@@ -1,0 +1,113 @@
+import com.lightningkite.deployhelpers.*
+import com.vanniktech.maven.publish.SonatypeHost
+
+plugins {
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.serialization)
+    alias(libs.plugins.androidLibrary)
+    // alias(libs.plugins.dokka)
+    id("signing")
+    alias(libs.plugins.vanniktechMavenPublish)
+}
+
+kotlin {
+    explicitApi()
+    applyDefaultHierarchyTemplate()
+    androidTarget {
+        compilations.all {
+            kotlinOptions.jvmTarget = "1.8"
+        }
+    }
+
+    jvm {
+        compilations.all {
+            kotlinOptions.jvmTarget = "1.8"
+        }
+    }
+    js(IR) {
+        browser()
+    }
+    iosX64()
+    iosArm64()
+    iosSimulatorArm64()
+    macosX64()
+    macosArm64()
+
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                api(project(path = ":basis"))
+                
+            }
+            kotlin {
+                srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
+            }
+        }
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.coroutinesTesting)
+            }
+            kotlin {
+                srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
+            }
+        }
+        val commonJvmMain by creating {
+            dependsOn(commonMain)
+        }
+        val nonJvmMain by creating {
+            dependsOn(commonMain)
+        }
+        val nativeMain by getting {
+            dependsOn(nonJvmMain)
+        }
+        val jsMain by getting {
+            dependsOn(nonJvmMain)
+        }
+        val jvmMain by getting {
+            dependsOn(commonJvmMain)
+        }
+        val androidMain by getting {
+            dependsOn(commonJvmMain)
+        }
+        val jvmTest by getting {
+            dependsOn(commonTest)
+        }
+    }
+}
+
+mavenPublishing {
+    // publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    signAllPublications()
+    coordinates(group.toString(), name, version.toString())
+    pom {
+        name.set("Service Abstractions - $name")
+        description.set(description)
+        github("lightningkite", "service-abstractions")
+        licenses {
+            mit()
+        }
+        developers {
+            joseph()
+            brady()
+        }
+    }
+}
+
+android {
+    namespace = "com.lightningkite.serviceabstractions"
+    compileSdk = 34
+
+    defaultConfig {
+        minSdk = 21
+    }
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+    dependencies {
+        coreLibraryDesugaring(libs.androidDesugaring)
+    }
+}
