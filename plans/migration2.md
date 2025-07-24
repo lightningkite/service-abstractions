@@ -17,7 +17,10 @@ This guide provides a succinct, step-by-step workflow for migrating modules from
 2. **Configure build files**:
    - Core module: Use `kotlin-multiplatform` when possible
    - Implementation modules: Use appropriate plugins based on dependencies
-   - Add explicit API mode to all modules: `kotlin { explicitApi() }`
+   - Add explicit API mode to all modules: `kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    } explicitApi() }`
 
 3. **Set up package structure**:
    ```

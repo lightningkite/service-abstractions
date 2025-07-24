@@ -1,7 +1,7 @@
 package com.lightningkite.serviceabstractions
 
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlin.time.DurationUnit
@@ -32,8 +32,8 @@ public sealed interface MetricType {
         override val unit: MetricUnit = MetricUnit.Seconds
     }
 }
-public fun Service.performanceMetric(vararg path: String) = MetricType.Performance(this, path.toList())
-public fun Service.countMetric(vararg path: String) = MetricType.Count(this, path.toList())
+public fun Service.performanceMetric(vararg path: String): MetricType.Performance = MetricType.Performance(this, path.toList())
+public fun Service.countMetric(vararg path: String): MetricType.Count = MetricType.Count(this, path.toList())
 
 public suspend fun MetricType.report(value: Double = 1.0) {
     service.context.metricSink.metric(this, value)

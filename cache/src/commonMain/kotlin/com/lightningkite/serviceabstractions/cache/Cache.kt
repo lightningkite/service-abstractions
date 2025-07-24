@@ -5,8 +5,8 @@ import com.lightningkite.serviceabstractions.Service
 import com.lightningkite.serviceabstractions.Setting
 import com.lightningkite.serviceabstractions.SettingContext
 import com.lightningkite.serviceabstractions.UrlSettingParser
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule

@@ -22,6 +22,9 @@ dependencies {
 }
 
 kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
     explicitApi()
     sourceSets.main {
         kotlin.srcDir("build/generated/ksp/main/kotlin")

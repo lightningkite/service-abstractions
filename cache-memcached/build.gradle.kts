@@ -18,10 +18,15 @@ dependencies {
     api(project(path = ":basis"))
     api(project(path = ":cache"))
     implementation(libs.kotlinTest)
+    implementation(libs.memcached)
     testImplementation(libs.coroutinesTesting)
+    testImplementation(project(":cache-test"))
 }
 
 kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
     explicitApi()
     sourceSets.main {
         kotlin.srcDir("build/generated/ksp/main/kotlin")

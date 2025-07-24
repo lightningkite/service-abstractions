@@ -101,6 +101,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
         }
 
         kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
             explicitApi()
             applyDefaultHierarchyTemplate()
             androidTarget {
@@ -130,6 +133,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
                         ${if(module.parent != null) "api(project(path = \":${module.parent.name}\"))" else ""}
                     }
                     kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
                         srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
                     }
                 }
@@ -139,6 +145,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
                         implementation(libs.coroutinesTesting)
                     }
                     kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
                         srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
                     }
                 }
@@ -197,6 +206,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
         }
 
         kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
             explicitApi()
             sourceSets.main {
                 kotlin.srcDir("build/generated/ksp/main/kotlin")

@@ -46,7 +46,7 @@ public suspend inline fun <reified T : Any> Cache.modify(
     modify(key, context.serializersModule.serializer<T>(), maxTries, timeToLive, modification)
 
 
-public inline operator fun <reified T> (() -> Cache).get(key: String) =
+public inline operator fun <reified T> (() -> Cache).get(key: String): CacheHandle<T> =
     CacheHandle<T>(this, key) { this().context.serializersModule.serializer<T>() }
 
 

@@ -5,6 +5,8 @@ import com.lightningkite.serviceabstractions.test.runTestWithClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlin.test.*
+import kotlin.test.Test
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 abstract class CacheTest {
@@ -58,8 +60,9 @@ abstract class CacheTest {
         }
     }
 
+    open val waitScale: Duration = 0.25.seconds
     @Test
-    open fun expirationTest() {
+    fun expirationTest() {
         val cache = cache ?: run {
             println("Could not test because the cache is not supported on this system.")
             return
@@ -67,26 +70,26 @@ abstract class CacheTest {
         runSuspendingTest {
             val key = "x"
             assertEquals(null, cache.get<Int>(key))
-            cache.set<Int>(key, 1, 0.25.seconds)
+            cache.set<Int>(key, 1, waitScale)
             assertEquals(1, cache.get<Int>(key))
-            delay(300)
+            delay(waitScale * 1.5)
             assertEquals(null, cache.get<Int>(key))
-            cache.set<Int>(key, 1, 0.25.seconds)
-            cache.add(key, 1, 0.25.seconds)
+            cache.set<Int>(key, 1, waitScale)
+            cache.add(key, 1, waitScale)
             assertEquals(2, cache.get<Int>(key))
-            delay(900)
+            delay(waitScale * 1.5)
             assertEquals(null, cache.get<Int>(key))
-            cache.add(key, 1, 0.25.seconds)
+            cache.add(key, 1, waitScale)
             assertEquals(1, cache.get<Int>(key))
-            delay(300)
+            delay(waitScale * 1.5)
             assertEquals(null, cache.get<Int>(key))
         }
         runSuspendingTest {
             val key = "y"
             assertEquals(null, cache.get<Int>(key))
-            cache.add(key, 1, 0.25.seconds)
+            cache.add(key, 1, waitScale)
             assertEquals(1, cache.get<Int>(key))
-            delay(300)
+            delay(waitScale * 1.5)
             assertEquals(null, cache.get<Int>(key))
         }
     }

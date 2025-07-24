@@ -1,8 +1,8 @@
 package com.lightningkite.serviceabstractions
 
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 @Serializable
 public data class HealthStatus(

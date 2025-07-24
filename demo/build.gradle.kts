@@ -54,6 +54,9 @@ dependencies {
 }
 
 kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
     sourceSets.main {
         kotlin.srcDir("build/generated/ksp/main/kotlin")
     }

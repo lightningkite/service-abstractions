@@ -13,6 +13,9 @@ plugins {
 }
 
 kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
     explicitApi()
     applyDefaultHierarchyTemplate()
     androidTarget {
@@ -42,6 +45,9 @@ kotlin {
                 
             }
             kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
@@ -52,6 +58,9 @@ kotlin {
                 implementation(project(":cache-test"))
             }
             kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }

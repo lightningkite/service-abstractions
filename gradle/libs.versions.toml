@@ -96,6 +96,8 @@ kotlinLogging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "
 kotlinReflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
 kotlinStdLib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlinTest = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlinTestJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+kotlinTestJs = { module = "org.jetbrains.kotlin:kotlin-test-js", version.ref = "kotlin" }
 kotlinXDatetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinXDatetime" }
 kotlinXJson = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinXSerialization" }
 kotlinerCli = { module = "com.lightningkite:kotliner-cli", version.ref = "kotlinerCli" }

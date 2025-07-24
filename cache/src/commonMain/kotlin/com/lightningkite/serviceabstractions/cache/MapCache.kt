@@ -5,8 +5,8 @@ import com.lightningkite.serviceabstractions.SettingContext
 import com.lightningkite.serviceabstractions.cache.Cache
 import com.lightningkite.serviceabstractions.default
 import com.lightningkite.serviceabstractions.performanceMetric
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
