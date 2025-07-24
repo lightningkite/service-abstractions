@@ -1,5 +1,6 @@
 import com.lightningkite.deployhelpers.*
-import com.vanniktech.maven.publish.SonatypeHost
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 import org.gradle.kotlin.dsl.implementation
 
 plugins {
@@ -16,14 +17,14 @@ kotlin {
     explicitApi()
     applyDefaultHierarchyTemplate()
     androidTarget {
-        compilations.all {
-            kotlinOptions.jvmTarget = "1.8"
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_1_8)
         }
     }
 
     jvm {
-        compilations.all {
-            kotlinOptions.jvmTarget = "1.8"
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_1_8)
         }
     }
     js(IR) {
@@ -60,7 +61,6 @@ kotlin {
             }
         }
         val jvmTest by getting {
-            dependsOn(commonTest)
         }
     }
 }

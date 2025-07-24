@@ -4,6 +4,7 @@ import com.lightningkite.deployhelpers.useLocalDependencies
 import com.lightningkite.deployhelpers.github
 import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     // alias(libs.plugins.dokka) apply false
@@ -13,6 +14,7 @@ plugins {
     alias(libs.plugins.androidLibrary) apply false
     alias(libs.plugins.graalVmNative) apply false
     alias(libs.plugins.shadow) apply false
+    alias(libs.plugins.versionCatalogUpdate)
 }
 
 buildscript {
@@ -29,7 +31,6 @@ buildscript {
 allprojects {
     group = "com.lightningkite.serviceabstractions"
 //    useGitBasedVersion()
-    useLocalDependencies()
     publishing()
 
     repositories {

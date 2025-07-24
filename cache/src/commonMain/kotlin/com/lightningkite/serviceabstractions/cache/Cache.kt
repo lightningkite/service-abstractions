@@ -19,8 +19,6 @@ import kotlin.time.Duration.Companion.seconds
  * Every implementation will handle how to get and set values in the underlying cache system.
  */
 public interface Cache : Service {
-    public val serializersModule: SerializersModule
-
     /**
      * Settings that define what cache to use and how to connect to it.
      *

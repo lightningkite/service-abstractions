@@ -1,41 +1,66 @@
-
-import com.lightningkite.deployhelpers.github
-import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
-import com.vanniktech.maven.publish.SonatypeHost
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.ksp)
-    // alias(libs.plugins.dokka)
     alias(libs.plugins.serialization)
+    alias(libs.plugins.androidLibrary)
+    // alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
-dependencies {
-    api(project(path = ":basis"))
-    
-    testImplementation(libs.coroutinesTesting)
-}
-
 kotlin {
     explicitApi()
-    sourceSets.main {
-        kotlin.srcDir("build/generated/ksp/main/kotlin")
+    applyDefaultHierarchyTemplate()
+    androidTarget {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_1_8)
+        }
     }
-    sourceSets.test {
-        kotlin.srcDir("build/generated/ksp/test/kotlin")
-    }
-}
 
-tasks.withType<JavaCompile>().configureEach {
-    this.targetCompatibility = "17"
-}
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    kotlinOptions.freeCompilerArgs += "-opt-in=kotlinx.serialization.ExperimentalSerializationApi"
-    kotlinOptions.freeCompilerArgs += "-opt-in=kotlin.RequiresOptIn"
-    kotlinOptions.jvmTarget = JavaVersion.VERSION_17.toString()
+    jvm {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_1_8)
+        }
+    }
+    js(IR) {
+        browser()
+    }
+    iosX64()
+    iosArm64()
+    iosSimulatorArm64()
+    macosX64()
+    macosArm64()
+
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                api(project(path = ":basis"))
+                
+            }
+            kotlin {
+                srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
+            }
+        }
+        val commonTest by getting {
+            dependencies {
+                implementation(libs.kotlinTest)
+                implementation(libs.coroutinesTesting)
+            }
+            kotlin {
+                srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
+            }
+        }
+        val jvmMain by getting {
+            dependencies {
+            }
+        }
+        val jvmTest by getting {
+        }
+    }
 }
 
 mavenPublishing {
@@ -53,5 +78,22 @@ mavenPublishing {
             joseph()
             brady()
         }
+    }
+}
+
+android {
+    namespace = "com.lightningkite.serviceabstractions"
+    compileSdk = 34
+
+    defaultConfig {
+        minSdk = 21
+    }
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+    dependencies {
+        coreLibraryDesugaring(libs.androidDesugaring)
     }
 }

@@ -2,7 +2,8 @@
 import com.lightningkite.deployhelpers.github
 import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
-import com.vanniktech.maven.publish.SonatypeHost
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 
 plugins {
     alias(libs.plugins.kotlinJvm)
@@ -14,30 +15,40 @@ plugins {
 }
 
 dependencies {
-    api(project(path = ":database"))
-    api(project(path = ":database-mongodb"))
-    api(project(path = ":database-jsonfile"))
-    api(project(path = ":database-postgres"))
-    api(project(path = ":email"))
-    api(project(path = ":email-mailgun"))
-    api(project(path = ":sms"))
-    api(project(path = ":sms-twilio"))
-    api(project(path = ":metrics"))
-    api(project(path = ":metrics-cloudwatch"))
-    api(project(path = ":notifications"))
-    api(project(path = ":notifications-fcm"))
-    api(project(path = ":cache"))
-    api(project(path = ":cache-dynamodb"))
-    api(project(path = ":cache-memcached"))
-    api(project(path = ":cache-redis"))
-    api(project(path = ":pubsub"))
-    api(project(path = ":pubsub-redis"))
-    api(project(path = ":files"))
-    api(project(path = ":files-clamav"))
-    api(project(path = ":files-azbs"))
-    api(project(path = ":files-s3"))
-    api(project(path = ":exceptions"))
-    api(project(path = ":exceptions-sentry"))
+    api(project(":database"))
+    api(project(":database-processor"))
+    api(project(":database-test"))
+    api(project(":database-mongodb"))
+    api(project(":database-jsonfile"))
+    api(project(":database-postgres"))
+    api(project(":email"))
+    api(project(":email-test"))
+    api(project(":email-mailgun"))
+    api(project(":sms"))
+    api(project(":sms-test"))
+    api(project(":sms-twilio"))
+    api(project(":metrics"))
+    api(project(":metrics-test"))
+    api(project(":metrics-cloudwatch"))
+    api(project(":notifications"))
+    api(project(":notifications-test"))
+    api(project(":notifications-fcm"))
+    api(project(":cache"))
+    api(project(":cache-test"))
+    api(project(":cache-dynamodb"))
+    api(project(":cache-memcached"))
+    api(project(":cache-redis"))
+    api(project(":pubsub"))
+    api(project(":pubsub-test"))
+    api(project(":pubsub-redis"))
+    api(project(":files"))
+    api(project(":files-test"))
+    api(project(":files-clamav"))
+    api(project(":files-azbs"))
+    api(project(":files-s3"))
+    api(project(":exceptions"))
+    api(project(":exceptions-test"))
+    api(project(":exceptions-sentry"))
 
     testImplementation(libs.coroutinesTesting)
 }
@@ -54,11 +65,7 @@ kotlin {
 tasks.withType<JavaCompile>().configureEach {
     this.targetCompatibility = "17"
 }
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    kotlinOptions.freeCompilerArgs += "-opt-in=kotlinx.serialization.ExperimentalSerializationApi"
-    kotlinOptions.freeCompilerArgs += "-opt-in=kotlin.RequiresOptIn"
-    kotlinOptions.jvmTarget = JavaVersion.VERSION_17.toString()
-}
+
 
 mavenPublishing {
     // publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)

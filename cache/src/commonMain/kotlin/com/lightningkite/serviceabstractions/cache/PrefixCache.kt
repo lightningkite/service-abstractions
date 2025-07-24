@@ -9,7 +9,6 @@ import kotlin.time.Duration
 public class PrefixCache(public val cache: Cache, public val prefix: String): Cache {
     override val context: SettingContext
         get() = cache.context
-    override val serializersModule: SerializersModule get() = cache.serializersModule
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? = cache.get(prefix + key, serializer)
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit = cache.set(prefix + key, value, serializer, timeToLive)
     override suspend fun <T> setIfNotExists(

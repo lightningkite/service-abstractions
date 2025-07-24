@@ -8,28 +8,38 @@ data class Module(
 
 val data = """
             database*
+                processor
+                test*
                 mongodb
                 jsonfile
                 postgres
             email*
+                test*
                 mailgun
             sms*
+                test*
                 twilio
             metrics*
+                test*
                 cloudwatch
             notifications*
+                test*
                 fcm
             cache*
+                test*
                 dynamodb
                 memcached
                 redis
             pubsub*
+                test*
                 redis
             files*
+                test*
                 clamav
                 azbs
                 s3
-            exceptions
+            exceptions*
+                test*
                 sentry
             demo
             """.trimIndent()
@@ -77,7 +87,8 @@ for (module in modules) {
     val buildText = if(module.multiplatform) {
         """
         import com.lightningkite.deployhelpers.*
-        import com.vanniktech.maven.publish.SonatypeHost
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+        
 
         plugins {
             alias(libs.plugins.kotlinMultiplatform)
@@ -124,7 +135,7 @@ for (module in modules) {
                 }
                 val commonTest by getting {
                     dependencies {
-                        implementation(kotlin("test"))
+                        implementation(libs.kotlinTest)
                         implementation(libs.coroutinesTesting)
                     }
                     kotlin {
@@ -166,7 +177,8 @@ for (module in modules) {
         import com.lightningkite.deployhelpers.github
         import com.lightningkite.deployhelpers.mit
         import com.lightningkite.deployhelpers.*
-        import com.vanniktech.maven.publish.SonatypeHost
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+        
 
         plugins {
             alias(libs.plugins.kotlinJvm)
@@ -180,6 +192,7 @@ for (module in modules) {
         dependencies {
             api(project(path = ":basis"))
             ${if(module.parent != null) "api(project(path = \":${module.parent.name}\"))" else ""}
+            implementation(libs.kotlinTest)
             testImplementation(libs.coroutinesTesting)
         }
 

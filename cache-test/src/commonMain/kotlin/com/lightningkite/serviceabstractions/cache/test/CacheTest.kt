@@ -1,29 +1,11 @@
-package com.lightningkite.serviceabstractions.cache
-
-import com.lightningkite.serviceabstractions.ClockContextElement
+package com.lightningkite.serviceabstractions.cache.test
 import com.lightningkite.serviceabstractions.HealthStatus
-import com.lightningkite.serviceabstractions.withClock
+import com.lightningkite.serviceabstractions.cache.*
+import com.lightningkite.serviceabstractions.test.runTestWithClock
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.test.TestResult
-import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.testTimeSource
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.UtcOffset
-import kotlinx.datetime.toInstant
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
-import kotlin.time.ComparableTimeMark
-import kotlin.time.Duration
+import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeSource
 
 abstract class CacheTest {
     abstract val cache: Cache?
@@ -109,4 +91,3 @@ abstract class CacheTest {
         }
     }
 }
-
