@@ -22,6 +22,7 @@ dependencies {
     implementation(libs.kotlinTest)
     implementation(project(":aws-client"))
     testImplementation(libs.coroutinesTesting)
+    testImplementation(project(":cache-test"))
 }
 
 kotlin {
