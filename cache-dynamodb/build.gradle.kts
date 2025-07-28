@@ -20,6 +20,7 @@ dependencies {
     api(libs.dynamodb)
     implementation(libs.coroutinesReactive)
     implementation(libs.kotlinTest)
+    implementation(project(":aws-client"))
     testImplementation(libs.coroutinesTesting)
 }
 
