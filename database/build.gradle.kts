@@ -15,8 +15,9 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
-    explicitApi()
+//    explicitApi()
     applyDefaultHierarchyTemplate()
     androidTarget {
         compilerOptions {
@@ -42,11 +43,13 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(project(path = ":basis"))
-                
+                api(project(path = ":should-be-standard-library"))
+
             }
             kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
@@ -59,6 +62,7 @@ kotlin {
             kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }

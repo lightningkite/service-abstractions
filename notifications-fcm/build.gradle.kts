@@ -18,12 +18,14 @@ dependencies {
     api(project(path = ":basis"))
     api(project(path = ":notifications"))
     implementation(libs.kotlinTest)
+    implementation(libs.firebaseAdmin)
     testImplementation(libs.coroutinesTesting)
 }
 
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     explicitApi()
     sourceSets.main {

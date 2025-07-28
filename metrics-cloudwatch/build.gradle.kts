@@ -16,7 +16,14 @@ plugins {
 
 dependencies {
     api(project(path = ":basis"))
-    api(project(path = ":metrics"))
+    api(project(path = ":aws-client"))
+    fun ModuleDependency.excludeNetty() {
+        exclude("software.amazon.awssdk:netty-nio-client")
+        exclude("software.amazon.awssdk:apache-client")
+    }
+
+    api(libs.awsCloudWatch) { excludeNetty() }
+    api(libs.awsCrtClient) { excludeNetty() }
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }
@@ -24,6 +31,7 @@ dependencies {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     explicitApi()
     sourceSets.main {

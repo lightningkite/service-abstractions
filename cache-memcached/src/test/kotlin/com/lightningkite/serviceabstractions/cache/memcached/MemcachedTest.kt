@@ -2,6 +2,7 @@ package com.lightningkite.serviceabstractions.cache.memcached
 
 import com.lightningkite.serviceabstractions.MetricSink
 import com.lightningkite.serviceabstractions.SettingContext
+import com.lightningkite.serviceabstractions.TestSettingContext
 import com.lightningkite.serviceabstractions.cache.Cache
 import com.lightningkite.serviceabstractions.cache.test.CacheTest
 import com.lightningkite.serviceabstractions.test.runTestWithClock
@@ -25,10 +26,7 @@ class MemcachedTest : CacheTest() {
         if (EmbeddedMemcached.available) {
             try {
                 val client = XMemcachedClient("127.0.0.1", 11211)
-                MemcachedCache(client, object : SettingContext {
-                    override val serializersModule: SerializersModule = SerializersModule {}
-                    override val metricSink: MetricSink = MetricSink.None
-                })
+                MemcachedCache(client, TestSettingContext())
             } catch (e: Exception) {
                 println("Could not connect to Memcached: ${e.message}")
                 null

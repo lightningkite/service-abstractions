@@ -2,6 +2,7 @@ package com.lightningkite.serviceabstractions.cache.redis
 
 import com.lightningkite.serviceabstractions.MetricSink
 import com.lightningkite.serviceabstractions.SettingContext
+import com.lightningkite.serviceabstractions.TestSettingContext
 import com.lightningkite.serviceabstractions.cache.Cache
 import com.lightningkite.serviceabstractions.cache.test.CacheTest
 import io.lettuce.core.RedisClient
@@ -21,10 +22,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class RedisTest: CacheTest() {
     override val cache: Cache? by lazy {
-        RedisCache(RedisClient.create("redis://127.0.0.1:6379/0"), object: SettingContext {
-            override val serializersModule: SerializersModule = SerializersModule {}
-            override val metricSink: MetricSink = MetricSink.None
-        })
+        RedisCache(RedisClient.create("redis://127.0.0.1:6379/0"), TestSettingContext())
     }
     override fun runSuspendingTest(body: suspend CoroutineScope.() -> Unit) = runBlocking { body() }
     override val waitScale: Duration

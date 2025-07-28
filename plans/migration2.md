@@ -20,6 +20,7 @@ This guide provides a succinct, step-by-step workflow for migrating modules from
    - Add explicit API mode to all modules: `kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     } explicitApi() }`
 
 3. **Set up package structure**:

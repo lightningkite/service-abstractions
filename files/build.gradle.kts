@@ -15,6 +15,7 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
@@ -42,12 +43,17 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(project(path = ":basis"))
-                
+                api(project(path = ":files-client"))
+                api(project(path = ":data"))
+                // Add cryptography-kotlin for SHA-256 hashing and Base64 encoding
+                implementation("dev.whyoleg.cryptography:cryptography-core:0.5.0")
+                implementation("dev.whyoleg.cryptography:cryptography-provider-optimal:0.5.0")
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
@@ -55,11 +61,13 @@ kotlin {
             dependencies {
                 implementation(libs.kotlinTest)
                 implementation(libs.coroutinesTesting)
+                implementation(project(":files-test"))
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }

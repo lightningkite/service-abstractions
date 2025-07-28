@@ -103,6 +103,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
         kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
             explicitApi()
             applyDefaultHierarchyTemplate()
@@ -135,6 +136,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
                     kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
                         srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
                     }
@@ -147,6 +149,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
                     kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
                         srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
                     }
@@ -208,6 +211,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
         kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
             explicitApi()
             sourceSets.main {

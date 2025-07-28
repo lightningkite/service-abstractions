@@ -17,13 +17,20 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":pubsub"))
+    implementation(libs.lettuce)
+    implementation(libs.embeddedRedis)
+    implementation(libs.guava)
+    implementation(libs.coroutinesCore)
+    implementation(libs.coroutinesReactive)
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
+    testImplementation(project(":cache-test"))
 }
 
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     explicitApi()
     sourceSets.main {

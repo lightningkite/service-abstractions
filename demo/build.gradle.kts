@@ -15,19 +15,18 @@ plugins {
 }
 
 dependencies {
-    api(project(":database"))
-    api(project(":database-processor"))
-    api(project(":database-test"))
-    api(project(":database-mongodb"))
-    api(project(":database-jsonfile"))
-    api(project(":database-postgres"))
+//    api(project(":database"))
+//    api(project(":database-processor"))
+//    api(project(":database-test"))
+//    api(project(":database-mongodb"))
+//    api(project(":database-jsonfile"))
+//    api(project(":database-postgres"))
     api(project(":email"))
     api(project(":email-test"))
     api(project(":email-mailgun"))
     api(project(":sms"))
     api(project(":sms-test"))
     api(project(":sms-twilio"))
-    api(project(":metrics"))
     api(project(":metrics-test"))
     api(project(":metrics-cloudwatch"))
     api(project(":notifications"))
@@ -56,6 +55,7 @@ dependencies {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     sourceSets.main {
         kotlin.srcDir("build/generated/ksp/main/kotlin")

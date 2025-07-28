@@ -1,5 +1,3 @@
-rootProject.name = "lightning-server"
-
 pluginManagement {
     repositories {
         mavenLocal()
@@ -29,21 +27,25 @@ pluginManagement {
     }
 }
 
+include(":should-be-standard-library")
+include(":aws-client")
 include(":basis")
+include(":data")
+include(":http-client")
 include(":test")
-include(":database")
-include(":database-processor")
-include(":database-test")
-include(":database-mongodb")
-include(":database-jsonfile")
-include(":database-postgres")
+//include(":database")
+//include(":database-processor")
+//include(":database-test")
+//include(":database-mongodb")
+//include(":database-jsonfile")
+//include(":database-postgres")
 include(":email")
 include(":email-test")
+include(":email-javasmtp")
 include(":email-mailgun")
 include(":sms")
 include(":sms-test")
 include(":sms-twilio")
-include(":metrics")
 include(":metrics-test")
 include(":metrics-cloudwatch")
 include(":notifications")
@@ -58,7 +60,9 @@ include(":pubsub")
 include(":pubsub-test")
 include(":pubsub-redis")
 include(":files")
+include(":files-client")
 include(":files-test")
+//include(":files-javalocal")
 include(":files-clamav")
 include(":files-azbs")
 include(":files-s3")

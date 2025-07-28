@@ -27,6 +27,7 @@ kotlin = "2.2.0"
 kotlinHtmlJvm = "0.12.0"
 kotlinLogging = "7.0.7"
 kotlinXDatetime = "0.7.1"
+kotlinXIO = "0.8.0"
 kotlinXSerialization = "1.9.0"
 kotlinerCli = "1.0.5"
 kotlinxSerializationCsvDurable = "0.2.11"
@@ -90,9 +91,10 @@ hierynomusSshj = { module = "com.hierynomus:sshj", version.ref = "hierynomusSshj
 javaJwt = { module = "com.auth0:java-jwt", version.ref = "javaJwt" }
 kBson = { module = "com.github.jershell:kbson", version.ref = "kbson" }
 kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
+kotlinXIO = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinXIO" }
 kotlinCompiler = { module = "org.jetbrains.kotlin:kotlin-compiler", version.ref = "kotlin" }
 kotlinHtmlJvm = { module = "org.jetbrains.kotlinx:kotlinx-html-jvm", version.ref = "kotlinHtmlJvm" }
-kotlinLogging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlinLogging" }
+kotlinLogging = { module = "io.github.oshai:kotlin-logging", version.ref = "kotlinLogging" }
 kotlinReflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
 kotlinStdLib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlinTest = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }

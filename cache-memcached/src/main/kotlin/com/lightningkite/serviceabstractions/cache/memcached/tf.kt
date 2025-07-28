@@ -2,7 +2,6 @@ package com.lightningkite.serviceabstractions.cache.memcached
 
 import com.lightningkite.serviceabstractions.Untested
 import com.lightningkite.serviceabstractions.cache.Cache
-import com.lightningkite.serviceabstractions.terraform.TerraformJsonObject
 import com.lightningkite.serviceabstractions.terraform.TerraformNeed
 import com.lightningkite.serviceabstractions.terraform.TerraformServiceResult
 import com.lightningkite.serviceabstractions.terraform.terraformJsonObject

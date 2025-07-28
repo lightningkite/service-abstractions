@@ -15,10 +15,7 @@ fun main() {
             "cache": "ram"
         }
     """.trimIndent()
-    val context = object: SettingContext {
-        override val metricSink: MetricSink = MetricSink.None
-        override val serializersModule: SerializersModule = EmptySerializersModule()
-    }
+    val context = TestSettingContext()
     val settings = Json.decodeFromString<MyServerSettings>(settingsFile)
 
     runBlocking {

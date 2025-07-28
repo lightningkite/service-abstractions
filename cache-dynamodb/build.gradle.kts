@@ -17,6 +17,8 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":cache"))
+    api(libs.dynamodb)
+    implementation(libs.coroutinesReactive)
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }
@@ -24,6 +26,7 @@ dependencies {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     explicitApi()
     sourceSets.main {

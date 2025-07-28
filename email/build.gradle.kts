@@ -15,6 +15,7 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
@@ -42,12 +43,14 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(project(path = ":basis"))
-                
+                api(project(path = ":data"))
+
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
@@ -57,9 +60,10 @@ kotlin {
                 implementation(libs.coroutinesTesting)
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }

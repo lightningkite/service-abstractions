@@ -2,7 +2,9 @@
 .idea
 build
 .kotlin
-local
+/*/local
+/local
 local.*
 local.version.txt
 old-lightning-server
+.DS_Store
