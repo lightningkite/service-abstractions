@@ -1,4 +1,4 @@
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.*
 import com.lightningkite.GeoCoordinate
@@ -46,17 +46,17 @@ fun <K, V> DataClassPath<K, V>.fullTextSearch(value: String, levenshteinDistance
 infix fun <K, T> DataClassPath<K, Map<String, T>>.containsKey(key: String) = mapCondition(Condition.Exists(key))
 inline infix fun <K, reified T> DataClassPath<K, T>.condition(make: (DataClassPath<T, T>) -> Condition<T>): Condition<K> = mapCondition(make(path<T>()))
 
-@Deprecated("Use neq instead", ReplaceWith("this.neq(value)", "com.lightningkite.serverabstractions.database.neq"))
+@Deprecated("Use neq instead", ReplaceWith("this.neq(value)", "com.lightningkite.serviceabstractions.database.neq"))
 infix fun <K, T> DataClassPath<K, T>.ne(value: T) = mapCondition(Condition.NotEqual(value))
 @JsName("xDataClassPathInsideSet") infix fun <K, T> DataClassPath<K, T>.inside(values: Set<T>) = mapCondition(Condition.Inside(values.toList()))
 infix fun <K, T> DataClassPath<K, T>.inside(values: List<T>) = mapCondition(Condition.Inside(values))
-@Deprecated("Use notInside instead", ReplaceWith("this.notInside(value)", "com.lightningkite.serverabstractions.database.notInside"))
+@Deprecated("Use notInside instead", ReplaceWith("this.notInside(value)", "com.lightningkite.serviceabstractions.database.notInside"))
 @JsName("xDataClassPathNinSet") infix fun <K, T> DataClassPath<K, T>.nin(values: Set<T>) = mapCondition(Condition.NotInside(values.toList()))
-@Deprecated("Use notInside instead", ReplaceWith("this.notInside(value)", "com.lightningkite.serverabstractions.database.notInside"))
+@Deprecated("Use notInside instead", ReplaceWith("this.notInside(value)", "com.lightningkite.serviceabstractions.database.notInside"))
 infix fun <K, T> DataClassPath<K, T>.nin(values: List<T>) = mapCondition(Condition.NotInside(values))
-@Deprecated("Use notInside instead", ReplaceWith("this.notInside(value)", "com.lightningkite.serverabstractions.database.notInside"))
+@Deprecated("Use notInside instead", ReplaceWith("this.notInside(value)", "com.lightningkite.serviceabstractions.database.notInside"))
 @JsName("xDataClassPathNotInSet2") infix fun <K, T> DataClassPath<K, T>.notIn(values: Set<T>) = mapCondition(Condition.NotInside(values.toList()))
-@Deprecated("Use notInside instead", ReplaceWith("this.notInside(values)", "com.lightningkite.serverabstractions.database.notInside"))
+@Deprecated("Use notInside instead", ReplaceWith("this.notInside(values)", "com.lightningkite.serviceabstractions.database.notInside"))
 infix fun <K, T> DataClassPath<K, T>.notIn(values: List<T>) = mapCondition(Condition.NotInside(values))
 @Deprecated("Size equals will be removed in the future in favor of something that detects empty specifically")
 @JsName("xDataClassPathListSizedEqual") @JvmName("listSizedEqual") infix fun <K, T> DataClassPath<K, List<T>>.sizesEquals(count: Int) = mapCondition(Condition.ListSizesEquals(count))

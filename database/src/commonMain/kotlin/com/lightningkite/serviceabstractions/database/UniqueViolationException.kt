@@ -1,6 +1,5 @@
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
-import com.lightningkite.serialization.*
 class UniqueViolationException(
     cause: Throwable?,
     val key: String? = null,

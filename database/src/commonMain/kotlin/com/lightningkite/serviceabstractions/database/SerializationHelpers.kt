@@ -2,10 +2,10 @@
 
 package com.lightningkite.serialization
 
-import com.lightningkite.serverabstractions.database.ConditionSerializer
-import com.lightningkite.serverabstractions.database.LazyRenamedSerialDescriptor
-import com.lightningkite.serverabstractions.database.ModificationSerializer
-import com.lightningkite.serverabstractions.database.SortPartSerializer
+import com.lightningkite.serviceabstractions.database.ConditionSerializer
+import com.lightningkite.serviceabstractions.database.LazyRenamedSerialDescriptor
+import com.lightningkite.serviceabstractions.database.ModificationSerializer
+import com.lightningkite.serviceabstractions.database.SortPartSerializer
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer

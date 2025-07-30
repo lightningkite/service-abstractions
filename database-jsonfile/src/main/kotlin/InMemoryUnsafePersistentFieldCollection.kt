@@ -1,30 +1,31 @@
-package com.lightningkite.serverabstractions.database
-
-import com.lightningkite.serialization.*
-import kotlinx.coroutines.*
+import com.lightningkite.serviceabstractions.database.InMemoryFieldCollection
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.actor
+import kotlinx.coroutines.launch
+import kotlinx.io.files.Path
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
-import java.io.Closeable
-import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import java.util.*
 import org.slf4j.LoggerFactory
+import java.io.Closeable
+import java.nio.file.Files
+import java.util.Collections
+import kotlin.io.path.exists
 
 /**
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
  * and writing the collection data into a file when closing.
  */
-class InMemoryUnsafePersistentFieldCollection<Model : Any>(
+private class JsonFileFieldCollection<Model : Any>(
     val encoding: StringFormat,
     serializer: KSerializer<Model>,
-    val file: File
+    val file: Path
 ) : InMemoryFieldCollection<Model>(
     data = Collections.synchronizedList(ArrayList()),
     serializer = serializer
-), Closeable{
+), Closeable {
 
     companion object{
         val logger = LoggerFactory.getLogger(this::class.java)
@@ -63,4 +64,3 @@ class InMemoryUnsafePersistentFieldCollection<Model : Any>(
         logger.debug("Saved $file")
     }
 }
-

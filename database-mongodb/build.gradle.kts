@@ -19,6 +19,9 @@ dependencies {
     api(project(path = ":database"))
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
+    implementation(libs.embedMongo)
+    implementation(libs.mongoDriver)
+    api(libs.kBson)
 }
 
 kotlin {

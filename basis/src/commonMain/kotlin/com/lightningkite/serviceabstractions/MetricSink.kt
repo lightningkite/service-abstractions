@@ -2,8 +2,6 @@ package com.lightningkite.serviceabstractions
 
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
-import kotlin.time.DurationUnit
-import kotlin.time.TimeSource
 import io.github.oshai.kotlinlogging.KotlinLogging
 
 public interface MetricSink: Service {
@@ -38,7 +36,7 @@ public interface MetricSink: Service {
         )
     }
     public class LogImmediately(override val context: SettingContext): MetricSink {
-        private val log = KotlinLogging.logger("com.lightningkite.lightningserver.metrics.MetricSink.LogImmediately")
+        private val log = KotlinLogging.logger("com.lightningkite.serviceabstractions.MetricSink.LogImmediately")
         override suspend fun report(reportingInfo: ReportingContextElement) {
             log.info { reportingInfo.toString() }
         }

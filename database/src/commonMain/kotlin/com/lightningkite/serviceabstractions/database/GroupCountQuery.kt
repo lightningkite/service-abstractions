@@ -1,5 +1,5 @@
 
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.serialization.DataClassPathPartial
 import kotlinx.serialization.Serializable

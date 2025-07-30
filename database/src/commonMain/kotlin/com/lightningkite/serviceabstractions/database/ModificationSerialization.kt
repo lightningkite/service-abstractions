@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalSerializationApi::class)
 
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.IsRawString
 import com.lightningkite.TrimmedString
@@ -121,7 +121,7 @@ private val numlist = setOf(
 @Suppress("UNCHECKED_CAST")
 data class ModificationSerializer<T>(val inner: KSerializer<T>) :
     MySealedClassSerializerInterface<Modification<T>> by (cache.getOrPut(KSerializerKey(inner)) {
-        MySealedClassSerializer<Modification<T>>("com.lightningkite.serverabstractions.database.Modification", {
+        MySealedClassSerializer<Modification<T>>("com.lightningkite.serviceabstractions.database.Modification", {
             val r = when {
                 inner.nullElement() != null -> nullableOptions(inner.nullElement()!! as KSerializer<Any>)
                 inner.descriptor.serialName.substringBefore('/') == "kotlin.String" -> stringOptions

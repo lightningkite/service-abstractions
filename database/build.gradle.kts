@@ -10,6 +10,7 @@ plugins {
     // alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
+    id("org.jetbrains.kotlinx.atomicfu") version "0.29.0"
 }
 
 kotlin {
@@ -44,13 +45,13 @@ kotlin {
             dependencies {
                 api(project(path = ":basis"))
                 api(project(path = ":should-be-standard-library"))
-
+                api(project(path = ":data"))
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }

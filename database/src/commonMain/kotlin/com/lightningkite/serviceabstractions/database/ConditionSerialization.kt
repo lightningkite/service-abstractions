@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalSerializationApi::class)
 
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.GeoCoordinate
 import com.lightningkite.IsRawString
@@ -76,7 +76,7 @@ private fun <T: Any> classOptionsReflective(inner: KSerializer<T>): List<MySeale
 private val cache = HashMap<KSerializerKey, MySealedClassSerializerInterface<*>>()
 @Suppress("UNCHECKED_CAST")
 class ConditionSerializer<T>(val inner: KSerializer<T>): MySealedClassSerializerInterface<Condition<T>> by (cache.getOrPut(KSerializerKey(inner)) {
-    MySealedClassSerializer<Condition<T>>("com.lightningkite.serverabstractions.database.Condition", {
+    MySealedClassSerializer<Condition<T>>("com.lightningkite.serviceabstractions.database.Condition", {
         val r = when {
             inner.descriptor.isNullable -> nullableOptions(inner.innerElement() as KSerializer<Any>)
             inner.descriptor.serialName.substringBefore('/') == "kotlin.String" -> stringOptions

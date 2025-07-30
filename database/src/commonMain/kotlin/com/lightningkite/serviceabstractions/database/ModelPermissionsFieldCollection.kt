@@ -1,9 +1,11 @@
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.serialization.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
+
+class SecurityException(message: String? = null, cause: Throwable? = null) : RuntimeException(message, cause)
 
 /**
  * Uses [ModelPermissions] to secure a [FieldCollection].

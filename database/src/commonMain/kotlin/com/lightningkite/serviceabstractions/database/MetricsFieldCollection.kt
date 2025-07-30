@@ -1,13 +1,13 @@
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.serialization.*
-import com.lightningkite.lightningserver.metrics.MetricType
-import com.lightningkite.lightningserver.metrics.MetricUnit
-import com.lightningkite.lightningserver.metrics.Metrics
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.KSerializer
+import kotlin.time.Clock
+import com.lightningkite.serviceabstractions.MetricType
+import com.lightningkite.serviceabstractions.MetricUnit
 
 class MetricsFieldCollection<M: Any>(override val wraps: FieldCollection<M>, metricsKeyName: String = "Database"): FieldCollection<M> {
     override val serializer: KSerializer<M> get() = wraps.serializer
@@ -22,14 +22,14 @@ class MetricsFieldCollection<M: Any>(override val wraps: FieldCollection<M>, met
     ): Flow<M> = Metrics.addPerformanceToSumPerHandler(metricsKey, metricsCountKey) {
         val source = wraps.find(condition, orderBy, skip, limit, maxQueryMs)
         flow {
-            var now = System.nanoTime()
+            var now = Clock.System.now().toEpochMilliseconds()
             var timeSum = 0L
             Metrics.addToSumPerHandler(metricsCountKey, 1.0)
             try {
                 source.collect {
-                    timeSum += (System.nanoTime() - now)
+                    timeSum += (Clock.System.now().toEpochMilliseconds() - now)
                     emit(it)
-                    now = System.nanoTime()
+                    now = Clock.System.now().toEpochMilliseconds()
                 }
             } finally {
                 Metrics.addToSumPerHandler(metricsKey, timeSum / 1000000.0)

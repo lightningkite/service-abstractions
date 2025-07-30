@@ -1,14 +1,13 @@
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.serialization.*
-import com.lightningkite.lightningserver.exceptions.BadRequestException
-import io.ktor.util.reflect.*
+import kotlinx.atomicfu.AtomicRef
+import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.ReentrantLock
+import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.KSerializer
-import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
 /**
  * A FieldCollection who's underlying implementation is actually manipulating a MutableList.
@@ -21,16 +20,16 @@ open class InMemoryFieldCollection<Model : Any>(
 
     private val lock = ReentrantLock()
 
-    private val uniqueIndexChecks = ConcurrentLinkedQueue<(List<EntryChange<Model>>) -> Unit>()
+    private val uniqueIndexChecks = mutableListOf<AtomicRef<(List<EntryChange<Model>>) -> Unit>>()
 
     private fun uniqueCheck(changed: EntryChange<Model>) = uniqueCheck(listOf(changed))
-    private fun uniqueCheck(changes: List<EntryChange<Model>>) = uniqueIndexChecks.forEach { it(changes) }
+    private fun uniqueCheck(changes: List<EntryChange<Model>>) = uniqueIndexChecks.forEach { it.value(changes) }
 
     init {
         serializer.descriptor.indexes().plus(NeededIndex(fields = listOf("_id"), true, "primary key")).forEach { index: NeededIndex ->
             if (index.unique) {
                 val fields = serializer.serializableProperties!!.filter { index.fields.contains(it.name) }
-                uniqueIndexChecks.add { changes: List<EntryChange<Model>> ->
+                uniqueIndexChecks.add(atomic { changes: List<EntryChange<Model>> ->
                     val fieldChanges = changes.mapNotNull { entryChange ->
                         if (
                             (entryChange.old == null && entryChange.new != null) ||
@@ -51,7 +50,7 @@ open class InMemoryFieldCollection<Model : Any>(
                             throw UniqueViolationException(collection = serializer.descriptor.serialName, key = fields.joinToString { it.name }, cause = IllegalStateException())
                         }
                     }
-                }
+                })
             }
         }
     }

@@ -1,4 +1,4 @@
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.serialization.SerializableProperty
 import com.lightningkite.serialization.serializableProperties

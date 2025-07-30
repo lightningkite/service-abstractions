@@ -35,7 +35,7 @@ class DataClassPathSerializer<T>(val inner: KSerializer<T>): KSerializerWithDefa
     override val default: DataClassPathPartial<T>
         get() = DataClassPathSelf(inner)
     @OptIn(ExperimentalSerializationApi::class)
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("com.lightningkite.serverabstractions.database.DataClassPathPartial", PrimitiveKind.STRING)
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("com.lightningkite.serviceabstractions.database.DataClassPathPartial", PrimitiveKind.STRING)
 
     override fun deserialize(decoder: Decoder): DataClassPathPartial<T> {
         val value = decoder.decodeString()

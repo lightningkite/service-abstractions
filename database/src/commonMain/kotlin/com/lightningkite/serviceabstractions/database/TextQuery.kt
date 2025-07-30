@@ -1,4 +1,4 @@
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import kotlin.math.min
 

@@ -1,4 +1,4 @@
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.serialization.*
 import kotlinx.coroutines.flow.Flow
@@ -8,7 +8,7 @@ import kotlinx.serialization.KSerializer
 /**
  * An abstract way to communicate with a database on a specific collection/table
  * using conditions and modifications. The underlying database is irrelevant and
- * will have it's own implementation of this interface.
+ * will have its own implementation of this interface.
  */
 interface FieldCollection<Model : Any> {
     val serializer: KSerializer<Model>

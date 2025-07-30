@@ -1,5 +1,5 @@
 @file:OptIn(ExperimentalSerializationApi::class)
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialInfo

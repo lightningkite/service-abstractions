@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalSerializationApi::class)
 
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.serialization.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -18,7 +18,7 @@ class SortPartSerializer<T>(val inner: KSerializer<T>): KSerializerWithDefault<S
     @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
     override val descriptor: SerialDescriptor = object: SerialDescriptor {
         override val kind: SerialKind = PrimitiveKind.STRING
-        override val serialName: String = "com.lightningkite.serverabstractions.database.SortPart"
+        override val serialName: String = "com.lightningkite.serviceabstractions.database.SortPart"
         override val elementsCount: Int get() = 0
         override fun getElementName(index: Int): String = error()
         override fun getElementIndex(name: String): Int = error()

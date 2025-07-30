@@ -1,12 +1,10 @@
 package com.lightningkite.serviceabstractions.cache
 
-import com.lightningkite.serviceabstractions.SettingContext
 import com.lightningkite.serviceabstractions.countMetric
 import com.lightningkite.serviceabstractions.measure
 import com.lightningkite.serviceabstractions.performanceMetric
 import com.lightningkite.serviceabstractions.report
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.modules.SerializersModule
 import kotlin.time.Duration
 
 /**

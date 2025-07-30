@@ -2,8 +2,8 @@
 
 package com.lightningkite.serialization
 
-import com.lightningkite.serverabstractions.database.Condition
-import com.lightningkite.serverabstractions.database.Modification
+import com.lightningkite.serviceabstractions.database.Condition
+import com.lightningkite.serviceabstractions.database.Modification
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable

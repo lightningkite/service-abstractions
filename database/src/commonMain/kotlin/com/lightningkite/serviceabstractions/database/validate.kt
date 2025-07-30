@@ -2,7 +2,7 @@ package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.IsRawString
 import com.lightningkite.serialization.*
-import com.lightningkite.serverabstractions.database.*
+import com.lightningkite.serviceabstractions.database.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable

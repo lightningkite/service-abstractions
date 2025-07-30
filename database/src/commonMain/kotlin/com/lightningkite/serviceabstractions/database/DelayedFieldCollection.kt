@@ -1,4 +1,4 @@
-package com.lightningkite.serverabstractions.database
+package com.lightningkite.serviceabstractions.database
 
 import com.lightningkite.serialization.*
 import kotlinx.coroutines.delay
@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onStart
 import kotlinx.serialization.KSerializer
 import com.lightningkite.serialization.SerializableProperty
+import com.lightningkite.serviceabstractions.SettingContext
 import kotlin.random.Random
 import kotlin.reflect.KType
 import kotlin.time.Duration
@@ -183,6 +184,9 @@ fun Database.delayed(range: ClosedRange<Duration>): Database = object : Database
     override fun <T : Any> collection(serializer: KSerializer<T>, name: String): FieldCollection<T> {
         return this@delayed.collection<T>(serializer, name).delayed(range)
     }
+
+    override val context: SettingContext
+        get() = this@delayed.context
 
     override suspend fun connect() = this@delayed.connect()
     override suspend fun disconnect() = this@delayed.disconnect()

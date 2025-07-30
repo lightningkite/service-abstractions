@@ -1,0 +1,39 @@
+package com.lightningkite.serviceabstractions.database
+
+import com.lightningkite.serviceabstractions.database.Database
+import com.lightningkite.serviceabstractions.database.FieldCollection
+import com.lightningkite.serviceabstractions.database.InMemoryFieldCollection
+import com.lightningkite.serviceabstractions.SettingContext
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+
+/**
+ * A Database implementation that exists entirely in the applications Heap. There are no external connections.
+ * It uses InMemoryFieldCollections in its implementation. This is NOT meant for persistent or long term storage.
+ * This database will be completely erased everytime the application is stopped.
+ * This is useful in places that persistent data is not needed and speed is desired such as Unit Tests.
+ *
+ * @param premadeData A JsonObject that contains data you wish to populate the database with on creation.
+ */
+public class InMemoryDatabase(public val premadeData: JsonObject? = null, override val context: SettingContext) :
+    MetricTrackingDatabase() {
+    public val collections: HashMap<Pair<KSerializer<*>, String>, FieldCollection<*>> = HashMap()
+
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): FieldCollection<T> = collections.getOrPut(serializer to name) {
+        val made = InMemoryFieldCollection(serializer = serializer)
+        premadeData?.get(name)?.let {
+            val json = Json { this.serializersModule = context.serializersModule }
+
+            val data = json.decodeFromJsonElement(
+                ListSerializer(serializer),
+                it
+            )
+            made.data.addAll(data)
+        }
+        made
+    } as FieldCollection<T>
+
+}

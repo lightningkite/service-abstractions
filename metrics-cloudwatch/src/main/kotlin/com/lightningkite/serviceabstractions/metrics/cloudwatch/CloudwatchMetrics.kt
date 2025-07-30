@@ -91,6 +91,26 @@ public class CloudwatchMetricSink(
                         MetricUnit.Count -> StandardUnit.COUNT
                         MetricUnit.BytesPerSecond -> StandardUnit.BYTES_SECOND
                         MetricUnit.CountPerSecond -> StandardUnit.COUNT_SECOND
+                        MetricUnit.Microseconds -> StandardUnit.MICROSECONDS
+                        MetricUnit.Milliseconds -> StandardUnit.MILLISECONDS
+                        MetricUnit.Kilobytes -> StandardUnit.KILOBYTES
+                        MetricUnit.Megabytes -> StandardUnit.MEGABYTES
+                        MetricUnit.Gigabytes -> StandardUnit.GIGABYTES
+                        MetricUnit.Terabytes -> StandardUnit.TERABYTES
+                        MetricUnit.Bits -> StandardUnit.BITS
+                        MetricUnit.Kilobits -> StandardUnit.KILOBITS
+                        MetricUnit.Megabits -> StandardUnit.MEGABITS
+                        MetricUnit.Gigabits -> StandardUnit.GIGABITS
+                        MetricUnit.Terabits -> StandardUnit.TERABITS
+                        MetricUnit.KilobytesPerSecond -> StandardUnit.KILOBYTES_SECOND
+                        MetricUnit.MegabytesPerSecond -> StandardUnit.MEGABYTES_SECOND
+                        MetricUnit.GigabytesPerSecond -> StandardUnit.GIGABYTES_SECOND
+                        MetricUnit.TerabytesPerSecond -> StandardUnit.TERABYTES_SECOND
+                        MetricUnit.BitsPerSecond -> StandardUnit.BITS_SECOND
+                        MetricUnit.KilobitsPerSecond -> StandardUnit.KILOBITS_SECOND
+                        MetricUnit.MegabitsPerSecond -> StandardUnit.MEGABITS_SECOND
+                        MetricUnit.GigabitsPerSecond -> StandardUnit.GIGABITS_SECOND
+                        MetricUnit.TerabitsPerSecond -> StandardUnit.TERABITS_SECOND
                         MetricUnit.Other -> StandardUnit.NONE
                     }
                 )

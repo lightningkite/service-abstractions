@@ -2,7 +2,7 @@
 
 package com.lightningkite.serialization
 
-import com.lightningkite.serverabstractions.database.LazyRenamedSerialDescriptor
+import com.lightningkite.serviceabstractions.database.LazyRenamedSerialDescriptor
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.nullable
