@@ -4,6 +4,7 @@ import com.lightningkite.serviceabstractions.database.Database
 import com.lightningkite.serviceabstractions.database.UniqueViolationException
 import com.lightningkite.serviceabstractions.HealthStatus
 import com.lightningkite.serviceabstractions.SettingContext
+import com.lightningkite.serviceabstractions.database.MetricsWrappedDatabase
 import com.mongodb.*
 import com.mongodb.event.ConnectionCheckedInEvent
 import com.mongodb.event.ConnectionCheckedOutEvent
@@ -46,13 +47,15 @@ public class MongoDatabase(
                 Regex("""mongodb://.*/(?<databaseName>[^?]+)(?:\?.*)?""")
                     .matchEntire(url)
                     ?.let { match ->
-                        MongoDatabase(
-                            databaseName = match.groups["databaseName"]!!.value,
-                            clientSettings = MongoClientSettings.builder()
-                                .applyConnectionString(ConnectionString(url))
-                                .build(),
-                            atlasSearch = false,
-                            context = context
+                        MetricsWrappedDatabase(
+                            MongoDatabase(
+                                databaseName = match.groups["databaseName"]!!.value,
+                                clientSettings = MongoClientSettings.builder()
+                                    .applyConnectionString(ConnectionString(url))
+                                    .build(),
+                                atlasSearch = false,
+                                context = context
+                            ), "Database"
                         )
                     }
                     ?: throw IllegalStateException("Invalid mongodb URL. The URL should match the pattern: mongodb://[credentials and host information]/[databaseName]?[params]")
@@ -118,7 +121,7 @@ public class MongoDatabase(
     }
 
     private val active = AtomicInteger(0)
-    private val poolSize by lazy { if (Settings.isServerless) 4 else 100 }
+    private val poolSize by lazy { if (isServerless) 4 else 100 }
     public val listener: ConnectionPoolListener = object : ConnectionPoolListener {
         override fun connectionCheckedIn(event: ConnectionCheckedInEvent) {
             active.incrementAndGet()
@@ -136,15 +139,15 @@ public class MongoDatabase(
         active.set(0)
         MongoClient.create(
             MongoClientSettings.builder(clientSettings)
-            .uuidRepresentation(UuidRepresentation.STANDARD)
-            .applyToConnectionPoolSettings {
-                it.maxSize(poolSize)
-                if (Settings.isServerless) {
-                    it.maxConnectionIdleTime(15, TimeUnit.SECONDS)
-                    it.maxConnectionLifeTime(1L, TimeUnit.MINUTES)
+                .uuidRepresentation(UuidRepresentation.STANDARD)
+                .applyToConnectionPoolSettings {
+                    it.maxSize(poolSize)
+                    if (isServerless) {
+                        it.maxConnectionIdleTime(15, TimeUnit.SECONDS)
+                        it.maxConnectionLifeTime(1L, TimeUnit.MINUTES)
+                    }
                 }
-            }
-            .build())
+                .build())
     }
     private var client = lazy(makeClientWithListener)
     private var databaseLazy = lazy { client.value.getDatabase(databaseName) }

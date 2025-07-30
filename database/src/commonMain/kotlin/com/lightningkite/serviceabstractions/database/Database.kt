@@ -38,16 +38,16 @@ interface Database : Service {
     ) : Setting<Database> {
         public companion object : UrlSettingParser<Database>() {
             init {
-                register("ram") { _, context -> InMemoryDatabase(context = context) }
+                register("ram") { _, context -> MetricsWrappedDatabase(InMemoryDatabase(context = context), "Database") }
                 register("ram-preload") { url, context ->
                     val json = Json { this.serializersModule = context.serializersModule }
-                    InMemoryDatabase(
+                    MetricsWrappedDatabase(InMemoryDatabase(
                         json.parseToJsonElement(
                             SystemFileSystem.source(Path(url.substringAfter("://"))).buffered().readByteString()
                                 .decodeToString()
                         ) as? JsonObject,
                         context
-                    )
+                    ), "Database")
                 }
                 register("delay") { url, context ->
                     val x = url.substringAfter("://")
@@ -63,7 +63,7 @@ interface Database : Service {
                         }
                         ?: 350.milliseconds..750.milliseconds
                     val wraps = x.substringAfter("/")
-                    parse(wraps.substringBefore("://"), context).delayed(delay)
+                    MetricsWrappedDatabase(parse(wraps.substringBefore("://"), context).delayed(delay), "Database")
                 }
             }
         }

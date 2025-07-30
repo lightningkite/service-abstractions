@@ -2,6 +2,7 @@ import com.lightningkite.serviceabstractions.database.InMemoryFieldCollection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.launch
 import kotlinx.io.files.Path
@@ -18,7 +19,7 @@ import kotlin.io.path.exists
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
  * and writing the collection data into a file when closing.
  */
-private class JsonFileFieldCollection<Model : Any>(
+internal class JsonFileFieldCollection<Model : Any>(
     val encoding: StringFormat,
     serializer: KSerializer<Model>,
     val file: Path

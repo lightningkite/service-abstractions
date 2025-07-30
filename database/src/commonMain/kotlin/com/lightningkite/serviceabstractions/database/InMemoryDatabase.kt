@@ -17,9 +17,8 @@ import kotlinx.serialization.json.JsonObject
  *
  * @param premadeData A JsonObject that contains data you wish to populate the database with on creation.
  */
-public class InMemoryDatabase(public val premadeData: JsonObject? = null, override val context: SettingContext) :
-    MetricTrackingDatabase() {
-    public val collections: HashMap<Pair<KSerializer<*>, String>, FieldCollection<*>> = HashMap()
+class InMemoryDatabase(val premadeData: JsonObject? = null, override val context: SettingContext) : Database {
+    val collections: HashMap<Pair<KSerializer<*>, String>, FieldCollection<*>> = HashMap()
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> collection(serializer: KSerializer<T>, name: String): FieldCollection<T> = collections.getOrPut(serializer to name) {

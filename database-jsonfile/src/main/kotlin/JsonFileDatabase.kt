@@ -1,7 +1,7 @@
 import com.lightningkite.serviceabstractions.database.Database
 import com.lightningkite.serviceabstractions.database.FieldCollection
-import InMemoryUnsafePersistentFieldCollection
 import com.lightningkite.serviceabstractions.SettingContext
+import com.lightningkite.serviceabstractions.database.MetricsWrappedDatabase
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -27,21 +27,24 @@ public class JsonFileDatabase(public val folder: Path, override val context: Set
     public companion object {
         init {
             Database.Settings.register("ram-unsafe-persist") { url, context ->
-                JsonFileDatabase(
-                    Path(url.substringAfter("://")), context
+
+                MetricsWrappedDatabase(
+                    JsonFileDatabase(
+                        Path(url.substringAfter("://")), context
+                    ), "Database"
                 )
             }
         }
     }
 
-    public val collections: HashMap<Pair<KSerializer<*>, String>, FieldCollection<*>> = HashMap<Pair<KSerializer<*>, String>, FieldCollection<*>>()
+    public val collections: HashMap<Pair<KSerializer<*>, String>, FieldCollection<*>> = HashMap()
 
     override fun <T : Any> collection(serializer: KSerializer<T>, name: String): FieldCollection<T> =
         synchronized(collections) {
             @Suppress("UNCHECKED_CAST")
             collections.getOrPut(serializer to name) {
                 val fileName = name.filter { it.isLetterOrDigit() }
-                val oldStyle = SystemFileSystem.resolve(Path(folder, fileName), )
+                val oldStyle = SystemFileSystem.resolve(Path(folder, fileName))
                 val storage = SystemFileSystem.resolve(Path(folder, "$fileName.json"))
                 if (SystemFileSystem.exists(oldStyle) && !SystemFileSystem.exists(storage))
                     SystemFileSystem.sink(storage, append = false).buffered().use { sink ->
@@ -50,7 +53,7 @@ public class JsonFileDatabase(public val folder: Path, override val context: Set
                         }
                     }
                 val json = Json { this.serializersModule = context.serializersModule }
-                InMemoryUnsafePersistentFieldCollection(
+                JsonFileFieldCollection(
                     json,
                     serializer,
                     storage
