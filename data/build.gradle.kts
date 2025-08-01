@@ -1,8 +1,6 @@
 import com.lightningkite.deployhelpers.*
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-import org.gradle.kotlin.dsl.implementation
-
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.ksp)
@@ -105,7 +103,7 @@ mavenPublishing {
 }
 
 android {
-    namespace = "com.lightningkite.serviceabstractions"
+    namespace = "com.lightningkite.services"
     compileSdk = 34
 
     defaultConfig {

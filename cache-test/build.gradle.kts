@@ -92,7 +92,7 @@ mavenPublishing {
 }
 
 android {
-    namespace = "com.lightningkite.serviceabstractions"
+    namespace = "com.lightningkite.services"
     compileSdk = 34
 
     defaultConfig {

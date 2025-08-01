@@ -1,6 +1,6 @@
-package com.lightningkite.serviceabstractions.cache.dynamodb
+package com.lightningkite.services.cache.dynamodb
 
-import com.lightningkite.serviceabstractions.SettingContext
+import com.lightningkite.services.SettingContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.reactive.asFlow
@@ -10,30 +10,25 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.json.*
 import software.amazon.awssdk.core.async.SdkPublisher
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
-import software.amazon.awssdk.services.dynamodb.paginators.ScanPublisher
 import java.util.*
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.reactive.asFlow
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.overwriteWith
-import kotlinx.serialization.modules.serializersModuleOf
 
 
-private fun <T> SdkPublisher<Map<String, AttributeValue>>.parse(serializer: KSerializer<T>, module: SerializersModule): Flow<T> {
-    return asFlow().map { serializer.fromDynamoMap(it, module) }
+private fun <T> SdkPublisher<Map<String, AttributeValue>>.parse(serializer: KSerializer<T>, context: SettingContext): Flow<T> {
+    return asFlow().map { serializer.fromDynamoMap(it, context) }
 }
 
-private fun json(module: SerializersModule): Json {
+private fun json(context: SettingContext): Json {
     return Json {
         ignoreUnknownKeys = true
-        serializersModule = module
+        serializersModule = context.serializersModule
         encodeDefaults = true
     }
 }
 
-internal fun <T> KSerializer<T>.toDynamo(value: T, module: SerializersModule): AttributeValue {
-    val jsonElement = json(module).encodeToJsonElement(this, value)
+internal fun <T> KSerializer<T>.toDynamo(value: T, context: SettingContext): AttributeValue {
+    val jsonElement = json(context).encodeToJsonElement(this, value)
     return when (jsonElement) {
         is JsonObject -> AttributeValue.fromM(jsonElement.mapValues { it.value.toDynamoDb() })
         else -> jsonElement.toDynamoDb()
@@ -41,17 +36,17 @@ internal fun <T> KSerializer<T>.toDynamo(value: T, module: SerializersModule): A
 }
 
 // change test
-internal fun <T> KSerializer<T>.fromDynamo(value: AttributeValue, module: SerializersModule): T {
+internal fun <T> KSerializer<T>.fromDynamo(value: AttributeValue, context: SettingContext): T {
     try {
         val element = value.toJson()
-        return json(module).decodeFromJsonElement(this, element)
+        return json(context).decodeFromJsonElement(this, element)
     } catch(e: Exception) {
         throw SerializationException("Could not parse $value as ${this.descriptor.serialName}", e)
     }
 }
 
-private fun <T> KSerializer<T>.toDynamoMap(value: T, module: SerializersModule): Map<String, AttributeValue> = toDynamo(value, module).m()
-private fun <T> KSerializer<T>.fromDynamoMap(value: Map<String, AttributeValue>, module: SerializersModule): T = fromDynamo(AttributeValue.fromM(value), module)
+private fun <T> KSerializer<T>.toDynamoMap(value: T, context: SettingContext): Map<String, AttributeValue> = toDynamo(value, context).m()
+private fun <T> KSerializer<T>.fromDynamoMap(value: Map<String, AttributeValue>, context: SettingContext): T = fromDynamo(AttributeValue.fromM(value), context)
 
 private fun JsonElement.toDynamoDb(): AttributeValue {
     return when (this) {
@@ -85,7 +80,7 @@ private fun AttributeValue.toJson(): JsonElement {
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-private fun SerialDescriptor.dynamoType(module: SerializersModule): AttributeValue.Type = when {
+private fun SerialDescriptor.dynamoType(context: SettingContext): AttributeValue.Type = when {
     else -> when(this.kind) {
         PolymorphicKind.OPEN -> TODO()
         PolymorphicKind.SEALED -> TODO()
@@ -98,7 +93,7 @@ private fun SerialDescriptor.dynamoType(module: SerializersModule): AttributeVal
         PrimitiveKind.LONG -> AttributeValue.Type.N
         PrimitiveKind.SHORT -> AttributeValue.Type.N
         PrimitiveKind.STRING -> AttributeValue.Type.S
-        SerialKind.CONTEXTUAL -> module.getContextualDescriptor(this)!!.dynamoType(module)
+        SerialKind.CONTEXTUAL -> context.serializersModule.getContextualDescriptor(this)!!.dynamoType(context)
         SerialKind.ENUM -> AttributeValue.Type.S
         StructureKind.CLASS -> AttributeValue.Type.M
         StructureKind.LIST -> AttributeValue.Type.L

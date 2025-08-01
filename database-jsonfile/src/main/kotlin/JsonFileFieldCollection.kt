@@ -1,4 +1,4 @@
-import com.lightningkite.serviceabstractions.database.InMemoryFieldCollection
+import com.lightningkite.services.database.InMemoryFieldCollection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers

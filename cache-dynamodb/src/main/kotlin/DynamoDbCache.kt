@@ -1,11 +1,11 @@
-package com.lightningkite.serviceabstractions.cache.dynamodb
+package com.lightningkite.services.cache.dynamodb
 
 
-import com.lightningkite.serviceabstractions.HealthStatus
-import com.lightningkite.serviceabstractions.SettingContext
-import com.lightningkite.serviceabstractions.aws.AwsConnections
-import com.lightningkite.serviceabstractions.cache.Cache
-import com.lightningkite.serviceabstractions.cache.MetricTrackingCache
+import com.lightningkite.services.HealthStatus
+import com.lightningkite.services.SettingContext
+import com.lightningkite.services.aws.AwsConnections
+import com.lightningkite.services.cache.Cache
+import com.lightningkite.services.cache.MetricTrackingCache
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.KSerializer
