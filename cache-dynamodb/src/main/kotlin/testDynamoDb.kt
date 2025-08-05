@@ -1,4 +1,4 @@
-package com.lightningkite.serviceabstractions.cache.dynamodb
+package com.lightningkite.services.cache.dynamodb
 
 import org.slf4j.LoggerFactory
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials

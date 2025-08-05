@@ -1,7 +1,7 @@
-package com.lightningkite.serviceabstractions.cache.dynamodb
+package com.lightningkite.services.cache.dynamodb
 
-import com.lightningkite.serviceabstractions.cache.Cache
-import com.lightningkite.serviceabstractions.cache.test.CacheTest
+import com.lightningkite.services.cache.Cache
+import com.lightningkite.services.cache.test.CacheTest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.builtins.SetSerializer

@@ -1,4 +1,4 @@
-package com.lightningkite.serviceabstractions.cache.dynamodb
+package com.lightningkite.services.cache.dynamodb
 
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClientBuilder
