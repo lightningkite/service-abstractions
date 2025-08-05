@@ -7,6 +7,7 @@ import kotlinx.io.readString
 import kotlinx.io.writeString
 
 public sealed interface Data: AutoCloseable {
+    public val size: Long get() = -1
     public fun bytes(): ByteArray
     public fun write(to: kotlinx.io.Sink)
     public fun text(): String
@@ -15,7 +16,7 @@ public sealed interface Data: AutoCloseable {
      * You can only consume this once.
      * Make sure you close it.
      */
-    public class Sink(public val emit: (kotlinx.io.Sink) -> Unit): Data {
+    public class Sink(override val size: Long = -1, public val emit: (kotlinx.io.Sink) -> Unit): Data {
         override fun write(to: kotlinx.io.Sink) { emit(to) }
         override fun text(): String {
             val dest = Buffer()
@@ -34,7 +35,7 @@ public sealed interface Data: AutoCloseable {
      * You can only consume this once.
      * Make sure you close it.
      */
-    public class Source(public val source: kotlinx.io.Source): Data {
+    public class Source(public val source: kotlinx.io.Source, override val size: Long = -1): Data {
         override fun write(to: kotlinx.io.Sink): Unit = source.use { source ->
             source.transferTo(to)
         }
@@ -48,17 +49,22 @@ public sealed interface Data: AutoCloseable {
         override fun close() = source.close()
     }
     public class Bytes(public val data: ByteArray): Data {
+        override val size: Long
+            get() = data.size.toLong()
         override fun write(to: kotlinx.io.Sink): Unit = to.write(data, 0, data.size)
         override fun bytes(): ByteArray = data
         override fun text(): String = data.decodeToString()
         override fun close() = Unit
     }
     public class Text(public val data: String): Data {
+        private val asBytes by lazy { data.encodeToByteArray() }
+        override val size: Long
+            get() = asBytes.size.toLong()
         public val encoding: String = "UTF-8"
         override fun write(to: kotlinx.io.Sink) {
             to.writeString(data)
         }
-        override fun bytes(): ByteArray = data.encodeToByteArray()
+        override fun bytes(): ByteArray = asBytes
         override fun text(): String = data
         override fun close() = Unit
     }
@@ -69,8 +75,8 @@ public data class TypedData(val data: Data, val mediaType: MediaType): AutoClose
     public companion object {
         public fun text(text: String, mediaType: MediaType): TypedData = TypedData(Data.Text(text), mediaType)
         public fun bytes(bytes: ByteArray, mediaType: MediaType): TypedData = TypedData(Data.Bytes(bytes), mediaType)
-        public fun source(source: kotlinx.io.Source, mediaType: MediaType): TypedData = TypedData(Data.Source(source), mediaType)
-        public fun sink(emit: (kotlinx.io.Sink) -> Unit, mediaType: MediaType): TypedData = TypedData(Data.Sink(emit), mediaType)
+        public fun source(source: kotlinx.io.Source, mediaType: MediaType, size: Long = -1): TypedData = TypedData(Data.Source(source, size), mediaType)
+        public fun sink(mediaType: MediaType, size: Long = -1, emit: (kotlinx.io.Sink) -> Unit): TypedData = TypedData(Data.Sink(size, emit), mediaType)
     }
     public fun text(): String = data.text()
     public fun write(to: kotlinx.io.Sink) = data.write(to)

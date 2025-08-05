@@ -1,12 +1,11 @@
 @file:OptIn(ExperimentalSerializationApi::class)
-package com.lightningkite.serviceabstractions.database
+package com.lightningkite.serviceabstractions.data
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialInfo
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialKind
 import kotlin.reflect.KClass
-import kotlin.time.ExperimentalTime
 
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.FUNCTION)

@@ -95,7 +95,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
             alias(libs.plugins.ksp)
             alias(libs.plugins.serialization)
             alias(libs.plugins.androidLibrary)
-            // alias(libs.plugins.dokka)
+            alias(libs.plugins.dokka)
             id("signing")
             alias(libs.plugins.vanniktechMavenPublish)
         }
@@ -195,7 +195,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
         plugins {
             alias(libs.plugins.kotlinJvm)
             alias(libs.plugins.ksp)
-            // alias(libs.plugins.dokka)
+            alias(libs.plugins.dokka)
             alias(libs.plugins.serialization)
             id("signing")
             alias(libs.plugins.vanniktechMavenPublish)

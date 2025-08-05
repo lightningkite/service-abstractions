@@ -1,8 +1,6 @@
-package com.lightningkite.serviceabstractions.database
+package com.lightningkite.serviceabstractions.data
 
 import com.lightningkite.IsRawString
-import com.lightningkite.serialization.*
-import com.lightningkite.serviceabstractions.database.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -10,6 +8,7 @@ import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeEncoder
+import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.reflect.KClass
 
@@ -28,13 +27,13 @@ data class ValidationIssue(val path: List<String>, val code: Int, val text: Stri
 @Serializable
 data class ValidationIssuePart(val code: Int, val text: String)
 
-fun <T> SerializersModule.validateFast(serializer: SerializationStrategy<T>, value: T, out: ValidationOut) {
-    val e = ValidationEncoder(this, out)
+fun <T> Validators.validateFast(serializer: SerializationStrategy<T>, value: T, out: ValidationOut) {
+    val e = ValidationEncoder(this, this.serializersModule, out)
     e.encodeSerializableValue(serializer, value)
 }
 
-suspend fun <T> SerializersModule.validate(serializer: SerializationStrategy<T>, value: T, out: ValidationOut) {
-    val e = ValidationEncoder(this, out)
+suspend fun <T> Validators.validate(serializer: SerializationStrategy<T>, value: T, out: ValidationOut) {
+    val e = ValidationEncoder(this, this.serializersModule, out)
     e.encodeSerializableValue(serializer, value)
     e.runSuspend()
 }
@@ -49,7 +48,7 @@ suspend fun <T> SerializersModule.validate(serializer: SerializationStrategy<T>,
 //    }
 //}
 
-object Validators {
+class Validators(val serializersModule: SerializersModule = EmptySerializersModule()) {
     internal val processors = ArrayList<(Annotation, value: Any?) -> ValidationIssuePart?>()
     inline fun <reified T : Annotation, V : Any> processor(crossinline action: (T, V) -> ValidationIssuePart?) {
         directProcessor(T::class) { a, b ->
@@ -228,7 +227,7 @@ object Validators {
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-private class ValidationEncoder(override val serializersModule: SerializersModule, val out: ValidationOut) :
+private class ValidationEncoder(val validators: Validators, override val serializersModule: SerializersModule, val out: ValidationOut) :
     AbstractEncoder() {
 
     val queued = ArrayList<suspend () -> Unit>()
@@ -284,7 +283,7 @@ private class ValidationEncoder(override val serializersModule: SerializersModul
 
     fun validate(value: Any, annotations: List<Annotation>) {
         annotations.forEach {
-            Validators.processors.forEach { runner ->
+            validators.processors.forEach { runner ->
                 runner.invoke(it, value)?.let {
                     out(ValidationIssue(buildList {
                         keyPath.forEach {
@@ -296,7 +295,7 @@ private class ValidationEncoder(override val serializersModule: SerializersModul
                 }
             }
             queued += {
-                Validators.suspendProcessors.forEach { runner ->
+                validators.suspendProcessors.forEach { runner ->
                     runner.invoke(it, value)?.let {
                         out(ValidationIssue(buildList {
                             keyPath.forEach {

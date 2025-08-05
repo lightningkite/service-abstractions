@@ -86,7 +86,6 @@ interface Database : Service {
      * Will attempt inserting data into the database to confirm that the connection is alive and available.
      */
     override suspend fun healthCheck(): HealthStatus {
-        prepareModelsServerCore()
         try {
             val c = collection<HealthCheckTestModel>()
             val id = "HealthCheck"

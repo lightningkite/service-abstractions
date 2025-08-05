@@ -4,13 +4,17 @@ package com.lightningkite
 /**
  * Represents a Media (formerly known as MIME) content type.
  */
-public data class MediaType(val type: String, val subtype: String) {
+public data class MediaType(val type: String, val subtype: String, val parameters: Map<String, String>) {
     public constructor(fullType: String) : this(
         fullType.substringBefore('/'),
-        fullType.substringAfter('/')
+        fullType.substringAfter('/').substringBefore(';'),
+        fullType.substringAfter(';', "").split(';').filter { it.isNotBlank() }.associate { it.substringBefore('=').trim() to it.substringAfter('=', "").trim() }
     )
 
-    override fun toString(): String = "$type/$subtype"
+    public fun accepts(other: MediaType): Boolean
+        = (type == "*" || type == other.type) && (subtype == "*" || subtype == other.subtype)
+
+    override fun toString(): String = "$type/$subtype" + parameters.entries.joinToString("; ", "; ") { "${it.key}=${it.value}" }
 
     public companion object {
         public val Any: MediaType = MediaType("*/*")

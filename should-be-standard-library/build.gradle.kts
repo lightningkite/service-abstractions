@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.serialization)
     alias(libs.plugins.androidLibrary)
-    // alias(libs.plugins.dokka)
+    alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -48,10 +48,10 @@ kotlin {
                 api(libs.coroutinesCore)
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
@@ -61,10 +61,10 @@ kotlin {
                 implementation(libs.coroutinesTesting)
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
@@ -77,23 +77,7 @@ kotlin {
     }
 }
 
-mavenPublishing {
-    // publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
-    signAllPublications()
-    coordinates(group.toString(), name, version.toString())
-    pom {
-        name.set("Service Abstractions - $name")
-        description.set(description)
-        github("lightningkite", "service-abstractions")
-        licenses {
-            mit()
-        }
-        developers {
-            joseph()
-            brady()
-        }
-    }
-}
+lkLibrary("lightningkite", "service-abstractions") {}
 
 android {
     namespace = "com.lightningkite.serviceabstractions"

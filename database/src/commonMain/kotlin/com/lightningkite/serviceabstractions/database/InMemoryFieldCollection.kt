@@ -20,16 +20,16 @@ open class InMemoryFieldCollection<Model : Any>(
 
     private val lock = ReentrantLock()
 
-    private val uniqueIndexChecks = mutableListOf<AtomicRef<(List<EntryChange<Model>>) -> Unit>>()
+    private val uniqueIndexChecks = mutableListOf<(List<EntryChange<Model>>) -> Unit>()
 
     private fun uniqueCheck(changed: EntryChange<Model>) = uniqueCheck(listOf(changed))
-    private fun uniqueCheck(changes: List<EntryChange<Model>>) = uniqueIndexChecks.forEach { it.value(changes) }
+    private fun uniqueCheck(changes: List<EntryChange<Model>>) = uniqueIndexChecks.forEach { it(changes) }
 
     init {
         serializer.descriptor.indexes().plus(NeededIndex(fields = listOf("_id"), true, "primary key")).forEach { index: NeededIndex ->
             if (index.unique) {
                 val fields = serializer.serializableProperties!!.filter { index.fields.contains(it.name) }
-                uniqueIndexChecks.add(atomic { changes: List<EntryChange<Model>> ->
+                uniqueIndexChecks.add { changes: List<EntryChange<Model>> ->
                     val fieldChanges = changes.mapNotNull { entryChange ->
                         if (
                             (entryChange.old == null && entryChange.new != null) ||
@@ -47,10 +47,14 @@ open class InMemoryFieldCollection<Model : Any>(
                                     property.get(fromDb) == value
                                 }
                             }) {
-                            throw UniqueViolationException(collection = serializer.descriptor.serialName, key = fields.joinToString { it.name }, cause = IllegalStateException())
+                            throw UniqueViolationException(
+                                collection = serializer.descriptor.serialName,
+                                key = fields.joinToString { it.name },
+                                cause = IllegalStateException()
+                            )
                         }
                     }
-                })
+                }
             }
         }
     }
