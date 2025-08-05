@@ -1,10 +1,6 @@
 @file:OptIn(ExperimentalSerializationApi::class)
-<<<<<<<< HEAD:data/src/commonMain/kotlin/com/lightningkite/services/data/Annotations.kt
-package com.lightningkite.serviceabstractions.data
-========
 
-package com.lightningkite.services.database
->>>>>>>> origin/main:database/src/commonMain/kotlin/com/lightningkite/services/database/Annotations.kt
+package com.lightningkite.serviceabstractions.data
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialInfo

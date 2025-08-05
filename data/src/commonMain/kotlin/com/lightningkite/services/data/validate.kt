@@ -1,8 +1,4 @@
-<<<<<<<< HEAD:data/src/commonMain/kotlin/com/lightningkite/services/data/validate.kt
 package com.lightningkite.serviceabstractions.data
-========
-package com.lightningkite.services.database
->>>>>>>> origin/main:database/src/commonMain/kotlin/com/lightningkite/services/database/validate.kt
 
 import com.lightningkite.IsRawString
 import kotlinx.serialization.ExperimentalSerializationApi

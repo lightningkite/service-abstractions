@@ -122,7 +122,7 @@ public class DynamoDbCache(
             item["expires"]?.n()?.toLongOrNull()?.let {
                 if (System.currentTimeMillis().div(1000L) > it) return null
             }
-            return serializer.fromDynamo(item["value"]!!, context.serializersModule)
+            return serializer.fromDynamo(item["value"]!!, context)
         } else return null
     }
 
@@ -132,7 +132,7 @@ public class DynamoDbCache(
             it.tableName(tableName)
             it.item(mapOf(
                 "key" to AttributeValue.fromS(key),
-                "value" to serializer.toDynamo(value, context.serializersModule),
+                "value" to serializer.toDynamo(value, context),
             ) + (timeToLive?.let {
                 mapOf("expires" to AttributeValue.fromN(now().plus(it).epochSeconds.toString()))
             } ?: mapOf()))
@@ -154,7 +154,7 @@ public class DynamoDbCache(
                 it.item(
                     mapOf(
                         "key" to AttributeValue.fromS(key),
-                        "value" to serializer.toDynamo(value, context.serializersModule),
+                        "value" to serializer.toDynamo(value, context),
                     ) + (timeToLive?.let {
                         mapOf("expires" to AttributeValue.fromN(now().plus(it).epochSeconds.toString()))
                     } ?: mapOf())
