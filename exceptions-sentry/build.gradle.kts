@@ -16,7 +16,6 @@ plugins {
 
 dependencies {
     api(project(path = ":basis"))
-    api(project(path = ":exceptions"))
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }

@@ -1,10 +1,10 @@
 package com.lightningkite.services.files.test
 
 import com.lightningkite.MediaType
+import com.lightningkite.services.data.Data
+import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.default
-import com.lightningkite.services.files.Data
 import com.lightningkite.services.files.PublicFileSystem
-import com.lightningkite.services.files.TypedData
 import com.lightningkite.services.http.client
 import com.lightningkite.services.test.runTestWithClock
 import io.ktor.client.request.*

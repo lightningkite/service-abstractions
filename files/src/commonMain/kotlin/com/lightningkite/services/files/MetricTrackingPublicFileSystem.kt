@@ -3,6 +3,8 @@ package com.lightningkite.services.files
 import com.lightningkite.MediaType
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.MetricType
+import com.lightningkite.services.data.Data
+import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.measure
 import com.lightningkite.services.performanceMetric
 

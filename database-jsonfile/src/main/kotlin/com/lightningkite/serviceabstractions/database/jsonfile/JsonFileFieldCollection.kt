@@ -1,3 +1,5 @@
+package com.lightningkite.serviceabstractions.database.jsonfile
+
 import com.lightningkite.services.database.InMemoryFieldCollection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -5,17 +7,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.launch
+import kotlinx.io.buffered
+import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
+import kotlinx.io.readString
+import kotlinx.io.writeString
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
 import org.slf4j.LoggerFactory
 import java.io.Closeable
-import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Collections
 import kotlin.io.path.exists
+import kotlin.io.path.writeText
 
 /**
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
@@ -24,7 +30,8 @@ import kotlin.io.path.exists
 internal class JsonFileFieldCollection<Model : Any>(
     val encoding: StringFormat,
     serializer: KSerializer<Model>,
-    val file: File
+    val filesystem: FileSystem,
+    val file: Path
 ) : InMemoryFieldCollection<Model>(
     data = Collections.synchronizedList(ArrayList()),
     serializer = serializer
@@ -45,7 +52,7 @@ internal class JsonFileFieldCollection<Model : Any>(
         data.addAll(
             encoding.decodeFromString(
                 ListSerializer(serializer),
-                file.takeIf { it.exists() }?.readText() ?: "[]"
+                file.takeIf { filesystem.exists(it) }?.let { filesystem.source(it).buffered().readString() } ?: "[]"
             )
         )
         val shutdownHook = Thread {
@@ -61,9 +68,11 @@ internal class JsonFileFieldCollection<Model : Any>(
     }
 
     fun handleCollectionDump() {
-        val temp = file.parentFile!!.resolve(file.name + ".saving")
-        temp.writeText(encoding.encodeToString(ListSerializer(serializer), data.toList()))
-        Files.move(temp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        val temp = Path(file.parent!!, file.name + ".saving")
+        filesystem.sink(temp).buffered().use {
+            it.writeString(encoding.encodeToString(ListSerializer(serializer), data.toList()))
+        }
+        filesystem.atomicMove(temp, file)
         logger.debug("Saved $file")
     }
 }

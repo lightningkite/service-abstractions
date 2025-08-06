@@ -17,7 +17,6 @@ kotlin {
         optIn.add("kotlin.time.ExperimentalTime")
         optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
-    explicitApi()
     applyDefaultHierarchyTemplate()
     androidTarget {
         compilerOptions {

@@ -17,7 +17,6 @@ kotlin {
         optIn.add("kotlin.time.ExperimentalTime")
         optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
-    explicitApi()
     applyDefaultHierarchyTemplate()
     androidTarget {
         compilerOptions {
@@ -46,10 +45,10 @@ kotlin {
                 api(project(path = ":database"))
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
@@ -59,10 +58,10 @@ kotlin {
                 implementation(libs.coroutinesTesting)
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }

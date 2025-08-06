@@ -32,6 +32,8 @@ public sealed interface MetricType {
 }
 public fun Service.performanceMetric(name: String): MetricType.Performance = MetricType.Performance(this, name)
 public fun Service.countMetric(name: String): MetricType.Count = MetricType.Count(this, name)
+public fun Service.performanceMetric(vararg names: String): MetricType.Performance = MetricType.Performance(this, names.joinToString("-"))
+public fun Service.countMetric(vararg names: String): MetricType.Count = MetricType.Count(this, names.joinToString("-"))
 
 public suspend fun MetricType.report(value: Double) {
     currentReportingContext()?.report(this, value)

@@ -2,6 +2,7 @@ package com.lightningkite.services.pubsub
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.countMetric
+import com.lightningkite.services.increment
 import com.lightningkite.services.measure
 import com.lightningkite.services.performanceMetric
 import com.lightningkite.services.report
@@ -36,7 +37,7 @@ public abstract class MetricTrackingPubSub(override val context: SettingContext)
                 try {
                     emitMetric.measure { baseChannel.emit(value) }
                 } catch (e: Exception) {
-                    failureMetric.report()
+                    failureMetric.increment()
                     throw e
                 }
             }
@@ -64,7 +65,7 @@ public abstract class MetricTrackingPubSub(override val context: SettingContext)
                 try {
                     emitMetric.measure { baseChannel.emit(value) }
                 } catch (e: Exception) {
-                    failureMetric.report()
+                    failureMetric.increment()
                     throw e
                 }
             }

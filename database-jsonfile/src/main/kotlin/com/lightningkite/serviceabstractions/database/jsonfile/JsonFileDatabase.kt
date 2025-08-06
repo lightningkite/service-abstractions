@@ -1,8 +1,11 @@
+package com.lightningkite.serviceabstractions.database.jsonfile
+
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.FieldCollection
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.database.MetricsWrappedDatabase
 import kotlinx.io.buffered
+import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.KSerializer
@@ -18,7 +21,7 @@ import kotlin.collections.HashMap
  *
  * @param folder The File references a directory where you wish the data to be stored.
  */
-public class JsonFileDatabase(public val folder: Path, override val context: SettingContext) :
+public class JsonFileDatabase(public val filesystem: FileSystem, public val folder: Path, override val context: SettingContext) :
     Database {
     init {
         SystemFileSystem.createDirectories(folder)
@@ -30,6 +33,7 @@ public class JsonFileDatabase(public val folder: Path, override val context: Set
 
                 MetricsWrappedDatabase(
                     JsonFileDatabase(
+                        SystemFileSystem,
                         Path(url.substringAfter("://")), context
                     ), "Database"
                 )
@@ -44,11 +48,11 @@ public class JsonFileDatabase(public val folder: Path, override val context: Set
             @Suppress("UNCHECKED_CAST")
             collections.getOrPut(serializer to name) {
                 val fileName = name.filter { it.isLetterOrDigit() }
-                val oldStyle = SystemFileSystem.resolve(Path(folder, fileName))
-                val storage = SystemFileSystem.resolve(Path(folder, "$fileName.json"))
-                if (SystemFileSystem.exists(oldStyle) && !SystemFileSystem.exists(storage))
-                    SystemFileSystem.sink(storage, append = false).buffered().use { sink ->
-                        SystemFileSystem.source(oldStyle).buffered().use { source ->
+                val oldStyle = filesystem.resolve(Path(folder, fileName))
+                val storage = filesystem.resolve(Path(folder, "$fileName.json"))
+                if (filesystem.exists(oldStyle) && !filesystem.exists(storage))
+                    filesystem.sink(storage, append = false).buffered().use { sink ->
+                        filesystem.source(oldStyle).buffered().use { source ->
                             source.transferTo(sink)
                         }
                     }
@@ -56,6 +60,7 @@ public class JsonFileDatabase(public val folder: Path, override val context: Set
                 JsonFileFieldCollection(
                     json,
                     serializer,
+                    filesystem,
                     storage
                 )
             } as FieldCollection<T>

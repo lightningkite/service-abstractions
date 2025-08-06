@@ -61,10 +61,10 @@ kotlin {
                 implementation(libs.coroutinesTesting)
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi")
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
+                }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
