@@ -3,6 +3,7 @@ package com.lightningkite.services.database.mongodb
 import com.github.jershell.kbson.Configuration
 import com.github.jershell.kbson.KBson
 import com.lightningkite.GeoCoordinateGeoJsonSerializer
+import com.lightningkite.serviceabstractions.data.*
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.database.Aggregate
 import com.lightningkite.services.database.CollectionChanges
@@ -14,7 +15,7 @@ import com.lightningkite.services.database.EntryChange
 import com.lightningkite.services.database.FieldCollection
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.SortPart
-import com.lightningkite.services.database.TextIndex
+import com.lightningkite.services.data.*
 import com.lightningkite.services.database.collectChunked
 import com.lightningkite.services.database.getContextual
 import com.lightningkite.services.database.indexes

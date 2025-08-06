@@ -11,7 +11,9 @@ import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
 import org.slf4j.LoggerFactory
 import java.io.Closeable
+import java.io.File
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Collections
 import kotlin.io.path.exists
 
@@ -22,7 +24,7 @@ import kotlin.io.path.exists
 internal class JsonFileFieldCollection<Model : Any>(
     val encoding: StringFormat,
     serializer: KSerializer<Model>,
-    val file: Path
+    val file: File
 ) : InMemoryFieldCollection<Model>(
     data = Collections.synchronizedList(ArrayList()),
     serializer = serializer

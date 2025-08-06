@@ -1,7 +1,12 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.serviceabstractions.data.Index
 import com.lightningkite.serviceabstractions.data.IndexSet
+import com.lightningkite.serviceabstractions.data.NamedIndex
+import com.lightningkite.serviceabstractions.data.NamedIndexSet
+import com.lightningkite.serviceabstractions.data.NamedUnique
 import com.lightningkite.serviceabstractions.data.NamedUniqueSet
+import com.lightningkite.serviceabstractions.data.Unique
 import com.lightningkite.serviceabstractions.data.UniqueSet
 import kotlinx.serialization.descriptors.SerialDescriptor
 

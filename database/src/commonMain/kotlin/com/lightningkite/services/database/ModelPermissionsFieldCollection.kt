@@ -1,5 +1,6 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.serviceabstractions.data.TextIndex
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
