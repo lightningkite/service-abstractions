@@ -120,7 +120,7 @@ private val cache = HashMap<KSerializerKey, MySealedClassSerializerInterface<*>>
 @Suppress("UNCHECKED_CAST")
 class ConditionSerializer<T>(val inner: KSerializer<T>) :
     MySealedClassSerializerInterface<Condition<T>> by (cache.getOrPut(KSerializerKey(inner)) {
-        MySealedClassSerializer<Condition<T>>("com.lightningkite.serviceabstractions.database.Condition", {
+        MySealedClassSerializer<Condition<T>>("com.lightningkite.services.database.Condition", {
             val r = when {
                 inner.descriptor.isNullable -> nullableOptions(inner.innerElement() as KSerializer<Any>)
                 inner.descriptor.serialName.substringBefore('/') == "kotlin.String" -> stringOptions

@@ -2,8 +2,8 @@ package com.lightningkite.services.database
 
 import com.lightningkite.GeoCoordinate
 import com.lightningkite.IsRawString
-import com.lightningkite.serviceabstractions.data.DisplayName
-import com.lightningkite.serviceabstractions.data.DoesNotNeedLabel
+import com.lightningkite.services.data.DisplayName
+import com.lightningkite.services.data.DoesNotNeedLabel
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient

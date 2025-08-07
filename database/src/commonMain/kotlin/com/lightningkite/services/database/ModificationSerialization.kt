@@ -3,7 +3,7 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.IsRawString
-import com.lightningkite.serviceabstractions.data.ShouldValidateSub
+import com.lightningkite.services.data.ShouldValidateSub
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.*
@@ -120,7 +120,7 @@ private val numlist = setOf(
 @Suppress("UNCHECKED_CAST")
 data class ModificationSerializer<T>(val inner: KSerializer<T>) :
     MySealedClassSerializerInterface<Modification<T>> by (cache.getOrPut(KSerializerKey(inner)) {
-        MySealedClassSerializer<Modification<T>>("com.lightningkite.serviceabstractions.database.Modification", {
+        MySealedClassSerializer<Modification<T>>("com.lightningkite.services.database.Modification", {
             val r = when {
                 inner.nullElement() != null -> nullableOptions(inner.nullElement()!! as KSerializer<Any>)
                 inner.descriptor.serialName.substringBefore('/') == "kotlin.String" -> stringOptions

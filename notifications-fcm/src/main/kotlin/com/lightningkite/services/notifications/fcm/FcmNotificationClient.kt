@@ -20,7 +20,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
  */
 public class FcmNotificationClient(context: SettingContext) : MetricTrackingNotificationService(context) {
 
-    private val log = KotlinLogging.logger("com.lightningkite.serviceabstractions.notifications.fcm.FcmNotificationClient")
+    private val log = KotlinLogging.logger("com.lightningkite.services.notifications.fcm.FcmNotificationClient")
 
     public companion object {
         init {

@@ -42,7 +42,7 @@ class DataClassPathSerializer<T>(val inner: KSerializer<T>) : KSerializerWithDef
 
     @OptIn(ExperimentalSerializationApi::class)
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor(
-        "com.lightningkite.serviceabstractions.database.DataClassPathPartial",
+        "com.lightningkite.services.database.DataClassPathPartial",
         PrimitiveKind.STRING
     )
 

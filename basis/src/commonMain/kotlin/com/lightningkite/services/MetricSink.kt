@@ -36,7 +36,7 @@ public interface MetricSink: Service {
         )
     }
     public class MetricLogger(override val context: SettingContext): MetricSink {
-        private val log = KotlinLogging.logger("com.lightningkite.serviceabstractions.MetricSink.MetricLogger")
+        private val log = KotlinLogging.logger("com.lightningkite.services.MetricSink.MetricLogger")
         override suspend fun report(reportingInfo: ReportingContextElement) {
             log.info { reportingInfo.toString() }
         }

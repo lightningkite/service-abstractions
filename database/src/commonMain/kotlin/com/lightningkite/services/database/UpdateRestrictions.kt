@@ -1,6 +1,6 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.serviceabstractions.data.GenerateDataClassPaths
+import com.lightningkite.services.data.GenerateDataClassPaths
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer

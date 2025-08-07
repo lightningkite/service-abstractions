@@ -25,8 +25,8 @@ This guide provides a succinct, step-by-step workflow for migrating modules from
 
 3. **Set up package structure**:
    ```
-   com.lightningkite.serviceabstractions.module/       # Core interfaces
-   com.lightningkite.serviceabstractions.module.impl/  # Implementation
+   com.lightningkite.services.module/       # Core interfaces
+   com.lightningkite.services.module.impl/  # Implementation
    ```
 
 ### 2. Interface Migration

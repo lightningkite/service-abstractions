@@ -1,7 +1,7 @@
 package com.lightningkite.services.database
 
 
-import com.lightningkite.serviceabstractions.data.Description
+import com.lightningkite.services.data.Description
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind

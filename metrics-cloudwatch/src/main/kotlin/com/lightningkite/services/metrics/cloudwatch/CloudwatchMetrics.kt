@@ -27,7 +27,7 @@ public class CloudwatchMetricSink(
     credentialProvider: AwsCredentialsProvider,
 ) : MetricSink {
     public companion object {
-        private val logger = KotlinLogging.logger("com.lightningkite.serviceabstractions.metrics.cloudwatch")
+        private val logger = KotlinLogging.logger("com.lightningkite.services.metrics.cloudwatch")
 
         init {
             MetricSink.Settings.register("cloudwatch") { url, context ->

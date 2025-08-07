@@ -93,7 +93,7 @@ infix fun <K, T> DataClassPath<K, Map<String, T>>.containsKey(key: String) = map
 inline infix fun <K, reified T> DataClassPath<K, T>.condition(make: (DataClassPath<T, T>) -> Condition<T>): Condition<K> =
     mapCondition(make(path<T>()))
 
-@Deprecated("Use neq instead", ReplaceWith("this.neq(value)", "com.lightningkite.serviceabstractions.database.neq"))
+@Deprecated("Use neq instead", ReplaceWith("this.neq(value)", "com.lightningkite.services.database.neq"))
 infix fun <K, T> DataClassPath<K, T>.ne(value: T) = mapCondition(Condition.NotEqual(value))
 @JsName("xDataClassPathInsideSet")
 infix fun <K, T> DataClassPath<K, T>.inside(values: Set<T>) = mapCondition(Condition.Inside(values.toList()))
@@ -101,27 +101,27 @@ infix fun <K, T> DataClassPath<K, T>.inside(values: List<T>) = mapCondition(Cond
 
 @Deprecated(
     "Use notInside instead",
-    ReplaceWith("this.notInside(value)", "com.lightningkite.serviceabstractions.database.notInside")
+    ReplaceWith("this.notInside(value)", "com.lightningkite.services.database.notInside")
 )
 @JsName("xDataClassPathNinSet")
 infix fun <K, T> DataClassPath<K, T>.nin(values: Set<T>) = mapCondition(Condition.NotInside(values.toList()))
 
 @Deprecated(
     "Use notInside instead",
-    ReplaceWith("this.notInside(value)", "com.lightningkite.serviceabstractions.database.notInside")
+    ReplaceWith("this.notInside(value)", "com.lightningkite.services.database.notInside")
 )
 infix fun <K, T> DataClassPath<K, T>.nin(values: List<T>) = mapCondition(Condition.NotInside(values))
 
 @Deprecated(
     "Use notInside instead",
-    ReplaceWith("this.notInside(value)", "com.lightningkite.serviceabstractions.database.notInside")
+    ReplaceWith("this.notInside(value)", "com.lightningkite.services.database.notInside")
 )
 @JsName("xDataClassPathNotInSet2")
 infix fun <K, T> DataClassPath<K, T>.notIn(values: Set<T>) = mapCondition(Condition.NotInside(values.toList()))
 
 @Deprecated(
     "Use notInside instead",
-    ReplaceWith("this.notInside(values)", "com.lightningkite.serviceabstractions.database.notInside")
+    ReplaceWith("this.notInside(values)", "com.lightningkite.services.database.notInside")
 )
 infix fun <K, T> DataClassPath<K, T>.notIn(values: List<T>) = mapCondition(Condition.NotInside(values))
 

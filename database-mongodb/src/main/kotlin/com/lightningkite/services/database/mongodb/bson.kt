@@ -1,7 +1,7 @@
 package com.lightningkite.services.database.mongodb
 
 import com.github.jershell.kbson.*
-import com.lightningkite.serviceabstractions.data.*
+import com.lightningkite.services.data.*
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.termShouldUseFuzzySearch

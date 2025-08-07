@@ -364,10 +364,10 @@ private const val LINKED_HASH_MAP_NAME = "kotlin.collections.LinkedHashMap"
 private const val HASH_MAP_NAME = "kotlin.collections.HashMap"
 
 val skipTypes = setOf(
-    "com.lightningkite.serviceabstractions.database.Condition",
-    "com.lightningkite.serviceabstractions.database.Modification",
-    "com.lightningkite.serviceabstractions.database.DataClassPathPartial",
-    "com.lightningkite.serviceabstractions.database.SortPart",
+    "com.lightningkite.services.database.Condition",
+    "com.lightningkite.services.database.Modification",
+    "com.lightningkite.services.database.DataClassPathPartial",
+    "com.lightningkite.services.database.SortPart",
 )
 
 @Serializable

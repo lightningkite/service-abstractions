@@ -1,4 +1,4 @@
-package com.lightningkite.serviceabstractions.data
+package com.lightningkite.services.data
 
 import com.lightningkite.IsRawString
 import kotlinx.serialization.ExperimentalSerializationApi

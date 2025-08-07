@@ -1,3 +1,0 @@
-package com.lightningkite.serviceabstractions.notifications.test
-
-public abstract class NotificationsTest

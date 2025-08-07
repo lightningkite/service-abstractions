@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalSerializationApi::class)
 
-package com.lightningkite.serviceabstractions.data
+package com.lightningkite.services.data
 
 import kotlinx.io.Buffer
 import kotlinx.io.Sink

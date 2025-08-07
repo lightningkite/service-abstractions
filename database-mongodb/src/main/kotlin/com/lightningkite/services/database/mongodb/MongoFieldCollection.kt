@@ -3,7 +3,7 @@ package com.lightningkite.services.database.mongodb
 import com.github.jershell.kbson.Configuration
 import com.github.jershell.kbson.KBson
 import com.lightningkite.GeoCoordinateGeoJsonSerializer
-import com.lightningkite.serviceabstractions.data.*
+import com.lightningkite.services.data.*
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.database.Aggregate
 import com.lightningkite.services.database.CollectionChanges
@@ -15,9 +15,7 @@ import com.lightningkite.services.database.EntryChange
 import com.lightningkite.services.database.FieldCollection
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.SortPart
-import com.lightningkite.services.data.*
 import com.lightningkite.services.database.collectChunked
-import com.lightningkite.services.database.getContextual
 import com.lightningkite.services.database.indexes
 import com.lightningkite.services.database.innerElement
 import com.lightningkite.services.database.simplify
@@ -31,14 +29,11 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.*
-import kotlinx.serialization.modules.overwriteWith
 import org.bson.BsonBoolean
 import org.bson.BsonDocument
 import org.bson.conversions.Bson
 import java.util.concurrent.TimeUnit
-import kotlin.collections.get
 import kotlin.reflect.KClass
-import kotlin.text.get
 
 public class MongoFieldCollection<Model : Any>(
     override val serializer: KSerializer<Model>,

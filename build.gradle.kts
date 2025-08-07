@@ -26,7 +26,7 @@ buildscript {
 }
 
 allprojects {
-    group = "com.lightningkite.serviceabstractions"
+    group = "com.lightningkite.services"
 
     repositories {
         mavenLocal()
