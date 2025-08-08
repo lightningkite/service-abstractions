@@ -16,6 +16,7 @@ import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.time.ComparableTimeMark
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.measureTime
 
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -34,4 +35,11 @@ public inline fun runTestWithClock(
         started = testTimeSource.markNow()
         testBody()
     })
+}
+
+inline fun performance(times: Int = 1_000_000, warmup: Int = times / 10, block: ()->Unit): Duration {
+    repeat(warmup) { block() }
+    return measureTime {
+        repeat(times) { block() }
+    }.div(times.toDouble())
 }

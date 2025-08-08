@@ -17,6 +17,17 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":files"))
+    testImplementation(project(path = ":files-test"))
+
+    // AWS S3 dependencies
+    fun ModuleDependency.excludeNetty() {
+        exclude("software.amazon.awssdk:netty-nio-client")
+        exclude("software.amazon.awssdk:apache-client")
+    }
+    api(libs.awsS3) { excludeNetty() }
+    api(libs.awsCrtClient) { excludeNetty() }
+    implementation(libs.coroutinesReactive)
+    
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }

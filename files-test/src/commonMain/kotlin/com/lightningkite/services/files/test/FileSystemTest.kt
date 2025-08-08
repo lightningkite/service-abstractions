@@ -11,6 +11,8 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.http.content.*
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.test.*
 import kotlin.time.Clock
@@ -84,15 +86,17 @@ abstract class FileSystemTests {
             return
         }
         runSuspendingTest {
-            withTimeout(10_000L) {
-                val testFile = system.root.resolve("test.txt")
-                val message = "Hello world!"
-                testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                val testFileNotIncluded = system.root.resolve("doNotInclude/test.txt")
-                testFileNotIncluded.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                assertContains(testFile.parent!!.list()!!.also { println(it) }, testFile)
-                assertFalse(testFileNotIncluded in testFile.parent!!.list()!!)
-                testFile.get()!!.data.text()
+            withContext(Dispatchers.Default.limitedParallelism(1)) {
+                withTimeout(10_000L) {
+                    val testFile = system.root.resolve("test.txt")
+                    val message = "Hello world!"
+                    testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
+                    val testFileNotIncluded = system.root.resolve("doNotInclude/test.txt")
+                    testFileNotIncluded.put(TypedData(Data.Text(message), MediaType.Text.Plain))
+                    assertContains(testFile.parent!!.list()!!.also { println(it) }, testFile)
+                    assertFalse(testFileNotIncluded in testFile.parent!!.list()!!)
+                    testFile.get()!!.data.text()
+                }
             }
         }
     }
