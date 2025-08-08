@@ -56,7 +56,7 @@ public fun <T> KBson.stringifyAny(serializer: KSerializer<T>, obj: T): BsonValue
 
 @Suppress("UNCHECKED_CAST")
 private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = Document(), key: String?, atlasSearch: Boolean, context: SettingContext): Document {
-    val bson = KBson(context.serializersModule, Configuration())
+    val bson = KBson(context.internalSerializersModule, Configuration())
 
     when (this) {
         is Condition.Always -> {}
@@ -147,7 +147,7 @@ private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = D
 @Suppress("UNCHECKED_CAST")
 private fun <T> Modification<T>.dump(serializer: KSerializer<T>, update: UpdateWithOptions = UpdateWithOptions(), key: String?, context: SettingContext): UpdateWithOptions {
     val into = update.document
-    val bson = KBson(context.serializersModule, Configuration())
+    val bson = KBson(context.internalSerializersModule, Configuration())
 
     when(this) {
         is Modification.Nothing -> TODO("Not supported")
@@ -227,7 +227,7 @@ public fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, co
         .filterIsInstance<Document>()
         .flatMap { it.keys }
         .toSet()
-    val bson = KBson(context.serializersModule, Configuration())
+    val bson = KBson(context.internalSerializersModule, Configuration())
     document["\$setOnInsert"] = bson.stringify(serializer, model).toDocument().also {
         set?.keys?.forEach { k ->
             if(it[k] == set[k]) it.remove(k)

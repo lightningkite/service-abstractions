@@ -37,8 +37,8 @@ class S3PublicFileSystemTest : FileSystemTests() {
             signedUrlDuration = 15.minutes,
             credentialProvider = DefaultCredentialsProvider.builder().profileName("lk").build(),
             context = object: SettingContext {
-                override val name: String get() = "files"
-                override val serializersModule: SerializersModule = EmptySerializersModule()
+                override val projectName: String get() = "files"
+                override val internalSerializersModule: SerializersModule = EmptySerializersModule()
                 override val metricSink: MetricSink = MetricSink.None(this)
                 override val secretBasis: ByteArray = byteArrayOf()
 

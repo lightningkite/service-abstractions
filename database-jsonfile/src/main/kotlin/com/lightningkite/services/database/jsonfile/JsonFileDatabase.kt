@@ -56,7 +56,7 @@ public class JsonFileDatabase(public val filesystem: FileSystem, public val fold
                             source.transferTo(sink)
                         }
                     }
-                val json = Json { this.serializersModule = context.serializersModule }
+                val json = Json { this.serializersModule = context.internalSerializersModule }
                 JsonFileFieldCollection(
                     json,
                     serializer,

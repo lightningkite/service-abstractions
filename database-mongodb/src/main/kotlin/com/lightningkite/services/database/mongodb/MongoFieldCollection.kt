@@ -41,7 +41,7 @@ public class MongoFieldCollection<Model : Any>(
     private val access: MongoCollectionAccess,
     private val context: SettingContext
 ) : FieldCollection<Model> {
-    public var bson: KBson = KBson(context.serializersModule, Configuration())
+    public var bson: KBson = KBson(context.internalSerializersModule, Configuration())
 
     public val indexedTextFields: List<DataClassPathPartial<Model>>? by lazy {
         val ser = DataClassPathSerializer(serializer)
@@ -464,7 +464,7 @@ public class MongoFieldCollection<Model : Any>(
                                 return when {
                                     this.descriptor.isNullable -> this.innerElement()
                                     this.descriptor.kind == StructureKind.LIST -> this.innerElement()
-                                    this.descriptor.kind == SerialKind.CONTEXTUAL -> context.serializersModule.getContextual<Any>(this.descriptor.capturedKClass as KClass<Any>) as KSerializer<*>
+                                    this.descriptor.kind == SerialKind.CONTEXTUAL -> context.internalSerializersModule.getContextual<Any>(this.descriptor.capturedKClass as KClass<Any>) as KSerializer<*>
                                     else -> this
                                 }
                             }

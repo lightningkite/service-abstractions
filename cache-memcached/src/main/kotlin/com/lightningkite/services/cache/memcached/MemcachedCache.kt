@@ -21,7 +21,7 @@ public class MemcachedCache(
     override val context: SettingContext
 ) : MetricTrackingCache() {
     
-    public val json: Json = Json { this.serializersModule = context.serializersModule }
+    public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
     
     public companion object {
         init {

@@ -5,8 +5,8 @@ import kotlinx.serialization.modules.SerializersModule
 import kotlin.time.Clock
 
 public interface SettingContext {
-    public val name: String
-    public val serializersModule: SerializersModule
+    public val projectName: String
+    public val internalSerializersModule: SerializersModule
     public val metricSink: MetricSink
     public val clock: Clock get() = Clock.System
     public val secretBasis: ByteArray
@@ -17,10 +17,10 @@ public interface SettingContext {
 }
 
 public class TestSettingContext(
-    override val serializersModule: SerializersModule = EmptySerializersModule(),
+    override val internalSerializersModule: SerializersModule = EmptySerializersModule(),
     override var clock: Clock = Clock.System
 ): SettingContext {
-    override val name: String get() = "Test"
+    override val projectName: String get() = "Test"
     override val metricSink: MetricSink = MetricSink.MetricLogger(this)
     override val secretBasis: ByteArray = ByteArray(64) { 0 }
 }

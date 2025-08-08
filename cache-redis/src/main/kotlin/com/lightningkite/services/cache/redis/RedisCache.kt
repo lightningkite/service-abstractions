@@ -16,7 +16,7 @@ import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
 public class RedisCache(public val lettuceClient: RedisClient, override val context: SettingContext) : MetricTrackingCache() {
-    public val json: Json = Json { this.serializersModule = context.serializersModule }
+    public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
     public companion object {
         init {
             Cache.Settings.register("redis-test") { url, context ->

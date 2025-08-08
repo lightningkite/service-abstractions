@@ -24,7 +24,7 @@ public class RedisPubSub(
     private val observables = ConcurrentHashMap<String, Flux<String>>()
     private val subscribeConnection = client.connectPubSub().reactive()
     private val publishConnection = client.connectPubSub().reactive()
-    private val json = Json { serializersModule = context.serializersModule }
+    private val json = Json { serializersModule = context.internalSerializersModule }
 
     private fun key(key: String): Flux<String> = observables.getOrPut(key) {
         val reactive = subscribeConnection

@@ -21,7 +21,7 @@ private fun <T> SdkPublisher<Map<String, AttributeValue>>.parse(serializer: KSer
 private fun json(context: SettingContext): Json {
     return Json {
         ignoreUnknownKeys = true
-        serializersModule = context.serializersModule
+        serializersModule = context.internalSerializersModule
         encodeDefaults = true
     }
 }
@@ -92,7 +92,7 @@ private fun SerialDescriptor.dynamoType(context: SettingContext): AttributeValue
         PrimitiveKind.LONG -> AttributeValue.Type.N
         PrimitiveKind.SHORT -> AttributeValue.Type.N
         PrimitiveKind.STRING -> AttributeValue.Type.S
-        SerialKind.CONTEXTUAL -> context.serializersModule.getContextualDescriptor(this)!!.dynamoType(context)
+        SerialKind.CONTEXTUAL -> context.internalSerializersModule.getContextualDescriptor(this)!!.dynamoType(context)
         SerialKind.ENUM -> AttributeValue.Type.S
         StructureKind.CLASS -> AttributeValue.Type.M
         StructureKind.LIST -> AttributeValue.Type.L

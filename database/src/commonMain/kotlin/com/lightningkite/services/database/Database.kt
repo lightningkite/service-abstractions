@@ -41,7 +41,7 @@ interface Database : Service {
                     )
                 }
                 register("ram-preload") { url, context ->
-                    val json = Json { this.serializersModule = context.serializersModule }
+                    val json = Json { this.serializersModule = context.internalSerializersModule }
                     MetricsWrappedDatabase(
                         InMemoryDatabase(
                             json.parseToJsonElement(
@@ -83,7 +83,7 @@ interface Database : Service {
 
     @Suppress("UNCHECKED_CAST")
     fun <T : Any> collection(type: KType, name: String): FieldCollection<T> =
-        collection(context.serializersModule.serializer(type) as KSerializer<T>, name)
+        collection(context.internalSerializersModule.serializer(type) as KSerializer<T>, name)
 
     /**
      * Will attempt inserting data into the database to confirm that the connection is alive and available.
@@ -111,5 +111,5 @@ data class HealthCheckTestModel(override val _id: String) : HasId<String>
  * This can make collection calls much cleaner and less wordy when the types can be inferred.
  */
 inline fun <reified T : Any> Database.collection(name: String = T::class.simpleName!!): FieldCollection<T> {
-    return collection(context.serializersModule.serializer<T>(), name)
+    return collection(context.internalSerializersModule.serializer<T>(), name)
 }

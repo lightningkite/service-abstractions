@@ -59,7 +59,7 @@ public class JavaSmtpEmailService(
                             password = match.groups["password"]?.value,
                             from = EmailAddressWithName(
                                 value = params["fromEmail"]!!.first(),
-                                label = params["fromLabel"]?.first() ?: context.name,
+                                label = params["fromLabel"]?.first() ?: context.projectName,
                             )
                             ?: throw IllegalStateException("SMTP Email requires a fromEmail to be set.")
                         )

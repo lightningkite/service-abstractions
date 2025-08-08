@@ -16,7 +16,7 @@ public open class MapCache(
     public val entries: MutableMap<String, Entry>,
     override val context: SettingContext,
 ) : MetricTrackingCache() {
-    private val serializersModule: SerializersModule get() = context.serializersModule
+    private val serializersModule: SerializersModule get() = context.internalSerializersModule
     public data class Entry(val value: Any?, val expires: Instant? = null)
 
     @Suppress("UNCHECKED_CAST")

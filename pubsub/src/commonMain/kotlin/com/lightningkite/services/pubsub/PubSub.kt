@@ -71,7 +71,7 @@ public interface PubSub : Service {
  * Gets a channel for a specific key using the default serializer.
  */
 public inline operator fun <reified T : Any> PubSub.get(key: String): PubSubChannel<T> {
-    return get(key, context.serializersModule.serializer<T>())
+    return get(key, context.internalSerializersModule.serializer<T>())
 }
 
 /**

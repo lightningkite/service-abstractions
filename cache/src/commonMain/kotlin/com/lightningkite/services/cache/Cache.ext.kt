@@ -9,7 +9,7 @@ import kotlin.time.Duration
  * This can make get calls much cleaner and less wordy when the types can be inferred.
  */
 public suspend inline fun <reified T : Any> Cache.get(key: String): T? {
-    return get(key, context.serializersModule.serializer<T>())
+    return get(key, context.internalSerializersModule.serializer<T>())
 }
 
 /**
@@ -17,7 +17,7 @@ public suspend inline fun <reified T : Any> Cache.get(key: String): T? {
  * This can make set calls much cleaner and less wordy when the types can be inferred.
  */
 public suspend inline fun <reified T : Any> Cache.set(key: String, value: T, timeToLive: Duration? = null) {
-    return set(key, value, context.serializersModule.serializer<T>(), timeToLive)
+    return set(key, value, context.internalSerializersModule.serializer<T>(), timeToLive)
 }
 
 /**
@@ -29,7 +29,7 @@ public suspend inline fun <reified T : Any> Cache.setIfNotExists(
     value: T,
     timeToLive: Duration? = null
 ): Boolean {
-    return setIfNotExists(key, value, context.serializersModule.serializer<T>(), timeToLive)
+    return setIfNotExists(key, value, context.internalSerializersModule.serializer<T>(), timeToLive)
 }
 
 
@@ -43,11 +43,11 @@ public suspend inline fun <reified T : Any> Cache.modify(
     timeToLive: Duration? = null,
     noinline modification: (T?) -> T?
 ): Boolean =
-    modify(key, context.serializersModule.serializer<T>(), maxTries, timeToLive, modification)
+    modify(key, context.internalSerializersModule.serializer<T>(), maxTries, timeToLive, modification)
 
 
 public inline operator fun <reified T> (() -> Cache).get(key: String): CacheHandle<T> =
-    CacheHandle<T>(this, key) { this().context.serializersModule.serializer<T>() }
+    CacheHandle<T>(this, key) { this().context.internalSerializersModule.serializer<T>() }
 
 
 internal expect fun platformSpecificCacheSettings()

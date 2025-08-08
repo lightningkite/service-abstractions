@@ -22,7 +22,7 @@ class InMemoryDatabase(val premadeData: JsonObject? = null, override val context
         collections.getOrPut(serializer to name) {
             val made = InMemoryFieldCollection(serializer = serializer)
             premadeData?.get(name)?.let {
-                val json = Json { this.serializersModule = context.serializersModule }
+                val json = Json { this.serializersModule = context.internalSerializersModule }
 
                 val data = json.decodeFromJsonElement(
                     ListSerializer(serializer),
