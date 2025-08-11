@@ -3,12 +3,14 @@ package com.lightningkite.services.cache.dynamodb
 
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.cache.MetricTrackingCache
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.serializer
 import software.amazon.awssdk.auth.credentials.AwsCredentials
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
@@ -20,6 +22,7 @@ import kotlin.time.Clock.System.now
 import kotlin.time.Duration
 
 public class DynamoDbCache(
+    override val name: String,
     public val makeClient: () -> DynamoDbAsyncClient,
     public val tableName: String = "cache",
     override val context: SettingContext,
@@ -28,11 +31,15 @@ public class DynamoDbCache(
 
     public companion object {
         init {
-            Cache.Settings.register("dynamodb") { url, context ->
+            Cache.Settings.register("dynamodb-local") { name, url, context ->
+                DynamoDbCache(name, { embeddedDynamo() }, context = context)
+            }
+            Cache.Settings.register("dynamodb") { name, url, context ->
                 Regex("""dynamodb://(?:(?<access>[^:]+):(?<secret>[^@]+)@)?(?<region>[^/]+)/(?<tableName>.+)""").matchEntire(url)?.let { match ->
                     val user = match.groups["access"]?.value ?: ""
                     val password = match.groups["secret"]?.value ?: ""
                     DynamoDbCache(
+                        name,
                         {
                             DynamoDbAsyncClient.builder()
                                 .credentialsProvider(
@@ -169,20 +176,38 @@ public class DynamoDbCache(
 
     override suspend fun addInternal(key: String, value: Int, timeToLive: Duration?) {
         ready.await()
-        client.updateItem {
-            it.tableName(tableName)
-            it.key(mapOf("key" to AttributeValue.fromS(key)))
-            it.updateExpression("SET #exp = :exp, #v = if_not_exists(#v, :z) + :v")
-            it.expressionAttributeNames(mapOf("#v" to "value", "#exp" to "expires"))
-            it.expressionAttributeValues(
-                mapOf(
-                    ":z" to AttributeValue.fromN("0"),
-                    ":v" to AttributeValue.fromN(value.toString()),
-                    ":exp" to (timeToLive?.let { AttributeValue.fromN(now().plus(it).epochSeconds.toString()) }
-                        ?: AttributeValue.fromNul(true))
+        try {
+            println("DEBUG PREVIEW: ${try {
+                client.getItem {
+                    it.tableName(tableName)
+                    it.consistentRead(true)
+                    it.key(mapOf("key" to AttributeValue.fromS(key)))
+                }.await().toString()
+            } catch(e: Exception) {
+                "nah"
+            }}")
+            println("NOW: ${now().epochSeconds}")
+            client.updateItem {
+                it.tableName(tableName)
+                it.key(mapOf("key" to AttributeValue.fromS(key)))
+                it.conditionExpression("attribute_not_exists(#exp) OR #exp = :null OR #exp > :now")
+                it.updateExpression("SET #exp = :exp, #v = if_not_exists(#v, :z) + :v")
+                it.expressionAttributeNames(mapOf("#v" to "value", "#exp" to "expires"))
+                it.expressionAttributeValues(
+                    mapOf(
+                        ":null" to AttributeValue.fromNul(true),
+                        ":now" to AttributeValue.fromN(now().epochSeconds.toString()),
+                        ":z" to AttributeValue.fromN("0"),
+                        ":v" to AttributeValue.fromN(value.toString()),
+                        ":exp" to (timeToLive?.let { AttributeValue.fromN(now().plus(it).epochSeconds.toString()) }
+                            ?: AttributeValue.fromNul(true))
+                    )
                 )
-            )
-        }.await()
+            }.await()
+        } catch(e: ConditionalCheckFailedException) {
+            println("FAILED CONDITIONAL CHECK: ${e.message}")
+            setInternal(key, value, Int.serializer(), timeToLive)
+        }
     }
 
     override suspend fun removeInternal(key: String) {

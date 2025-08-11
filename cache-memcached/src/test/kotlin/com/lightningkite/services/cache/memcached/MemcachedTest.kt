@@ -13,15 +13,13 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 class MemcachedTest : CacheTest() {
+    init {
+        MemcachedCache
+    }
+
     override val cache: Cache? by lazy {
         if (EmbeddedMemcached.available) {
-            try {
-                val client = XMemcachedClient("127.0.0.1", 11211)
-                MemcachedCache(client, TestSettingContext())
-            } catch (e: Exception) {
-                println("Could not connect to Memcached: ${e.message}")
-                null
-            }
+            Cache.Settings("memcached-test").invoke("test", TestSettingContext())
         } else {
             println("Memcached is not available on this system.")
             null

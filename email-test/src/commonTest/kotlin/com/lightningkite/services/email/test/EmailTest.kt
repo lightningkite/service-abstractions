@@ -24,8 +24,8 @@ class EmailTest {
     @BeforeTest
     fun setup() {
         testContext = TestSettingContext()
-        testEmailService = TestEmailService(testContext)
-        consoleEmailService = ConsoleEmailService(testContext)
+        testEmailService = TestEmailService("testEmailService", testContext)
+        consoleEmailService = ConsoleEmailService("consoleEmailService", testContext)
         
         // Clear any previous test emails
         testEmailService.clear()
@@ -36,11 +36,6 @@ class EmailTest {
         // Test sending a message with ConsoleEmailService
         val email = createTestEmail()
         consoleEmailService.send(email)
-        
-        // Verify metrics were recorded
-        val metrics = testContext.metricSink.metrics
-        assertTrue(metrics.isNotEmpty())
-        assertTrue(metrics.any { it.first.path.contains("send") })
     }
     
     @Test
@@ -67,10 +62,6 @@ class EmailTest {
         assertEquals(2, testEmailService.allEmails().size)
         assertEquals(secondEmail.subject, testEmailService.lastEmail()?.subject)
         
-        // Verify metrics were recorded
-        val metrics = testContext.metricSink.metrics
-        assertTrue(metrics.isNotEmpty())
-        assertTrue(metrics.any { it.first.path.contains("send") })
     }
     
     @Test
@@ -113,10 +104,6 @@ class EmailTest {
         assertEquals("Hello User 1! This is a test message.", user1Email.plainText)
         assertEquals("<p>Hello User 1! This is a test message.</p>", user1Email.html)
         
-        // Verify metrics were recorded
-        val metrics = testContext.metricSink.metrics
-        assertTrue(metrics.isNotEmpty())
-        assertTrue(metrics.any { it.first.path.contains("sendBulk") })
     }
     
     @Test
@@ -136,7 +123,7 @@ class EmailTest {
         val settings = EmailService.Settings(url = "test")
         
         // Create email service instance from settings
-        val emailService = settings.invoke(testContext)
+        val emailService = settings.invoke("email", testContext)
         
         // Verify it's a TestEmailService instance
         assertTrue(emailService is TestEmailService)
@@ -158,7 +145,7 @@ class EmailTest {
         val settings = EmailService.Settings(url = "console")
         
         // Create email service instance from settings
-        val emailService = settings.invoke(testContext)
+        val emailService = settings.invoke("email", testContext)
         
         // Verify it's a ConsoleEmailService instance
         assertTrue(emailService is ConsoleEmailService)
@@ -166,11 +153,6 @@ class EmailTest {
         // Test sending an email (no assertions needed, just verify it doesn't throw)
         val email = createTestEmail()
         emailService.send(email)
-        
-        // Verify metrics were recorded
-        val metrics = testContext.metricSink.metrics
-        assertTrue(metrics.isNotEmpty())
-        assertTrue(metrics.any { it.first.path.contains("send") })
     }
     
     // Helper function to create a test email

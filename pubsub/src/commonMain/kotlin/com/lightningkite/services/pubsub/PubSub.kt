@@ -28,13 +28,13 @@ public interface PubSub : Service {
     ) : Setting<PubSub> {
         public companion object : UrlSettingParser<PubSub>() {
             init {
-                register("local") { _, context -> LocalPubSub(context) }
-                register("debug") { _, context -> DebugPubSub(context) }
+                register("local") { name, _, context -> LocalPubSub(name, context) }
+                register("debug") { name, _, context -> DebugPubSub(name, context) }
             }
         }
 
-        override fun invoke(context: SettingContext): PubSub {
-            return parse(url, context)
+        override fun invoke(name: String, context: SettingContext): PubSub {
+            return parse(name, url, context)
         }
     }
 

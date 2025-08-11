@@ -15,24 +15,33 @@ import redis.embedded.RedisServer
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
-public class RedisCache(public val lettuceClient: RedisClient, override val context: SettingContext) : MetricTrackingCache() {
+public class RedisCache(
+    override val name: String,
+    public val lettuceClient: RedisClient,
+    override val context: SettingContext
+) : MetricTrackingCache() {
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
+
     public companion object {
+        private var currentLocal: RedisServer? = null
         init {
-            Cache.Settings.register("redis-test") { url, context ->
-                val redisServer = RedisServer.builder()
-                    .port(6379)
-                    .setting("bind 127.0.0.1") // good for local development on Windows to prevent security popups
-                    .slaveOf("localhost", 6378)
-                    .setting("daemonize no")
-                    .setting("appendonly no")
-                    .setting("maxmemory 128M")
-                    .build()
-                redisServer.start()
-                RedisCache(RedisClient.create("redis://127.0.0.1:6378"), context)
+            Cache.Settings.register("redis-test") { name, url, context ->
+                if(currentLocal == null) {
+                    val redisServer = RedisServer.builder()
+                        .port(6379)
+                        .bind("127.0.0.1") // good for local development on Windows to prevent security popups
+                        .slaveOf("localhost", 6378)
+                        .setting("daemonize no")
+                        .setting("appendonly no")
+                        .setting("maxmemory 128M")
+                        .build()
+                    redisServer.start()
+                    currentLocal = redisServer
+                }
+                RedisCache(name, RedisClient.create("redis://127.0.0.1:6378/0"), context)
             }
-            Cache.Settings.register("redis") { url, context ->
-                RedisCache(RedisClient.create(url), context)
+            Cache.Settings.register("redis") { name, url, context ->
+                RedisCache(name, RedisClient.create(url), context)
             }
         }
     }
@@ -57,14 +66,14 @@ public class RedisCache(public val lettuceClient: RedisClient, override val cont
         timeToLive: Duration?
     ): Boolean {
         val result = lettuceConnection.setnx(key, json.encodeToString(serializer, value)).awaitFirst()
-        if(result) timeToLive?.let { lettuceConnection.pexpire(key, it.toJavaDuration()).collect {  } }
+        if (result) timeToLive?.let { lettuceConnection.pexpire(key, it.toJavaDuration()).collect { } }
         return result
     }
 
     override suspend fun addInternal(key: String, value: Int, timeToLive: Duration?) {
         lettuceConnection.incrby(key, value.toLong()).collect { }
         timeToLive?.let {
-            lettuceConnection.pexpire(key, it.toJavaDuration()).collect {  }
+            lettuceConnection.pexpire(key, it.toJavaDuration()).collect { }
         }
     }
 

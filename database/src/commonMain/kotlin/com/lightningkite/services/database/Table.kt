@@ -9,13 +9,13 @@ import kotlinx.serialization.KSerializer
  * using conditions and modifications. The underlying database is irrelevant and
  * will have its own implementation of this interface.
  */
-interface FieldCollection<Model : Any> {
+interface Table<Model : Any> {
     val serializer: KSerializer<Model>
 
     /**
      * The field collection this wraps, if any.
      */
-    val wraps: FieldCollection<Model>? get() = null
+    val wraps: Table<Model>? get() = null
 
     /**
      * The full condition that will be sent to the database in the end.  Used to help analyze security rules.

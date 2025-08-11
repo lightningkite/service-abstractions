@@ -7,6 +7,7 @@ import com.lightningkite.services.SettingContext
  * This is useful for local development and debugging.
  */
 public class ConsoleNotificationService(
+    override val name: String,
     context: SettingContext
 ) : MetricTrackingNotificationService(context) {
 

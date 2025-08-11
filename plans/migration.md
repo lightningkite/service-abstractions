@@ -70,13 +70,13 @@ public value class Settings(
 ) : Setting<Cache> {
     public companion object : UrlSettingParser<Cache>() {
         init {
-            register("ram-unsafe") { url, context -> MapCache(mutableMapOf(), context) }
+            register("ram-unsafe") { name, url, context -> MapCache(mutableMapOf(), context) }
             platformSpecificCacheSettings()
         }
     }
     
-    override fun invoke(context: SettingContext): Cache {
-        return parse(url, context)
+    override fun invoke(name: String, context: SettingContext): Cache {
+        return parse(name, url, context)
     }
 }
 ```
@@ -166,7 +166,7 @@ public open class MapCache(
 }
 
 // Usage
-register("ram-unsafe") { url, context -> MapCache(mutableMapOf(), context) }
+register("ram-unsafe") { name, url, context -> MapCache(mutableMapOf(), context) }
 ```
 
 **Key Changes:**

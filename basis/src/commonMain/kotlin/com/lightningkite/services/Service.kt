@@ -5,6 +5,11 @@ import kotlin.time.Duration.Companion.minutes
 
 public interface Service {
     /**
+     * The name of the service.  This should be unique across all services.
+     */
+    public val name: String
+
+    /**
      * The context in which this service was started.
      * Contains references to both serialization information and metrics information.
      */

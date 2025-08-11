@@ -5,7 +5,9 @@ import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.Service
 import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.UrlSettingParser
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmInline
 
 /**
  * An interface for sending SMS messages.
@@ -29,36 +31,22 @@ public interface SMS : Service {
      * @param from The phone number to send messages from (optional, can be specified in the URL for some implementations)
      */
     @Serializable
-    public data class Settings(
+    @JvmInline
+    public value class Settings(
         public val url: String = "console",
-        public val from: String? = null
     ) : Setting<SMS> {
-        override fun invoke(context: SettingContext): SMS {
-            val protocol = url.substringBefore("://")
-            return protocols[protocol]?.invoke(context, this)
-                ?: throw IllegalArgumentException("Unknown SMS protocol: $protocol")
+        override fun invoke(name: String, context: SettingContext): SMS {
+            return parse(name, url, context)
         }
 
-        public companion object {
-            private val protocols: MutableMap<String, (SettingContext, Settings) -> SMS> = mutableMapOf()
-
+        public companion object : UrlSettingParser<SMS>() {
             init {
-                registerProtocol("console") { context, _ -> 
-                    ConsoleSMS(context)
+                register("console") { name, _, context ->
+                    ConsoleSMS(name, context)
                 }
-                registerProtocol("test") { context, _ ->
-                    TestSMS(context)
+                register("test") { name, _, context ->
+                    TestSMS(name, context)
                 }
-            }
-
-            /**
-             * Registers a protocol handler for SMS settings.
-             *
-             * @param protocol The protocol identifier (e.g., "console", "test", "twilio")
-             * @param factory A function that creates an SMS instance from the context and settings
-             */
-            public fun registerProtocol(protocol: String, factory: (SettingContext, Settings) -> SMS) {
-                protocols[protocol] = factory
             }
         }
     }

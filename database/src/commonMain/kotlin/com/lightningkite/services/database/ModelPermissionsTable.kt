@@ -8,12 +8,12 @@ import kotlinx.serialization.KSerializer
 class SecurityException(message: String? = null, cause: Throwable? = null) : RuntimeException(message, cause)
 
 /**
- * Uses [ModelPermissions] to secure a [FieldCollection].
+ * Uses [ModelPermissions] to secure a [Table].
  */
-open class ModelPermissionsFieldCollection<Model : Any>(
-    override val wraps: FieldCollection<Model>,
+open class ModelPermissionsTable<Model : Any>(
+    override val wraps: Table<Model>,
     val permissions: ModelPermissions<Model>
-) : FieldCollection<Model> {
+) : Table<Model> {
     override val serializer: KSerializer<Model> get() = wraps.serializer
     private val textIndexPaths = serializer.descriptor.annotations.filterIsInstance<TextIndex>()
         .firstOrNull()?.fields?.map { DataClassPathSerializer(serializer).fromString(it).properties }
@@ -223,5 +223,5 @@ open class ModelPermissionsFieldCollection<Model : Any>(
     override suspend fun mask(): Mask<Model> = permissions.readMask
 }
 
-fun <Model : Any> FieldCollection<Model>.withPermissions(permissions: ModelPermissions<Model>): FieldCollection<Model> =
-    ModelPermissionsFieldCollection(this, permissions)
+fun <Model : Any> Table<Model>.withPermissions(permissions: ModelPermissions<Model>): Table<Model> =
+    ModelPermissionsTable(this, permissions)

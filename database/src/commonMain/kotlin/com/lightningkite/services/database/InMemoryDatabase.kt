@@ -1,6 +1,8 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.countMetric
+import com.lightningkite.services.performanceMetric
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -14,13 +16,16 @@ import kotlinx.serialization.json.JsonObject
  *
  * @param premadeData A JsonObject that contains data you wish to populate the database with on creation.
  */
-class InMemoryDatabase(val premadeData: JsonObject? = null, override val context: SettingContext) : Database {
-    val collections: HashMap<Pair<KSerializer<*>, String>, FieldCollection<*>> = HashMap()
+class InMemoryDatabase(override val name: String, val premadeData: JsonObject? = null, override val context: SettingContext) : Database {
+    val collections: HashMap<Pair<KSerializer<*>, String>, Table<*>> = HashMap()
+
+    private val waitMetric = performanceMetric("wait")
+    private val callMetric = countMetric("call")
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): FieldCollection<T> =
-        collections.getOrPut(serializer to name) {
-            val made = InMemoryFieldCollection(serializer = serializer)
+    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T> =
+        (collections.getOrPut(serializer to name) {
+            val made = InMemoryTable(serializer = serializer)
             premadeData?.get(name)?.let {
                 val json = Json { this.serializersModule = context.internalSerializersModule }
 
@@ -31,6 +36,12 @@ class InMemoryDatabase(val premadeData: JsonObject? = null, override val context
                 made.data.addAll(data)
             }
             made
-        } as FieldCollection<T>
+        } as Table<T>).let {
+            MetricsTable(
+                it,
+                waitMetric,
+                callMetric,
+            )
+        }
 
 }

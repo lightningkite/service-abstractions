@@ -7,12 +7,14 @@ import com.lightningkite.services.data.TypedData
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.HMAC
 import dev.whyoleg.cryptography.algorithms.SHA256
+import dev.whyoleg.cryptography.random.CryptographyRandom
 import kotlinx.io.IOException
 import kotlinx.io.buffered
 import kotlinx.io.files.FileNotFoundException
 import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import kotlinx.io.readByteArray
 import kotlinx.io.readString
 import kotlinx.io.writeString
 import kotlin.time.Duration
@@ -23,21 +25,33 @@ import kotlin.time.Instant
  * A FileSystem implementation that uses kotlinx.io.files.FileSystem.
  */
 public class KotlinxIoPublicFileSystem(
+    override val name: String,
     override val context: SettingContext,
     public val kotlinxIo: FileSystem = SystemFileSystem,
     public val rootDirectory: Path,
-    public val serveUrl: String = "http://localhost:8080",
-    public val serveDirectory: String = "files",
+    public val serveUrl: String = "http://localhost:8080/files",
     public val signatureReadDuration: Duration = 1.hours,
 ): MetricTrackingPublicFileSystem() {
     private val hmac = CryptographyProvider.Default.get(HMAC)
     private val shaVersion = SHA256
     private val sha = CryptographyProvider.Default.get(shaVersion)
-    private val key = hmac.keyDecoder(shaVersion).decodeFromByteArrayBlocking(HMAC.Key.Format.RAW, context.secretBasis)
+    private val secretBytes = run {
+        val signingKeyPath = Path(rootDirectory, ".signingKey")
+        if(kotlinxIo.exists(signingKeyPath)) {
+            kotlinxIo.source(Path(rootDirectory, ".signingKey")).buffered().readByteArray()
+        } else {
+            val random = CryptographyRandom.nextBytes(32)
+            kotlinxIo.sink(signingKeyPath).buffered().use {
+                it.write(random)
+            }
+            random
+        }
+    }
+    private val key = hmac.keyDecoder(shaVersion).decodeFromByteArrayBlocking(HMAC.Key.Format.RAW, secretBytes)
 
     override val root: KotlinxIoFile = KotlinxIoFile(Path(""))
     
-    override val rootUrls: List<String> = listOf("$serveUrl/$serveDirectory")
+    override val rootUrls: List<String> = listOf(serveUrl)
 
     internal data class DataToSign(val url: String, val expires: Instant, val upload: Boolean) {
         constructor(urlWithQuery: String): this(
@@ -91,7 +105,7 @@ public class KotlinxIoPublicFileSystem(
         
         override val parent: FileObject? = relativePath.parent?.let { KotlinxIoFile(it) } ?: root
         
-        override val url: String = "$serveUrl/$serveDirectory${relativePath}"
+        override val url: String = "$serveUrl/${relativePath}"
         
         override val signedUrl: String get() {
             return DataToSign(url, context.clock.now().plus(signatureReadDuration), false)
@@ -111,7 +125,7 @@ public class KotlinxIoPublicFileSystem(
 
         override suspend fun listImpl(): List<FileObject>? {
             return try {
-                kotlinxIo.list(absolutePath).filter { !it.name.endsWith(".contenttype") }.map {
+                kotlinxIo.list(absolutePath).filter { !it.name.endsWith(".contenttype") && it.name != ".signingKey" }.map {
                     KotlinxIoFile(Path(relativePath, it.name))
                 }
             } catch (e: FileNotFoundException) {

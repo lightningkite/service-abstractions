@@ -4,7 +4,10 @@ import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.UniqueViolationException
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.database.MetricsWrappedDatabase
+import com.lightningkite.services.countMetric
+import com.lightningkite.services.database.Table
+import com.lightningkite.services.database.MetricsTable
+import com.lightningkite.services.performanceMetric
 import com.mongodb.*
 import com.mongodb.event.ConnectionCheckedInEvent
 import com.mongodb.event.ConnectionCheckedOutEvent
@@ -22,6 +25,7 @@ import kotlin.math.roundToInt
 import kotlin.text.get
 
 public class MongoDatabase(
+    override val name: String,
     public val databaseName: String,
     public val atlasSearch: Boolean = false,
     public val clientSettings: MongoClientSettings,
@@ -44,24 +48,23 @@ public class MongoDatabase(
             ?: emptyMap()
 
         init {
-            Database.Settings.register("mongodb") { url, context ->
+            Database.Settings.register("mongodb") { name, url, context ->
                 Regex("""mongodb://.*/(?<databaseName>[^?]+)(?:\?.*)?""")
                     .matchEntire(url)
                     ?.let { match ->
-                        MetricsWrappedDatabase(
-                            MongoDatabase(
-                                databaseName = match.groups["databaseName"]!!.value,
-                                clientSettings = MongoClientSettings.builder()
-                                    .applyConnectionString(ConnectionString(url))
-                                    .build(),
-                                atlasSearch = false,
-                                context = context
-                            ), "Database"
+                        MongoDatabase(
+                            name = name,
+                            databaseName = match.groups["databaseName"]!!.value,
+                            clientSettings = MongoClientSettings.builder()
+                                .applyConnectionString(ConnectionString(url))
+                                .build(),
+                            atlasSearch = false,
+                            context = context
                         )
                     }
                     ?: throw IllegalStateException("Invalid mongodb URL. The URL should match the pattern: mongodb://[credentials and host information]/[databaseName]?[params]")
             }
-            Database.Settings.register("mongodb+srv") { url, context ->
+            Database.Settings.register("mongodb+srv") { name, url, context ->
                 Regex("""mongodb\+srv://.*/(?<databaseName>[^?]+)(?:\?.*)?""")
                     .matchEntire(url)
                     ?.let { match ->
@@ -70,6 +73,7 @@ public class MongoDatabase(
                         val withoutAtlasSearch =
                             url.replace("?atlasSearch=true", "").replace("&atlasSearch=true", "")
                         MongoDatabase(
+                            name = name,
                             databaseName = match.groups["databaseName"]!!.value,
                             clientSettings = MongoClientSettings.builder()
                                 .applyConnectionString(ConnectionString(withoutAtlasSearch))
@@ -80,7 +84,7 @@ public class MongoDatabase(
                     }
                     ?: throw IllegalStateException("Invalid mongodb URL. The URL should match the pattern: mongodb+srv://[credentials and host information]/[databaseName]?[params]")
             }
-            Database.Settings.register("mongodb-test") { url, context ->
+            Database.Settings.register("mongodb-test") { name, url, context ->
                 Regex("""mongodb-test(?:://(?:\?(?<params>.*))?)?""")
                     .matchEntire(url)
                     ?.let { match ->
@@ -88,6 +92,7 @@ public class MongoDatabase(
                             parseParameterString(params)
                         }
                         MongoDatabase(
+                            name = name,
                             databaseName = "default",
                             clientSettings = testMongo(version = params?.get("mongoVersion")?.firstOrNull()),
                             atlasSearch = false,
@@ -96,7 +101,7 @@ public class MongoDatabase(
                     }
                     ?: throw IllegalStateException("Invalid mongodb-test URL. The URL should match the pattern: mongodb-test://?[params]\nAvailable params are: mongoVersion")
             }
-            Database.Settings.register("mongodb-file") { url, context ->
+            Database.Settings.register("mongodb-file") { name, url, context ->
                 Regex("""mongodb-file://(?<folder>[^?]+)(?:\?(?<params>.*))?""")
                     .matchEntire(url)
                     ?.let { match ->
@@ -105,6 +110,7 @@ public class MongoDatabase(
                             parseParameterString(params)
                         }
                         MongoDatabase(
+                            name = name,
                             databaseName = params?.get("databaseName")?.firstOrNull() ?: "default",
                             clientSettings = embeddedMongo(
                                 databaseFolder = File(folder),
@@ -192,13 +198,16 @@ public class MongoDatabase(
         return listOf(super.healthCheck(), poolHealth).maxBy { it.level }
     }
 
-    private val collections = ConcurrentHashMap<Pair<KSerializer<*>, String>, Lazy<MongoFieldCollection<*>>>()
+    private val collections = ConcurrentHashMap<Pair<KSerializer<*>, String>, Lazy<MongoTable<*>>>()
+
+    private val waitMetric = performanceMetric("wait")
+    private val callMetric = countMetric("call")
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): MongoFieldCollection<T> =
+    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-                MongoFieldCollection(serializer, atlasSearch = atlasSearch, object : MongoCollectionAccess {
+                MongoTable(serializer, atlasSearch = atlasSearch, object : MongoCollectionAccess {
                     override suspend fun <T> wholeDb(action: suspend com.mongodb.kotlin.client.coroutine.MongoDatabase.() -> T): T {
                         return action(databaseLazy.value)
                     }
@@ -240,5 +249,11 @@ public class MongoDatabase(
                     }
                 }, context)
             }
-        } as Lazy<MongoFieldCollection<T>>).value
+        } as Lazy<MongoTable<T>>).value.let {
+            MetricsTable(
+                it,
+                waitMetric,
+                callMetric,
+            )
+        }
 }

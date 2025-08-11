@@ -17,6 +17,7 @@ import kotlin.time.Duration
  * A cache implementation that uses Memcached as the backend.
  */
 public class MemcachedCache(
+    override val name: String,
     public val client: MemcachedClient,
     override val context: SettingContext
 ) : MetricTrackingCache() {
@@ -25,15 +26,15 @@ public class MemcachedCache(
     
     public companion object {
         init {
-            Cache.Settings.register("memcached-test") { url, context ->
+            Cache.Settings.register("memcached-test") { name, url, context ->
                 val process = EmbeddedMemcached.start()
                 Runtime.getRuntime().addShutdownHook(Thread {
                     process.destroy()
                 })
-                MemcachedCache(XMemcachedClient("127.0.0.1", 11211), context)
+                MemcachedCache(name, XMemcachedClient("127.0.0.1", 11211), context)
             }
             
-            Cache.Settings.register("memcached") { url, context ->
+            Cache.Settings.register("memcached") { name, url, context ->
                 val hosts = url.substringAfter("://").split(' ', ',').filter { it.isNotBlank() }
                     .map {
                         InetSocketAddress(
@@ -41,15 +42,15 @@ public class MemcachedCache(
                             it.substringAfter(':', "").toIntOrNull() ?: 11211
                         )
                     }
-                MemcachedCache(XMemcachedClient(hosts), context)
+                MemcachedCache(name, XMemcachedClient(hosts), context)
             }
             
-            Cache.Settings.register("memcached-aws") { url, context ->
+            Cache.Settings.register("memcached-aws") { name, url, context ->
                 val configFullHost = url.substringAfter("://")
                 val configPort = configFullHost.substringAfter(':', "").toIntOrNull() ?: 11211
                 val configHost = configFullHost.substringBefore(':')
                 val client = AWSElasticCacheClient(InetSocketAddress(configHost, configPort))
-                MemcachedCache(client, context)
+                MemcachedCache(name, client, context)
             }
         }
     }

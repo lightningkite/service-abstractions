@@ -8,16 +8,21 @@ import kotlinx.coroutines.*
 import org.junit.AfterClass
 import org.junit.BeforeClass
 import redis.embedded.RedisServer
+import kotlin.test.Test
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 class RedisTest: CacheTest() {
+
+    // TODO: Why does redis-test not work?
+//    init { RedisCache }
+//    override val cache: Cache? by lazy {
+//        Cache.Settings("redis-test").invoke("test", TestSettingContext()) as RedisCache
+//    }
+
     override val cache: Cache? by lazy {
-        RedisCache(RedisClient.create("redis://127.0.0.1:6379/0"), TestSettingContext())
+        RedisCache("test", RedisClient.create("redis://127.0.0.1:6379/0"), TestSettingContext())
     }
-    override fun runSuspendingTest(body: suspend CoroutineScope.() -> Unit) = runBlocking { body() }
-    override val waitScale: Duration
-        get() = 0.25.seconds
 
     companion object {
         lateinit var redisServer: RedisServer
@@ -42,4 +47,12 @@ class RedisTest: CacheTest() {
         }
     }
 
+    override fun runSuspendingTest(body: suspend CoroutineScope.() -> Unit) = runBlocking { body() }
+    override val waitScale: Duration
+        get() = 0.25.seconds
+
+    @Test
+    fun runnable() {
+
+    }
 }

@@ -21,14 +21,14 @@ public interface NotificationService : Service {
     public value class Settings(
         public val url: String
     ) : Setting<NotificationService> {
-        override fun invoke(context: SettingContext): NotificationService {
-            return parse(url, context)
+        override fun invoke(name: String, context: SettingContext): NotificationService {
+            return parse(name, url, context)
         }
         
         public companion object: UrlSettingParser<NotificationService>() {
             init {
-                register("console") { url, context -> ConsoleNotificationService(context) }
-                register("test") { url, context -> TestNotificationService(context) }
+                register("console") { name, url, context -> ConsoleNotificationService(name, context) }
+                register("test") { name, url, context -> TestNotificationService(name, context) }
             }
         }
     }

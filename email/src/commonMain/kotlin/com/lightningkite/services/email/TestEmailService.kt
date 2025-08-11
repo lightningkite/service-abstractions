@@ -7,7 +7,7 @@ import com.lightningkite.services.TestSettingContext
  * An email service implementation that stores emails for testing purposes.
  * Note: This implementation is not thread-safe and is intended for testing only.
  */
-public class TestEmailService(override val context: SettingContext) : MetricTrackingEmailService() {
+public class TestEmailService(override val name: String, override val context: SettingContext) : MetricTrackingEmailService() {
     /**
      * The list of emails that have been sent.
      */
@@ -77,14 +77,5 @@ public class TestEmailService(override val context: SettingContext) : MetricTrac
      */
     public fun allEmails(): List<Email> {
         return sentEmails
-    }
-
-    public companion object {
-        /**
-         * A shared instance of TestEmailService for use in tests.
-         */
-        public val shared: TestEmailService by lazy {
-            TestEmailService(TestSettingContext())
-        }
     }
 }

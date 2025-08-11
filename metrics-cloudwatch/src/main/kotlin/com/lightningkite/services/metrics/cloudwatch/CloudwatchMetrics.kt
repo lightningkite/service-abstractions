@@ -21,6 +21,7 @@ import software.amazon.awssdk.services.cloudwatch.model.StandardUnit
 import java.util.concurrent.ConcurrentLinkedQueue
 
 public class CloudwatchMetricSink(
+    override val name: String,
     override val context: SettingContext,
     public val namespace: String,
     public val region: Region,
@@ -30,7 +31,7 @@ public class CloudwatchMetricSink(
         private val logger = KotlinLogging.logger("com.lightningkite.services.metrics.cloudwatch")
 
         init {
-            MetricSink.Settings.register("cloudwatch") { url, context ->
+            MetricSink.Settings.register("cloudwatch") { name, url, context ->
                 Regex("""cloudwatch://((?:(?<user>[a-zA-Z0-9+/]+):(?<password>[a-zA-Z0-9+/]+)@)?(?<region>[a-zA-Z0-9-]+))/(?<namespace>[^?]+)""").matchEntire(
                     url
                 )?.let { match ->
@@ -39,6 +40,7 @@ public class CloudwatchMetricSink(
                     val namespace = match.groups["namespace"]?.value ?: "nonamespace"
                     val region = Region.of(match.groups["region"]!!.value.lowercase())
                     CloudwatchMetricSink(
+                        name,
                         context,
                         namespace,
                         region,
@@ -71,7 +73,7 @@ public class CloudwatchMetricSink(
         queue.addAll(reportingInfo.metricSums.map {
             MetricDatum.builder()
                 .value(it.value)
-                .metricName((it.type.service?.toString() ?: "Overall") + "/" + it.type.name)
+                .metricName((it.type.service?.name ?: "Overall") + "/" + it.type.name)
                 .dimensions(
                     Dimension.builder()
                         .name("context")

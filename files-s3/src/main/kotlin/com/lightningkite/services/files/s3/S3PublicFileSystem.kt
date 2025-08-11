@@ -22,30 +22,33 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.jvm.JvmInline
 import kotlin.jvm.optionals.getOrNull
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
 /**
  * An implementation of [PublicFileSystem] that uses AWS S3 for storage.
  */
 public class S3PublicFileSystem(
+    override val name: String,
     public val region: Region,
     public val credentialProvider: AwsCredentialsProvider,
     public val bucket: String,
     public val signedUrlDuration: Duration? = null,
     override val context: SettingContext
 ) : PublicFileSystem {
-    
+
     private val signedUrlDurationJava: java.time.Duration? = signedUrlDuration?.toJavaDuration()
-    
+
     override val rootUrls: List<String> = listOf(
         "https://${bucket}.s3.${region.id()}.amazonaws.com/",
         "https://s3-${region.id()}.amazonaws.com/${bucket}/",
     )
-    
+
     private var credsOnHand: AwsCredentials? = null
     private var credsOnHandMs: Long = 0
     private var credsDirect: DirectAwsCredentials? = null
-    
+
     public data class DirectAwsCredentials(
         val access: String,
         val secret: String,
@@ -59,7 +62,7 @@ public class S3PublicFileSystem(
      */
     public fun creds(): DirectAwsCredentials {
         val onHand = credsDirect
-        return if(onHand == null || System.currentTimeMillis() > credsOnHandMs) {
+        return if (onHand == null || System.currentTimeMillis() > credsOnHandMs) {
             val x = credentialProvider.resolveCredentials()
             credsOnHand = x
             val y = DirectAwsCredentials(
@@ -68,20 +71,21 @@ public class S3PublicFileSystem(
                 token = (x as? AwsSessionCredentials)?.sessionToken(),
             )
             credsDirect = y
-            credsOnHandMs = x.expirationTime().getOrNull()?.toEpochMilli() ?: (System.currentTimeMillis() + 24L*60*60*1000)
+            credsOnHandMs =
+                x.expirationTime().getOrNull()?.toEpochMilli() ?: (System.currentTimeMillis() + 24L * 60 * 60 * 1000)
             y
         } else onHand
     }
-    
+
     private var lastSigningKey: SecretKeySpec? = null
     private var lastSigningKeyDate: String = ""
-    
+
     /**
      * Gets a signing key for the given date.
      */
     public fun signingKey(date: String): SecretKeySpec {
         val lastSigningKey = lastSigningKey
-        if(lastSigningKey == null || lastSigningKeyDate != date) {
+        if (lastSigningKey == null || lastSigningKeyDate != date) {
             val secretKey = creds().secret
             val newKey = "AWS4$secretKey".toByteArray()
                 .let { date.toByteArray().mac(it) }
@@ -104,7 +108,7 @@ public class S3PublicFileSystem(
             .credentialsProvider(credentialProvider)
             .build()
     }
-    
+
     /**
      * The S3 async client.
      */
@@ -114,7 +118,7 @@ public class S3PublicFileSystem(
             .credentialsProvider(credentialProvider)
             .build()
     }
-    
+
     /**
      * The S3 presigner.
      */
@@ -136,7 +140,7 @@ public class S3PublicFileSystem(
         val path = url.substringAfter(rootUrls.first()).substringBefore('?')
         return S3FileObject(this, File(path))
     }
-    
+
     /**
      * Checks the health of the S3 connection by performing a test write and read.
      */
@@ -144,10 +148,10 @@ public class S3PublicFileSystem(
         return try {
             val testFile = root.resolve("health-check/test-file.txt")
             val testContent = "Test Content ${System.currentTimeMillis()}"
-            
+
             // Test write
             testFile.put(TypedData(Data.Text(testContent), MediaType.Text.Plain))
-            
+
             // Test read
             val readContent = testFile.get()
             if (readContent == null) {
@@ -156,7 +160,7 @@ public class S3PublicFileSystem(
                     additionalMessage = "Failed to read test file"
                 )
             }
-            
+
             val readText = readContent.data.text()
             if (readText != testContent) {
                 return HealthStatus(
@@ -164,10 +168,10 @@ public class S3PublicFileSystem(
                     additionalMessage = "Test content did not match: expected '$testContent', got '$readText'"
                 )
             }
-            
+
             // Test delete
             testFile.delete()
-            
+
             HealthStatus(level = HealthStatus.Level.OK)
         } catch (e: Exception) {
             HealthStatus(
@@ -177,54 +181,55 @@ public class S3PublicFileSystem(
         }
     }
 
-    /**
-     * Settings for S3PublicFileSystem.
-     */
-    @Serializable
-    @JvmInline
-    public value class Settings(
-        public val url: String = "s3://bucket.region.amazonaws.com"
-    ) : Setting<PublicFileSystem> {
+    public companion object {
+        init {
+            PublicFileSystem.Settings.register("s3") { name, url, context ->
+                val regex =
+                    Regex("""s3://(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com/?""")
+                val match = regex.matchEntire(url) ?: throw IllegalArgumentException(
+                    "Invalid S3 URL. The URL should match the pattern: s3:" +
+                            "//[user]:[password]@[bucket].[region].amazonaws.com/"
+                )
 
-        public companion object : UrlSettingParser<PublicFileSystem>() {
-            init {
-                register("s3") { url, context ->
-                    val regex = Regex("""s3://(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com/?""")
-                    val match = regex.matchEntire(url) ?: throw IllegalArgumentException(
-                        "Invalid S3 URL. The URL should match the pattern: s3://[user]:[password]@[bucket].[region].amazonaws.com/"
-                    )
-                    
-                    val user = match.groups["user"]?.value ?: ""
-                    val password = match.groups["password"]?.value ?: ""
-                    val bucket = match.groups["bucket"]?.value ?: throw IllegalArgumentException("No bucket provided")
-                    val region = match.groups["region"]?.value ?: throw IllegalArgumentException("No region provided")
-                    
-                    val params = url.substringAfter("?", "").substringBefore("#", "")
-                        .takeIf { it.isNotEmpty() }
-                        ?.split("&")
-                        ?.associate { it.substringBefore("=") to it.substringAfter("=", "") }
-                        ?: emptyMap()
-                    
-                    val signedUrlDuration = params["signedUrlDuration"]?.toLongOrNull()?.let { Duration.parse("${it}s") }
-                    
-                    S3PublicFileSystem(
-                        region = Region.of(region),
-                        credentialProvider = if (user.isNotBlank() && password.isNotBlank()) {
+                val user = match.groups["user"]?.value ?: ""
+                val password = match.groups["password"]?.value ?: ""
+                val profile = match.groups["profile"]?.value ?: ""
+                val bucket = match.groups["bucket"]?.value ?: throw IllegalArgumentException("No bucket provided")
+                val region = match.groups["region"]?.value ?: throw IllegalArgumentException("No region provided")
+
+                val params = url.substringAfter("?", "").substringBefore("#", "")
+                    .takeIf { it.isNotEmpty() }
+                    ?.split("&")
+                    ?.associate { it.substringBefore("=") to it.substringAfter("=", "") }
+                    ?: emptyMap()
+
+                val signedUrlDuration = params["signedUrlDuration"]?.let {
+                    if(it == "forever" || it == "null") null
+                    else if(it.all { it.isDigit() }) it.toLong().seconds
+                    else Duration.parse(it)
+                } ?: 1.hours
+
+                S3PublicFileSystem(
+                    name = name,
+                    region = Region.of(region),
+                    credentialProvider = when {
+                        user.isNotBlank() && password.isNotBlank() -> {
                             StaticCredentialsProvider.create(object : AwsCredentials {
                                 override fun accessKeyId(): String = user
                                 override fun secretAccessKey(): String = password
                             })
-                        } else DefaultCredentialsProvider.create(),
-                        bucket = bucket,
-                        signedUrlDuration = signedUrlDuration,
-                        context = context
-                    )
-                }
+                        }
+                        profile.isNotBlank() -> {
+                            println("Using profile name $profile")
+                            DefaultCredentialsProvider.builder().profileName(profile).build()
+                        }
+                        else -> DefaultCredentialsProvider.builder().build()
+                    },
+                    bucket = bucket,
+                    signedUrlDuration = signedUrlDuration,
+                    context = context
+                )
             }
-        }
-
-        override fun invoke(context: SettingContext): PublicFileSystem {
-            return parse(url, context)
         }
     }
 }
@@ -245,7 +250,7 @@ internal fun String.sha256(): String = java.security.MessageDigest.getInstance("
  * Converts this byte array to a hexadecimal string.
  */
 internal fun ByteArray.toHex(): String = buildString {
-    for(item in this@toHex) {
+    for (item in this@toHex) {
         append(item.toUByte().toString(16).padStart(2, '0'))
     }
 }

@@ -13,10 +13,10 @@ import kotlinx.serialization.KSerializer
  * A FieldCollection who's underlying implementation is actually manipulating a MutableList.
  * This is useful for times that an actual database is not needed, and you need to move fast, such as during Unit Tests.
  */
-open class InMemoryFieldCollection<Model : Any>(
+open class InMemoryTable<Model : Any>(
     val data: MutableList<Model> = ArrayList(),
     override val serializer: KSerializer<Model>
-) : FieldCollection<Model> {
+) : Table<Model> {
 
     private val lock = ReentrantLock()
 

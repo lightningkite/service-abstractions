@@ -34,25 +34,21 @@ interface Database : Service {
     ) : Setting<Database> {
         public companion object : UrlSettingParser<Database>() {
             init {
-                register("ram") { _, context ->
-                    MetricsWrappedDatabase(
-                        InMemoryDatabase(context = context),
-                        "Database"
-                    )
+                register("ram") { name, _, context ->
+                    InMemoryDatabase(name, context = context)
                 }
-                register("ram-preload") { url, context ->
+                register("ram-preload") { name, url, context ->
                     val json = Json { this.serializersModule = context.internalSerializersModule }
-                    MetricsWrappedDatabase(
-                        InMemoryDatabase(
-                            json.parseToJsonElement(
-                                SystemFileSystem.source(Path(url.substringAfter("://"))).buffered().readByteString()
-                                    .decodeToString()
-                            ) as? JsonObject,
-                            context
-                        ), "Database"
+                    InMemoryDatabase(
+                        name,
+                        json.parseToJsonElement(
+                            SystemFileSystem.source(Path(url.substringAfter("://"))).buffered().readByteString()
+                                .decodeToString()
+                        ) as? JsonObject,
+                        context
                     )
                 }
-                register("delay") { url, context ->
+                register("delay") { name, url, context ->
                     val x = url.substringAfter("://")
                     val delayString = x.substringBefore("/")
                     val delay = delayString.toLongOrNull()?.let { it.milliseconds..it.milliseconds }
@@ -66,23 +62,23 @@ interface Database : Service {
                         }
                         ?: 350.milliseconds..750.milliseconds
                     val wraps = x.substringAfter("/")
-                    MetricsWrappedDatabase(parse(wraps.substringBefore("://"), context).delayed(delay), "Database")
+                    parse(name, wraps.substringBefore("://"), context).delayed(delay)
                 }
             }
         }
 
-        override fun invoke(context: SettingContext): Database {
-            return parse(url, context)
+        override fun invoke(name: String, context: SettingContext): Database {
+            return parse(name, url, context)
         }
     }
 
     /**
      * Returns a FieldCollection of type T that will access and manipulate data from a collection/table in the underlying database system.
      */
-    fun <T : Any> collection(serializer: KSerializer<T>, name: String): FieldCollection<T>
+    fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T>
 
     @Suppress("UNCHECKED_CAST")
-    fun <T : Any> collection(type: KType, name: String): FieldCollection<T> =
+    fun <T : Any> collection(type: KType, name: String): Table<T> =
         collection(context.internalSerializersModule.serializer(type) as KSerializer<T>, name)
 
     /**
@@ -110,6 +106,6 @@ data class HealthCheckTestModel(override val _id: String) : HasId<String>
  * A Helper function for getting a collection from a database using generics.
  * This can make collection calls much cleaner and less wordy when the types can be inferred.
  */
-inline fun <reified T : Any> Database.collection(name: String = T::class.simpleName!!): FieldCollection<T> {
+inline fun <reified T : Any> Database.collection(name: String = T::class.simpleName!!): Table<T> {
     return collection(context.internalSerializersModule.serializer<T>(), name)
 }

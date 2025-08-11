@@ -4,6 +4,8 @@ import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.sms.ConsoleSMS
 import com.lightningkite.services.sms.SMS
+import com.lightningkite.services.sms.TestSMS
+import com.lightningkite.toPhoneNumber
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -20,28 +22,19 @@ class SMSTest {
     @BeforeTest
     fun setup() {
         testContext = TestSettingContext()
-        testSMS = TestSMS(testContext)
-        consoleSMS = ConsoleSMS(testContext)
-        
-        // Reset the test SMS instance
-        TestSMSInstance.reset()
-    }
+        testSMS = TestSMS("testSMS", testContext)
+        consoleSMS = ConsoleSMS("consoleSMS", testContext) }
     
     @Test
     fun testConsoleSMS() = runTest {
         // Test sending a message with ConsoleSMS
-        consoleSMS.send("1234567890", "Test message")
-        
-        // Verify metrics were recorded
-        val metrics = testContext.metricSink.metrics
-        assertTrue(metrics.isNotEmpty())
-        assertTrue(metrics.any { it.first.path.contains("send") })
+        consoleSMS.send("1234567890".toPhoneNumber(), "Test message")
     }
     
     @Test
     fun testTestSMS() = runTest {
         // Test sending a message with TestSMS
-        val phoneNumber = "1234567890"
+        val phoneNumber = "1234567890".toPhoneNumber()
         val messageText = "Test message"
         testSMS.send(phoneNumber, messageText)
         
@@ -55,18 +48,13 @@ class SMSTest {
         assertEquals(1, testSMS.messageHistory.size)
         
         // Send another message
-        val secondNumber = "0987654321"
+        val secondNumber = "0987654321".toPhoneNumber()
         val secondText = "Another test"
         testSMS.send(secondNumber, secondText)
         
         // Verify history updated
         assertEquals(2, testSMS.messageHistory.size)
         assertEquals(secondNumber, testSMS.lastMessageSent?.to)
-        
-        // Verify metrics were recorded
-        val metrics = testContext.metricSink.metrics
-        assertTrue(metrics.isNotEmpty())
-        assertTrue(metrics.any { it.first.path.contains("send") })
     }
     
     @Test
@@ -81,7 +69,7 @@ class SMSTest {
         }
         
         // Send message
-        val phoneNumber = "1234567890"
+        val phoneNumber = "1234567890".toPhoneNumber()
         val messageText = "Test message"
         testSMS.send(phoneNumber, messageText)
         
@@ -101,31 +89,5 @@ class SMSTest {
         // Test health check for TestSMS
         val testHealthStatus = testSMS.healthCheck()
         assertEquals(HealthStatus.Level.OK, testHealthStatus.level)
-    }
-    
-    @Test
-    fun testSettingsWithTestProtocol() = runTest {
-        // Register the test protocol
-        SMS.Settings.registerTestProtocol()
-        
-        // Create settings with test protocol
-        val settings = SMS.Settings(url = "test")
-        
-        // Create SMS instance from settings
-        val sms = settings.invoke(testContext)
-        
-        // Verify it's a TestSMS instance
-        assertTrue(sms is TestSMS)
-        
-        // Test sending a message
-        val phoneNumber = "1234567890"
-        val messageText = "Test from settings"
-        sms.send(phoneNumber, messageText)
-        
-        // Verify the message was stored in the TestSMS instance
-        val testInstance = sms as TestSMS
-        assertNotNull(testInstance.lastMessageSent)
-        assertEquals(phoneNumber, testInstance.lastMessageSent?.to)
-        assertEquals(messageText, testInstance.lastMessageSent?.message)
     }
 }

@@ -31,13 +31,13 @@ public interface Cache : Service {
 
         public companion object : UrlSettingParser<Cache>() {
             init {
-                register("ram-unsafe") { url, context -> MapCache(mutableMapOf(), context) }
+                register("ram-unsafe") { name, url, context -> MapCache(name, mutableMapOf(), context) }
                 platformSpecificCacheSettings()
             }
         }
 
-        override fun invoke(context: SettingContext): Cache {
-            return parse(url, context)
+        override fun invoke(name: String, context: SettingContext): Cache {
+            return parse(name, url, context)
         }
     }
 

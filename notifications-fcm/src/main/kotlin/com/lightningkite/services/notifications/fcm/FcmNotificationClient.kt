@@ -18,13 +18,16 @@ import io.github.oshai.kotlinlogging.KotlinLogging
  * The concrete implementation of NotificationClient that will use Firebase Messaging to send push notifications to
  * clients.
  */
-public class FcmNotificationClient(context: SettingContext) : MetricTrackingNotificationService(context) {
+public class FcmNotificationClient(
+    override val name: String,
+    context: SettingContext
+) : MetricTrackingNotificationService(context) {
 
     private val log = KotlinLogging.logger("com.lightningkite.services.notifications.fcm.FcmNotificationClient")
 
     public companion object {
         init {
-            NotificationService.Settings.register("fcm") { url, context ->
+            NotificationService.Settings.register("fcm") { name, url, context ->
                 var creds = url.substringAfter("://", "")
 
                 if (!creds.startsWith('{')) {
@@ -37,7 +40,7 @@ public class FcmNotificationClient(context: SettingContext) : MetricTrackingNoti
                         .setCredentials(GoogleCredentials.fromStream(creds.byteInputStream()))
                         .build()
                 )
-                FcmNotificationClient(context)
+                FcmNotificationClient(name, context)
             }
         }
     }
@@ -159,7 +162,7 @@ public class FcmNotificationClient(context: SettingContext) : MetricTrackingNoti
                     val result = FirebaseMessaging.getInstance().sendEachForMulticast(it)
                     result.responses.forEachIndexed { index, sendResponse ->
                         log.debug { "Send $index: ${sendResponse.messageId} / ${sendResponse.exception?.message} ${sendResponse.exception?.messagingErrorCode}" }
-                        results[targets[index]] = when(val errorCode = sendResponse.exception?.messagingErrorCode) {
+                        results[targets[index]] = when (val errorCode = sendResponse.exception?.messagingErrorCode) {
                             null -> NotificationSendResult.Success
                             MessagingErrorCode.UNREGISTERED -> NotificationSendResult.DeadToken
                             else -> {
@@ -170,7 +173,7 @@ public class FcmNotificationClient(context: SettingContext) : MetricTrackingNoti
                     }
                 }
             }
-        if(errorCodes.isNotEmpty()) {
+        if (errorCodes.isNotEmpty()) {
             log.warn { "Some notifications failed to send.  Error codes received: ${errorCodes.joinToString()}" }
         }
         return results

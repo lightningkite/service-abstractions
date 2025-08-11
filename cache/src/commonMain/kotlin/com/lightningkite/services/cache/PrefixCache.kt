@@ -6,6 +6,7 @@ import kotlinx.serialization.KSerializer
 import kotlin.time.Duration
 
 public class PrefixCache(public val cache: Cache, public val prefix: String): Cache {
+    override val name: String get() = cache.name
     override val context: SettingContext
         get() = cache.context
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? = cache.get(prefix + key, serializer)

@@ -9,7 +9,10 @@ import kotlinx.serialization.builtins.serializer
 /**
  * A local implementation of the PubSub interface.
  */
-public class LocalPubSub(override val context: SettingContext) : MetricTrackingPubSub(context) {
+public class LocalPubSub(
+    override val name: String,
+    override val context: SettingContext
+) : MetricTrackingPubSub(context) {
     private val channels = mutableMapOf<String, PubSubChannel<*>>()
 
     @Suppress("UNCHECKED_CAST")
@@ -18,7 +21,7 @@ public class LocalPubSub(override val context: SettingContext) : MetricTrackingP
         if (existing != null) {
             return existing as PubSubChannel<T>
         }
-        
+
         val flow = MutableSharedFlow<T>(0)
         val channel = object : PubSubChannel<T> {
             override suspend fun collect(collector: FlowCollector<T>) {
@@ -29,7 +32,7 @@ public class LocalPubSub(override val context: SettingContext) : MetricTrackingP
                 flow.emit(value)
             }
         }
-        
+
         channels[key] = channel
         return channel
     }
@@ -40,7 +43,10 @@ public class LocalPubSub(override val context: SettingContext) : MetricTrackingP
 /**
  * A debug implementation of the PubSub interface that logs operations.
  */
-public class DebugPubSub(override val context: SettingContext) : MetricTrackingPubSub(context) {
+public class DebugPubSub(
+    override val name: String,
+    override val context: SettingContext
+) : MetricTrackingPubSub(context) {
     private val channels = mutableMapOf<String, PubSubChannel<*>>()
 
     @Suppress("UNCHECKED_CAST")
@@ -49,7 +55,7 @@ public class DebugPubSub(override val context: SettingContext) : MetricTrackingP
         if (existing != null) {
             return existing as PubSubChannel<T>
         }
-        
+
         println("[DEBUG_PUBSUB] Created channel $key")
         val flow = MutableSharedFlow<T>(0)
         val channel = object : PubSubChannel<T> {
@@ -62,7 +68,7 @@ public class DebugPubSub(override val context: SettingContext) : MetricTrackingP
                 flow.emit(value)
             }
         }
-        
+
         channels[key] = channel
         return channel
     }

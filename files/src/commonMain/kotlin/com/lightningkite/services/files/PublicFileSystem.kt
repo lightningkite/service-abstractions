@@ -38,34 +38,30 @@ public interface PublicFileSystem : Service {
 
         public companion object : UrlSettingParser<PublicFileSystem>() {
             init {
-                register("file") { url, context ->
+                register("file") { name, url, context ->
                     val protocol = url.substringBefore("://")
-                    if (protocol != "kotlinx-io") {
-                        throw IllegalArgumentException("KotlinxIoPublicFileSystem only supports kotlinx-io:// URLs, got $protocol")
-                    }
 
                     val path = Path(url.substringAfter("://").substringBefore("?").substringBefore("#"))
-                    val params = url.substringAfter("?", "").substringBefore("#", "")
+                    val params = url.substringAfter("?", "").substringBefore("#")
                         .takeIf { it.isNotEmpty() }
                         ?.split("&")
                         ?.associate { it.substringBefore("=") to it.substringAfter("=", "") }
                         ?: emptyMap()
                     val serveUrl = params["serveUrl"] ?: throw IllegalArgumentException("No serveUrl provided")
-                    val serveDirectory = params["serveDirectory"] ?: throw IllegalArgumentException("No serveDirectory provided")
 
                     KotlinxIoPublicFileSystem(
+                        name = name,
                         context = context,
                         kotlinxIo = SystemFileSystem,
                         rootDirectory = path,
                         serveUrl = serveUrl,
-                        serveDirectory = serveDirectory,
                     )
                 }
             }
         }
 
-        override fun invoke(context: SettingContext): PublicFileSystem {
-            return parse(url, context)
+        override fun invoke(name: String, context: SettingContext): PublicFileSystem {
+            return parse(name, url, context)
         }
     }
 }

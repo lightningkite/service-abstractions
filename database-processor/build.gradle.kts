@@ -15,8 +15,8 @@ plugins {
 }
 
 dependencies {
-    api(project(path = ":basis"))
-    api(project(path = ":database"))
+    implementation(libs.ksp)
+    implementation(libs.kotlinCompiler)
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }

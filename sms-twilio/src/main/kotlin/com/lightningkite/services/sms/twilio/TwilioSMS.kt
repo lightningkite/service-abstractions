@@ -20,6 +20,7 @@ import kotlinx.serialization.json.Json
  * An SMS implementation that sends messages using the Twilio API.
  */
 public class TwilioSMS(
+    override val name: String,
     context: SettingContext,
     private val account: String,
     private val key: String,
@@ -61,26 +62,23 @@ public class TwilioSMS(
             throw SMSException("Failed to send SMS: $errorMessage")
         }
     }
-}
 
-/**
- * Extension function for SMS.Settings to register the Twilio protocol.
- * This should be called at application startup to register the Twilio implementation.
- */
-public fun SMS.Settings.Companion.registerTwilioProtocol() {
-    registerProtocol("twilio") { context, settings ->
-        val url = settings.url
-        val regex = Regex("""twilio://(?<user>[^:]+):(?<password>[^@]+)(?:@(?<phoneNumber>.+))?""")
-        val match = regex.matchEntire(url)
-            ?: throw IllegalArgumentException("Invalid Twilio URL. The URL should match the pattern: twilio://[user]:[password]@[phoneNumber]")
-        
-        val account = match.groups["user"]?.value
-            ?: throw IllegalArgumentException("Twilio account not provided in URL")
-        val key = match.groups["password"]?.value
-            ?: throw IllegalArgumentException("Twilio key not provided in URL")
-        val from = settings.from ?: match.groups["phoneNumber"]?.value
-            ?: throw IllegalArgumentException("Twilio phone number not provided in URL or settings")
-        
-        TwilioSMS(context, account, key, from)
+    public companion object {
+        init {
+            SMS.Settings.register("twilio") { name, url, context ->
+                val regex = Regex("""twilio://(?<user>[^:]+):(?<password>[^@]+)(?:@(?<phoneNumber>.+))?""")
+                val match = regex.matchEntire(url)
+                    ?: throw IllegalArgumentException("Invalid Twilio URL. The URL should match the pattern: twilio://[user]:[password]@[phoneNumber]")
+
+                val account = match.groups["user"]?.value
+                    ?: throw IllegalArgumentException("Twilio account not provided in URL")
+                val key = match.groups["password"]?.value
+                    ?: throw IllegalArgumentException("Twilio key not provided in URL")
+                val from = match.groups["phoneNumber"]?.value
+                ?: throw IllegalArgumentException("Twilio phone number not provided in URL or settings")
+
+                TwilioSMS(name, context, account, key, from)
+            }
+        }
     }
 }

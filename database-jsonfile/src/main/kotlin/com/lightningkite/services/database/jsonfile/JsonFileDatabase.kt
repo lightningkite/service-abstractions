@@ -1,9 +1,11 @@
 package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.database.Database
-import com.lightningkite.services.database.FieldCollection
+import com.lightningkite.services.database.Table
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.database.MetricsWrappedDatabase
+import com.lightningkite.services.countMetric
+import com.lightningkite.services.database.MetricsTable
+import com.lightningkite.services.performanceMetric
 import kotlinx.io.buffered
 import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
@@ -21,7 +23,12 @@ import kotlin.collections.HashMap
  *
  * @param folder The File references a directory where you wish the data to be stored.
  */
-public class JsonFileDatabase(public val filesystem: FileSystem, public val folder: Path, override val context: SettingContext) :
+public class JsonFileDatabase(
+    override val name: String,
+    public val filesystem: FileSystem,
+    public val folder: Path,
+    override val context: SettingContext
+) :
     Database {
     init {
         SystemFileSystem.createDirectories(folder)
@@ -29,21 +36,21 @@ public class JsonFileDatabase(public val filesystem: FileSystem, public val fold
 
     public companion object {
         init {
-            Database.Settings.register("ram-unsafe-persist") { url, context ->
-
-                MetricsWrappedDatabase(
-                    JsonFileDatabase(
-                        SystemFileSystem,
-                        Path(url.substringAfter("://")), context
-                    ), "Database"
+            Database.Settings.register("ram-unsafe-persist") { name, url, context ->
+                JsonFileDatabase(
+                    name,
+                    SystemFileSystem,
+                    Path(url.substringAfter("://")), context
                 )
             }
         }
     }
 
-    public val collections: HashMap<Pair<KSerializer<*>, String>, FieldCollection<*>> = HashMap()
+    public val collections: HashMap<Pair<KSerializer<*>, String>, Table<*>> = HashMap()
 
-    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): FieldCollection<T> =
+    private val waitMetric = performanceMetric("wait")
+    private val callMetric = countMetric("call")
+    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T> =
         synchronized(collections) {
             @Suppress("UNCHECKED_CAST")
             collections.getOrPut(serializer to name) {
@@ -57,12 +64,18 @@ public class JsonFileDatabase(public val filesystem: FileSystem, public val fold
                         }
                     }
                 val json = Json { this.serializersModule = context.internalSerializersModule }
-                JsonFileFieldCollection(
+                JsonFileTable(
                     json,
                     serializer,
                     filesystem,
                     storage
-                )
-            } as FieldCollection<T>
+                ).let {
+                    MetricsTable(
+                        it,
+                        waitMetric,
+                        callMetric,
+                    )
+                }
+            } as Table<T>
         }
 }

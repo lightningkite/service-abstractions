@@ -18,7 +18,7 @@ fun main() {
     val settings = Json.decodeFromString<MyServerSettings>(settingsFile)
 
     runBlocking {
-        val cache = settings.cache(context)
+        val cache = settings.cache("cache", context)
         repeat(5) {
             val currentValue = cache.get<Int>("counter")
             println("Counter: $currentValue")

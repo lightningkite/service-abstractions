@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.jsonfile
 
-import com.lightningkite.services.database.InMemoryFieldCollection
+import com.lightningkite.services.database.InMemoryTable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -17,22 +17,18 @@ import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
 import org.slf4j.LoggerFactory
 import java.io.Closeable
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.Collections
-import kotlin.io.path.exists
-import kotlin.io.path.writeText
 
 /**
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
  * and writing the collection data into a file when closing.
  */
-internal class JsonFileFieldCollection<Model : Any>(
+internal class JsonFileTable<Model : Any>(
     val encoding: StringFormat,
     serializer: KSerializer<Model>,
     val filesystem: FileSystem,
     val file: Path
-) : InMemoryFieldCollection<Model>(
+) : InMemoryTable<Model>(
     data = Collections.synchronizedList(ArrayList()),
     serializer = serializer
 ), Closeable {

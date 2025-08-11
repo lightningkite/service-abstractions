@@ -31,7 +31,8 @@ class JavaSmtpEmailServiceTest {
         }
         val creds = credentials.readText().let { Json.decodeFromString<SmtpConfig>(credentials.readText()) }
         JavaSmtpEmailService(
-            TestSettingContext(),
+            name = "email",
+            context = TestSettingContext(),
             hostName = creds.hostName,
             port = creds.port,
             username = creds.username,

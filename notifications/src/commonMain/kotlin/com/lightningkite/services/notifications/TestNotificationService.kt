@@ -7,6 +7,7 @@ import com.lightningkite.services.SettingContext
  * It tracks sent notifications and can optionally print them to the console.
  */
 public class TestNotificationService(
+    override val name: String,
     context: SettingContext
 ) : MetricTrackingNotificationService(context) {
 
@@ -34,6 +35,8 @@ public class TestNotificationService(
      */
     public var onMessageSent: ((Message) -> Unit)? = null
 
+    private val console by lazy { ConsoleNotificationService(name, context) }
+
     /**
      * Sends a notification to the specified targets for testing purposes.
      * 
@@ -51,7 +54,7 @@ public class TestNotificationService(
         
         if (printToConsole) {
             // Use the ConsoleNotificationService to print the message
-            ConsoleNotificationService(context).send(targets, data)
+            console.send(targets, data)
         }
         
         return targets.associateWith { NotificationSendResult.Success }
@@ -64,14 +67,5 @@ public class TestNotificationService(
         lastMessageSent = null
         onMessageSent = null
         printToConsole = false
-    }
-
-    public companion object {
-        /**
-         * Creates a TestNotificationService with the given context.
-         * This factory method is used by the Settings class.
-         */
-        public fun create(context: SettingContext): TestNotificationService = 
-            TestNotificationService(context)
     }
 }

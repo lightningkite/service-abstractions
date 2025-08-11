@@ -2,6 +2,7 @@ package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.MetricSink
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.files.test.FileSystemTests
 import com.lightningkite.services.test.performance
@@ -31,19 +32,10 @@ import kotlin.time.Duration.Companion.minutes
 class S3PublicFileSystemTest : FileSystemTests() {
     
     override val system: S3PublicFileSystem? by lazy {
-        S3PublicFileSystem(
-            region = Region.US_WEST_2,
-            bucket = "lightningkite-unit-test-bucket",
-            signedUrlDuration = 15.minutes,
-            credentialProvider = DefaultCredentialsProvider.builder().profileName("lk").build(),
-            context = object: SettingContext {
-                override val projectName: String get() = "files"
-                override val internalSerializersModule: SerializersModule = EmptySerializersModule()
-                override val metricSink: MetricSink = MetricSink.None(this)
-                override val secretBasis: ByteArray = byteArrayOf()
-
-            }
-        )
+        S3PublicFileSystem
+        PublicFileSystem.Settings(
+            "s3://lk@lightningkite-unit-test-bucket.us-west-2.amazonaws.com"
+        ).invoke("test", TestSettingContext()) as? S3PublicFileSystem
     }
     
     override fun uploadHeaders(builder: HttpRequestBuilder) {

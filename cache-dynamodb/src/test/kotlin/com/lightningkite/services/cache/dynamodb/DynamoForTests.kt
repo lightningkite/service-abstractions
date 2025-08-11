@@ -1,63 +1,38 @@
 package com.lightningkite.services.cache.dynamodb
 
+import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.cache.dynamodb.DynamoDbCache
 import com.lightningkite.services.cache.dynamodb.embeddedDynamo
 import com.lightningkite.services.cache.dynamodb.fromDynamo
 import com.lightningkite.services.cache.dynamodb.toDynamo
+import com.lightningkite.services.cache.get
+import com.lightningkite.services.cache.set
 import com.lightningkite.services.cache.test.CacheTest
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.TestResult
 import kotlinx.serialization.builtins.SetSerializer
 import kotlinx.serialization.builtins.serializer
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-object DynamoForTests {
-    var d = DynamoDbCache({ embeddedDynamo() })
-
-}
-
 class DynamoTest : CacheTest() {
-    override val cache: Cache?
-        get() = DynamoForTests.d
+    init { DynamoDbCache }
+    override val cache: DynamoDbCache
+        get() = Cache.Settings("dynamodb-local").invoke("test", TestSettingContext()) as DynamoDbCache
+
+    override fun runSuspendingTest(body: suspend CoroutineScope.() -> Unit) = runBlocking { body() }
 
     @Test fun parsing() {
         val target = setOf("asdf", "fdsa")
         val serializer = SetSerializer(String.serializer())
-        assertEquals(target, serializer.fromDynamo(serializer.toDynamo(target)))
+        assertEquals(target, serializer.fromDynamo(serializer.toDynamo(target, cache.context), cache.context))
     }
 
-    @Test override fun expirationTest() {
-        val cache = cache ?: run {
-            println("Could not test because the cache is not supported on this system.")
-            return
-        }
-        runBlocking {
-            val key = "x"
-            assertEquals(null, cache.get<Int>(key))
-            cache.set<Int>(key, 1, 2.seconds)
-            assertEquals(1, cache.get<Int>(key))
-            delay(3000)
-            assertEquals(null, cache.get<Int>(key))
-            cache.set<Int>(key, 1, 2.seconds)
-            cache.add(key, 1, 2.seconds)
-            assertEquals(2, cache.get<Int>(key))
-            delay(9000)
-            assertEquals(null, cache.get<Int>(key))
-            cache.add(key, 1, 2.seconds)
-            assertEquals(1, cache.get<Int>(key))
-            delay(3000)
-            assertEquals(null, cache.get<Int>(key))
-        }
-        runBlocking {
-            val key = "y"
-            assertEquals(null, cache.get<Int>(key))
-            cache.add(key, 1, 2.seconds)
-            assertEquals(1, cache.get<Int>(key))
-            delay(3000)
-            assertEquals(null, cache.get<Int>(key))
-        }
-    }
+    override val waitScale: Duration
+        get() = 2.seconds
 }

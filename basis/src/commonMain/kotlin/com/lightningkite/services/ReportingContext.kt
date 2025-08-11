@@ -31,11 +31,10 @@ public val reportingLogger: KLogger = KotlinLogging.logger("com.lightningkite.li
 
 public suspend inline fun <T> topLevelReportingContext(
     context: String,
-    settings: SettingContext,
+    destination: MetricSink,
     crossinline action: suspend CoroutineScope.() -> T
 ): T {
     val parent = currentReportingContext()
-    val destination = settings.metricSink
     reportingLogger.info { "Handling $context" }
     val element = ReportingContextElement(context, destination, parent)
     return try {

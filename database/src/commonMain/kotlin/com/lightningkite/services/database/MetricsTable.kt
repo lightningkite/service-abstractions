@@ -8,13 +8,12 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.KSerializer
 import kotlin.time.Clock
 
-class MetricsFieldCollection<M : Any>(
-    override val wraps: FieldCollection<M>,
-    metricsKeyName: String = "Database",
+class MetricsTable<M : Any>(
+    override val wraps: Table<M>,
     val waitTimeMetric: MetricType.Performance,
     val callCountMetric: MetricType.Count,
 ) :
-    FieldCollection<M> {
+    Table<M> {
     override val serializer: KSerializer<M> get() = wraps.serializer
 
     override suspend fun find(

@@ -1,7 +1,18 @@
 package com.lightningkite.services.database
 
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.AbstractDecoder
+import kotlinx.serialization.encoding.AbstractEncoder
+import kotlinx.serialization.encoding.CompositeDecoder
+import kotlinx.serialization.encoding.CompositeEncoder
+import kotlinx.serialization.internal.GeneratedSerializer
+import kotlinx.serialization.modules.SerializersModule
+import kotlin.text.get
 
 interface SerializableProperty<A, B> {
     val name: String
@@ -17,6 +28,18 @@ interface SerializableProperty<A, B> {
                 it
             )
         }
+
+//    @OptIn(InternalSerializationApi::class)
+//    class Generated<A, B>(
+//        val parent: GeneratedSerializer<A>,
+//        val index: Int,
+//    ): SerializableProperty<A, B> {
+//        override val name: String = parent.descriptor.getElementName(index)
+//        override val serializer: KSerializer<Any?> = it as KSerializer<Any?>
+//        override fun setCopy(receiver: A, value: B): A = (parent as KSerializer<A>).set(receiver, index, it as KSerializer<Any?>, value)
+//        override fun get(receiver: A): B = (parent as KSerializer<A>).get(receiver, index, it)
+//        override val serializableAnnotations: List<SerializableAnnotation> = serializer.descriptor.getElementAnnotations(index).mapNotNull { SerializableAnnotation.parseOrNull(it) }
+//    }
 
     companion object {
     }

@@ -12,7 +12,7 @@ import com.lightningkite.services.database.DataClassPath
 import com.lightningkite.services.database.DataClassPathPartial
 import com.lightningkite.services.database.DataClassPathSerializer
 import com.lightningkite.services.database.EntryChange
-import com.lightningkite.services.database.FieldCollection
+import com.lightningkite.services.database.Table
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.SortPart
 import com.lightningkite.services.database.collectChunked
@@ -35,12 +35,12 @@ import org.bson.conversions.Bson
 import java.util.concurrent.TimeUnit
 import kotlin.reflect.KClass
 
-public class MongoFieldCollection<Model : Any>(
+public class MongoTable<Model : Any>(
     override val serializer: KSerializer<Model>,
     public val atlasSearch: Boolean,
     private val access: MongoCollectionAccess,
     private val context: SettingContext
-) : FieldCollection<Model> {
+) : Table<Model> {
     public var bson: KBson = KBson(context.internalSerializersModule, Configuration())
 
     public val indexedTextFields: List<DataClassPathPartial<Model>>? by lazy {

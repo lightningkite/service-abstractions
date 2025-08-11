@@ -15,10 +15,10 @@ import kotlin.time.DurationUnit
  * @param wraps The actual underlying FieldCollection to retrieve data from.
  * @param milliseconds The amount of delay that will be added to every call.
  */
-open class DelayedFieldCollection<Model : Any>(
-    override val wraps: FieldCollection<Model>,
+open class DelayedTable<Model : Any>(
+    override val wraps: Table<Model>,
     val range: ClosedRange<Duration>
-) : FieldCollection<Model> {
+) : Table<Model> {
     suspend fun doDelay() {
         delay(
             Random.nextDouble(
@@ -174,11 +174,13 @@ open class DelayedFieldCollection<Model : Any>(
     }
 }
 
-fun <Model : Any> FieldCollection<Model>.delayed(range: ClosedRange<Duration>): FieldCollection<Model> =
-    DelayedFieldCollection(this, range)
+fun <Model : Any> Table<Model>.delayed(range: ClosedRange<Duration>): Table<Model> =
+    DelayedTable(this, range)
 
 fun Database.delayed(range: ClosedRange<Duration>): Database = object : Database {
-    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): FieldCollection<T> {
+    override val name: String
+        get() = this@delayed.name
+    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T> {
         return this@delayed.collection<T>(serializer, name).delayed(range)
     }
 

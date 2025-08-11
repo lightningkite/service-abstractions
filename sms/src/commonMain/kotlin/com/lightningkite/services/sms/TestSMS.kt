@@ -7,7 +7,10 @@ import com.lightningkite.services.SettingContext
  * A test implementation of SMS that stores messages for verification in tests.
  * This implementation is useful for unit testing.
  */
-public class TestSMS(context: SettingContext) : MetricTrackingSMS(context) {
+public class TestSMS(
+    override val name: String,
+    context: SettingContext
+) : MetricTrackingSMS(context) {
 
     /**
      * Represents an SMS message with recipient and content.

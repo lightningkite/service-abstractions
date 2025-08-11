@@ -13,6 +13,7 @@ import kotlin.time.Duration
  * You should select a map implementation that matches your concurrency needs.
  */
 public open class MapCache(
+    override val name: String,
     public val entries: MutableMap<String, Entry>,
     override val context: SettingContext,
 ) : MetricTrackingCache() {

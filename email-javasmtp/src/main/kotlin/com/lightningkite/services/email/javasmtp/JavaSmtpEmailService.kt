@@ -25,6 +25,7 @@ import kotlin.use
  * An email client that will send real emails through SMTP.
  */
 public class JavaSmtpEmailService(
+    override val name: String,
     override val context: SettingContext,
     public val hostName: String,
     public val port: Int,
@@ -45,13 +46,14 @@ public class JavaSmtpEmailService(
             ?.mapValues { it.value.map { it.second } }
             ?: emptyMap()
         init {
-            EmailService.Settings.register("smtp") { url, context ->
+            EmailService.Settings.register("smtp") { name, url, context ->
                 Regex("""smtp://(?:(?<username>[^:]+):(?<password>.+)@)?(?<host>[^:@]+):(?<port>[0-9]+)(?:\?(?<params>.*))?""")
                     .matchEntire(url)
                     ?.let { match ->
                         val port = match.groups["port"]!!.value.toInt()
                         val params = parseParameterString(match.groups["params"]?.value ?: "")
                         JavaSmtpEmailService(
+                            name = name,
                             context = context,
                             hostName = match.groups["host"]!!.value,
                             port = port,

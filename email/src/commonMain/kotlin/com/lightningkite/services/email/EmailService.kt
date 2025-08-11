@@ -28,13 +28,13 @@ public interface EmailService : Service {
     ) : Setting<EmailService> {
         public companion object : UrlSettingParser<EmailService>() {
             init {
-                register("console") { _, context -> ConsoleEmailService(context) }
-                register("test") { _, context -> TestEmailService(context) }
+                register("console") { name, _, context -> ConsoleEmailService(name, context) }
+                register("test") { name, _, context -> TestEmailService(name, context) }
             }
         }
 
-        override fun invoke(context: SettingContext): EmailService {
-            return parse(url, context)
+        override fun invoke(name: String, context: SettingContext): EmailService {
+            return parse(name, url, context)
         }
     }
 
