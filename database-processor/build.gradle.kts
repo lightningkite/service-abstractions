@@ -26,7 +26,6 @@ kotlin {
         optIn.add("kotlin.time.ExperimentalTime")
         optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
-//    explicitApi()
     sourceSets.main {
         kotlin.srcDir("build/generated/ksp/main/kotlin")
     }

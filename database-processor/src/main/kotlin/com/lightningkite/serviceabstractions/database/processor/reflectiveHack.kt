@@ -1,4 +1,4 @@
-package com.lightningkite.lightningserver.db
+package com.lightningkite.services.database.processor
 
 import com.google.devtools.ksp.containingFile
 import com.google.devtools.ksp.symbol.KSClassDeclaration

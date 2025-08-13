@@ -1,8 +1,8 @@
-package com.lightningkite.lightningdb
+package com.lightningkite.services.database.processor
 
 import com.google.devtools.ksp.symbol.*
-import com.lightningkite.lightningserver.db.defaultText
-import com.lightningkite.lightningserver.db.isMarkedNullable
+import com.lightningkite.services.database.processor.defaultText
+import com.lightningkite.services.database.processor.isMarkedNullable
 
 data class Field(
     val name: String,

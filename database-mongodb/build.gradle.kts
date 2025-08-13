@@ -21,6 +21,8 @@ dependencies {
     testImplementation(libs.coroutinesTesting)
     implementation(libs.embedMongo)
     implementation(libs.mongoDriver)
+//    implementation(libs.ktMongo)
+//    implementation(libs.ktMongoMultiplatform)
     api(libs.kBson)
 }
 

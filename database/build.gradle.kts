@@ -57,6 +57,7 @@ kotlin {
         }
         val commonTest by getting {
             dependencies {
+                implementation(project(":test"))
                 implementation(libs.kotlinTest)
                 implementation(libs.coroutinesTesting)
             }
@@ -74,6 +75,12 @@ kotlin {
         }
         val jvmTest by getting {
         }
+    }
+}
+
+dependencies {
+    configurations.filter { it.name.startsWith("ksp") }.forEach {
+        add(it.name, project(":database-processor"))
     }
 }
 

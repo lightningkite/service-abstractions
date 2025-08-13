@@ -55,6 +55,7 @@ shadow = "8.1.1"
 vanniktechMavenPublish = "0.34.0"
 webauthn4jCore = "0.29.4.RELEASE"
 xmlUtilJvm = "0.91.1"
+ktMongo = "0.20.1"
 versionCatalogUpdate = "1.0.0"
 
 [libraries]
@@ -125,6 +126,8 @@ memcached = { module = "com.googlecode.xmemcached:xmemcached", version.ref = "me
 metadataExtractor = { module = "com.drewnoakes:metadata-extractor", version.ref = "metadataExtractor" }
 mongoBson = { module = "org.mongodb:bson", version.ref = "bson" }
 mongoDriver = { module = "org.mongodb:mongodb-driver-kotlin-coroutine", version.ref = "mongoDriver" }
+ktMongo = { module = "dev.opensavvy.ktmongo:driver-coroutines", version.ref = "ktMongo" }
+ktMongoMultiplatform = { module = "dev.opensavvy.ktmongo:bson-multiplatform", version.ref = "ktMongo" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 oneTimePass = { module = "dev.turingcomplete:kotlin-onetimepassword", version.ref = "oneTimePass" }
 orgCrac = { module = "io.github.crac:org-crac", version.ref = "orgCrac" }

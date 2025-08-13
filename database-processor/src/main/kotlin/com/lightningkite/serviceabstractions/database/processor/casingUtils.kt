@@ -1,4 +1,4 @@
-package com.lightningkite.lightningdb
+package com.lightningkite.services.database.processor
 
 import java.util.*
 

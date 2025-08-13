@@ -11,6 +11,7 @@ import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.internal.GeneratedSerializer
+import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.text.get
 
@@ -29,17 +30,22 @@ interface SerializableProperty<A, B> {
             )
         }
 
-//    @OptIn(InternalSerializationApi::class)
-//    class Generated<A, B>(
-//        val parent: GeneratedSerializer<A>,
-//        val index: Int,
-//    ): SerializableProperty<A, B> {
-//        override val name: String = parent.descriptor.getElementName(index)
-//        override val serializer: KSerializer<Any?> = it as KSerializer<Any?>
-//        override fun setCopy(receiver: A, value: B): A = (parent as KSerializer<A>).set(receiver, index, it as KSerializer<Any?>, value)
-//        override fun get(receiver: A): B = (parent as KSerializer<A>).get(receiver, index, it)
-//        override val serializableAnnotations: List<SerializableAnnotation> = serializer.descriptor.getElementAnnotations(index).mapNotNull { SerializableAnnotation.parseOrNull(it) }
-//    }
+    @Suppress("UNCHECKED_CAST")
+    @OptIn(InternalSerializationApi::class)
+    class Generated<A, B>(
+        val parent: GeneratedSerializer<A>,
+        val index: Int,
+    ) : SerializableProperty<A, B> {
+        override val name: String by lazy { parent.descriptor.getElementName(index) }
+        override val serializer: KSerializer<B> by lazy { parent.childSerializers()[index] as KSerializer<B> }
+        override fun setCopy(receiver: A, value: B): A = parent.set(receiver, index, serializer, value)
+        override fun get(receiver: A): B = (parent as KSerializer<A>).get(receiver, index, serializer)
+        override val serializableAnnotations: List<SerializableAnnotation> by lazy {
+            serializer.descriptor.getElementAnnotations(
+                index
+            ).mapNotNull { SerializableAnnotation.parseOrNull(it) }
+        }
+    }
 
     companion object {
     }
@@ -68,34 +74,24 @@ fun <T> KSerializer<T>.tryFindAnnotations(propertyName: String): List<Annotation
     else return descriptor.getElementAnnotations(i)
 }
 
-private val serClassToList = HashMap<String, (Array<KSerializer<*>>) -> Array<SerializableProperty<*, *>>>()
+private val serNameToProperties = HashMap<String, Array<SerializableProperty<*, *>>>()
 
-@OptIn(ExperimentalSerializationApi::class)
+@OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
 val <T> KSerializer<T>.serializableProperties: Array<SerializableProperty<T, *>>?
-    get() = (serClassToList[this.descriptor.serialName]?.invoke(
-        tryTypeParameterSerializers() ?: arrayOf()
-    )) as? Array<SerializableProperty<T, *>>
-        ?: (this as? VirtualStruct.Concrete)?.serializableProperties as? Array<SerializableProperty<T, *>>
-
-@OptIn(ExperimentalSerializationApi::class)
-fun <T, S : KSerializer<T>> S.properties(action: (Array<KSerializer<Nothing>>) -> Array<SerializableProperty<T, *>>) {
-    @Suppress("UNCHECKED_CAST")
-    serClassToList[descriptor.serialName] = action as (Array<KSerializer<*>>) -> Array<SerializableProperty<*, *>>
-}
-
-
-//object UUID_mostSignificantBits: SerializableProperty<UUID, Long> {
-//    override val name: String = "mostSignificantBits"
-//    override fun get(receiver: UUID): Long = receiver.mostSignificantBits
-//    override fun setCopy(receiver: UUID, value: Long): UUID = UUID(value, receiver.leastSignificantBits)
-//    override val serializer: KSerializer<Long> = Long.serializer()
-//}
-//
-//inline fun <reified T> List_first() = List_first(serializer<T>())
-//data class List_first<T>(val t: KSerializer<T>): SerializableProperty<List<T>, T> {
-//    override val name: String = "first"
-//    override val serializer: KSerializer<T> = t
-//    override fun get(receiver: List<T>): T = receiver.first()
-//    override fun setCopy(receiver: List<T>, value: T): List<T> = listOf(value) + receiver.drop(1)
-//}
+    get() {
+        return if (this !is GeneratedSerializer<*>) null
+        else if (this.typeParametersSerializers().isEmpty()) serNameToProperties.getOrPut(this.descriptor.serialName) {
+            (0..<descriptor.elementsCount).map<Int, SerializableProperty<T, *>> { index ->
+                SerializableProperty.Generated<T, Any?>(
+                    this as GeneratedSerializer<T>,
+                    index
+                )
+            }.toTypedArray()
+        } as Array<SerializableProperty<T, *>> else (0..<descriptor.elementsCount).map<Int, SerializableProperty<T, *>> { index ->
+            SerializableProperty.Generated<T, Any?>(
+                this as GeneratedSerializer<T>,
+                index
+            )
+        }.toTypedArray()
+    }
