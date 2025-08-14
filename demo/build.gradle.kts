@@ -15,14 +15,13 @@ plugins {
 }
 
 dependencies {
-//    api(project(":database"))
-//    api(project(":database-processor"))
-//    api(project(":database-test"))
-//    api(project(":database-mongodb"))
-//    api(project(":database-jsonfile"))
-//    api(project(":database-postgres"))
+    api(project(":database"))
+    api(project(":database-processor"))
+    api(project(":database-test"))
+    api(project(":database-mongodb"))
+    api(project(":database-jsonfile"))
+    api(project(":database-postgres"))
     api(project(":email"))
-    api(project(":email-mailgun"))
     api(project(":sms"))
     api(project(":sms-twilio"))
     api(project(":metrics-cloudwatch"))
@@ -36,7 +35,6 @@ dependencies {
     api(project(":pubsub-redis"))
     api(project(":files"))
     api(project(":files-clamav"))
-    api(project(":files-azbs"))
     api(project(":files-s3"))
     api(project(":exceptions-sentry"))
 

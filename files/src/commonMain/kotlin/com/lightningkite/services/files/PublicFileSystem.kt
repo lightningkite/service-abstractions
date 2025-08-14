@@ -4,6 +4,7 @@ import com.lightningkite.services.Service
 import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
+import com.lightningkite.services.data.KFile
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.Serializable
@@ -41,7 +42,7 @@ public interface PublicFileSystem : Service {
                 register("file") { name, url, context ->
                     val protocol = url.substringBefore("://")
 
-                    val path = Path(url.substringAfter("://").substringBefore("?").substringBefore("#"))
+                    val path = url.substringAfter("://").substringBefore("?").substringBefore("#")
                     val params = url.substringAfter("?", "").substringBefore("#")
                         .takeIf { it.isNotEmpty() }
                         ?.split("&")
@@ -52,8 +53,7 @@ public interface PublicFileSystem : Service {
                     KotlinxIoPublicFileSystem(
                         name = name,
                         context = context,
-                        kotlinxIo = SystemFileSystem,
-                        rootDirectory = path,
+                        rootKFile = KFile(path),
                         serveUrl = serveUrl,
                     )
                 }

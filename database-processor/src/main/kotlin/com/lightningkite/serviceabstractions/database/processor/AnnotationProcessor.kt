@@ -16,13 +16,14 @@ import java.util.Locale.getDefault
 import kotlin.collections.HashSet
 import kotlin.collections.distinct
 import kotlin.collections.plus
+import kotlin.text.appendLine
 import kotlin.text.substringAfterLast
 
 
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 3) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 9) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("DatabaseModel") != null || annotation("GenerateDataClassPaths") != null
 
@@ -105,9 +106,13 @@ class TableGenerator(
                             val classReference: String = declaration.safeLocalReference()
                             val fields = declaration.fields()
                             val typeReference: String = declaration.safeLocalReference() + (declaration.typeParameters.takeUnless { it.isEmpty() }
-                                ?.joinToString(", ", "<", ">") { it.name.asString() } ?: "")
+                                ?.joinToString(", ", "<", ">") {  it.name.asString() } ?: "")
                             val simpleName: String = declaration.simpleName.getShortName()
+
                             if(declaration.typeParameters.isNotEmpty()) {
+                                appendLine("inline fun <${declaration.typeParameters.joinToString(", ") {
+                                    "reified " + it.name.asString() + ": " + (it.bounds.firstOrNull()?.toKotlin() ?: "Any?")
+                                }}> $classReference.Companion.path(): DataClassPath<$typeReference, $typeReference> = com.lightningkite.services.database.path<$typeReference>()")
                                 for ((index, field) in fields.withIndex()) {
                                     val serPropName = "field${
                                         field.name.replaceFirstChar {
@@ -120,7 +125,7 @@ class TableGenerator(
                                         it.name.asString() + ": " + (it.bounds.firstOrNull()?.toKotlin() ?: "Any?")
                                     }}> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(this as GeneratedSerializer<$typeReference>, $index)")
                                     appendLine(
-                                        "val <ROOT, ${
+                                        "@get:JvmName(\"path$serPropName\") val <ROOT, ${
                                             declaration.typeParameters.joinToString(", ") {
                                                 it.name.asString() + ": " + (it.bounds.firstOrNull()?.toKotlin() ?: "Any?")
                                             }
@@ -128,11 +133,12 @@ class TableGenerator(
                                     )
                                 }
                             } else {
+                                appendLine("inline val $typeReference.Companion.path: DataClassPath<$typeReference, $typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
                                 appendLine("private val ${simpleName}__properties = $classReference.serializer().serializableProperties!!")
                                 for ((index, field) in fields.withIndex()) {
                                     val serPropName = "${simpleName}_${field.name}"
                                     appendLine("val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = ${simpleName}__properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
-                                    appendLine("val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[$serPropName]")
+                                    appendLine("@get:JvmName(\"path$serPropName\") val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[$serPropName]")
                                 }
                             }
                         }

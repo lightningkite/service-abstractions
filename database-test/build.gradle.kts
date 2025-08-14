@@ -43,6 +43,7 @@ kotlin {
             dependencies {
                 api(project(path = ":basis"))
                 api(project(path = ":database"))
+                api(project(path = ":test"))
             }
             kotlin {
                 compilerOptions {
@@ -71,6 +72,12 @@ kotlin {
         }
         val jvmTest by getting {
         }
+    }
+}
+
+dependencies {
+    configurations.filter { it.name.startsWith("ksp") }.forEach {
+        add(it.name, project(":database-processor"))
     }
 }
 

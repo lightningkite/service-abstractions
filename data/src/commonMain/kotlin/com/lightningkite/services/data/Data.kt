@@ -11,13 +11,14 @@ public sealed interface Data: AutoCloseable {
     public fun bytes(): ByteArray
     public fun write(to: kotlinx.io.Sink)
     public fun text(): String
+    public fun source(): kotlinx.io.Source
 
     /**
      * You can only consume this once.
      * Make sure you close it.
      */
     public class Sink(override val size: Long = -1, public val emit: (kotlinx.io.Sink) -> Unit): Data {
-        override fun write(to: kotlinx.io.Sink) { emit(to) }
+        override fun write(to: kotlinx.io.Sink) { to.use { emit(to) } }
         override fun text(): String {
             val dest = Buffer()
             emit(dest)
@@ -28,6 +29,7 @@ public sealed interface Data: AutoCloseable {
             emit(dest)
             return dest.readByteArray()
         }
+        override fun source(): kotlinx.io.Source = Buffer().also { emit(it) }
         override fun close() {}
     }
 
@@ -46,14 +48,16 @@ public sealed interface Data: AutoCloseable {
         override fun bytes(): ByteArray = source.use { source ->
             source.readByteArray()
         }
+        override fun source(): kotlinx.io.Source = source
         override fun close() = source.close()
     }
     public class Bytes(public val data: ByteArray): Data {
         override val size: Long
             get() = data.size.toLong()
-        override fun write(to: kotlinx.io.Sink): Unit = to.write(data, 0, data.size)
+        override fun write(to: kotlinx.io.Sink): Unit = to.use { to.write(data, 0, data.size) }
         override fun bytes(): ByteArray = data
         override fun text(): String = data.decodeToString()
+        override fun source(): kotlinx.io.Source = Buffer().also { it.write(data) }
         override fun close() = Unit
     }
     public class Text(public val data: String): Data {
@@ -62,8 +66,11 @@ public sealed interface Data: AutoCloseable {
             get() = asBytes.size.toLong()
         public val encoding: String = "UTF-8"
         override fun write(to: kotlinx.io.Sink) {
-            to.writeString(data)
+            to.use {
+                to.writeString(data)
+            }
         }
+        override fun source(): kotlinx.io.Source = Buffer().also { it.writeString(data) }
         override fun bytes(): ByteArray = asBytes
         override fun text(): String = data
         override fun close() = Unit

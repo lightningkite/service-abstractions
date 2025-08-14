@@ -22,6 +22,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.SerialKind
+import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractDecoder
 import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeDecoder
@@ -74,7 +75,12 @@ private class MinDecoder(override val serializersModule: SerializersModule, var 
     override fun decodeValue(): Any = item!!
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = decodeValue() as T
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int = throw IllegalStateException("Use MinDecoderB")
-    override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = MinDecoderB(serializersModule, item as List<*>)
+    override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = when(descriptor.kind) {
+        StructureKind.CLASS, StructureKind.OBJECT -> MinDecoderB(serializersModule, item as List<*>)
+        StructureKind.MAP -> this
+        StructureKind.LIST -> this
+        else -> TODO()
+    }
 }
 
 /**
@@ -90,16 +96,22 @@ private class MinDecoderB(override val serializersModule: SerializersModule, var
         elementIndex++
         return null
     }
+    fun decode() = items[elementIndex++]
     override fun decodeValue(): Any {
-        return items[elementIndex++]!!
+        return decode()!!
     }
-    override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = decodeValue() as T
+    override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = decode() as T
     override fun decodeSequentially(): Boolean = true
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
         if (elementIndex >= (items.size)) return CompositeDecoder.DECODE_DONE
         return elementIndex
     }
-    override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = MinDecoderB(serializersModule, decodeValue() as List<*>)
+    override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = when(descriptor.kind) {
+        StructureKind.CLASS, StructureKind.OBJECT -> MinDecoderB(serializersModule, decode() as List<*>)
+        StructureKind.MAP -> MinDecoder(serializersModule, decode())
+        StructureKind.LIST -> MinDecoder(serializersModule, decode())
+        else -> TODO()
+    }
 }
 
 
@@ -196,8 +208,10 @@ private val empty = EmptySerializersModule()
 internal fun <T, V> KSerializer<T>.get(instance: T, index: Int, childSerializer: KSerializer<V>, module: SerializersModule = empty ): V {
     val e = MinEncoderSI(module, index)
     this.serialize(e, instance)
-    val d = MinDecoder(module, e.output)
-    return childSerializer.deserialize(d)
+//    println("Child: ${childSerializer.descriptor.serialName} (${childSerializer.descriptor.kind})")
+    return e.output as V
+//    val d = MinDecoder(module, e.output)
+//    return childSerializer.deserialize(d)
 }
 
 /**
@@ -216,14 +230,13 @@ internal fun <T, V> KSerializer<T>.get(instance: T, index: Int, childSerializer:
 internal fun <T, V> KSerializer<T>.set(instance: T, index: Int, childSerializer: KSerializer<V>, value: V, module: SerializersModule = empty ): T {
     val e = MinEncoder(module)
     this.serialize(e, instance)
-    val newValue = run {
-        if(childSerializer.descriptor.kind == SerialKind.CONTEXTUAL) return@run value
-        val e2 = MinEncoder(module, )
-        childSerializer.serialize(e2, value)
-        e2.output
-    }
+    val newValue = value
     val eo = e.output as ArrayList<Any?>
+//    println("Before: $eo")
+//    println("Before Types: ${eo.joinToString(", ", "[", "]") { it?.let { it::class.simpleName } ?: "null"}}")
     eo[index] = newValue
+//    println("After : $eo")
+//    println("After  Types: ${eo.joinToString(", ", "[", "]") { it?.let { it::class.simpleName } ?: "null"}}")
     @Suppress("UNCHECKED_CAST") val d = MinDecoder(module, e.output)
     return deserialize(d)
 }

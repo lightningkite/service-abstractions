@@ -25,7 +25,7 @@ object UUIDSerializer : KSerializer<Uuid> {
     }
 
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("kotlin.uuid.Uuid", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("kotlin.uuid.Uuid/default", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: Uuid) = encoder.encodeString(value.toString())
 }
@@ -58,10 +58,10 @@ object DurationSerializer : KSerializer<Duration> {
     override fun serialize(encoder: Encoder, value: Duration) = encoder.encodeString(value.toString())
 }
 
-object InstantIso8601Serializer : KSerializer<Instant> {
+object InstantIso8601Serializer : KSerializer<kotlin.time.Instant> {
 
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("kotlinx.datetime.Instant/loose", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("kotlin.time.Instant/loose", PrimitiveKind.STRING)
 
     override fun deserialize(decoder: Decoder): Instant =
         try {

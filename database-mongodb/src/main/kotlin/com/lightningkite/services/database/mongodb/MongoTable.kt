@@ -1,7 +1,5 @@
 package com.lightningkite.services.database.mongodb
 
-import com.github.jershell.kbson.Configuration
-import com.github.jershell.kbson.KBson
 import com.lightningkite.GeoCoordinateGeoJsonSerializer
 import com.lightningkite.services.data.*
 import com.lightningkite.services.SettingContext
@@ -18,6 +16,9 @@ import com.lightningkite.services.database.SortPart
 import com.lightningkite.services.database.collectChunked
 import com.lightningkite.services.database.indexes
 import com.lightningkite.services.database.innerElement
+import com.lightningkite.services.database.mongodb.bson.Configuration
+import com.lightningkite.services.database.mongodb.bson.DefaultModule
+import com.lightningkite.services.database.mongodb.bson.KBson
 import com.lightningkite.services.database.simplify
 import com.lightningkite.services.database.walk
 import com.mongodb.MongoCommandException
@@ -29,6 +30,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.modules.overwriteWith
 import org.bson.BsonBoolean
 import org.bson.BsonDocument
 import org.bson.conversions.Bson
@@ -41,7 +43,7 @@ public class MongoTable<Model : Any>(
     private val access: MongoCollectionAccess,
     private val context: SettingContext
 ) : Table<Model> {
-    public var bson: KBson = KBson(context.internalSerializersModule, Configuration())
+    internal val bson: KBson = KBson(context.internalSerializersModule.overwriteWith(DefaultModule), Configuration())
 
     public val indexedTextFields: List<DataClassPathPartial<Model>>? by lazy {
         val ser = DataClassPathSerializer(serializer)
@@ -80,7 +82,7 @@ public class MongoTable<Model : Any>(
         if (orderBy.isNotEmpty()) return updateOneIgnoringResult(cs, Modification.Assign(model), orderBy)
         return access {
             replaceOne(
-                cs.bson(serializer, context = context),
+                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 bson.stringify(serializer, model)
             ).matchedCount != 0L
         }
@@ -95,12 +97,12 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
-        val m = simplifiedModification.bson(serializer, context = context)
+        val m = simplifiedModification.bson(serializer, bson = bson)
         return access {
             // TODO: Ugly hack for handling weird upserts
-            if (m.upsert(model, serializer, context)) {
+            if (m.upsert(model, serializer, bson)) {
                 findOneAndUpdate(
-                    cs.bson(serializer, context = context),
+                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                     m.document,
                     FindOneAndUpdateOptions()
                         .returnDocument(ReturnDocument.BEFORE)
@@ -114,7 +116,7 @@ public class MongoTable<Model : Any>(
                     ?: EntryChange(null, model)
             } else {
                 findOneAndUpdate(
-                    cs.bson(serializer, context = context),
+                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                     m.document,
                     FindOneAndUpdateOptions()
                         .returnDocument(ReturnDocument.BEFORE)
@@ -144,13 +146,13 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return false
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
-        val m = simplifiedModification.bson(serializer, context = context)
+        val m = simplifiedModification.bson(serializer, bson = bson)
         return access {
             // TODO: Ugly hack for handling weird upserts
-            if (m.upsert(model, serializer, context = context)) {
-                updateOne(cs.bson(serializer, context = context), m.document, m.options).matchedCount > 0
+            if (m.upsert(model, serializer, bson = bson)) {
+                updateOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch), m.document, m.options).matchedCount > 0
             } else {
-                if (updateOne(cs.bson(serializer, context = context), m.document, m.options).matchedCount != 0L) {
+                if (updateOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch), m.document, m.options).matchedCount != 0L) {
                     true
                 } else {
                     insertOne(bson.stringify(serializer, model))
@@ -169,10 +171,10 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
-        val m = simplifiedModification.bson(serializer, context = context)
+        val m = simplifiedModification.bson(serializer, bson = bson)
         val before = access<Model?> {
             findOneAndUpdate(
-                cs.bson(serializer, context = context),
+                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 m.document,
                 FindOneAndUpdateOptions()
                     .returnDocument(ReturnDocument.BEFORE)
@@ -198,8 +200,8 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return false
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
-        val m = simplifiedModification.bson(serializer, context = context)
-        return access { updateOne(cs.bson(serializer, context = context), m.document, m.options).matchedCount != 0L }
+        val m = simplifiedModification.bson(serializer, bson = bson)
+        return access { updateOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch), m.document, m.options).matchedCount != 0L }
     }
 
     override suspend fun updateMany(
@@ -210,11 +212,11 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return CollectionChanges()
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return CollectionChanges()
-        val m = simplifiedModification.bson(serializer, context = context)
+        val m = simplifiedModification.bson(serializer, bson = bson)
         val changes = ArrayList<EntryChange<Model>>()
         // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
         access {
-            find(cs.bson(serializer, context = context)).collectChunked(1000) { list ->
+            find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).collectChunked(1000) { list ->
                 updateMany(Filters.`in`("_id", list.map { it["_id"] }), m.document, m.options)
                 list.asSequence().map { bson.load(serializer, it) }
                     .forEach {
@@ -233,10 +235,10 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return 0
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return 0
-        val m = simplifiedModification.bson(serializer, context = context)
+        val m = simplifiedModification.bson(serializer, bson = bson)
         return access {
             updateMany(
-                cs.bson(serializer, context = context),
+                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 m.document,
                 m.options
             ).matchedCount.toInt()
@@ -248,7 +250,7 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return null
         return access {
             // TODO: Hack, needs some retry logic at a minimum
-            withDocumentClass<BsonDocument>().find(cs.bson(serializer, context = context))
+            withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
                 .let { if (orderBy.isEmpty()) it else it.sort(sort(orderBy)) }
                 .limit(1).firstOrNull()?.let {
                     val id = it["_id"]
@@ -265,7 +267,7 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         if (orderBy.isNotEmpty()) return deleteOne(condition, orderBy) != null
-        return access { deleteOne(cs.bson(serializer, context = context)).deletedCount > 0 }
+        return access { deleteOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount > 0 }
     }
 
     override suspend fun deleteMany(condition: Condition<Model>): List<Model> {
@@ -274,7 +276,7 @@ public class MongoTable<Model : Any>(
         val remove = ArrayList<Model>()
         access {
             // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
-            withDocumentClass<BsonDocument>().find(cs.bson(serializer, context = context)).collectChunked(1000) { list ->
+            withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).collectChunked(1000) { list ->
                 deleteMany(Filters.`in`("_id", list.map { it["_id"] }))
                 list.asSequence().map { bson.load(serializer, it) }
                     .forEach {
@@ -288,7 +290,7 @@ public class MongoTable<Model : Any>(
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int {
         val cs = condition.simplify()
         if (cs is Condition.Never) return 0
-        return access { deleteMany(cs.bson(serializer, context = context)).deletedCount.toInt() }
+        return access { deleteMany(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount.toInt() }
     }
 
 
@@ -322,9 +324,9 @@ public class MongoTable<Model : Any>(
                         add(Aggregates.project(Projections.metaSearchScore("search_score").toBsonDocument().apply {
                             for(field in serializer.descriptor.elementNames) put(field, BsonBoolean(true))
                         }))
-                        add(Aggregates.match(cs.bson(serializer, atlasSearch = true, context = context)))
+                        add(Aggregates.match(cs.bson(serializer, atlasSearch = true, bson = bson)))
                     } else {
-                        add(Aggregates.match(cs.bson(serializer, context = context)))
+                        add(Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)))
                     }
 
                     if (anyFts != null && !atlasSearch) {
@@ -350,12 +352,6 @@ public class MongoTable<Model : Any>(
                 }
         }
     }
-    private class EndFlowException: Exception() {
-        override fun fillInStackTrace(): Throwable {
-            stackTrace = emptyArray()
-            return this
-        }
-    }
 
     @Serializable
     private data class KeyHolder<Key>(val _id: Key)
@@ -363,7 +359,7 @@ public class MongoTable<Model : Any>(
     override suspend fun count(condition: Condition<Model>): Int {
         val cs = condition.simplify()
         if (cs is Condition.Never) return 0
-        return access { countDocuments(cs.bson(serializer, context = context)).toInt() }
+        return access { countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt() }
     }
 
     override suspend fun <Key> groupCount(
@@ -375,7 +371,7 @@ public class MongoTable<Model : Any>(
         return access {
             aggregate<BsonDocument>(
                 listOf(
-                    Aggregates.match(cs.bson(serializer, context = context)),
+                    Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
                     Aggregates.group("\$" + groupBy.mongo, Accumulators.sum("count", 1))
                 )
             )
@@ -406,7 +402,7 @@ public class MongoTable<Model : Any>(
         return access {
             aggregate(
                 listOf(
-                    Aggregates.match(cs.bson(serializer, context = context)),
+                    Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
                     Aggregates.group(null, aggregate.asValueBson(property.mongo))
                 )
             )
@@ -430,7 +426,7 @@ public class MongoTable<Model : Any>(
         return access {
             aggregate(
                 listOf(
-                    Aggregates.match(cs.bson(serializer, context = context)),
+                    Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
                     Aggregates.group("\$" + groupBy.mongo, aggregate.asValueBson(property.mongo))
                 )
             )

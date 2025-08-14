@@ -57,8 +57,10 @@ webauthn4jCore = "0.29.4.RELEASE"
 xmlUtilJvm = "0.91.1"
 ktMongo = "0.20.1"
 versionCatalogUpdate = "1.0.0"
+atomicfu = "0.29.0"
 
 [libraries]
+atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
 androidDesugaring = { module = "com.android.tools:desugar_jdk_libs", version.ref = "androidDesugaring" }
 angusMail = { module = "org.eclipse.angus:angus-mail", version.ref = "angusMail" }
 apacheTika = { module = "org.apache.tika:tika-parsers", version.ref = "apacheTika" }

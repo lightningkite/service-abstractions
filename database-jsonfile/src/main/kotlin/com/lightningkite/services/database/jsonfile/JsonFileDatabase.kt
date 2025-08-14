@@ -4,11 +4,10 @@ import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.Table
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.countMetric
+import com.lightningkite.services.data.KFile
 import com.lightningkite.services.database.MetricsTable
 import com.lightningkite.services.performanceMetric
 import kotlinx.io.buffered
-import kotlinx.io.files.FileSystem
-import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -25,13 +24,12 @@ import kotlin.collections.HashMap
  */
 public class JsonFileDatabase(
     override val name: String,
-    public val filesystem: FileSystem,
-    public val folder: Path,
+    public val folder: KFile,
     override val context: SettingContext
 ) :
     Database {
     init {
-        SystemFileSystem.createDirectories(folder)
+        folder.mkdirs()
     }
 
     public companion object {
@@ -39,8 +37,8 @@ public class JsonFileDatabase(
             Database.Settings.register("ram-unsafe-persist") { name, url, context ->
                 JsonFileDatabase(
                     name,
-                    SystemFileSystem,
-                    Path(url.substringAfter("://")), context
+                    KFile(url.substringAfter("://")),
+                    context
                 )
             }
         }
@@ -55,11 +53,14 @@ public class JsonFileDatabase(
             @Suppress("UNCHECKED_CAST")
             collections.getOrPut(serializer to name) {
                 val fileName = name.filter { it.isLetterOrDigit() }
-                val oldStyle = filesystem.resolve(Path(folder, fileName))
-                val storage = filesystem.resolve(Path(folder, "$fileName.json"))
-                if (filesystem.exists(oldStyle) && !filesystem.exists(storage))
-                    filesystem.sink(storage, append = false).buffered().use { sink ->
-                        filesystem.source(oldStyle).buffered().use { source ->
+                val oldStyle = folder.then(fileName)
+                val storage = folder.then("$fileName.json")
+                println("oldStyle: $oldStyle")
+                println("folder: $folder")
+                println("storage: $storage")
+                if (oldStyle.exists() && !storage.exists())
+                    storage.sink(append = false).buffered().use { sink ->
+                        oldStyle.source().buffered().use { source ->
                             source.transferTo(sink)
                         }
                     }
@@ -67,7 +68,6 @@ public class JsonFileDatabase(
                 JsonFileTable(
                     json,
                     serializer,
-                    filesystem,
                     storage
                 ).let {
                     MetricsTable(

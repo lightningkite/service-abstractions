@@ -17,6 +17,8 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":files"))
+    testImplementation(project(path = ":test"))
+    implementation(libs.clamAv)
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }

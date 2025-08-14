@@ -3,6 +3,7 @@ package com.lightningkite.services.files
 import com.lightningkite.MediaType
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.Data
+import com.lightningkite.services.data.KFile
 import com.lightningkite.services.data.TypedData
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.HMAC
@@ -27,8 +28,7 @@ import kotlin.time.Instant
 public class KotlinxIoPublicFileSystem(
     override val name: String,
     override val context: SettingContext,
-    public val kotlinxIo: FileSystem = SystemFileSystem,
-    public val rootDirectory: Path,
+    public val rootKFile: KFile,
     public val serveUrl: String = "http://localhost:8080/files",
     public val signatureReadDuration: Duration = 1.hours,
 ): MetricTrackingPublicFileSystem() {
@@ -36,20 +36,18 @@ public class KotlinxIoPublicFileSystem(
     private val shaVersion = SHA256
     private val sha = CryptographyProvider.Default.get(shaVersion)
     private val secretBytes = run {
-        val signingKeyPath = Path(rootDirectory, ".signingKey")
-        if(kotlinxIo.exists(signingKeyPath)) {
-            kotlinxIo.source(Path(rootDirectory, ".signingKey")).buffered().readByteArray()
+        val signingKeyPath = rootKFile.then(".signingKey")
+        if(signingKeyPath.exists()) {
+            signingKeyPath.readByteArray()
         } else {
             val random = CryptographyRandom.nextBytes(32)
-            kotlinxIo.sink(signingKeyPath).buffered().use {
-                it.write(random)
-            }
+            signingKeyPath.writeByteArray(random)
             random
         }
     }
     private val key = hmac.keyDecoder(shaVersion).decodeFromByteArrayBlocking(HMAC.Key.Format.RAW, secretBytes)
 
-    override val root: KotlinxIoFile = KotlinxIoFile(Path(""))
+    override val root: KotlinxIoFile = KotlinxIoFile(rootKFile)
     
     override val rootUrls: List<String> = listOf(serveUrl)
 
@@ -75,7 +73,7 @@ public class KotlinxIoPublicFileSystem(
         if(context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
         if(!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
         if(data.upload) throw IllegalArgumentException("URL is for upload, not read")
-        return KotlinxIoFile(Path(data.url.substringAfter(serveUrl)))
+        return KotlinxIoFile(rootKFile.then(*data.url.substringAfter(serveUrl).split('/').toTypedArray()))
     }
     override fun parseSignedUrlForWrite(url: String): KotlinxIoFile {
         val data = DataToSign(url.substringBeforeLast("&"))
@@ -84,15 +82,17 @@ public class KotlinxIoPublicFileSystem(
         if(context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
         if(!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
         if(!data.upload) throw IllegalArgumentException("URL is for read, not upload")
-        return KotlinxIoFile(Path(data.url.substringAfter(serveUrl)))
+        return KotlinxIoFile(rootKFile.then(*data.url.substringAfter(serveUrl).split('/').toTypedArray()))
     }
 
     /**
      * A file object implementation for the kotlinx.io file system.
      */
     public inner class KotlinxIoFile(
-        public val relativePath: Path
+        public val kfile: KFile
     ) : MetricTrackingFileObject() {
+        internal val relativePath get() = kfile.path
+
         override fun toString(): String = relativePath.toString()
         override fun equals(other: Any?): Boolean = other is KotlinxIoFile && this.relativePath == other.relativePath
 
@@ -100,10 +100,10 @@ public class KotlinxIoPublicFileSystem(
         init { if(relativePath.isAbsolute) throw IllegalArgumentException("Invalid relative path: $relativePath")}
 
         override val name: String = relativePath.name
+
+        override fun resolve(path: String): FileObject = KotlinxIoFile(kfile.then(path))
         
-        override fun resolve(path: String): FileObject = KotlinxIoFile(Path(this.relativePath, path))
-        
-        override val parent: FileObject? = relativePath.parent?.let { KotlinxIoFile(it) } ?: root
+        override val parent: FileObject? = kfile.parent?.let { KotlinxIoFile(it) }
         
         override val url: String = "$serveUrl/${relativePath}"
         
@@ -117,29 +117,29 @@ public class KotlinxIoPublicFileSystem(
                 .signed()
         }
 
-        private val absolutePath: Path
-            get() = Path(rootDirectory, relativePath.toString())
+        private val absolutePath: KFile
+            get() = kfile.resolved
             
-        private val contentTypePath: Path
-            get() = Path(rootDirectory, "${relativePath}.contenttype")
+        private val contentTypePath: KFile
+            get() = kfile.parent!!.then("${kfile.name}.contenttype")
 
         override suspend fun listImpl(): List<FileObject>? {
             return try {
-                kotlinxIo.list(absolutePath).filter { !it.name.endsWith(".contenttype") && it.name != ".signingKey" }.map {
-                    KotlinxIoFile(Path(relativePath, it.name))
+                kfile.list().filter { !it.name.endsWith(".contenttype") && it.name != ".signingKey" }.map {
+                    KotlinxIoFile(it)
                 }
             } catch (e: FileNotFoundException) {
                 null
             } catch (e: IOException) {
-                if(kotlinxIo.exists(contentTypePath)) null
+                if(contentTypePath.exists()) null
                 else throw e
             }
         }
         
         override suspend fun headImpl(): FileInfo? {
-            val metadata = kotlinxIo.metadataOrNull(absolutePath) ?: return null
-            val mediaType = if (kotlinxIo.exists(contentTypePath)) {
-                kotlinxIo.source(contentTypePath).use { source ->
+            val metadata = kfile.metadataOrNull() ?: return null
+            val mediaType = if (contentTypePath.exists()) {
+                contentTypePath.source().use { source ->
                     MediaType(source.buffered().readString())
                 }
             } else {
@@ -155,50 +155,50 @@ public class KotlinxIoPublicFileSystem(
         
         override suspend fun putImpl(content: TypedData) {
             // Create parent directories if they don't exist
-            val parent = absolutePath.parent
-            if (parent != null && !kotlinxIo.exists(parent)) {
-                kotlinxIo.createDirectories(parent)
+            val parent = kfile.parent
+            if (parent != null && !parent.exists()) {
+                parent.createDirectories()
             }
 
             // Write content type to content type file
-            kotlinxIo.sink(contentTypePath).buffered().use {
+            contentTypePath.sink().buffered().use {
                 it.writeString(content.mediaType.toString())
             }
 
             // Write content to file
-            kotlinxIo.sink(absolutePath).buffered().use {
+            kfile.sink().buffered().use {
                 content.data.write(it)
             }
         }
         
         override suspend fun getImpl(): TypedData? {
-            if (!kotlinxIo.exists(absolutePath)) {
+            if (!kfile.exists()) {
                 return null
             }
 
-            val mediaType = if (kotlinxIo.exists(contentTypePath)) {
-                kotlinxIo.source(contentTypePath).buffered().use { source ->
+            val mediaType = if (contentTypePath.exists()) {
+                contentTypePath.source().buffered().use { source ->
                     MediaType(source.readString())
                 }
             } else {
                 MediaType.fromExtension(relativePath.name)
             }
 
-            val source = kotlinxIo.source(absolutePath)
+            val source = kfile.source()
             return TypedData(Data.Source(source.buffered()), mediaType)
         }
         
         override suspend fun deleteImpl() {
             try {
-                if (kotlinxIo.exists(contentTypePath)) {
-                    kotlinxIo.delete(contentTypePath)
+                if (contentTypePath.exists()) {
+                    contentTypePath.delete()
                 }
                 
-                if (kotlinxIo.exists(absolutePath)) {
-                    kotlinxIo.delete(absolutePath)
+                if (kfile.exists()) {
+                    kfile.delete()
                 }
             } catch (e: Exception) {
-                throw RuntimeException("Failed to delete file: ${absolutePath}", e)
+                throw RuntimeException("Failed to delete file: ${kfile}", e)
             }
         }
     }

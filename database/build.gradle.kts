@@ -46,6 +46,7 @@ kotlin {
                 api(project(path = ":basis"))
                 api(project(path = ":should-be-standard-library"))
                 api(project(path = ":data"))
+                api(libs.atomicfu)
             }
             kotlin {
                 compilerOptions {

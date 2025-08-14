@@ -1,6 +1,5 @@
 package com.lightningkite.services.database.mongodb
 
-import com.github.jershell.kbson.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
@@ -10,6 +9,8 @@ import com.lightningkite.services.database.DataClassPath
 import com.lightningkite.services.database.DataClassPathSerializer
 import com.lightningkite.services.database.listElement
 import com.lightningkite.services.database.mapValueElement
+import com.lightningkite.services.database.mongodb.bson.KBson
+import com.lightningkite.services.database.mongodb.bson.toDocument
 import com.lightningkite.services.database.nullElement
 import com.mongodb.client.model.UpdateOptions
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -31,14 +32,15 @@ import kotlinx.serialization.modules.SerializersModule
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
+import kotlin.uuid.Uuid
 
-public fun documentOf(): Document {
+internal fun documentOf(): Document {
     return Document()
 }
-public fun documentOf(pair: Pair<String, Any?>): Document {
+internal fun documentOf(pair: Pair<String, Any?>): Document {
     return Document(pair.first, pair.second)
 }
-public fun documentOf(vararg pairs: Pair<String, Any?>): Document {
+internal fun documentOf(vararg pairs: Pair<String, Any?>): Document {
     return Document().apply {
         for(entry in pairs) {
             this[entry.first] = entry.second
@@ -49,34 +51,32 @@ public fun documentOf(vararg pairs: Pair<String, Any?>): Document {
 // TODO: This whole file is terrible
 
 @Serializable private data class Wrapper<T>(val value: T)
-public fun <T> KBson.stringifyAny(serializer: KSerializer<T>, obj: T): BsonValue {
+internal fun <T> KBson.stringifyAny(serializer: KSerializer<T>, obj: T): BsonValue {
     return stringify(Wrapper.serializer(serializer), Wrapper(obj))["value"]!!
 }
 
 
 @Suppress("UNCHECKED_CAST")
-private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = Document(), key: String?, atlasSearch: Boolean, context: SettingContext): Document {
-    val bson = KBson(context.internalSerializersModule, Configuration())
-
+private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = Document(), key: String?, atlasSearch: Boolean, bson: KBson): Document {
     when (this) {
         is Condition.Always -> {}
         is Condition.Never -> into["thisFieldWillNeverExist"] = "no never"
         is Condition.And -> {
-            into["\$and"] = conditions.map { it.dump(serializer, key = key, atlasSearch = atlasSearch, context = context)  }
+            into["\$and"] = conditions.map { it.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson)  }
         }
-        is Condition.Or -> if(conditions.isEmpty()) into["thisFieldWillNeverExist"] = "no never" else into["\$or"] = conditions.map { it.dump(serializer, key = key, atlasSearch = atlasSearch, context = context)  }
+        is Condition.Or -> if(conditions.isEmpty()) into["thisFieldWillNeverExist"] = "no never" else into["\$or"] = conditions.map { it.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson)  }
         is Condition.Equal -> into.sub(key)["\$eq"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.NotEqual -> into.sub(key)["\$ne"] = value.let { bson.stringifyAny(serializer, it) }
-        is Condition.SetAllElements<*> -> (condition as Condition<Any?>).dump(serializer.listElement()!! as KSerializer<Any?>, into.sub(key).sub("\$not").sub("\$elemMatch"), key = "\$not", atlasSearch = atlasSearch, context = context)
-        is Condition.SetAnyElements<*> -> into.sub(key)["\$elemMatch"] = (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, context = context)
-        is Condition.ListAllElements<*> -> (condition as Condition<Any?>).dump(serializer.listElement()!! as KSerializer<Any?>, into.sub(key).sub("\$not").sub("\$elemMatch"), key = "\$not", atlasSearch = atlasSearch, context = context)
-        is Condition.ListAnyElements<*> -> into.sub(key)["\$elemMatch"] = (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, context = context)
+        is Condition.SetAllElements<*> -> (condition as Condition<Any?>).dump(serializer.listElement()!! as KSerializer<Any?>, into.sub(key).sub("\$not").sub("\$elemMatch"), key = "\$not", atlasSearch = atlasSearch, bson = bson)
+        is Condition.SetAnyElements<*> -> into.sub(key)["\$elemMatch"] = (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
+        is Condition.ListAllElements<*> -> (condition as Condition<Any?>).dump(serializer.listElement()!! as KSerializer<Any?>, into.sub(key).sub("\$not").sub("\$elemMatch"), key = "\$not", atlasSearch = atlasSearch, bson = bson)
+        is Condition.ListAnyElements<*> -> into.sub(key)["\$elemMatch"] = (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
         is Condition.Exists<*> -> into[if (key == null) this.key else "$key.${this.key}"] = documentOf("\$exists" to true)
         is Condition.GreaterThan -> into.sub(key)["\$gt"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.LessThan -> into.sub(key)["\$lt"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.GreaterThanOrEqual -> into.sub(key)["\$gte"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.LessThanOrEqual -> into.sub(key)["\$lte"] = value.let { bson.stringifyAny(serializer, it) }
-        is Condition.IfNotNull<*> -> (condition as Condition<Any?>).dump(serializer.nullElement()!! as KSerializer<Any?>, into, key, atlasSearch = atlasSearch, context = context)
+        is Condition.IfNotNull<*> -> (condition as Condition<Any?>).dump(serializer.nullElement()!! as KSerializer<Any?>, into, key, atlasSearch = atlasSearch, bson = bson)
         is Condition.Inside -> into.sub(key)["\$in"] = values.let { bson.stringifyAny(ListSerializer(serializer), it) }
         is Condition.NotInside -> into.sub(key)["\$nin"] = values.let { bson.stringifyAny(ListSerializer(serializer), it) }
         is Condition.IntBitsAnyClear -> into.sub(key)["\$bitsAllClear"] = mask
@@ -84,10 +84,10 @@ private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = D
         is Condition.IntBitsClear -> into.sub(key)["\$bitsAnyClear"] = mask
         is Condition.IntBitsSet -> into.sub(key)["\$bitsAnySet"] = mask
         is Condition.Not -> {
-            into["\$nor"] = listOf(condition.dump(serializer, key = key, atlasSearch = atlasSearch, context = context))
+            into["\$nor"] = listOf(condition.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson))
         }
 //        is Condition.Not -> condition.dump(serializer, into.sub(key)["\$not"], key)
-        is Condition.OnKey<*> -> (condition as Condition<Any?>).dump(serializer.mapValueElement() as KSerializer<Any?>, into, if (key == null) this.key else "$key.${this.key}", atlasSearch = atlasSearch, context = context)
+        is Condition.OnKey<*> -> (condition as Condition<Any?>).dump(serializer.mapValueElement() as KSerializer<Any?>, into, if (key == null) this.key else "$key.${this.key}", atlasSearch = atlasSearch, bson = bson)
         is Condition.GeoDistance -> into.sub(key)["\$geoWithin"] = documentOf(
             "\$centerSphere" to listOf(
                 listOf(this.value.longitude, this.value.latitude),
@@ -128,9 +128,9 @@ private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = D
                     }
                 if(subs.isNotEmpty()) {
                     if (this.requireAllTermsPresent)
-                        Condition.And(subs).dump(serializer, into, key, atlasSearch, context = context)
+                        Condition.And(subs).dump(serializer, into, key, atlasSearch, bson = bson)
                     else
-                        Condition.Or(subs).dump(serializer, into, key, atlasSearch, context = context)
+                        Condition.Or(subs).dump(serializer, into, key, atlasSearch, bson = bson)
                 }
             } else into["\$text"] = documentOf(
                 "\$search" to value,
@@ -139,19 +139,17 @@ private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = D
         }
         is Condition.SetSizesEquals<*> -> into.sub(key)["\$size"] = count
         is Condition.ListSizesEquals<*> -> into.sub(key)["\$size"] = count
-        is Condition.OnField<*, *> -> (condition as Condition<Any?>).dump(this.key.serializer as KSerializer<Any?>, into, if (key == null) this.key.name else "$key.${this.key.name}", atlasSearch = atlasSearch, context = context)
+        is Condition.OnField<*, *> -> (condition as Condition<Any?>).dump(this.key.serializer as KSerializer<Any?>, into, if (key == null) this.key.name else "$key.${this.key.name}", atlasSearch = atlasSearch, bson = bson)
     }
     return into
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun <T> Modification<T>.dump(serializer: KSerializer<T>, update: UpdateWithOptions = UpdateWithOptions(), key: String?, context: SettingContext): UpdateWithOptions {
+private fun <T> Modification<T>.dump(serializer: KSerializer<T>, update: UpdateWithOptions = UpdateWithOptions(), key: String?, bson: KBson): UpdateWithOptions {
     val into = update.document
-    val bson = KBson(context.internalSerializersModule, Configuration())
-
     when(this) {
         is Modification.Nothing -> TODO("Not supported")
-        is Modification.Chain -> modifications.forEach { it.dump(serializer, update, key, context) }
+        is Modification.Chain -> modifications.forEach { it.dump(serializer, update, key, bson = bson) }
         is Modification.Assign -> into["\$set", key] = value.let { bson.stringifyAny(serializer, it) }
         is Modification.CoerceAtLeast -> into["\$max", key] = value.let { bson.stringifyAny(serializer, it) }
         is Modification.CoerceAtMost -> into["\$min", key] = value.let { bson.stringifyAny(serializer, it) }
@@ -159,38 +157,38 @@ private fun <T> Modification<T>.dump(serializer: KSerializer<T>, update: UpdateW
         is Modification.Multiply -> into["\$mul", key] = by.let { bson.stringifyAny(serializer, it) }
         is Modification.AppendString -> TODO("Appending strings is not supported yet")
         is Modification.AppendRawString -> TODO("Appending raw strings is not supported yet")
-        is Modification.IfNotNull<*> -> (modification as Modification<Any?>).dump(serializer.nullElement()!! as KSerializer<Any?>, update, key, context)
+        is Modification.IfNotNull<*> -> (modification as Modification<Any?>).dump(serializer.nullElement()!! as KSerializer<Any?>, update, key, bson = bson)
         is Modification.OnField<*, *> ->
-            (modification as Modification<Any?>).dump(this.key.serializer as KSerializer<Any?>, update, if (key == null) this.key.name else "$key.${this.key.name}", context)
+            (modification as Modification<Any?>).dump(this.key.serializer as KSerializer<Any?>, update, if (key == null) this.key.name else "$key.${this.key.name}", bson = bson)
         is Modification.ListAppend<*> -> into.sub("\$push").sub(key)["\$each"] = items.let { bson.stringifyAny(serializer as KSerializer<List<Any?>>, it) }
-        is Modification.ListRemove<*> -> into["\$pull", key] = (condition as Condition<Any?>).bson(serializer.listElement() as KSerializer<Any?>, context = context)
+        is Modification.ListRemove<*> -> into["\$pull", key] = (condition as Condition<Any?>).bson(serializer.listElement() as KSerializer<Any?>, bson = bson)
         is Modification.ListRemoveInstances<*> -> into["\$pullAll", key] = items.let { bson.stringifyAny(serializer as KSerializer<List<Any?>>, it) }
         is Modification.ListDropFirst<*> -> into["\$pop", key] = -1
         is Modification.ListDropLast<*> -> into["\$pop", key] = 1
         is Modification.ListPerElement<*> -> {
             val condIdentifier = genName()
             update.options = update.options.arrayFilters(
-                (update.options.arrayFilters ?: listOf()) + (condition as Condition<Any?>).dump(serializer.listElement() as KSerializer<Any?>, key = condIdentifier, atlasSearch = false, context = context)
+                (update.options.arrayFilters ?: listOf()) + (condition as Condition<Any?>).dump(serializer.listElement() as KSerializer<Any?>, key = condIdentifier, atlasSearch = false, bson = bson)
             )
-            (modification as Modification<Any?>).dump(serializer.listElement() as KSerializer<Any?>, update, "$key.$[$condIdentifier]", context = context)
+            (modification as Modification<Any?>).dump(serializer.listElement() as KSerializer<Any?>, update, "$key.$[$condIdentifier]", bson = bson)
         }
         is Modification.SetAppend<*> -> into.sub("\$addToSet").sub(key)["\$each"] = items.let { bson.stringifyAny(serializer as KSerializer<Set<Any?>>, it) }
-        is Modification.SetRemove<*> -> into["\$pull", key] = (condition as Condition<Any?>).bson(serializer.listElement() as KSerializer<Any?>, context = context)
+        is Modification.SetRemove<*> -> into["\$pull", key] = (condition as Condition<Any?>).bson(serializer.listElement() as KSerializer<Any?>, bson = bson)
         is Modification.SetRemoveInstances<*> -> into["\$pullAll", key] = items.let { bson.stringifyAny(serializer as KSerializer<Set<Any?>>, it) }
         is Modification.SetDropFirst<*> -> into["\$pop", key] = -1
         is Modification.SetDropLast<*> -> into["\$pop", key] = 1
         is Modification.SetPerElement<*> -> {
             val condIdentifier = genName()
             update.options = update.options.arrayFilters(
-                (update.options.arrayFilters ?: listOf()) + (condition as Condition<Any?>).dump(serializer.listElement() as KSerializer<Any?>, key = condIdentifier, atlasSearch = false, context = context)
+                (update.options.arrayFilters ?: listOf()) + (condition as Condition<Any?>).dump(serializer.listElement() as KSerializer<Any?>, key = condIdentifier, atlasSearch = false, bson = bson)
             )
-            (modification as Modification<Any?>).dump(serializer.listElement() as KSerializer<Any?>, update, "$key.$[$condIdentifier]", context = context)
+            (modification as Modification<Any?>).dump(serializer.listElement() as KSerializer<Any?>, update, "$key.$[$condIdentifier]", bson = bson)
         }
         is Modification.Combine<*> -> map.forEach {
             into.sub("\$set")[if (key == null) it.key else "$key.${it.key}"] = it.value.let { bson.stringifyAny(serializer.mapValueElement() as KSerializer<Any?>, it) }
         }
         is Modification.ModifyByKey<*> -> map.forEach {
-            (it.value as Modification<Any?>).dump(serializer.mapValueElement() as KSerializer<Any?>, update, if (key == null) it.key else "$key.${it.key}", context = context)
+            (it.value as Modification<Any?>).dump(serializer.mapValueElement() as KSerializer<Any?>, update, if (key == null) it.key else "$key.${it.key}", bson = bson)
         }
         is Modification.RemoveKeys<*> -> this.fields.forEach {
             into.sub("\$unset")[if (key == null) it else "$key.${it}"] = ""
@@ -211,14 +209,14 @@ private fun genName(): String {
     return r.toString()
 }
 
-public data class UpdateWithOptions(
+internal data class UpdateWithOptions(
     val document: Document = Document(),
     var options: UpdateOptions = UpdateOptions()
 )
 
-public fun <T> Condition<T>.bson(serializer: KSerializer<T>, atlasSearch: Boolean = false, context: SettingContext): Document = Document().also { dump(serializer, it, null, atlasSearch, context) }
-public fun <T> Modification<T>.bson(serializer: KSerializer<T>, context: SettingContext): UpdateWithOptions = UpdateWithOptions().also { dump(serializer, it, null, context) }
-public fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, context: SettingContext): Boolean {
+internal fun <T> Condition<T>.bson(serializer: KSerializer<T>, atlasSearch: Boolean = false, bson: KBson): Document = Document().also { dump(serializer, it, null, atlasSearch, bson) }
+internal fun <T> Modification<T>.bson(serializer: KSerializer<T>, bson: KBson): UpdateWithOptions = UpdateWithOptions().also { dump(serializer, it, null, bson) }
+internal fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, bson: KBson): Boolean {
     val set: Document? = (document["\$set"] as? Document) ?: (document["\$set"] as? BsonDocument)?.toDocument()
     val inc = (document["\$inc"] as? Document) ?: (document["\$inc"] as? BsonDocument)?.toDocument()
     val restrict = document.entries.asSequence()
@@ -227,7 +225,6 @@ public fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, co
         .filterIsInstance<Document>()
         .flatMap { it.keys }
         .toSet()
-    val bson = KBson(context.internalSerializersModule, Configuration())
     document["\$setOnInsert"] = bson.stringify(serializer, model).toDocument().also {
         set?.keys?.forEach { k ->
             if(it[k] == set[k]) it.remove(k)
@@ -250,7 +247,7 @@ public fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, co
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-public fun SerialDescriptor.bsonType(module: SerializersModule): BsonType = when(kind) {
+internal fun SerialDescriptor.bsonType(module: SerializersModule): BsonType = when(kind) {
     SerialKind.ENUM -> BsonType.STRING
     SerialKind.CONTEXTUAL -> when(this.capturedKClass){
         ObjectId::class -> BsonType.OBJECT_ID
@@ -259,7 +256,7 @@ public fun SerialDescriptor.bsonType(module: SerializersModule): BsonType = when
         Date::class -> BsonType.DATE_TIME
         Calendar::class -> BsonType.DATE_TIME
         GregorianCalendar::class -> BsonType.DATE_TIME
-        Instant::class -> BsonType.DATE_TIME
+        kotlin.time.Instant::class -> BsonType.DATE_TIME
         LocalDate::class -> BsonType.DATE_TIME
         LocalDateTime::class -> BsonType.DATE_TIME
         LocalTime::class -> BsonType.DATE_TIME
@@ -269,6 +266,7 @@ public fun SerialDescriptor.bsonType(module: SerializersModule): BsonType = when
         Pattern::class -> BsonType.DOCUMENT
         Regex::class -> BsonType.DOCUMENT
         UUID::class -> BsonType.BINARY
+        Uuid::class -> BsonType.BINARY
         else -> module.getContextualDescriptor(this)!!.bsonType(module)
     }
     PrimitiveKind.BOOLEAN -> BsonType.BOOLEAN
