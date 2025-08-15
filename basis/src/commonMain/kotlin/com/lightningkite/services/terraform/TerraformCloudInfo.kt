@@ -5,11 +5,13 @@ public class TerraformCloudInfo(
     public val domain: String? = null,
     public val domainZoneId: String? = null,
     public val deploymentTag: String,
-    public val applicationProvider: String,
-    public val applicationProviderType: String,
-    public val applicationProviderRegion: String,
-    public val applicationVpcIdExpression: String? = null,
-    public val applicationVpcSecurityGroupExpression: String? = null,
-    public val applicationVpcPrivateSubnetsExpression: String? = null,
-    public val applicationVpcNatGatewayIpExpression: String? = null,
+    public val applicationProvider: TerraformProvider,
+    public val applicationVpc: TerraformAwsVpcInfo? = null,
+)
+
+public class TerraformAwsVpcInfo(
+    public val idExpression: String,
+    public val securityGroupExpression: String,
+    public val privateSubnetsExpression: String,
+    public val natGatewayIpExpression: String,
 )

@@ -13,7 +13,7 @@ import kotlinx.serialization.json.buildJsonObject
  * @param baseUrl The base URL for serving files
  * @param secret An optional secret for signing URLs
  */
-public fun TerraformNeed<PublicFileSystem>.local(
+public fun TerraformNeed<PublicFileSystem.Settings>.local(
     directory: String,
     serveDirectory: String = "files",
     baseUrl: String = "http://localhost:8080",
@@ -22,7 +22,8 @@ public fun TerraformNeed<PublicFileSystem>.local(
     val secretPart = secret?.let { "?secret=$it&baseUrl=$baseUrl" } ?: "?baseUrl=$baseUrl"
     return TerraformServiceResult<PublicFileSystem>(
         need = this,
-        terraformExpression = "file://$directory$secretPart#$serveDirectory",
-        out = buildJsonObject {  }
+        setting = "file://$directory$secretPart#$serveDirectory",
+        requireProviders = setOf(),
+        content = buildJsonObject {  }
     )
 }

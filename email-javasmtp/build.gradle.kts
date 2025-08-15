@@ -20,6 +20,7 @@ dependencies {
     implementation(libs.angusMail)
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
+    testImplementation(project(":test"))
 }
 
 kotlin {

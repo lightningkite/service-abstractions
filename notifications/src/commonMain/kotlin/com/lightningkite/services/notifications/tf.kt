@@ -8,10 +8,11 @@ import kotlinx.serialization.json.buildJsonObject
  * Creates a console-based notification service for development.
  * This implementation prints notifications to the console and is not intended for production use.
  */
-public fun TerraformNeed<NotificationService>.console(): TerraformServiceResult<NotificationService> = TerraformServiceResult(
+public fun TerraformNeed<NotificationService.Settings>.console(): TerraformServiceResult<NotificationService> = TerraformServiceResult(
     need = this,
-    terraformExpression = "console://",
-    out = buildJsonObject {}
+    setting = "console://",
+    requireProviders = setOf(),
+    content = buildJsonObject {}
 )
 
 /**
@@ -19,8 +20,9 @@ public fun TerraformNeed<NotificationService>.console(): TerraformServiceResult<
  * This implementation tracks sent notifications but doesn't actually send them.
  * It is not intended for production use.
  */
-public fun TerraformNeed<NotificationService>.test(): TerraformServiceResult<NotificationService> = TerraformServiceResult(
+public fun TerraformNeed<NotificationService.Settings>.test(): TerraformServiceResult<NotificationService> = TerraformServiceResult(
     need = this,
-    terraformExpression = "test://",
-    out = buildJsonObject {}
+    setting = "test://",
+    requireProviders = setOf(),
+    content = buildJsonObject {}
 )

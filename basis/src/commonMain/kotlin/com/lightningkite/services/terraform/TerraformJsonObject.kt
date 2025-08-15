@@ -9,7 +9,10 @@ import kotlin.jvm.JvmName
 
 public class TerraformJsonObject() {
 
-    public fun tfExpression(expression: String): String = "\${$expression}"
+    public fun expression(expression: String): String = "\${$expression}"
+    public companion object {
+        public fun expression(expression: String): String = "\${$expression}"
+    }
 
     internal sealed interface Node {
         fun toJson(): JsonElement
@@ -53,6 +56,12 @@ public class TerraformJsonObject() {
 
     override fun toString(): String = root.toString()
     public fun toJsonObject(): JsonObject = JsonObject(root.children.mapValues { it.value.toJson() })
+
+    public fun include(other: JsonObject) {
+        for((key, value) in other) {
+            key - value
+        }
+    }
 
     public inner class Subpath internal constructor(private val root: ObjectNode) {
         internal fun getObject(keys: List<String>): ObjectNode {

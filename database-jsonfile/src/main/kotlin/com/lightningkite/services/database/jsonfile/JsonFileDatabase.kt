@@ -5,6 +5,7 @@ import com.lightningkite.services.database.Table
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.countMetric
 import com.lightningkite.services.data.KFile
+import com.lightningkite.services.data.root
 import com.lightningkite.services.database.MetricsTable
 import com.lightningkite.services.performanceMetric
 import kotlinx.io.buffered
@@ -37,7 +38,7 @@ public class JsonFileDatabase(
             Database.Settings.register("ram-unsafe-persist") { name, url, context ->
                 JsonFileDatabase(
                     name,
-                    KFile(url.substringAfter("://")),
+                    SystemFileSystem.root.resolve(url.substringAfter("://")),
                     context
                 )
             }

@@ -69,7 +69,7 @@ This guide provides a succinct, step-by-step workflow for migrating modules from
 
 2. **Basic implementation in core module**:
    ```kotlin
-   public fun TerraformNeed<Service>.ram(): TerraformServiceResult<Service> = 
+   public fun TerraformNeed<Service.Settings>.ram(): TerraformServiceResult<Service> = 
        TerraformServiceResult<Service>(
            need = this,
            terraformExpression = "ram://",
@@ -79,7 +79,7 @@ This guide provides a succinct, step-by-step workflow for migrating modules from
 
 3. **Specialized implementations in implementation modules**:
    ```kotlin
-   public fun TerraformNeed<Service>.awsImplementation(
+   public fun TerraformNeed<Service.Settings>.awsImplementation(
        // Configuration parameters
    ): TerraformServiceResult<Service> = TerraformServiceResult(
        need = this,

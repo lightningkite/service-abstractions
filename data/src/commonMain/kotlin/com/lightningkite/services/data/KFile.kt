@@ -31,7 +31,6 @@ public data class KFile(public val fileSystem: FileSystem, public val path: Path
 
     public fun then(vararg parts: String): KFile = KFile(fileSystem, Path(path, *parts))
 
-    @Deprecated("Upgrade to then instead")
     public fun resolve(string: String) = then(*string.split('/').toTypedArray())
 
     public fun sink(append: Boolean = false): Sink = fileSystem.sink(path, append).buffered()
@@ -66,7 +65,7 @@ public data class KFile(public val fileSystem: FileSystem, public val path: Path
     public fun appendByteArray(byteArray: ByteArray) = sink(append = true).use { it.write(byteArray) }
     public fun writeByteString(byteString: ByteString) = sink().use { it.write(byteString.toByteArray()) }
     public fun appendByteString(byteString: ByteString) = sink(append = true).use { it.write(byteString.toByteArray()) }
-    
+
     public fun readString(): String = source().use { it.readString() }
     public fun readByteArray(): ByteArray = source().use { it.readByteArray() }
     public fun readByteString(): ByteString = source().use { it.readByteString() }
@@ -75,10 +74,13 @@ public data class KFile(public val fileSystem: FileSystem, public val path: Path
     public fun readByteStringOrNull(): ByteString? = if(exists()) readByteString() else null
 
     public fun takeIfExists(): KFile? = takeIf { fileSystem.exists(path) }
-    
-    public companion object {
-        public fun temporary(extension: String = "file", leading: String? = null): KFile = KFile(SystemFileSystem,
-            Path(SystemTemporaryDirectory, (leading ?: Uuid.random().toString()) + "." + extension)
-        )
-    }
+}
+
+public val FileSystem.root: KFile get() = KFile(this, Path(""))
+public fun FileSystem.temporary(extension: String = "file", leading: String? = null): KFile = KFile(this,
+    Path(SystemTemporaryDirectory, (leading ?: Uuid.random().toString()) + "." + extension)
+)
+
+private fun sampleUsage() {
+    SystemFileSystem.root.then("Home", "Joseph", "sample.txt").writeText("Hello world!")
 }

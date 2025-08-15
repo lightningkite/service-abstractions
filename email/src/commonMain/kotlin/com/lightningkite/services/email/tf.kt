@@ -8,18 +8,20 @@ import kotlinx.serialization.json.buildJsonObject
  * Creates a console-based email service for development.
  * This is not intended for production use.
  */
-public fun TerraformNeed<EmailService>.console(): TerraformServiceResult<EmailService> = TerraformServiceResult(
+public fun TerraformNeed<EmailService.Settings>.console(): TerraformServiceResult<EmailService.Settings> = TerraformServiceResult(
     need = this,
-    terraformExpression = "console://",
-    out = buildJsonObject {}
+    setting = "console://",
+    requireProviders = setOf(),
+    content = buildJsonObject {}
 )
 
 /**
  * Creates a test email service for testing.
  * This is not intended for production use.
  */
-public fun TerraformNeed<EmailService>.test(): TerraformServiceResult<EmailService> = TerraformServiceResult(
+public fun TerraformNeed<EmailService.Settings>.test(): TerraformServiceResult<EmailService.Settings> = TerraformServiceResult(
     need = this,
-    terraformExpression = "test://",
-    out = buildJsonObject {}
+    setting = "test://",
+    requireProviders = setOf(),
+    content = buildJsonObject {}
 )
