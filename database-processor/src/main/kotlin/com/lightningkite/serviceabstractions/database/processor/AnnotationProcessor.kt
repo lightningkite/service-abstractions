@@ -73,6 +73,7 @@ class TableGenerator(
                                         "kotlinx.serialization.internal.GeneratedSerializer",
                                         "kotlinx.datetime.*",
                                         "com.lightningkite.*",
+                                        "kotlin.jvm.JvmName",
                                     )
                                 )
                                 .distinct()

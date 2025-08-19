@@ -5,6 +5,7 @@ import kotlinx.io.Buffer
 import kotlinx.io.readByteArray
 import kotlinx.io.readString
 import kotlinx.io.writeString
+import kotlin.js.JsName
 
 public sealed interface Data: AutoCloseable {
     public val size: Long get() = -1
@@ -37,7 +38,7 @@ public sealed interface Data: AutoCloseable {
      * You can only consume this once.
      * Make sure you close it.
      */
-    public class Source(public val source: kotlinx.io.Source, override val size: Long = -1): Data {
+    public class Source(@JsName("sourceValue") public val source: kotlinx.io.Source, override val size: Long = -1): Data {
         override fun write(to: kotlinx.io.Sink): Unit = source.use { source ->
             source.transferTo(to)
         }
