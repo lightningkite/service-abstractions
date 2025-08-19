@@ -1,48 +1,52 @@
-package com.lightningkite.services.cache.memcached
+package com.lightningkite.services.cache.redis
 
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.terraform.TerraformCloudInfo
-import com.lightningkite.services.terraform.TerraformNeed
+import com.lightningkite.services.cache.get
+import com.lightningkite.services.cache.set
 import com.lightningkite.services.test.assertPlannableAws
 import com.lightningkite.services.test.assertTerraformApply
 import com.lightningkite.services.test.expensive
+import com.lightningkite.services.test.withAwsSpecific
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.builtins.serializer
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class TfTest {
     @Test fun test() {
         assertPlannableAws<Cache.Settings>(vpc = true) {
-            it.awsElasticacheMemcached()
+            it.awsElasticacheRedis()
         }
     }
     @Test fun expensiveTest() {
-        MemcachedCache
+        RedisCache
         expensive {
             assertTerraformApply(
-                name = "aws-memcached",
+                name = "aws-redis",
                 domain = false,
                 vpc = true,
                 serializer = Cache.Settings.serializer(),
                 fulfill = {
-                    it.awsElasticacheMemcached()
+                    it.awsElasticacheRedis()
                 }
             )
         }
     }
     @Test fun testServerless() {
         assertPlannableAws<Cache.Settings>(vpc = true) {
-            it.awsElasticacheMemcachedServerless()
+            it.awsElasticacheRedisServerless()
         }
     }
     @Test fun expensiveTestServerless() {
-        MemcachedCache
+        RedisCache
         expensive {
             assertTerraformApply(
-                name = "aws-memcached2",
+                name = "aws-redis-serverless",
                 domain = false,
                 vpc = true,
                 serializer = Cache.Settings.serializer(),
                 fulfill = {
-                    it.awsElasticacheMemcachedServerless()
+                    it.awsElasticacheRedisServerless()
                 }
             )
         }

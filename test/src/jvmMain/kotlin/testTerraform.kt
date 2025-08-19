@@ -79,16 +79,12 @@ fun <T> assertPlannableAwsSpecific(
             "for_each" - expression("toset(module.vpc.private_subnets_cidr_blocks)")
             "security_group_id" - expression("aws_security_group.internal.id")
             "cidr_ipv4" - expression("each.key")
-            "from_port" - 0
-            "to_port" - 0
             "ip_protocol" - -1
         }
         "resource.aws_vpc_security_group_egress_rule.freeInternal" {
             "for_each" - expression("toset(module.vpc.private_subnets_cidr_blocks)")
             "security_group_id" - expression("aws_security_group.internal.id")
             "cidr_ipv4" - expression("each.key")
-            "from_port" - 0
-            "to_port" - 0
             "ip_protocol" - -1
         }
     }
@@ -120,7 +116,13 @@ fun <T> assertPlannableAwsSpecific(
     root.resolve("main.tf.json").writeText(
         terraformJsonObject {
             "terraform" {
-                "required_providers" - result.requireProviders.map { it.toTerraformJson() }
+                "required_providers" {
+                    result.requireProviders
+                        .plus(TerraformProviderImport.aws)
+                        .distinct()
+                        .map { it.toTerraformJson() }
+                        .forEach { include(it) }
+                }
                 "required_version" - "~> 1.0"
                 "backend.local" {
                     "path" - "./build/terraform.tfstate"
@@ -137,7 +139,7 @@ fun <T> assertPlannableAwsSpecific(
     )
     root.resolve("active.tf.json").writeText(prettyJson.encodeToString(result.content))
     println(root)
-    root.runTerraform("init", "-input=false", "-no-color")
+    root.runTerraform("init", "-upgrade", "-input=false", "-no-color")
     root.runTerraform("plan", "-input=false", "-no-color", "-out=plan.tfplan")
     return TerraformServicePlan(
         result, root, root.resolve("plan.tfplan")
@@ -151,6 +153,7 @@ private fun File.runTerraform(vararg args: String): String {
         .also { it.environment()["AWS_PROFILE"] = "lk" }
         .inheritIO()
         .redirectOutput(tempOut)
+        .redirectError(tempOut)
         .start()
         .waitFor()
     val text = tempOut.readText()
@@ -159,6 +162,26 @@ private fun File.runTerraform(vararg args: String): String {
         throw Exception("Terraform exited with result $result")
     }
     return text
+}
+
+fun <T: Setting<R>, R> assertTerraformApply(
+    name: String,
+    serializer: KSerializer<T>,
+    domain: Boolean,
+    vpc: Boolean,
+    fulfill: (TerraformNeed<T>) -> TerraformServiceResult<T>,
+) {
+    expensive {
+        val basis = assertPlannableAwsSpecific(name, domain, vpc, fulfill)
+        basis.root.runTerraform("apply", "plan.tfplan", "-no-color")
+        val setting = basis.root.runTerraform("output", "-json", "-no-color")
+            .let { Json.parseToJsonElement(it) }
+            .jsonObject["result"]!!
+            .jsonObject["value"]!!
+            .let { Json.decodeFromJsonElement(serializer, it) }
+        println("Setting: $setting")
+        basis.root.runTerraform("destroy", "--auto-approve", "-no-color")
+    }
 }
 
 fun <T: Setting<R>, R> withAwsSpecific(

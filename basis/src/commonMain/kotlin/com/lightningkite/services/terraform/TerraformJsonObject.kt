@@ -43,12 +43,12 @@ public class TerraformJsonObject() {
         (getObject(keys.dropLast(1)).children.getOrPut(keys.last()) { ValueNode() } as ValueNode).values.add(value)
     }
 
-    public operator fun String.minus(value: String): Unit = minus(JsonPrimitive(value))
-    public operator fun String.minus(value: Number): Unit = minus(JsonPrimitive(value))
-    public operator fun String.minus(value: Boolean): Unit = minus(JsonPrimitive(value))
-    @JvmName("minusListString") public operator fun String.minus(value: List<String>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
-    @JvmName("minusListNumber") public operator fun String.minus(value: List<Number>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
-    @JvmName("minusListBoolean") public operator fun String.minus(value: List<Boolean>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
+    public operator fun String.minus(value: String?): Unit = minus(JsonPrimitive(value))
+    public operator fun String.minus(value: Number?): Unit = minus(JsonPrimitive(value))
+    public operator fun String.minus(value: Boolean?): Unit = minus(JsonPrimitive(value))
+    @JvmName("minusListString") public operator fun String.minus(value: List<String?>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
+    @JvmName("minusListNumber") public operator fun String.minus(value: List<Number?>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
+    @JvmName("minusListBoolean") public operator fun String.minus(value: List<Boolean?>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
     @JvmName("minusListJson") public operator fun String.minus(value: List<JsonElement>): Unit = minus(JsonArray(value) as JsonElement)
     public operator fun String.invoke(builder: Subpath.() -> Unit) {
         Subpath(getObject(split('.'))).apply(builder)
@@ -76,15 +76,21 @@ public class TerraformJsonObject() {
             (getObject(keys.dropLast(1)).children.getOrPut(keys.last()) { ValueNode() } as ValueNode).values.add(value)
         }
 
-        public operator fun String.minus(value: String): Unit = minus(JsonPrimitive(value))
-        public operator fun String.minus(value: Number): Unit = minus(JsonPrimitive(value))
-        public operator fun String.minus(value: Boolean): Unit = minus(JsonPrimitive(value))
-        @JvmName("minusListString") public operator fun String.minus(value: List<String>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
-        @JvmName("minusListNumber") public operator fun String.minus(value: List<Number>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
-        @JvmName("minusListBoolean") public operator fun String.minus(value: List<Boolean>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
+        public operator fun String.minus(value: String?): Unit = minus(JsonPrimitive(value))
+        public operator fun String.minus(value: Number?): Unit = minus(JsonPrimitive(value))
+        public operator fun String.minus(value: Boolean?): Unit = minus(JsonPrimitive(value))
+        @JvmName("minusListString") public operator fun String.minus(value: List<String?>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
+        @JvmName("minusListNumber") public operator fun String.minus(value: List<Number?>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
+        @JvmName("minusListBoolean") public operator fun String.minus(value: List<Boolean?>): Unit = minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
         @JvmName("minusListJson") public operator fun String.minus(value: List<JsonElement>): Unit = minus(JsonArray(value) as JsonElement)
         public operator fun String.invoke(builder: Subpath.() -> Unit) {
             Subpath(getObject(split('.'))).apply(builder)
+        }
+
+        public fun include(other: JsonObject) {
+            for ((key, value) in other) {
+                key - value
+            }
         }
     }
 }

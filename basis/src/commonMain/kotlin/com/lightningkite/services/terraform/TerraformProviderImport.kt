@@ -24,6 +24,16 @@ public data class TerraformProviderImport(
             source  = "hashicorp/archive",
             version = "~> 2.7.0",
         )
+        public val google: TerraformProviderImport = TerraformProviderImport(
+            name = "google",
+            source  = "hashicorp/google",
+            version = "~> 5.0.0",
+        )
+        public val mongodbAtlas: TerraformProviderImport = TerraformProviderImport(
+            name = "mongodbatlas",
+            source  = "mongodb/mongodbatlas",
+            version = "~> 1.33.0",
+        )
     }
     public fun toTerraformJson(): JsonObject = terraformJsonObject {
         name {

@@ -10,7 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
  * 
  * @return A TerraformServiceResult with the console SMS configuration
  */
-public fun TerraformNeed<SMS.Settings>.console(): TerraformServiceResult<SMS> = 
+public fun TerraformNeed<SMS.Settings>.console(): TerraformServiceResult<SMS.Settings> = 
     TerraformServiceResult(
         need = this,
         setting = "console://",

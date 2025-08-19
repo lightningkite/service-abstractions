@@ -8,7 +8,7 @@ import com.lightningkite.services.terraform.terraformJsonObject
  * Creates a local PubSub implementation for testing.
  * This is not suitable for production use.
  */
-public fun TerraformNeed<PubSub.Settings>.local(): TerraformServiceResult<PubSub> = TerraformServiceResult(
+public fun TerraformNeed<PubSub.Settings>.local(): TerraformServiceResult<PubSub.Settings> = TerraformServiceResult(
     need = this,
     setting = "local://",
     requireProviders = setOf(),
@@ -19,7 +19,7 @@ public fun TerraformNeed<PubSub.Settings>.local(): TerraformServiceResult<PubSub
  * Creates a debug PubSub implementation that logs operations.
  * This is not suitable for production use.
  */
-public fun TerraformNeed<PubSub.Settings>.debug(): TerraformServiceResult<PubSub> = TerraformServiceResult(
+public fun TerraformNeed<PubSub.Settings>.debug(): TerraformServiceResult<PubSub.Settings> = TerraformServiceResult(
     need = this,
     setting = "debug://",
     requireProviders = setOf(),

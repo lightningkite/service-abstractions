@@ -18,9 +18,9 @@ public fun TerraformNeed<PublicFileSystem.Settings>.local(
     serveDirectory: String = "files",
     baseUrl: String = "http://localhost:8080",
     secret: String? = null
-): TerraformServiceResult<PublicFileSystem> {
+): TerraformServiceResult<PublicFileSystem.Settings> {
     val secretPart = secret?.let { "?secret=$it&baseUrl=$baseUrl" } ?: "?baseUrl=$baseUrl"
-    return TerraformServiceResult<PublicFileSystem>(
+    return TerraformServiceResult<PublicFileSystem.Settings>(
         need = this,
         setting = "file://$directory$secretPart#$serveDirectory",
         requireProviders = setOf(),

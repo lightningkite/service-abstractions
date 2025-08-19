@@ -27,6 +27,7 @@ dependencies {
     
     implementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
+    testImplementation(project(path = ":test"))
 }
 
 kotlin {
