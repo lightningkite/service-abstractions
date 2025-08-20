@@ -2,7 +2,7 @@ package com.lightningkite.services.metrics.cloudwatch
 
 
 import com.lightningkite.services.HealthStatus
-import com.lightningkite.services.MetricSink
+import com.lightningkite.services.MetricReporter
 import com.lightningkite.services.MetricUnit
 import com.lightningkite.services.ReportingContextElement
 import com.lightningkite.services.SettingContext
@@ -20,18 +20,18 @@ import software.amazon.awssdk.services.cloudwatch.model.MetricDatum
 import software.amazon.awssdk.services.cloudwatch.model.StandardUnit
 import java.util.concurrent.ConcurrentLinkedQueue
 
-public class CloudwatchMetricSink(
+public class CloudwatchMetricReporter(
     override val name: String,
     override val context: SettingContext,
     public val namespace: String,
     public val region: Region,
     credentialProvider: AwsCredentialsProvider,
-) : MetricSink {
+) : MetricReporter {
     public companion object {
         private val logger = KotlinLogging.logger("com.lightningkite.services.metrics.cloudwatch")
 
         init {
-            MetricSink.Settings.register("cloudwatch") { name, url, context ->
+            MetricReporter.Settings.register("cloudwatch") { name, url, context ->
                 Regex("""cloudwatch://((?:(?<user>[a-zA-Z0-9+/]+):(?<password>[a-zA-Z0-9+/]+)@)?(?<region>[a-zA-Z0-9-]+))/(?<namespace>[^?]+)""").matchEntire(
                     url
                 )?.let { match ->
@@ -39,7 +39,7 @@ public class CloudwatchMetricSink(
                     val password = match.groups["password"]?.value ?: ""
                     val namespace = match.groups["namespace"]?.value ?: "nonamespace"
                     val region = Region.of(match.groups["region"]!!.value.lowercase())
-                    CloudwatchMetricSink(
+                    CloudwatchMetricReporter(
                         name,
                         context,
                         namespace,

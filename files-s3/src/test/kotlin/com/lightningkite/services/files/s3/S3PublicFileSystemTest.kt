@@ -1,23 +1,11 @@
 package com.lightningkite.services.files.s3
 
-import com.lightningkite.services.MetricSink
-import com.lightningkite.services.SettingContext
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.files.test.FileSystemTests
 import com.lightningkite.services.test.performance
 import io.ktor.client.request.*
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.modules.EmptySerializersModule
-import kotlinx.serialization.modules.SerializersModule
-import org.junit.Ignore
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider
-import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
-import software.amazon.awssdk.regions.Region
 import kotlin.test.Test
-import kotlin.time.Duration.Companion.minutes
 
 /**
  * Tests for [S3PublicFileSystem].
