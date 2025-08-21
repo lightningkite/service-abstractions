@@ -111,9 +111,32 @@ class TableGenerator(
                             val simpleName: String = declaration.simpleName.getShortName()
 
                             if(declaration.typeParameters.isNotEmpty()) {
-                                appendLine("inline fun <${declaration.typeParameters.joinToString(", ") {
+                                appendLine("public inline fun <${declaration.typeParameters.joinToString(", ") {
                                     "reified " + it.name.asString() + ": " + (it.bounds.firstOrNull()?.toKotlin() ?: "Any?")
                                 }}> $classReference.Companion.path(): DataClassPath<$typeReference, $typeReference> = com.lightningkite.services.database.path<$typeReference>()")
+
+                                listOf(
+                                    "public fun",
+                                    declaration.typeParameters.joinToString(", ", prefix = " <", postfix = "> ") { param ->
+                                        param.name.asString() + (param.bounds.firstOrNull()?.toKotlin()?.let { ": $it" } ?: "")
+                                    },
+                                    "$classReference.Companion.path(",
+                                    declaration.typeParameters.joinToString(", ") { param ->
+                                        "${param.name.asString().lowercase()}: KSerializer<${param.name.asString()}>"
+                                    },
+                                    "): DataClassPath<$typeReference, $typeReference>",
+                                    " = ",
+                                    "com.lightningkite.services.database.path",
+                                    declaration.typeParameters.joinToString(
+                                        ", ",
+                                        prefix = "($classReference.Companion.serializer(",
+                                        postfix = "))"
+                                    ) {
+                                        it.name.asString().lowercase()
+                                    },
+                                    "\n"
+                                ).forEach(::append)
+
                                 for ((index, field) in fields.withIndex()) {
                                     val serPropName = "field${
                                         field.name.replaceFirstChar {
@@ -122,11 +145,11 @@ class TableGenerator(
                                             ) else it.toString()
                                         }
                                     }"
-                                    appendLine("val <${declaration.typeParameters.joinToString(", ") {
+                                    appendLine("public val <${declaration.typeParameters.joinToString(", ") {
                                         it.name.asString() + ": " + (it.bounds.firstOrNull()?.toKotlin() ?: "Any?")
                                     }}> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(this as GeneratedSerializer<$typeReference>, $index)")
                                     appendLine(
-                                        "@get:JvmName(\"path$serPropName\") val <ROOT, ${
+                                        "@get:JvmName(\"path$serPropName\") public val <ROOT, ${
                                             declaration.typeParameters.joinToString(", ") {
                                                 it.name.asString() + ": " + (it.bounds.firstOrNull()?.toKotlin() ?: "Any?")
                                             }
@@ -134,12 +157,12 @@ class TableGenerator(
                                     )
                                 }
                             } else {
-                                appendLine("inline val $typeReference.Companion.path: DataClassPath<$typeReference, $typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
+                                appendLine("public inline val $typeReference.Companion.path: DataClassPath<$typeReference, $typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
                                 appendLine("private val ${simpleName}__properties = $classReference.serializer().serializableProperties!!")
                                 for ((index, field) in fields.withIndex()) {
                                     val serPropName = "${simpleName}_${field.name}"
-                                    appendLine("val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = ${simpleName}__properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
-                                    appendLine("@get:JvmName(\"path$serPropName\") val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[$serPropName]")
+                                    appendLine("public val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = ${simpleName}__properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
+                                    appendLine("@get:JvmName(\"path$serPropName\") public val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[$serPropName]")
                                 }
                             }
                         }

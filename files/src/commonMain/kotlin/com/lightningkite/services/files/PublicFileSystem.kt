@@ -34,7 +34,7 @@ public interface PublicFileSystem : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "file://files"
+        public val url: String = "file://${KFile(SystemFileSystem, Path("local/files")).also { it.createDirectories() }.resolved}"
     ) : Setting<PublicFileSystem> {
 
         public companion object : UrlSettingParser<PublicFileSystem>() {

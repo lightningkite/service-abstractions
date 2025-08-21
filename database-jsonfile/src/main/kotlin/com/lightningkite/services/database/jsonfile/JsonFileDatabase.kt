@@ -35,7 +35,7 @@ public class JsonFileDatabase(
 
     public companion object {
         init {
-            Database.Settings.register("ram-unsafe-persist") { name, url, context ->
+            Database.Settings.register("json-files") { name, url, context ->
                 JsonFileDatabase(
                     name,
                     SystemFileSystem.root.resolve(url.substringAfter("://")),
