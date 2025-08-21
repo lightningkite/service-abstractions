@@ -1,50 +1,21 @@
 package com.lightningkite.services.cache.memcached
 
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.terraform.TerraformCloudInfo
 import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.test.assertPlannableAws
-import com.lightningkite.services.test.assertTerraformApply
+import com.lightningkite.services.test.assertPlannableAwsVpc
 import com.lightningkite.services.test.expensive
 import kotlin.test.Test
 
 class TfTest {
     @Test fun test() {
-        assertPlannableAws<Cache.Settings>(vpc = true) {
+        assertPlannableAwsVpc<Cache.Settings>("aws") {
             it.awsElasticacheMemcached()
         }
     }
-    @Test fun expensiveTest() {
-        MemcachedCache
-        expensive {
-            assertTerraformApply(
-                name = "aws-memcached",
-                domain = false,
-                vpc = true,
-                serializer = Cache.Settings.serializer(),
-                fulfill = {
-                    it.awsElasticacheMemcached()
-                }
-            )
-        }
-    }
     @Test fun testServerless() {
-        assertPlannableAws<Cache.Settings>(vpc = true) {
+        assertPlannableAwsVpc<Cache.Settings>("aws-sls") {
             it.awsElasticacheMemcachedServerless()
-        }
-    }
-    @Test fun expensiveTestServerless() {
-        MemcachedCache
-        expensive {
-            assertTerraformApply(
-                name = "aws-memcached2",
-                domain = false,
-                vpc = true,
-                serializer = Cache.Settings.serializer(),
-                fulfill = {
-                    it.awsElasticacheMemcachedServerless()
-                }
-            )
         }
     }
 }

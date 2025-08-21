@@ -13,6 +13,119 @@ import kotlin.time.DurationUnit
 
 @JvmInline
 @Serializable
+public value class DataSize(public val bytes: Long): Comparable<DataSize> {
+    override fun compareTo(other: DataSize): Int = this.bytes.compareTo(other.bytes)
+    public val inWholeKibibytes: Long get() = bytes / 1024
+    public val inWholeMebibytes: Long get() = bytes / 1024 / 1024
+    public val inWholeGibibytes: Long get() = bytes / 1024 / 1024 / 1024
+    public val inWholeTebibytes: Long get() = bytes / 1024 / 1024 / 1024 / 1024
+    public val kibibytes: Double get() = bytes.toDouble() / 1024
+    public val mebibytes: Double get() = bytes.toDouble() / 1024 / 1024
+    public val gibibytes: Double get() = bytes.toDouble() / 1024 / 1024 / 1024
+    public val tebibytes: Double get() = bytes.toDouble() / 1024 / 1024 / 1024 / 1024
+
+    @Deprecated("Prefer the precise measure inWholeKibibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("inWholeKibibytes")) public val inWholeKilobytes: Long get() = inWholeKibibytes
+    @Deprecated("Prefer the precise measure inWholeMebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("inWholeMebibytes")) public val inWholeMegabytes: Long get() = inWholeMebibytes
+    @Deprecated("Prefer the precise measure inWholeGibibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("inWholeGibibytes")) public val inWholeGigabytes: Long get() = inWholeGibibytes
+    @Deprecated("Prefer the precise measure inWholeTebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("inWholeTebibytes")) public val inWholeTerabytes: Long get() = inWholeTebibytes
+    @Deprecated("Prefer the precise measure kibibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("kibibytes")) public val kilobytes: Double get() = kibibytes
+    @Deprecated("Prefer the precise measure mebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("mebibytes")) public val megabytes: Double get() = mebibytes
+    @Deprecated("Prefer the precise measure gibibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("gibibytes")) public val gigabytes: Double get() = gibibytes
+    @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("tebibytes")) public val terabytes: Double get() = tebibytes
+
+    public val decimalKilobytes: Double get() = bytes.toDouble() / 1000
+    public val decimalMegabytes: Double get() = bytes.toDouble() / 1000 / 1000
+    public val decimalGigabytes: Double get() = bytes.toDouble() / 1000 / 1000 / 1000
+    public val decimalTerabytes: Double get() = bytes.toDouble() / 1000 / 1000 / 1000 / 1000
+
+    public operator fun plus(other: DataSize): DataSize = DataSize(bytes + other.bytes)
+    public operator fun minus(other: DataSize): DataSize = DataSize(bytes - other.bytes)
+    public operator fun times(ratio: Double): DataSize = DataSize((bytes * ratio).toLong())
+    public operator fun times(ratio: Long): DataSize = DataSize(bytes * ratio)
+    public operator fun div(ratio: Double): DataSize = DataSize((bytes / ratio).toLong())
+    public operator fun div(ratio: Long): DataSize = DataSize(bytes / ratio)
+
+    public companion object {
+        public val Int.bytes: DataSize get() = DataSize(this.toLong())
+        public val Int.kibibytes: DataSize get() = DataSize(this.toLong() * 1024)
+        public val Int.mebibytes: DataSize get() = DataSize(this.toLong() * 1024 * 1024)
+        public val Int.gibibytes: DataSize get() = DataSize(this.toLong() * 1024 * 1024 * 1024)
+        public val Int.tebibytes: DataSize get() = DataSize(this.toLong() * 1024 * 1024 * 1024 * 1024)
+        public val Long.bytes: DataSize get() = DataSize(this)
+        public val Long.kibibytes: DataSize get() = DataSize(this * 1024)
+        public val Long.mebibytes: DataSize get() = DataSize(this * 1024 * 1024)
+        public val Long.gibibytes: DataSize get() = DataSize(this * 1024 * 1024 * 1024)
+        public val Long.tebibytes: DataSize get() = DataSize(this * 1024 * 1024 * 1024 * 1024)
+        public val Double.bytes: DataSize get() = DataSize((this).toLong())
+        public val Double.kibibytes: DataSize get() = DataSize((this * 1024).toLong())
+        public val Double.mebibytes: DataSize get() = DataSize((this * 1024 * 1024).toLong())
+        public val Double.gibibytes: DataSize get() = DataSize((this * 1024 * 1024 * 1024).toLong())
+        public val Double.tebibytes: DataSize get() = DataSize((this * 1024 * 1024 * 1024 * 1024).toLong())
+
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("kilobytes")) public val Int.kilobytes: DataSize get() = kibibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("megabytes")) public val Int.megabytes: DataSize get() = mebibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("gigabytes")) public val Int.gigabytes: DataSize get() = gibibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("terabytes")) public val Int.terabytes: DataSize get() = tebibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("kilobytes")) public val Long.kilobytes: DataSize get() = kibibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("megabytes")) public val Long.megabytes: DataSize get() = mebibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("gigabytes")) public val Long.gigabytes: DataSize get() = gibibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("terabytes")) public val Long.terabytes: DataSize get() = tebibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("kilobytes")) public val Double.kilobytes: DataSize get() = kibibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("megabytes")) public val Double.megabytes: DataSize get() = mebibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("gigabytes")) public val Double.gigabytes: DataSize get() = gibibytes
+        @Deprecated("Prefer the precise measure tebibytes.  If you meant to use decimal units, be explicit about it.", ReplaceWith("terabytes")) public val Double.terabytes: DataSize get() = tebibytes
+
+        public val Int.decimalKilobytes: DataSize get() = DataSize(this.toLong() * 1000)
+        public val Int.decimalMegabytes: DataSize get() = DataSize(this.toLong() * 1000 * 1000)
+        public val Int.decimalGigabytes: DataSize get() = DataSize(this.toLong() * 1000 * 1000 * 1000)
+        public val Int.decimalTerabytes: DataSize get() = DataSize(this.toLong() * 1000 * 1000 * 1000 * 1000)
+        public val Long.decimalKilobytes: DataSize get() = DataSize(this * 1000)
+        public val Long.decimalMegabytes: DataSize get() = DataSize(this * 1000 * 1000)
+        public val Long.decimalGigabytes: DataSize get() = DataSize(this * 1000 * 1000 * 1000)
+        public val Long.decimalTerabytes: DataSize get() = DataSize(this * 1000 * 1000 * 1000 * 1000)
+        public val Double.decimalKilobytes: DataSize get() = DataSize((this * 1000).toLong())
+        public val Double.decimalMegabytes: DataSize get() = DataSize((this * 1000 * 1000).toLong())
+        public val Double.decimalGigabytes: DataSize get() = DataSize((this * 1000 * 1000 * 1000).toLong())
+        public val Double.decimalTerabytes: DataSize get() = DataSize((this * 1000 * 1000 * 1000 * 1000).toLong())
+    }
+    override fun toString(): String = toStringBinaryAbbreviated()
+    public fun toStringDecimalLong(): String {
+        var amount = bytes
+        if(amount > 1000) amount /= 1000 else return "$amount bytes"
+        if(amount > 1000) amount /= 1000 else return "$amount decimal kilobytes"
+        if(amount > 1000) amount /= 1000 else return "$amount decimal megabytes"
+        if(amount > 1000) amount /= 1000 else return "$amount decimal gigabytes"
+        return "$amount terabytes"
+    }
+    public fun toStringBinaryLong(): String {
+        var amount = bytes
+        if(amount > 1024) amount /= 1024 else return "$amount bytes"
+        if(amount > 1024) amount /= 1024 else return "$amount kibibytes"
+        if(amount > 1024) amount /= 1024 else return "$amount mebibytes"
+        if(amount > 1024) amount /= 1024 else return "$amount gibibytes"
+        return "$amount tebibytes"
+    }
+    public fun toStringDecimalAbbreviated(): String {
+        var amount = bytes
+        if(amount > 1000) amount /= 1000 else return "$amount B"
+        if(amount > 1000) amount /= 1000 else return "$amount KB"
+        if(amount > 1000) amount /= 1000 else return "$amount MB"
+        if(amount > 1000) amount /= 1000 else return "$amount GB"
+        return "$amount TB"
+    }
+    public fun toStringBinaryAbbreviated(): String {
+        var amount = bytes
+        if(amount > 1024) amount /= 1024 else return "$amount B"
+        if(amount > 1024) amount /= 1024 else return "$amount KiB"
+        if(amount > 1024) amount /= 1024 else return "$amount MiB"
+        if(amount > 1024) amount /= 1024 else return "$amount GiB"
+        return "$amount TiB"
+    }
+}
+
+
+@JvmInline
+@Serializable
 public value class Length(public val meters: Double): Comparable<Length> {
     override fun compareTo(other: Length): Int = this.meters.compareTo(other.meters)
     public val astronomicalUnits: Double get() = meters / 1.495978707E11

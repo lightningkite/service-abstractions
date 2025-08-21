@@ -20,7 +20,7 @@ This guide provides a succinct, step-by-step workflow for migrating modules from
    - Add explicit API mode to all modules: `kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     } explicitApi() }`
 
 3. **Set up package structure**:
@@ -69,7 +69,7 @@ This guide provides a succinct, step-by-step workflow for migrating modules from
 
 2. **Basic implementation in core module**:
    ```kotlin
-   public fun TerraformNeed<Service.Settings>.ram(): TerraformServiceResult<Service> = 
+   context(emitter: TerraformEmitterAws) public fun TerraformNeed<Service.Settings>.ram(): TerraformServiceResult<Service> = 
        TerraformServiceResult<Service>(
            need = this,
            terraformExpression = "ram://",
@@ -79,9 +79,9 @@ This guide provides a succinct, step-by-step workflow for migrating modules from
 
 3. **Specialized implementations in implementation modules**:
    ```kotlin
-   public fun TerraformNeed<Service.Settings>.awsImplementation(
+   context(emitter: TerraformEmitterAws) public fun TerraformNeed<Service.Settings>.awsImplementation(
        // Configuration parameters
-   ): TerraformServiceResult<Service> = TerraformServiceResult(
+   ): Unit = oldStyle(
        need = this,
        terraformExpression = "implementation://\${resource.name}",
        out = terraformJsonObject {

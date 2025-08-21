@@ -2,29 +2,29 @@ package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.Untested
 import com.lightningkite.services.database.Database
+import com.lightningkite.services.terraform.TerraformEmitterAws
 import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.terraform.TerraformProviderImport
-import com.lightningkite.services.terraform.TerraformServiceResult
-import com.lightningkite.services.terraform.awsRegion
+import com.lightningkite.services.terraform.oldStyle
 import com.lightningkite.services.terraform.terraformJsonObject
 
 @Deprecated("Deprecated by Atlas")
 @Untested
-public fun TerraformNeed<Database.Settings>.mongodbAtlasServerless(
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasServerless(
     orgId: String,
     continuousBackupEnabled: Boolean,
     existingProjectId: String? = null,
-): TerraformServiceResult<Database.Settings> = TerraformServiceResult(
+): Unit = oldStyle(
     need = this,
     setting = $$"""
-        mongodb+srv://$${cloudInfo.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(resource.mongodbatlas_serverless_instance.$$name.connection_strings_standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(resource.mongodbatlas_serverless_instance.$$name.connection_strings_standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent(),
     requireProviders = setOf(TerraformProviderImport.mongodbAtlas),
-    content = terraformJsonObject {
+    content = {
 
         if (existingProjectId == null) {
             "resource.mongodbatlas_project.$name" {
-                "name" - "${cloudInfo.projectPrefix}$name"
+                "name" - "${emitter.projectPrefix}$name"
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -40,16 +40,16 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasServerless(
         }
         "resource.mongodbatlas_serverless_instance.$name" {
             "project_id" - (existingProjectId ?: expression("mongodbatlas_project.$name.id"))
-            "name" - "${cloudInfo.projectPrefix}$name"
+            "name" - "${emitter.projectPrefix}$name"
 
             "provider_settings_backing_provider_name" - "AWS"
             "provider_settings_provider_name" - "SERVERLESS"
-            "provider_settings_region_name" - cloudInfo.applicationProvider.awsRegion!!.uppercase().replace("-", "_")
+            "provider_settings_region_name" - emitter.applicationRegion.uppercase().replace("-", "_")
 
             "continuous_backup_enabled" - continuousBackupEnabled
         }
         "resource.mongodbatlas_database_user.$name" {
-            "username" - "\"${cloudInfo.projectPrefix}$name-main"
+            "username" - "\"${emitter.projectPrefix}$name-main"
             "password" - expression("random_password.$name.result")
             "project_id" - expression("mongodbatlas_project.$name.id")
             "auth_database_name" - "admin"
@@ -70,24 +70,24 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasServerless(
 
 
 @Untested
-public fun TerraformNeed<Database.Settings>.mongodbAtlas(
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     orgId: String,
-    backupEnabled: Boolean,
+    backupEnabled: Boolean = true,
     zoneName: String? = null,
     maxSize: String = "M10",
     minSize: String = "M40",
     existingProjectId: String? = null,
-): TerraformServiceResult<Database.Settings> = TerraformServiceResult(
+): Unit = oldStyle(
     need = this,
     setting = $$"""
-        mongodb+srv://$${cloudInfo.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent(),
     requireProviders = setOf(TerraformProviderImport.mongodbAtlas),
-    content = terraformJsonObject {
+    content = {
 
         if (existingProjectId == null) {
             "resource.mongodbatlas_project.$name" {
-                "name" - "${cloudInfo.projectPrefix}$name"
+                "name" - "${emitter.projectPrefix}$name"
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -103,7 +103,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
         }
         "resource.mongodbatlas_advanced_cluster.$name" {
             "project_id" - (existingProjectId ?: expression("mongodbatlas_project.$name.id"))
-            "name" - "${cloudInfo.projectPrefix}$name"
+            "name" - "${emitter.projectPrefix}$name"
             "cluster_type" - "REPLICASET"
 
             "backup_enabled" - backupEnabled
@@ -128,13 +128,13 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                     }
                     "priority" - 7
                     "provider_name" - "AWS"
-                    "region_name" - cloudInfo.applicationProvider.awsRegion!!.uppercase()
+                    "region_name" - emitter.applicationRegion.uppercase()
                         .replace("-", "_")
                 }
             }
         }
         "resource.mongodbatlas_database_user.$name" {
-            "username" - "\"${cloudInfo.projectPrefix}$name-main"
+            "username" - "\"${emitter.projectPrefix}$name-main"
             "password" - expression("random_password.$name.result")
             "project_id" - expression("mongodbatlas_project.$name.id")
             "auth_database_name" - "admin"
@@ -155,22 +155,22 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
 
 
 @Untested
-public fun TerraformNeed<Database.Settings>.mongodbFlex(
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbFlex(
     orgId: String,
-    backupEnabled: Boolean,
+    backupEnabled: Boolean = true,
     zoneName: String? = null,
     existingProjectId: String? = null,
-): TerraformServiceResult<Database.Settings> = TerraformServiceResult(
+): Unit = oldStyle(
     need = this,
     setting = $$"""
-        mongodb+srv://$${cloudInfo.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent(),
     requireProviders = setOf(TerraformProviderImport.mongodbAtlas),
-    content = terraformJsonObject {
+    content = {
 
         if (existingProjectId == null) {
             "resource.mongodbatlas_project.$name" {
-                "name" - "${cloudInfo.projectPrefix}$name"
+                "name" - "${emitter.projectPrefix}$name"
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -186,7 +186,7 @@ public fun TerraformNeed<Database.Settings>.mongodbFlex(
         }
         "resource.mongodbatlas_advanced_cluster.${name}" {
             "project_id" - (existingProjectId ?: expression("mongodbatlas_project.$name.id"))
-            "name" - "${cloudInfo.projectPrefix}$name"
+            "name" - "${emitter.projectPrefix}$name"
             "cluster_type" - "REPLICASET"
 
             "backup_enabled" - backupEnabled
@@ -196,13 +196,13 @@ public fun TerraformNeed<Database.Settings>.mongodbFlex(
                 "region_configs" {
                     "provider_name" - "FLEX"
                     "backing_provider_name" - "AWS"
-                    "region_name" - cloudInfo.applicationProvider.awsRegion!!.uppercase().replace("-", "_")
+                    "region_name" - emitter.applicationRegion.uppercase().replace("-", "_")
                     "priority" - 7
                 }
             }
         }
         "resource.mongodbatlas_database_user.$name" {
-            "username" - "\"${cloudInfo.projectPrefix}$name-main"
+            "username" - "\"${emitter.projectPrefix}$name-main"
             "password" - expression("random_password.$name.result")
             "project_id" - expression("mongodbatlas_project.$name.id")
             "auth_database_name" - "admin"
