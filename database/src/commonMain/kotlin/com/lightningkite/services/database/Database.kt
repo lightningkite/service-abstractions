@@ -30,7 +30,7 @@ interface Database : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "ram-unsafe-persist://${Path(SystemFileSystem.resolve(Path("")), "./local/database")}"
+        public val url: String = "ram"
     ) : Setting<Database> {
         public companion object : UrlSettingParser<Database>() {
             init {
