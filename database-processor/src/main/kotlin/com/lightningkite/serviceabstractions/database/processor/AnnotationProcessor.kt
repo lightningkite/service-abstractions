@@ -122,7 +122,7 @@ class TableGenerator(
                                     },
                                     "$classReference.Companion.path(",
                                     declaration.typeParameters.joinToString(", ") { param ->
-                                        "${param.name.asString().camelCase()}: KSerializer<${param.name.asString()}>"
+                                        "${param.name.asString().lowercase()}: KSerializer<${param.name.asString()}>"
                                     },
                                     "): DataClassPath<$typeReference, $typeReference>",
                                     " = ",
@@ -132,7 +132,7 @@ class TableGenerator(
                                         prefix = "($classReference.Companion.serializer(",
                                         postfix = "))"
                                     ) {
-                                        it.name.asString().camelCase()
+                                        it.name.asString().lowercase()
                                     },
                                     "\n"
                                 ).forEach(::append)
