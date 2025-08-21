@@ -114,6 +114,29 @@ class TableGenerator(
                                 appendLine("public inline fun <${declaration.typeParameters.joinToString(", ") {
                                     "reified " + it.name.asString() + ": " + (it.bounds.firstOrNull()?.toKotlin() ?: "Any?")
                                 }}> $classReference.Companion.path(): DataClassPath<$typeReference, $typeReference> = com.lightningkite.services.database.path<$typeReference>()")
+
+                                listOf(
+                                    "public fun",
+                                    declaration.typeParameters.joinToString(", ", prefix = " <", postfix = "> ") { param ->
+                                        param.name.asString() + (param.bounds.firstOrNull()?.toKotlin()?.let { ": $it" } ?: "")
+                                    },
+                                    "$classReference.Companion.path(",
+                                    declaration.typeParameters.joinToString(", ") { param ->
+                                        "${param.name.asString().camelCase()}: KSerializer<${param.name.asString()}>"
+                                    },
+                                    "): DataClassPath<$typeReference, $typeReference>",
+                                    " = ",
+                                    "com.lightningkite.services.database.path",
+                                    declaration.typeParameters.joinToString(
+                                        ", ",
+                                        prefix = "($classReference.Companion.serializer(",
+                                        postfix = "))"
+                                    ) {
+                                        it.name.asString().camelCase()
+                                    },
+                                    "\n"
+                                ).forEach(::append)
+
                                 for ((index, field) in fields.withIndex()) {
                                     val serPropName = "field${
                                         field.name.replaceFirstChar {
