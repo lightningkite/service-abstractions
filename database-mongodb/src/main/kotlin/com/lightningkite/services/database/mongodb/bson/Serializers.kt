@@ -1,5 +1,14 @@
 package com.lightningkite.services.database.mongodb.bson
 
+import com.lightningkite.services.database.DurationMsSerializer
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atDate
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialInfo
@@ -17,6 +26,11 @@ import org.bson.types.Decimal128
 import org.bson.types.ObjectId
 import java.math.BigDecimal
 import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import kotlin.text.toLong
+import kotlin.time.Duration
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 import kotlin.uuid.toJavaUuid
 import kotlin.uuid.toKotlinUuid
@@ -154,10 +168,117 @@ internal object UuidSerializer : KSerializer<Uuid> {
     }
 }
 
+/**
+ *
+ */
+public abstract class TemporalExtendedJsonSerializer<T> : KSerializer<T> {
+
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor(javaClass.name + "/bson", PrimitiveKind.STRING)
+
+    /**
+     * Returns the number of milliseconds since January 1, 1970, 00:00:00 GMT
+     * represented by this <tt>Temporal</tt> object.
+     *
+     * @return  the number of milliseconds since January 1, 1970, 00:00:00 GMT
+     *          represented by this date.
+     */
+    public abstract fun epochMillis(temporal: T): Long
+
+    public abstract fun instantiate(date: Long): T
+
+    override fun serialize(encoder: Encoder, value: T) {
+        encoder as BsonEncoder
+        encoder.encodeDateTime(epochMillis(value))
+    }
+
+    override fun deserialize(decoder: Decoder): T {
+        return when (decoder) {
+            is FlexibleDecoder -> {
+                instantiate(
+                    when (decoder.reader.currentBsonType) {
+                        BsonType.STRING -> decoder.decodeString().toLong()
+                        BsonType.DATE_TIME -> decoder.reader.readDateTime()
+                        BsonType.INT32 -> decoder.decodeInt().toLong()
+                        BsonType.INT64 -> decoder.decodeLong()
+                        BsonType.DOUBLE -> decoder.decodeDouble().toLong()
+                        BsonType.DECIMAL128 -> decoder.reader.readDecimal128().toLong()
+                        BsonType.TIMESTAMP -> TimeUnit.SECONDS.toMillis(decoder.reader.readTimestamp().time.toLong())
+                        else -> throw SerializationException("Unsupported ${decoder.reader.currentBsonType} reading date")
+                    }
+                )
+            }
+            else -> throw SerializationException("Unknown decoder type")
+        }
+    }
+}
+
+//@Serializer(forClass = Instant::class)
+public object MongoInstantSerializer : TemporalExtendedJsonSerializer<Instant>() {
+
+    override fun epochMillis(temporal: Instant): Long = temporal.toEpochMilliseconds()
+
+    override fun instantiate(date: Long): Instant = Instant.fromEpochMilliseconds(date)
+}
+
+//@Serializer(forClass = LocalDate::class)
+public object MongoLocalDateSerializer : TemporalExtendedJsonSerializer<LocalDate>() {
+
+    override fun epochMillis(temporal: LocalDate): Long =
+        MongoInstantSerializer.epochMillis(temporal.atStartOfDayIn(TimeZone.UTC))
+
+    override fun instantiate(date: Long): LocalDate =
+        MongoLocalDateTimeSerializer.instantiate(date).date
+}
+
+//@Serializer(forClass = LocalDateTime::class)
+public object MongoLocalDateTimeSerializer : TemporalExtendedJsonSerializer<LocalDateTime>() {
+
+    override fun epochMillis(temporal: LocalDateTime): Long =
+        MongoInstantSerializer.epochMillis(temporal.toInstant(TimeZone.UTC))
+
+    override fun instantiate(date: Long): LocalDateTime =
+        MongoInstantSerializer.instantiate(date).toLocalDateTime(TimeZone.UTC)
+}
+
+//@Serializer(forClass = LocalTime::class)
+public object MongoLocalTimeSerializer : TemporalExtendedJsonSerializer<LocalTime>() {
+
+    override fun epochMillis(temporal: LocalTime): Long =
+        MongoLocalDateTimeSerializer.epochMillis(temporal.atDate(LocalDate.fromEpochDays(0)))
+
+    override fun instantiate(date: Long): LocalTime =
+        MongoLocalDateTimeSerializer.instantiate(date).time
+}
+
+//@Serializer(forClass = Locale::class)
+public object MongoLocaleSerializer : KSerializer<Locale> {
+
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("java.util.Locale/bson", PrimitiveKind.STRING)
+    override fun deserialize(decoder: Decoder): Locale = Locale.forLanguageTag(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: Locale) {
+        encoder.encodeString(value.toLanguageTag())
+    }
+}
+
 internal val DefaultModule = SerializersModule {
     contextual(ObjectId::class, ObjectIdSerializer)
     contextual(BigDecimal::class, BigDecimalSerializer)
     contextual(ByteArray::class, ByteArraySerializer)
     contextual(Date::class, DateSerializer)
     contextual(Uuid::class, UuidSerializer)
+
+    contextual(Duration::class, DurationMsSerializer)
+    contextual(Instant::class, MongoInstantSerializer)
+//    contextual(ZonedDateTime::class, MongoZonedDateTimeSerializer)
+//    contextual(OffsetDateTime::class, MongoOffsetDateTimeSerializer)
+//    contextual(OffsetTime::class, MongoOffsetTimeSerializer)
+    contextual(LocalDate::class, MongoLocalDateSerializer)
+    contextual(LocalDateTime::class, MongoLocalDateTimeSerializer)
+    contextual(LocalTime::class, MongoLocalTimeSerializer)
+//    contextual(BsonTimestamp::class, BsonTimestampSerializer)
+    contextual(Locale::class, MongoLocaleSerializer)
+//    contextual(Binary::class, BinarySerializer)
+//    contextual(AnonType::class, ByteArrayAnonTypeSerializer)
 }
+
