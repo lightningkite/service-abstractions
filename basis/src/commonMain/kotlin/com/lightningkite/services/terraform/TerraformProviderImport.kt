@@ -34,6 +34,26 @@ public data class TerraformProviderImport(
             source  = "mongodb/mongodbatlas",
             version = "~> 1.33.0",
         )
+        public val local: TerraformProviderImport = TerraformProviderImport(
+            name = "local",
+            source = "hashicorp/local",
+            version = "~> 2.5.2",
+        )
+        public val nullProvider: TerraformProviderImport = TerraformProviderImport(
+            name = "null",
+            source = "hashicorp/null",
+            version = "~> 3.2.3",
+        )
+        public val tls: TerraformProviderImport = TerraformProviderImport(
+            name = "tls",
+            source = "hashicorp/tls",
+            version = "~>4.0.6",
+        )
+        public val ssh: TerraformProviderImport = TerraformProviderImport(
+            name = "ssh",
+            source = "loafoe/ssh",
+            version = "~>2.7.0",
+        )
     }
     public fun toTerraformJson(): JsonObject = terraformJsonObject {
         name {

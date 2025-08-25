@@ -1,6 +1,5 @@
 package com.lightningkite.services.terraform
 
-import com.lightningkite.services.ExceptionReporter
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
@@ -9,7 +8,6 @@ import kotlinx.serialization.json.encodeToJsonElement
 public interface TerraformEmitter {
     public val projectPrefix: String
     public val deploymentTag: String
-    public val domain: String?
 
     public fun require(provider: TerraformProviderImport)
     public fun require(provider: TerraformProvider)
@@ -18,33 +16,32 @@ public interface TerraformEmitter {
 }
 
 public class TerraformAwsVpcInfo(
-    public val idExpression: String,
-    public val securityGroupExpression: String,
-    public val privateSubnetsExpression: String,
-    public val natGatewayIpExpression: String,
+    public val id: String,
+    public val securityGroup: String,
+    public val privateSubnets: String,
+    public val publicSubnets: String,
+    public val applicationSubnets: String,
+    public val natGatewayIps: String,
+    public val cidr: String,
 )
 
 public interface TerraformEmitterAws: TerraformEmitter {
     public val applicationRegion: String
-    public fun addApplicationPolicyStatement(
-        actions: List<String>,
-        effect: String = "Allow",
-        resources: List<String>,
-//        condition: Map<String, Map<String, String>>? = null,
-    )
+    public val policyStatements: MutableCollection<PolicyStatement>
 }
 
-public interface TerraformEmitterAwsVpc: TerraformEmitterAws  {
+public interface TerraformEmitterKnownIpAddresses: TerraformEmitterAws  {
+    public val applicationIpAddresses: String
+}
+
+public interface TerraformEmitterAwsVpc: TerraformEmitterAws, TerraformEmitterKnownIpAddresses  {
     public val applicationVpc: TerraformAwsVpcInfo
-    public val applicationIdExpression: String get() = applicationVpc.idExpression
-    public val applicationSecurityGroupExpression: String get() = applicationVpc.securityGroupExpression
-    public val applicationPrivateSubnetsExpression: String get() = applicationVpc.privateSubnetsExpression
-    public val applicationNatGatewayIpExpression: String get() = applicationVpc.natGatewayIpExpression
+    override val applicationIpAddresses: String get() = applicationVpc.natGatewayIps
 }
 
 public interface TerraformEmitterAwsDomain: TerraformEmitterAws  {
     public val domainZoneId: String
-    override val domain: String
+    public val domain: String
 }
 
 // sample fulfillment

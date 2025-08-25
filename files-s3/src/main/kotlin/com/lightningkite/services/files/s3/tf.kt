@@ -2,6 +2,7 @@ package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.Untested
 import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.terraform.PolicyStatement
 import com.lightningkite.services.terraform.TerraformEmitterAws
 import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.terraform.TerraformProvider
@@ -72,11 +73,11 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.
             }
         }
     }
-    emitter.addApplicationPolicyStatement(
-        actions = listOf("s3:*"),
-        resources = listOf(
+    emitter.policyStatements += (PolicyStatement(
+        action = listOf("s3:*"),
+        resource = listOf(
             $$"arn:aws:s3:::${aws_s3_bucket.$${name}.id}",
             $$"arn:aws:s3:::${aws_s3_bucket.$${name}.id}/*",
-        )
+        ))
     )
 }

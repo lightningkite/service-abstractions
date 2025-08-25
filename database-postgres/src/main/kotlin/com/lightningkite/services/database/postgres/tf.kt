@@ -27,7 +27,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         if (emitter is TerraformEmitterAwsVpc) {
             "resource.aws_db_subnet_group.$name" {
                 "name" - "${emitter.projectPrefix}-${name}"
-                "subnet_ids" - emitter.applicationPrivateSubnetsExpression
+                "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
             }
         }
         
@@ -49,7 +49,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "final_snapshot_identifier" - "${emitter.projectPrefix}-${name}"
 
             if (emitter is TerraformEmitterAwsVpc) {
-                "vpc_security_group_ids" - listOf(emitter.applicationSecurityGroupExpression)
+                "vpc_security_group_ids" - listOf(expression(emitter.applicationVpc.securityGroup))
                 "db_subnet_group_name" - expression("aws_db_subnet_group.${name}.name")
             }
             
@@ -96,7 +96,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         if (emitter is TerraformEmitterAwsVpc) {
             "resource.aws_db_subnet_group.$name" {
                 "name" - "${emitter.projectPrefix}-${name}"
-                "subnet_ids" - (emitter.applicationPrivateSubnetsExpression)
+                "subnet_ids" - (expression(emitter.applicationVpc.privateSubnets))
             }
         }
         
@@ -119,7 +119,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "enable_http_endpoint" - true
             
             if (emitter is TerraformEmitterAwsVpc) {
-                "vpc_security_group_ids" - listOf(emitter.applicationSecurityGroupExpression)
+                "vpc_security_group_ids" - listOf(expression(emitter.applicationVpc.securityGroup))
                 "db_subnet_group_name" - expression("aws_db_subnet_group.${name}.name")
             }
             
