@@ -50,7 +50,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.
             "resource.aws_s3_bucket_policy.${name}" {
                 "depends_on" - listOf<String>("aws_s3_bucket_public_access_block.${name}")
                 "bucket" - expression("aws_s3_bucket.${name}.id")
-                "policy" - """
+                "policy" - $$"""
                 {
                     "Version": "2012-10-17",
                     "Statement": [
@@ -62,7 +62,8 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.
                                 "s3:GetObject"
                             ],
                             "Resource": [
-                                "arn:aws:s3:::*/*"
+                                "arn:aws:s3:::${aws_s3_bucket.$${name}.id}",
+                                "arn:aws:s3:::${aws_s3_bucket.$${name}.id}/*",
                             ]
                         }
                     ]
@@ -73,6 +74,9 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.
     }
     emitter.addApplicationPolicyStatement(
         actions = listOf("s3:*"),
-        resources = listOf("*")
+        resources = listOf(
+            $$"arn:aws:s3:::${aws_s3_bucket.$${name}.id}",
+            $$"arn:aws:s3:::${aws_s3_bucket.$${name}.id}/*",
+        )
     )
 }
