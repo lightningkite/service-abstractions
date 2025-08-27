@@ -23,7 +23,7 @@ public fun testMongo(
     deleteAfter = true,
     databaseFolder = databaseFolder,
     port = Net.freeServerPort(Net.getLocalHost()),
-    version = version?.let { Version.Main.valueOf(it) } ?: Version.Main.V7_0
+    version = version?.let { Version.Main.valueOf(it) } ?: Version.Main.V8_0
 )
 
 public fun embeddedMongo(
@@ -35,14 +35,14 @@ public fun embeddedMongo(
         deleteAfter = false,
         databaseFolder = databaseFolder,
         port = port ?: 54961,
-        version = version?.let { Version.Main.valueOf(it) } ?: Version.Main.V7_0
+        version = version?.let { Version.Main.valueOf(it) } ?: Version.Main.V8_0
     )
 
 private fun embeddedMongo(
     deleteAfter: Boolean,
     databaseFolder: File,
     port: Int,
-    version: Version.Main = Version.Main.V7_0
+    version: Version.Main = Version.Main.V8_0
 ): MongoClientSettings {
 
     databaseFolder.mkdirs()

@@ -9,6 +9,7 @@ import kotlinx.datetime.atDate
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialInfo
@@ -35,12 +36,12 @@ import kotlin.uuid.Uuid
 import kotlin.uuid.toJavaUuid
 import kotlin.uuid.toKotlinUuid
 
+@OptIn(ExperimentalSerializationApi::class)
 @SerialInfo
 @Target(AnnotationTarget.PROPERTY)
 internal annotation class NonEncodeNull
 
 
-@Serializer(forClass = Date::class)
 internal object DateSerializer : KSerializer<Date> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("DateSerializer", PrimitiveKind.STRING)
 
@@ -67,7 +68,6 @@ internal object DateSerializer : KSerializer<Date> {
 }
 
 
-@Serializer(forClass = BigDecimal::class)
 internal object BigDecimalSerializer : KSerializer<BigDecimal> {
     override val descriptor: SerialDescriptor =
             PrimitiveSerialDescriptor("BigDecimalSerializer", PrimitiveKind.STRING)
@@ -93,7 +93,6 @@ internal object BigDecimalSerializer : KSerializer<BigDecimal> {
 }
 
 
-@Serializer(forClass = ByteArray::class)
 internal object ByteArraySerializer : KSerializer<ByteArray> {
     override val descriptor: SerialDescriptor =
             PrimitiveSerialDescriptor("ByteArraySerializer", PrimitiveKind.STRING)
@@ -116,7 +115,6 @@ internal object ByteArraySerializer : KSerializer<ByteArray> {
 }
 
 
-@Serializer(forClass = ObjectId::class)
 internal object ObjectIdSerializer : KSerializer<ObjectId> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("ObjectIdSerializer", PrimitiveKind.STRING)
 
@@ -141,7 +139,7 @@ internal object ObjectIdSerializer : KSerializer<ObjectId> {
     }
 }
 
-@Serializer(forClass = Uuid::class)
+
 internal object UuidSerializer : KSerializer<Uuid> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("UuidSerializer", PrimitiveKind.STRING)
 
@@ -168,9 +166,7 @@ internal object UuidSerializer : KSerializer<Uuid> {
     }
 }
 
-/**
- *
- */
+
 public abstract class TemporalExtendedJsonSerializer<T> : KSerializer<T> {
 
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor(javaClass.name + "/bson", PrimitiveKind.STRING)
@@ -212,7 +208,7 @@ public abstract class TemporalExtendedJsonSerializer<T> : KSerializer<T> {
     }
 }
 
-//@Serializer(forClass = Instant::class)
+
 public object MongoInstantSerializer : TemporalExtendedJsonSerializer<Instant>() {
 
     override fun epochMillis(temporal: Instant): Long = temporal.toEpochMilliseconds()
@@ -220,7 +216,7 @@ public object MongoInstantSerializer : TemporalExtendedJsonSerializer<Instant>()
     override fun instantiate(date: Long): Instant = Instant.fromEpochMilliseconds(date)
 }
 
-//@Serializer(forClass = LocalDate::class)
+
 public object MongoLocalDateSerializer : TemporalExtendedJsonSerializer<LocalDate>() {
 
     override fun epochMillis(temporal: LocalDate): Long =
@@ -230,7 +226,7 @@ public object MongoLocalDateSerializer : TemporalExtendedJsonSerializer<LocalDat
         MongoLocalDateTimeSerializer.instantiate(date).date
 }
 
-//@Serializer(forClass = LocalDateTime::class)
+
 public object MongoLocalDateTimeSerializer : TemporalExtendedJsonSerializer<LocalDateTime>() {
 
     override fun epochMillis(temporal: LocalDateTime): Long =
@@ -240,7 +236,7 @@ public object MongoLocalDateTimeSerializer : TemporalExtendedJsonSerializer<Loca
         MongoInstantSerializer.instantiate(date).toLocalDateTime(TimeZone.UTC)
 }
 
-//@Serializer(forClass = LocalTime::class)
+
 public object MongoLocalTimeSerializer : TemporalExtendedJsonSerializer<LocalTime>() {
 
     override fun epochMillis(temporal: LocalTime): Long =
@@ -250,7 +246,7 @@ public object MongoLocalTimeSerializer : TemporalExtendedJsonSerializer<LocalTim
         MongoLocalDateTimeSerializer.instantiate(date).time
 }
 
-//@Serializer(forClass = Locale::class)
+
 public object MongoLocaleSerializer : KSerializer<Locale> {
 
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("java.util.Locale/bson", PrimitiveKind.STRING)
@@ -261,6 +257,7 @@ public object MongoLocaleSerializer : KSerializer<Locale> {
     }
 }
 
+
 internal val DefaultModule = SerializersModule {
     contextual(ObjectId::class, ObjectIdSerializer)
     contextual(BigDecimal::class, BigDecimalSerializer)
@@ -270,15 +267,9 @@ internal val DefaultModule = SerializersModule {
 
     contextual(Duration::class, DurationMsSerializer)
     contextual(Instant::class, MongoInstantSerializer)
-//    contextual(ZonedDateTime::class, MongoZonedDateTimeSerializer)
-//    contextual(OffsetDateTime::class, MongoOffsetDateTimeSerializer)
-//    contextual(OffsetTime::class, MongoOffsetTimeSerializer)
     contextual(LocalDate::class, MongoLocalDateSerializer)
     contextual(LocalDateTime::class, MongoLocalDateTimeSerializer)
     contextual(LocalTime::class, MongoLocalTimeSerializer)
-//    contextual(BsonTimestamp::class, BsonTimestampSerializer)
     contextual(Locale::class, MongoLocaleSerializer)
-//    contextual(Binary::class, BinarySerializer)
-//    contextual(AnonType::class, ByteArrayAnonTypeSerializer)
 }
 
