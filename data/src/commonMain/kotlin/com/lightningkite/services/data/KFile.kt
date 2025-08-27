@@ -8,6 +8,7 @@ import kotlinx.io.files.FileMetadata
 import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import kotlinx.io.files.SystemPathSeparator
 import kotlinx.io.files.SystemTemporaryDirectory
 import kotlinx.io.readByteArray
 import kotlinx.io.readByteString
@@ -76,7 +77,8 @@ public data class KFile(public val fileSystem: FileSystem, public val path: Path
     public fun takeIfExists(): KFile? = takeIf { fileSystem.exists(path) }
 }
 
-public val FileSystem.root: KFile get() = KFile(this, Path(""))
+public val FileSystem.root: KFile get() = KFile(this, Path("$SystemPathSeparator"))
+public val workingDirectory: KFile get() = KFile(SystemFileSystem, Path(""))
 public fun FileSystem.temporary(extension: String = "file", leading: String? = null): KFile = KFile(this,
     Path(SystemTemporaryDirectory, (leading ?: Uuid.random().toString()) + "." + extension)
 )

@@ -52,6 +52,14 @@ public inline fun <reified T> TerraformNeed<T>.direct(value: T): Unit = with(emi
 }
 
 context(emitter: TerraformEmitter)
+public inline fun <reified T> TerraformNeed<T>.byVariable(): Unit = with(emitter) {
+    emit("variables") {
+        "var.$name" {}
+    }
+    fulfillSetting(name, JsonPrimitive(TerraformJsonObject.expression("var.$name")))
+}
+
+context(emitter: TerraformEmitter)
 public inline fun <reified T> TerraformNeed<T>.oldStyle(
     need: TerraformNeed<T>,
     setting: JsonElement,
@@ -60,19 +68,6 @@ public inline fun <reified T> TerraformNeed<T>.oldStyle(
     crossinline content: TerraformJsonObject.()->Unit
 ) {
     emitter.fulfillSetting(name, setting)
-    providers.forEach { emitter.require(it) }
-    requireProviders.forEach { emitter.require(it) }
-    emitter.emit(need.name) { content() }
-}
-context(emitter: TerraformEmitter)
-public inline fun <reified T> TerraformNeed<T>.oldStyle(
-    need: TerraformNeed<T>,
-    setting: String,
-    requireProviders: Collection<TerraformProviderImport> = emptyList(),
-    providers: Collection<TerraformProvider> = emptyList(),
-    crossinline content: TerraformJsonObject.()->Unit
-) {
-    emitter.fulfillSetting(name, JsonPrimitive(setting))
     providers.forEach { emitter.require(it) }
     requireProviders.forEach { emitter.require(it) }
     emitter.emit(need.name) { content() }

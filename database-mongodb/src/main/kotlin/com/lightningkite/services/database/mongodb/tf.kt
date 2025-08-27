@@ -5,10 +5,13 @@ import com.lightningkite.services.database.Database
 import com.lightningkite.services.terraform.TerraformEmitterAws
 import com.lightningkite.services.terraform.TerraformEmitterAwsVpc
 import com.lightningkite.services.terraform.TerraformEmitterKnownIpAddresses
+import com.lightningkite.services.terraform.TerraformJsonObject
 import com.lightningkite.services.terraform.TerraformNeed
+import com.lightningkite.services.terraform.TerraformProvider
 import com.lightningkite.services.terraform.TerraformProviderImport
-import com.lightningkite.services.terraform.oldStyle
 import com.lightningkite.services.terraform.terraformJsonObject
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 @Deprecated("Deprecated by Atlas")
 @Untested
@@ -16,18 +19,22 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     orgId: String,
     continuousBackupEnabled: Boolean,
     existingProjectId: String? = null,
-): Unit = oldStyle(
-    need = this,
-    setting = $$"""
+): Unit {
+    emitter.fulfillSetting(
+        name, JsonPrimitive(
+            value = $$"""
         mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(resource.mongodbatlas_serverless_instance.$$name.connection_strings_standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent(),
-    requireProviders = setOf(TerraformProviderImport.mongodbAtlas),
-    content = {
-        val region = emitter.applicationRegion.uppercase().replace("-", "_")
-
-        val projectId = if (existingProjectId == null) {
-            "resource.mongodbatlas_project.$name" {
-                "name" - "${emitter.projectPrefix}$name"
+    """.trimIndent()
+        )
+    )
+    emptyList<TerraformProvider>().forEach { emitter.require(it) }
+    setOf(TerraformProviderImport.mongodbAtlas).forEach { emitter.require(it) }
+    emitter.emit(name) {
+        val projectName1 = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}${name}"
+        val region1 = emitter.applicationRegion.uppercase().replace("-", "_")
+        val projectId1 = if (existingProjectId == null) {
+            "resource.mongodbatlas_project.${name}" {
+                "name" - "$projectName1"
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -35,30 +42,30 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
                 "is_realtime_performance_panel_enabled" - true
                 "is_schema_advisor_enabled" - true
             }
-            expression("mongodbatlas_project.$name.id")
+            expression("mongodbatlas_project.${name}.id")
         } else existingProjectId
         "resource.random_password.${name}" {
             "length" - 32
             "special" - true
             "override_special" - "-_"
         }
-        "resource.mongodbatlas_serverless_instance.$name" {
-            "project_id" - projectId
-            "name" - "${emitter.projectPrefix}$name"
+        "resource.mongodbatlas_serverless_instance.${name}" {
+            "project_id" - projectId1
+            "name" - "$projectName1"
 
             "provider_settings_backing_provider_name" - "AWS"
             "provider_settings_provider_name" - "SERVERLESS"
-            "provider_settings_region_name" - region
+            "provider_settings_region_name" - region1
 
             "continuous_backup_enabled" - continuousBackupEnabled
         }
-        "resource.mongodbatlas_database_user.$name" {
-            "username" - "${emitter.projectPrefix}$name-main"
-            "password" - expression("random_password.$name.result")
-            "project_id" - expression("mongodbatlas_project.$name.id")
+        "resource.mongodbatlas_database_user.${name}" {
+            "username" - "$projectName1-main"
+            "password" - expression("random_password.${name}.result")
+            "project_id" - expression("mongodbatlas_project.${name}.id")
             "auth_database_name" - "admin"
 
-            "roles" - listOf(
+            "roles" - listOf<JsonObject>(
                 terraformJsonObject {
                     "role_name" - "readWrite"
                     "database_name" - "default"
@@ -69,22 +76,21 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
                 }
             )
         }
-
-        (emitter as? TerraformEmitterKnownIpAddresses)?.let { emitter ->
+        (emitter as? TerraformEmitterKnownIpAddresses)?.let<TerraformEmitterKnownIpAddresses, Unit> { emitter ->
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id"   - projectId
+                "project_id" - projectId1
                 "cidr_block" - $$"${element($${emitter.applicationIpAddresses},0)}/32"
-                "comment"    - "Main Compute"
+                "comment" - "Main Compute"
             }
         } ?: run {
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id"   - projectId
+                "project_id" - projectId1
                 "cidr_block" - "0.0.0.0/0"
-                "comment"    - "Anywhere"
+                "comment" - "Anywhere"
             }
         }
     }
-)
+}
 
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     orgId: String,
@@ -93,18 +99,28 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     minSize: String = "M10",
     maxSize: String = "M40",
     existingProjectId: String? = null,
-): Unit = oldStyle(
-    need = this,
-    setting = $$"""
+): Unit {
+    emitter.fulfillSetting(
+        this@mongodbAtlas.name, JsonPrimitive(
+            value = $$"""
         mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent(),
-    requireProviders = setOf(TerraformProviderImport.mongodbAtlas),
-    content = {
+    """.trimIndent()
+        )
+    )
+    emptyList<com.lightningkite.services.terraform.TerraformProvider>().forEach { emitter.require(it) }
+    setOf(TerraformProviderImport.mongodbAtlas).forEach { emitter.require(it) }
+    emitter.emit(this.name) { // MongoDB ATLAS Network Container - View Highlighted section below.
+        // MongoDB ATLAS VPC Peer Conf
+        // IP Whitelist on ATLAS side
+        // # UPDATE - MongoDB ATLAS provider 1.0.0 made mongodbatlas_project_ip_whitelist resource and replaced with mongodbatlas_project_ip_access_list
+        // AWS VPC Peer Conf
+        // VPC Peer Device to ATLAS Route Table Association on AWS
+        val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
         val region = emitter.applicationRegion.uppercase().replace("-", "_")
 
         val projectId = if (existingProjectId == null) {
             "resource.mongodbatlas_project.$name" {
-                "name" - "${emitter.projectPrefix}$name"
+                "name" - "$projectName"
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -121,7 +137,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         }
         "resource.mongodbatlas_advanced_cluster.$name" {
             "project_id" - projectId
-            "name" - "${emitter.projectPrefix}$name"
+            "name" - "$projectName"
             "cluster_type" - "REPLICASET"
 
             "backup_enabled" - backupEnabled
@@ -151,7 +167,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             }
         }
         "resource.mongodbatlas_database_user.$name" {
-            "username" - "${emitter.projectPrefix}$name-main"
+            "username" - "$projectName-main"
             "password" - expression("random_password.$name.result")
             "project_id" - expression("mongodbatlas_project.$name.id")
             "auth_database_name" - "admin"
@@ -216,39 +232,47 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             }
         } ?: (emitter as? TerraformEmitterKnownIpAddresses)?.let { emitter ->
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id"   - projectId
+                "project_id" - projectId
                 "cidr_block" - $$"${element($${emitter.applicationIpAddresses},0)}/32"
-                "comment"    - "Main Compute"
+                "comment" - "Main Compute"
             }
         } ?: run {
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id"   - projectId
+                "project_id" - projectId
                 "cidr_block" - "0.0.0.0/0"
-                "comment"    - "Anywhere"
+                "comment" - "Anywhere"
             }
         }
     }
-)
+}
 
-
-@Untested
-context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
     orgId: String,
     backupEnabled: Boolean = true,
     zoneName: String? = null,
     existingProjectId: String? = null,
-): Unit = oldStyle(
-    need = this,
-    setting = $$"""
+): Unit {
+    emitter.fulfillSetting(
+        this@mongodbAtlasFree.name, JsonPrimitive(
+            value = $$"""
         mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent(),
-    requireProviders = setOf(TerraformProviderImport.mongodbAtlas),
-    content = {
+    """.trimIndent()
+        )
+    )
+    emptyList<com.lightningkite.services.terraform.TerraformProvider>().forEach { emitter.require(it) }
+    setOf(TerraformProviderImport.mongodbAtlas).forEach { emitter.require(it) }
+    emitter.emit(this.name) { // MongoDB ATLAS Network Container - View Highlighted section below.
+        // MongoDB ATLAS VPC Peer Conf
+        // IP Whitelist on ATLAS side
+        // # UPDATE - MongoDB ATLAS provider 1.0.0 made mongodbatlas_project_ip_whitelist resource and replaced with mongodbatlas_project_ip_access_list
+        // AWS VPC Peer Conf
+        // VPC Peer Device to ATLAS Route Table Association on AWS
+        val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
         val region = emitter.applicationRegion.uppercase().replace("-", "_")
 
         val projectId = if (existingProjectId == null) {
             "resource.mongodbatlas_project.$name" {
-                "name" - "${emitter.projectPrefix}$name"
+                "name" - "$projectName"
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -263,9 +287,9 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "special" - true
             "override_special" - "-_"
         }
-        "resource.mongodbatlas_advanced_cluster.${name}" {
+        "resource.mongodbatlas_advanced_cluster.$name" {
             "project_id" - projectId
-            "name" - "${emitter.projectPrefix}$name"
+            "name" - "$projectName"
             "cluster_type" - "REPLICASET"
 
             "backup_enabled" - backupEnabled
@@ -273,15 +297,17 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "replication_specs" {
                 "zone_name" - zoneName
                 "region_configs" {
-                    "provider_name" - "FLEX"
+                    "electable_specs" {
+                        "instance_size" - "M0"
+                    }
+                    "priority" - 7
                     "backing_provider_name" - "AWS"
                     "region_name" - region
-                    "priority" - 7
                 }
             }
         }
         "resource.mongodbatlas_database_user.$name" {
-            "username" - "${emitter.projectPrefix}$name-main"
+            "username" - "$projectName-main"
             "password" - expression("random_password.$name.result")
             "project_id" - expression("mongodbatlas_project.$name.id")
             "auth_database_name" - "admin"
@@ -299,16 +325,103 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         }
         (emitter as? TerraformEmitterKnownIpAddresses)?.let { emitter ->
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id"   - projectId
+                "project_id" - projectId
                 "cidr_block" - $$"${element($${emitter.applicationIpAddresses},0)}/32"
-                "comment"    - "Main Compute"
+                "comment" - "Main Compute"
             }
         } ?: run {
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id"   - projectId
+                "project_id" - projectId
                 "cidr_block" - "0.0.0.0/0"
-                "comment"    - "Anywhere"
+                "comment" - "Anywhere"
             }
         }
     }
-)
+}
+
+
+@Untested
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
+    orgId: String,
+    backupEnabled: Boolean = true,
+    zoneName: String? = null,
+    existingProjectId: String? = null,
+): Unit {
+    emitter.fulfillSetting(
+        name, JsonPrimitive(
+            value = $$"""
+        mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+    """.trimIndent()
+        )
+    )
+    emptyList<TerraformProvider>().forEach { emitter.require(it) }
+    setOf(TerraformProviderImport.mongodbAtlas).forEach { emitter.require(it) }
+    emitter.emit(name) {
+        val projectName1 = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}${name}"
+        val region1 = emitter.applicationRegion.uppercase().replace("-", "_")
+        val projectId1 = if (existingProjectId == null) {
+            "resource.mongodbatlas_project.${name}" {
+                "name" - "$projectName1"
+                "org_id" - orgId
+                "is_collect_database_specifics_statistics_enabled" - true
+                "is_data_explorer_enabled" - true
+                "is_performance_advisor_enabled" - true
+                "is_realtime_performance_panel_enabled" - true
+                "is_schema_advisor_enabled" - true
+            }
+            expression("mongodbatlas_project.${name}.id")
+        } else existingProjectId
+        "resource.random_password.${name}" {
+            "length" - 32
+            "special" - true
+            "override_special" - "-_"
+        }
+        "resource.mongodbatlas_advanced_cluster.${name}" {
+            "project_id" - projectId1
+            "name" - "$projectName1"
+            "cluster_type" - "REPLICASET"
+
+            "backup_enabled" - backupEnabled
+
+            "replication_specs" {
+                "zone_name" - zoneName
+                "region_configs" {
+                    "provider_name" - "FLEX"
+                    "backing_provider_name" - "AWS"
+                    "region_name" - region1
+                    "priority" - 7
+                }
+            }
+        }
+        "resource.mongodbatlas_database_user.${name}" {
+            "username" - "$projectName1-main"
+            "password" - expression("random_password.${name}.result")
+            "project_id" - expression("mongodbatlas_project.${name}.id")
+            "auth_database_name" - "admin"
+
+            "roles" - listOf<JsonObject>(
+                terraformJsonObject {
+                    "role_name" - "readWrite"
+                    "database_name" - "default"
+                },
+                terraformJsonObject {
+                    "role_name" - "readAnyDatabase"
+                    "database_name" - "admin"
+                }
+            )
+        }
+        (emitter as? TerraformEmitterKnownIpAddresses)?.let<TerraformEmitterKnownIpAddresses, Unit> { emitter ->
+            "resource.mongodbatlas_project_ip_access_list.database" {
+                "project_id" - projectId1
+                "cidr_block" - $$"${element($${emitter.applicationIpAddresses},0)}/32"
+                "comment" - "Main Compute"
+            }
+        } ?: run {
+            "resource.mongodbatlas_project_ip_access_list.database" {
+                "project_id" - projectId1
+                "cidr_block" - "0.0.0.0/0"
+                "comment" - "Anywhere"
+            }
+        }
+    }
+}

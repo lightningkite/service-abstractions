@@ -1,13 +1,12 @@
 package com.lightningkite.services.email.javasmtp
 
 import com.lightningkite.services.email.EmailService
-import com.lightningkite.services.terraform.TerraformEmitterAws
 import com.lightningkite.services.terraform.TerraformEmitterAwsDomain
 import com.lightningkite.services.terraform.TerraformEmitterAwsVpc
+import com.lightningkite.services.terraform.TerraformJsonObject
 import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.terraform.TerraformProviderImport
-import com.lightningkite.services.terraform.oldStyle
-import com.lightningkite.services.terraform.terraformJsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Creates a console-based email service for development.
@@ -15,13 +14,17 @@ import com.lightningkite.services.terraform.terraformJsonObject
  */
 context(emitter: TerraformEmitterAwsDomain) public fun TerraformNeed<EmailService.Settings>.aws(
     reportingEmail: String,
-): Unit = oldStyle(
-    need = this,
-    setting = $$"""
+): Unit {
+    emitter.fulfillSetting(
+        this@aws.name, JsonPrimitive(
+            value = $$"""
         smtp://${aws_iam_access_key.$${name}.id}:${aws_iam_access_key.$${name}.ses_smtp_password_v4}@email-smtp.$${emitter.applicationRegion}.amazonaws.com:587?fromEmail=noreply@$${emitter.domain}
-    """.trimIndent(),
-    requireProviders = setOf(TerraformProviderImport.aws),
-    content = {
+    """.trimIndent()
+        )
+    )
+    emptyList<com.lightningkite.services.terraform.TerraformProvider>().forEach { emitter.require(it) }
+    setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+    emitter.emit(this.name) { //                "depends_on" - listOf("resource.aws_ses_domain_identity.$name")
         "resource.aws_iam_user.$name" {
             "name" - "${emitter.projectPrefix}-${name}-user"
         }
@@ -31,7 +34,7 @@ context(emitter: TerraformEmitterAwsDomain) public fun TerraformNeed<EmailServic
         "data.aws_iam_policy_document.$name" {
             "statement" {
                 "actions" - listOf("ses:SendRawEmail")
-                "resources"- listOf("*")
+                "resources" - listOf("*")
             }
         }
         "resource.aws_iam_policy.$name" {
@@ -43,7 +46,7 @@ context(emitter: TerraformEmitterAwsDomain) public fun TerraformNeed<EmailServic
             "user" - expression("aws_iam_user.$name.name")
             "policy_arn" - expression("aws_iam_policy.$name.arn")
         }
-        if(emitter is TerraformEmitterAwsVpc) {
+        if (emitter is TerraformEmitterAwsVpc) {
             "resource.aws_security_group.$name" {
                 "name" - "${emitter.projectPrefix}-${name}-security-group"
                 "vpc_id" - expression(emitter.applicationVpc.id)
@@ -121,4 +124,4 @@ context(emitter: TerraformEmitterAwsDomain) public fun TerraformNeed<EmailServic
             )
         }
     }
-)
+}

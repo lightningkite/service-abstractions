@@ -8,7 +8,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
-public class TerraformProvider(
+public data class TerraformProvider(
     public val import: TerraformProviderImport,
     public val alias: String? = null,
     public val out: JsonObject,

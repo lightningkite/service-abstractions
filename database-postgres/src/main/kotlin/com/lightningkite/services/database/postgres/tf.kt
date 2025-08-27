@@ -3,6 +3,7 @@ package com.lightningkite.services.database.postgres
 import com.lightningkite.services.Untested
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.terraform.*
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Creates an AWS Aurora Serverless V2 PostgreSQL cluster for database operations.
@@ -17,27 +18,29 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     minCapacity: Double = 0.5,
     maxCapacity: Double = 2.0,
     autoPause: Boolean = true,
-): Unit = oldStyle(
-    need = this,
-    setting = $$"""
+): Unit {
+    emitter.fulfillSetting(
+        name, JsonPrimitive(
+            value = $$"""
         postgresql://master:${random_password.$$name.result}@${aws_rds_cluster.$$name.endpoint}/$$name
-    """.trimIndent(),
-    requireProviders = setOf(TerraformProviderImport.aws),
-    content = {
+    """.trimIndent()
+        )
+    )
+    emptyList<TerraformProvider>().forEach { emitter.require(it) }
+    setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+    emitter.emit(name) {
         if (emitter is TerraformEmitterAwsVpc) {
-            "resource.aws_db_subnet_group.$name" {
+            "resource.aws_db_subnet_group.${name}" {
                 "name" - "${emitter.projectPrefix}-${name}"
                 "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
             }
         }
-        
         "resource.random_password.${name}" {
             "length" - 32
             "special" - true
             "override_special" - "-_"
         }
-        
-        "resource.aws_rds_cluster.$name" {
+        "resource.aws_rds_cluster.${name}" {
             "cluster_identifier" - "${emitter.projectPrefix}-${name}"
             "engine" - "aurora-postgresql"
             "engine_mode" - "provisioned"
@@ -49,17 +52,16 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "final_snapshot_identifier" - "${emitter.projectPrefix}-${name}"
 
             if (emitter is TerraformEmitterAwsVpc) {
-                "vpc_security_group_ids" - listOf(expression(emitter.applicationVpc.securityGroup))
+                "vpc_security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
                 "db_subnet_group_name" - expression("aws_db_subnet_group.${name}.name")
             }
-            
+
             "serverlessv2_scaling_configuration" {
                 "min_capacity" - minCapacity
                 "max_capacity" - maxCapacity
             }
         }
-        
-        "resource.aws_rds_cluster_instance.$name" {
+        "resource.aws_rds_cluster_instance.${name}" {
             "publicly_accessible" - (emitter is TerraformEmitterAwsVpc)
             "cluster_identifier" - expression("aws_rds_cluster.${name}.id")
             "instance_class" - "db.serverless"
@@ -71,7 +73,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             }
         }
     }
-)
+}
 
 /**
  * Creates an AWS Aurora Serverless V1 PostgreSQL cluster for database operations.
@@ -86,27 +88,29 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     minCapacity: Int = 2,
     maxCapacity: Int = 4,
     autoPause: Boolean = true,
-): Unit = oldStyle(
-    need = this,
-    setting = $$"""
+): Unit {
+    emitter.fulfillSetting(
+        name, JsonPrimitive(
+            value = $$"""
         postgresql://master:${random_password.$$name.result}@${aws_rds_cluster.$$name.endpoint}/$$name
-    """.trimIndent(),
-    requireProviders = setOf(TerraformProviderImport.aws),
-    content = {
+    """.trimIndent()
+        )
+    )
+    emptyList<TerraformProvider>().forEach { emitter.require(it) }
+    setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+    emitter.emit(name) {
         if (emitter is TerraformEmitterAwsVpc) {
-            "resource.aws_db_subnet_group.$name" {
+            "resource.aws_db_subnet_group.${name}" {
                 "name" - "${emitter.projectPrefix}-${name}"
                 "subnet_ids" - (expression(emitter.applicationVpc.privateSubnets))
             }
         }
-        
         "resource.random_password.${name}" {
             "length" - 32
             "special" - true
             "override_special" - "-_"
         }
-        
-        "resource.aws_rds_cluster.$name" {
+        "resource.aws_rds_cluster.${name}" {
             "cluster_identifier" - "${emitter.projectPrefix}-${name}"
             "engine" - "aurora-postgresql"
             "engine_mode" - "serverless"
@@ -117,12 +121,12 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "skip_final_snapshot" - true
             "final_snapshot_identifier" - "${emitter.projectPrefix}-${name}"
             "enable_http_endpoint" - true
-            
+
             if (emitter is TerraformEmitterAwsVpc) {
-                "vpc_security_group_ids" - listOf(expression(emitter.applicationVpc.securityGroup))
+                "vpc_security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
                 "db_subnet_group_name" - expression("aws_db_subnet_group.${name}.name")
             }
-            
+
             "scaling_configuration" {
                 "auto_pause" - autoPause
                 "min_capacity" - minCapacity
@@ -132,4 +136,4 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             }
         }
     }
-)
+}

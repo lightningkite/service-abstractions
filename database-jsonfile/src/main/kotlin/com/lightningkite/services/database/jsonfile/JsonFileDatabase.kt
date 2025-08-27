@@ -6,6 +6,7 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.countMetric
 import com.lightningkite.services.data.KFile
 import com.lightningkite.services.data.root
+import com.lightningkite.services.data.workingDirectory
 import com.lightningkite.services.database.MetricsTable
 import com.lightningkite.services.performanceMetric
 import kotlinx.io.buffered
@@ -30,7 +31,7 @@ public class JsonFileDatabase(
 ) :
     Database {
     init {
-        folder.mkdirs()
+        folder.createDirectories()
     }
 
     public companion object {
@@ -38,7 +39,7 @@ public class JsonFileDatabase(
             Database.Settings.register("json-files") { name, url, context ->
                 JsonFileDatabase(
                     name,
-                    SystemFileSystem.root.resolve(url.substringAfter("://")),
+                    workingDirectory.resolve(url.substringAfter("://")),
                     context
                 )
             }
