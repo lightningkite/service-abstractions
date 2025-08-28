@@ -30,6 +30,11 @@ public class PostgresDatabase(
     }
 
     public companion object {
+        public fun com.lightningkite.services.database.Database.Settings.Companion.postgres(
+            username: String,
+            password: String,
+            host: String
+        ): com.lightningkite.services.database.Database.Settings = com.lightningkite.services.database.Database.Settings("postgresql://$username:$password@$host")
         init {
             // postgresql://user:password@endpoint/database
             com.lightningkite.services.database.Database.Settings.register("postgresql") { name, url, context ->

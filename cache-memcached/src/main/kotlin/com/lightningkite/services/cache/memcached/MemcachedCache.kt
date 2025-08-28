@@ -25,6 +25,9 @@ public class MemcachedCache(
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
     
     public companion object {
+        public fun Cache.Settings.Companion.memcached(vararg hosts: InetSocketAddress): Cache.Settings = Cache.Settings("memcached://${hosts.joinToString(","){ it.hostString + ":" + it.port }}")
+        public fun Cache.Settings.Companion.memcachedTest(): Cache.Settings = Cache.Settings("memcached-test")
+        public fun Cache.Settings.Companion.memcachedAws(host: String, port: Int): Cache.Settings = Cache.Settings("memcached-aws://$host:$port")
         init {
             Cache.Settings.register("memcached-test") { name, url, context ->
                 val process = EmbeddedMemcached.start()

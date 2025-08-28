@@ -2,7 +2,7 @@ package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.Untested
 import com.lightningkite.services.files.PublicFileSystem
-import com.lightningkite.services.terraform.PolicyStatement
+import com.lightningkite.services.terraform.AwsPolicyStatement
 import com.lightningkite.services.terraform.TerraformEmitterAws
 import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.terraform.TerraformProvider
@@ -19,15 +19,15 @@ import kotlin.time.Duration
  */
 @Untested
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.Settings>.awsS3Bucket(
+    signedUrlDuration: Duration? = null,
     forceDestroy: Boolean = true,
-    signedUrlDuration: Duration? = null
 ): Unit {
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = if (signedUrlDuration == null) {
-                "s3://\${aws_s3_bucket.${name}.bucket}.s3-\${aws_s3_bucket.${name}.region}.amazonaws.com/"
+                $$"s3://${aws_s3_bucket.$${name}.bucket}.s3-${aws_s3_bucket.$${name}.region}.amazonaws.com/"
             } else {
-                "s3://\${aws_s3_bucket.${name}.bucket}.s3-\${aws_s3_bucket.${name}.region}.amazonaws.com/?signedUrlDuration=$signedUrlDuration"
+                $$"s3://${aws_s3_bucket.$${name}.bucket}.s3-${aws_s3_bucket.$${name}.region}.amazonaws.com/?signedUrlDuration=$$signedUrlDuration"
             }
         )
     )
@@ -73,7 +73,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.
             }
         }
     }
-    emitter.policyStatements += (PolicyStatement(
+    emitter.policyStatements += (AwsPolicyStatement(
         action = listOf("s3:*"),
         resource = listOf(
             $$"arn:aws:s3:::${aws_s3_bucket.$${name}.id}",

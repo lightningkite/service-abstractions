@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
-public data class PolicyStatement(
+public data class AwsPolicyStatement(
     @SerialName("Sid") val sid: String? = null,
     @SerialName("Action") val action: List<String>,
     @SerialName("Effect") val effect: Effect = Effect.Allow,

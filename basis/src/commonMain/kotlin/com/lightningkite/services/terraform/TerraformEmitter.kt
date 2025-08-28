@@ -27,7 +27,7 @@ public class TerraformAwsVpcInfo(
 
 public interface TerraformEmitterAws: TerraformEmitter {
     public val applicationRegion: String
-    public val policyStatements: MutableCollection<PolicyStatement>
+    public val policyStatements: MutableCollection<AwsPolicyStatement>
 }
 
 public interface TerraformEmitterKnownIpAddresses: TerraformEmitterAws  {

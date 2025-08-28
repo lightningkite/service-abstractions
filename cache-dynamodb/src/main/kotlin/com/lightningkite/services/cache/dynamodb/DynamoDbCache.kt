@@ -30,6 +30,17 @@ public class DynamoDbCache(
     public val client: DynamoDbAsyncClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED, makeClient)
 
     public companion object {
+        public fun Cache.Settings.Companion.dynamoDbLocal(): Cache.Settings = Cache.Settings("dynamodb-local")
+        public fun Cache.Settings.Companion.dynamoDb(
+            region: Region,
+            tableName: String
+        ): Cache.Settings = Cache.Settings("dynamodb://$region/$tableName")
+        public fun Cache.Settings.Companion.dynamoDb(
+            accessKey: String,
+            secretKey: String,
+            region: Region,
+            tableName: String
+        ): Cache.Settings = Cache.Settings("dynamodb://$accessKey:$secretKey@$region/$tableName")
         init {
             Cache.Settings.register("dynamodb-local") { name, url, context ->
                 DynamoDbCache(name, { embeddedDynamo() }, context = context)

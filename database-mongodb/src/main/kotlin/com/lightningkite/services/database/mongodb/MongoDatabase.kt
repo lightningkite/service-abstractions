@@ -47,6 +47,11 @@ public class MongoDatabase(
             ?.mapValues { it.value.map { it.second } }
             ?: emptyMap()
 
+        public fun Database.Settings.Companion.mongoDb(connectionString: String): Database.Settings = Database.Settings(connectionString)
+        public fun Database.Settings.Companion.mongoDbTest(version: String? = null): Database.Settings = Database.Settings("mongodb-test://?mongoVersion=$version")
+        public fun Database.Settings.Companion.mongoDbFile(folder: String, port: Int? = null, databaseName: String? = null): Database.Settings =
+            Database.Settings("mongodb-file://$folder?port=$port&databaseName=$databaseName")
+
         init {
             Database.Settings.register("mongodb") { name, url, context ->
                 Regex("""mongodb://.*/(?<databaseName>[^?]+)(?:\?.*)?""")

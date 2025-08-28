@@ -1,6 +1,6 @@
 package com.lightningkite.services.test
 
-import com.lightningkite.services.terraform.PolicyStatement
+import com.lightningkite.services.terraform.AwsPolicyStatement
 import com.lightningkite.services.terraform.TerraformAwsVpcInfo
 import com.lightningkite.services.terraform.TerraformEmitter
 import com.lightningkite.services.terraform.TerraformEmitterAws
@@ -11,20 +11,14 @@ import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.terraform.TerraformProvider
 import com.lightningkite.services.terraform.TerraformProviderImport
 import com.lightningkite.services.terraform.include
-import com.lightningkite.services.terraform.terraformJsonObject
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.serializer
 import java.io.File
 
@@ -39,7 +33,7 @@ open class TerraformEmitterAwsTest<S>(
         root.mkdirs()
     }
 
-    override val policyStatements = ArrayList<PolicyStatement>()
+    override val policyStatements = ArrayList<AwsPolicyStatement>()
 
     override val projectPrefix: String get() = "test-project"
     override val deploymentTag: String get() = "test-project"
@@ -264,7 +258,7 @@ fun TerraformEmitterAwsVpc.bastion(
                     put(
                         "Statement", Json.encodeToJsonElement(
                             listOfNotNull(
-                        PolicyStatement(
+                        AwsPolicyStatement(
                         action = listOf("sts:AssumeRole"),
                         resource = listOf(expression("aws_iam_role.bastion_exec.arn")),
                         principal = buildJsonObject {

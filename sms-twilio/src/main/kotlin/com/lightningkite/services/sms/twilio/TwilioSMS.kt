@@ -64,6 +64,7 @@ public class TwilioSMS(
     }
 
     public companion object {
+        public fun SMS.Settings.Companion.twilio(account: String, key: String, from: String): SMS.Settings = SMS.Settings("twilio://$account:$key@$from")
         init {
             SMS.Settings.register("twilio") { name, url, context ->
                 val regex = Regex("""twilio://(?<user>[^:]+):(?<password>[^@]+)(?:@(?<phoneNumber>.+))?""")

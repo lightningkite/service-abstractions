@@ -1,5 +1,6 @@
 package com.lightningkite.services.email.javasmtp
 
+import com.lightningkite.EmailAddress
 import com.lightningkite.services.email.EmailService
 import com.lightningkite.services.terraform.TerraformEmitterAwsDomain
 import com.lightningkite.services.terraform.TerraformEmitterAwsVpc
@@ -12,11 +13,10 @@ import kotlinx.serialization.json.JsonPrimitive
  * Creates a console-based email service for development.
  * This is not intended for production use.
  */
-context(emitter: TerraformEmitterAwsDomain) public fun TerraformNeed<EmailService.Settings>.aws(
-    reportingEmail: String,
+context(emitter: TerraformEmitterAwsDomain) public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
+    reportingEmail: EmailAddress,
 ): Unit {
-    emitter.fulfillSetting(
-        this@aws.name, JsonPrimitive(
+    emitter.fulfillSetting(name, JsonPrimitive(
             value = $$"""
         smtp://${aws_iam_access_key.$${name}.id}:${aws_iam_access_key.$${name}.ses_smtp_password_v4}@email-smtp.$${emitter.applicationRegion}.amazonaws.com:587?fromEmail=noreply@$${emitter.domain}
     """.trimIndent()

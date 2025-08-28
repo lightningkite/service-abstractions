@@ -30,6 +30,16 @@ public class CloudwatchMetricReporter(
     public companion object {
         private val logger = KotlinLogging.logger("com.lightningkite.services.metrics.cloudwatch")
 
+        public fun MetricReporter.Settings.Companion.cloudwatch(
+            user: String,
+            password: String,
+            region: Region,
+            namespace: String
+        ): MetricReporter.Settings = MetricReporter.Settings("cloudwatch://$user:$password@$region/$namespace")
+        public fun MetricReporter.Settings.Companion.cloudwatch(
+            region: Region,
+            namespace: String
+        ): MetricReporter.Settings = MetricReporter.Settings("cloudwatch://$region/$namespace")
         init {
             MetricReporter.Settings.register("cloudwatch") { name, url, context ->
                 Regex("""cloudwatch://((?:(?<user>[a-zA-Z0-9+/]+):(?<password>[a-zA-Z0-9+/]+)@)?(?<region>[a-zA-Z0-9-]+))/(?<namespace>[^?]+)""").matchEntire(

@@ -182,6 +182,21 @@ public class S3PublicFileSystem(
     }
 
     public companion object {
+        public fun PublicFileSystem.Settings.Companion.s3(
+            user: String,
+            password: String,
+            region: Region,
+            bucket: String,
+        ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$user:$password@$bucket.s3-$region.amazonaws.com")
+        public fun PublicFileSystem.Settings.Companion.s3(
+            profile: String,
+            region: Region,
+            bucket: String,
+        ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$profile@$bucket.s3-$region.amazonaws.com")
+        public fun PublicFileSystem.Settings.Companion.s3(
+            region: Region,
+            bucket: String,
+        ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$bucket.s3-$region.amazonaws.com")
         init {
             PublicFileSystem.Settings.register("s3") { name, url, context ->
                 val regex =

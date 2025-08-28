@@ -35,6 +35,7 @@ public class JsonFileDatabase(
     }
 
     public companion object {
+        public fun Database.Settings.Companion.jsonFile(folder: KFile): Database.Settings = Database.Settings("json-files://$folder")
         init {
             Database.Settings.register("json-files") { name, url, context ->
                 JsonFileDatabase(

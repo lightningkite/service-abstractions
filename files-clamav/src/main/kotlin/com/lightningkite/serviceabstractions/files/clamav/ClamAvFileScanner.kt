@@ -20,6 +20,11 @@ public class ClamAvFileScanner(
     override fun requires(claimedType: MediaType): FileScanner.Requires = FileScanner.Requires.Whole
 
     public companion object {
+        public fun FileScanner.Settings.Companion.clamav(
+            host: String = "localhost",
+            port: Int = 3310,
+            platform: Platform = Platform.UNIX
+        ): FileScanner.Settings = FileScanner.Settings("clamav://$host:$port/$platform")
         init {
             FileScanner.Settings.register("clamav") { name, url, context ->
                 Regex("""clamav://(?<host>[^:/]+):?(?<port>[0-9]+)?/(?<platform>[^/]+)?(\?(?<params>.*))?""").matchEntire(url)

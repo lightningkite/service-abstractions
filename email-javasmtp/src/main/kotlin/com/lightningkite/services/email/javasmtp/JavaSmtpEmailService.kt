@@ -45,6 +45,14 @@ public class JavaSmtpEmailService(
             ?.groupBy { it.first }
             ?.mapValues { it.value.map { it.second } }
             ?: emptyMap()
+        public fun EmailService.Settings.Companion.smtp(
+            username: String,
+            password: String,
+            host: String,
+            port: String,
+            fromEmail: String,
+            fromLabel: String? = null,
+        ): EmailService.Settings = EmailService.Settings("smtp://$username:$password@$host:$port?fromEmail=$fromEmail&fromLabel=$fromLabel")
         init {
             EmailService.Settings.register("smtp") { name, url, context ->
                 Regex("""smtp://(?:(?<username>[^:]+):(?<password>.+)@)?(?<host>[^:@]+):(?<port>[0-9]+)(?:\?(?<params>.*))?""")

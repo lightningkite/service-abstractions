@@ -30,6 +30,8 @@ public class RedisPubSub(
     private val json = Json { serializersModule = context.internalSerializersModule }
 
     public companion object {
+        public fun PubSub.Settings.Companion.redisTest(): PubSub.Settings = PubSub.Settings("redis-test")
+        public fun PubSub.Settings.Companion.redis(url: String): PubSub.Settings = PubSub.Settings("redis://$url")
         init {
             PubSub.Settings.register("redis-test") { name, url, context ->
                 val redisServer = RedisServer.builder()

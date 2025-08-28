@@ -24,6 +24,8 @@ public class RedisCache(
 
     public companion object {
         private var currentLocal: RedisServer? = null
+        public fun Cache.Settings.Companion.redisTest(): Cache.Settings = Cache.Settings("redis-test")
+        public fun Cache.Settings.Companion.redis(url: String): Cache.Settings = Cache.Settings("redis://$url")
         init {
             Cache.Settings.register("redis-test") { name, url, context ->
                 if(currentLocal == null) {

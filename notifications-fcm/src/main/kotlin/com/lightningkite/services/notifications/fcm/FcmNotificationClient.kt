@@ -26,6 +26,10 @@ public class FcmNotificationClient(
     private val log = KotlinLogging.logger("com.lightningkite.services.notifications.fcm.FcmNotificationClient")
 
     public companion object {
+        public fun NotificationService.Settings.Companion.fcm(jsonString: String): NotificationService.Settings =
+            NotificationService.Settings("fcm://$jsonString")
+        public fun NotificationService.Settings.Companion.fcm(file: File): NotificationService.Settings =
+            NotificationService.Settings("fcm://$file")
         init {
             NotificationService.Settings.register("fcm") { name, url, context ->
                 var creds = url.substringAfter("://", "")
