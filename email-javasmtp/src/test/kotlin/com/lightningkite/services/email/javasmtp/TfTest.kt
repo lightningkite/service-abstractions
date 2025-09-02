@@ -8,6 +8,7 @@ import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.test.assertPlannableAws
 import com.lightningkite.services.test.assertPlannableAwsDomain
 import com.lightningkite.services.test.expensive
+import com.lightningkite.toEmailAddress
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 
@@ -17,7 +18,7 @@ class TfTest {
     }
     @Test fun test() {
         assertPlannableAwsDomain<EmailService.Settings>("aws-ses") {
-            it.aws("joseph@lightningkite.com")
+            it.awsSesSmtp("joseph@lightningkite.com".toEmailAddress())
         }
     }
 //    @Test fun expensiveTest() {

@@ -48,6 +48,24 @@ abstract class FileSystemTests {
             testFile.delete()
         }
     }
+    @Test fun testLocalRestoration() = runSuspendingTest {
+        val system = system ?: run {
+            println("Could not test because the file system isn't supported here.")
+            return@runSuspendingTest
+        }
+        val file = system.root.resolve("test.txt")
+        println(file)
+        assertEquals(file, system.parseInternalUrl(file.url.also { println(it) }))
+    }
+    @Test fun testRemoteRestoration() = runSuspendingTest {
+        val system = system ?: run {
+            println("Could not test because the file system isn't supported here.")
+            return@runSuspendingTest
+        }
+        val file = system.root.resolve("test.txt")
+        println(file)
+        assertEquals(file, system.parseExternalUrl(file.signedUrl.also { println(it) }))
+    }
 
     @Test
     fun testInfo() {

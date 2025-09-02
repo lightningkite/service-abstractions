@@ -5,19 +5,21 @@ import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
+import com.lightningkite.services.http.client
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Instant
 import kotlin.time.toKotlinInstant
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
-import java.io.InputStream
+import java.net.URLDecoder
 import java.net.URLEncoder
 import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
@@ -296,6 +298,59 @@ public class S3FileObject(
     override fun toString(): String = url
     override fun equals(other: Any?): Boolean = other is S3FileObject && other.system == system && other.unixPath == unixPath
     override fun hashCode(): Int = 31 * system.hashCode() + unixPath.hashCode()
+
+    internal fun assertSignatureValid(queryParams: String) {
+        if (system.signedUrlDuration != null) {
+            try {
+                val headers = queryParams.split('&').associate {
+                    URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(
+                        it.substringAfter(
+                            '=', ""
+                        ), Charsets.UTF_8
+                    )
+                }
+                val secretKey = system.credentialProvider.resolveCredentials().secretAccessKey()
+                val objectPath = path.path.replace("\\", "/")
+                val date = headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
+                val algorithm = headers["X-Amz-Algorithm"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Algorithm' found.")
+                val credential = headers["X-Amz-Credential"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Credential' found.")
+                val scope = credential.substringAfter("/")
+
+                val canonicalRequest = """
+                GET
+                ${"/" + objectPath.removePrefix("/")}
+                ${queryParams.substringBefore("&X-Amz-Signature=").split('&').sorted().joinToString("&")}
+                host:${system.bucket}.s3.${system.region.id()}.amazonaws.com
+                
+                host
+                UNSIGNED-PAYLOAD
+                """.trimIndent()
+
+                val toSignString = """
+                $algorithm
+                $date
+                $scope
+                ${canonicalRequest.sha256()}
+                """.trimIndent()
+
+                val signingKey = "AWS4$secretKey".toByteArray().let { date.substringBefore('T').toByteArray().mac(it) }
+                    .let { system.region.id().toByteArray().mac(it) }.let { "s3".toByteArray().mac(it) }
+                    .let { "aws4_request".toByteArray().mac(it) }
+
+                val regeneratedSig = toSignString.toByteArray().mac(signingKey).toHex()
+
+                if (regeneratedSig == headers["X-Amz-Signature"]!!) return
+            } catch (e: Exception) {
+                /* squish */
+            }
+            return runBlocking {
+                val response = client.get("$url?$queryParams") {
+                    header("Range", "0-0")
+                }
+                if(!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
+            }
+        }
+    }
     
     public companion object {
         private val CONSTANT_BYTES_A = "GET\n/".toByteArray()

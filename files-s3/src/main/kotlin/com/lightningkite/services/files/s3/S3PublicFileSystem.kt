@@ -2,16 +2,10 @@ package com.lightningkite.services.files.s3
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.HealthStatus
-import com.lightningkite.services.Service
-import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.UrlSettingParser
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.files.FileObject
 import com.lightningkite.services.files.PublicFileSystem
-import kotlinx.coroutines.future.await
-import kotlinx.serialization.Serializable
 import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3AsyncClient
@@ -19,7 +13,6 @@ import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import java.io.File
 import javax.crypto.spec.SecretKeySpec
-import kotlin.jvm.JvmInline
 import kotlin.jvm.optionals.getOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
@@ -131,14 +124,16 @@ public class S3PublicFileSystem(
 
     override val root: S3FileObject = S3FileObject(this, File(""))
 
-    override fun parseSignedUrlForRead(url: String): FileObject {
+    override fun parseInternalUrl(url: String): S3FileObject? {
+        if (rootUrls.none { prefix -> url.startsWith(prefix) }) return null
         val path = url.substringAfter(rootUrls.first()).substringBefore('?')
         return S3FileObject(this, File(path))
     }
 
-    override fun parseSignedUrlForWrite(url: String): FileObject {
-        val path = url.substringAfter(rootUrls.first()).substringBefore('?')
-        return S3FileObject(this, File(path))
+    override fun parseExternalUrl(url: String): S3FileObject? {
+        return parseInternalUrl(url)?.also {
+            it.assertSignatureValid(url.substringAfter('?'))
+        }
     }
 
     /**
@@ -187,16 +182,20 @@ public class S3PublicFileSystem(
             password: String,
             region: Region,
             bucket: String,
-        ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$user:$password@$bucket.s3-$region.amazonaws.com")
+        ): PublicFileSystem.Settings =
+            PublicFileSystem.Settings("s3://$user:$password@$bucket.s3-$region.amazonaws.com")
+
         public fun PublicFileSystem.Settings.Companion.s3(
             profile: String,
             region: Region,
             bucket: String,
         ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$profile@$bucket.s3-$region.amazonaws.com")
+
         public fun PublicFileSystem.Settings.Companion.s3(
             region: Region,
             bucket: String,
         ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$bucket.s3-$region.amazonaws.com")
+
         init {
             PublicFileSystem.Settings.register("s3") { name, url, context ->
                 val regex =
@@ -219,8 +218,8 @@ public class S3PublicFileSystem(
                     ?: emptyMap()
 
                 val signedUrlDuration = params["signedUrlDuration"]?.let {
-                    if(it == "forever" || it == "null") null
-                    else if(it.all { it.isDigit() }) it.toLong().seconds
+                    if (it == "forever" || it == "null") null
+                    else if (it.all { it.isDigit() }) it.toLong().seconds
                     else Duration.parse(it)
                 } ?: 1.hours
 
@@ -234,10 +233,12 @@ public class S3PublicFileSystem(
                                 override fun secretAccessKey(): String = password
                             })
                         }
+
                         profile.isNotBlank() -> {
                             println("Using profile name $profile")
                             DefaultCredentialsProvider.builder().profileName(profile).build()
                         }
+
                         else -> DefaultCredentialsProvider.builder().build()
                     },
                     bucket = bucket,

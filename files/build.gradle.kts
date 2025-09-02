@@ -43,7 +43,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(project(path = ":basis"))
-//                api(project(path = ":files-client"))
+                api(project(path = ":files-client"))
                 api(project(path = ":data"))
                 // Add cryptography-kotlin for SHA-256 hashing and Base64 encoding
                 implementation("dev.whyoleg.cryptography:cryptography-core:0.5.0")

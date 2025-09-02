@@ -18,3 +18,7 @@ public suspend fun TypedData.download(
     write(file.sink())
     return file
 }
+
+public fun FileObject.resolveRandom(prefix: String, extension: String): FileObject {
+    return resolve("${prefix}_${Uuid.random()}.${extension}")
+}

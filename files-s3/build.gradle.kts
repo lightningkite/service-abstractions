@@ -17,6 +17,7 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":files"))
+    api(project(path = ":http-client"))
     testImplementation(project(path = ":files-test"))
 
     // AWS S3 dependencies

@@ -1,5 +1,6 @@
 package com.lightningkite.services.files
 
+import kotlinx.serialization.ContextualSerializer
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SealedSerializationApi
@@ -9,7 +10,7 @@ import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
-public object ServerFileSerializer : KSerializer<ServerFile> {
+public object DirectServerFileSerializer : KSerializer<ServerFile> {
     //Description("A URL referencing a file that the server owns.")
     @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
     override val descriptor: SerialDescriptor = object: SerialDescriptor {
@@ -34,3 +35,6 @@ public object ServerFileSerializer : KSerializer<ServerFile> {
         return ServerFile(decoder.decodeString())
     }
 }
+
+@OptIn(ExperimentalSerializationApi::class)
+public object DeferToContextualServerFileSerializer: KSerializer<ServerFile> by ContextualSerializer<ServerFile>(ServerFile::class, DirectServerFileSerializer, arrayOf())

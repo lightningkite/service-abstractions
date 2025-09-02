@@ -25,8 +25,8 @@ public interface PublicFileSystem : Service {
      */
     public val rootUrls: List<String> get() = listOf(root.url)
 
-    public fun parseSignedUrlForRead(url: String): FileObject
-    public fun parseSignedUrlForWrite(url: String): FileObject
+    public fun parseInternalUrl(url: String): FileObject?
+    public fun parseExternalUrl(url: String): FileObject?
 
     /**
      * Settings for a FileSystem.
@@ -54,7 +54,7 @@ public interface PublicFileSystem : Service {
                         name = name,
                         context = context,
                         rootKFile = KFile(path),
-                        serveUrl = serveUrl,
+                        serveUrl = serveUrl + (if(serveUrl.endsWith("/")) "" else "/"),
                     )
                 }
             }

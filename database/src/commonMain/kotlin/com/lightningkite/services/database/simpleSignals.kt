@@ -365,6 +365,114 @@ fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListeners(
 
 }
 
+fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListener(
+    changeListener: suspend (CollectionChanges<Model>) -> Unit
+): Table<Model> = object : Table<Model> by this@withChangeListener {
+    override val wraps = this@withChangeListener
+
+    override suspend fun insert(models: Iterable<Model>): List<Model> = wraps.insert(models)
+        .also {
+            changeListener(CollectionChanges<Model>(it.map { EntryChange(null, it) }))
+        }
+
+    override suspend fun deleteMany(condition: Condition<Model>): List<Model> = wraps.deleteMany(condition)
+        .also {
+            changeListener(CollectionChanges<Model>(it.map { EntryChange(it, null) }))
+        }
+
+    override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? =
+        wraps.deleteOne(condition, orderBy)
+            .also {
+                changeListener(CollectionChanges<Model>(listOf<EntryChange<Model>>(EntryChange(it, null))))
+            }
+
+    override suspend fun replaceOne(
+        condition: Condition<Model>,
+        model: Model,
+        orderBy: List<SortPart<Model>>
+    ): EntryChange<Model> = wraps.replaceOne(condition, model, orderBy)
+        .also {
+            changeListener(CollectionChanges<Model>(listOf<EntryChange<Model>>(it)))
+        }
+
+    override suspend fun updateOne(
+        condition: Condition<Model>,
+        modification: Modification<Model>,
+        orderBy: List<SortPart<Model>>
+    ): EntryChange<Model> = wraps.updateOne(condition, modification, orderBy)
+        .also {
+            changeListener(CollectionChanges<Model>(listOf<EntryChange<Model>>(it)))
+        }
+
+    override suspend fun upsertOne(
+        condition: Condition<Model>,
+        modification: Modification<Model>,
+        model: Model
+    ): EntryChange<Model> = wraps.upsertOne(condition, modification, model)
+        .also {
+            changeListener(CollectionChanges<Model>(listOf<EntryChange<Model>>(it)))
+        }
+
+    override suspend fun updateMany(
+        condition: Condition<Model>,
+        modification: Modification<Model>
+    ): CollectionChanges<Model> = wraps.updateMany(condition, modification)
+        .also {
+            changeListener(CollectionChanges<Model>(it.changes))
+        }
+
+
+    override suspend fun replaceOneIgnoringResult(
+        condition: Condition<Model>,
+        model: Model,
+        orderBy: List<SortPart<Model>>
+    ): Boolean =
+        replaceOne(
+            condition,
+            model,
+            orderBy
+        ).new != null
+
+    override suspend fun upsertOneIgnoringResult(
+        condition: Condition<Model>,
+        modification: Modification<Model>,
+        model: Model
+    ): Boolean =
+        upsertOne(
+            condition,
+            modification,
+            model
+        ).old != null
+
+    override suspend fun updateOneIgnoringResult(
+        condition: Condition<Model>,
+        modification: Modification<Model>,
+        orderBy: List<SortPart<Model>>
+    ): Boolean =
+        updateOne(
+            condition,
+            modification,
+            orderBy
+        ).new != null
+
+    override suspend fun updateManyIgnoringResult(
+        condition: Condition<Model>,
+        modification: Modification<Model>
+    ): Int = updateMany(condition, modification).changes.size
+
+    override suspend fun deleteOneIgnoringOld(
+        condition: Condition<Model>,
+        orderBy: List<SortPart<Model>>
+    ): Boolean =
+    deleteOne(
+        condition,
+        orderBy
+    ) != null
+
+    override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int = deleteMany(condition).size
+
+}
+
 /**
  * Intercept all kinds of creates, including [Table.insert], [Table.upsertOne], and [Table.upsertOneIgnoringResult].
  * Allows you to modify the object before it is actually created.

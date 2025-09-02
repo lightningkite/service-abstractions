@@ -12,10 +12,6 @@ import dev.whyoleg.cryptography.random.CryptographyRandom
 import kotlinx.io.IOException
 import kotlinx.io.buffered
 import kotlinx.io.files.FileNotFoundException
-import kotlinx.io.files.FileSystem
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readByteArray
 import kotlinx.io.readString
 import kotlinx.io.writeString
 import kotlin.time.Duration
@@ -29,7 +25,7 @@ public class KotlinxIoPublicFileSystem(
     override val name: String,
     override val context: SettingContext,
     public val rootKFile: KFile,
-    public val serveUrl: String = "http://localhost:8080/files",
+    public val serveUrl: String = "http://localhost:8080/files/",
     public val signatureReadDuration: Duration = 1.hours,
 ): MetricTrackingPublicFileSystem() {
     private val hmac = CryptographyProvider.Default.get(HMAC)
@@ -51,13 +47,13 @@ public class KotlinxIoPublicFileSystem(
     
     override val rootUrls: List<String> = listOf(serveUrl)
 
-    internal data class DataToSign(val url: String, val expires: Instant, val upload: Boolean) {
+    internal data class DataToSign constructor(val url: String, val expires: Instant, val upload: Boolean) {
         constructor(urlWithQuery: String): this(
             url = urlWithQuery.substringBefore("?"),
             expires = urlWithQuery.substringAfter("?expires=", "0").takeWhile { it.isDigit() }.toLong().let { Instant.fromEpochMilliseconds(it) },
             upload = urlWithQuery.contains("&upload=true")
         )
-        override fun toString(): String = "url=$url&expires=${expires.toEpochMilliseconds()}" + if(upload) "&upload=true" else ""
+        override fun toString(): String = "$url?expires=${expires.toEpochMilliseconds()}" + if(upload) "&upload=true" else ""
     }
     internal fun sign(data: DataToSign): String {
         return key.signatureGenerator().generateSignatureBlocking(data.toString().encodeToByteArray()).toHexString()
@@ -66,7 +62,12 @@ public class KotlinxIoPublicFileSystem(
         return key.signatureVerifier().tryVerifySignatureBlocking(data.toString().encodeToByteArray(), signature.hexToByteArray())
     }
     internal fun DataToSign.signed() = toString() + "&signature=" + sign(this)
-    override fun parseSignedUrlForRead(url: String): KotlinxIoFile {
+    override fun parseInternalUrl(url: String): KotlinxIoFile? {
+        if(!url.startsWith(serveUrl)) return null
+        return KotlinxIoFile(rootKFile.then(*url.substringAfter(serveUrl).split('/').toTypedArray()))
+    }
+    override fun parseExternalUrl(url: String): KotlinxIoFile? {
+        if(!url.startsWith(serveUrl)) return null
         val data = DataToSign(url.substringBeforeLast("&"))
         val signature = url.substringAfterLast("&", "").substringAfter('=')
         if(!verify(data, signature)) throw IllegalArgumentException("Signature verification failed for $url")
@@ -75,7 +76,8 @@ public class KotlinxIoPublicFileSystem(
         if(data.upload) throw IllegalArgumentException("URL is for upload, not read")
         return KotlinxIoFile(rootKFile.then(*data.url.substringAfter(serveUrl).split('/').toTypedArray()))
     }
-    override fun parseSignedUrlForWrite(url: String): KotlinxIoFile {
+    public fun parseUploadUrl(url: String): KotlinxIoFile? {
+        if(!url.startsWith(serveUrl)) return null
         val data = DataToSign(url.substringBeforeLast("&"))
         val signature = url.substringAfterLast("&", "").substringAfter('=')
         if(!verify(data, signature)) throw IllegalArgumentException("Signature verification failed for $url")
@@ -91,21 +93,21 @@ public class KotlinxIoPublicFileSystem(
     public inner class KotlinxIoFile(
         public val kfile: KFile
     ) : MetricTrackingFileObject() {
-        internal val relativePath get() = kfile.path
+        init {
+            if(!kfile.path.toString().startsWith(rootKFile.path.toString())) throw IllegalArgumentException("Invalid path.  '${kfile.path}' does not start with '${rootKFile.path}'")
+        }
+        internal val relativePath = kfile.path.toString().removePrefix(rootKFile.path.toString())
 
-        override fun toString(): String = relativePath.toString()
-        override fun equals(other: Any?): Boolean = other is KotlinxIoFile && this.relativePath == other.relativePath
+        override fun toString(): String = relativePath
+        override fun equals(other: Any?): Boolean = other is KotlinxIoFile && this.kfile == other.kfile
 
-        init { if(relativePath.toString().contains("..")) throw IllegalArgumentException("Invalid relative path: $relativePath")}
-        init { if(relativePath.isAbsolute) throw IllegalArgumentException("Invalid relative path: $relativePath")}
+        override val name: String = kfile.path.name
 
-        override val name: String = relativePath.name
-
-        override fun resolve(path: String): FileObject = KotlinxIoFile(kfile.then(path))
+        override fun resolve(path: String): FileObject = KotlinxIoFile(kfile.then(*path.split('/').toTypedArray()))
         
-        override val parent: FileObject? = kfile.parent?.let { KotlinxIoFile(it) }
+        override val parent: FileObject? = if(kfile == rootKFile) null else kfile.parent?.let { KotlinxIoFile(it) }
         
-        override val url: String = "$serveUrl/${relativePath}"
+        override val url: String = serveUrl + relativePath.removePrefix("/")
         
         override val signedUrl: String get() {
             return DataToSign(url, context.clock.now().plus(signatureReadDuration), false)
@@ -143,7 +145,7 @@ public class KotlinxIoPublicFileSystem(
                     MediaType(source.buffered().readString())
                 }
             } else {
-                MediaType.fromExtension(relativePath.name)
+                MediaType.fromExtension(kfile.path.name.substringAfterLast('.', ""))
             }
 
             return FileInfo(
@@ -181,7 +183,7 @@ public class KotlinxIoPublicFileSystem(
                     MediaType(source.readString())
                 }
             } else {
-                MediaType.fromExtension(relativePath.name)
+                MediaType.fromExtension(kfile.path.name.substringAfterLast('.', ""))
             }
 
             val source = kfile.source()

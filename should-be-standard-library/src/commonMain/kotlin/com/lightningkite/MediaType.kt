@@ -1,10 +1,22 @@
 package com.lightningkite
 
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.serializer
+
 
 /**
  * Represents a Media (formerly known as MIME) content type.
  */
+@Serializable(MediaType.Serializer::class)
 public data class MediaType(val type: String, val subtype: String, val parameters: Map<String, String> = mapOf()) {
+
+    public object Serializer: KSerializer<MediaType> {
+        override val descriptor = String.serializer().descriptor
+        override fun serialize(encoder: kotlinx.serialization.encoding.Encoder, value: MediaType) = encoder.encodeString(value.toString())
+        override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): MediaType = MediaType(decoder.decodeString())
+    }
+
     public constructor(fullType: String) : this(
         fullType.substringBefore('/'),
         fullType.substringAfter('/').substringBefore(';'),
