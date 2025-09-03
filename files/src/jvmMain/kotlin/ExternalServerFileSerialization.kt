@@ -78,14 +78,14 @@ public class ExternalServerFileSerializer(
         }
     }
 
-    public fun certifyForUse(value: FileObject, expiration: Duration): ServerFile =
-        ServerFile(signUrl("future:" + value.url, expiration))
+    public fun certifyForUse(value: FileObject, expiration: Duration): String =
+        signUrl("future:" + value.url, expiration)
 
-    public fun certifyAlreadyScannedForUse(value: FileObject, expiration: Duration): ServerFile =
-        ServerFile(signUrl("future-prescanned:" + value.url, expiration))
+    public fun certifyAlreadyScannedForUse(value: FileObject, expiration: Duration): String =
+        signUrl("future-prescanned:" + value.url, expiration)
 
-    public suspend fun scan(value: ServerFile, expiration: Duration): ServerFile {
-        val raw = value.location
+    public suspend fun scan(value: String, expiration: Duration): String {
+        val raw = value
         if (raw.startsWith("future-prescanned:")) return value
         if (!raw.startsWith("future:")) throw IllegalArgumentException("URL scheme is not 'future'")
         if (!verifyUrl(raw)) throw IllegalArgumentException("URL is not valid")
