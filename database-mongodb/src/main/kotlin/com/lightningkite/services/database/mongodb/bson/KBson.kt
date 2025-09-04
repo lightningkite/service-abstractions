@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.mongodb.bson
 
+import com.github.jershell.kbson.DefaultModule
+import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils
 import kotlinx.serialization.*
 import kotlinx.serialization.modules.SerializersModule
 import org.bson.*
@@ -7,32 +9,30 @@ import org.bson.codecs.*
 
 
 
-internal class KBson(override val serializersModule: SerializersModule = DefaultModule, private val configuration: Configuration = Configuration()) : SerialFormat {
+@OptIn(ExperimentalSerializationApi::class)
+internal class KBson(override val serializersModule: SerializersModule = DefaultModule, private val configuration: BsonConfiguration = BsonConfiguration(explicitNulls = true)) : SerialFormat, BinaryFormat {
     fun <T> stringify(serializer: SerializationStrategy<T>, obj: T): BsonDocument {
         val doc = BsonDocument()
         val writer = BsonDocumentWriter(doc)
 
-        serializer.serialize(BsonEncoder(writer, serializersModule, configuration), obj)
+        BsonCodecUtils.createBsonEncoder(writer, serializersModule, configuration).encodeSerializableValue(serializer, obj)
         writer.flush()
 
         return doc
     }
-
     fun <T> parse(deserializer: DeserializationStrategy<T>, doc: BsonDocument): T {
-        return BsonFlexibleDecoder((doc.asBsonReader() as AbstractBsonReader), serializersModule, configuration).decodeSerializableValue(deserializer)
+        return BsonCodecUtils.createBsonDecoder(doc.asBsonReader() as AbstractBsonReader, serializersModule, configuration).decodeSerializableValue(deserializer)
     }
 
-    fun <T> load(deserializer: DeserializationStrategy<T>, doc: ByteArray): T {
-        return BsonFlexibleDecoder((RawBsonDocument(doc).asBsonReader() as AbstractBsonReader), serializersModule, configuration).decodeSerializableValue(deserializer)
-    }
+    override fun <T> encodeToByteArray(
+        serializer: SerializationStrategy<T>,
+        value: T
+    ): ByteArray = this.stringify(serializer, value).toByteArray()
 
-    fun <T> load(deserializer: DeserializationStrategy<T>, doc: BsonDocument): T {
-        return BsonFlexibleDecoder((doc.asBsonReader() as AbstractBsonReader), serializersModule, configuration).decodeSerializableValue(deserializer)
-    }
-
-    fun <T> dump(serializer: SerializationStrategy<T>, obj: T): ByteArray {
-        return this.stringify(serializer, obj).toByteArray()
-    }
+    override fun <T> decodeFromByteArray(
+        deserializer: DeserializationStrategy<T>,
+        bytes: ByteArray
+    ): T = BsonCodecUtils.createBsonDecoder(RawBsonDocument(bytes).asBsonReader() as AbstractBsonReader, serializersModule, configuration).decodeSerializableValue(deserializer)
 
     companion object {
         val default = KBson()

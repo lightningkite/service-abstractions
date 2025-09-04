@@ -218,17 +218,10 @@ internal class DbLikeMapDecoder(
     }
 
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
+        val override = serializationOverride(deserializer)
         @Suppress("UNCHECKED_CAST")
-        return when ((deserializer as? KSerializer<T>)?.nullElement() ?: deserializer) {
-            UUIDSerializer -> getter(popTag()).let { it as java.util.UUID }.toKotlinUuid() as T
-            LocalDateIso8601Serializer, com.lightningkite.services.database.LocalDateIso8601Serializer -> getter(popTag()).let { it as LocalDate }.toKotlinLocalDate() as T
-            kotlin.time.Instant.serializer(), com.lightningkite.services.database.InstantIso8601Serializer -> getter(popTag()).let { it as java.time.Instant }.toKotlinInstant() as T
-            DurationSerializer, com.lightningkite.services.database.DurationSerializer -> getter(popTag()).let { it as Duration }.toKotlinDuration() as T
-            LocalDateTimeIso8601Serializer, com.lightningkite.services.database.LocalDateTimeIso8601Serializer -> getter(popTag()).let { it as LocalDateTime }.toKotlinLocalDateTime() as T
-            LocalTimeIso8601Serializer, com.lightningkite.services.database.LocalTimeIso8601Serializer -> getter(popTag()) .let { it as LocalTime }.toKotlinLocalTime() as T
-
-            else -> super.decodeSerializableValue(deserializer)
-        }
+        return if(override != null) (override as JdbcConversion<T, Any?>).toKotlin(getter(popTag()))
+        else super.decodeSerializableValue(deserializer)
     }
 
     override fun decodeNotNullMark(): Boolean {
@@ -435,17 +428,10 @@ internal class DbLikeMapEncoder(
     }
 
     override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
-        when ((serializer as? KSerializer<T>)?.nullElement() ?: serializer) {
-            UUIDSerializer -> writer(popTag(), (value as Uuid).toJavaUuid())
-            LocalDateIso8601Serializer, com.lightningkite.services.database.LocalDateIso8601Serializer -> writer(popTag(), (value as kotlinx.datetime.LocalDate).toJavaLocalDate())
-            kotlin.time.Instant.serializer(), com.lightningkite.services.database.InstantIso8601Serializer -> writer(popTag(), (value as Instant).toJavaInstant())
-            DurationSerializer, com.lightningkite.services.database.DurationSerializer -> writer(popTag(), (value as kotlin.time.Duration).toJavaDuration())
-                //LocalDateTimeSerializer -> writer(popTag(), value)
-            LocalDateTimeIso8601Serializer, com.lightningkite.services.database.LocalDateTimeIso8601Serializer -> writer(popTag(), (value as kotlinx.datetime.LocalDateTime).toJavaLocalDateTime())
-            LocalTimeIso8601Serializer, com.lightningkite.services.database.LocalTimeIso8601Serializer -> writer(popTag(), (value as kotlinx.datetime.LocalTime).toJavaLocalTime())
-
-            else -> super.encodeSerializableValue(serializer, value)
-        }
+        val override = serializationOverride(serializer)
+        @Suppress("UNCHECKED_CAST")
+        if(override != null) writer(popTag(),(override as JdbcConversion<T, Any?>).toJava(value))
+        else super.encodeSerializableValue(serializer, value)
     }
 
     override fun <T : Any> encodeNullableSerializableValue(serializer: SerializationStrategy<T>, value: T?) {

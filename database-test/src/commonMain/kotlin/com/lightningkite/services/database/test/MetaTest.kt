@@ -1,4 +1,4 @@
-@file:UseContextualSerialization(Uuid::class)
+
 package com.lightningkite.services.database.test
 
 import kotlinx.coroutines.flow.*

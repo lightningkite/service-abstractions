@@ -64,7 +64,7 @@ public class PostgresCollection<T : Any>(
                 .orderBy(*orderBy.map {
                     @Suppress("UNCHECKED_CAST")
                     (
-                            if (it.field.serializerAny.descriptor.kind == PrimitiveKind.STRING) {
+                            if (it.field.serializerAny.descriptor.kind == PrimitiveKind.STRING && serializationOverride(it.field.serializerAny.descriptor) == null) {
                                 // TODO: Check database default collation to skip extra work
                                 if (it.ignoreCase) (table.col[it.field.colName]!! as Column<String>).lowerCase()
                                 else AsciiValue(table.col[it.field.colName]!! as Column<String>)

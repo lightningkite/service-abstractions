@@ -1,280 +1,277 @@
+/*
+ * Copyright 2008-present MongoDB, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.lightningkite.services.database.mongodb.bson
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.SerializationStrategy
-import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.descriptors.PolymorphicKind
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.SerialKind
+import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeEncoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.modules.SerializersModule
-import org.bson.BsonBinary
+import org.bson.BsonValue
 import org.bson.BsonWriter
-import org.bson.UuidRepresentation
-import org.bson.json.JsonReader
-import org.bson.types.Decimal128
+import org.bson.codecs.BsonValueCodec
+import org.bson.codecs.EncoderContext
+import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.convertCamelCase
 import org.bson.types.ObjectId
-import java.util.UUID
 
+/**
+ * The BsonEncoder interface
+ *
+ * For custom serialization handlers
+ */
+@ExperimentalSerializationApi
+public sealed interface BsonEncoder : Encoder, CompositeEncoder {
 
-internal open class BsonEncoder(
-        private val writer: BsonWriter,
-        override val serializersModule: SerializersModule,
-        private val configuration: Configuration
-) : AbstractEncoder() {
+    /**
+     * Encodes an ObjectId
+     *
+     * @param value the ObjectId
+     */
+    public fun encodeObjectId(value: ObjectId)
 
+    /**
+     * Encodes a BsonValue
+     *
+     * @param value the BsonValue
+     */
+    public fun encodeBsonValue(value: BsonValue)
+}
+
+/**
+ * The default BsonEncoder implementation
+ *
+ * Unlike BsonDecoder implementations, state is shared when encoding, so a single class is used to encode Bson Arrays,
+ * Documents, Polymorphic types and Maps.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+internal open class BsonEncoderImpl(
+    val writer: BsonWriter,
+    override val serializersModule: SerializersModule,
+    val configuration: BsonConfiguration
+) : BsonEncoder, AbstractEncoder() {
+
+    companion object {
+        val validKeyKinds = setOf(PrimitiveKind.STRING, PrimitiveKind.CHAR, SerialKind.ENUM)
+        val bsonValueCodec = BsonValueCodec()
+    }
+
+    private var isPolymorphic = false
     private var state = STATE.VALUE
-    private var hasBegin = false // for UnionKind
-    private var stateMap = StateMap()
-    private var deferredKeyName: String? = null
+    private var mapState = MapState()
+    internal val deferredElementHandler: DeferredElementHandler = DeferredElementHandler()
 
     override fun shouldEncodeElementDefault(descriptor: SerialDescriptor, index: Int): Boolean =
-            configuration.encodeDefaults
+        configuration.encodeDefaults
 
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
         when (descriptor.kind) {
-            StructureKind.LIST -> writer.writeStartArray()
-            StructureKind.CLASS -> {
-                if (hasBegin) {
-                    hasBegin = false
-                } else {
-                    writer.writeStartDocument()
-                }
-            }
-            StructureKind.OBJECT -> {
-                if (hasBegin) {
-                    hasBegin = false
-                } else {
-                    writer.writeStartDocument()
-                }
-            }
             is PolymorphicKind -> {
                 writer.writeStartDocument()
-                writer.writeName(descriptor.classDiscriminator())
-                hasBegin = true
+                writer.writeName(configuration.classDiscriminator)
+                isPolymorphic = true
             }
-            StructureKind.MAP -> {
+
+            is StructureKind.LIST -> writer.writeStartArray()
+            is StructureKind.CLASS,
+            StructureKind.OBJECT -> {
+                if (isPolymorphic) {
+                    isPolymorphic = false
+                } else {
+                    writer.writeStartDocument()
+                }
+            }
+
+            is StructureKind.MAP -> {
                 writer.writeStartDocument()
-                stateMap = StateMap()
+                mapState = MapState()
             }
+
             else -> throw SerializationException("Primitives are not supported at top-level")
         }
-        return super.beginStructure(descriptor)
-    }
-
-    private fun SerialDescriptor.classDiscriminator(): String {
-        for (annotation in this.annotations) {
-            if (annotation is BsonClassDiscriminator) {
-                return annotation.discriminator
-            }
-        }
-        return configuration.classDiscriminator
+        return this
     }
 
     override fun endStructure(descriptor: SerialDescriptor) {
         when (descriptor.kind) {
             is StructureKind.LIST -> writer.writeEndArray()
-            is StructureKind.MAP, StructureKind.CLASS, StructureKind.OBJECT -> writer.writeEndDocument()
-            else -> {}
-/*            PolymorphicKind.OPEN -> TODO()
-            PolymorphicKind.SEALED -> TODO()
-            PrimitiveKind.BOOLEAN -> TODO()
-            PrimitiveKind.BYTE -> TODO()
-            PrimitiveKind.CHAR -> TODO()
-            PrimitiveKind.DOUBLE -> TODO()
-            PrimitiveKind.FLOAT -> TODO()
-            PrimitiveKind.INT -> TODO()
-            PrimitiveKind.LONG -> TODO()
-            PrimitiveKind.SHORT -> TODO()
-            PrimitiveKind.STRING -> TODO()
-            SerialKind.CONTEXTUAL -> TODO()
-            SerialKind.ENUM -> TODO()*/
-        }
-    }
+            StructureKind.MAP,
+            StructureKind.CLASS,
+            StructureKind.OBJECT -> writer.writeEndDocument()
 
-    override fun <T : Any> encodeNullableSerializableValue(serializer: SerializationStrategy<T>, value: T?) {
-        when {
-            deferredKeyName != null && value == null -> {
-                deferredKeyName = null
-                // and nothing
-            }
-            deferredKeyName != null && value != null -> {
-                writer.writeName(deferredKeyName)
-                deferredKeyName = null
-                super.encodeNullableSerializableValue(serializer, value)
-            }
-            else -> super.encodeNullableSerializableValue(serializer, value)
+            else -> {}
         }
     }
 
     override fun encodeElement(descriptor: SerialDescriptor, index: Int): Boolean {
         when (descriptor.kind) {
             is StructureKind.CLASS -> {
-                val name = descriptor.getElementName(index)
-
-                val elemDesc = try {
-                    descriptor.getElementDescriptor(index)
-                } catch (e: IndexOutOfBoundsException) {
-                    null
+                val elementName = descriptor.getElementName(index)
+                if (descriptor.getElementDescriptor(index).isNullable) {
+                    deferredElementHandler.set(elementName)
+                } else {
+                    encodeName(elementName)
                 }
-                if (elemDesc?.isNullable != false) {
-                    val ann =
-                            configuration.nonEncodeNull || descriptor.getElementAnnotations(index)
-                                    .any { it is NonEncodeNull }
-                    if (ann) {
-                        deferredKeyName = name
+            }
+
+            is StructureKind.MAP -> {
+                if (index == 0) {
+                    val keyKind = descriptor.getElementDescriptor(index).kind
+                    if (!validKeyKinds.contains(keyKind)) {
+                        throw SerializationException(
+                            """Invalid key type for ${descriptor.serialName}.
+                                | Expected STRING or ENUM but found: `${keyKind}`."""
+                                .trimMargin()
+                        )
                     }
                 }
+                state = mapState.nextState()
+            }
 
-                if (deferredKeyName == null) {
-                    writer.writeName(name)
-                }
-            }
-            is StructureKind.MAP -> {
-                state = stateMap.next()
-            }
             else -> {}
-
-/*            SerialKind.ENUM -> TODO()
-            SerialKind.CONTEXTUAL -> TODO()
-            PrimitiveKind.BOOLEAN -> TODO()
-            PrimitiveKind.BYTE -> TODO()
-            PrimitiveKind.CHAR -> TODO()
-            PrimitiveKind.SHORT -> TODO()
-            PrimitiveKind.INT -> TODO()
-            PrimitiveKind.LONG -> TODO()
-            PrimitiveKind.FLOAT -> TODO()
-            PrimitiveKind.DOUBLE -> TODO()
-            PrimitiveKind.STRING -> TODO()
-            StructureKind.LIST -> TODO()
-            StructureKind.OBJECT -> TODO()
-            PolymorphicKind.SEALED -> TODO()
-            PolymorphicKind.OPEN -> TODO()
-                                     */
         }
         return true
     }
 
-    override fun encodeNull() {
-        writer.writeNull()
+    override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
+        deferredElementHandler.with(
+            {
+                // When using generics its possible for `value` to be null
+                // See: https://youtrack.jetbrains.com/issue/KT-66206
+                if (value != null || configuration.explicitNulls) {
+                    encodeName(it)
+                    serializationOverride(serializer)?.let {
+                        encodeBsonValue(it(value))
+                    } ?: super<AbstractEncoder>.encodeSerializableValue(serializer, value)
+                }
+            },
+            {
+                serializationOverride(serializer)?.let {
+                    encodeBsonValue(it(value))
+                } ?: super<AbstractEncoder>.encodeSerializableValue(serializer, value)
+            })
     }
 
-    override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) {
-        val value = enumDescriptor.getElementName(index)
-        if (state == STATE.NAME) {
-            writer.writeName(value)
-        } else {
-            writer.writeString(value)
-        }
+    override fun <T : Any> encodeNullableSerializableValue(serializer: SerializationStrategy<T>, value: T?) {
+        deferredElementHandler.with(
+            {
+                if (value != null || configuration.explicitNulls) {
+                    encodeName(it)
+                    serializationOverride(serializer)?.let {
+                        if(value == null) encodeNull() else encodeBsonValue(it(value))
+                    } ?: super<AbstractEncoder>.encodeNullableSerializableValue(serializer, value)
+                }
+            },
+            {
+                serializationOverride(serializer)?.let {
+                    if(value == null) encodeNull() else encodeBsonValue(it(value))
+                } ?: super<AbstractEncoder>.encodeNullableSerializableValue(serializer, value)
+            })
     }
+
+    override fun encodeByte(value: Byte) = encodeInt(value.toInt())
+    override fun encodeChar(value: Char) = encodeString(value.toString())
+    override fun encodeFloat(value: Float) = encodeDouble(value.toDouble())
+    override fun encodeShort(value: Short) = encodeInt(value.toInt())
+
+    override fun encodeBoolean(value: Boolean) = writer.writeBoolean(value)
+    override fun encodeDouble(value: Double) = writer.writeDouble(value)
+    override fun encodeInt(value: Int) = writer.writeInt32(value)
+    override fun encodeLong(value: Long) = writer.writeInt64(value)
+    override fun encodeNull() = writer.writeNull()
 
     override fun encodeString(value: String) {
         when (state) {
-            STATE.NAME -> encodeStructName(value)
+            STATE.NAME -> deferredElementHandler.set(value)
             STATE.VALUE -> writer.writeString(value)
         }
     }
 
-    override fun encodeInt(value: Int) {
+    override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) {
+        val value = enumDescriptor.getElementName(index)
         when (state) {
-            STATE.VALUE -> writer.writeInt32(value)
-            STATE.NAME -> encodeStructName(value)
+            STATE.NAME -> encodeName(value)
+            STATE.VALUE -> writer.writeString(value)
         }
     }
 
-    override fun encodeDouble(value: Double) {
-        when (state) {
-            STATE.VALUE -> writer.writeDouble(value)
-            STATE.NAME -> encodeStructName(value)
-        }
+    override fun encodeObjectId(value: ObjectId) {
+        writer.writeObjectId(value)
     }
 
-    override fun encodeFloat(value: Float) {
-        when (state) {
-            STATE.VALUE -> writer.writeDouble(value.toDouble())
-            STATE.NAME -> encodeStructName(value)
-        }
+    override fun encodeBsonValue(value: BsonValue) {
+        bsonValueCodec.encode(writer, value, EncoderContext.builder().build())
     }
 
-    override fun encodeLong(value: Long) {
-        when (state) {
-            STATE.VALUE -> writer.writeInt64(value)
-            STATE.NAME -> encodeStructName(value)
-        }
-    }
-
-    override fun encodeChar(value: Char) {
-        when (state) {
-            STATE.VALUE -> writer.writeSymbol(value.toString())
-            STATE.NAME -> encodeStructName(value)
-        }
-    }
-
-    override fun encodeBoolean(value: Boolean) {
-        when (state) {
-            STATE.VALUE -> writer.writeBoolean(value)
-            STATE.NAME -> encodeStructName(value)
-        }
-    }
-
-    override fun encodeByte(value: Byte) {
-        when (state) {
-            STATE.VALUE -> writer.writeInt32(value.toInt())
-            STATE.NAME -> encodeStructName(value)
-        }
-    }
-
-    override fun encodeShort(value: Short) {
-        when (state) {
-            STATE.VALUE -> writer.writeInt32(value.toInt())
-            STATE.NAME -> encodeStructName(value)
-        }
-    }
-
-    fun encodeDateTime(value: Long) {
-        when (state) {
-            STATE.VALUE -> writer.writeDateTime(value)
-            STATE.NAME -> encodeStructName(value.toString())
-        }
-    }
-
-    fun encodeObjectId(value: ObjectId) {
-        when (state) {
-            STATE.VALUE -> writer.writeObjectId(value)
-            STATE.NAME -> encodeStructName(value.toString())
-        }
-    }
-
-    fun encodeDecimal128(value: Decimal128) {
-        when (state) {
-            STATE.VALUE -> writer.writeDecimal128(value)
-            STATE.NAME -> encodeStructName(value.toString())
-        }
-    }
-
-    fun encodeByteArray(value: ByteArray) {
-        when (state) {
-            STATE.VALUE -> writer.writeBinaryData(BsonBinary(value))
-            // I think we can use base64, but files can be big
-            STATE.NAME -> throw SerializationException("ByteArray is not supported as a key of map")
-        }
-    }
-
-    fun encodeUUID(value: UUID, uuidRepresentation: UuidRepresentation = UuidRepresentation.STANDARD) {
-        when (state) {
-            STATE.VALUE -> writer.writeBinaryData(BsonBinary(value, uuidRepresentation))
-            // I think we can use base64, but files can be big
-            STATE.NAME -> throw SerializationException("UUID is not supported as a key of map")
-        }
-    }
-
-    fun encodeJson(value: String) {
-        when (state) {
-            STATE.VALUE -> writer.pipe(JsonReader(value))
-            STATE.NAME -> throw SerializationException("Json is not supported as a key of map")
-        }
-    }
-
-    private fun encodeStructName(value: Any) {
-        writer.writeName(value.toString())
+    internal fun encodeName(value: Any) {
+        val name =
+            value.toString().let {
+                if (configuration.bsonNamingStrategy == BsonNamingStrategy.SNAKE_CASE) {
+                    convertCamelCase(it, '_')
+                } else {
+                    it
+                }
+            }
+        writer.writeName(name)
         state = STATE.VALUE
+    }
+
+    private enum class STATE {
+        NAME,
+        VALUE
+    }
+
+    private class MapState {
+        var currentState: STATE = STATE.VALUE
+        fun getState(): STATE = currentState
+
+        fun nextState(): STATE {
+            currentState =
+                when (currentState) {
+                    STATE.VALUE -> STATE.NAME
+                    STATE.NAME -> STATE.VALUE
+                }
+            return getState()
+        }
+    }
+
+    internal class DeferredElementHandler {
+        private var deferredElementName: String? = null
+
+        fun set(name: String) {
+            assert(deferredElementName == null) { "Overwriting an existing deferred name" }
+            deferredElementName = name
+        }
+
+        fun with(actionWithDeferredElement: (String) -> Unit, actionWithoutDeferredElement: () -> Unit) {
+            deferredElementName?.let {
+                reset()
+                actionWithDeferredElement(it)
+            }
+                ?: actionWithoutDeferredElement()
+        }
+
+        private fun reset() {
+            deferredElementName = null
+        }
     }
 }

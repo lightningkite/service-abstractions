@@ -36,7 +36,7 @@ class KxSerializationFieldAccessTest {
         var char: Char = ' ',
         var string: String = "",
         var uuid: Uuid = Uuid.NIL,
-        @Contextual var instant: Instant = Instant.fromEpochMilliseconds(0L),
+        var instant: Instant = Instant.fromEpochMilliseconds(0L),
         var list: List<Int> = listOf(),
         var listEmbedded: List<ClassUsedForEmbedding> = listOf(),
         var set: Set<Int> = setOf(),
@@ -53,7 +53,7 @@ class KxSerializationFieldAccessTest {
         var charNullable: Char? = null,
         var stringNullable: String? = null,
         var uuidNullable: Uuid? = null,
-        @Contextual var instantNullable: Instant? = null,
+        var instantNullable: Instant? = null,
         var listNullable: List<Int>? = null,
         var mapNullable: Map<String, Int>? = null,
         var embeddedNullable: ClassUsedForEmbedding? = null,
@@ -83,7 +83,7 @@ class KxSerializationFieldAccessTest {
     data class StupidGenericBox<T>(val value: T)
 
     @Serializable
-    data class ContextualCopyCheck(@Contextual val date: LocalDate)
+    data class ContextualCopyCheck(val date: LocalDate)
 
     @Test fun getPerf() {
         val getter = { it: UnreasonablyComplex -> it.nested }

@@ -16,8 +16,6 @@ import com.lightningkite.services.database.SortPart
 import com.lightningkite.services.database.collectChunked
 import com.lightningkite.services.database.indexes
 import com.lightningkite.services.database.innerElement
-import com.lightningkite.services.database.mongodb.bson.Configuration
-import com.lightningkite.services.database.mongodb.bson.DefaultModule
 import com.lightningkite.services.database.mongodb.bson.KBson
 import com.lightningkite.services.database.simplify
 import com.lightningkite.services.database.walk
@@ -43,7 +41,7 @@ public class MongoTable<Model : Any>(
     private val access: MongoCollectionAccess,
     private val context: SettingContext
 ) : Table<Model> {
-    internal val bson: KBson = KBson(context.internalSerializersModule.overwriteWith(DefaultModule), Configuration())
+    internal val bson: KBson = KBson(context.internalSerializersModule)
 
     public val indexedTextFields: List<DataClassPathPartial<Model>>? by lazy {
         val ser = DataClassPathSerializer(serializer)
@@ -112,7 +110,7 @@ public class MongoTable<Model : Any>(
                         .arrayFilters(m.options.arrayFilters)
                         .hint(m.options.hint)
                         .hintString(m.options.hintString)
-                )?.let { bson.load(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                )?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
                     ?: EntryChange(null, model)
             } else {
                 findOneAndUpdate(
@@ -126,7 +124,7 @@ public class MongoTable<Model : Any>(
                         .arrayFilters(m.options.arrayFilters)
                         .hint(m.options.hint)
                         .hintString(m.options.hintString)
-                )?.let { bson.load(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                )?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
                     ?: run {
                         insertOne(bson.stringify(serializer, model)); EntryChange(
                         null,
@@ -185,7 +183,7 @@ public class MongoTable<Model : Any>(
                     .arrayFilters(m.options.arrayFilters)
                     .hint(m.options.hint)
                     .hintString(m.options.hintString)
-            )?.let { bson.load(serializer, it) }
+            )?.let { bson.parse(serializer, it) }
         } ?: return EntryChange(null, null)
         val after = modification(before)
         return EntryChange(before, after)
@@ -218,7 +216,7 @@ public class MongoTable<Model : Any>(
         access {
             find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).collectChunked(1000) { list ->
                 updateMany(Filters.`in`("_id", list.map { it["_id"] }), m.document, m.options)
-                list.asSequence().map { bson.load(serializer, it) }
+                list.asSequence().map { bson.parse(serializer, it) }
                     .forEach {
                         changes.add(EntryChange(it, modification(it)))
                     }
@@ -255,7 +253,7 @@ public class MongoTable<Model : Any>(
                 .limit(1).firstOrNull()?.let {
                     val id = it["_id"]
                     deleteOne(Filters.eq("_id", id))
-                    bson.load(serializer, it)
+                    bson.parse(serializer, it)
                 }
         }
     }
@@ -278,7 +276,7 @@ public class MongoTable<Model : Any>(
             // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
             withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).collectChunked(1000) { list ->
                 deleteMany(Filters.`in`("_id", list.map { it["_id"] }))
-                list.asSequence().map { bson.load(serializer, it) }
+                list.asSequence().map { bson.parse(serializer, it) }
                     .forEach {
                         remove.add(it)
                     }
@@ -348,7 +346,7 @@ public class MongoTable<Model : Any>(
                 }
                 .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
                 .map {
-                    bson.load(serializer, it)
+                    bson.parse(serializer, it)
                 }
         }
     }
@@ -377,7 +375,7 @@ public class MongoTable<Model : Any>(
             )
                 .toList()
                 .associate {
-                    bson.load(
+                    bson.parse(
                         KeyHolder.serializer(groupBy.serializer),
                         it
                     )._id to it.getNumber("count").intValue()
@@ -432,7 +430,7 @@ public class MongoTable<Model : Any>(
             )
                 .toList()
                 .associate {
-                    bson.load(
+                    bson.parse(
                         KeyHolder.serializer(groupBy.serializer),
                         it
                     )._id to (if (it.isNull("value")) null else it.getNumber("value").doubleValue())

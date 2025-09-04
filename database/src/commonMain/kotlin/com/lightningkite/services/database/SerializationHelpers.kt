@@ -32,12 +32,6 @@ abstract class WrappingSerializer<OUTER, INNER>(val name: String) : KSerializer<
         encoder.encodeSerializableValue(to, inner(value))
 }
 
-abstract class TrueObjectSerializer<T>(name: String, val value: T) : WrappingSerializer<T, Boolean>(name) {
-    override fun getDeferred(): KSerializer<Boolean> = Boolean.serializer()
-    override fun inner(it: T): Boolean = true
-    override fun outer(it: Boolean) = value
-}
-
 @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
 internal fun defer(serialName: String, kind: SerialKind, deferred: () -> SerialDescriptor): SerialDescriptor =
     object : SerialDescriptor {

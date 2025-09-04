@@ -208,6 +208,7 @@ class SerializationRegistry(val module: SerializersModule) {
         }
     }
 
+    @OptIn(InternalSerializationApi::class)
     fun registerVirtual(type: KSerializer<*>): VirtualType? {
         type.nullElement()?.let { return registerVirtual(it) }
         return if (type.descriptor.serialName !in direct && type.descriptor.serialName !in factory) {
@@ -215,8 +216,7 @@ class SerializationRegistry(val module: SerializersModule) {
             if (type.tryTypeParameterSerializers3().isNullOrEmpty()) registerVirtualWithoutTypeParameters(type)
             else registerVirtualWithTypeParameters(
                 type.descriptor.serialName,
-                master.factory[type.descriptor.serialName]
-                    ?: throw IllegalStateException("${type.descriptor.serialName} not registered in master")
+                master.factory[type.descriptor.serialName] ?: (type as GeneratedSerializer<*>).factory()
             )
         } else null
     }
