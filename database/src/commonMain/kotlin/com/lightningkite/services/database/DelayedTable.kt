@@ -15,11 +15,11 @@ import kotlin.time.DurationUnit
  * @param wraps The actual underlying FieldCollection to retrieve data from.
  * @param milliseconds The amount of delay that will be added to every call.
  */
-open class DelayedTable<Model : Any>(
+public open class DelayedTable<Model : Any>(
     override val wraps: Table<Model>,
-    val range: ClosedRange<Duration>
+    private val range: ClosedRange<Duration>
 ) : Table<Model> {
-    suspend fun doDelay() {
+    private suspend fun doDelay() {
         delay(
             Random.nextDouble(
                 range.start.toDouble(DurationUnit.SECONDS),
@@ -174,14 +174,14 @@ open class DelayedTable<Model : Any>(
     }
 }
 
-fun <Model : Any> Table<Model>.delayed(range: ClosedRange<Duration>): Table<Model> =
+public fun <Model : Any> Table<Model>.delayed(range: ClosedRange<Duration>): Table<Model> =
     DelayedTable(this, range)
 
-fun Database.delayed(range: ClosedRange<Duration>): Database = object : Database {
+public fun Database.delayed(range: ClosedRange<Duration>): Database = object : Database {
     override val name: String
         get() = this@delayed.name
-    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T> {
-        return this@delayed.collection<T>(serializer, name).delayed(range)
+    override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> {
+        return this@delayed.table(serializer, name).delayed(range)
     }
 
     override val context: SettingContext

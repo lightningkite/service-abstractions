@@ -8,10 +8,10 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.KSerializer
 import kotlin.time.Clock
 
-class MetricsTable<M : Any>(
+public class MetricsTable<M : Any>(
     override val wraps: Table<M>,
-    val waitTimeMetric: MetricType.Performance,
-    val callCountMetric: MetricType.Count,
+    private val waitTimeMetric: MetricType.Performance,
+    private val callCountMetric: MetricType.Count,
 ) :
     Table<M> {
     override val serializer: KSerializer<M> get() = wraps.serializer

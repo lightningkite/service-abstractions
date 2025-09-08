@@ -209,7 +209,7 @@ public class MongoDatabase(
     private val callMetric = countMetric("call")
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T> =
+    override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
                 MongoTable(serializer, atlasSearch = atlasSearch, object : MongoCollectionAccess {
@@ -232,7 +232,7 @@ public class MongoDatabase(
                             if (e.writeErrors.all { ErrorCategory.fromErrorCode(it.code) == ErrorCategory.DUPLICATE_KEY })
                                 throw UniqueViolationException(
                                     cause = e,
-                                    collection = it.namespace.collectionName
+                                    table = it.namespace.collectionName
                                 )
                             else throw e
                         } catch (e: MongoSocketException) {
@@ -245,7 +245,7 @@ public class MongoDatabase(
                             if (ErrorCategory.fromErrorCode(e.code) == ErrorCategory.DUPLICATE_KEY)
                                 throw UniqueViolationException(
                                     cause = e,
-                                    collection = it.namespace.collectionName
+                                    table = it.namespace.collectionName
                                 )
                             else throw e
                         } catch (e: Exception) {

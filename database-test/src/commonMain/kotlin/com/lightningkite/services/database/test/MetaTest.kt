@@ -18,7 +18,7 @@ abstract class MetaTest {
 
     @Test
     fun test() = runTest {
-        val c = database.collection<MetaTestModel>()
+        val c = database.table<MetaTestModel>()
         val toInsert = MetaTestModel(
             condition = condition { it.int gt 3 },
             modification = modification { it.int += 2 }

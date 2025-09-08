@@ -207,7 +207,7 @@ internal sealed class AbstractBsonDecoder(
     }
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
         val override = serializationOverride(deserializer)
-        return if(override != null) override(decodeBsonValue())
+        return if(override != null) override.toKotlin(decodeBsonValue())
         else deserializer.deserialize(this)
     }
 }
@@ -279,7 +279,7 @@ internal open class BsonPolymorphicDecoder(
         }
         val decoder = createBsonDecoder(reader, serializersModule, configuration)
         val override = serializationOverride(deserializer)
-        return if(override != null) override(decoder.decodeBsonValue())
+        return if(override != null) override.toKotlin(decoder.decodeBsonValue())
         else deserializer.deserialize(decoder)
     }
 

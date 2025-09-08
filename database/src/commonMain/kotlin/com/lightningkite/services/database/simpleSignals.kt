@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.FlowCollector
 /**
  * Runs after an item is created.
  */
-fun <Model : Any> Table<Model>.postCreate(
+public fun <Model : Any> Table<Model>.postCreate(
     onCreate: suspend (Model) -> Unit
 ): Table<Model> = object : Table<Model> by this@postCreate {
     override val wraps = this@postCreate
@@ -24,14 +24,10 @@ fun <Model : Any> Table<Model>.postCreate(
     }
 }
 
-@Deprecated("Use 'interceptDelete' instead", ReplaceWith("interceptDelete(onDelete)"))
-fun <Model : Any> Table<Model>.preDelete(onDelete: suspend (Model) -> Unit): Table<Model> =
-    interceptDelete(onDelete)
-
 /**
  * Runs after an item is deleted.
  */
-fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postDelete(
+public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postDelete(
     onDelete: suspend (Model) -> Unit
 ): Table<Model> = object : Table<Model> by this@postDelete {
     override val wraps = this@postDelete
@@ -55,7 +51,7 @@ fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postDelete(
 /**
  * Runs after an existing item is changed.
  */
-fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
+public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
     changed: suspend (Model, Model) -> Unit
 ): Table<Model> = object : Table<Model> by this@postChange {
     override val wraps = this@postChange
@@ -122,7 +118,7 @@ fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
 /**
  * Runs after any value is added or modified in the database.
  */
-fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
+public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
     changed: suspend (Model) -> Unit
 ): Table<Model> = object : Table<Model> by this@postNewValue {
     override val wraps = this@postNewValue
@@ -188,7 +184,7 @@ fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
         updateMany(condition, modification).changes.size
 }
 
-fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postRawChanges(
+public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postRawChanges(
     changed: suspend (List<EntryChange<Model>>) -> Unit
 ): Table<Model> = object : Table<Model> by this@postRawChanges {
     override val wraps = this@postRawChanges
@@ -263,7 +259,7 @@ fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postRawChanges(
 
 }
 
-fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListeners(
+public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListeners(
     changeListeners: List<suspend (CollectionChanges<Model>) -> Unit>
 ): Table<Model> = object : Table<Model> by this@withChangeListeners {
     override val wraps = this@withChangeListeners
@@ -365,7 +361,7 @@ fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListeners(
 
 }
 
-fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListener(
+public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListener(
     changeListener: suspend (CollectionChanges<Model>) -> Unit
 ): Table<Model> = object : Table<Model> by this@withChangeListener {
     override val wraps = this@withChangeListener
@@ -477,7 +473,7 @@ fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListener(
  * Intercept all kinds of creates, including [Table.insert], [Table.upsertOne], and [Table.upsertOneIgnoringResult].
  * Allows you to modify the object before it is actually created.
  */
-inline fun <Model : Any> Table<Model>.interceptCreate(crossinline interceptor: suspend (Model) -> Model): Table<Model> =
+public inline fun <Model : Any> Table<Model>.interceptCreate(crossinline interceptor: suspend (Model) -> Model): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptCreate
         override suspend fun insert(models: Iterable<Model>): List<Model> =
@@ -500,7 +496,7 @@ inline fun <Model : Any> Table<Model>.interceptCreate(crossinline interceptor: s
  * Intercept all kinds of creates, including [Table.insert], [Table.upsertOne], and [Table.upsertOneIgnoringResult].
  * Allows you to modify the object before it is actually created.
  */
-inline fun <Model : Any> Table<Model>.interceptCreates(crossinline interceptor: suspend (Iterable<Model>) -> List<Model>): Table<Model> =
+public inline fun <Model : Any> Table<Model>.interceptCreates(crossinline interceptor: suspend (Iterable<Model>) -> List<Model>): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptCreates
         override suspend fun insert(models: Iterable<Model>): List<Model> =
@@ -522,7 +518,7 @@ inline fun <Model : Any> Table<Model>.interceptCreates(crossinline interceptor: 
 /**
  * Intercepts all kinds of replace operations.
  */
-inline fun <Model : Any> Table<Model>.interceptReplace(crossinline interceptor: suspend (Model) -> Model): Table<Model> =
+public inline fun <Model : Any> Table<Model>.interceptReplace(crossinline interceptor: suspend (Model) -> Model): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptReplace
 
@@ -570,7 +566,7 @@ inline fun <Model : Any> Table<Model>.interceptReplace(crossinline interceptor: 
 /**
  * Intercepts all modifications sent to the database.
  */
-inline fun <Model : Any> Table<Model>.interceptModification(crossinline interceptor: suspend (Modification<Model>) -> Modification<Model>): Table<Model> =
+public inline fun <Model : Any> Table<Model>.interceptModification(crossinline interceptor: suspend (Modification<Model>) -> Modification<Model>): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptModification
         override suspend fun upsertOne(
@@ -611,7 +607,7 @@ inline fun <Model : Any> Table<Model>.interceptModification(crossinline intercep
 /**
  * Intercepts all changes sent to the database, including inserting, replacing, upserting, and updating.
  */
-inline fun <Model : Any> Table<Model>.interceptChange(crossinline interceptor: suspend (Modification<Model>) -> Modification<Model>): Table<Model> =
+public inline fun <Model : Any> Table<Model>.interceptChange(crossinline interceptor: suspend (Modification<Model>) -> Modification<Model>): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptChange
         override suspend fun insert(models: Iterable<Model>): List<Model> =
@@ -684,7 +680,7 @@ inline fun <Model : Any> Table<Model>.interceptChange(crossinline interceptor: s
  * Also gives you an instance of the model that will be changed.
  * This is significantly more expensive, as we must retrieve the data before we can calculate the change.
  */
-inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptChangePerInstance(
+public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptChangePerInstance(
     includeMassUpdates: Boolean = true,
     crossinline interceptor: suspend (Model, Modification<Model>) -> Modification<Model>
 ): Table<Model> =
@@ -810,7 +806,7 @@ inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptChange
 /**
  * Runs before an item is deleted.
  */
-fun <Model : Any> Table<Model>.interceptDelete(
+public fun <Model : Any> Table<Model>.interceptDelete(
     onDelete: suspend (Model) -> Unit
 ): Table<Model> = object : Table<Model> by this@interceptDelete {
     override val wraps = this@interceptDelete

@@ -168,7 +168,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
         android {
             namespace = "com.lightningkite.services"
-            compileSdk = 34
+            compileSdk = 36
 
             defaultConfig {
                 minSdk = 21

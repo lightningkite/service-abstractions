@@ -1,8 +1,8 @@
 package com.lightningkite.services.database.mongodb.bson
 
-import com.github.jershell.kbson.DefaultModule
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils
 import kotlinx.serialization.*
+import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 import org.bson.*
 import org.bson.codecs.*
@@ -10,7 +10,7 @@ import org.bson.codecs.*
 
 
 @OptIn(ExperimentalSerializationApi::class)
-internal class KBson(override val serializersModule: SerializersModule = DefaultModule, private val configuration: BsonConfiguration = BsonConfiguration(explicitNulls = true)) : SerialFormat, BinaryFormat {
+internal class KBson(override val serializersModule: SerializersModule = EmptySerializersModule(), private val configuration: BsonConfiguration = BsonConfiguration(explicitNulls = true)) : SerialFormat, BinaryFormat {
     fun <T> stringify(serializer: SerializationStrategy<T>, obj: T): BsonDocument {
         val doc = BsonDocument()
         val writer = BsonDocumentWriter(doc)

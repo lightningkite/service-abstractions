@@ -19,9 +19,9 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * An abstracted model for communicating with a Database.
- * Every implementation will handle how to return a FieldCollection to perform actions on a collection/table in the underlying database system.
+ * Every implementation will handle how to return a table to perform actions on a table in the underlying database system.
  */
-interface Database : Service {
+public interface Database : Service {
     /**
      * Settings that define what cache to use and how to connect to it.
      *
@@ -73,13 +73,13 @@ interface Database : Service {
     }
 
     /**
-     * Returns a FieldCollection of type T that will access and manipulate data from a collection/table in the underlying database system.
+     * Returns a table of type T that will access and manipulate data from a table in the underlying database system.
      */
-    fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T>
+    public fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T>
 
     @Suppress("UNCHECKED_CAST")
-    fun <T : Any> collection(type: KType, name: String): Table<T> =
-        collection(context.internalSerializersModule.serializer(type) as KSerializer<T>, name)
+    public fun <T : Any> table(type: KType, name: String): Table<T> =
+        table(context.internalSerializersModule.serializer(type) as KSerializer<T>, name)
 
     /**
      * Will attempt inserting data into the database to confirm that the connection is alive and available.
@@ -87,7 +87,7 @@ interface Database : Service {
     override suspend fun healthCheck(): HealthStatus {
 //        prepareModelsServerCore()
         try {
-            val c = collection<HealthCheckTestModel>()
+            val c = table<HealthCheckTestModel>()
             val id = "HealthCheck"
             c.upsertOneById(id, HealthCheckTestModel(id))
             if (c.get(id) == null) throw AssertionError("Assertion Failed")
@@ -100,12 +100,12 @@ interface Database : Service {
 
 @GenerateDataClassPaths
 @Serializable
-data class HealthCheckTestModel(override val _id: String) : HasId<String>
+public data class HealthCheckTestModel(override val _id: String) : HasId<String>
 
 /**
- * A Helper function for getting a collection from a database using generics.
- * This can make collection calls much cleaner and less wordy when the types can be inferred.
+ * A Helper function for getting a table from a database using generics.
+ * This can make table calls much cleaner and less wordy when the types can be inferred.
  */
-inline fun <reified T : Any> Database.collection(name: String = T::class.simpleName!!): Table<T> {
-    return collection(context.internalSerializersModule.serializer<T>(), name)
+public inline fun <reified T : Any> Database.table(name: String = T::class.simpleName!!): Table<T> {
+    return table(context.internalSerializersModule.serializer<T>(), name)
 }

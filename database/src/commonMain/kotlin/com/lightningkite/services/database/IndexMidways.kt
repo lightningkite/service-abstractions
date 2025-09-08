@@ -14,7 +14,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
  * Used for database implementations.
  * An index that is needed for this model.
  */
-data class NeededIndex(
+public data class NeededIndex(
     val fields: List<String>,
     val unique: Boolean = false,
     val name: String? = null,
@@ -25,7 +25,7 @@ data class NeededIndex(
  * Used for database implementations.
  * Gives a list of needed indexes for the model.
  */
-fun SerialDescriptor.indexes(): Set<NeededIndex> {
+public fun SerialDescriptor.indexes(): Set<NeededIndex> {
     val seen = HashSet<SerialDescriptor>()
     val out = HashSet<NeededIndex>()
     fun handleDescriptor(descriptor: SerialDescriptor, prefix: String = "") {

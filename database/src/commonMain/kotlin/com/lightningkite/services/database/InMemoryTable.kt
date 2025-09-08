@@ -13,8 +13,8 @@ import kotlinx.serialization.KSerializer
  * A FieldCollection who's underlying implementation is actually manipulating a MutableList.
  * This is useful for times that an actual database is not needed, and you need to move fast, such as during Unit Tests.
  */
-open class InMemoryTable<Model : Any>(
-    val data: MutableList<Model> = ArrayList(),
+public open class InMemoryTable<Model : Any>(
+    public val data: MutableList<Model> = ArrayList(),
     override val serializer: KSerializer<Model>
 ) : Table<Model> {
 
@@ -38,9 +38,9 @@ open class InMemoryTable<Model : Any>(
                                     (entryChange.old == null && entryChange.new != null) ||
                                     (entryChange.old != null &&
                                             entryChange.new != null &&
-                                            fields.any { it.get(entryChange.old) != it.get(entryChange.new) })
+                                            fields.any { it.get(entryChange.old!!) != it.get(entryChange.new!!) })
                                 )
-                                    fields.map { it to it.get(entryChange.new) }
+                                    fields.map { it to it.get(entryChange.new!!) }
                                 else
                                     null
                             }
@@ -51,7 +51,7 @@ open class InMemoryTable<Model : Any>(
                                         }
                                     }) {
                                     throw UniqueViolationException(
-                                        collection = serializer.descriptor.serialName,
+                                        table = serializer.descriptor.serialName,
                                         key = fields.joinToString { it.name },
                                         cause = IllegalStateException()
                                     )
@@ -261,7 +261,7 @@ open class InMemoryTable<Model : Any>(
 
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int = deleteMany(condition).size
 
-    fun drop() {
+    public fun drop() {
         data.clear()
     }
 }

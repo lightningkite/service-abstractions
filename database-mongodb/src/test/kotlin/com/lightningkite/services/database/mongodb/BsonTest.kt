@@ -1,8 +1,12 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.data.GenerateDataClassPaths
 import com.lightningkite.services.database.mongodb.bson.KBson
 import com.lightningkite.services.database.test.LargeTestModel
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
+import org.bson.types.ObjectId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -20,3 +24,11 @@ class BsonTest {
         println(KBson().stringifyAny(Int.serializer(), 1))
     }
 }
+
+
+
+@Serializable
+@GenerateDataClassPaths
+data class ObjectIdTest(
+    @Contextual val _id: ObjectId,
+)

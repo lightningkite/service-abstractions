@@ -17,6 +17,7 @@ package com.lightningkite.services.database.mongodb.bson
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializer
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -63,22 +64,49 @@ import org.bson.types.ObjectId
 public val defaultSerializersModule: SerializersModule =
     ObjectIdSerializer.serializersModule + BsonValueSerializer.serializersModule + dateTimeSerializersModule
 
-@ExperimentalSerializationApi
-@Serializer(forClass = ObjectId::class)
+@JvmInline
+@Serializable(KObjectIdSerializer::class)
+public value class KObjectId(public val value: ObjectId): Comparable<KObjectId> {
+    public constructor(hexString: String): this(value = ObjectId(hexString))
+    public constructor(): this(value = ObjectId())
+    override fun compareTo(other: KObjectId): Int {
+        return value.compareTo(other.value)
+    }
+}
+
+@OptIn(ExperimentalSerializationApi::class)
+public object KObjectIdSerializer : KSerializer<KObjectId> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("com.lightningkite.services.database.mongodb.bson.KObjectId", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: KObjectId) {
+        when (encoder) {
+            is BsonEncoder -> encoder.encodeObjectId(value.value)
+            else -> encoder.encodeString(value.value.toHexString())
+        }
+    }
+
+    override fun deserialize(decoder: Decoder): KObjectId {
+        return when (decoder) {
+            is BsonDecoder -> KObjectId(decoder.decodeObjectId())
+            else -> KObjectId(ObjectId(decoder.decodeString()))
+        }
+    }
+}
+@OptIn(ExperimentalSerializationApi::class)
 public object ObjectIdSerializer : KSerializer<ObjectId> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("ObjectIdSerializer", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: ObjectId) {
         when (encoder) {
             is BsonEncoder -> encoder.encodeObjectId(value)
-            else -> throw SerializationException("ObjectId is not supported by ${encoder::class}")
+            else -> encoder.encodeString(value.toHexString())
         }
     }
 
     override fun deserialize(decoder: Decoder): ObjectId {
         return when (decoder) {
             is BsonDecoder -> decoder.decodeObjectId()
-            else -> throw SerializationException("ObjectId is not supported by ${decoder::class}")
+            else -> ObjectId(decoder.decodeString())
         }
     }
 

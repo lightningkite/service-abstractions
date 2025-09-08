@@ -1,30 +1,21 @@
 package com.lightningkite.services.database
 
-
 import kotlinx.serialization.Serializable
 import kotlin.math.sqrt
 
-@Serializable
-enum class Aggregate {
-    Sum,
-    Average,
-    StandardDeviationSample,
-    StandardDeviationPopulation
-}
-
-fun Aggregate.aggregator(): Aggregator = when (this) {
+internal fun Aggregate.aggregator(): Aggregator = when (this) {
     Aggregate.Sum -> SumAggregator()
     Aggregate.Average -> AverageAggregator()
     Aggregate.StandardDeviationSample -> StandardDeviationSampleAggregator()
     Aggregate.StandardDeviationPopulation -> StandardDeviationPopulationAggregator()
 }
 
-interface Aggregator {
+internal interface Aggregator {
     fun consume(value: Double)
     fun complete(): Double?
 }
 
-class SumAggregator : Aggregator {
+private class SumAggregator : Aggregator {
     var current: Double = 0.0
     var anyFound = false
     override fun consume(value: Double) {
@@ -35,7 +26,7 @@ class SumAggregator : Aggregator {
     override fun complete(): Double? = if (anyFound) current else null
 }
 
-class AverageAggregator : Aggregator {
+private class AverageAggregator : Aggregator {
     var count: Int = 0
     var current: Double = 0.0
     override fun consume(value: Double) {
@@ -46,7 +37,7 @@ class AverageAggregator : Aggregator {
     override fun complete(): Double? = if (count == 0) null else current
 }
 
-class StandardDeviationSampleAggregator : Aggregator {
+private class StandardDeviationSampleAggregator : Aggregator {
     var count: Int = 0
     var mean: Double = 0.0
     var m2: Double = 0.0
@@ -61,7 +52,7 @@ class StandardDeviationSampleAggregator : Aggregator {
     override fun complete(): Double? = if (count < 2) null else sqrt(m2 / (count.toDouble() - 1))
 }
 
-class StandardDeviationPopulationAggregator : Aggregator {
+private class StandardDeviationPopulationAggregator : Aggregator {
     var count: Int = 0
     var mean: Double = 0.0
     var m2: Double = 0.0
@@ -76,7 +67,7 @@ class StandardDeviationPopulationAggregator : Aggregator {
     override fun complete(): Double? = if (count == 0) null else sqrt(m2 / count.toDouble())
 }
 
-fun Sequence<Double>.aggregate(aggregate: Aggregate): Double? {
+public fun Sequence<Double>.aggregate(aggregate: Aggregate): Double? {
     val aggregator = aggregate.aggregator()
     for (item in this) {
         aggregator.consume(item)

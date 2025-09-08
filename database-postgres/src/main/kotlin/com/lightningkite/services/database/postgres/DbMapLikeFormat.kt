@@ -434,6 +434,7 @@ internal class DbLikeMapEncoder(
         else super.encodeSerializableValue(serializer, value)
     }
 
+    @ExperimentalSerializationApi
     override fun <T : Any> encodeNullableSerializableValue(serializer: SerializationStrategy<T>, value: T?) {
         if (value == null) {
             when (serializer.descriptor.kind) {

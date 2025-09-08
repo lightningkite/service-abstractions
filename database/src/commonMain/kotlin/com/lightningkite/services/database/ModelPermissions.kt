@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 @GenerateDataClassPaths
-data class ModelPermissions<Model>(
+public data class ModelPermissions<Model>(
     /**
      * The user may only create an item if it matches this condition.
      */
@@ -36,11 +36,11 @@ data class ModelPermissions<Model>(
     val delete: Condition<Model> = Condition.Never,
     val maxQueryTimeMs: Long = 1_000L
 ) {
-    companion object {
+    public companion object {
         /**
          * A full whitelist permission set.
          */
-        fun <Model> allowAll(): ModelPermissions<Model> = ModelPermissions(
+        public fun <Model> allowAll(): ModelPermissions<Model> = ModelPermissions(
             create = Condition.Always,
             read = Condition.Always,
             update = Condition.Always,
@@ -48,7 +48,7 @@ data class ModelPermissions<Model>(
         )
     }
 
-    constructor(
+    public  constructor(
         read: Condition<Model>,
         readMask: Mask<Model> = Mask(),
         manage: Condition<Model>,
@@ -62,7 +62,7 @@ data class ModelPermissions<Model>(
         delete = manage
     )
 
-    constructor(
+    public constructor(
         all: Condition<Model>,
         readMask: Mask<Model> = Mask(),
         updateRestriction: UpdateRestrictions<Model> = UpdateRestrictions(),
@@ -78,15 +78,15 @@ data class ModelPermissions<Model>(
     /**
      * @return a condition defining under what circumstances the given [modification] is permitted in.
      */
-    fun allowed(modification: Modification<Model>): Condition<Model> = updateRestrictions(modification) and update
+    public fun allowed(modification: Modification<Model>): Condition<Model> = updateRestrictions(modification) and update
 
     /**
      * Masks a single instance of the model.
      */
-    fun mask(model: Model): Model = readMask(model)
+    public fun mask(model: Model): Model = readMask(model)
 
     /**
      * Masks a single instance of the model.
      */
-    fun mask(model: Partial<Model>): Partial<Model> = readMask(model)
+    public fun mask(model: Partial<Model>): Partial<Model> = readMask(model)
 }

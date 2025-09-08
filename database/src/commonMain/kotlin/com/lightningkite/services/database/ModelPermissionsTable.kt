@@ -5,14 +5,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
 
-class SecurityException(message: String? = null, cause: Throwable? = null) : RuntimeException(message, cause)
+public class SecurityException(message: String? = null, cause: Throwable? = null) : RuntimeException(message, cause)
 
 /**
  * Uses [ModelPermissions] to secure a [Table].
  */
-open class ModelPermissionsTable<Model : Any>(
+public open class ModelPermissionsTable<Model : Any>(
     override val wraps: Table<Model>,
-    val permissions: ModelPermissions<Model>
+    private val permissions: ModelPermissions<Model>
 ) : Table<Model> {
     override val serializer: KSerializer<Model> get() = wraps.serializer
     private val textIndexPaths = serializer.descriptor.annotations.filterIsInstance<TextIndex>()
@@ -223,5 +223,5 @@ open class ModelPermissionsTable<Model : Any>(
     override suspend fun mask(): Mask<Model> = permissions.readMask
 }
 
-fun <Model : Any> Table<Model>.withPermissions(permissions: ModelPermissions<Model>): Table<Model> =
+public fun <Model : Any> Table<Model>.withPermissions(permissions: ModelPermissions<Model>): Table<Model> =
     ModelPermissionsTable(this, permissions)

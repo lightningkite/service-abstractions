@@ -160,13 +160,13 @@ internal open class BsonEncoderImpl(
                 if (value != null || configuration.explicitNulls) {
                     encodeName(it)
                     serializationOverride(serializer)?.let {
-                        encodeBsonValue(it(value))
+                        encodeBsonValue(it.toBson(value))
                     } ?: super<AbstractEncoder>.encodeSerializableValue(serializer, value)
                 }
             },
             {
                 serializationOverride(serializer)?.let {
-                    encodeBsonValue(it(value))
+                    encodeBsonValue(it.toBson(value))
                 } ?: super<AbstractEncoder>.encodeSerializableValue(serializer, value)
             })
     }
@@ -177,13 +177,13 @@ internal open class BsonEncoderImpl(
                 if (value != null || configuration.explicitNulls) {
                     encodeName(it)
                     serializationOverride(serializer)?.let {
-                        if(value == null) encodeNull() else encodeBsonValue(it(value))
+                        if(value == null) encodeNull() else encodeBsonValue(it.toBson(value))
                     } ?: super<AbstractEncoder>.encodeNullableSerializableValue(serializer, value)
                 }
             },
             {
                 serializationOverride(serializer)?.let {
-                    if(value == null) encodeNull() else encodeBsonValue(it(value))
+                    if(value == null) encodeNull() else encodeBsonValue(it.toBson(value))
                 } ?: super<AbstractEncoder>.encodeNullableSerializableValue(serializer, value)
             })
     }

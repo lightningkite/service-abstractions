@@ -16,14 +16,14 @@ import kotlinx.serialization.json.JsonObject
  *
  * @param premadeData A JsonObject that contains data you wish to populate the database with on creation.
  */
-class InMemoryDatabase(override val name: String, val premadeData: JsonObject? = null, override val context: SettingContext) : Database {
-    val collections: HashMap<Pair<KSerializer<*>, String>, Table<*>> = HashMap()
+public class InMemoryDatabase(override val name: String, private val premadeData: JsonObject? = null, override val context: SettingContext) : Database {
+    public val collections: HashMap<Pair<KSerializer<*>, String>, Table<*>> = HashMap()
 
     private val waitMetric = performanceMetric("wait")
     private val callMetric = countMetric("call")
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T> =
+    override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
             val made = InMemoryTable(serializer = serializer)
             premadeData?.get(name)?.let {

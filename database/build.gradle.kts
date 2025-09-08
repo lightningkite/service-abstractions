@@ -18,7 +18,7 @@ kotlin {
         optIn.add("kotlin.time.ExperimentalTime")
         optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
-//    explicitApi()
+    explicitApi()
     applyDefaultHierarchyTemplate()
     androidTarget {
         compilerOptions {
@@ -46,6 +46,7 @@ kotlin {
                 api(project(path = ":basis"))
                 api(project(path = ":should-be-standard-library"))
                 api(project(path = ":data"))
+                api(project(path = ":database-shared"))
                 api(libs.atomicfu)
             }
             kotlin {
@@ -70,32 +71,6 @@ kotlin {
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
-        val nonJvmMain by creating {
-            dependsOn(commonMain)
-            dependencies {
-            }
-        }
-        val jvmCommonMain by creating {
-            dependsOn(commonMain)
-            dependencies {
-            }
-        }
-        val androidMain by getting {
-            dependsOn(jvmCommonMain)
-        }
-        val jvmMain by getting {
-            dependsOn(jvmCommonMain)
-            dependencies {
-            }
-        }
-        val jvmTest by getting {
-        }
-        val jsMain by getting { dependsOn(nonJvmMain) }
-        val iosX64Main by getting { dependsOn(nonJvmMain) }
-        val iosArm64Main by getting { dependsOn(nonJvmMain) }
-        val iosSimulatorArm64Main by getting { dependsOn(nonJvmMain) }
-        val macosX64Main by getting { dependsOn(nonJvmMain) }
-        val macosArm64Main by getting { dependsOn(nonJvmMain) }
     }
 }
 
@@ -109,7 +84,7 @@ lkLibrary("lightningkite", "service-abstractions") {}
 
 android {
     namespace = "com.lightningkite.services"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 21

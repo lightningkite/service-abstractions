@@ -59,7 +59,7 @@ public class DynamoDbCache(
                                             override fun accessKeyId(): String = user
                                             override fun secretAccessKey(): String = password
                                         })
-                                    } else DefaultCredentialsProvider.create()
+                                    } else DefaultCredentialsProvider.builder().build()
                                 )
                                 .httpClient(AwsConnections.asyncClient)
                                 .overrideConfiguration(AwsConnections.clientOverrideConfiguration)

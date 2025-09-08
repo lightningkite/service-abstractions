@@ -9,13 +9,13 @@ import kotlinx.serialization.serializer
 
 @Serializable
 @GenerateDataClassPaths
-data class Mask<T>(
+public data class Mask<T>(
     /**
      * If the condition does not pass, then the modification will be applied to mask the values.
      */
     val pairs: List<Pair<Condition<T>, Modification<T>>> = listOf()
 ) {
-    operator fun invoke(on: T): T {
+    public operator fun invoke(on: T): T {
         var value = on
         for (pair in pairs) {
             if (!pair.first(on)) value = pair.second(value)
@@ -23,7 +23,7 @@ data class Mask<T>(
         return value
     }
 
-    operator fun invoke(on: Partial<T>): Partial<T> {
+    public operator fun invoke(on: Partial<T>): Partial<T> {
         var value = on
         for (pair in pairs) {
             val evaluated = pair.first(on)
@@ -32,7 +32,7 @@ data class Mask<T>(
         return value
     }
 
-    fun permitSort(on: List<SortPart<T>>): Condition<T> {
+    public fun permitSort(on: List<SortPart<T>>): Condition<T> {
         val totalConditions = ArrayList<Condition<T>>()
         for (pair in pairs) {
             if (on.any { pair.second.affects(it.field) }) totalConditions.add(pair.first)
@@ -44,7 +44,7 @@ data class Mask<T>(
         }
     }
 
-    operator fun invoke(on: DataClassPathPartial<T>): Condition<T> {
+    public operator fun invoke(on: DataClassPathPartial<T>): Condition<T> {
         val totalConditions = ArrayList<Condition<T>>()
         for (pair in pairs) {
             if (pair.second.affects(on)) totalConditions.add(pair.first)
@@ -56,7 +56,7 @@ data class Mask<T>(
         }
     }
 
-    operator fun invoke(
+    public operator fun invoke(
         condition: Condition<T>,
         tableTextPaths: List<List<SerializableProperty<*, *>>> = listOf()
     ): Condition<T> {
@@ -71,36 +71,36 @@ data class Mask<T>(
         }
     }
 
-    class Builder<T>(
+    public class Builder<T>(
         serializer: KSerializer<T>,
-        val pairs: ArrayList<Pair<Condition<T>, Modification<T>>> = ArrayList()
+        public val pairs: ArrayList<Pair<Condition<T>, Modification<T>>> = ArrayList()
     ) {
-        val it = DataClassPathSelf(serializer)
-        fun <V> DataClassPath<T, V>.mask(value: V, unless: Condition<T> = Condition.Never) {
+        private val it = DataClassPathSelf(serializer)
+        public fun <V> DataClassPath<T, V>.mask(value: V, unless: Condition<T> = Condition.Never) {
             pairs.add(unless to mapModification(Modification.Assign(value)))
         }
 
-        infix fun <V> DataClassPath<T, V>.maskedTo(value: V) = mapModification(Modification.Assign(value))
-        infix fun Modification<T>.unless(condition: Condition<T>) {
+        public infix fun <V> DataClassPath<T, V>.maskedTo(value: V): Modification<T> = mapModification(Modification.Assign(value))
+        public infix fun Modification<T>.unless(condition: Condition<T>) {
             pairs.add(condition to this)
         }
 
-        fun always(modification: Modification<T>) {
+        public fun always(modification: Modification<T>) {
             pairs.add(Condition.Never to modification)
         }
 
-        fun build() = Mask(pairs)
-        fun include(mask: Mask<T>) {
+        public fun build(): Mask<T> = Mask(pairs)
+        public fun include(mask: Mask<T>) {
             pairs.addAll(mask.pairs)
         }
     }
 }
 
-inline fun <reified T> mask(builder: Mask.Builder<T>.(DataClassPath<T, T>) -> Unit): Mask<T> {
+public inline fun <reified T> mask(builder: Mask.Builder<T>.(DataClassPath<T, T>) -> Unit): Mask<T> {
     return Mask.Builder<T>(serializer<T>()).apply { builder(path()) }.build()
 }
 
-operator fun <T> Condition<T>.invoke(map: Partial<T>): Boolean? {
+public operator fun <T> Condition<T>.invoke(map: Partial<T>): Boolean? {
     return when (this) {
         is Condition.Always -> true
         is Condition.Never -> false
@@ -130,7 +130,7 @@ operator fun <T> Condition<T>.invoke(map: Partial<T>): Boolean? {
 }
 
 @Suppress("UNCHECKED_CAST")
-operator fun <T> Modification<T>.invoke(map: Partial<T>): Partial<T> {
+public operator fun <T> Modification<T>.invoke(map: Partial<T>): Partial<T> {
     return when (this) {
         is Modification.OnField<*, *> -> if (map.parts.containsKey(key)) {
             val newPartial = Partial<T>(map.parts.toMutableMap())
@@ -145,10 +145,10 @@ operator fun <T> Modification<T>.invoke(map: Partial<T>): Partial<T> {
     }
 }
 
-fun <K, V> Modification<K>.valueSetForDataClassPath(path: DataClassPath<K, V>): V? =
+private fun <K, V> Modification<K>.valueSetForDataClassPath(path: DataClassPath<K, V>): V? =
     (forDataClassPath<V>(path.properties) as? Modification.Assign<V>)?.value
 
-fun <K, V> Modification<K>.forDataClassPath(path: DataClassPath<K, V>): Modification<V>? =
+private  fun <K, V> Modification<K>.forDataClassPath(path: DataClassPath<K, V>): Modification<V>? =
     forDataClassPath<V>(path.properties)
 
 @Suppress("UNCHECKED_CAST")
@@ -180,7 +180,7 @@ private fun <V> Modification<*>.forDataClassPath(list: List<SerializableProperty
     }
 }
 
-fun Modification<*>.affects(path: DataClassPathPartial<*>): Boolean = affects(path.properties)
+public fun Modification<*>.affects(path: DataClassPathPartial<*>): Boolean = affects(path.properties)
 private fun Modification<*>.affects(list: List<SerializableProperty<*, *>>): Boolean {
     return when (this) {
         is Modification.OnField<*, *> -> if (list.first() == this.key) {
@@ -196,7 +196,7 @@ private fun Modification<*>.affects(list: List<SerializableProperty<*, *>>): Boo
     }
 }
 
-fun Condition<*>.reads(path: DataClassPathPartial<*>): Boolean = reads(path.properties)
+public fun Condition<*>.reads(path: DataClassPathPartial<*>): Boolean = reads(path.properties)
 private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean {
     return when (this) {
         is Condition.OnField<*, *> -> if (list.first() == this.key) {
@@ -216,7 +216,7 @@ private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean 
     }
 }
 
-fun <T> Condition<T>.readPaths(): Set<DataClassPathPartial<T>> {
+internal fun <T> Condition<T>.readPaths(): Set<DataClassPathPartial<T>> {
     val out = HashSet<DataClassPathPartial<T>>()
     emitReadPaths { out.add(it) }
     return out
@@ -224,7 +224,7 @@ fun <T> Condition<T>.readPaths(): Set<DataClassPathPartial<T>> {
 
 @OptIn(ExperimentalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
-fun <T> Condition<T>.emitReadPaths(out: (DataClassPathPartial<T>) -> Unit) = emitReadPaths(
+internal fun <T> Condition<T>.emitReadPaths(out: (DataClassPathPartial<T>) -> Unit): Unit = emitReadPaths(
     DataClassPathSelf<T>(
         NothingSerializer() as KSerializer<T>
     )
@@ -256,7 +256,7 @@ private fun Condition<*>.emitReadPaths(soFar: DataClassPath<*, *>, out: (DataCla
     // PATH: (((root, a), b), c)
 }
 
-fun <T> Condition<T>.readsResultOf(
+public fun <T> Condition<T>.readsResultOf(
     modification: Modification<T>,
     tableTextPaths: List<List<SerializableProperty<*, *>>> = listOf()
 ): Boolean {
@@ -326,7 +326,7 @@ fun <T> Condition<T>.readsResultOf(
 }
 
 @Suppress("UNCHECKED_CAST")
-fun <T> Condition<T>.guaranteedAfter(modification: Modification<T>): Boolean {
+public fun <T> Condition<T>.guaranteedAfter(modification: Modification<T>): Boolean {
     return when (modification) {
         is Modification.Assign -> this(modification.value)
         is Modification.OnField<*, *> -> {
@@ -360,7 +360,7 @@ fun <T> Condition<T>.guaranteedAfter(modification: Modification<T>): Boolean {
 }
 
 @Suppress("UNCHECKED_CAST")
-fun <T, V> Modification<T>.map(
+public fun <T, V> Modification<T>.map(
     path: DataClassPath<T, V>,
     onModification: (Modification<V>) -> Modification<V>,
 ): Modification<T> = (this as Modification<Any?>).map<V>(path.properties, onModification) as Modification<T>
@@ -405,7 +405,7 @@ private fun <V> Modification<*>.map(
 }
 
 
-fun Condition<*>.walk(action: (Condition<*>) -> Unit) {
+public fun Condition<*>.walk(action: (Condition<*>) -> Unit) {
     action(this)
     when (this) {
         is Condition.And -> this.conditions.forEach { it.walk(action) }

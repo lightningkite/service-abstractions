@@ -51,7 +51,7 @@ public class JsonFileDatabase(
 
     private val waitMetric = performanceMetric("wait")
     private val callMetric = countMetric("call")
-    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): Table<T> =
+    override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         synchronized(collections) {
             @Suppress("UNCHECKED_CAST")
             collections.getOrPut(serializer to name) {

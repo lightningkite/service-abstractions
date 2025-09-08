@@ -16,7 +16,6 @@
 package com.lightningkite.services.database.mongodb.bson
 
 import java.time.ZoneOffset
-import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -38,6 +37,7 @@ import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.plus
 import org.bson.BsonDateTime
 import com.lightningkite.services.database.mongodb.bson.utils.SerializationModuleUtils.isClassAvailable
+import kotlin.time.Instant
 
 /**
  * The default serializers module

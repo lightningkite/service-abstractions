@@ -68,7 +68,7 @@ public class PostgresDatabase(
     private val collections = ConcurrentHashMap<Pair<KSerializer<*>, String>, Lazy<PostgresCollection<*>>>()
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> collection(serializer: KSerializer<T>, name: String): PostgresCollection<T> =
+    override fun <T : Any> table(serializer: KSerializer<T>, name: String): PostgresCollection<T> =
         (collections.getOrPut(serializer to name) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
                 PostgresCollection(

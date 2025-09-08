@@ -8,15 +8,15 @@ import kotlinx.coroutines.flow.toList
  * Returns a Flow that will contain ALL the instances of *Model* in the collection.
  * @return Flow that will return ALL the instances of *Model* in the collection.
  */
-suspend fun <Model : Any>
-        Table<Model>.all() = find(condition = Condition.Always)
+public suspend fun <Model : Any>
+        Table<Model>.all(): Flow<Model> = find(condition = Condition.Always)
 
 /**
  * Will find a single instance of *Model* from the collection and return it.
  * @param condition The condition used to find an instance of Model.
  * @return The first instance of *Model* that matches the provided condition or null if nothing in the collection matches the condition.
  */
-suspend fun <Model : Any>
+public suspend fun <Model : Any>
         Table<Model>.findOne(condition: Condition<Model>): Model? =
     find(condition = condition, limit = 1).firstOrNull()
 
@@ -25,7 +25,7 @@ suspend fun <Model : Any>
  * @param model The instance of *Model* that will be inserted into the collection.
  * @return The instance of *Model* that was inserted into the collection.
  */
-suspend fun <Model : Any>
+public suspend fun <Model : Any>
         Table<Model>.insertOne(model: Model): Model? = insert(listOf(model)).firstOrNull()
 
 /**
@@ -33,7 +33,7 @@ suspend fun <Model : Any>
  * @param models The Iterable that will be inserted into the collection
  * @return The List of *Model* that was inserted into the database.
  */
-suspend fun <Model : Any>
+public suspend fun <Model : Any>
         Table<Model>.insertMany(models: Iterable<Model>): List<Model> = insert(models)
 
 /**
@@ -41,10 +41,10 @@ suspend fun <Model : Any>
  * @param mass The MassModification containing the condition for which to update, and a modification for how to update *Models* in the collection.
  * @return An Int representing how many instances of *Model* was updated.
  */
-suspend fun <Model : Any>
+public suspend fun <Model : Any>
         Table<Model>.updateManyIgnoringResult(
     mass: MassModification<Model>
-) = updateManyIgnoringResult(mass.condition, mass.modification)
+): Int = updateManyIgnoringResult(mass.condition, mass.modification)
 
 
 /**
@@ -53,7 +53,7 @@ suspend fun <Model : Any>
  * @param modification The modification describing how you which to update the instance.
  * @return A boolean indicating whether an item was updated in the collection.
  */
-suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.updateOneByIdIgnoringResult(
     id: ID,
     modification: Modification<Model>
@@ -67,7 +67,7 @@ suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  * @param modification The modification describing how you which to update the instance.
  * @return An Entry change which includes the value before the update and the value after the update.
  */
-suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.updateOneById(
     id: ID,
     modification: Modification<Model>
@@ -80,7 +80,7 @@ suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  * @param id The _id of the *Model* instance that you wish to delete.
  * @return A boolean indicating whether an item was deleted.
  */
-suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.deleteOneById(
     id: ID
 ): Boolean {
@@ -93,11 +93,11 @@ suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  * @param model The instance of *Model* you which to replace the existing instance with.
  * @return An Entry change which includes the value before the update and the value after the replace.
  */
-suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.replaceOneById(
     id: ID,
     model: Model
-) = replaceOne(Condition.OnField(serializer._id(), Condition.Equal(id)), model)
+): EntryChange<Model> = replaceOne(Condition.OnField(serializer._id(), Condition.Equal(id)), model)
 
 
 /**
@@ -106,11 +106,11 @@ suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  * @param model The instance of *Model* you which to upsert into the collection.
  * @return An Entry change which includes the value before the update and the value after the upsert.
  */
-suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.upsertOneById(
     id: ID,
     model: Model
-) = upsertOne(Condition.OnField(serializer._id(), Condition.Equal(id)), Modification.Assign(model), model)
+): EntryChange<Model> = upsertOne(Condition.OnField(serializer._id(), Condition.Equal(id)), Modification.Assign(model), model)
 
 
 /**
@@ -118,7 +118,7 @@ suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  * @param id The id of the object you want to retrieve.
  * @return The instance of *Model* from the collection with the same id or null if it does not exist.
  */
-suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.get(
     id: ID
 ): Model? {
@@ -130,7 +130,7 @@ suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  * @param ids The list of ids of the objects you want to retrieve.
  * @return A List of *Model* from the collection with the matching ids to the ones provided.
  */
-suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.getMany(
     ids: Collection<ID>
 ): List<Model> {
@@ -143,7 +143,7 @@ suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  * @param query The values used in calculating a search on a collection.
  * @return A List of *Model* from the collection that match the query provided.
  */
-suspend fun <Model : Any>
+public suspend fun <Model : Any>
         Table<Model>.query(query: Query<Model>): Flow<Model> =
     find(query.condition, query.orderBy, query.skip, query.limit)
 
@@ -152,14 +152,6 @@ suspend fun <Model : Any>
  * @param query The values used in calculating a search on a collection.
  * @return A List of *Model* from the collection that match the query provided.
  */
-suspend fun <Model : Any>
+public suspend fun <Model : Any>
         Table<Model>.queryPartial(query: QueryPartial<Model>): Flow<Partial<Model>> =
     findPartial(query.fields, query.condition, query.orderBy, query.skip, query.limit)
-
-@Deprecated("Use the built in group count with keyPaths.")
-suspend inline fun <reified Key, reified Model : Any> Table<Model>.groupCount(
-    condition: Condition<Model> = Condition.Always,
-    groupBy: SerializableProperty<Model, Key>
-): Map<Key, Int> {
-    return this.groupCount<Key>(condition, path<Model>()[groupBy])
-}

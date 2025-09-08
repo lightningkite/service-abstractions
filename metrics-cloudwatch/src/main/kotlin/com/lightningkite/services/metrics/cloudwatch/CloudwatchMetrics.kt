@@ -59,7 +59,7 @@ public class CloudwatchMetricReporter(
                                 override fun accessKeyId(): String = user
                                 override fun secretAccessKey(): String = password
                             })
-                        } else DefaultCredentialsProvider.create(),
+                        } else DefaultCredentialsProvider.builder().build(),
                     )
                 }
                     ?: throw IllegalStateException("Invalid CloudWatch metrics URL. The URL should match the pattern: cloudwatch://[user]:[password]@[region]/[namespace]")

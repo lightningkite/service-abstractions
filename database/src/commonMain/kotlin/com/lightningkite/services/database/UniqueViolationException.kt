@@ -1,11 +1,11 @@
 package com.lightningkite.services.database
 
-class UniqueViolationException(
+public class UniqueViolationException(
     cause: Throwable?,
-    val key: String? = null,
-    val collection: String? = null,
+    public val key: String? = null,
+    public val table: String? = null,
 ) : Exception(
-    key?.let { "Key $key already exists in $collection" } ?: collection?.let { "Unique violation in $collection" }
+    key?.let { "Key $key already exists in $table" } ?: table?.let { "Unique violation in $table" }
     ?: "Unique violation",
     cause
 ) {

@@ -5,32 +5,32 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
 
 /**
- * An abstract way to communicate with a database on a specific collection/table
+ * An abstract way to communicate with a database on a specific table
  * using conditions and modifications. The underlying database is irrelevant and
  * will have its own implementation of this interface.
  */
-interface Table<Model : Any> {
-    val serializer: KSerializer<Model>
+public interface Table<Model : Any> {
+    public val serializer: KSerializer<Model>
 
     /**
      * The field collection this wraps, if any.
      */
-    val wraps: Table<Model>? get() = null
+    public val wraps: Table<Model>? get() = null
 
     /**
      * The full condition that will be sent to the database in the end.  Used to help analyze security rules.
      */
-    suspend fun fullCondition(condition: Condition<Model>): Condition<Model> = condition
+    public suspend fun fullCondition(condition: Condition<Model>): Condition<Model> = condition
 
     /**
      * The mask that will be used on data coming out of the database.  Used to help analyze security rules.
      */
-    suspend fun mask(): Mask<Model> = Mask()
+    public suspend fun mask(): Mask<Model> = Mask()
 
     /**
      * Query for items in the collection.
      */
-    suspend fun find(
+    public suspend fun find(
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>> = listOf(),
         skip: Int = 0,
@@ -41,7 +41,7 @@ interface Table<Model : Any> {
     /**
      * Query for items in the collection.
      */
-    suspend fun findPartial(
+    public suspend fun findPartial(
         fields: Set<DataClassPathPartial<Model>>,
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>> = listOf(),
@@ -61,14 +61,14 @@ interface Table<Model : Any> {
     /**
      * Count the number of matching items in the collection.
      */
-    suspend fun count(
+    public suspend fun count(
         condition: Condition<Model> = Condition.Always
     ): Int
 
     /**
      * Count the number of matching items in each group.
      */
-    suspend fun <Key> groupCount(
+    public suspend fun <Key> groupCount(
         condition: Condition<Model> = Condition.Always,
         groupBy: DataClassPath<Model, Key>
     ): Map<Key, Int>
@@ -76,7 +76,7 @@ interface Table<Model : Any> {
     /**
      * Aggregate a particular numerical field on all matching items.
      */
-    suspend fun <N : Number?> aggregate(
+    public suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model> = Condition.Always,
         property: DataClassPath<Model, N>
@@ -85,7 +85,7 @@ interface Table<Model : Any> {
     /**
      * Aggregate a particular numerical field on all matching items by group.
      */
-    suspend fun <N : Number?, Key> groupAggregate(
+    public suspend fun <N : Number?, Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model> = Condition.Always,
         groupBy: DataClassPath<Model, Key>,
@@ -97,7 +97,7 @@ interface Table<Model : Any> {
      * Insert items into the collection.
      * @return The items that were actually inserted in the end.
      */
-    suspend fun insert(
+    public suspend fun insert(
         models: Iterable<Model>
     ): List<Model>
 
@@ -106,7 +106,7 @@ interface Table<Model : Any> {
      * Replaces a single item via a condition.
      * @return The old and new items.
      */
-    suspend fun replaceOne(
+    public suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
         orderBy: List<SortPart<Model>> = listOf()
@@ -116,7 +116,7 @@ interface Table<Model : Any> {
      * Replaces a single item via a condition.
      * @return If a change was made to the database.
      */
-    suspend fun replaceOneIgnoringResult(
+    public suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
         orderBy: List<SortPart<Model>> = listOf()
@@ -126,7 +126,7 @@ interface Table<Model : Any> {
      * Inserts an item if it doesn't exist, but otherwise modifies it.
      * @return The old and new items.
      */
-    suspend fun upsertOne(
+    public suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
         model: Model
@@ -136,7 +136,7 @@ interface Table<Model : Any> {
      * Inserts an item if it doesn't exist, but otherwise modifies it.
      * @return If there was an existing element that matched the condition.
      */
-    suspend fun upsertOneIgnoringResult(
+    public suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
         model: Model
@@ -146,7 +146,7 @@ interface Table<Model : Any> {
      * Updates a single item in the collection.
      * @return The old and new items.
      */
-    suspend fun updateOne(
+    public suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
         orderBy: List<SortPart<Model>> = listOf(),
@@ -156,7 +156,7 @@ interface Table<Model : Any> {
      * Updates a single item in the collection.
      * @return If a change was made to the database.
      */
-    suspend fun updateOneIgnoringResult(
+    public suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
         orderBy: List<SortPart<Model>> = listOf()
@@ -167,7 +167,7 @@ interface Table<Model : Any> {
      * Updates many items in the collection.
      * @return The changes made to the collection.
      */
-    suspend fun updateMany(
+    public suspend fun updateMany(
         condition: Condition<Model>,
         modification: Modification<Model>,
     ): CollectionChanges<Model>
@@ -176,7 +176,7 @@ interface Table<Model : Any> {
      * Updates many items in the collection.
      * @return The number of entries affected.
      */
-    suspend fun updateManyIgnoringResult(
+    public suspend fun updateManyIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
     ): Int
@@ -185,7 +185,7 @@ interface Table<Model : Any> {
      * Deletes a single item from the collection.
      * @return The item removed from the collection.
      */
-    suspend fun deleteOne(
+    public suspend fun deleteOne(
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>> = listOf()
     ): Model?
@@ -194,7 +194,7 @@ interface Table<Model : Any> {
      * Deletes a single item from the collection.
      * @return Whether any items were deleted.
      */
-    suspend fun deleteOneIgnoringOld(
+    public suspend fun deleteOneIgnoringOld(
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>> = listOf()
     ): Boolean
@@ -204,7 +204,7 @@ interface Table<Model : Any> {
      * Deletes many items from the collection.
      * @return The item removed from the collection.
      */
-    suspend fun deleteMany(
+    public suspend fun deleteMany(
         condition: Condition<Model>
     ): List<Model>
 
@@ -212,7 +212,7 @@ interface Table<Model : Any> {
      * Deletes many items from the collection.
      * @return The number of deleted items.
      */
-    suspend fun deleteManyIgnoringOld(
+    public suspend fun deleteManyIgnoringOld(
         condition: Condition<Model>
     ): Int
 }

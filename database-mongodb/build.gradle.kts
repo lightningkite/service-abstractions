@@ -25,7 +25,6 @@ dependencies {
     implementation(libs.mongoDriver)
 //    implementation(libs.ktMongo)
 //    implementation(libs.ktMongoMultiplatform)
-    api(libs.kBson)
 }
 
 kotlin {
