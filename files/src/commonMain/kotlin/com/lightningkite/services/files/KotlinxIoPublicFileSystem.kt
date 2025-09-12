@@ -27,7 +27,10 @@ public class KotlinxIoPublicFileSystem(
     public val rootKFile: KFile,
     public val serveUrl: String = "http://localhost:8080/files/",
     public val signatureReadDuration: Duration = 1.hours,
-): MetricTrackingPublicFileSystem() {
+): PublicFileSystem {
+    init {
+        rootKFile.createDirectories()
+    }
     private val hmac = CryptographyProvider.Default.get(HMAC)
     private val shaVersion = SHA256
     private val sha = CryptographyProvider.Default.get(shaVersion)
@@ -92,7 +95,7 @@ public class KotlinxIoPublicFileSystem(
      */
     public inner class KotlinxIoFile(
         public val kfile: KFile
-    ) : MetricTrackingFileObject() {
+    ) : FileObject {
         init {
             if(!kfile.path.toString().startsWith(rootKFile.path.toString())) throw IllegalArgumentException("Invalid path.  '${kfile.path}' does not start with '${rootKFile.path}'")
         }
@@ -103,7 +106,7 @@ public class KotlinxIoPublicFileSystem(
 
         override val name: String = kfile.path.name
 
-        override fun resolve(path: String): FileObject = KotlinxIoFile(kfile.then(*path.split('/').toTypedArray()))
+        override fun then(path: String): FileObject = KotlinxIoFile(kfile.then(*path.split('/').toTypedArray()))
         
         override val parent: FileObject? = if(kfile == rootKFile) null else kfile.parent?.let { KotlinxIoFile(it) }
         
@@ -125,7 +128,7 @@ public class KotlinxIoPublicFileSystem(
         private val contentTypePath: KFile
             get() = kfile.parent!!.then("${kfile.name}.contenttype")
 
-        override suspend fun listImpl(): List<FileObject>? {
+        override suspend fun list(): List<FileObject>? {
             return try {
                 kfile.list().filter { !it.name.endsWith(".contenttype") && it.name != ".signingKey" }.map {
                     KotlinxIoFile(it)
@@ -138,7 +141,7 @@ public class KotlinxIoPublicFileSystem(
             }
         }
         
-        override suspend fun headImpl(): FileInfo? {
+        override suspend fun head(): FileInfo? {
             val metadata = kfile.metadataOrNull() ?: return null
             val mediaType = if (contentTypePath.exists()) {
                 contentTypePath.source().use { source ->
@@ -155,7 +158,7 @@ public class KotlinxIoPublicFileSystem(
             )
         }
         
-        override suspend fun putImpl(content: TypedData) {
+        override suspend fun put(content: TypedData) {
             // Create parent directories if they don't exist
             val parent = kfile.parent
             if (parent != null && !parent.exists()) {
@@ -173,7 +176,7 @@ public class KotlinxIoPublicFileSystem(
             }
         }
         
-        override suspend fun getImpl(): TypedData? {
+        override suspend fun get(): TypedData? {
             if (!kfile.exists()) {
                 return null
             }
@@ -190,7 +193,7 @@ public class KotlinxIoPublicFileSystem(
             return TypedData(Data.Source(source.buffered()), mediaType)
         }
         
-        override suspend fun deleteImpl() {
+        override suspend fun delete() {
             try {
                 if (contentTypePath.exists()) {
                     contentTypePath.delete()

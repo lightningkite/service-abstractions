@@ -18,6 +18,7 @@ dependencies {
     api(project(path = ":basis"))
     api(project(path = ":pubsub"))
     implementation(libs.lettuce)
+    implementation(libs.lettuceOtel)
     implementation(libs.embeddedRedis)
     implementation(libs.guava)
     implementation(libs.coroutinesCore)

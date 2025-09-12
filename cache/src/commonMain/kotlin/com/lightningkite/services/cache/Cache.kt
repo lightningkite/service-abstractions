@@ -94,7 +94,20 @@ public interface Cache : Service {
         maxTries: Int = 1,
         timeToLive: Duration? = null,
         modification: (T?) -> T?
-    ): Boolean
+    ): Boolean {
+        repeat(maxTries) {
+            val current = get(key, serializer)
+            val new = modification(current)
+            if (current == get(key, serializer)) {
+                if (new != null)
+                    set(key, new, serializer, timeToLive)
+                else
+                    remove(key)
+                return true
+            }
+        }
+        return false
+    }
 
 
     /**

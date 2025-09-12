@@ -1,15 +1,18 @@
 package com.lightningkite.services.aws
 
 import com.lightningkite.services.HealthStatus
+import com.lightningkite.services.SettingContext
+import com.lightningkite.services.SharedResources
+import io.opentelemetry.instrumentation.awssdk.v2_2.AwsSdkTelemetry
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
-import software.amazon.awssdk.http.HttpMetric
 import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient
 import software.amazon.awssdk.http.crt.AwsCrtHttpClient
-import software.amazon.awssdk.metrics.MetricCollection
-import software.amazon.awssdk.metrics.MetricPublisher
 import kotlin.math.roundToInt
 
-public object AwsConnections {
+public class AwsConnections(private val context: SettingContext) {
+    public companion object Key: SharedResources.Key<AwsConnections> {
+        override fun setup(context: SettingContext): AwsConnections = AwsConnections(context)
+    }
     public val client: AwsCrtHttpClient = AwsCrtHttpClient.builder()
         .build() as AwsCrtHttpClient
     public val asyncClient: AwsCrtAsyncHttpClient = AwsCrtAsyncHttpClient.builder()
@@ -23,19 +26,13 @@ public object AwsConnections {
         in 0.95f ..< 1f -> HealthStatus(HealthStatus.Level.URGENT, additionalMessage = "Connection utilization: ${amount.times(100).roundToInt()}%")
         else -> HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Connection utilization: ${amount.times(100).roundToInt()}%")
     }
+    private val telemetry: AwsSdkTelemetry? = context.openTelemetry?.let {
+        AwsSdkTelemetry.create(it)
+    }
     public val clientOverrideConfiguration: ClientOverrideConfiguration? = ClientOverrideConfiguration.builder()
-        .addMetricPublisher(object: MetricPublisher {
-
-            override fun publish(metrics: MetricCollection) {
-                metrics.childrenWithName("ApiCallAttempt")?.forEach {
-                    it.childrenWithName("HttpClient")?.forEach {
-                        it.metricValues(HttpMetric.MAX_CONCURRENCY).firstOrNull()?.let { total = it }
-                        it.metricValues(HttpMetric.LEASED_CONCURRENCY).firstOrNull()?.let { used = it }
-                    }
-                }
-            }
-
-            override fun close() {}
-        })
+        .let {
+            if(telemetry != null) it.addExecutionInterceptor(telemetry.newExecutionInterceptor())
+            else it
+        }
         .build()
 }

@@ -37,6 +37,4 @@ public interface Service {
      * Checks the status of this service
      */
     public suspend fun healthCheck(): HealthStatus
-
-    public val metrics: List<MetricType> get() = emptyList()
 }

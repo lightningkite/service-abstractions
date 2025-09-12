@@ -18,6 +18,7 @@ dependencies {
     api(project(path = ":basis"))
     api(project(path = ":files"))
     api(project(path = ":http-client"))
+    api(project(path = ":aws-client"))
     testImplementation(project(path = ":files-test"))
 
     // AWS S3 dependencies

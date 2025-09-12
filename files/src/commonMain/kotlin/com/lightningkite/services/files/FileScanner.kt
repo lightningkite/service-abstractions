@@ -7,18 +7,14 @@ import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
 import com.lightningkite.services.data.TypedData
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.io.Source
 import kotlinx.io.buffered
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readByteArray
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
-import kotlin.text.get
 
 
 public interface FileScanner: Service {
@@ -79,7 +75,7 @@ public suspend fun List<FileScanner>.scan(item: TypedData) {
 public suspend fun List<FileScanner>.copyAndScan(source: FileObject, destination: FileObject) {
     try {
         source.copyTo(destination)
-        scan(source.get()!!)
+        scan(source.get() ?: throw IllegalArgumentException("Source file ${source.url} does not exist."))
     } catch(e: Exception) {
         destination.delete()
         throw e

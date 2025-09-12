@@ -4,6 +4,7 @@ import com.google.auth.oauth2.GoogleCredentials
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.*
+import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.notifications.NotificationService
 import kotlinx.coroutines.Dispatchers
@@ -20,8 +21,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
  */
 public class FcmNotificationClient(
     override val name: String,
-    context: SettingContext
-) : MetricTrackingNotificationService(context) {
+    override val context: SettingContext
+) : NotificationService {
 
     private val log = KotlinLogging.logger("com.lightningkite.services.notifications.fcm.FcmNotificationClient")
 
@@ -53,7 +54,7 @@ public class FcmNotificationClient(
      * Sends a simple notification and data. No custom options are set beyond what is provided.
      * If you need a more complicated set of messages you should use the other functions.
      */
-    override suspend fun sendImplementation(
+    override suspend fun send(
         targets: List<String>,
         data: NotificationData
     ): Map<String, NotificationSendResult> {
@@ -181,6 +182,10 @@ public class FcmNotificationClient(
             log.warn { "Some notifications failed to send.  Error codes received: ${errorCodes.joinToString()}" }
         }
         return results
+    }
+
+    override suspend fun healthCheck(): HealthStatus {
+        return HealthStatus(HealthStatus.Level.OK, additionalMessage = "Firebase Notification Service - No direct health checks available.")
     }
 }
 

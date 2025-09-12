@@ -33,6 +33,9 @@ shadow = "8.1.1"
 vanniktechMavenPublish = "0.34.0"
 versionCatalogUpdate = "1.0.0"
 atomicfu = "0.29.0"
+slf4j = "2.0.17"
+openTelemetryInstrumentationAlpha = "2.19.0-alpha"
+openTelemetryInstrumentationRelease = "2.19.0"
 
 [libraries]
 atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
@@ -41,6 +44,7 @@ angusMail = { module = "org.eclipse.angus:angus-mail", version.ref = "angusMail"
 awsCloudWatch = { module = "software.amazon.awssdk:cloudwatch", version.ref = "awsVersion" }
 awsCrtClient = { module = "software.amazon.awssdk:aws-crt-client", version.ref = "awsVersion" }
 awsS3 = { module = "software.amazon.awssdk:s3", version.ref = "awsVersion" }
+awsOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-aws-sdk-2.2", version.ref = "openTelemetryInstrumentationAlpha" }
 clamAv = { module = "xyz.capybara:clamav-client", version.ref = "clamAv" }
 coroutinesCore = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 coroutinesReactive = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-reactive", version.ref = "coroutines" }
@@ -69,12 +73,15 @@ ktorClientCio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 ktorContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktorJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 lettuce = { module = "io.lettuce:lettuce-core", version.ref = "lettuce" }
+lettuceOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-lettuce-5.1", version.ref = "openTelemetryInstrumentationAlpha" }
 lkGradleHelpers = { module = "com.lightningkite:lk-gradle-helpers", version.ref = "lkGradleHelpers" }
 logBackClassic = { module = "ch.qos.logback:logback-classic", version.ref = "logBackClassic" }
 memcached = { module = "com.googlecode.xmemcached:xmemcached", version.ref = "memcached" }
 mongoDriver = { module = "org.mongodb:mongodb-driver-kotlin-coroutine", version.ref = "mongoDriver" }
+mongoDriverOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-mongo-3.1", version.ref = "openTelemetryInstrumentationAlpha" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 proguard = { module = "com.guardsquare:proguard-gradle", version.ref = "proguard" }
+openTelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version = "1.54.0" }
 
 [plugins]
 androidApp = { id = "com.android.application", version.ref = "agp" }

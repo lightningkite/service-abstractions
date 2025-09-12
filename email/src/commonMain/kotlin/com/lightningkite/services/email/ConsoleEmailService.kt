@@ -6,11 +6,11 @@ import com.lightningkite.services.SettingContext
  * An email service implementation that outputs emails to the console.
  * Useful for development and debugging.
  */
-public class ConsoleEmailService(override val name: String, override val context: SettingContext) : MetricTrackingEmailService() {
+public class ConsoleEmailService(override val name: String, override val context: SettingContext) : EmailService {
     /**
      * Sends an email by outputting it to the console.
      */
-    override suspend fun sendInternal(email: Email) {
+    override suspend fun send(email: Email) {
         println("--------- EMAIL ---------")
         println("From: ${email.from ?: ""} <${email.from ?: "no-reply@example.com"}>")
         println("To: ${email.to.joinToString(", ") { "${it.label ?: ""} <${it.value}>" }}")

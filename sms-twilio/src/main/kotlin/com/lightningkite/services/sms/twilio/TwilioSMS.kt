@@ -1,8 +1,8 @@
 package com.lightningkite.services.sms.twilio
 
 import com.lightningkite.PhoneNumber
+import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.sms.MetricTrackingSMS
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
 import io.ktor.client.*
@@ -21,11 +21,11 @@ import kotlinx.serialization.json.Json
  */
 public class TwilioSMS(
     override val name: String,
-    context: SettingContext,
+    override val context: SettingContext,
     private val account: String,
     private val key: String,
     private val from: String
-) : MetricTrackingSMS(context) {
+) : SMS {
 
     private val client = HttpClient(Java) {
         install(ContentNegotiation) {
@@ -47,7 +47,7 @@ public class TwilioSMS(
     /**
      * Sends an SMS message using the Twilio API.
      */
-    override suspend fun sendImplementation(to: PhoneNumber, message: String) {
+    override suspend fun send(to: PhoneNumber, message: String) {
         val response = client.submitForm(
             url = "https://api.twilio.com/2010-04-01/Accounts/${account}/Messages.json",
             formParameters = Parameters.build {
@@ -61,6 +61,11 @@ public class TwilioSMS(
             val errorMessage = response.bodyAsText()
             throw SMSException("Failed to send SMS: $errorMessage")
         }
+    }
+
+    override suspend fun healthCheck(): HealthStatus {
+        // TODO
+        return HealthStatus(HealthStatus.Level.OK, additionalMessage = "Twilio SMS Service - No direct health checks available yet.")
     }
 
     public companion object {

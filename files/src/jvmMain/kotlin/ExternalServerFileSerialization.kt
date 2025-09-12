@@ -2,10 +2,7 @@ package com.lightningkite.services.files
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.data.TypedData
-import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.HMAC
-import dev.whyoleg.cryptography.algorithms.SHA256
-import dev.whyoleg.cryptography.random.CryptographyRandom
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -27,8 +24,8 @@ public class ExternalServerFileSerializer(
     public val clock: Clock,
     public val scanners: List<FileScanner>,
     public val fileSystems: List<PublicFileSystem>,
-    public val jail: FileObject = fileSystems.first().root.resolve("upload-jail"),
-    public val ready: FileObject = fileSystems.first().root.resolve("uploaded"),
+    public val jail: FileObject = fileSystems.first().root.then("upload-jail"),
+    public val ready: FileObject = fileSystems.first().root.then("uploaded"),
     public val onUse: (FileObject) -> Unit,
     public val key: HMAC.Key
 ) : KSerializer<ServerFile> {
@@ -37,7 +34,7 @@ public class ExternalServerFileSerializer(
 
     private val uploadFile: suspend (data: TypedData) -> FileObject = {
         scanners.scan(it)
-        val d = primary.root.resolveRandom("uploaded", "file")
+        val d = primary.root.thenRandom("uploaded", "file")
         d.put(it)
         d
     }
@@ -67,6 +64,7 @@ public class ExternalServerFileSerializer(
             it.parseInternalUrl(url)
         }
         if (file == null) {
+            // TODO: Is this dangerous?  If someone could inject a foreign url, this allows them to direct users to malware
             logger.warn {
                 "The given url (${value.location}) does not start with any files root. Known roots: ${
                     fileSystems.flatMap { it.rootUrls }.joinToString()
@@ -78,21 +76,22 @@ public class ExternalServerFileSerializer(
         }
     }
 
-    public fun certifyForUse(value: FileObject, expiration: Duration): String =
-        signUrl("future:" + value.url, expiration)
+    public fun certifyForUse(jailPath: String, expiration: Duration): String =
+        signUrl("future:$jailPath", expiration)
 
-    public fun certifyAlreadyScannedForUse(value: FileObject, expiration: Duration): String =
-        signUrl("future-prescanned:" + value.url, expiration)
+    public fun certifyAlreadyScannedForUse(readyPath: String, expiration: Duration): String =
+        signUrl("future-prescanned:$readyPath", expiration)
 
     public suspend fun scan(value: String, expiration: Duration): String {
         val raw = value
         if (raw.startsWith("future-prescanned:")) return value
         if (!raw.startsWith("future:")) throw IllegalArgumentException("URL scheme is not 'future'")
         if (!verifyUrl(raw)) throw IllegalArgumentException("URL is not valid")
-        val safe = ready.resolve(raw.substringAfter("future:"))
-        val source = jail.resolve(raw.substringAfter("future:"))
+        val withoutFuture = raw.substringAfter("future:").substringBefore('?')
+        val safe = ready.then(withoutFuture)
+        val source = jail.then(withoutFuture)
         scanners.copyAndScan(source, safe)
-        return certifyAlreadyScannedForUse(safe, expiration)
+        return certifyAlreadyScannedForUse(withoutFuture, expiration)
     }
 
     /**
@@ -103,15 +102,15 @@ public class ExternalServerFileSerializer(
         when {
             raw.startsWith("future:") -> {
                 if (!verifyUrl(raw)) throw IllegalArgumentException("URL is not valid")
-                val source = jail.resolve(raw.substringAfter("future:"))
-                val safe = ready.resolve(raw.substringAfter("future:"))
+                val source = jail.then(raw.substringAfter("future:").substringBefore('?'))
+                val safe = ready.then(raw.substringAfter("future:").substringBefore('?'))
                 runBlocking { scanners.copyAndScan(source, safe) }
                 return ServerFile(safe.url)
             }
 
             raw.startsWith("future-prescanned:") -> {
                 if (!verifyUrl(raw)) throw IllegalArgumentException("URL is not valid")
-                val safe = ready.resolve(raw.substringAfter("future-prescanned:"))
+                val safe = ready.then(raw.substringAfter("future-prescanned:").substringBefore('?'))
                 onUse(safe)
                 return ServerFile(safe.url)
             }
@@ -141,8 +140,9 @@ public class ExternalServerFileSerializer(
 
     @TestOnly
     internal fun signUrl(url: String, expiration: Duration): String {
+        if(url.contains('?')) throw IllegalArgumentException("URL cannot contain query parameters.")
         return url.plus("?useUntil=${clock.now().plus(expiration).toEpochMilliseconds()}").let {
-            it + "&token=" + key.signatureGenerator().generateSignatureBlocking(url.toByteArray())
+            it + "&token=" + key.signatureGenerator().generateSignatureBlocking(it.toByteArray())
                 .let { Base64.UrlSafe.encode(it) }
         }
     }
@@ -161,7 +161,7 @@ public class ExternalServerFileSerializer(
 
     @TestOnly
     internal fun verifyUrl(url: String, exp: Long, token: String): Boolean {
-        return (clock.now() < Instant.fromEpochMilliseconds(exp)) && key.signatureVerifier().tryVerifySignatureBlocking(
+        return (Instant.fromEpochMilliseconds(exp) > clock.now()) && key.signatureVerifier().tryVerifySignatureBlocking(
             data = (url.substringBefore('?') + "?useUntil=$exp").toByteArray(),
             signature = Base64.UrlSafe.decode(token)
         )

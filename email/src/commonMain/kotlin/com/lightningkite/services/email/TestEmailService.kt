@@ -1,13 +1,12 @@
 package com.lightningkite.services.email
 
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.TestSettingContext
 
 /**
  * An email service implementation that stores emails for testing purposes.
  * Note: This implementation is not thread-safe and is intended for testing only.
  */
-public class TestEmailService(override val name: String, override val context: SettingContext) : MetricTrackingEmailService() {
+public class TestEmailService(override val name: String, override val context: SettingContext) : EmailService {
     /**
      * The list of emails that have been sent.
      */
@@ -29,7 +28,7 @@ public class TestEmailService(override val name: String, override val context: S
     /**
      * Stores the email in the sentEmails list.
      */
-    override suspend fun sendInternal(email: Email) {
+    override suspend fun send(email: Email) {
         _sentEmails.add(email)
     }
 

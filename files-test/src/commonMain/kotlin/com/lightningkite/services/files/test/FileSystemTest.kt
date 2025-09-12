@@ -41,7 +41,7 @@ abstract class FileSystemTests {
             return
         }
         runSuspendingTest {
-            val testFile = system.root.resolve("test.txt")
+            val testFile = system.root.then("test.txt")
             val message = "Hello world!"
             testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
             assertEquals(message, testFile.get()!!.data.text())
@@ -53,7 +53,7 @@ abstract class FileSystemTests {
             println("Could not test because the file system isn't supported here.")
             return@runSuspendingTest
         }
-        val file = system.root.resolve("test.txt")
+        val file = system.root.then("test.txt")
         println(file)
         assertEquals(file, system.parseInternalUrl(file.url.also { println(it) }))
     }
@@ -62,7 +62,7 @@ abstract class FileSystemTests {
             println("Could not test because the file system isn't supported here.")
             return@runSuspendingTest
         }
-        val file = system.root.resolve("test.txt")
+        val file = system.root.then("test.txt")
         println(file)
         assertEquals(file, system.parseExternalUrl(file.signedUrl.also { println(it) }))
     }
@@ -74,7 +74,7 @@ abstract class FileSystemTests {
             return
         }
         runSuspendingTest {
-            val testFile = system.root.resolve("test.txt")
+            val testFile = system.root.then("test.txt")
             val message = "Hello world!"
             val beforeModify = Clock.default().now().minus(120.seconds)
             testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
@@ -85,7 +85,7 @@ abstract class FileSystemTests {
             assertTrue(info.lastModified == null || info.lastModified!! > beforeModify)
 
             // Testing with sub folders.
-            val secondFile = system.root.resolve("test/secondTest.txt")
+            val secondFile = system.root.then("test/secondTest.txt")
             val secondMessage = "Hello Second world!"
             val secondBeforeModify = Clock.default().now().minus(120.seconds)
             secondFile.put(TypedData(Data.Text(secondMessage), MediaType.Text.Plain))
@@ -106,10 +106,10 @@ abstract class FileSystemTests {
         runSuspendingTest {
             withContext(Dispatchers.Default.limitedParallelism(1)) {
                 withTimeout(10_000L) {
-                    val testFile = system.root.resolve("test.txt")
+                    val testFile = system.root.then("test.txt")
                     val message = "Hello world!"
                     testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                    val testFileNotIncluded = system.root.resolve("doNotInclude/test.txt")
+                    val testFileNotIncluded = system.root.then("doNotInclude/test.txt")
                     testFileNotIncluded.put(TypedData(Data.Text(message), MediaType.Text.Plain))
                     assertContains(testFile.parent!!.list()!!.also { println(it) }, testFile)
                     assertFalse(testFileNotIncluded in testFile.parent!!.list()!!)
@@ -126,7 +126,7 @@ abstract class FileSystemTests {
             return
         }
         runSuspendingTest {
-            val testFile = system.root.resolve("test.txt")
+            val testFile = system.root.then("test.txt")
             val message = "Hello world!"
             testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
             assertTrue(testFile.signedUrl.startsWith(testFile.url))
@@ -134,7 +134,7 @@ abstract class FileSystemTests {
             assertTrue(client.get(testFile.signedUrl).status.isSuccess())
         }
         runSuspendingTest {
-            val testFile = system.root.resolve("test with spaces.txt")
+            val testFile = system.root.then("test with spaces.txt")
             val message = "Hello world!"
             testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
             assertTrue(testFile.signedUrl.startsWith(testFile.url))
@@ -142,7 +142,7 @@ abstract class FileSystemTests {
             assertTrue(client.get(testFile.signedUrl).status.isSuccess())
         }
         runSuspendingTest {
-            val testFile = system.root.resolve("folder/test with spaces.txt")
+            val testFile = system.root.then("folder/test with spaces.txt")
             val message = "Hello world!"
             testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
             assertTrue(testFile.signedUrl.startsWith(testFile.url))
@@ -160,7 +160,7 @@ abstract class FileSystemTests {
             return
         }
         runSuspendingTest {
-            val testFile = system.root.resolve("test.txt")
+            val testFile = system.root.then("test.txt")
             val message = "Hello world!"
             assertTrue(client.put(testFile.uploadUrl(1.hours)) {
                 uploadHeaders(this)

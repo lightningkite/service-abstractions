@@ -3,7 +3,6 @@ package com.lightningkite.services.sms.test
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.sms.ConsoleSMS
-import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.TestSMS
 import com.lightningkite.toPhoneNumber
 import kotlinx.coroutines.test.runTest

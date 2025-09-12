@@ -10,7 +10,7 @@ public interface FileObject {
     /**
      * Resolves a path relative to this file object.
      */
-    public fun resolve(path: String): FileObject
+    public fun then(path: String): FileObject
     
     /**
      * The parent file object, or null if this is the root.

@@ -41,4 +41,5 @@ public interface NotificationService : Service {
      * @return A map of target tokens to send results
      */
     public suspend fun send(targets: List<String>, data: NotificationData): Map<String, NotificationSendResult>
+
 }

@@ -1,8 +1,6 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.countMetric
-import com.lightningkite.services.performanceMetric
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -19,9 +17,6 @@ import kotlinx.serialization.json.JsonObject
 public class InMemoryDatabase(override val name: String, private val premadeData: JsonObject? = null, override val context: SettingContext) : Database {
     public val collections: HashMap<Pair<KSerializer<*>, String>, Table<*>> = HashMap()
 
-    private val waitMetric = performanceMetric("wait")
-    private val callMetric = countMetric("call")
-
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
@@ -36,12 +31,6 @@ public class InMemoryDatabase(override val name: String, private val premadeData
                 made.data.addAll(data)
             }
             made
-        } as Table<T>).let {
-            MetricsTable(
-                it,
-                waitMetric,
-                callMetric,
-            )
-        }
+        } as Table<T>)
 
 }

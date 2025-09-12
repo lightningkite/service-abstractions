@@ -3,12 +3,9 @@ package com.lightningkite.services.database.jsonfile
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.Table
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.countMetric
 import com.lightningkite.services.data.KFile
 import com.lightningkite.services.data.root
 import com.lightningkite.services.data.workingDirectory
-import com.lightningkite.services.database.MetricsTable
-import com.lightningkite.services.performanceMetric
 import kotlinx.io.buffered
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.KSerializer
@@ -49,8 +46,6 @@ public class JsonFileDatabase(
 
     public val collections: HashMap<Pair<KSerializer<*>, String>, Table<*>> = HashMap()
 
-    private val waitMetric = performanceMetric("wait")
-    private val callMetric = countMetric("call")
     override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         synchronized(collections) {
             @Suppress("UNCHECKED_CAST")
@@ -72,13 +67,7 @@ public class JsonFileDatabase(
                     json,
                     serializer,
                     storage
-                ).let {
-                    MetricsTable(
-                        it,
-                        waitMetric,
-                        callMetric,
-                    )
-                }
+                )
             } as Table<T>
         }
 }

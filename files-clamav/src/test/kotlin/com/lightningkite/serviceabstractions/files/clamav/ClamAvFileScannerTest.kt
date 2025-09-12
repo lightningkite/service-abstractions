@@ -7,7 +7,6 @@ import com.lightningkite.services.files.FileScanException
 import com.lightningkite.services.files.FileScanner
 import com.lightningkite.services.files.scan
 import kotlinx.coroutines.runBlocking
-import xyz.capybara.clamav.ScanFailureException
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 

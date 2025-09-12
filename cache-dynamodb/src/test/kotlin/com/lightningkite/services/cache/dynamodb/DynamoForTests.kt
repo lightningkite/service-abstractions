@@ -2,17 +2,9 @@ package com.lightningkite.services.cache.dynamodb
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.cache.dynamodb.DynamoDbCache
-import com.lightningkite.services.cache.dynamodb.embeddedDynamo
-import com.lightningkite.services.cache.dynamodb.fromDynamo
-import com.lightningkite.services.cache.dynamodb.toDynamo
-import com.lightningkite.services.cache.get
-import com.lightningkite.services.cache.set
 import com.lightningkite.services.cache.test.CacheTest
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.TestResult
 import kotlinx.serialization.builtins.SetSerializer
 import kotlinx.serialization.builtins.serializer
 import org.junit.Test

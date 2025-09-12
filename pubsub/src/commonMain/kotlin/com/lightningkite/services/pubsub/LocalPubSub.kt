@@ -12,11 +12,11 @@ import kotlinx.serialization.builtins.serializer
 public class LocalPubSub(
     override val name: String,
     override val context: SettingContext
-) : MetricTrackingPubSub(context) {
+) : PubSub {
     private val channels = mutableMapOf<String, PubSubChannel<*>>()
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T> getInternal(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
+    override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
         val existing = channels[key]
         if (existing != null) {
             return existing as PubSubChannel<T>
@@ -37,7 +37,7 @@ public class LocalPubSub(
         return channel
     }
 
-    override fun stringInternal(key: String): PubSubChannel<String> = getInternal(key, String.serializer())
+    override fun string(key: String): PubSubChannel<String> = get(key, String.serializer())
 }
 
 /**
@@ -46,11 +46,11 @@ public class LocalPubSub(
 public class DebugPubSub(
     override val name: String,
     override val context: SettingContext
-) : MetricTrackingPubSub(context) {
+) : PubSub {
     private val channels = mutableMapOf<String, PubSubChannel<*>>()
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T> getInternal(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
+    override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
         val existing = channels[key]
         if (existing != null) {
             return existing as PubSubChannel<T>
@@ -73,5 +73,5 @@ public class DebugPubSub(
         return channel
     }
 
-    override fun stringInternal(key: String): PubSubChannel<String> = getInternal(key, String.serializer())
+    override fun string(key: String): PubSubChannel<String> = get(key, String.serializer())
 }

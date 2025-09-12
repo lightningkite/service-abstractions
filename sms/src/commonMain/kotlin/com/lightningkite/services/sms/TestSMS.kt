@@ -1,6 +1,7 @@
 package com.lightningkite.services.sms
 
 import com.lightningkite.PhoneNumber
+import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
 
 /**
@@ -9,8 +10,8 @@ import com.lightningkite.services.SettingContext
  */
 public class TestSMS(
     override val name: String,
-    context: SettingContext
-) : MetricTrackingSMS(context) {
+    override val context: SettingContext
+) : SMS {
 
     /**
      * Represents an SMS message with recipient and content.
@@ -52,7 +53,7 @@ public class TestSMS(
     /**
      * Stores the message and invokes the callback.
      */
-    override suspend fun sendImplementation(to: PhoneNumber, message: String) {
+    override suspend fun send(to: PhoneNumber, message: String) {
         val m = Message(to, message)
         lastMessageSent = m
         messageHistory.add(m)
@@ -63,5 +64,9 @@ public class TestSMS(
             println(message)
             println()
         }
+    }
+
+    override suspend fun healthCheck(): HealthStatus {
+        return HealthStatus(HealthStatus.Level.OK, additionalMessage = "Test SMS Service - No real messages are sent.")
     }
 }

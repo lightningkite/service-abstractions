@@ -3,9 +3,11 @@ package com.lightningkite.services.files.s3
 import com.lightningkite.MediaType
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.get
 import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3AsyncClient
@@ -99,6 +101,7 @@ public class S3PublicFileSystem(
         S3Client.builder()
             .region(region)
             .credentialsProvider(credentialProvider)
+            .httpClient(context[AwsConnections].client)
             .build()
     }
 
@@ -109,6 +112,7 @@ public class S3PublicFileSystem(
         S3AsyncClient.builder()
             .region(region)
             .credentialsProvider(credentialProvider)
+            .httpClient(context[AwsConnections].asyncClient)
             .build()
     }
 
@@ -141,7 +145,7 @@ public class S3PublicFileSystem(
      */
     override suspend fun healthCheck(): HealthStatus {
         return try {
-            val testFile = root.resolve("health-check/test-file.txt")
+            val testFile = root.then("health-check/test-file.txt")
             val testContent = "Test Content ${System.currentTimeMillis()}"
 
             // Test write

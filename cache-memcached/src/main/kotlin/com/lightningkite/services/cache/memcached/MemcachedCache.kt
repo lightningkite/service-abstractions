@@ -2,7 +2,6 @@ package com.lightningkite.services.cache.memcached
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.cache.MetricTrackingCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
@@ -20,7 +19,9 @@ public class MemcachedCache(
     override val name: String,
     public val client: MemcachedClient,
     override val context: SettingContext
-) : MetricTrackingCache() {
+) : Cache {
+
+    // TODO: Support OpenTelemetry
     
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
     
@@ -58,7 +59,7 @@ public class MemcachedCache(
         }
     }
 
-    override suspend fun <T> getInternal(key: String, serializer: KSerializer<T>): T? = withContext(Dispatchers.IO) {
+    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? = withContext(Dispatchers.IO) {
         try {
             client.get<String>(key)?.let { json.decodeFromString(serializer, it) }
         } catch (e: Exception) {
@@ -66,7 +67,7 @@ public class MemcachedCache(
         }
     }
 
-    override suspend fun <T> setInternal(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
+    override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
         withContext(Dispatchers.IO) {
             if(!client.set(
                 key,
@@ -76,7 +77,7 @@ public class MemcachedCache(
             Unit
         }
 
-    override suspend fun <T> setIfNotExistsInternal(
+    override suspend fun <T> setIfNotExists(
         key: String,
         value: T,
         serializer: KSerializer<T>,
@@ -89,7 +90,7 @@ public class MemcachedCache(
         )
     }
 
-    override suspend fun addInternal(key: String, value: Int, timeToLive: Duration?): Unit = withContext(Dispatchers.IO) {
+    override suspend fun add(key: String, value: Int, timeToLive: Duration?): Unit = withContext(Dispatchers.IO) {
         client.incr(key, value.toLong(), value.toLong())
         timeToLive?.let {
             client.touch(key, it.inWholeSeconds.toInt())
@@ -97,7 +98,7 @@ public class MemcachedCache(
         Unit
     }
 
-    override suspend fun removeInternal(key: String): Unit = withContext(Dispatchers.IO) {
+    override suspend fun remove(key: String): Unit = withContext(Dispatchers.IO) {
         client.delete(key)
         Unit
     }

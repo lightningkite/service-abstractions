@@ -16,24 +16,24 @@ public open class MapCache(
     override val name: String,
     public val entries: MutableMap<String, Entry>,
     override val context: SettingContext,
-) : MetricTrackingCache() {
+) : Cache {
     private val serializersModule: SerializersModule get() = context.internalSerializersModule
     public data class Entry(val value: Any?, val expires: Instant? = null)
 
     @Suppress("UNCHECKED_CAST")
-    override suspend fun <T> getInternal(key: String, serializer: KSerializer<T>): T? {
+    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
         return entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }?.value as? T
     }
 
-    override suspend fun <T> setInternal(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
+    override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
         entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
     }
 
-    public fun clearInternal() {
+    public fun clear() {
         entries.clear()
     }
 
-    override suspend fun <T> setIfNotExistsInternal(
+    override suspend fun <T> setIfNotExists(
         key: String,
         value: T,
         serializer: KSerializer<T>,
@@ -46,7 +46,7 @@ public open class MapCache(
         return false
     }
 
-    override suspend fun addInternal(key: String, value: Int, timeToLive: Duration?): Unit {
+    override suspend fun add(key: String, value: Int, timeToLive: Duration?): Unit {
         val entry = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
         val current = entry?.value
         val new = when (current) {
@@ -61,7 +61,7 @@ public open class MapCache(
         entries[key] = Entry(new, timeToLive?.let { Clock.default().now() + it })
     }
 
-    override suspend fun removeInternal(key: String): Unit {
+    override suspend fun remove(key: String): Unit {
         entries.remove(key)
     }
 }

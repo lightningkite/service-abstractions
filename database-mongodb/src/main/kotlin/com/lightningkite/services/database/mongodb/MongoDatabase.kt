@@ -4,16 +4,14 @@ import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.UniqueViolationException
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.countMetric
 import com.lightningkite.services.database.Table
-import com.lightningkite.services.database.MetricsTable
-import com.lightningkite.services.performanceMetric
 import com.mongodb.*
 import com.mongodb.event.ConnectionCheckedInEvent
 import com.mongodb.event.ConnectionCheckedOutEvent
 import com.mongodb.event.ConnectionPoolListener
 import com.mongodb.kotlin.client.coroutine.MongoClient
 import com.mongodb.kotlin.client.coroutine.MongoCollection
+import io.opentelemetry.instrumentation.mongo.v3_1.MongoTelemetry
 import kotlinx.serialization.KSerializer
 import org.bson.BsonDocument
 import org.bson.UuidRepresentation
@@ -125,7 +123,6 @@ public class MongoDatabase(
                             atlasSearch = false,
                             context = context
                         )
-
                     }
                     ?: throw IllegalStateException("Invalid mongodb-file URL. The URL should match the pattern: mongodb-file://[FolderPath]?[params]\nAvailable params are: mongoVersion, port, databaseName")
             }
@@ -147,10 +144,12 @@ public class MongoDatabase(
     // You might be asking, "WHY?  WHY IS THIS SO COMPLICATED?"
     // Well, we have to be able to fully disconnect and reconnect existing Mongo databases in order to support AWS's
     // SnapStart feature effectively.  As such, we have to destroy and reproduce all the connections on demand.
+    private val telemetry = context.openTelemetry?.let { MongoTelemetry.builder(it).build() }
     private val makeClientWithListener = {
         active.set(0)
         MongoClient.create(
             MongoClientSettings.builder(clientSettings)
+                .also { if(telemetry != null) it.addCommandListener(telemetry.newCommandListener()) else it }
                 .uuidRepresentation(UuidRepresentation.STANDARD)
                 .applyToConnectionPoolSettings {
                     it.maxSize(poolSize)
@@ -205,9 +204,6 @@ public class MongoDatabase(
 
     private val collections = ConcurrentHashMap<Pair<KSerializer<*>, String>, Lazy<MongoTable<*>>>()
 
-    private val waitMetric = performanceMetric("wait")
-    private val callMetric = countMetric("call")
-
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
@@ -254,11 +250,5 @@ public class MongoDatabase(
                     }
                 }, context)
             }
-        } as Lazy<MongoTable<T>>).value.let {
-            MetricsTable(
-                it,
-                waitMetric,
-                callMetric,
-            )
-        }
+        } as Lazy<MongoTable<T>>).value
 }

@@ -5,7 +5,6 @@ import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.cache.test.CacheTest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
-import net.rubyeye.xmemcached.XMemcachedClient
 import org.junit.AfterClass
 import org.junit.BeforeClass
 import java.lang.Exception

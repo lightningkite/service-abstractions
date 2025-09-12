@@ -1,5 +1,6 @@
 package com.lightningkite.services.notifications
 
+import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
 
 /**
@@ -8,8 +9,8 @@ import com.lightningkite.services.SettingContext
  */
 public class ConsoleNotificationService(
     override val name: String,
-    context: SettingContext
-) : MetricTrackingNotificationService(context) {
+    override val context: SettingContext
+) : NotificationService {
 
     /**
      * Sends a notification to the specified targets by printing to the console.
@@ -18,7 +19,7 @@ public class ConsoleNotificationService(
      * @param data The notification data to send
      * @return A map of target tokens to send results (always Success)
      */
-    override suspend fun sendImplementation(
+    override suspend fun send(
         targets: List<String>,
         data: NotificationData
     ): Map<String, NotificationSendResult> {
@@ -61,4 +62,6 @@ public class ConsoleNotificationService(
 
         return targets.associateWith { NotificationSendResult.Success }
     }
+
+    override suspend fun healthCheck(): HealthStatus = HealthStatus(HealthStatus.Level.OK, additionalMessage = "Local console notification service - no real notifications are sent.")
 }

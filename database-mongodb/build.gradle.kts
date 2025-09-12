@@ -23,6 +23,7 @@ dependencies {
     testImplementation(libs.coroutinesTesting)
     implementation(libs.embedMongo)
     implementation(libs.mongoDriver)
+    implementation(libs.mongoDriverOtel)
 //    implementation(libs.ktMongo)
 //    implementation(libs.ktMongoMultiplatform)
 }

@@ -1,7 +1,6 @@
 package com.lightningkite.services.pubsub.redis
 
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.pubsub.MetricTrackingPubSub
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.lettuce.core.RedisClient
@@ -23,7 +22,7 @@ public class RedisPubSub(
     override val name: String,
     override val context: SettingContext,
     private val client: RedisClient
-) : MetricTrackingPubSub(context) {
+) : PubSub {
     private val observables = ConcurrentHashMap<String, Flux<String>>()
     private val subscribeConnection = client.connectPubSub().reactive()
     private val publishConnection = client.connectPubSub().reactive()
@@ -65,7 +64,7 @@ public class RedisPubSub(
             .share()
     }
 
-    override fun <T> getInternal(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
+    override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
         return object : PubSubChannel<T> {
             override suspend fun collect(collector: FlowCollector<T>) {
                 key(key).map { json.decodeFromString(serializer, it) }.collect { collector.emit(it) }
@@ -77,7 +76,7 @@ public class RedisPubSub(
         }
     }
 
-    override fun stringInternal(key: String): PubSubChannel<String> {
+    override fun string(key: String): PubSubChannel<String> {
         return object : PubSubChannel<String> {
             override suspend fun collect(collector: FlowCollector<String>) {
                 key(key).asFlow().collect { collector.emit(it) }

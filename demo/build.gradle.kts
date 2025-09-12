@@ -24,7 +24,6 @@ dependencies {
     api(project(":email"))
     api(project(":sms"))
     api(project(":sms-twilio"))
-    api(project(":metrics-cloudwatch"))
     api(project(":notifications"))
     api(project(":notifications-fcm"))
     api(project(":cache"))
@@ -36,7 +35,6 @@ dependencies {
     api(project(":files"))
     api(project(":files-clamav"))
     api(project(":files-s3"))
-    api(project(":exceptions-sentry"))
 
     testImplementation(libs.coroutinesTesting)
 }

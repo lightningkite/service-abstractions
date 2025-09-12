@@ -1,10 +1,14 @@
 package com.lightningkite.services.files
 
+import com.lightningkite.MediaType
+import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.Service
 import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
+import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.KFile
+import com.lightningkite.services.data.TypedData
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.Serializable
@@ -27,6 +31,36 @@ public interface PublicFileSystem : Service {
 
     public fun parseInternalUrl(url: String): FileObject?
     public fun parseExternalUrl(url: String): FileObject?
+
+
+    override suspend fun healthCheck(): HealthStatus {
+        return try {
+            val testFile = root.then("health-check/test-file.txt")
+            val contentData = Data.Text("Test Content")
+            val content = TypedData(contentData, MediaType.Text.Plain)
+            testFile.put(content)
+            val retrieved = testFile.get()
+            if (retrieved?.mediaType != MediaType.Text.Plain) {
+                HealthStatus(
+                    level = HealthStatus.Level.ERROR,
+                    additionalMessage = "Test write resulted in file of incorrect content type"
+                )
+            } else if (retrieved.data.text() != contentData.text()) {
+                HealthStatus(
+                    level = HealthStatus.Level.ERROR,
+                    additionalMessage = "Test content did not match"
+                )
+            } else {
+                testFile.delete()
+                HealthStatus(level = HealthStatus.Level.OK)
+            }
+        } catch (e: Exception) {
+            HealthStatus(
+                level = HealthStatus.Level.ERROR,
+                additionalMessage = e.message
+            )
+        }
+    }
 
     /**
      * Settings for a FileSystem.

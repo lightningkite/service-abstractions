@@ -36,7 +36,7 @@ public class S3FileObject(
      */
     private val unixPath: String get() = path.toString().replace('\\', '/')
     
-    override fun resolve(path: String): S3FileObject = S3FileObject(system, this.path.resolve(path))
+    override fun then(path: String): S3FileObject = S3FileObject(system, this.path.resolve(path))
     
     override val name: String get() = path.name
     

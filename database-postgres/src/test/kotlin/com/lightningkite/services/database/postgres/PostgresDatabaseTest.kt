@@ -2,7 +2,6 @@ package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.database.*
-import com.lightningkite.services.database.postgres.PostgresRetrievalTest.StarWarsFilms.sequelId
 import com.lightningkite.services.database.test.*
 import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules
 import kotlinx.coroutines.Dispatchers
@@ -10,28 +9,21 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.EmptySerializersModule
 import org.jetbrains.exposed.dao.id.IntIdTable
-import org.jetbrains.exposed.sql.ColumnType
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.StdOutSqlLogger
-import org.jetbrains.exposed.sql.Table
 import org.jetbrains.exposed.sql.Transaction
 import org.jetbrains.exposed.sql.addLogger
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.javatime.timestamp
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
-import org.jetbrains.exposed.sql.transactions.transactionManager
-import org.junit.Assert.*
 import org.junit.ClassRule
 import org.junit.Rule
-import org.postgresql.util.PGobject
 import java.sql.Connection.TRANSACTION_READ_COMMITTED
-import java.sql.ResultSet
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals

@@ -32,7 +32,7 @@ class S3PublicFileSystemTest : FileSystemTests() {
 
     @Test fun signingPerformance() {
         val system = system ?: return
-        val file = system.root.resolve("test.txt")
+        val file = system.root.then("test.txt")
         val mine = performance(10_000) {
             file.signedUrl
         }

@@ -2,7 +2,6 @@ package com.lightningkite.services.cache.redis
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.cache.MetricTrackingCache
 import io.lettuce.core.RedisClient
 import io.lettuce.core.SetArgs
 import io.lettuce.core.api.reactive.RedisReactiveCommands
@@ -19,7 +18,7 @@ public class RedisCache(
     override val name: String,
     public val lettuceClient: RedisClient,
     override val context: SettingContext
-) : MetricTrackingCache() {
+) : Cache {
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
 
     public companion object {
@@ -49,11 +48,11 @@ public class RedisCache(
     }
 
     public val lettuceConnection: RedisReactiveCommands<String, String> = lettuceClient.connect().reactive()
-    override suspend fun <T> getInternal(key: String, serializer: KSerializer<T>): T? {
+    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
         return lettuceConnection.get(key).awaitFirstOrNull()?.let { json.decodeFromString(serializer, it) }
     }
 
-    override suspend fun <T> setInternal(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
+    override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
         lettuceConnection.set(
             key,
             json.encodeToString(serializer, value),
@@ -61,7 +60,7 @@ public class RedisCache(
         ).collect {}
     }
 
-    override suspend fun <T> setIfNotExistsInternal(
+    override suspend fun <T> setIfNotExists(
         key: String,
         value: T,
         serializer: KSerializer<T>,
@@ -72,14 +71,14 @@ public class RedisCache(
         return result
     }
 
-    override suspend fun addInternal(key: String, value: Int, timeToLive: Duration?) {
+    override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
         lettuceConnection.incrby(key, value.toLong()).collect { }
         timeToLive?.let {
             lettuceConnection.pexpire(key, it.toJavaDuration()).collect { }
         }
     }
 
-    override suspend fun removeInternal(key: String) {
+    override suspend fun remove(key: String) {
         lettuceConnection.del(key).collect { }
     }
 }

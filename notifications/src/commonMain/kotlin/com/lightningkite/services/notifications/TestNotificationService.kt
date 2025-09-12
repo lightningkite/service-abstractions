@@ -1,5 +1,6 @@
 package com.lightningkite.services.notifications
 
+import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
 
 /**
@@ -8,8 +9,8 @@ import com.lightningkite.services.SettingContext
  */
 public class TestNotificationService(
     override val name: String,
-    context: SettingContext
-) : MetricTrackingNotificationService(context) {
+    override val context: SettingContext
+) : NotificationService {
 
     /**
      * Represents a notification message sent to targets.
@@ -44,7 +45,7 @@ public class TestNotificationService(
      * @param data The notification data to send
      * @return A map of target tokens to send results (always Success)
      */
-    override suspend fun sendImplementation(
+    override suspend fun send(
         targets: List<String>,
         data: NotificationData
     ): Map<String, NotificationSendResult> {
@@ -67,5 +68,9 @@ public class TestNotificationService(
         lastMessageSent = null
         onMessageSent = null
         printToConsole = false
+    }
+
+    override suspend fun healthCheck(): HealthStatus {
+        return console.healthCheck()
     }
 }

@@ -3,10 +3,9 @@ package com.lightningkite.services.cache.dynamodb
 
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.cache.MetricTrackingCache
+import com.lightningkite.services.get
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.KSerializer
@@ -26,7 +25,7 @@ public class DynamoDbCache(
     public val makeClient: () -> DynamoDbAsyncClient,
     public val tableName: String = "cache",
     override val context: SettingContext,
-) : MetricTrackingCache() {
+) : Cache {
     public val client: DynamoDbAsyncClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED, makeClient)
 
     public companion object {
@@ -61,8 +60,7 @@ public class DynamoDbCache(
                                         })
                                     } else DefaultCredentialsProvider.builder().build()
                                 )
-                                .httpClient(AwsConnections.asyncClient)
-                                .overrideConfiguration(AwsConnections.clientOverrideConfiguration)
+                                .httpClient(context[AwsConnections].asyncClient)
                                 .region(Region.of(match.groups["region"]!!.value))
                                 .build()
                         },
@@ -75,7 +73,7 @@ public class DynamoDbCache(
         }
     }
     override suspend fun healthCheck(): HealthStatus {
-        return listOf(super.healthCheck(), AwsConnections.health).maxBy { it.level }
+        return listOf(super.healthCheck(), context[AwsConnections].health).maxBy { it.level }
     }
 
     @OptIn(DelicateCoroutinesApi::class)
@@ -129,7 +127,7 @@ public class DynamoDbCache(
 
     private var ready = ready()
 
-    override suspend fun <T> getInternal(key: String, serializer: KSerializer<T>): T? {
+    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
         ready.await()
         val r = client.getItem {
             it.tableName(tableName)
@@ -145,7 +143,7 @@ public class DynamoDbCache(
         } else return null
     }
 
-    override suspend fun <T> setInternal(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
+    override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
         ready.await()
         client.putItem {
             it.tableName(tableName)
@@ -158,7 +156,7 @@ public class DynamoDbCache(
         }.await()
     }
 
-    override suspend fun <T> setIfNotExistsInternal(
+    override suspend fun <T> setIfNotExists(
         key: String,
         value: T,
         serializer: KSerializer<T>,
@@ -185,7 +183,7 @@ public class DynamoDbCache(
         return true
     }
 
-    override suspend fun addInternal(key: String, value: Int, timeToLive: Duration?) {
+    override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
         ready.await()
         try {
             println("DEBUG PREVIEW: ${try {
@@ -217,11 +215,11 @@ public class DynamoDbCache(
             }.await()
         } catch(e: ConditionalCheckFailedException) {
             println("FAILED CONDITIONAL CHECK: ${e.message}")
-            setInternal(key, value, Int.serializer(), timeToLive)
+            set(key, value, Int.serializer(), timeToLive)
         }
     }
 
-    override suspend fun removeInternal(key: String) {
+    override suspend fun remove(key: String) {
         ready.await()
         client.deleteItem {
             it.tableName(tableName)
