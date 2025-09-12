@@ -55,7 +55,8 @@ private class MinEncoder(
         return this
     }
     override fun endStructure(descriptor: SerialDescriptor) {
-        encodeValue(stack.removeLast())
+        encodeValue(stack.removeAt(stack.lastIndex))
+//        encodeValue(stack.removeLast())  // TODO: we can't do this because Java 21 compilation is being stupid
     }
     override fun encodeNull() {
         stack.lastOrNull()?.add(null) ?: run {

@@ -1,22 +1,20 @@
-package com.lightningkite.serviceabstractions.database
+package com.lightningkite.services.database
 
+import kotlin.uuid.Uuid
+import kotlin.time.Instant
+import kotlinx.serialization.*
 import com.lightningkite.services.data.GenerateDataClassPaths
 import com.lightningkite.services.data.Index
 import com.lightningkite.services.data.TextIndex
 import com.lightningkite.services.database.HasId
+import com.lightningkite.services.database.childSerializersOrNull
 import com.lightningkite.services.database.get
 import com.lightningkite.services.database.set
-import com.lightningkite.services.database.childSerializersOrNull
 import com.lightningkite.services.test.performance
 import kotlinx.datetime.LocalDate
-import kotlinx.serialization.ContextualSerializer
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.nullable
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.time.Instant
-import kotlin.uuid.Uuid
 
 class KxSerializationFieldAccessTest {
 
@@ -115,7 +113,8 @@ class KxSerializationFieldAccessTest {
             local = altSetter(sample, newvalue)
         }.also { println("encdec: $it") }
     }
-    @Test fun contextual() {
+    @Test
+    fun contextual() {
         val ser = ContextualCopyCheck.serializer()
         val input = ContextualCopyCheck(LocalDate(2023, 1, 1))
         val output = ContextualCopyCheck(LocalDate(2024, 2, 2))
@@ -157,7 +156,7 @@ class KxSerializationFieldAccessTest {
             mapNullable = mapOf("asdf" to 1),
             embeddedNullable = ClassUsedForEmbedding()
         )
-        val serializer = LargeTestModel.serializer()
+        val serializer = LargeTestModel.Companion.serializer()
         for (index in 0..<serializer.descriptor.elementsCount) {
             println("---${serializer.descriptor.getElementName(index)}---")
             val alt = serializer.get(altValue, index, serializer.childSerializersOrNull()!![index])
@@ -166,4 +165,3 @@ class KxSerializationFieldAccessTest {
         }
     }
 }
-
