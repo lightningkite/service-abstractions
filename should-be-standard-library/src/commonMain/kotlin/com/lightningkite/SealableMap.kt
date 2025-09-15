@@ -24,6 +24,8 @@ public class SealableMap<K, V>(private val wraps: MutableMap<K, V>): MutableMap<
     public fun seal() {
         sealed = Exception()
     }
+
+    override fun toString(): String = wraps.toString()
 }
 
 public fun <K, V> Map<K, V>.toSealedMap(): Map<K, V> = SealableMap(toMutableMap()).apply { seal() }

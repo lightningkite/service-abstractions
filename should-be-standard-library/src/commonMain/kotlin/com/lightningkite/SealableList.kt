@@ -51,6 +51,8 @@ public class SealableList<E>(private val wraps: MutableList<E>): MutableList<E> 
     public fun seal() {
         sealed = Exception()
     }
+
+    override fun toString(): String = wraps.toString()
 }
 
 public fun <T> Collection<T>.toSealedList(): List<T> = SealableList(toMutableList()).apply { seal() }
