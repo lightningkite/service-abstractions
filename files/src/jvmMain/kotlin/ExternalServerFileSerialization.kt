@@ -121,7 +121,9 @@ public class ExternalServerFileSerializer(
                 val data = Base64.decode(base64)
                 //            if(data.size < 500) return ServerFile(raw)
                 return runBlocking {
-                    uploadFile(TypedData.bytes(data, type))
+                    val typedData = TypedData.bytes(data, type)
+                    scanners.scan(typedData)
+                    uploadFile(typedData)
                 }.let { ServerFile(it.url) }
             }
 
