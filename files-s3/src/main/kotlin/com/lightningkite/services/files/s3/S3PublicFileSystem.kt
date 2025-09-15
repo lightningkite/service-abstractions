@@ -33,8 +33,6 @@ public class S3PublicFileSystem(
     override val context: SettingContext
 ) : PublicFileSystem {
 
-    private val signedUrlDurationJava: java.time.Duration? = signedUrlDuration?.toJavaDuration()
-
     override val rootUrls: List<String> = listOf(
         "https://${bucket}.s3.${region.id()}.amazonaws.com/",
         "https://s3-${region.id()}.amazonaws.com/${bucket}/",
@@ -221,11 +219,14 @@ public class S3PublicFileSystem(
                     ?.associate { it.substringBefore("=") to it.substringAfter("=", "") }
                     ?: emptyMap()
 
-                val signedUrlDuration = params["signedUrlDuration"]?.let {
-                    if (it == "forever" || it == "null") null
-                    else if (it.all { it.isDigit() }) it.toLong().seconds
-                    else Duration.parse(it)
-                } ?: 1.hours
+                val signedUrlDuration = params["signedUrlDuration"].let {
+                    when{
+                        it == null -> 1.hours
+                        it == "forever" || it == "null" -> null
+                        it.all { it.isDigit() } -> it.toLong().seconds
+                        else -> Duration.parse(it)
+                    }
+                }
 
                 S3PublicFileSystem(
                     name = name,
