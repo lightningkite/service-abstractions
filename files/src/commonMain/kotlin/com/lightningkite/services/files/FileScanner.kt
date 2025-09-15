@@ -17,8 +17,9 @@ import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
 
-public interface FileScanner: Service {
+public interface FileScanner : Service {
     public enum class Requires { Nothing, FirstSixteenBytes, Whole }
+
     public fun requires(claimedType: MediaType): Requires
     public suspend fun scan(claimedType: MediaType, data: Source)
 
@@ -55,28 +56,30 @@ public suspend fun FileScanner.copyAndScan(source: FileObject, destination: File
     try {
         source.copyTo(destination)
         scan(source.get()!!)
-    } catch(e: Exception) {
+    } catch (e: Exception) {
         destination.delete()
         throw e
     }
 }
+
 public suspend fun List<FileScanner>.scan(item: TypedData) {
     // TODO Splittable stream
     coroutineScope {
         val asFile = item.download()
         val all = this@scan.map {
-            val t =  launch { it.scan(item.mediaType, asFile.source().buffered()) }
+            val t = launch { it.scan(item.mediaType, asFile.source().buffered()) }
             t.start()
             t
         }
         all.joinAll()
     }
 }
+
 public suspend fun List<FileScanner>.copyAndScan(source: FileObject, destination: FileObject) {
     try {
         source.copyTo(destination)
         scan(source.get() ?: throw IllegalArgumentException("Source file ${source.url} does not exist."))
-    } catch(e: Exception) {
+    } catch (e: Exception) {
         destination.delete()
         throw e
     }
@@ -102,7 +105,7 @@ public class CheckMimeFileScanner(
         val c9 = bytes[8].toUByte().toInt()
         val c10 = bytes[9].toUByte().toInt()
         val c11 = bytes[10].toUByte().toInt()
-        when(claimedType) {
+        when (claimedType) {
             MediaType.Image.JPEG -> {
                 if (c1 == 0xFF && c2 == 0xD8 && c3 == 0xFF) {
                     if (c4 == 0xE0 || c4 == 0xEE) {
@@ -121,30 +124,40 @@ public class CheckMimeFileScanner(
                         return
                     }
                 }
-                throw FileScanException("Mime type mismatch; doesn't fit the JPEG format ${c1.toUByte().toString(16)} ${c2.toUByte().toString(16)} ${c3.toUByte().toString(16)} ${c4.toUByte().toString(16)}")
+                throw FileScanException(
+                    "Mime type mismatch; doesn't fit the JPEG format ${c1.toUByte().toString(16)} ${c2.toUByte().toString(16)} ${c3.toUByte().toString(16)} ${
+                        c4.toUByte().toString(16)
+                    }"
+                )
             }
+
             MediaType.Image.GIF -> {
-                if(c1 == 'G'.code && c2 == 'I'.code && c3 == 'F'.code && c4 == '8'.code) return
+                if (c1 == 'G'.code && c2 == 'I'.code && c3 == 'F'.code && c4 == '8'.code) return
                 throw FileScanException("Mime type mismatch; doesn't fit the GIF format")
             }
+
             MediaType.Image.Tiff -> {
 
                 if ((c1 == 0x49 && c2 == 0x49 && c3 == 0x2a && c4 == 0x00)
-                    || (c1 == 0x4d && c2 == 0x4d && c3 == 0x00 && c4 == 0x2a)) {
+                    || (c1 == 0x4d && c2 == 0x4d && c3 == 0x00 && c4 == 0x2a)
+                ) {
                     return
                 }
                 throw FileScanException("Mime type mismatch; doesn't fit the TIFF format")
             }
+
             MediaType.Image.PNG -> {
                 if (c1 == 137 && c2 == 80 && c3 == 78 &&
                     c4 == 71 && c5 == 13 && c6 == 10 &&
-                    c7 == 26 && c8 == 10) {
+                    c7 == 26 && c8 == 10
+                ) {
                     return
                 }
                 throw FileScanException("Mime type mismatch; doesn't fit the PNG format")
             }
+
             in MediaType.xmlTypes -> {
-                if(bytes.decodeToString().trimStart().firstOrNull() == '<') return
+                if (bytes.decodeToString().trimStart().firstOrNull() == '<') return
 //                if(bytes.decodeToString()Charsets.UTF_16BE).trimStart().firstOrNull() == '<') return
 //                if(bytes.decodeToString()Charsets.UTF_16LE).trimStart().firstOrNull() == '<') return
 //                if(bytes.decodeToString()Charsets.UTF_32LE).trimStart().firstOrNull() == '<') return

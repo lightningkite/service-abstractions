@@ -31,20 +31,21 @@ public class KotlinxIoPublicFileSystem(
     init {
         rootKFile.createDirectories()
     }
-    private val hmac = CryptographyProvider.Default.get(HMAC)
-    private val shaVersion = SHA256
-    private val sha = CryptographyProvider.Default.get(shaVersion)
-    private val secretBytes = run {
-        val signingKeyPath = rootKFile.then(".signingKey")
-        if(signingKeyPath.exists()) {
-            signingKeyPath.readByteArray()
-        } else {
-            val random = CryptographyRandom.nextBytes(32)
-            signingKeyPath.writeByteArray(random)
-            random
+
+    private val key = run {
+        val hmac = CryptographyProvider.Default.get(HMAC)
+        val digest = SHA256
+        val format = HMAC.Key.Format.RAW
+
+        val keyFile = rootKFile.then(".signingKey")
+
+        if (keyFile.exists()) hmac.keyDecoder(digest).decodeFromByteArrayBlocking(format, keyFile.readByteArray())
+        else {
+            val key = hmac.keyGenerator(digest).generateKeyBlocking()
+            keyFile.writeByteArray(key.encodeToByteArrayBlocking(format))
+            key
         }
     }
-    private val key = hmac.keyDecoder(shaVersion).decodeFromByteArrayBlocking(HMAC.Key.Format.RAW, secretBytes)
 
     override val root: KotlinxIoFile = KotlinxIoFile(rootKFile)
     
@@ -56,7 +57,7 @@ public class KotlinxIoPublicFileSystem(
             expires = urlWithQuery.substringAfter("?expires=", "0").takeWhile { it.isDigit() }.toLong().let { Instant.fromEpochMilliseconds(it) },
             upload = urlWithQuery.contains("&upload=true")
         )
-        override fun toString(): String = "$url?expires=${expires.toEpochMilliseconds()}" + if(upload) "&upload=true" else ""
+        override fun toString(): String = "$url?expires=${expires.toEpochMilliseconds()}" + if (upload) "&upload=true" else ""
     }
     internal fun sign(data: DataToSign): String {
         return key.signatureGenerator().generateSignatureBlocking(data.toString().encodeToByteArray()).toHexString()
@@ -66,27 +67,27 @@ public class KotlinxIoPublicFileSystem(
     }
     internal fun DataToSign.signed() = toString() + "&signature=" + sign(this)
     override fun parseInternalUrl(url: String): KotlinxIoFile? {
-        if(!url.startsWith(serveUrl)) return null
+        if (!url.startsWith(serveUrl)) return null
         return KotlinxIoFile(rootKFile.then(*url.substringAfter(serveUrl).split('/').toTypedArray()))
     }
     override fun parseExternalUrl(url: String): KotlinxIoFile? {
-        if(!url.startsWith(serveUrl)) return null
+        if (!url.startsWith(serveUrl)) return null
         val data = DataToSign(url.substringBeforeLast("&"))
         val signature = url.substringAfterLast("&", "").substringAfter('=')
-        if(!verify(data, signature)) throw IllegalArgumentException("Signature verification failed for $url")
-        if(context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
-        if(!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
-        if(data.upload) throw IllegalArgumentException("URL is for upload, not read")
+        if (!verify(data, signature)) throw IllegalArgumentException("Signature verification failed for $url")
+        if (context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
+        if (!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
+        if (data.upload) throw IllegalArgumentException("URL is for upload, not read")
         return KotlinxIoFile(rootKFile.then(*data.url.substringAfter(serveUrl).split('/').toTypedArray()))
     }
     public fun parseUploadUrl(url: String): KotlinxIoFile? {
-        if(!url.startsWith(serveUrl)) return null
+        if (!url.startsWith(serveUrl)) return null
         val data = DataToSign(url.substringBeforeLast("&"))
         val signature = url.substringAfterLast("&", "").substringAfter('=')
-        if(!verify(data, signature)) throw IllegalArgumentException("Signature verification failed for $url")
-        if(context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
-        if(!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
-        if(!data.upload) throw IllegalArgumentException("URL is for read, not upload")
+        if (!verify(data, signature)) throw IllegalArgumentException("Signature verification failed for $url")
+        if (context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
+        if (!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
+        if (!data.upload) throw IllegalArgumentException("URL is for read, not upload")
         return KotlinxIoFile(rootKFile.then(*data.url.substringAfter(serveUrl).split('/').toTypedArray()))
     }
 
@@ -206,5 +207,7 @@ public class KotlinxIoPublicFileSystem(
                 throw RuntimeException("Failed to delete file: ${kfile}", e)
             }
         }
+
+        override fun hashCode(): Int = kfile.hashCode() + 47
     }
 }
