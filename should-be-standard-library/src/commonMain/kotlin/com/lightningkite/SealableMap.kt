@@ -8,7 +8,7 @@ public class SealableMap<K, V>(private val wraps: MutableMap<K, V>): MutableMap<
 
     private inline fun <T> checkSealed(crossinline action: MutableMap<K, V>.() -> T): T {
         sealed?.let {
-            throw IllegalStateException("Data has been sealed and cannot be modified: Sealed here: ${it.printStackTrace()}")
+            throw IllegalStateException("Data has been sealed and cannot be modified. Sealed here: ${it.printStackTrace()}")
         }
         return wraps.action()
     }
