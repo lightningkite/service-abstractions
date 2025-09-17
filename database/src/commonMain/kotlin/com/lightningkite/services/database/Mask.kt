@@ -216,7 +216,7 @@ private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean 
     }
 }
 
-internal fun <T> Condition<T>.readPaths(): Set<DataClassPathPartial<T>> {
+public fun <T> Condition<T>.readPaths(): Set<DataClassPathPartial<T>> {
     val out = HashSet<DataClassPathPartial<T>>()
     emitReadPaths { out.add(it) }
     return out
@@ -224,7 +224,7 @@ internal fun <T> Condition<T>.readPaths(): Set<DataClassPathPartial<T>> {
 
 @OptIn(ExperimentalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
-internal fun <T> Condition<T>.emitReadPaths(out: (DataClassPathPartial<T>) -> Unit): Unit = emitReadPaths(
+public fun <T> Condition<T>.emitReadPaths(out: (DataClassPathPartial<T>) -> Unit): Unit = emitReadPaths(
     DataClassPathSelf<T>(
         NothingSerializer() as KSerializer<T>
     )
