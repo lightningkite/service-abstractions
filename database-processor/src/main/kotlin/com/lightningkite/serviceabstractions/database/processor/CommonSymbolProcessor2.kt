@@ -59,7 +59,7 @@ abstract class CommonSymbolProcessor2(
                 else "Main"
             }
 
-        val interestedIn = interestedIn(object: Resolver by resolver {
+        val interestedIn = interestedIn(object : Resolver by resolver {
             override fun getAllFiles(): Sequence<KSFile> {
                 return resolver.getAllFiles().filter {
                     !common || it.filePath.contains("/src/common")
@@ -140,25 +140,25 @@ fun processFiles(
 ) {
     lockFile.parentFile.mkdirs()
     val dependenciesFile = File(lockFile.absolutePath + ".dependencies")
-    if(!dependenciesFile.exists()) dependenciesFile.createNewFile()
+    if (!dependenciesFile.exists()) dependenciesFile.createNewFile()
     dependenciesFile.appendText(dependencies.joinToString("\n") + "\n\n")
     val hash = dependencies.checksum() + version
     val runningFile = File(lockFile.absolutePath + ".running")
     val pastHashesFile = File(lockFile.absolutePath + ".past")
-    if(!pastHashesFile.exists()) pastHashesFile.createNewFile()
+    if (!pastHashesFile.exists()) pastHashesFile.createNewFile()
     var count = 0
-    while(!runningFile.createNewFile() && count++ < 50) {
+    while (!runningFile.createNewFile() && count++ < 50) {
         Thread.sleep(100)
         println("Waiting on lock...")
     }
-    if(count >= 50) throw Exception("Waited, could not get lock")
+    if (count >= 50) throw Exception("Waited, could not get lock")
     println("Running...")
     val hashFromFile = lockFile.takeIf { it.exists() }?.readText()?.toIntOrNull()
     lockFile.writeText(hash.toString())
     pastHashesFile.appendText(hash.toString() + "\n")
     try {
         println("Hash comparison: $hash vs $hashFromFile")
-        if(hash != hashFromFile) {
+        if (hash != hashFromFile) {
             println("Running the action!")
             destinationFolder.deleteRecursively()
             destinationFolder.mkdirs()

@@ -412,14 +412,14 @@ public data class SerializableAnnotation(
     }
 }
 
-internal val KSerializer<*>.serializableAnnotations: List<SerializableAnnotation>
+public val KSerializer<*>.serializableAnnotations: List<SerializableAnnotation>
     get() = if (this is VirtualType) this.annotations else descriptor.annotations.mapNotNull {
         SerializableAnnotation.parseOrNull(
             it
         )
     }
 
-internal fun KSerializer<*>.getElementSerializableAnnotations(index: Int): List<SerializableAnnotation> =
+public fun KSerializer<*>.getElementSerializableAnnotations(index: Int): List<SerializableAnnotation> =
     if (this is VirtualStruct.Concrete) this.struct.fields[index].annotations
     else descriptor.getElementAnnotations(index).mapNotNull { SerializableAnnotation.parseOrNull(it) }
 

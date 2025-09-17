@@ -28,22 +28,20 @@ internal object DefaultDecoder : Decoder {
 
     init {
         defaults[UUIDSerializer.descriptor.serialName] = Uuid.NIL
+        defaults[Uuid.serializer().descriptor.serialName] = Uuid.NIL
         defaults[InstantIso8601Serializer.descriptor.serialName] = Instant.fromEpochMilliseconds(0)
+        defaults[Instant.serializer().descriptor.serialName] = Instant.fromEpochMilliseconds(0)
         defaults[LocalTimeIso8601Serializer.descriptor.serialName] = LocalTime(0, 0, 0)
         defaults[LocalDateIso8601Serializer.descriptor.serialName] = LocalDate(1970, 1, 1)
-        defaults[LocalDateTimeIso8601Serializer.descriptor.serialName] =
-            LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
+        defaults[LocalDateTimeIso8601Serializer.descriptor.serialName] = LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
         defaults[kotlinx.datetime.serializers.LocalTimeIso8601Serializer.descriptor.serialName] = LocalTime(0, 0, 0)
         defaults[kotlinx.datetime.serializers.LocalDateIso8601Serializer.descriptor.serialName] = LocalDate(1970, 1, 1)
-        defaults[kotlinx.datetime.serializers.LocalDateTimeIso8601Serializer.descriptor.serialName] =
-            LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
+        defaults[kotlinx.datetime.serializers.LocalDateTimeIso8601Serializer.descriptor.serialName] = LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
         defaults[DurationSerializer.descriptor.serialName] = 0.seconds
         defaults[Duration.serializer().descriptor.serialName] = 0.seconds
         defaults[DurationMsSerializer.descriptor.serialName] = 0.seconds
-        defaults[ZonedDateTimeIso8601Serializer.descriptor.serialName] =
-            ZonedDateTime(LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0)), TimeZone.UTC)
-        defaults[OffsetDateTimeIso8601Serializer.descriptor.serialName] =
-            OffsetDateTime(LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0)), UtcOffset.ZERO)
+        defaults[ZonedDateTimeIso8601Serializer.descriptor.serialName] = ZonedDateTime(LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0)), TimeZone.UTC)
+        defaults[OffsetDateTimeIso8601Serializer.descriptor.serialName] = OffsetDateTime(LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0)), UtcOffset.ZERO)
         defaults[TimeZoneSerializer.descriptor.serialName] = TimeZone.currentSystemDefault()
         defaults[GeoCoordinateGeoJsonSerializer.descriptor.serialName] = GeoCoordinate(0.0, 0.0)
         defaults[GeoCoordinateArraySerializer.descriptor.serialName] = GeoCoordinate(0.0, 0.0)
