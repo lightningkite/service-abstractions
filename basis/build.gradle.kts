@@ -48,7 +48,6 @@ kotlin {
                 api(libs.kotlinXDatetime)
                 api(libs.coroutinesCore)
                 api(libs.kotlinLogging)
-                api(libs.logBackClassic)
                 api(project(":should-be-standard-library"))
             }
             kotlin {
@@ -82,6 +81,7 @@ kotlin {
         val jvmMain by getting {
             dependencies {
                 api(libs.openTelemetry.api)
+                api(libs.openTelemetry.kotlin)
             }
         }
         val jvmTest by getting {

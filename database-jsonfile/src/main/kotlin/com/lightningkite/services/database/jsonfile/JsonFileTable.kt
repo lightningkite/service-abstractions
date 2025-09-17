@@ -2,6 +2,8 @@ package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.data.KFile
 import com.lightningkite.services.database.InMemoryTable
+import io.github.oshai.kotlinlogging.KLogger
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +13,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
-import org.slf4j.LoggerFactory
 import java.io.Closeable
 import java.util.Collections
 
@@ -28,8 +29,8 @@ internal class JsonFileTable<Model : Any>(
     serializer = serializer
 ), Closeable {
 
-    companion object{
-        val logger = LoggerFactory.getLogger(this::class.java)
+    companion object {
+        val logger = KotlinLogging.logger("com.lightningkite.services.database.jsonfile.JsonFileTable")
     }
 
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -62,6 +63,6 @@ internal class JsonFileTable<Model : Any>(
         val temp = file.parent!!.then(file.name + ".saving")
         temp.writeText(encoding.encodeToString(ListSerializer(serializer), data.toList()))
         temp.atomicMove(file)
-        logger.debug("Saved $file")
+        logger.debug { "Saved $file" }
     }
 }
