@@ -248,7 +248,6 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
 
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
     orgId: String,
-    backupEnabled: Boolean = true,
     zoneName: String? = null,
     existingProjectId: String? = null,
 ): Unit {
@@ -292,8 +291,6 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "name" - "$projectName"
             "cluster_type" - "REPLICASET"
 
-            "backup_enabled" - backupEnabled
-
             "replication_specs" {
                 "zone_name" - zoneName
                 "region_configs" {
@@ -301,6 +298,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
                         "instance_size" - "M0"
                     }
                     "priority" - 7
+                    "provider_name" - "TENANT"
                     "backing_provider_name" - "AWS"
                     "region_name" - region
                 }

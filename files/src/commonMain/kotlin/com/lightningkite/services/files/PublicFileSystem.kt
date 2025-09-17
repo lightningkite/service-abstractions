@@ -5,6 +5,7 @@ import com.lightningkite.services.*
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.KFile
 import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.workingDirectory
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.Serializable
@@ -68,11 +69,8 @@ public interface PublicFileSystem : Service {
     @JvmInline
     public value class Settings(
         public val url: String = "file://${
-            KFile(
-                SystemFileSystem,
-                Path("local/files")
-            ).also { it.createDirectories() }.resolved
-        }",
+            workingDirectory.then("local/files").also { it.createDirectories() }
+        }?serveUrl=files",
     ) : Setting<PublicFileSystem> {
 
         public companion object : UrlSettingParser<PublicFileSystem>() {
@@ -92,7 +90,8 @@ public interface PublicFileSystem : Service {
                         ?.associate { it.substringBefore("=") to it.substringAfter("=", "") }
                         ?: emptyMap()
 
-                    val serveUrl = params["serveUrl"] ?: throw IllegalArgumentException("No serveUrl provided")
+                    val relativeServeUrl = params["serveUrl"] ?: throw IllegalArgumentException("No serveUrl provided")
+                    val serveUrl = if(relativeServeUrl.contains("://")) relativeServeUrl.trim('/').plus('/') else "${context.publicUrl}/${relativeServeUrl.trim('/')}/"
 
                     val signedUrlDuration = params["signedUrlDuration"].let {
                         when {
@@ -107,7 +106,7 @@ public interface PublicFileSystem : Service {
                         name = name,
                         context = context,
                         rootKFile = KFile(path),
-                        serveUrl = serveUrl + (if (serveUrl.endsWith("/")) "" else "/"),
+                        serveUrl = serveUrl,
                         signedUrlDuration = signedUrlDuration
                     )
                 }

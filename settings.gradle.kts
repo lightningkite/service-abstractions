@@ -12,6 +12,7 @@ pluginManagement {
     plugins {
         kotlin("plugin.serialization") version "2.0.0"
         id("com.google.devtools.ksp") version "2.0.21-1.0.25"
+        id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
     }
 
     dependencyResolutionManagement {
@@ -24,6 +25,11 @@ pluginManagement {
             maven("https://jitpack.io")
         }
 
+        versionCatalogs {
+            create("awssdk") {
+                from("aws.sdk.kotlin:version-catalog:1.5.39")
+            }
+        }
     }
 }
 
@@ -54,6 +60,7 @@ include(":files")
 include(":files-clamav")
 include(":files-client")
 include(":files-s3")
+//include(":files-s3-kmp")
 include(":files-test")
 include(":http-client")
 include(":metrics-cloudwatch")

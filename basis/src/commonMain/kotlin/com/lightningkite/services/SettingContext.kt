@@ -5,6 +5,7 @@ import kotlin.time.Clock
 
 public interface SettingContext {
     public val projectName: String
+    public val publicUrl: String
     public val internalSerializersModule: SerializersModule
     public val openTelemetry: OpenTelemetry?
     public val clock: Clock get() = Clock.System

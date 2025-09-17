@@ -44,10 +44,4 @@ class S3PublicFileSystemTest : FileSystemTests() {
         println("Ratio: ${mine / theirs}")
         assert(mine < theirs)
     }
-
-    @Test fun settingParse() {
-        S3PublicFileSystem
-        PublicFileSystem.Settings("s3://demo-example-files20220920193513533900000004.s3-us-west-2.amazonaws.com/?signedUrlDuration=1d")
-            .invoke("test", TestSettingContext()) as? S3PublicFileSystem
-    }
 }

@@ -2,7 +2,6 @@ package com.lightningkite.services.database.processor
 
 import com.google.devtools.ksp.symbol.*
 import com.lightningkite.services.database.processor.imports
-import org.jetbrains.kotlin.util.capitalizeDecapitalize.decapitalizeAsciiOnly
 import kotlin.reflect.KClass
 
 private val KSType.useCustomType: Boolean

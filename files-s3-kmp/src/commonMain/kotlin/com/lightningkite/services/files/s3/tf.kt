@@ -74,7 +74,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.
             }
         }
         "resource.aws_s3_bucket_cors_configuration.files" {
-            "bucket" - expression("aws_s3_bucket.$name.bucket")
+            "bucket" - expression("aws_s3_bucket.files.bucket")
 
             "cors_rule" - listOf(
                 terraformJsonObject {

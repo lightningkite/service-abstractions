@@ -87,16 +87,16 @@ context(emitter: TerraformEmitterAwsDomain) public fun TerraformNeed<EmailServic
             "ttl" - "600"
             "records" - listOf(expression("aws_ses_domain_identity.$name.verification_token"))
         }
-        "resource.aws_ses_domain_dkim.$name" {
+        "resource.aws_ses_domain_dkim.${name}_dkim" {
             "domain" - expression("aws_ses_domain_identity.$name.domain")
         }
         "resource.aws_route53_record.${name}_dkim_records" {
             "count" - 3
             "zone_id" - emitter.domainZoneId
-            "name" - "${'$'}{element(aws_ses_domain_dkim.${name}.dkim_tokens, count.index)}._domainkey.${emitter.domain}"
+            "name" - "${'$'}{element(aws_ses_domain_dkim.${name}_dkim.dkim_tokens, count.index)}._domainkey.${emitter.domain}"
             "type" - "CNAME"
             "ttl" - "600"
-            "records" - listOf(expression("aws_ses_domain_dkim.$name.dkim_tokens[count.index]"))
+            "records" - listOf(expression("aws_ses_domain_dkim.${name}_dkim.dkim_tokens[count.index]"))
         }
         "resource.aws_route53_record.${name}_spf_mail_from" {
             "zone_id" - emitter.domainZoneId
@@ -114,7 +114,7 @@ context(emitter: TerraformEmitterAwsDomain) public fun TerraformNeed<EmailServic
             "ttl" - "300"
             "records" - listOf("v=spf1 include:amazonses.com -all")
         }
-        "resource.aws_route53_record.${name}_dmarc_txt" {
+        "resource.aws_route53_record.${name}_route_53_dmarc_txt" {
             "zone_id" - emitter.domainZoneId
             "name" - "_dmarc.${emitter.domain}"
             "type" - "TXT"

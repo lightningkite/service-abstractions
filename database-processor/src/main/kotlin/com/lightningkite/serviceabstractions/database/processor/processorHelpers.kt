@@ -1,7 +1,6 @@
 package com.lightningkite.services.database.processor
 
 import com.google.devtools.ksp.symbol.*
-import org.jetbrains.kotlin.util.capitalizeDecapitalize.decapitalizeAsciiOnly
 import kotlin.math.min
 
 data class ResolvedAnnotation(
@@ -59,7 +58,7 @@ fun KSType.toKotlinSerializer(contextualTypes: List<KSDeclaration>): String {
             "kotlin.collections.Set" -> return@run "SetSerializer$typeArgsAndEnding"
             "kotlin.collections.Map" -> return@run "MapSerializer$typeArgsAndEnding"
         }
-        (this.declaration as? KSTypeParameter)?.let { return@run it.name.asString().decapitalizeAsciiOnly() }
+        (this.declaration as? KSTypeParameter)?.let { return@run it.name.asString().decapitalize() }
 
         return@run declaration.safeLocalReference() + ".serializer$typeArgsAndEnding"
     } + if (isMarkedNullable) ".nullable2" else ""

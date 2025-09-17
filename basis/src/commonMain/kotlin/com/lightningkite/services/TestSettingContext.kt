@@ -8,6 +8,7 @@ public class TestSettingContext(
     override val internalSerializersModule: SerializersModule = EmptySerializersModule(),
     override var clock: Clock = Clock.System
 ): SettingContext {
+    override val publicUrl: String get() = "http://localhost:8080"
     override val sharedResources: SharedResources = SharedResources()
     override val projectName: String get() = "Test"
     override val openTelemetry: OpenTelemetry? get() = null

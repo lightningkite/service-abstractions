@@ -19,7 +19,7 @@ dependencies {
     api(project(path = ":cache"))
     implementation(libs.lettuce)
     implementation(libs.lettuceOtel)
-    implementation(libs.embeddedRedis)
+    testImplementation(libs.embeddedRedis)
     implementation(libs.guava)
     implementation(libs.coroutinesReactive)
     implementation(libs.kotlinTest)

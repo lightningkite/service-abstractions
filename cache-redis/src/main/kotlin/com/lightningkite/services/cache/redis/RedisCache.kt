@@ -10,7 +10,6 @@ import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.reactive.collect
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
-import redis.embedded.RedisServer
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
@@ -22,25 +21,8 @@ public class RedisCache(
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
 
     public companion object {
-        private var currentLocal: RedisServer? = null
-        public fun Cache.Settings.Companion.redisTest(): Cache.Settings = Cache.Settings("redis-test")
         public fun Cache.Settings.Companion.redis(url: String): Cache.Settings = Cache.Settings("redis://$url")
         init {
-            Cache.Settings.register("redis-test") { name, url, context ->
-                if(currentLocal == null) {
-                    val redisServer = RedisServer.builder()
-                        .port(6379)
-                        .bind("127.0.0.1") // good for local development on Windows to prevent security popups
-                        .slaveOf("localhost", 6378)
-                        .setting("daemonize no")
-                        .setting("appendonly no")
-                        .setting("maxmemory 128M")
-                        .build()
-                    redisServer.start()
-                    currentLocal = redisServer
-                }
-                RedisCache(name, RedisClient.create("redis://127.0.0.1:6378/0"), context)
-            }
             Cache.Settings.register("redis") { name, url, context ->
                 RedisCache(name, RedisClient.create(url), context)
             }

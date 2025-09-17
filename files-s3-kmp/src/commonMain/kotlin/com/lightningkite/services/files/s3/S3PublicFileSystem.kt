@@ -3,31 +3,25 @@ package com.lightningkite.services.files.s3
 import com.lightningkite.MediaType
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.get
-import software.amazon.awssdk.auth.credentials.*
-import software.amazon.awssdk.regions.Region
-import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.presigner.S3Presigner
-import java.io.File
-import javax.crypto.spec.SecretKeySpec
-import kotlin.jvm.optionals.getOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.toJavaDuration
+import aws.sdk.kotlin.services.s3.S3Client
+import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
+import aws.smithy.kotlin.runtime.auth.awscredentials.CredentialsProvider
+import kotlin.io.path.Path
 
 /**
  * An implementation of [PublicFileSystem] that uses AWS S3 for storage.
  */
 public class S3PublicFileSystem(
     override val name: String,
-    public val region: Region,
-    public val credentialProvider: AwsCredentialsProvider,
+    public val region: String,
+    public val credentialProvider: CredentialsProvider,
     public val bucket: String,
     public val signedUrlDuration: Duration? = null,
     override val context: SettingContext
@@ -38,7 +32,7 @@ public class S3PublicFileSystem(
         "https://s3-${region.id()}.amazonaws.com/${bucket}/",
     )
 
-    private var credsOnHand: AwsCredentials? = null
+    private var credsOnHand: Credentials? = null
     private var credsOnHandMs: Long = 0
     private var credsDirect: DirectAwsCredentials? = null
 
@@ -51,85 +45,21 @@ public class S3PublicFileSystem(
     }
 
     /**
-     * Gets the current AWS credentials.
-     */
-    public fun creds(): DirectAwsCredentials {
-        val onHand = credsDirect
-        return if (onHand == null || System.currentTimeMillis() > credsOnHandMs) {
-            val x = credentialProvider.resolveCredentials()
-            credsOnHand = x
-            val y = DirectAwsCredentials(
-                access = x.accessKeyId(),
-                secret = x.secretAccessKey(),
-                token = (x as? AwsSessionCredentials)?.sessionToken(),
-            )
-            credsDirect = y
-            credsOnHandMs =
-                x.expirationTime().getOrNull()?.toEpochMilli() ?: (System.currentTimeMillis() + 24L * 60 * 60 * 1000)
-            y
-        } else onHand
-    }
-
-    private var lastSigningKey: SecretKeySpec? = null
-    private var lastSigningKeyDate: String = ""
-
-    /**
-     * Gets a signing key for the given date.
-     */
-    public fun signingKey(date: String): SecretKeySpec {
-        val lastSigningKey = lastSigningKey
-        if (lastSigningKey == null || lastSigningKeyDate != date) {
-            val secretKey = creds().secret
-            val newKey = "AWS4$secretKey".toByteArray()
-                .let { date.toByteArray().mac(it) }
-                .let { region.id().toByteArray().mac(it) }
-                .let { "s3".toByteArray().mac(it) }
-                .let { "aws4_request".toByteArray().mac(it) }
-                .let { SecretKeySpec(it, "HmacSHA256") }
-            this.lastSigningKey = newKey
-            lastSigningKeyDate = date
-            return newKey
-        } else return lastSigningKey
-    }
-
-    /**
      * The S3 client.
      */
     public val s3: S3Client by lazy {
-        S3Client.builder()
-            .region(region)
-            .credentialsProvider(credentialProvider)
-            .httpClient(context[AwsConnections].client)
-            .build()
+        S3Client {
+            this.region = this@S3PublicFileSystem.region
+            this.credentialsProvider
+        }
     }
 
-    /**
-     * The S3 async client.
-     */
-    public val s3Async: S3AsyncClient by lazy {
-        S3AsyncClient.builder()
-            .region(region)
-            .credentialsProvider(credentialProvider)
-            .httpClient(context[AwsConnections].asyncClient)
-            .build()
-    }
-
-    /**
-     * The S3 presigner.
-     */
-    public val signer: S3Presigner by lazy {
-        S3Presigner.builder()
-            .region(region)
-            .credentialsProvider(credentialProvider)
-            .build()
-    }
-
-    override val root: S3FileObject = S3FileObject(this, File(""))
+    override val root: S3FileObject = S3FileObject(this, Path(""))
 
     override fun parseInternalUrl(url: String): S3FileObject? {
         if (rootUrls.none { prefix -> url.startsWith(prefix) }) return null
         val path = url.substringAfter(rootUrls.first()).substringBefore('?')
-        return S3FileObject(this, File(path))
+        return S3FileObject(this, Path(path))
     }
 
     override fun parseExternalUrl(url: String): S3FileObject? {
@@ -201,8 +131,8 @@ public class S3PublicFileSystem(
         init {
             PublicFileSystem.Settings.register("s3") { name, url, context ->
                 val regex =
-                    Regex("""s3:\/\/(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com\/?""")
-                val match = regex.matchEntire(url.substringBefore('?')) ?: throw IllegalArgumentException(
+                    Regex("""s3://(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com/?""")
+                val match = regex.matchEntire(url) ?: throw IllegalArgumentException(
                     "Invalid S3 URL. The URL should match the pattern: s3:" +
                             "//[user]:[password]@[bucket].[region].amazonaws.com/"
                 )

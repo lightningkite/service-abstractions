@@ -19,7 +19,7 @@ dependencies {
     api(project(path = ":pubsub"))
     implementation(libs.lettuce)
     implementation(libs.lettuceOtel)
-    implementation(libs.embeddedRedis)
+    testImplementation(libs.embeddedRedis)
     implementation(libs.guava)
     implementation(libs.coroutinesCore)
     implementation(libs.coroutinesReactive)

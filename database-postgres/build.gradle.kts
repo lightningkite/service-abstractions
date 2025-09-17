@@ -23,7 +23,7 @@ dependencies {
     api(libs.exposedJavaTime)
     api(libs.exposedJdbc)
     api(libs.postgresql)
-    api(libs.embeddedPostgres)
+    testImplementation(libs.embeddedPostgres)
     testImplementation(libs.coroutinesTesting)
 }
 

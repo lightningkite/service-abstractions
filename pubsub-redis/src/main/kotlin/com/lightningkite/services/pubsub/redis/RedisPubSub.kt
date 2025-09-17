@@ -12,7 +12,6 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
-import redis.embedded.RedisServer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -29,21 +28,8 @@ public class RedisPubSub(
     private val json = Json { serializersModule = context.internalSerializersModule }
 
     public companion object {
-        public fun PubSub.Settings.Companion.redisTest(): PubSub.Settings = PubSub.Settings("redis-test")
         public fun PubSub.Settings.Companion.redis(url: String): PubSub.Settings = PubSub.Settings("redis://$url")
         init {
-            PubSub.Settings.register("redis-test") { name, url, context ->
-                val redisServer = RedisServer.builder()
-                    .port(6379)
-                    .setting("bind 127.0.0.1") // good for local development on Windows to prevent security popups
-                    .slaveOf("localhost", 6378)
-                    .setting("daemonize no")
-                    .setting("appendonly no")
-                    .setting("maxmemory 128M")
-                    .build()
-                redisServer.start()
-                RedisPubSub(name, context, RedisClient.create("redis://127.0.0.1:6378"))
-            }
             PubSub.Settings.register("redis") { name, url, context ->
                 RedisPubSub(name, context, RedisClient.create(url))
             }
