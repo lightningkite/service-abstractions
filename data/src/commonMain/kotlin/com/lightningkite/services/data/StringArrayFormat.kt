@@ -66,12 +66,54 @@ class StringArrayFormat(override val serializersModule: SerializersModule) : Str
         private var elementIndex = 0
         override val serializersModule: SerializersModule get() = this@StringArrayFormat.serializersModule
         override fun decodeBoolean(): Boolean = input().toBoolean()
-        override fun decodeByte(): Byte = input().toByte()
-        override fun decodeShort(): Short = input().toShort()
-        override fun decodeInt(): Int = input().toInt()
-        override fun decodeLong(): Long = input().toLong()
-        override fun decodeFloat(): Float = input().toFloat()
-        override fun decodeDouble(): Double = input().toDouble()
+        override fun decodeByte(): Byte {
+            val v = input()
+            try {
+                return v.toByte()
+            } catch(n: NumberFormatException) {
+                throw SerializationException("Expected a Byte, but got '$v'", n)
+            }
+        }
+        override fun decodeShort(): Short {
+            val v = input()
+            try {
+                return v.toShort()
+            } catch(n: NumberFormatException) {
+                throw SerializationException("Expected a Short, but got '$v'", n)
+            }
+        }
+        override fun decodeInt(): Int {
+            val v = input()
+            try {
+                return v.toInt()
+            } catch(n: NumberFormatException) {
+                throw SerializationException("Expected a Int, but got '$v'", n)
+            }
+        }
+        override fun decodeLong(): Long {
+            val v = input()
+            try {
+                return v.toLong()
+            } catch(n: NumberFormatException) {
+                throw SerializationException("Expected a Long, but got '$v'", n)
+            }
+        }
+        override fun decodeFloat(): Float {
+            val v = input()
+            try {
+                return v.toFloat()
+            } catch(n: NumberFormatException) {
+                throw SerializationException("Expected a Float, but got '$v'", n)
+            }
+        }
+        override fun decodeDouble(): Double {
+            val v = input()
+            try {
+                return v.toDouble()
+            } catch(n: NumberFormatException) {
+                throw SerializationException("Expected a Double, but got '$v'", n)
+            }
+        }
         override fun decodeChar(): Char = input().first()
         override fun decodeString(): String = input()
 
