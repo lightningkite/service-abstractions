@@ -25,7 +25,6 @@ public fun LoggingSettings.applyToLogback() {
 private fun LoggingSettings.ContextSettings.apply(partName: String, to: Logger) {
     to.isAdditive = additive
     to.level = Level.toLevel(level.toInt())
-    println("Log level set to ${Level.toLevel(level.toInt())}")
     if (filePattern?.isNotBlank() == true) {
         to.addAppender(RollingFileAppender<ILoggingEvent>().apply rolling@{
             context = LoggerFactory.getILoggerFactory() as LoggerContext
