@@ -1,5 +1,6 @@
 package com.lightningkite.serviceabstractions.database
 
+import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.PlatformNotSupportedError
 import com.lightningkite.services.database.factory
 import kotlinx.serialization.InternalSerializationApi
@@ -27,6 +28,11 @@ class SerializationHacksTest {
             println("Skipping test due to lack of serialization features.")
         }
     }
+
+//    @Test fun uberCursed() {
+//        val ser = Condition.serializer(SampleBox.serializer(Int.serializer()))
+//        println(ser.des)
+//    }
 }
 
 @Serializable

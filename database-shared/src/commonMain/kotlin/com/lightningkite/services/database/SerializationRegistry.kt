@@ -472,7 +472,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                                 )
                             }
                         },
-                        parameters = generics.asSequence().filter { it.used }.map {
+                        parameters = generics.toList().dropLastWhile { !it.used }.map {
                             VirtualTypeParameter(name = it.descriptor.serialName)
                         }.toList()
                     )

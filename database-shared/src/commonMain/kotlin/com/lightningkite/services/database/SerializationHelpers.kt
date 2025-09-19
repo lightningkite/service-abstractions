@@ -229,10 +229,12 @@ public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*
     is StructureKind.LIST -> arrayOf(innerElement())
     is StructureKind.MAP -> arrayOf(innerElement(), innerElement2())
     is StructureKind.CLASS -> {
+        @Suppress("UNCHECKED_CAST")
         (this as? GeneratedSerializer<*>)?.typeParametersSerializers()
             ?: (this as? ConditionSerializer<*>)?.inner?.let { arrayOf(it) }
             ?: (this as? ModificationSerializer<*>)?.inner?.let { arrayOf(it) }
             ?: (this as? PartialSerializer<*>)?.source?.let { arrayOf(it) }
+            ?: (this as? VirtualStruct.Concrete)?.arguments as? Array<KSerializer<*>>
     }
 
     is PrimitiveKind.STRING -> {
@@ -244,7 +246,9 @@ public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*
 }
 
 @OptIn(InternalSerializationApi::class)
-public fun KSerializer<*>.childSerializersOrNull(): Array<KSerializer<*>>? = (this as? GeneratedSerializer<*>)?.childSerializers()
+public fun KSerializer<*>.childSerializersOrNull(): Array<KSerializer<*>>? =
+    (this as? GeneratedSerializer<*>)?.childSerializers()
+        ?: (this as? VirtualStruct.Concrete)?.serializableProperties?.map { it.serializer }?.toTypedArray()
 
 @Suppress("UNCHECKED_CAST")
 internal val <T> KSerializer<T>.nullable2: KSerializer<T?> get() = if (this.descriptor.isNullable) this as KSerializer<T?> else (this as KSerializer<Any>).nullable as KSerializer<T?>

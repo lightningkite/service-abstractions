@@ -54,7 +54,7 @@ public data class VirtualStruct(
     }(${fields.joinToString()})"
 
     private object DefaultNotPresent
-    public inner class Concrete(private val registry: SerializationRegistry, private val arguments: Array<out KSerializer<*>>) :
+    public inner class Concrete(private val registry: SerializationRegistry, public val arguments: Array<out KSerializer<*>>) :
         KSerializer<VirtualInstance>, VirtualType by this@VirtualStruct,
         KSerializerWithDefault<VirtualInstance> {
         internal val struct: VirtualStruct = this@VirtualStruct
