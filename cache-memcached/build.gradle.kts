@@ -17,7 +17,7 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":cache"))
-    implementation(libs.kotlinTest)
+    testImplementation(libs.kotlinTest)
     implementation(libs.memcached)
     testImplementation(libs.coroutinesTesting)
     testImplementation(project(":cache-test"))

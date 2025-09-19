@@ -22,7 +22,7 @@ dependencies {
     api(libs.openTelemetry.exporter.otlp)
     api(libs.openTelemetryInstrumentation.logback)
     api(libs.logBackClassic)
-    implementation(libs.kotlinTest)
+    testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
     testImplementation(project(path = ":test"))
 }

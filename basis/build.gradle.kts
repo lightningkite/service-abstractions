@@ -60,7 +60,7 @@ kotlin {
         }
         val commonTest by getting {
             dependencies {
-                implementation(kotlin("test"))
+                implementation(libs.kotlinTest)
                 implementation(libs.coroutinesTesting)
             }
             kotlin {

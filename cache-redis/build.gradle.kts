@@ -22,7 +22,7 @@ dependencies {
     testImplementation(libs.embeddedRedis)
     implementation(libs.guava)
     implementation(libs.coroutinesReactive)
-    implementation(libs.kotlinTest)
+    testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
     testImplementation(project(":cache-test"))
 }

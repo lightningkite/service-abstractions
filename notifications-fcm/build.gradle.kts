@@ -17,7 +17,7 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":notifications"))
-    implementation(libs.kotlinTest)
+    testImplementation(libs.kotlinTest)
     implementation(libs.firebaseAdmin)
     testImplementation(libs.coroutinesTesting)
     testImplementation(project(path = ":test"))

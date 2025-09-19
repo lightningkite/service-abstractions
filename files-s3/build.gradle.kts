@@ -29,8 +29,8 @@ dependencies {
     api(libs.awsS3) { excludeNetty() }
     api(libs.awsCrtClient) { excludeNetty() }
     implementation(libs.coroutinesReactive)
-    
-    implementation(libs.kotlinTest)
+
+    testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }
 

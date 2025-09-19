@@ -19,7 +19,7 @@ dependencies {
     api(project(path = ":files"))
     testImplementation(project(path = ":test"))
     implementation(libs.clamAv)
-    implementation(libs.kotlinTest)
+    testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }
 

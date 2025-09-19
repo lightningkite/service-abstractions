@@ -43,6 +43,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(project(path = ":files"))
+                api(project(path = ":http-client"))
                 api(awssdk.services.s3)
             }
             kotlin {

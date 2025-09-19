@@ -18,7 +18,7 @@ dependencies {
     api(project(path = ":basis"))
     api(project(path = ":database"))
     testImplementation(project(path = ":database-test"))
-    implementation(libs.kotlinTest)
+    testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }
 

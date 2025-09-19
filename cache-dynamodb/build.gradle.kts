@@ -19,8 +19,8 @@ dependencies {
     api(project(path = ":cache"))
     api(libs.dynamodb)
     implementation(libs.coroutinesReactive)
-    implementation(libs.kotlinTest)
     implementation(project(":aws-client"))
+    testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
     testImplementation(project(":cache-test"))
 }

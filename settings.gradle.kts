@@ -33,13 +33,11 @@ pluginManagement {
     }
 }
 
-//include(":email-mailgun")
-//include(":files-azbs")
-//include(":files-javalocal")
 include(":aws-client")
 include(":basis")
 include(":cache")
 include(":cache-dynamodb")
+//include(":cache-dynamodb-kmp")
 include(":cache-memcached")
 include(":cache-redis")
 include(":cache-test")

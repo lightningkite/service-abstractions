@@ -16,7 +16,7 @@ plugins {
 
 dependencies {
     implementation(libs.ksp)
-    implementation(libs.kotlinTest)
+    testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 }
 

@@ -1,5 +1,7 @@
 package com.lightningkite.services.files.s3
 
+import aws.sdk.kotlin.runtime.auth.credentials.DefaultChainCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import com.lightningkite.MediaType
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
@@ -13,7 +15,9 @@ import kotlin.time.Duration.Companion.seconds
 import aws.sdk.kotlin.services.s3.S3Client
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import aws.smithy.kotlin.runtime.auth.awscredentials.CredentialsProvider
-import kotlin.io.path.Path
+import aws.smithy.kotlin.runtime.collections.Attributes
+import kotlinx.io.files.Path
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * An implementation of [PublicFileSystem] that uses AWS S3 for storage.
@@ -28,21 +32,9 @@ public class S3PublicFileSystem(
 ) : PublicFileSystem {
 
     override val rootUrls: List<String> = listOf(
-        "https://${bucket}.s3.${region.id()}.amazonaws.com/",
-        "https://s3-${region.id()}.amazonaws.com/${bucket}/",
+        "https://${bucket}.s3.${region}.amazonaws.com/",
+        "https://s3-${region}.amazonaws.com/${bucket}/",
     )
-
-    private var credsOnHand: Credentials? = null
-    private var credsOnHandMs: Long = 0
-    private var credsDirect: DirectAwsCredentials? = null
-
-    public data class DirectAwsCredentials(
-        val access: String,
-        val secret: String,
-        val token: String? = null
-    ) {
-        public val tokenPreEncoded: String? = token?.let { java.net.URLEncoder.encode(it, Charsets.UTF_8) }
-    }
 
     /**
      * The S3 client.
@@ -112,19 +104,19 @@ public class S3PublicFileSystem(
         public fun PublicFileSystem.Settings.Companion.s3(
             user: String,
             password: String,
-            region: Region,
+            region: String,
             bucket: String,
         ): PublicFileSystem.Settings =
             PublicFileSystem.Settings("s3://$user:$password@$bucket.s3-$region.amazonaws.com")
 
         public fun PublicFileSystem.Settings.Companion.s3(
             profile: String,
-            region: Region,
+            region: String,
             bucket: String,
         ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$profile@$bucket.s3-$region.amazonaws.com")
 
         public fun PublicFileSystem.Settings.Companion.s3(
-            region: Region,
+            region: String,
             bucket: String,
         ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$bucket.s3-$region.amazonaws.com")
 
@@ -160,21 +152,18 @@ public class S3PublicFileSystem(
 
                 S3PublicFileSystem(
                     name = name,
-                    region = Region.of(region),
+                    region = region,
                     credentialProvider = when {
-                        user.isNotBlank() && password.isNotBlank() -> {
-                            StaticCredentialsProvider.create(object : AwsCredentials {
-                                override fun accessKeyId(): String = user
-                                override fun secretAccessKey(): String = password
-                            })
-                        }
-
+                        user.isNotBlank() && password.isNotBlank() -> StaticCredentialsProvider(
+                            Credentials(
+                                user,
+                                password
+                            )
+                        )
                         profile.isNotBlank() -> {
-                            println("Using profile name $profile")
-                            DefaultCredentialsProvider.builder().profileName(profile).build()
+                            DefaultChainCredentialsProvider(profileName = profile)
                         }
-
-                        else -> DefaultCredentialsProvider.builder().build()
+                        else -> DefaultChainCredentialsProvider()
                     },
                     bucket = bucket,
                     signedUrlDuration = signedUrlDuration,

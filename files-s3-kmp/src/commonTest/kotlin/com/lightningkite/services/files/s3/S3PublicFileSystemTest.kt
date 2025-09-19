@@ -33,15 +33,21 @@ class S3PublicFileSystemTest : FileSystemTests() {
     @Test fun signingPerformance() {
         val system = system ?: return
         val file = system.root.then("test.txt")
-        val mine = performance(10_000) {
+//        val mine = performance(10_000) {
+//            file.signedUrl
+//        }
+        val theirs = performance(10_000) {
             file.signedUrl
         }
-        val theirs = performance(10_000) {
-            file.signedUrlOfficial
-        }
-        println("Mine: $mine")
+//        println("Mine: $mine")
         println("Theirs: $theirs")
-        println("Ratio: ${mine / theirs}")
-        assert(mine < theirs)
+//        println("Ratio: ${mine / theirs}")
+//        assert(mine < theirs)
+    }
+
+    @Test fun settingParse() {
+        S3PublicFileSystem
+        PublicFileSystem.Settings("s3://demo-example-files20220920193513533900000004.s3-us-west-2.amazonaws.com/?signedUrlDuration=1d")
+            .invoke("test", TestSettingContext()) as? S3PublicFileSystem
     }
 }

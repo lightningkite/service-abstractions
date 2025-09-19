@@ -71,17 +71,17 @@ kotlin {
         }
         val androidMain by getting {
             dependencies {
-                api(libs.kotlinTestJunit)
+//                api(libs.kotlinTestJunit)
             }
         }
         val jsMain by getting {
             dependencies {
-                api(libs.kotlinTestJs)
+//                api(libs.kotlinTestJs)
             }
         }
         val jvmMain by getting {
             dependencies {
-                api(libs.kotlinTestJunit)
+//                api(libs.kotlinTestJunit)
             }
         }
         val jvmTest by getting {

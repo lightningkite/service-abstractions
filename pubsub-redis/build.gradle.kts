@@ -23,7 +23,7 @@ dependencies {
     implementation(libs.guava)
     implementation(libs.coroutinesCore)
     implementation(libs.coroutinesReactive)
-    implementation(libs.kotlinTest)
+    testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
     testImplementation(project(":cache-test"))
 }
