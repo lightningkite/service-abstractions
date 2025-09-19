@@ -164,16 +164,7 @@ public data class VirtualStruct(
             }
         }
 
-        //        val defaults by lazy {
-//            fields.zip(serializers) { field, serializer ->
-//                field.defaultJson?.let {
-//                    return@zip DefaultDecoder.json.decodeFromString(serializer, it)
-//                }
-//                serializer.default()
-//            }
-//        }
-//        val defaultInstance by lazy { VirtualInstance(this, defaults) }
-        private val serializableProperties: Array<SerializableProperty<VirtualInstance, Any?>> by lazy {
+        public val serializableProperties: Array<SerializableProperty<VirtualInstance, Any?>> by lazy {
             fields.map {
                 SerializableProperty.FromVirtualField(it, registry, typeArguments)
             }.toTypedArray()

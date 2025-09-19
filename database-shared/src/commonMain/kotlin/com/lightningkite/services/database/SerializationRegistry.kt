@@ -123,6 +123,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
         register(kotlinx.datetime.serializers.LocalTimeIso8601Serializer)
         register(kotlinx.datetime.serializers.LocalDateTimeIso8601Serializer)
         register(UUIDSerializer)
+        register(kotlin.uuid.Uuid.serializer())
         register(OffsetDateTimeIso8601Serializer)
         register(ZonedDateTimeIso8601Serializer)
         register(GeoCoordinateArraySerializer)

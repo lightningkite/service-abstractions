@@ -77,6 +77,7 @@ private val serNameToProperties = HashMap<String, Array<SerializableProperty<*, 
 @Suppress("UNCHECKED_CAST")
 public val <T> KSerializer<T>.serializableProperties: Array<SerializableProperty<T, *>>?
     get() {
+        if(this is VirtualStruct.Concrete) return this.serializableProperties as Array<SerializableProperty<T, *>>
         return if (this !is GeneratedSerializer<*>) null
         else if (this.typeParametersSerializers().isEmpty()) serNameToProperties.getOrPut(this.descriptor.serialName) {
             (0..<descriptor.elementsCount).map<Int, SerializableProperty<T, *>> { index ->
