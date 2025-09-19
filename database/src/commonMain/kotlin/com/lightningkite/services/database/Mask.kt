@@ -145,10 +145,10 @@ public operator fun <T> Modification<T>.invoke(map: Partial<T>): Partial<T> {
     }
 }
 
-private fun <K, V> Modification<K>.valueSetForDataClassPath(path: DataClassPath<K, V>): V? =
+public fun <K, V> Modification<K>.valueSetForDataClassPath(path: DataClassPath<K, V>): V? =
     (forDataClassPath<V>(path.properties) as? Modification.Assign<V>)?.value
 
-private  fun <K, V> Modification<K>.forDataClassPath(path: DataClassPath<K, V>): Modification<V>? =
+public fun <K, V> Modification<K>.forDataClassPath(path: DataClassPath<K, V>): Modification<V>? =
     forDataClassPath<V>(path.properties)
 
 @Suppress("UNCHECKED_CAST")

@@ -1,6 +1,6 @@
 package com.lightningkite
 
-public class SealableList<E>(private val wraps: MutableList<E>): MutableList<E> by wraps {
+public class SealableList<E>(private val wraps: MutableList<E> = ArrayList()): MutableList<E> by wraps {
     private var sealed: Throwable? = null
 
     private fun assertNotSealed() {
@@ -49,10 +49,13 @@ public class SealableList<E>(private val wraps: MutableList<E>): MutableList<E> 
     }
 
     public fun seal() {
-        sealed = Exception()
+        if (sealed == null) sealed = Exception()
     }
 
     override fun toString(): String = wraps.toString()
 }
 
-public fun <T> Collection<T>.toSealedList(): List<T> = SealableList(toMutableList()).apply { seal() }
+public fun <T> buildSealedList(setup: MutableList<T>.() -> Unit): List<T> =
+    SealableList<T>().apply { setup(); seal() }
+
+public fun <T> Iterable<T>.toSealedList(): List<T> = SealableList(toMutableList()).apply { seal() }
