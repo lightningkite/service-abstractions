@@ -2,7 +2,6 @@ package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.data.KFile
 import com.lightningkite.services.database.InMemoryTable
-import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -61,7 +60,7 @@ internal class JsonFileTable<Model : Any>(
 
     fun handleCollectionDump() {
         val temp = file.parent!!.then(file.name + ".saving")
-        temp.writeText(encoding.encodeToString(ListSerializer(serializer), data.toList()))
+        temp.writeString(encoding.encodeToString(ListSerializer(serializer), data.toList()))
         temp.atomicMove(file)
         logger.debug { "Saved $file" }
     }

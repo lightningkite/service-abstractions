@@ -1,10 +1,12 @@
 package com.lightningkite.services.data
 
+import kotlinx.io.IOException
 import kotlinx.io.Sink
 import kotlinx.io.Source
 import kotlinx.io.buffered
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.files.FileMetadata
+import kotlinx.io.files.FileNotFoundException
 import kotlinx.io.files.FileSystem
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -60,8 +62,8 @@ public data class KFile(public val fileSystem: FileSystem, public val path: Path
         return fileSystem.list(path).map { KFile(fileSystem, it) }
     }
 
-    public fun writeText(string: String) = sink().use { it.writeString(string) }
-    public fun appendText(string: String) = sink(append = true).use { it.writeString(string) }
+    public fun writeString(string: String) = sink().use { it.writeString(string) }
+    public fun appendString(string: String) = sink(append = true).use { it.writeString(string) }
     public fun writeByteArray(byteArray: ByteArray) = sink().use { it.write(byteArray) }
     public fun appendByteArray(byteArray: ByteArray) = sink(append = true).use { it.write(byteArray) }
     public fun writeByteString(byteString: ByteString) = sink().use { it.write(byteString.toByteArray()) }
@@ -75,6 +77,19 @@ public data class KFile(public val fileSystem: FileSystem, public val path: Path
     public fun readByteStringOrNull(): ByteString? = if(exists()) readByteString() else null
 
     public fun takeIfExists(): KFile? = takeIf { fileSystem.exists(path) }
+    public fun copyTo(target: KFile, overwrite: Boolean = false): KFile {
+        val sourceMetadata = this.metadataOrNull() ?: throw FileNotFoundException("File '$this' does not exist.")
+        val targetMetadata = this.metadataOrNull()
+        if (targetMetadata != null && !overwrite)
+            throw FileAlreadyExistsException(target)
+        if (sourceMetadata.isDirectory) {
+            if (targetMetadata?.isRegularFile == true) throw FileAlreadyExistsException(target)
+            target.createDirectories()
+        } else {
+            target.sink().use { source().use { src -> it.transferFrom(src) } }
+        }
+        return target
+    }
 }
 
 public val FileSystem.root: KFile get() = KFile(this, Path("$SystemPathSeparator"))
@@ -84,5 +99,9 @@ public fun FileSystem.temporary(extension: String = "file", leading: String? = n
 )
 
 private fun sampleUsage() {
-    SystemFileSystem.root.then("Home", "Joseph", "sample.txt").writeText("Hello world!")
+    SystemFileSystem.root.then("Home", "Joseph", "sample.txt").writeString("Hello world!")
 }
+
+public class FileAlreadyExistsException(
+    file: KFile,
+) : IOException("The file '${file}' already exists.")
