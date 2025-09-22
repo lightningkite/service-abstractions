@@ -136,18 +136,17 @@ class TableGenerator(
                                 ).forEach(::append)
 
                                 for ((index, field) in fields.withIndex()) {
-                                    val serPropName = "field${
-                                        field.name.replaceFirstChar {
-                                            if (it.isLowerCase()) it.titlecase(
-                                                getDefault()
-                                            ) else it.toString()
-                                        }
-                                    }"
-                                    appendLine("public val <${declaration.typeParameters.joinToString(", ") {
+                                    val propName = field.name.replaceFirstChar {
+                                        if (it.isLowerCase()) it.titlecase(getDefault()) else it.toString()
+                                    }
+                                    val serPropName = "field$propName"
+
+                                    val prefix = declaration.safeLocalReference().camelCase()
+                                    appendLine("@get:JvmName(\"${prefix}_field_$propName\") public val <${declaration.typeParameters.joinToString(", ") {
                                         it.name.asString() + ": " + (it.bounds.firstOrNull()?.toKotlin() ?: "Any?")
                                     }}> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(this as GeneratedSerializer<$typeReference>, $index)")
                                     appendLine(
-                                        "@get:JvmName(\"path$serPropName\") public val <ROOT, ${
+                                        "@get:JvmName(\"${prefix}_path_$propName\") public val <ROOT, ${
                                             declaration.typeParameters.joinToString(", ") {
                                                 it.name.asString() + ": " + (it.bounds.firstOrNull()?.toKotlin() ?: "Any?")
                                             }

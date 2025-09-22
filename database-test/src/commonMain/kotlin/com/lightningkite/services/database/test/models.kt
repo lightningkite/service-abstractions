@@ -211,3 +211,17 @@ data class MetaTestModel(
     val modification: Modification<LargeTestModel>
 ) : HasId<Uuid> {
 }
+
+@GenerateDataClassPaths
+@Serializable
+data class HasGenerics<T>(
+    override val _id: Uuid,
+    val value: T
+) : HasId<Uuid>
+
+@GenerateDataClassPaths
+@Serializable
+data class HasGenerics2<T>(
+    override val _id: Uuid,
+    val value: T
+) : HasId<Uuid>

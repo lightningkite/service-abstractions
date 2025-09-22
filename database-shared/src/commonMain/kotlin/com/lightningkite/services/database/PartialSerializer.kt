@@ -31,7 +31,7 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
     private val innerDescriptor: SerialDescriptor by lazy {
         try {
             val sourceDescriptor = source.descriptor
-            buildClassSerialDescriptor("com.lightningkite.serialization.Partial", sourceDescriptor) {
+            buildClassSerialDescriptor("com.lightningkite.services.database.Partial", sourceDescriptor) {
                 if (sourceDescriptor.elementsCount != childSerializers.size) {
                     throw IllegalStateException("Mismatch in child serializer count; ${sourceDescriptor.elementsCount} vs ${childSerializers.size}; ${sourceDescriptor.elementNames.joinToString()} vs ${childSerializers.joinToString { it.descriptor.serialName }}")
                 }
@@ -59,7 +59,7 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
         }
     }
     override val descriptor: SerialDescriptor =
-        LazyRenamedSerialDescriptor("com.lightningkite.serialization.Partial") { innerDescriptor }
+        LazyRenamedSerialDescriptor("com.lightningkite.services.database.Partial") { innerDescriptor }
 
     override fun deserialize(decoder: Decoder): Partial<T> = decoder.decodeStructure(descriptor) {
         val out = HashMap<SerializableProperty<T, *>, Any?>()
