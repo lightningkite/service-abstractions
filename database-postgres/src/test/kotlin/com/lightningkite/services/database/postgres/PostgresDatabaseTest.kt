@@ -39,7 +39,7 @@ class BasicTest() {
 
     @Test fun schema2() {
         val db = Database.connect(pg.embeddedPostgres.postgresDatabase)
-        val collection = PostgresCollection(db, "LargeTestModel", LargeTestModel.serializer(), ClientModule)
+        val collection = PostgresCollection(db, "LargeTestModel", LargeTestModel.serializer(), EmptySerializersModule())
         runBlocking {
             // Quick test
             val t = LargeTestModel()
@@ -124,7 +124,7 @@ class PostgresRetrievalTest {
         @ClassRule @JvmField val postgres = EmbeddedPostgresRules.singleInstance()
     }
     val database: com.lightningkite.services.database.Database by lazy {
-        PostgresDatabase("test", TestSettingContext(ClientModule)){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
+        PostgresDatabase("test", TestSettingContext(EmptySerializersModule())){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
     }
     @kotlin.test.Test fun inout() = runTest {
         val collection = database.collection<LargeTestModel>("PostgresRetrievalTest")
@@ -197,7 +197,7 @@ class PostgresAggregationsTest : AggregationsTest() {
         @ClassRule @JvmField val postgres = EmbeddedPostgresRules.singleInstance()
     }
     override val database: com.lightningkite.services.database.Database by lazy {
-        PostgresDatabase("test", TestSettingContext(ClientModule)){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
+        PostgresDatabase("test", TestSettingContext(EmptySerializersModule())){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
     }
 }
 
@@ -206,7 +206,7 @@ class PostgresConditionTests : ConditionTests() {
         @ClassRule @JvmField val postgres = EmbeddedPostgresRules.singleInstance()
     }
     override val database: com.lightningkite.services.database.Database by lazy {
-        PostgresDatabase("test", TestSettingContext(ClientModule)){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
+        PostgresDatabase("test", TestSettingContext(EmptySerializersModule())){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
     }
 
     override fun test_geodistance_1() {
@@ -223,7 +223,7 @@ class PostgresModificationTests : ModificationTests() {
         @ClassRule @JvmField val postgres = EmbeddedPostgresRules.singleInstance()
     }
     override val database: com.lightningkite.services.database.Database by lazy {
-        PostgresDatabase("test", TestSettingContext(ClientModule)) { Database.connect(postgres.embeddedPostgres.postgresDatabase) }
+        PostgresDatabase("test", TestSettingContext(EmptySerializersModule())) { Database.connect(postgres.embeddedPostgres.postgresDatabase) }
     }
     override fun test_Map_modifyField() {
         // TODO: Make it work
@@ -243,6 +243,6 @@ class PostgresSortTest : SortTest() {
         @ClassRule @JvmField val postgres = EmbeddedPostgresRules.singleInstance()
     }
     override val database: com.lightningkite.services.database.Database by lazy {
-        PostgresDatabase("test", TestSettingContext(ClientModule)){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
+        PostgresDatabase("test", TestSettingContext(EmptySerializersModule())){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
     }
 }

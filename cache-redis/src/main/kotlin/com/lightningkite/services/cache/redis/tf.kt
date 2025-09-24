@@ -15,6 +15,7 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
     parameterGroupName: String = "default.redis7",
     count: Int = 1
 ): Unit {
+    if(!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
     emitter.fulfillSetting(
         name,
         JsonPrimitive(value = $$"redis://${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).address}:${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).port}/0")
@@ -56,6 +57,7 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
     maxStorageGb: Int = 10,
     snapshotRetentionLimit: Int = 1,
 ): Unit {
+    if(!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
     emitter.fulfillSetting(
         name,
         JsonPrimitive(value = $$"redis://${aws_elasticache_serverless_cache.$${name}.endpoint[0].address}:${aws_elasticache_serverless_cache.$${name}.endpoint[0].port}/0")

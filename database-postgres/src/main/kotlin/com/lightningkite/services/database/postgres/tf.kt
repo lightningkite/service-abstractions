@@ -19,6 +19,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     maxCapacity: Double = 2.0,
     autoPause: Boolean = true,
 ): Unit {
+    if(!Database.Settings.supports("postgresql")) throw IllegalArgumentException("You need to reference PostgresDatabase in your server definition to use this.")
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = $$"""
@@ -89,6 +90,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     maxCapacity: Int = 4,
     autoPause: Boolean = true,
 ): Unit {
+    if(!Database.Settings.supports("postgresql")) throw IllegalArgumentException("You need to reference PostgresDatabase in your server definition to use this.")
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = $$"""

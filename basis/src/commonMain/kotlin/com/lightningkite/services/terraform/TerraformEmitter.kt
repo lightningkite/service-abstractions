@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.KSerializer
 
 public interface TerraformEmitter {
     public val projectPrefix: String
@@ -13,6 +14,7 @@ public interface TerraformEmitter {
     public fun require(provider: TerraformProvider)
     public fun emit(context: String? = null, action: TerraformJsonObject.()->Unit)
     public fun fulfillSetting(settingName: String, element: JsonElement)
+    public fun variable(need: TerraformNeed<*>)
 }
 
 public class TerraformAwsVpcInfo(
@@ -53,8 +55,9 @@ public inline fun <reified T> TerraformNeed<T>.direct(value: T): Unit = with(emi
 
 context(emitter: TerraformEmitter)
 public inline fun <reified T> TerraformNeed<T>.byVariable(): Unit = with(emitter) {
+    variable(this@byVariable)
     emit("variables") {
-        "var.$name" {}
+        "variable.$name" {}
     }
     fulfillSetting(name, JsonPrimitive(TerraformJsonObject.expression("var.$name")))
 }

@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonPrimitive
 context(emitter: TerraformEmitterAwsDomain) public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
     reportingEmail: EmailAddress,
 ): Unit {
+    if(!EmailService.Settings.supports("smtp")) throw IllegalArgumentException("You need to reference JavaSmtpEmailService in your server definition to use this.")
     emitter.fulfillSetting(name, JsonPrimitive(
             value = $$"""
         smtp://${aws_iam_access_key.$${name}.id}:${aws_iam_access_key.$${name}.ses_smtp_password_v4}@email-smtp.$${emitter.applicationRegion}.amazonaws.com:587?fromEmail=noreply@$${emitter.domain}

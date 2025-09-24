@@ -23,6 +23,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.
     signedUrlDuration: Duration? = null,
     forceDestroy: Boolean = true,
 ): Unit {
+    if(!PublicFileSystem.Settings.supports("s3")) throw IllegalArgumentException("You need to reference S3PublicFileSystem in your server definition to use this.")
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = if (signedUrlDuration == null) {

@@ -19,9 +19,6 @@ import kotlinx.datetime.serializers.LocalTimeIso8601Serializer
 import java.util.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.data.Index
-import com.lightningkite.services.database.DurationSerializer
-import com.lightningkite.services.database.InstantIso8601Serializer
-import com.lightningkite.services.database.UUIDSerializer
 import kotlinx.serialization.builtins.serializer
 
 internal class SerialDescriptorTable(

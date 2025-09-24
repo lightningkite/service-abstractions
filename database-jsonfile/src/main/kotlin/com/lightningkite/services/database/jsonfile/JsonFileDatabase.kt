@@ -53,9 +53,6 @@ public class JsonFileDatabase(
                 val fileName = name.filter { it.isLetterOrDigit() }
                 val oldStyle = folder.then(fileName)
                 val storage = folder.then("$fileName.json")
-                println("oldStyle: $oldStyle")
-                println("folder: $folder")
-                println("storage: $storage")
                 if (oldStyle.exists() && !storage.exists())
                     storage.sink(append = false).buffered().use { sink ->
                         oldStyle.source().buffered().use { source ->

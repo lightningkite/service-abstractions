@@ -42,7 +42,7 @@ public class ExternalServerFileSerializer(
     @OptIn(ExperimentalSerializationApi::class)
     override val descriptor: SerialDescriptor = object : SerialDescriptor {
         override val kind: SerialKind = PrimitiveKind.STRING
-        override val serialName: String = "com.lightningkite.lightningserver.files.ServerFile/external"
+        override val serialName: String = "com.lightningkite.services.files.ServerFile"
         override val elementsCount: Int get() = 0
         override fun getElementName(index: Int): String = error()
         override fun getElementIndex(name: String): Int = error()

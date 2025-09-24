@@ -37,4 +37,12 @@ public object DirectServerFileSerializer : KSerializer<ServerFile> {
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-public object DeferToContextualServerFileSerializer: KSerializer<ServerFile> by ContextualSerializer<ServerFile>(ServerFile::class, DirectServerFileSerializer, arrayOf())
+public object DeferToContextualServerFileSerializer: KSerializer<ServerFile> {
+    private val c = ContextualSerializer<ServerFile>(ServerFile::class, DirectServerFileSerializer, arrayOf())
+    override val descriptor: SerialDescriptor = SerialDescriptor("com.lightningkite.services.files.ServerFile", c.descriptor)
+    override fun deserialize(decoder: Decoder): ServerFile = c.deserialize(decoder)
+    override fun serialize(
+        encoder: Encoder,
+        value: ServerFile
+    ): Unit = c.serialize(encoder, value)
+}

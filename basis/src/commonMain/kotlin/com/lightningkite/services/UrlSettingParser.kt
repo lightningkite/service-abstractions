@@ -7,6 +7,9 @@ public abstract class UrlSettingParser<T> {
         if(key in handlers) throw Error("Key $key already registered for ${this::class}.  This could be an attempt from a hostile library to control a particular implementation.")
         handlers[key] = handler
     }
+    public fun supports(schema: String): Boolean {
+        return schema in options
+    }
 
     public fun parse(name: String, url: String, module: SettingContext): T {
         val key = url.substringBefore("://")

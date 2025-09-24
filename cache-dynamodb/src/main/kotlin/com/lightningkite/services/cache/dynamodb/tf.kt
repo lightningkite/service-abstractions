@@ -11,5 +11,6 @@ import kotlinx.serialization.json.JsonPrimitive
 @Untested
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsDynamoDb(
 ): Unit {
+    if(!Cache.Settings.supports("dynamodb")) throw IllegalArgumentException("You need to reference 'DynamoDbCache' in your server definition to use this.")
     emitter.fulfillSetting(name, JsonPrimitive("dynamodb://${emitter.applicationRegion}/${emitter.projectPrefix.replace('-', '_')}"))
 }

@@ -116,7 +116,7 @@ private object FakerDecoder : AbstractDecoder() {
 
 private class CheatingBastardDecoder(
     var count: Int = 0,
-    override val serializersModule: SerializersModule = ClientModule
+    override val serializersModule: SerializersModule = EmptySerializersModule()
 ) : AbstractDecoder() {
     var counter = 0
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int {

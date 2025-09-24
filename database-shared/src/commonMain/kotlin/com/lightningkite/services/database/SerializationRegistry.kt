@@ -1,6 +1,11 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.*
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.Month
+import kotlinx.datetime.TimeZone
 import kotlinx.datetime.serializers.MonthSerializer
 import kotlinx.datetime.serializers.TimeZoneSerializer
 import kotlinx.serialization.*
@@ -10,10 +15,12 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.internal.GeneratedSerializer
+import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.SerializersModuleCollector
 import kotlin.reflect.KClass
 import kotlin.time.Duration
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -33,7 +40,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
 
     public companion object {
         public var permitCustomContextual: Boolean = false
-        public val master: SerializationRegistry = SerializationRegistry(ClientModule)
+        public val master: SerializationRegistry = SerializationRegistry(EmptySerializersModule())
     }
 
     init {
@@ -73,16 +80,20 @@ public class SerializationRegistry(public val module: SerializersModule) {
 
     public fun register(serializer: KSerializer<*>) {
 //        println("$this Registered ${serializer.descriptor.serialName}")
+        if(direct.containsKey(serializer.descriptor.serialName)) return
         direct[serializer.descriptor.serialName] = serializer
     }
 
     public fun register(name: String, make: (Array<KSerializer<Nothing>>) -> KSerializer<*>) {
 //        println("$this Registered $name")
+        if(factory.containsKey(name)) return
         @Suppress("UNCHECKED_CAST")
         factory[name] = make as (Array<KSerializer<*>>) -> KSerializer<*>
     }
 
     public fun <T : VirtualType> register(type: T): T {
+        if(direct.containsKey(type.serialName)) return type
+        if(factory.containsKey(type.serialName)) return type
         internalVirtualTypes[type.serialName] = type
         when (type) {
             is VirtualEnum -> direct[type.serialName] = type
@@ -115,29 +126,16 @@ public class SerializationRegistry(public val module: SerializersModule) {
         register(Char.serializer())
         register(String.serializer())
         register(Duration.serializer())
-        register(MonthSerializer)
-        register(TimeZoneSerializer)
-        register(kotlin.time.Instant.serializer())
-        register(InstantIso8601Serializer)
-        register(LocalDateIso8601Serializer)
-        register(LocalTimeIso8601Serializer)
-        register(LocalDateTimeIso8601Serializer)
-        register(kotlinx.datetime.serializers.LocalDateIso8601Serializer)
-        register(kotlinx.datetime.serializers.LocalTimeIso8601Serializer)
-        register(kotlinx.datetime.serializers.LocalDateTimeIso8601Serializer)
-        register(UUIDSerializer)
+//        register(Month.serializer())
+        register(TimeZone.serializer())
+        register(Instant.serializer())
+        register(LocalDate.serializer())
+        register(LocalTime.serializer())
+        register(LocalDateTime.serializer())
+        register(DurationMsSerializer)
         register(kotlin.uuid.Uuid.serializer())
         register(OffsetDateTimeIso8601Serializer)
         register(ZonedDateTimeIso8601Serializer)
-        register(GeoCoordinateArraySerializer)
-        register(TrimOnSerialize)
-        register(TrimLowercaseOnSerialize)
-        register(LowercaseOnSerialize)
-        register(TrimmedStringSerializer)
-        register(TrimmedCaselessStringSerializer)
-        register(CaselessStringSerializer)
-        register(EmailAddressSerializer)
-        register(PhoneNumberSerializer)
         register(ListSerializer(NothingSerializer()).descriptor.serialName) { ListSerializer(it[0]) }
         register(SetSerializer(NothingSerializer()).descriptor.serialName) { SetSerializer(it[0]) }
         register(MapSerializer(NothingSerializer(), NothingSerializer()).descriptor.serialName) {
@@ -174,25 +172,31 @@ public class SerializationRegistry(public val module: SerializersModule) {
         ) { TripleSerializer(it[0], it[1], it[2]) }
         register(ClosedRangeSerializer(NothingSerializer()).descriptor.serialName) { ClosedRangeSerializer(it[0]) }
 
-        register(com.lightningkite.GeoCoordinateGeoJsonSerializer)
-        register(com.lightningkite.GeoCoordinateArraySerializer)
+        register(com.lightningkite.GeoCoordinate.serializer())
         register(com.lightningkite.TrimmedString.serializer())
         register(com.lightningkite.CaselessString.serializer())
         register(com.lightningkite.TrimmedCaselessString.serializer())
         register(com.lightningkite.EmailAddress.serializer())
         register(com.lightningkite.PhoneNumber.serializer())
+        register(com.lightningkite.ZonedDateTime.serializer())
+        register(com.lightningkite.OffsetDateTime.serializer())
         register(com.lightningkite.Length.serializer())
         register(com.lightningkite.Area.serializer())
-        register(com.lightningkite.DataSize.serializer())
+        register(com.lightningkite.Volume.serializer())
         register(com.lightningkite.Mass.serializer())
         register(com.lightningkite.Speed.serializer())
         register(com.lightningkite.Acceleration.serializer())
         register(com.lightningkite.Force.serializer())
+        register(com.lightningkite.Pressure.serializer())
         register(com.lightningkite.Energy.serializer())
         register(com.lightningkite.Power.serializer())
-        register(Uuid.serializer())
-        register(com.lightningkite.ZonedDateTime.serializer())
-        register(com.lightningkite.OffsetDateTime.serializer())
+        register(com.lightningkite.Temperature.serializer())
+        register(com.lightningkite.RelativeTemperature.serializer())
+        register(com.lightningkite.DataSize.serializer())
+
+        register(com.lightningkite.services.data.ValidationIssue.serializer())
+        register(com.lightningkite.services.data.ValidationIssuePart.serializer())
+
         register(com.lightningkite.services.database.Aggregate.serializer())
         register(com.lightningkite.services.database.CollectionChanges.serializer(NothingSerializer()).descriptor.serialName) { com.lightningkite.services.database.CollectionChanges.serializer(it[0]) }
         register(com.lightningkite.services.database.CollectionUpdates.serializer(NothingSerializer(), NothingSerializer()).descriptor.serialName) { com.lightningkite.services.database.CollectionUpdates.serializer(it[0], it[1]) }
@@ -290,20 +294,6 @@ public class SerializationRegistry(public val module: SerializersModule) {
         register(com.lightningkite.services.database.SerializableAnnotationValue.StringValue.serializer())
         register(com.lightningkite.services.database.SerializableAnnotationValue.ClassValue.serializer())
         register(com.lightningkite.services.database.SerializableAnnotationValue.ArrayValue.serializer())
-        register(com.lightningkite.Length.serializer())
-        register(com.lightningkite.Area.serializer())
-        register(com.lightningkite.Volume.serializer())
-        register(com.lightningkite.Mass.serializer())
-        register(com.lightningkite.Speed.serializer())
-        register(com.lightningkite.Acceleration.serializer())
-        register(com.lightningkite.Force.serializer())
-        register(com.lightningkite.Pressure.serializer())
-        register(com.lightningkite.Energy.serializer())
-        register(com.lightningkite.Power.serializer())
-        register(com.lightningkite.Temperature.serializer())
-        register(com.lightningkite.RelativeTemperature.serializer())
-        register(com.lightningkite.services.data.ValidationIssue.serializer())
-        register(com.lightningkite.services.data.ValidationIssuePart.serializer())
     }
 
     private class GenericPlaceholderSerializer(val infoSource: String, val index: Int = 0) : KSerializer<Nothing> {

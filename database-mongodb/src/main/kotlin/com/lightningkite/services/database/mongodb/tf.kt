@@ -20,6 +20,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     continuousBackupEnabled: Boolean,
     existingProjectId: String? = null,
 ): Unit {
+    if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = $$"""
@@ -100,6 +101,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     maxSize: String = "M40",
     existingProjectId: String? = null,
 ): Unit {
+    if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     emitter.fulfillSetting(
         this@mongodbAtlas.name, JsonPrimitive(
             value = $$"""
@@ -251,6 +253,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     zoneName: String? = null,
     existingProjectId: String? = null,
 ): Unit {
+    if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     emitter.fulfillSetting(
         this@mongodbAtlasFree.name, JsonPrimitive(
             value = $$"""
@@ -345,6 +348,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     zoneName: String? = null,
     existingProjectId: String? = null,
 ): Unit {
+    if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = $$"""

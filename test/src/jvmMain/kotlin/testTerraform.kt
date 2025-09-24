@@ -62,6 +62,11 @@ open class TerraformEmitterAwsTest<S>(
         settings[settingName] = element
     }
 
+    val variables = ArrayList<TerraformNeed<*>>()
+    override fun variable(need: TerraformNeed<*>) {
+        variables += need
+    }
+
     override val applicationRegion: String
         get() = "us-west-2"
 

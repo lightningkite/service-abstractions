@@ -33,6 +33,11 @@ public data class KFile(public val fileSystem: FileSystem, public val path: Path
     public val resolved: KFile get() = KFile(fileSystem, fileSystem.resolve(path))
 
     public fun then(vararg parts: String): KFile = KFile(fileSystem, Path(path, *parts))
+    public fun withAlteredName(alter: (String)->String): KFile = KFile(
+        fileSystem = fileSystem,
+        path = path.parent?.let { Path(it, alter(name)) } ?: Path(alter(name))
+    )
+    public fun withAlteredExtension(alter: (String)->String): KFile = withAlteredName { it.substringBeforeLast('.') + "." + alter(it.substringAfterLast('.')) }
 
     public fun resolve(string: String) = then(*string.split('/').toTypedArray())
 

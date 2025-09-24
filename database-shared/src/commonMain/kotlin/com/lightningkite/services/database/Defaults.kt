@@ -11,6 +11,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -27,17 +28,11 @@ internal object DefaultDecoder : Decoder {
     private val defaults = HashMap<String, Any?>()
 
     init {
-        defaults[UUIDSerializer.descriptor.serialName] = Uuid.NIL
         defaults[Uuid.serializer().descriptor.serialName] = Uuid.NIL
-        defaults[InstantIso8601Serializer.descriptor.serialName] = Instant.fromEpochMilliseconds(0)
         defaults[Instant.serializer().descriptor.serialName] = Instant.fromEpochMilliseconds(0)
-        defaults[LocalTimeIso8601Serializer.descriptor.serialName] = LocalTime(0, 0, 0)
-        defaults[LocalDateIso8601Serializer.descriptor.serialName] = LocalDate(1970, 1, 1)
-        defaults[LocalDateTimeIso8601Serializer.descriptor.serialName] = LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
-        defaults[kotlinx.datetime.serializers.LocalTimeIso8601Serializer.descriptor.serialName] = LocalTime(0, 0, 0)
-        defaults[kotlinx.datetime.serializers.LocalDateIso8601Serializer.descriptor.serialName] = LocalDate(1970, 1, 1)
-        defaults[kotlinx.datetime.serializers.LocalDateTimeIso8601Serializer.descriptor.serialName] = LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
-        defaults[DurationSerializer.descriptor.serialName] = 0.seconds
+        defaults[LocalTime.serializer().descriptor.serialName] = LocalTime(0, 0, 0)
+        defaults[LocalDate.serializer().descriptor.serialName] = LocalDate(1970, 1, 1)
+        defaults[LocalDateTime.serializer().descriptor.serialName] = LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
         defaults[Duration.serializer().descriptor.serialName] = 0.seconds
         defaults[DurationMsSerializer.descriptor.serialName] = 0.seconds
         defaults[ZonedDateTimeIso8601Serializer.descriptor.serialName] = ZonedDateTime(LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0)), TimeZone.UTC)
@@ -49,7 +44,7 @@ internal object DefaultDecoder : Decoder {
         defaults[PhoneNumberSerializer.descriptor.serialName] = "+18000000000".toPhoneNumber()
     }
 
-    override var serializersModule: SerializersModule = ClientModule
+    override var serializersModule: SerializersModule = EmptySerializersModule()
     internal val json by lazy { Json { serializersModule = DefaultDecoder.serializersModule; encodeDefaults = true } }
     override fun decodeBoolean(): Boolean = false
     override fun decodeByte(): Byte = 0.toByte()

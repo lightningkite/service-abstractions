@@ -16,19 +16,6 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 
-public object UUIDSerializer : KSerializer<Uuid> {
-    override fun deserialize(decoder: Decoder): Uuid = try {
-        Uuid.parse(decoder.decodeString())
-    } catch (e: IllegalArgumentException) {
-        throw SerializationException(e.message)
-    }
-
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("kotlin.uuid.Uuid/default", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: Uuid): Unit = encoder.encodeString(value.toString())
-}
-
 public object DurationMsSerializer : KSerializer<Duration> {
     override fun deserialize(decoder: Decoder): Duration =
         try {
@@ -41,85 +28,6 @@ public object DurationMsSerializer : KSerializer<Duration> {
         PrimitiveSerialDescriptor("kotlin.time.Duration/milliseconds", PrimitiveKind.LONG)
 
     override fun serialize(encoder: Encoder, value: Duration): Unit = encoder.encodeLong(value.inWholeMilliseconds)
-}
-
-public object DurationSerializer : KSerializer<Duration> {
-    override fun deserialize(decoder: Decoder): Duration =
-        try {
-            Duration.parse(decoder.decodeString())
-        } catch (e: IllegalArgumentException) {
-            throw SerializationException(e.message)
-        }
-
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("kotlin.time.Duration/loose", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: Duration): Unit = encoder.encodeString(value.toString())
-}
-
-public object InstantIso8601Serializer : KSerializer<Instant> {
-
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("kotlin.time.Instant/loose", PrimitiveKind.STRING)
-
-    override fun deserialize(decoder: Decoder): Instant =
-        try {
-            Instant.parse(decoder.decodeString())
-        } catch (e: IllegalArgumentException) {
-            throw SerializationException(e.message)
-        }
-
-    override fun serialize(encoder: Encoder, value: Instant): Unit = encoder.encodeString(value.toString())
-
-}
-
-public object LocalDateIso8601Serializer : KSerializer<LocalDate> {
-
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("kotlinx.datetime.LocalDate/loose", PrimitiveKind.STRING)
-
-    override fun deserialize(decoder: Decoder): LocalDate =
-        try {
-            LocalDate.parse(decoder.decodeString())
-        } catch (e: IllegalArgumentException) {
-            throw SerializationException(e.message)
-        }
-
-    override fun serialize(encoder: Encoder, value: LocalDate): Unit = encoder.encodeString(value.toString())
-
-}
-
-public object LocalTimeIso8601Serializer : KSerializer<LocalTime> {
-
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("kotlinx.datetime.LocalTime/loose", PrimitiveKind.STRING)
-
-    override fun deserialize(decoder: Decoder): LocalTime =
-        try {
-            LocalTime.parse(decoder.decodeString())
-        } catch (e: IllegalArgumentException) {
-            throw SerializationException(e.message)
-        }
-
-    override fun serialize(encoder: Encoder, value: LocalTime): Unit = encoder.encodeString(value.toString())
-
-}
-
-public object LocalDateTimeIso8601Serializer : KSerializer<LocalDateTime> {
-
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("kotlinx.datetime.LocalDateTime/loose", PrimitiveKind.STRING)
-
-    override fun deserialize(decoder: Decoder): LocalDateTime =
-        try {
-            LocalDateTime.parse(decoder.decodeString())
-        } catch (e: IllegalArgumentException) {
-            throw SerializationException(e.message)
-        }
-
-    override fun serialize(encoder: Encoder, value: LocalDateTime): Unit =
-        encoder.encodeString(value.toString())
-
 }
 
 public class ClosedRangeSerializer<T : Comparable<T>>(private val inner: KSerializer<T>) : KSerializer<ClosedRange<T>> {
