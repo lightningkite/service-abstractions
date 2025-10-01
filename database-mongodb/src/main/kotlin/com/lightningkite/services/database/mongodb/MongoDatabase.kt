@@ -46,7 +46,7 @@ public class MongoDatabase(
             ?: emptyMap()
 
         public fun Database.Settings.Companion.mongoDb(connectionString: String): Database.Settings = Database.Settings(connectionString)
-        public fun Database.Settings.Companion.mongoDbTest(version: String? = null): Database.Settings = Database.Settings("mongodb-test://?mongoVersion=$version")
+        public fun Database.Settings.Companion.mongoDbTest(version: String? = null): Database.Settings = Database.Settings("mongodb-test://?version=$version")
         public fun Database.Settings.Companion.mongoDbFile(folder: String, port: Int? = null, databaseName: String? = null): Database.Settings =
             Database.Settings("mongodb-file://$folder?port=$port&databaseName=$databaseName")
 
@@ -97,12 +97,12 @@ public class MongoDatabase(
                         MongoDatabase(
                             name = name,
                             databaseName = "default",
-                            clientSettings = testMongo(version = params?.get("mongoVersion")?.firstOrNull()),
+                            clientSettings = testMongo(version = (params?.get("version") ?: params?.get("mongoVersion"))?.firstOrNull()),
                             atlasSearch = false,
                             context = context
                         )
                     }
-                    ?: throw IllegalStateException("Invalid mongodb-test URL. The URL should match the pattern: mongodb-test://?[params]\nAvailable params are: mongoVersion")
+                    ?: throw IllegalStateException("Invalid mongodb-test URL. The URL should match the pattern: mongodb-test://?[params]\nAvailable params are: version")
             }
             Database.Settings.register("mongodb-file") { name, url, context ->
                 Regex("""mongodb-file://(?<folder>[^?]+)(?:\?(?<params>.*))?""")
@@ -118,13 +118,13 @@ public class MongoDatabase(
                             clientSettings = embeddedMongo(
                                 databaseFolder = File(folder),
                                 port = params?.get("port")?.firstOrNull()?.toIntOrNull(),
-                                version = params?.get("mongoVersion")?.firstOrNull(),
+                                version = (params?.get("version") ?: params?.get("mongoVersion"))?.firstOrNull(),
                             ),
                             atlasSearch = false,
                             context = context
                         )
                     }
-                    ?: throw IllegalStateException("Invalid mongodb-file URL. The URL should match the pattern: mongodb-file://[FolderPath]?[params]\nAvailable params are: mongoVersion, port, databaseName")
+                    ?: throw IllegalStateException("Invalid mongodb-file URL. The URL should match the pattern: mongodb-file://[FolderPath]?[params]\nAvailable params are: databaseName, version, port")
             }
         }
     }
