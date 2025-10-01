@@ -45,6 +45,10 @@ public interface SerializableProperty<A, B> {
                 index
             ).mapNotNull { SerializableAnnotation.parseOrNull(it) }
         }
+
+        override fun toString(): String = parent.descriptor.serialName + "." + name
+        override fun hashCode(): Int = parent.descriptor.serialName.hashCode() + index
+        override fun equals(other: Any?): Boolean = other is Generated<*, *> && other.parent == parent && other.index == index
     }
 
     public class FromVirtualField(
@@ -61,6 +65,10 @@ public interface SerializableProperty<A, B> {
             VirtualInstance(receiver.type, receiver.values.toMutableList().also {
                 it[source.index] = value
             })
+
+        override fun toString(): String = source.name
+        override fun hashCode(): Int = source.hashCode()
+        override fun equals(other: Any?): Boolean = other is FromVirtualField && other.source == source
     }
 }
 
