@@ -2,11 +2,7 @@ package com.lightningkite.services.otel
 
 import ch.qos.logback.classic.LoggerContext
 import ch.qos.logback.core.ConsoleAppender
-import com.lightningkite.services.HasUrl
-import com.lightningkite.services.HasUrlSettingParser
-import com.lightningkite.services.OpenTelemetry
-import com.lightningkite.services.Setting
-import com.lightningkite.services.SettingContext
+import com.lightningkite.services.*
 import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
 import io.opentelemetry.context.propagation.ContextPropagators
@@ -16,8 +12,6 @@ import io.opentelemetry.exporter.logging.SystemOutLogRecordExporter
 import io.opentelemetry.exporter.otlp.http.logs.OtlpHttpLogRecordExporter
 import io.opentelemetry.exporter.otlp.http.metrics.OtlpHttpMetricExporter
 import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter
-import kotlinx.serialization.Serializable
-import org.slf4j.LoggerFactory
 import io.opentelemetry.exporter.otlp.logs.OtlpGrpcLogRecordExporter
 import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter
 import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter
@@ -37,9 +31,10 @@ import io.opentelemetry.sdk.trace.SdkTracerProviderBuilder
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import io.opentelemetry.sdk.trace.export.SpanExporter
+import kotlinx.serialization.Serializable
 import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import java.util.concurrent.TimeUnit
-import kotlin.apply
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -62,6 +57,7 @@ public data class OpenTelemetrySettings(
             } ?: SimpleSpanProcessor.create(exporter)
         )
     }
+
     private fun builder(exporter: LogRecordExporter) = SdkLoggerProvider.builder().addLogRecordProcessor(
         metricReportFrequency?.let {
             BatchLogRecordProcessor.builder(
@@ -70,6 +66,7 @@ public data class OpenTelemetrySettings(
         } ?: SimpleLogRecordProcessor.create(exporter)
 
     )
+
     private fun builder(exporter: MetricExporter): SdkMeterProviderBuilder {
         return SdkMeterProvider.builder().registerMetricReader(
             (metricReportFrequency ?: 5.seconds).let {
@@ -88,17 +85,26 @@ public data class OpenTelemetrySettings(
                     Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
                 val telemetry = OpenTelemetrySdk.builder()
                     .setTracerProvider(
-                        setting.builder(OtlpGrpcSpanExporter.builder().setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build())
+                        setting.builder(
+                            OtlpGrpcSpanExporter.builder()
+                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                        )
                             .setResource(resource)
                             .build()
                     )
                     .setMeterProvider(
-                        setting.builder(OtlpGrpcMetricExporter.builder().setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build())
+                        setting.builder(
+                            OtlpGrpcMetricExporter.builder()
+                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                        )
                             .setResource(resource)
                             .build()
                     )
                     .setLoggerProvider(
-                        setting.builder(OtlpGrpcLogRecordExporter.builder().setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build())
+                        setting.builder(
+                            OtlpGrpcLogRecordExporter.builder()
+                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                        )
                             .setResource(resource)
                             .build()
                     )
@@ -112,17 +118,26 @@ public data class OpenTelemetrySettings(
                     Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
                 val telemetry = OpenTelemetrySdk.builder()
                     .setTracerProvider(
-                        setting.builder(OtlpHttpSpanExporter.builder().setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build())
+                        setting.builder(
+                            OtlpHttpSpanExporter.builder()
+                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                        )
                             .setResource(resource)
                             .build()
                     )
                     .setMeterProvider(
-                        setting.builder(OtlpHttpMetricExporter.builder().setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build())
+                        setting.builder(
+                            OtlpHttpMetricExporter.builder()
+                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                        )
                             .setResource(resource)
                             .build()
                     )
                     .setLoggerProvider(
-                        setting.builder(OtlpHttpLogRecordExporter.builder().setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build())
+                        setting.builder(
+                            OtlpHttpLogRecordExporter.builder()
+                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                        )
                             .setResource(resource)
                             .build()
                     )
@@ -131,7 +146,7 @@ public data class OpenTelemetrySettings(
                 otelLoggingSetup(telemetry)
                 telemetry
             }
-            this.register("print") { name: String, setting: OpenTelemetrySettings, context ->
+            this.register("console") { name: String, setting: OpenTelemetrySettings, context ->
                 val resource = Resource.create(
                     Attributes.builder()
                         .put(/*ResourceAttributes.SERVICE_NAME*/"service.name", "opentelemetry-tests")
@@ -206,10 +221,10 @@ public data class OpenTelemetrySettings(
 }
 
 private fun otelLoggingSetup(telemetry: OpenTelemetrySdk?) {
-    (LoggerFactory.getILoggerFactory() as LoggerContext).apply {
-        getLogger(Logger.ROOT_LOGGER_NAME).apply {
+    (LoggerFactory.getILoggerFactory() as LoggerContext).apply logCtx@{
+        getLogger("OpenTelemetry").apply {
             addAppender(OpenTelemetryAppender().apply {
-                this.context = LoggerFactory.getILoggerFactory() as LoggerContext
+                this.context = this@logCtx
                 this.name = "OpenTelemetry"
                 start()
             })

@@ -205,8 +205,7 @@ public class KotlinxIoPublicFileSystem(
                 MediaType.fromExtension(kfile.path.name.substringAfterLast('.', ""))
             }
 
-            val source = kfile.source()
-            return TypedData(Data.Source(source.buffered()), mediaType)
+            return TypedData(Data.Source(kfile.source().buffered(), kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1), mediaType)
         }
 
         override suspend fun delete() {

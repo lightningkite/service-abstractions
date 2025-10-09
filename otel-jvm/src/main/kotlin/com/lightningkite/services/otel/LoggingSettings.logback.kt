@@ -10,33 +10,38 @@ import ch.qos.logback.core.rolling.RollingFileAppender
 import ch.qos.logback.core.rolling.TimeBasedRollingPolicy
 import com.lightningkite.services.LoggingSettings
 import org.slf4j.LoggerFactory
-import kotlin.collections.iterator
 
 public fun LoggingSettings.applyToLogback() {
     val logCtx: LoggerContext = LoggerFactory.getILoggerFactory() as LoggerContext
-    logCtx.getLogger(Logger.ROOT_LOGGER_NAME).detachAndStopAllAppenders()
-    default?.apply(Logger.ROOT_LOGGER_NAME, logCtx.getLogger(Logger.ROOT_LOGGER_NAME))
+    logCtx.getLogger(Logger.ROOT_LOGGER_NAME).apply {
+        detachAndStopAllAppenders()
+        default?.apply(Logger.ROOT_LOGGER_NAME, this)
+    }
     for (sub in (logger ?: mapOf())) {
-        sub.value.apply(sub.key, logCtx.getLogger(sub.key))
+        sub.value.apply(sub.key, logCtx.getLogger(sub.key), logCtx)
     }
 }
 
 
-private fun LoggingSettings.ContextSettings.apply(partName: String, to: Logger) {
+private fun LoggingSettings.ContextSettings.apply(
+    partName: String,
+    to: Logger,
+    logCtx: LoggerContext = LoggerFactory.getILoggerFactory() as LoggerContext,
+) {
     to.isAdditive = additive
     to.level = Level.toLevel(level.toInt())
     if (filePattern?.isNotBlank() == true) {
         to.addAppender(RollingFileAppender<ILoggingEvent>().apply rolling@{
-            context = LoggerFactory.getILoggerFactory() as LoggerContext
+            context = logCtx
             name = partName
             encoder = PatternLayoutEncoder().apply {
-                context = LoggerFactory.getILoggerFactory() as LoggerContext
+                context = logCtx
                 pattern = "%-12date{YYYY-MM-dd HH:mm:ss.SSS} %-5level %logger - %msg%n"
                 start()
             }
             isAppend = true
             rollingPolicy = TimeBasedRollingPolicy<ILoggingEvent>().apply {
-                context = LoggerFactory.getILoggerFactory() as LoggerContext
+                context = logCtx
                 setParent(this@rolling);
                 fileNamePattern = filePattern;
                 maxHistory = 7;
@@ -47,10 +52,10 @@ private fun LoggingSettings.ContextSettings.apply(partName: String, to: Logger) 
     }
     if (toConsole) {
         to.addAppender(ConsoleAppender<ILoggingEvent>().apply {
-            context = LoggerFactory.getILoggerFactory() as LoggerContext
+            context = logCtx
             name = partName + "Console"
             encoder = PatternLayoutEncoder().apply {
-                context = LoggerFactory.getILoggerFactory() as LoggerContext
+                context = logCtx
                 pattern = "%-12date{YYYY-MM-dd HH:mm:ss.SSS} %-5level %logger - %msg%n"
                 start()
             }
