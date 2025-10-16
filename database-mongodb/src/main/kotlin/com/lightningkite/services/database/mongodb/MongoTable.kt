@@ -585,10 +585,10 @@ public class MongoTable<Model : Any>(
                             }
                         }
                     }
-                } else if (it.unique) {
+                } else  {
                     requireCompletion += launch {
-                        val keys = Sorts.ascending(it.fields)
-                        val options = IndexOptions().unique(true).name(it.name)
+                        val keys = Sorts.orderBy(it.fields.map { field -> if(field.startsWith('-')) Sorts.descending(field.drop(1)) else Sorts.ascending(field) })
+                        val options = IndexOptions().unique(it.unique).background(!it.unique).name(it.name)
                         try {
                             createIndex(keys, options)
                         } catch (e: MongoCommandException) {
@@ -599,35 +599,11 @@ public class MongoTable<Model : Any>(
                                     createIndex(keys, options)
                                 } catch (e2: MongoCommandException) {
                                     context.report { Exception(
-                                        "Creating unique index failed on ${this@prepare.namespace.fullName}",
+                                        "Creating ${if(it.unique) "unique " else ""}index failed on ${this@prepare.namespace.fullName}",
                                         e
                                     ) }
                                     context.report { Exception(
-                                        "Creating unique index failed on ${this@prepare.namespace.fullName} even after attempted removal",
-                                        e2
-                                    ) }
-                                }
-                            } else {
-                                context.report { e }
-                            }
-                        }
-                    }
-                } else {
-                    launch {
-                        val keys = Sorts.ascending(it.fields)
-                        val options = IndexOptions().unique(false).background(true).name(it.name)
-                        try {
-                            createIndex(keys, options)
-                        } catch (e: MongoCommandException) {
-                            // Reform index if it already exists but with some difference in options
-                            if (e.errorCode == 85) {
-                                try {
-                                    dropIndex(keys)
-                                    createIndex(keys, options)
-                                } catch (e2: MongoCommandException) {
-                                    context.report { Exception("Creating index failed on ${this@prepare.namespace.fullName}", e) }
-                                    context.report { Exception(
-                                        "Creating index failed on ${this@prepare.namespace.fullName} even after attempted removal",
+                                        "Creating ${if(it.unique) "unique " else ""}index failed on ${this@prepare.namespace.fullName} even after attempted removal",
                                         e2
                                     ) }
                                 }
@@ -638,7 +614,7 @@ public class MongoTable<Model : Any>(
                     }
                 }
             }
-            requireCompletion.forEach { it.join() }
+            requireCompletion.joinAll()
         }
         preparedAlready = true
     }

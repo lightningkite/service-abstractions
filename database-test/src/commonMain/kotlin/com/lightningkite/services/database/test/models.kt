@@ -15,8 +15,8 @@ import kotlin.time.Instant
 @Serializable
 data class User(
     override val _id: Uuid = Uuid.random(),
-    @Unique override var email: String,
-    @Unique override val phoneNumber: String,
+    @Index(unique = true) override var email: String,
+    @Index(unique = true) override val phoneNumber: String,
     var age: Long = 0,
     var friends: List<Uuid> = listOf()
 ) : HasId<Uuid>, HasEmail, HasPhoneNumber {

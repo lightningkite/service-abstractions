@@ -56,31 +56,15 @@ internal class SerialDescriptorTable(
             if (!seen.add(descriptor)) return
             descriptor.annotations.forEach {
                 when (it) {
-                    is UniqueSet -> index(
-                        isUnique = true,
-                        columns = it.fields.flatMap { columnsByDotPath[it.split('.')]!! }.toTypedArray()
-                    )
-
                     is IndexSet -> index(
-                        isUnique = false,
+                        customIndexName = it.name.takeIf { it.isNotBlank() },
+                        isUnique = it.unique,
                         columns = it.fields.flatMap { columnsByDotPath[it.split('.')]!! }.toTypedArray()
                     )
 
                     is TextIndex -> {
                         // TODO
                     }
-
-                    is NamedUniqueSet -> index(
-                        customIndexName = it.indexName,
-                        isUnique = true,
-                        columns = it.fields.flatMap { columnsByDotPath[it.split('.')]!! }.toTypedArray()
-                    )
-
-                    is NamedIndexSet -> index(
-                        customIndexName = it.indexName,
-                        isUnique = false,
-                        columns = it.fields.flatMap { columnsByDotPath[it.split('.')]!! }.toTypedArray()
-                    )
                 }
             }
             (0 until descriptor.elementsCount).forEach { index ->
@@ -88,25 +72,9 @@ internal class SerialDescriptorTable(
                 if (sub.kind == StructureKind.CLASS) handleDescriptor(sub)
                 descriptor.getElementAnnotations(index).forEach {
                     when (it) {
-                        is Unique -> index(
-                            isUnique = true,
-                            columns = columnsByDotPath[listOf(descriptor.getElementName(index))]!!.toTypedArray()
-                        )
-
                         is Index -> index(
-                            isUnique = false,
-                            columns = columnsByDotPath[listOf(descriptor.getElementName(index))]!!.toTypedArray()
-                        )
-
-                        is NamedUnique -> index(
-                            customIndexName = it.indexName,
-                            isUnique = true,
-                            columns = columnsByDotPath[listOf(descriptor.getElementName(index))]!!.toTypedArray()
-                        )
-
-                        is NamedIndex -> index(
-                            customIndexName = it.indexName,
-                            isUnique = false,
+                            customIndexName = it.name.takeIf { it.isNotBlank() },
+                            isUnique = it.unique,
                             columns = columnsByDotPath[listOf(descriptor.getElementName(index))]!!.toTypedArray()
                         )
                     }

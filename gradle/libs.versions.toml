@@ -2,17 +2,17 @@
 agp = "8.11.2"
 androidDesugaring = "2.1.5"
 angusMail = "2.0.5"
-awsVersion = "2.34.6"
+awsVersion = "2.35.8"
 clamAv = "2.1.2"
 coroutines = "1.10.2"
-dokka = "2.0.0"
-dynamodb = "2.34.6"
+dokka = "2.1.0"
+dynamodb = "2.35.8"
 embedMongo = "4.21.0"
 embeddedPostgres = "2.1.1"
 embeddedRedis = "0.9.1"
 exposed = "0.61.0"
 firebaseAdmin = "9.5.0"
-graalVmNative = "0.11.1"
+graalVmNative = "0.11.2"
 guava = "33.5.0-jre"
 kbson = "0.5.0"
 kotlin = "2.2.20"
@@ -21,14 +21,14 @@ kotlinXDatetime = "0.7.1"
 kotlinXIO = "0.8.0"
 kotlinXSerialization = "1.9.0"
 ksp = "2.2.20-2.0.3"
-ktor = "3.3.0"
+ktor = "3.3.1"
 lettuce = "6.7.1.RELEASE"
 lkGradleHelpers = "4.0.6"
-logBackClassic = "1.5.18"
+logBackClassic = "1.5.19"
 memcached = "2.4.8"
-mongoDriver = "5.6.0"
+mongoDriver = "5.6.1"
 postgresql = "42.7.8"
-proguard = "7.7.0"
+proguard = "7.8.0"
 shadow = "8.1.1"
 vanniktechMavenPublish = "0.34.0"
 versionCatalogUpdate = "1.0.1"
@@ -82,11 +82,11 @@ mongoDriver = { module = "org.mongodb:mongodb-driver-kotlin-coroutine", version.
 mongoDriverOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-mongo-3.1", version.ref = "openTelemetryInstrumentationAlpha" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 proguard = { module = "com.guardsquare:proguard-gradle", version.ref = "proguard" }
-openTelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version = "1.54.0" }
-openTelemetry-kotlin = { module = "io.opentelemetry:opentelemetry-extension-kotlin", version = "1.54.0" }
-openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = "1.54.0" }
-openTelemetry-exporter-logging = { module = "io.opentelemetry:opentelemetry-exporter-logging", version = "1.54.0" }
-openTelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version = "1.54.0" }
+openTelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version = "1.55.0" }
+openTelemetry-kotlin = { module = "io.opentelemetry:opentelemetry-extension-kotlin", version = "1.55.0" }
+openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = "1.55.0" }
+openTelemetry-exporter-logging = { module = "io.opentelemetry:opentelemetry-exporter-logging", version = "1.55.0" }
+openTelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version = "1.55.0" }
 openTelemetryInstrumentation-logback = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version = "2.19.0-alpha" }
 
 [plugins]

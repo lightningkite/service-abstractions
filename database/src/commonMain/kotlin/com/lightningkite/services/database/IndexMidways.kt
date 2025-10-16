@@ -2,12 +2,6 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.data.Index
 import com.lightningkite.services.data.IndexSet
-import com.lightningkite.services.data.NamedIndex
-import com.lightningkite.services.data.NamedIndexSet
-import com.lightningkite.services.data.NamedUnique
-import com.lightningkite.services.data.NamedUniqueSet
-import com.lightningkite.services.data.Unique
-import com.lightningkite.services.data.UniqueSet
 import kotlinx.serialization.descriptors.SerialDescriptor
 
 /**
@@ -28,27 +22,11 @@ public data class NeededIndex(
 public fun SerialDescriptor.indexes(): Set<NeededIndex> {
     val seen = HashSet<SerialDescriptor>()
     val out = HashSet<NeededIndex>()
-    fun handleDescriptor(descriptor: SerialDescriptor, prefix: String = "") {
+    fun handleDescriptor(descriptor: SerialDescriptor) {
         if (!seen.add(descriptor)) return
         descriptor.annotations.forEach {
             when (it) {
-                is UniqueSet -> out.add(NeededIndex(fields = it.fields.map { prefix + it }, unique = true, name = null))
-                is IndexSet -> out.add(NeededIndex(fields = it.fields.map { prefix + it }, unique = false, name = null))
-                is NamedUniqueSet -> out.add(
-                    NeededIndex(
-                        fields = it.fields.map { prefix + it },
-                        unique = true,
-                        name = it.indexName
-                    )
-                )
-
-                is NamedIndexSet -> out.add(
-                    NeededIndex(
-                        fields = it.fields.map { prefix + it },
-                        unique = false,
-                        name = it.indexName
-                    )
-                )
+                is IndexSet -> out.add(NeededIndex(fields = it.fields.map { it }, unique = it.unique, name = it.name.takeIf { it.isNotBlank() }))
             }
         }
         (0 until descriptor.elementsCount).forEach { index ->
@@ -56,38 +34,11 @@ public fun SerialDescriptor.indexes(): Set<NeededIndex> {
 //            if (sub.kind == StructureKind.CLASS) handleDescriptor(sub, descriptor.getElementName(index) + ".")
             descriptor.getElementAnnotations(index).forEach {
                 when (it) {
-                    is NamedIndex -> out.add(
-                        NeededIndex(
-                            fields = listOf(prefix + descriptor.getElementName(index)),
-                            unique = false,
-                            name = it.indexName,
-                            type = sub.serialName
-                        )
-                    )
-
                     is Index -> out.add(
                         NeededIndex(
-                            fields = listOf(prefix + descriptor.getElementName(index)),
-                            unique = false,
-                            name = null,
-                            type = sub.serialName
-                        )
-                    )
-
-                    is NamedUnique -> out.add(
-                        NeededIndex(
-                            fields = listOf(prefix + descriptor.getElementName(index)),
-                            unique = true,
-                            name = it.indexName,
-                            type = sub.serialName
-                        )
-                    )
-
-                    is Unique -> out.add(
-                        NeededIndex(
-                            fields = listOf(prefix + descriptor.getElementName(index)),
-                            unique = true,
-                            name = null,
+                            fields = listOf(descriptor.getElementName(index)),
+                            unique = it.unique,
+                            name = it.name.takeIf { it.isNotBlank() },
                             type = sub.serialName
                         )
                     )
@@ -95,6 +46,6 @@ public fun SerialDescriptor.indexes(): Set<NeededIndex> {
             }
         }
     }
-    handleDescriptor(this, "")
+    handleDescriptor(this)
     return out
 }
