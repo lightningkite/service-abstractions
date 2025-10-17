@@ -1,6 +1,3 @@
-package com.lightningkite.serviceabstractions.database
-
-import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.PlatformNotSupportedError
 import com.lightningkite.services.database.factory
 import kotlinx.serialization.InternalSerializationApi
