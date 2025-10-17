@@ -26,7 +26,7 @@ public data class MediaType(val type: String, val subtype: String, val parameter
     public fun accepts(other: MediaType): Boolean
         = (type == "*" || type == other.type) && (subtype == "*" || subtype == other.subtype)
 
-    override fun toString(): String = "$type/$subtype" + parameters.entries.joinToString("; ", "; ") { "${it.key}=${it.value}" }
+    override fun toString(): String = "$type/$subtype" + (if(parameters.isNotEmpty()) parameters.entries.joinToString("; ", "; ") { "${it.key}=${it.value}" } else "")
 
     public companion object {
         public val Any: MediaType = MediaType("*/*")
@@ -139,9 +139,9 @@ public data class MediaType(val type: String, val subtype: String, val parameter
     public object Audio {
         public val Any: MediaType = MediaType("audio", "*")
         public val WAV: MediaType = MediaType("audio", "wav")
-        public val MP3: MediaType = MediaType("audio", "mp3")
         public val MP4: MediaType = MediaType("audio", "mp4")
         public val MPEG: MediaType = MediaType("audio", "mpeg")
+        public val MP3: MediaType = MediaType("audio", "mpeg")
         public val OGG: MediaType = MediaType("audio", "ogg")
     }
 
