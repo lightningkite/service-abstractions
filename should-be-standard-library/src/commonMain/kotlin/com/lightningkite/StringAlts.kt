@@ -51,7 +51,6 @@ public object TrimmedStringSerializer : KSerializer<TrimmedString> {
 @Serializable(TrimmedStringSerializer::class)
 @JvmInline
 public value class TrimmedString @Deprecated("Use String.trimmed()") constructor(override val raw: String) : IsRawString {
-
     override fun toString(): String = raw
     override fun mapRaw(action: (String) -> String): TrimmedString = raw.let(action).trimmed()
 }
@@ -130,11 +129,18 @@ public value class EmailAddress @Deprecated("Use String.toEmailAddress()") const
 }
 
 private val emailRegex = Regex("(?:[a-z0-9!#\$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#\$%&'*+/=?^_`{|}~-]+)*|\"(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21\\x23-\\x5b\\x5d-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21-\\x5a\\x53-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])+)\\])")
+
 @Suppress("DEPRECATION")
 public fun String.toEmailAddress(): EmailAddress {
     val fixed = this.trim().lowercase()
     if (emailRegex.matches(fixed)) return EmailAddress(fixed)
     else throw IllegalArgumentException("$fixed is not an email address.")
+}
+
+@Suppress("DEPRECATION")
+public fun String.toEmailAddressOrNull(): EmailAddress? {
+    val fixed = this.trim().lowercase()
+    return if (emailRegex.matches(fixed)) EmailAddress(fixed) else null
 }
 
 
@@ -168,11 +174,17 @@ private val punctuation = setOf(' ', '-', '.', ',', '(', ')', '[', ']', '<', '>'
 @Suppress("DEPRECATION")
 public fun String.toPhoneNumber(): PhoneNumber {
     val fixed = this.lowercase().filter { it !in punctuation }
-    if(fixed.startsWith('+')) {
-        return PhoneNumber(fixed)
-    } else if(fixed.length == 10) {
-        return PhoneNumber("+1$fixed")
-    } else {
-        throw IllegalArgumentException("Phone numbers should begin with a '+' and your country code.")
-    }
+
+    return if (fixed.startsWith('+')) PhoneNumber(fixed)
+    else if (fixed.length == 10) PhoneNumber("+1$fixed")
+    else throw IllegalArgumentException("Phone numbers should begin with a '+' and your country code.")
+}
+
+@Suppress("DEPRECATION")
+public fun String.toPhoneNumberOrNull(): PhoneNumber? {
+    val fixed = this.lowercase().filter { it !in punctuation }
+
+    return if (fixed.startsWith('+')) PhoneNumber(fixed)
+    else if (fixed.length == 10) PhoneNumber("+1$fixed")
+    else null
 }

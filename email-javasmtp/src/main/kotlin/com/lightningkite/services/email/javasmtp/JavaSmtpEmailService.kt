@@ -45,6 +45,7 @@ public class JavaSmtpEmailService(
             ?.groupBy { it.first }
             ?.mapValues { it.value.map { it.second } }
             ?: emptyMap()
+
         public fun EmailService.Settings.Companion.smtp(
             username: String,
             password: String,
@@ -53,6 +54,7 @@ public class JavaSmtpEmailService(
             fromEmail: String,
             fromLabel: String? = null,
         ): EmailService.Settings = EmailService.Settings("smtp://$username:$password@$host:$port?fromEmail=$fromEmail&fromLabel=$fromLabel")
+
         init {
             EmailService.Settings.register("smtp") { name, url, context ->
                 Regex("""smtp://(?:(?<username>[^:]+):(?<password>.+)@)?(?<host>[^:@]+):(?<port>[0-9]+)(?:\?(?<params>.*))?""")
@@ -71,7 +73,6 @@ public class JavaSmtpEmailService(
                                 value = params["fromEmail"]!!.first(),
                                 label = params["fromLabel"]?.first() ?: context.projectName,
                             )
-                            ?: throw IllegalStateException("SMTP Email requires a fromEmail to be set.")
                         )
                     }
                     ?: throw IllegalStateException("Invalid SMTP URL. The URL should match the pattern: smtp://[username]:[password]@[host]:[port]?[params]\nAvailable params are: fromEmail")
