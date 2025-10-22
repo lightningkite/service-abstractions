@@ -21,21 +21,22 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     existingProjectId: String? = null,
 ): Unit {
     if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
+    val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
+    val userName = "$projectName-main"
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = $$"""
-        mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(resource.mongodbatlas_serverless_instance.$$name.connection_strings_standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(resource.mongodbatlas_serverless_instance.$$name.connection_strings_standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent()
         )
     )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.mongodbAtlas).forEach { emitter.require(it) }
     emitter.emit(name) {
-        val projectName1 = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}${name}"
         val region1 = emitter.applicationRegion.uppercase().replace("-", "_")
         val projectId1 = if (existingProjectId == null) {
             "resource.mongodbatlas_project.${name}" {
-                "name" - "$projectName1"
+                "name" - "$projectName"
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -52,7 +53,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         }
         "resource.mongodbatlas_serverless_instance.${name}" {
             "project_id" - projectId1
-            "name" - "$projectName1"
+            "name" - "$projectName"
 
             "provider_settings_backing_provider_name" - "AWS"
             "provider_settings_provider_name" - "SERVERLESS"
@@ -61,7 +62,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "continuous_backup_enabled" - continuousBackupEnabled
         }
         "resource.mongodbatlas_database_user.${name}" {
-            "username" - "$projectName1-main"
+            "username" - userName
             "password" - expression("random_password.${name}.result")
             "project_id" - expression("mongodbatlas_project.${name}.id")
             "auth_database_name" - "admin"
@@ -102,10 +103,12 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     existingProjectId: String? = null,
 ): Unit {
     if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
+    val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
+    val userName = "$projectName-main"
     emitter.fulfillSetting(
         this@mongodbAtlas.name, JsonPrimitive(
             value = $$"""
-        mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent()
         )
     )
@@ -117,7 +120,6 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         // # UPDATE - MongoDB ATLAS provider 1.0.0 made mongodbatlas_project_ip_whitelist resource and replaced with mongodbatlas_project_ip_access_list
         // AWS VPC Peer Conf
         // VPC Peer Device to ATLAS Route Table Association on AWS
-        val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
         val region = emitter.applicationRegion.uppercase().replace("-", "_")
 
         val projectId = if (existingProjectId == null) {
@@ -169,7 +171,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             }
         }
         "resource.mongodbatlas_database_user.$name" {
-            "username" - "$projectName-main"
+            "username" - userName
             "password" - expression("random_password.$name.result")
             "project_id" - expression("mongodbatlas_project.$name.id")
             "auth_database_name" - "admin"
@@ -254,10 +256,12 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     existingProjectId: String? = null,
 ): Unit {
     if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
+    val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
+    val userName = "$projectName-main"
     emitter.fulfillSetting(
         this@mongodbAtlasFree.name, JsonPrimitive(
             value = $$"""
-        mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent()
         )
     )
@@ -308,7 +312,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             }
         }
         "resource.mongodbatlas_database_user.$name" {
-            "username" - "$projectName-main"
+            "username" - userName
             "password" - expression("random_password.$name.result")
             "project_id" - expression("mongodbatlas_project.$name.id")
             "auth_database_name" - "admin"
@@ -348,11 +352,13 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     zoneName: String? = null,
     existingProjectId: String? = null,
 ): Unit {
+    val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
+    val userName = "$projectName-main"
     if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = $$"""
-        mongodb+srv://$${emitter.projectPrefix}$$name-main:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent()
         )
     )
@@ -396,7 +402,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             }
         }
         "resource.mongodbatlas_database_user.${name}" {
-            "username" - "$projectName1-main"
+            "username" - userName
             "password" - expression("random_password.${name}.result")
             "project_id" - expression("mongodbatlas_project.${name}.id")
             "auth_database_name" - "admin"

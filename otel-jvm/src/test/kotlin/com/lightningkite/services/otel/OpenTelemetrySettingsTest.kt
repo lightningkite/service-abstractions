@@ -9,11 +9,23 @@ import kotlin.time.Duration.Companion.seconds
 class OpenTelemetrySettingsTest {
     @Test
     fun test() {
-        val telemetry = OpenTelemetrySettings("log", reportFrequency = null).invoke("telemetry", TestSettingContext())
+        val telemetry = OpenTelemetrySettings("console", reportFrequency = null).invoke("telemetry", TestSettingContext())
         val context = telemetry["asdf"]
-        context.spanBuilder("asdf").useBlocking {
+        telemetry["sub"].spanBuilder("span").useBlocking {
             println("OK, we're doing work")
             KotlinLogging.logger("sigh").info { "This is a test" }
+            context.error("uh oh", Exception("I can't believe you've done this."))
+        }
+        Thread.sleep(1.seconds.inWholeMilliseconds)
+    }
+    @Test
+    fun test2() {
+        val telemetry = OpenTelemetrySettings("log", reportFrequency = null).invoke("telemetry", TestSettingContext())
+        val context = telemetry["asdf"]
+        telemetry["sub"].spanBuilder("span").useBlocking {
+            println("OK, we're doing work")
+            KotlinLogging.logger("sigh").info { "This is a test" }
+            context.error("uh oh", Exception("I can't believe you've done this."))
         }
         Thread.sleep(1.seconds.inWholeMilliseconds)
     }

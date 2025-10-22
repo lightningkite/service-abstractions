@@ -222,7 +222,7 @@ public data class OpenTelemetrySettings(
 
 private fun otelLoggingSetup(telemetry: OpenTelemetrySdk?) {
     (LoggerFactory.getILoggerFactory() as LoggerContext).apply logCtx@{
-        getLogger("OpenTelemetry").apply {
+        getLogger(Logger.ROOT_LOGGER_NAME).apply {
             addAppender(OpenTelemetryAppender().apply {
                 this.context = this@logCtx
                 this.name = "OpenTelemetry"
