@@ -19,6 +19,25 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Instant
 
+/**
+ * A KSerializer for ServerFile that provides secure file upload handling with scanning and validation.
+ *
+ * This serializer handles three types of file references during deserialization:
+ * 1. `future:` URLs - Files uploaded to a jail directory that need scanning before use
+ * 2. `future-prescanned:` URLs - Files already scanned and ready for use
+ * 3. `data:` URLs - Base64-encoded inline data that will be uploaded and scanned
+ * 4. Regular URLs - Files from known file systems that will be validated
+ *
+ * During serialization, it converts internal file URLs to signed URLs for secure client access.
+ *
+ * @param clock Clock for timestamp validation
+ * @param scanners List of file scanners to run on uploaded files
+ * @param fileSystems List of file systems to check for file ownership
+ * @param jail Directory for uploaded files awaiting scanning (quarantine area)
+ * @param ready Directory for scanned and approved files
+ * @param onUse Callback invoked when a file is used
+ * @param key HMAC key for signing "future:" URLs
+ */
 @OptIn(SealedSerializationApi::class)
 public class ExternalServerFileSerializer(
     public val clock: Clock,
@@ -55,8 +74,12 @@ public class ExternalServerFileSerializer(
     }
 
     /**
-     * We need to sign the file's URL as we serialize it.
+     * Serializes a ServerFile to a signed URL for client consumption.
+     *
+     * If the file's location matches one of the known file systems, it's converted to a signed URL.
+     * Otherwise, the original URL is used with a warning (potential security risk).
      */
+    // TODO: Is this dangerous? If someone could inject a foreign url, this allows them to direct users to malware
     override fun serialize(encoder: Encoder, value: ServerFile) {
         val url = value.location
         val file = fileSystems.firstNotNullOfOrNull {
@@ -76,12 +99,40 @@ public class ExternalServerFileSerializer(
         }
     }
 
+    /**
+     * Creates a "future:" URL for a file in the jail directory.
+     *
+     * This URL can be used to reference a file that has been uploaded but not yet scanned.
+     * The URL includes an expiration and signature.
+     *
+     * @param jailPath The relative path within the jail directory
+     * @param expiration How long the URL should remain valid
+     * @return A signed "future:" URL
+     */
     public fun certifyForUse(jailPath: String, expiration: Duration): String =
         signUrl("future:$jailPath", expiration)
 
+    /**
+     * Creates a "future-prescanned:" URL for a file in the ready directory.
+     *
+     * This URL references a file that has already been scanned and approved.
+     *
+     * @param readyPath The relative path within the ready directory
+     * @param expiration How long the URL should remain valid
+     * @return A signed "future-prescanned:" URL
+     */
     public fun certifyAlreadyScannedForUse(readyPath: String, expiration: Duration): String =
         signUrl("future-prescanned:$readyPath", expiration)
 
+    /**
+     * Scans a file from the jail directory and moves it to the ready directory.
+     *
+     * @param value A "future:" URL referencing the file to scan
+     * @param expiration How long the resulting "future-prescanned:" URL should remain valid
+     * @return A "future-prescanned:" URL for the scanned file
+     * @throws IllegalArgumentException if the URL is invalid or has wrong scheme
+     * @throws FileScanException if scanning fails
+     */
     public suspend fun scan(value: String, expiration: Duration): String {
         val raw = value
         if (raw.startsWith("future-prescanned:")) return value
@@ -95,7 +146,19 @@ public class ExternalServerFileSerializer(
     }
 
     /**
-     * We need to ensure that the input is something that the server has validly signed - that's how we determine if this is OK.
+     * Deserializes a string into a ServerFile, handling various URL schemes securely.
+     *
+     * Supports four input formats:
+     * 1. `future:` - Scans the file from jail and moves to ready directory
+     * 2. `future-prescanned:` - Uses already-scanned file from ready directory
+     * 3. `data:` - Decodes base64 data, scans it, and uploads
+     * 4. Regular URLs - Validates against known file systems
+     *
+     * All URLs are verified with signatures to prevent unauthorized file access.
+     *
+     * @param decoder The decoder containing the serialized string
+     * @return A ServerFile with an internal URL
+     * @throws IllegalArgumentException if URL validation fails or URL doesn't match known file systems
      */
     override fun deserialize(decoder: Decoder): ServerFile {
         val raw = decoder.decodeString()
@@ -140,6 +203,14 @@ public class ExternalServerFileSerializer(
         }
     }
 
+    /**
+     * Signs a URL with expiration timestamp.
+     *
+     * @param url The URL to sign (must not contain query parameters)
+     * @param expiration How long the URL should remain valid
+     * @return The signed URL with useUntil and token parameters
+     * @throws IllegalArgumentException if the URL already contains query parameters
+     */
     @TestOnly
     internal fun signUrl(url: String, expiration: Duration): String {
         if(url.contains('?')) throw IllegalArgumentException("URL cannot contain query parameters.")
@@ -149,6 +220,13 @@ public class ExternalServerFileSerializer(
         }
     }
 
+    /**
+     * Verifies a signed URL by checking its signature and expiration.
+     *
+     * @param url The signed URL to verify
+     * @return true if signature is valid and URL hasn't expired, false otherwise
+     * @throws IllegalArgumentException if required parameters are missing
+     */
     @TestOnly
     internal fun verifyUrl(url: String): Boolean {
         val params = url.substringAfter('?')
@@ -161,6 +239,14 @@ public class ExternalServerFileSerializer(
         )
     }
 
+    /**
+     * Verifies a signed URL with explicit parameters.
+     *
+     * @param url The base URL (without query parameters)
+     * @param exp The expiration timestamp in epoch milliseconds
+     * @param token The URL-safe base64 encoded signature token
+     * @return true if signature is valid and URL hasn't expired, false otherwise
+     */
     @TestOnly
     internal fun verifyUrl(url: String, exp: Long, token: String): Boolean {
         return (Instant.fromEpochMilliseconds(exp) > clock.now()) && key.signatureVerifier().tryVerifySignatureBlocking(
@@ -169,3 +255,35 @@ public class ExternalServerFileSerializer(
         )
     }
 }
+
+/*
+ * TODO: API Recommendations
+ *
+ * 1. The serialize() method has a security concern - it allows unknown URLs to pass through
+ *    with only a warning. Consider:
+ *    - Making this behavior configurable (strict vs permissive mode)
+ *    - Throwing an exception in strict mode
+ *    - Providing a whitelist of allowed external domains
+ *
+ * 2. deserialize() uses runBlocking which can block threads. Consider:
+ *    - Making this an async serializer if the serialization framework supports it
+ *    - Documenting the blocking behavior
+ *    - Providing configuration for timeouts
+ *
+ * 3. The "jail" and "ready" directory pattern is powerful but not documented for users.
+ *    Consider adding comprehensive documentation about:
+ *    - The upload workflow (client -> jail -> scan -> ready)
+ *    - How to integrate with upload endpoints
+ *    - Cleanup strategies for failed uploads
+ *
+ * 4. Error handling could be more granular. Consider different exception types for:
+ *    - Signature validation failures
+ *    - Expiration failures
+ *    - Scanning failures
+ *    - Unknown file system failures
+ *
+ * 5. The onUse callback is called only for future-prescanned URLs. Consider:
+ *    - Documenting when and why this is called
+ *    - Calling it for other URL types if appropriate
+ *    - Making callback exceptions not break deserialization
+ */

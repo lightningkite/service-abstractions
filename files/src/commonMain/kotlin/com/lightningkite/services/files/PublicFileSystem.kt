@@ -17,22 +17,58 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * An abstracted model for reading and writing files in a storage solution.
  * Every implementation will handle how to resolve FileObjects in their own system.
+ *
+ * This interface provides a way to work with file systems across different storage
+ * backends (local filesystem, S3, etc.) using a consistent API.
  */
 public interface PublicFileSystem : Service {
     /**
      * The root file object for this file system.
+     * All file paths are resolved relative to this root.
      */
     public val root: FileObject
 
     /**
      * The root URLs for this file system.
+     * Default implementation returns a single-element list containing the root's URL.
+     * Override this if your file system has multiple root URLs (e.g., CDN mirrors).
      */
     public val rootUrls: List<String> get() = listOf(root.url)
 
+    /**
+     * Parses an internal URL (unsigned, used within the server) into a FileObject.
+     *
+     * @param url The internal URL to parse
+     * @return A FileObject if the URL belongs to this file system, null otherwise
+     */
     public fun parseInternalUrl(url: String): FileObject?
+
+    /**
+     * Parses an external URL (signed, provided to clients) into a FileObject.
+     *
+     * For file systems with signed URLs, this will validate the signature and expiration.
+     *
+     * @param url The external/signed URL to parse
+     * @return A FileObject if the URL is valid and belongs to this file system, null otherwise
+     * @throws IllegalArgumentException if signature validation fails or URL has expired
+     */
     public fun parseExternalUrl(url: String): FileObject?
 
 
+    /**
+     * Performs a health check by writing, reading, and deleting a test file.
+     *
+     * The health check verifies:
+     * - Ability to write files
+     * - Ability to read files with correct content type
+     * - Ability to read files with matching content
+     * - Ability to delete files
+     *
+     * Note: The test file is created at `health-check/test-file.txt` relative to root.
+     * If deletion fails, this file may persist.
+     *
+     * @return HealthStatus.Level.OK if all operations succeed, HealthStatus.Level.ERROR otherwise
+     */
     override suspend fun healthCheck(): HealthStatus {
         return try {
             val testFile = root.then("health-check/test-file.txt")
@@ -63,7 +99,14 @@ public interface PublicFileSystem : Service {
     }
 
     /**
-     * Settings for a FileSystem.
+     * Configuration settings for a PublicFileSystem.
+     *
+     * Example URLs:
+     * - `file:///path/to/directory?serveUrl=files` - Local filesystem with relative serve URL
+     * - `file:///path/to/directory?serveUrl=https://example.com/files` - Local filesystem with absolute serve URL
+     * - `file:///path/to/directory?serveUrl=files&signedUrlDuration=PT1H` - With 1 hour signed URL duration
+     * - `file:///path/to/directory?serveUrl=files&signedUrlDuration=3600` - With 3600 seconds signed URL duration
+     * - `file:///path/to/directory?serveUrl=files&signedUrlDuration=forever` - Without signed URL expiration
      */
     @Serializable
     @JvmInline
@@ -82,7 +125,7 @@ public interface PublicFileSystem : Service {
                     // Required Parameters:
                     //      serveUrl - The base url files will be served from
                     // Optional Parameters:
-                    //      signatureExpiration - How long a url is valid for. If not provided the default time is 1 hour
+                    //      signedUrlDuration - How long a url is valid for. If not provided the default time is 1 hour
                     //      valid values are: "forever", "null", a valid iso8601 duration string, a number representing seconds
                     val params = url.substringAfter("?", "").substringBefore("#")
                         .takeIf { it.isNotEmpty() }
@@ -118,3 +161,26 @@ public interface PublicFileSystem : Service {
         }
     }
 }
+
+/*
+ * TODO: API Recommendations
+ *
+ * 1. Consider adding a `exists()` method to the interface for checking file existence
+ *    without reading the entire file (more efficient than calling head() != null).
+ *
+ * 2. Consider adding bulk operations for better performance:
+ *    - suspend fun copyBatch(items: List<Pair<FileObject, FileObject>>)
+ *    - suspend fun deleteBatch(items: List<FileObject>)
+ *
+ * 3. The healthCheck leaves a test file if deletion fails. Consider adding a cleanup
+ *    method or documenting this behavior more prominently for operations teams.
+ *
+ * 4. Consider adding metadata operations:
+ *    - suspend fun setMetadata(key: String, value: String)
+ *    - suspend fun getMetadata(key: String): String?
+ *    This would be useful for tags, custom headers, etc.
+ *
+ * 5. The distinction between parseInternalUrl and parseExternalUrl could be clarified
+ *    with better naming (e.g., parseUnsignedUrl vs parseSignedUrl) or merged into a
+ *    single method with a validation parameter.
+ */

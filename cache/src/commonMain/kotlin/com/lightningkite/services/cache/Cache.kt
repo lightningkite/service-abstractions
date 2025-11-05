@@ -14,14 +14,30 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * An abstracted model for caching data outside the running program using, for example, Redis or Memcached.
- * Every implementation will handle how to get and set values in the underlying cache system.
+ * An abstraction for caching data in external storage systems (e.g., Redis, Memcached) or in-memory.
+ *
+ * Cache provides a key-value store with optional TTL (time-to-live) support. All values are serialized
+ * using KotlinX Serialization, allowing type-safe storage and retrieval of Kotlin objects.
+ *
+ * Implementations handle connection management, serialization, and platform-specific details.
+ *
+ * Example usage:
+ * ```kotlin
+ * val cache = Cache.Settings("redis://localhost:6379")("my-cache", context)
+ * cache.set("user:123", user, timeToLive = 1.hours)
+ * val cachedUser = cache.get<User>("user:123")
+ * ```
  */
 public interface Cache : Service {
     /**
-     * Settings that define what cache to use and how to connect to it.
+     * Configuration for instantiating a Cache instance.
      *
-     * @param url Defines the type and connection to the cache. Built-in options are local.
+     * The URL scheme determines the cache implementation:
+     * - `ram` or `ram://` - Thread-safe in-memory cache (JVM uses ConcurrentHashMap)
+     * - `ram-unsafe` - Non-thread-safe in-memory cache (faster, single-threaded use only)
+     * - Other schemes registered by implementation modules (e.g., `redis://`, `memcached://`)
+     *
+     * @property url Connection string defining the cache type and connection parameters.
      */
     @Serializable
     @JvmInline
@@ -43,33 +59,34 @@ public interface Cache : Service {
 
 
     /**
-     * Returns a value of type T from the cache.
+     * Retrieves a value from the cache.
      *
-     * @param key The key that will be used to retrieve the value
-     * @param serializer The serializer that will be used to turn the raw serialized data from the cache into T.
-     * @return An instance of T, or null if the key did not exist in the cache.
+     * @param key The cache key.
+     * @param serializer Serializer for deserializing the cached value.
+     * @return The cached value, or null if the key doesn't exist or has expired.
      */
     public suspend fun <T> get(key: String, serializer: KSerializer<T>): T?
 
     /**
-     * Sets the instance of T provided into the cache under the key provided. If the key already exists the existing data will be overwritten.
-     * You can optionally provide an expiration time on the key. After that duration the key will automatically be removed.
+     * Stores a value in the cache, overwriting any existing value.
      *
-     * @param key The key that will be used when placing the value into the database.
-     * @param value The instance of T that you wish to store into the cache.
-     * @param serializer The serializer that will be used to turn the instance of T into serialized data to be stored in the cache.
-     * @param timeToLive  (Optional) The expiration time to be set on for the key in the cache. If no value is provided the key will have no expiration time.
+     * @param key The cache key.
+     * @param value The value to cache.
+     * @param serializer Serializer for serializing the value.
+     * @param timeToLive Optional TTL. After this duration, the key is automatically removed. Null means no expiration.
      */
     public suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration? = null)
 
     /**
-     * Sets the instance of T provided into the cache under the key provided. If the key already exists then the incoming value will not be added to the cache.
-     * You can optionally provide an expiration time on the key. After that duration the key will automatically be removed.
+     * Stores a value only if the key does not already exist (atomic operation where supported).
      *
-     * @param key The key that will be used when placing the value into the database.
-     * @param value The instance of T that you wish to store into the cache.
-     * @param serializer The serializer that will be used to turn the instance of T into serialized data to be stored in the cache.
-     * @param timeToLive  (Optional) The expiration time to be set on for the key in the cache. If no value is provided the key will have no expiration time.
+     * This is useful for implementing distributed locks or ensuring only one instance writes initial data.
+     *
+     * @param key The cache key.
+     * @param value The value to cache.
+     * @param serializer Serializer for serializing the value.
+     * @param timeToLive Optional TTL. After this duration, the key is automatically removed. Null means no expiration.
+     * @return true if the value was set, false if the key already existed.
      */
     public suspend fun <T> setIfNotExists(
         key: String,
@@ -79,14 +96,46 @@ public interface Cache : Service {
     ): Boolean
 
     /**
-     * Will modify an existing value in the cache. If the key does not exist and the modification still returns a value
-     * then the new value will be inserted into the cache.
+     * Atomically modifies a cached value using optimistic locking (compare-and-swap pattern).
      *
-     * @param key The key that will be used when modifying the value into the database.
-     * @param serializer The serializer that will be used to turn the instance of T into serialized data to be stored in the cache.
-     * @param maxTries How many times it will attempt to make the modification to the cache.
-     * @param timeToLive  (Optional) The expiration time to be set on for the key in the cache. If no value is provided the key will have no expiration time.
-     * @param modification A lambda that takes in a nullable T and returns a nullable T. If a non null value is returned it will be set in the cache using the key. If a null value is returned the key will be removed from the cache.
+     * Reads the current value, applies the modification function, and writes back only if the value
+     * hasn't changed in the meantime. Retries up to [maxTries] times on conflicts.
+     *
+     * If the key doesn't exist, [modification] receives null. If it returns non-null, that value is inserted.
+     * If [modification] returns null, the key is removed from the cache.
+     *
+     * **Important:** Implementations must provide proper atomic operations (like Redis WATCH/MULTI or
+     * compare-and-set) to ensure correctness. The modification should be truly atomic to prevent lost updates
+     * in concurrent scenarios.
+     *
+     * ## Implementation Guidelines
+     *
+     * Implementations should:
+     * - Use native CAS operations where available (Redis WATCH, Memcached CAS, etc.)
+     * - For in-memory implementations, use proper synchronization
+     * - Return false only after exhausting all retries
+     * - Ensure the modification function is called with the most recent value
+     *
+     * ## Usage Example
+     *
+     * ```kotlin
+     * // Increment a counter safely
+     * cache.modify<Int>("counter", maxTries = 5) { current ->
+     *     (current ?: 0) + 1
+     * }
+     *
+     * // Update a complex object
+     * cache.modify<User>("user:123", maxTries = 3) { user ->
+     *     user?.copy(lastSeen = Clock.System.now())
+     * }
+     * ```
+     *
+     * @param key The cache key.
+     * @param serializer Serializer for the cached value.
+     * @param maxTries Maximum retry attempts on conflicts. Default is 1 (no retries).
+     * @param timeToLive Optional TTL for the updated value. Null means no expiration.
+     * @param modification Function transforming the current value. Null input means key doesn't exist.
+     * @return true if modification succeeded within [maxTries] attempts, false otherwise.
      */
     public suspend fun <T> modify(
         key: String,
@@ -98,36 +147,56 @@ public interface Cache : Service {
         repeat(maxTries) {
             val current = get(key, serializer)
             val new = modification(current)
-            if (current == get(key, serializer)) {
-                if (new != null)
-                    set(key, new, serializer, timeToLive)
-                else
-                    remove(key)
-                return true
-            }
+            if(compareAndSet(key, serializer, current, new, timeToLive)) return true
         }
         return false
     }
 
+    public suspend fun <T> compareAndSet(
+        key: String,
+        serializer: KSerializer<T>,
+        expected: T?,
+        new: T?,
+        timeToLive: Duration? = null
+    ): Boolean {
+        if (expected == new) return true
+        if (expected != get(key, serializer)) return false
+        if (new != null) {
+            set(key, new, serializer, timeToLive)
+        } else {
+            remove(key)
+        }
+        return true
+    }
+
 
     /**
-     * Updates the value under key by adding value to the numerical value stored in the cache.
+     * Atomically increments a numeric value in the cache.
      *
-     * @param key The key that will be used when updating the value into the database.
-     * @param value The Int you wish to add to the value already in the cache.
-     * @param timeToLive (Optional) The expiration time to be set on for the key in the cache. If no value is provided the key will have no expiration time.
+     * If the key doesn't exist, it's created with the given value.
+     * If the key exists with a non-numeric value, behavior is implementation-specific
+     * (MapCache treats it as 0 and starts from [value]).
+     *
+     * @param key The cache key.
+     * @param value The amount to add (can be negative for decrement).
+     * @param timeToLive Optional TTL for the updated value. Null means no expiration.
      */
     public suspend fun add(key: String, value: Int, timeToLive: Duration? = null)
 
     /**
-     * Removes a single key from cache. If the key didn't exist, nothing will happen.
+     * Removes a key from the cache.
      *
-     * @param key The key that will be removed from the cache.
+     * This operation is idempotent - removing a non-existent key succeeds silently.
+     *
+     * @param key The cache key to remove.
      */
     public suspend fun remove(key: String)
 
     /**
-     * Will attempt inserting data into the cache to confirm that the connection is alive and available.
+     * Verifies cache connectivity and basic operations.
+     *
+     * Performs a write-then-read test to ensure the cache is responsive and functional.
+     * The test uses a temporary key with a 10-second validity check to detect stale responses.
      */
     override suspend fun healthCheck(): HealthStatus {
         return try {
@@ -143,4 +212,33 @@ public interface Cache : Service {
         }
     }
 }
+
+/*
+ * TODO: API Recommendations for Cache interface:
+ *
+ * 1. Consider adding a `getOrSet` method for common cache-aside pattern:
+ *    suspend fun <T> getOrSet(key: String, serializer: KSerializer<T>, timeToLive: Duration? = null, producer: suspend () -> T): T
+ *
+ * 2. Consider adding batch operations for efficiency:
+ *    - suspend fun <T> getMany(keys: List<String>, serializer: KSerializer<T>): Map<String, T>
+ *    - suspend fun <T> setMany(entries: Map<String, T>, serializer: KSerializer<T>, timeToLive: Duration? = null)
+ *    - suspend fun removeMany(keys: List<String>)
+ *
+ * 3. The `modify` default implementation has a race condition (reads value twice without locking).
+ *    Document that implementations should override with proper CAS operations, or consider removing
+ *    the default implementation to force proper implementation.
+ *
+ * 4. Consider adding TTL refresh/update operation:
+ *    suspend fun touch(key: String, timeToLive: Duration): Boolean
+ *
+ * 5. Consider adding pattern-based operations (where supported by backing store):
+ *    - suspend fun keys(pattern: String): List<String>
+ *    - suspend fun removePattern(pattern: String): Int
+ *
+ * 6. The `add` method only supports Int. Consider:
+ *    - Supporting Long for larger counters
+ *    - Renaming to `increment` for clarity
+ *    - Adding a `decrement` convenience method
+ */
+
 

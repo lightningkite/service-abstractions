@@ -13,6 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.io.asSource
+import kotlinx.io.buffered
 import kotlin.time.toKotlinInstant
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.model.*
@@ -25,6 +27,15 @@ import kotlin.time.toJavaDuration
 
 /**
  * An implementation of [FileObject] that uses AWS S3 for storage.
+ *
+ * This class represents a file or directory in an S3 bucket. It provides:
+ * - Efficient signed URL generation using a custom AWS Signature V4 implementation
+ * - Optimized copy operations within the same bucket (server-side copy)
+ * - Pagination support for listing large directories
+ * - Proper handling of URL encoding for paths with special characters
+ *
+ * @property system The parent [S3PublicFileSystem] managing this file object
+ * @property path The file path relative to the bucket root (uses java.io.File for path manipulation)
  */
 public class S3FileObject(
     public val system: S3PublicFileSystem,
@@ -33,16 +44,25 @@ public class S3FileObject(
     
     /**
      * The Unix-style path for this file.
+     * Converts Windows-style backslashes to forward slashes for S3 compatibility.
      */
     private val unixPath: String get() = path.toString().replace('\\', '/')
-    
+
     override fun then(path: String): S3FileObject = S3FileObject(system, this.path.resolve(path))
-    
+
     override val name: String get() = path.name
-    
+
     override val parent: FileObject?
         get() = path.parentFile?.let { S3FileObject(system, it) } ?: if (unixPath.isNotEmpty()) system.root else null
 
+    /**
+     * Lists all direct children of this directory.
+     *
+     * This method uses pagination to handle directories with many files efficiently.
+     * It filters results to only include direct children (not nested subdirectories).
+     *
+     * @return A list of [S3FileObject] representing the directory contents, or null if this is not a directory
+     */
     override suspend fun list(): List<FileObject>? = withContext(Dispatchers.IO) {
         try {
             val results = ArrayList<S3FileObject>()
@@ -65,6 +85,11 @@ public class S3FileObject(
         }
     }
 
+    /**
+     * Gets metadata about this file without downloading its contents.
+     *
+     * @return [FileInfo] containing media type, size, and last modified time, or null if the file doesn't exist
+     */
     override suspend fun head(): FileInfo? = withContext(Dispatchers.IO) {
         try {
             system.s3Async.headObject {
@@ -82,6 +107,11 @@ public class S3FileObject(
         }
     }
 
+    /**
+     * Uploads content to this file in S3.
+     *
+     * @param content The typed data to upload, including media type information
+     */
     override suspend fun put(content: TypedData) {
         withContext(Dispatchers.IO) {
             system.s3.putObject(PutObjectRequest.builder().also {
@@ -89,15 +119,16 @@ public class S3FileObject(
                 it.key(unixPath)
                 it.contentType(content.mediaType.toString())
             }.build(), content.data.size.let { size ->
-                if (size > 0) {
-                    RequestBody.fromBytes(content.data.bytes())
-                } else {
-                    RequestBody.fromBytes(content.data.bytes())
-                }
+                RequestBody.fromBytes(content.data.bytes())
             })
         }
     }
 
+    /**
+     * Downloads the contents of this file from S3.
+     *
+     * @return [TypedData] containing the file contents and media type, or null if the file doesn't exist
+     */
     override suspend fun get(): TypedData? = withContext(Dispatchers.IO) {
         try {
             val response = system.s3.getObject(
@@ -106,20 +137,24 @@ public class S3FileObject(
                     it.key(unixPath)
                 }.build()
             )
-            
+
             val contentType = response.response().contentType() ?: "application/octet-stream"
             val mediaType = MediaType(contentType)
-            val bytes = response.readAllBytes()
-            
-            TypedData(
-                data = Data.Bytes(bytes),
-                mediaType = mediaType
-            )
+            TypedData.source(response.asSource().buffered(), mediaType = mediaType)
         } catch (e: NoSuchKeyException) {
             null
         }
     }
 
+    /**
+     * Copies this file to another location.
+     *
+     * If the destination is also an S3 file in the same bucket, this performs a server-side copy
+     * which is faster and doesn't require downloading/uploading the file contents.
+     * Otherwise, it falls back to downloading and re-uploading the file.
+     *
+     * @param other The destination file object
+     */
     override suspend fun copyTo(other: FileObject) {
         if (other is S3FileObject && other.system.bucket == system.bucket) {
             withContext(Dispatchers.IO) {
@@ -135,6 +170,11 @@ public class S3FileObject(
         }
     }
 
+    /**
+     * Deletes this file from S3.
+     *
+     * Note: S3 delete operations are eventually consistent and may not be immediately visible.
+     */
     override suspend fun delete() {
         withContext(Dispatchers.IO) {
             system.s3Async.deleteObject {
@@ -146,14 +186,30 @@ public class S3FileObject(
 
     /**
      * Encodes a string for use in a URL path, preserving slashes.
+     * Converts spaces to %20 instead of + for URL path compatibility.
      */
     private fun String.encodeURLPathSafe(): String = URLEncoder.encode(this, Charsets.UTF_8)
         .replace("%2F", "/")
         .replace("+", "%20")
 
+    /**
+     * The unsigned URL for this file.
+     * This URL will only work if the bucket has public read access configured.
+     */
     override val url: String
         get() = "https://${system.bucket}.s3.${system.region.id()}.amazonaws.com/${unixPath.encodeURLPathSafe()}"
 
+    /**
+     * A signed URL for secure, time-limited access to this file.
+     *
+     * This implementation uses a custom AWS Signature V4 signing process that is significantly
+     * faster than the AWS SDK's built-in presigner. The URL includes authentication credentials
+     * and is valid for the duration specified in [S3PublicFileSystem.signedUrlDuration].
+     *
+     * If [S3PublicFileSystem.signedUrlDuration] is null, returns the unsigned [url] instead.
+     *
+     * @return A signed URL valid for GET requests
+     */
     override val signedUrl: String
         get() = system.signedUrlDuration?.let { e ->
             val creds = system.creds()
@@ -209,7 +265,16 @@ public class S3FileObject(
             result
         } ?: url
 
-    override fun uploadUrl(timeout: Duration): String = 
+    /**
+     * Generates a signed URL for uploading content to this file.
+     *
+     * This uses the custom signing implementation when [S3PublicFileSystem.signedUrlDuration] is set,
+     * otherwise falls back to the AWS SDK presigner.
+     *
+     * @param timeout The duration for which the upload URL will be valid
+     * @return A signed URL valid for PUT requests
+     */
+    override fun uploadUrl(timeout: Duration): String =
         system.signedUrlDuration?.let { _ ->
             val creds = system.creds()
             val accessKey = creds.access
@@ -275,6 +340,10 @@ public class S3FileObject(
         }.url().toString()
 
 
+    /**
+     * Alternative signed URL using AWS SDK's official presigner.
+     * Used for performance comparison testing.
+     */
     internal val signedUrlOfficial: String
         get() = system.signedUrlDuration?.let { duration ->
             system.signer.presignGetObject {
@@ -286,6 +355,10 @@ public class S3FileObject(
             }.url().toString()
         } ?: url
 
+    /**
+     * Alternative upload URL using AWS SDK's official presigner.
+     * Used for performance comparison testing.
+     */
     internal fun uploadUrlOfficial(timeout: Duration): String =
         system.signer.presignPutObject {
             it.signatureDuration(timeout.toJavaDuration())
@@ -296,9 +369,21 @@ public class S3FileObject(
         }.url().toString()
 
     override fun toString(): String = url
+
     override fun equals(other: Any?): Boolean = other is S3FileObject && other.system == system && other.unixPath == unixPath
+
     override fun hashCode(): Int = 31 * system.hashCode() + unixPath.hashCode()
 
+    /**
+     * Validates the signature of an external URL's query parameters.
+     *
+     * This method attempts to verify the AWS Signature V4 signature locally first.
+     * If local verification fails or throws an exception, it falls back to making
+     * an HTTP request to S3 to validate the URL.
+     *
+     * @param queryParams The query parameters portion of the URL (after the '?')
+     * @throws IllegalArgumentException if the signature is invalid
+     */
     internal fun assertSignatureValid(queryParams: String) {
         if (system.signedUrlDuration != null) {
             try {
@@ -341,7 +426,8 @@ public class S3FileObject(
 
                 if (regeneratedSig == headers["X-Amz-Signature"]!!) return
             } catch (e: Exception) {
-                /* squish */
+                // Ignore.  It's OK if this fails; it just indicates the signature wasn't one we understand.
+                // We can validate it with a call to S3 instead.
             }
             return runBlocking {
                 val response = client.get("$url?$queryParams") {
@@ -384,3 +470,38 @@ public class S3FileObject(
         private fun String.sha256(): String = java.security.MessageDigest.getInstance("SHA-256").digest(toByteArray()).toHex()
     }
 }
+
+/*
+ * TODO: API Recommendations for S3FileObject
+ *
+ * 1. Error Handling: The list() method catches all exceptions and returns null. Consider being more
+ *    specific about which exceptions indicate "not a directory" vs actual errors that should be propagated.
+ *
+ * 2. Memory Efficiency: The get() method loads entire file into memory with readAllBytes(). For large files,
+ *    consider adding streaming alternatives or documenting the memory implications.
+ *
+ * 3. Redundant Code: The put() method has an unnecessary size check - both branches do the same thing.
+ *    Simplify to: RequestBody.fromBytes(content.data.bytes())
+ *
+ * 4. Cross-Region Copy: The copyTo() optimization only works within the same bucket. Consider extending
+ *    this to support cross-bucket copies within the same region, which is also server-side.
+ *
+ * 5. Signature Verification: The assertSignatureValid method falls back to making an HTTP request with
+ *    runBlocking, which could block the calling thread. Consider making this a suspend function or
+ *    documenting the blocking behavior.
+ *
+ * 6. URL Encoding: The encodeURLPathSafe method may not handle all edge cases correctly. Consider using
+ *    a more robust URL encoding library or AWS's URLEncoder for consistency with their SDKs.
+ *
+ * 7. Expiration Checking: The signedUrl and uploadUrl methods don't check if the credentials have expired
+ *    before generating signatures. Consider adding expiration validation.
+ *
+ * 8. Multipart Uploads: For large files, single-part uploads are inefficient. Consider exposing multipart
+ *    upload functionality or automatically using it for files above a threshold (e.g., 5MB).
+ *
+ * 9. Metadata Support: Consider adding methods to get/set custom metadata on S3 objects, which is a
+ *    commonly needed feature.
+ *
+ * 10. Listing Directories: The list() method doesn't include subdirectories (common prefixes). Consider
+ *     adding an option to include subdirectories or returning a richer result type.
+ */

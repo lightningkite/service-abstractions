@@ -23,6 +23,19 @@ import kotlin.time.toJavaDuration
 
 /**
  * An implementation of [PublicFileSystem] that uses AWS S3 for storage.
+ *
+ * This implementation provides access to files stored in an AWS S3 bucket with support for:
+ * - Signed URLs for secure access control
+ * - Multiple credential providers (static keys, profiles, default chain)
+ * - Optimized URL signing using custom implementation
+ * - Connection pooling via [AwsConnections]
+ *
+ * @property name The service name for logging and identification
+ * @property region The AWS region where the bucket is located
+ * @property credentialProvider The AWS credentials provider for authentication
+ * @property bucket The S3 bucket name
+ * @property signedUrlDuration The duration for which signed URLs are valid. If null, URLs are not signed (public bucket).
+ * @property context The setting context for accessing shared resources
  */
 public class S3PublicFileSystem(
     override val name: String,
@@ -42,6 +55,14 @@ public class S3PublicFileSystem(
     private var credsOnHandMs: Long = 0
     private var credsDirect: DirectAwsCredentials? = null
 
+    /**
+     * Direct AWS credentials with pre-encoded session token for efficient URL generation.
+     *
+     * @property access The AWS access key ID
+     * @property secret The AWS secret access key
+     * @property token The optional session token for temporary credentials
+     * @property tokenPreEncoded The pre-encoded session token for use in URLs
+     */
     public data class DirectAwsCredentials(
         val access: String,
         val secret: String,
@@ -51,7 +72,12 @@ public class S3PublicFileSystem(
     }
 
     /**
-     * Gets the current AWS credentials.
+     * Gets the current AWS credentials, caching them until expiration.
+     *
+     * This method caches credentials to avoid repeated calls to the credential provider.
+     * Credentials are refreshed when they expire or when the cache is empty.
+     *
+     * @return The current [DirectAwsCredentials]
      */
     public fun creds(): DirectAwsCredentials {
         val onHand = credsDirect
@@ -74,7 +100,13 @@ public class S3PublicFileSystem(
     private var lastSigningKeyDate: String = ""
 
     /**
-     * Gets a signing key for the given date.
+     * Gets a signing key for the given date, caching it for reuse within the same day.
+     *
+     * The signing key is derived from AWS credentials following AWS Signature Version 4 specification.
+     * It is cached per date to avoid expensive key derivation operations on every signature.
+     *
+     * @param date The date string in YYYYMMDD format
+     * @return A [SecretKeySpec] for signing requests
      */
     public fun signingKey(date: String): SecretKeySpec {
         val lastSigningKey = lastSigningKey
@@ -93,7 +125,10 @@ public class S3PublicFileSystem(
     }
 
     /**
-     * The S3 client.
+     * The synchronous S3 client for blocking operations.
+     *
+     * This client uses the HTTP client from [AwsConnections] for connection pooling.
+     * It is lazily initialized on first access.
      */
     public val s3: S3Client by lazy {
         S3Client.builder()
@@ -104,7 +139,10 @@ public class S3PublicFileSystem(
     }
 
     /**
-     * The S3 async client.
+     * The asynchronous S3 client for non-blocking operations.
+     *
+     * This client uses the async HTTP client from [AwsConnections] for connection pooling.
+     * It is lazily initialized on first access.
      */
     public val s3Async: S3AsyncClient by lazy {
         S3AsyncClient.builder()
@@ -115,7 +153,10 @@ public class S3PublicFileSystem(
     }
 
     /**
-     * The S3 presigner.
+     * The S3 presigner for creating signed URLs using AWS SDK.
+     *
+     * This is used as a fallback or for comparison with the custom signing implementation.
+     * It is lazily initialized on first access.
      */
     public val signer: S3Presigner by lazy {
         S3Presigner.builder()
@@ -127,8 +168,8 @@ public class S3PublicFileSystem(
     override val root: S3FileObject = S3FileObject(this, File(""))
 
     override fun parseInternalUrl(url: String): S3FileObject? {
-        if (rootUrls.none { prefix -> url.startsWith(prefix) }) return null
-        val path = url.substringAfter(rootUrls.first()).substringBefore('?')
+        val matchingPrefix = rootUrls.firstOrNull { prefix -> url.startsWith(prefix) } ?: return null
+        val path = url.substringAfter(matchingPrefix).substringBefore('?')
         return S3FileObject(this, File(path))
     }
 
@@ -139,7 +180,15 @@ public class S3PublicFileSystem(
     }
 
     /**
-     * Checks the health of the S3 connection by performing a test write and read.
+     * Checks the health of the S3 connection by performing a test write, read, and delete.
+     *
+     * This health check validates:
+     * - Write permissions to the bucket
+     * - Read permissions from the bucket
+     * - Delete permissions in the bucket
+     * - Content integrity (written data matches read data)
+     *
+     * @return [HealthStatus] with OK level if all operations succeed, ERROR otherwise
      */
     override suspend fun healthCheck(): HealthStatus {
         return try {
@@ -179,6 +228,15 @@ public class S3PublicFileSystem(
     }
 
     public companion object {
+        /**
+         * Creates S3 file system settings using static credentials.
+         *
+         * @param user AWS access key ID
+         * @param password AWS secret access key
+         * @param region AWS region
+         * @param bucket S3 bucket name
+         * @return Settings URL for S3 file system
+         */
         public fun PublicFileSystem.Settings.Companion.s3(
             user: String,
             password: String,
@@ -187,18 +245,42 @@ public class S3PublicFileSystem(
         ): PublicFileSystem.Settings =
             PublicFileSystem.Settings("s3://$user:$password@$bucket.s3-$region.amazonaws.com")
 
+        /**
+         * Creates S3 file system settings using a named AWS profile.
+         *
+         * @param profile AWS profile name from ~/.aws/credentials
+         * @param region AWS region
+         * @param bucket S3 bucket name
+         * @return Settings URL for S3 file system
+         */
         public fun PublicFileSystem.Settings.Companion.s3(
             profile: String,
             region: Region,
             bucket: String,
         ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$profile@$bucket.s3-$region.amazonaws.com")
 
+        /**
+         * Creates S3 file system settings using default AWS credential chain.
+         *
+         * This will use environment variables, instance profile, or other default credential sources.
+         *
+         * @param region AWS region
+         * @param bucket S3 bucket name
+         * @return Settings URL for S3 file system
+         */
         public fun PublicFileSystem.Settings.Companion.s3(
             region: Region,
             bucket: String,
         ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$bucket.s3-$region.amazonaws.com")
 
         init {
+            // Registers the "s3" URL scheme with the PublicFileSystem.Settings parser
+            // Supports formats:
+            // - s3://bucket.region.amazonaws.com/                           (default credentials)
+            // - s3://profile@bucket.region.amazonaws.com/                   (named profile)
+            // - s3://user:password@bucket.region.amazonaws.com/             (static credentials)
+            // Query parameters:
+            // - signedUrlDuration: Duration for signed URLs (default: 1h, "forever"/"null" for unsigned)
             PublicFileSystem.Settings.register("s3") { name, url, context ->
                 val regex =
                     Regex("""s3:\/\/(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com\/?""")
@@ -240,7 +322,6 @@ public class S3PublicFileSystem(
                         }
 
                         profile.isNotBlank() -> {
-                            println("Using profile name $profile")
                             DefaultCredentialsProvider.builder().profileName(profile).build()
                         }
 
@@ -275,3 +356,38 @@ internal fun ByteArray.toHex(): String = buildString {
         append(item.toUByte().toString(16).padStart(2, '0'))
     }
 }
+
+/*
+ * TODO: API Recommendations for S3PublicFileSystem
+ *
+ * 1. Connection Lifecycle: Consider implementing connect() and disconnect() methods from the Service interface
+ *    to properly manage S3 client resources in serverless environments (AWS Lambda, SnapStart).
+ *
+ * 2. Thread Safety: The credential caching mechanism (credsDirect, credsOnHandMs) and signing key cache
+ *    (lastSigningKey, lastSigningKeyDate) are not thread-safe. Consider using @Volatile or atomic operations
+ *    if this class will be accessed from multiple threads concurrently.
+ *
+ * 3. Credential Refresh: The credential expiration check uses > instead of >=, which could lead to using
+ *    expired credentials for a brief moment. Consider using >= for safer behavior.
+ *
+ * 4. URL Parsing: The parseInternalUrl method now correctly handles multiple root URL patterns, but consider
+ *    adding URL decoding for paths that contain encoded characters.
+ *
+ * 5. Health Check: Consider making the health check path configurable or using a more unique path to avoid
+ *    potential conflicts with user data (e.g., a UUID-based path).
+ *
+ * 6. Logging: Replace the println statement in the profile credential provider with proper logging using
+ *    kotlin-logging for consistency with the rest of the library.
+ *
+ * 7. Settings Builder: Consider adding a fluent builder API in addition to the URL-based configuration for
+ *    improved type safety and IDE support.
+ *
+ * 8. Multipart Upload: For large files, consider exposing multipart upload capabilities through the API
+ *    to improve upload performance and reliability.
+ *
+ * 9. Bucket Validation: Consider adding an optional bucket existence check during initialization to fail
+ *    fast if the bucket doesn't exist or is inaccessible.
+ *
+ * 10. Metrics/Observability: Consider adding OpenTelemetry spans for S3 operations to track performance
+ *     and errors in production environments.
+ */

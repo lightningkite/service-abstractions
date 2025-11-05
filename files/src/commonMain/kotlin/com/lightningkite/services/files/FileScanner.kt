@@ -17,10 +17,40 @@ import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
 
+/**
+ * A service for scanning and validating file content.
+ *
+ * FileScanner implementations can verify that uploaded files match their claimed media types,
+ * scan for malware, check file integrity, or perform other validation operations.
+ */
 public interface FileScanner : Service {
-    public enum class Requires { Nothing, FirstSixteenBytes, Whole }
+    /**
+     * Indicates how much of a file the scanner needs to read for validation.
+     */
+    public enum class Requires {
+        /** The scanner doesn't need to read any file content */
+        Nothing,
+        /** The scanner needs the first 16 bytes (e.g., for magic number validation) */
+        FirstSixteenBytes,
+        /** The scanner needs the entire file content */
+        Whole
+    }
 
+    /**
+     * Determines how much data this scanner needs to validate a file of the given type.
+     *
+     * @param claimedType The media type claimed by the file
+     * @return How much of the file needs to be read for this scanner
+     */
     public fun requires(claimedType: MediaType): Requires
+
+    /**
+     * Scans the provided data stream to validate it matches the claimed type.
+     *
+     * @param claimedType The media type the file claims to be
+     * @param data A source stream of the file data to scan
+     * @throws FileScanException if validation fails (e.g., type mismatch, malware detected)
+     */
     public suspend fun scan(claimedType: MediaType, data: Source)
 
     /**
@@ -49,9 +79,31 @@ public interface FileScanner : Service {
     }
 }
 
+/**
+ * Exception thrown when file scanning detects an issue.
+ *
+ * This can indicate type mismatches, malware detection, or other validation failures.
+ */
 public open class FileScanException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+/**
+ * Scans typed data using this file scanner.
+ *
+ * @param item The typed data to scan
+ * @throws FileScanException if validation fails
+ */
 public suspend fun FileScanner.scan(item: TypedData): Unit = scan(item.mediaType, item.data.source())
+
+/**
+ * Copies a file and scans it, deleting the destination if scanning fails.
+ *
+ * This is useful for safely processing uploaded files - if they fail validation,
+ * they won't remain in the destination location.
+ *
+ * @param source The source file to copy
+ * @param destination The destination file location
+ * @throws FileScanException if scanning fails
+ */
 public suspend fun FileScanner.copyAndScan(source: FileObject, destination: FileObject) {
     try {
         source.copyTo(destination)
@@ -62,6 +114,17 @@ public suspend fun FileScanner.copyAndScan(source: FileObject, destination: File
     }
 }
 
+// TODO: Splittable stream - currently downloads entire file to scan with multiple scanners.
+// Consider implementing a stream splitter to avoid multiple downloads for large files.
+/**
+ * Scans typed data using multiple file scanners in parallel.
+ *
+ * Note: Currently downloads the entire file to disk to enable multiple scanners to read it.
+ * This may be inefficient for large files scanned by multiple scanners.
+ *
+ * @param item The typed data to scan
+ * @throws FileScanException if any scanner fails validation
+ */
 public suspend fun List<FileScanner>.scan(item: TypedData) {
     // TODO Splittable stream
     coroutineScope {
@@ -75,6 +138,16 @@ public suspend fun List<FileScanner>.scan(item: TypedData) {
     }
 }
 
+/**
+ * Copies a file and scans it with multiple scanners, deleting the destination if any scanner fails.
+ *
+ * All scanners run in parallel. If any scanner fails, the destination is deleted.
+ *
+ * @param source The source file to copy
+ * @param destination The destination file location
+ * @throws FileScanException if any scanner fails validation
+ * @throws IllegalArgumentException if the source file doesn't exist
+ */
 public suspend fun List<FileScanner>.copyAndScan(source: FileObject, destination: FileObject) {
     try {
         source.copyTo(destination)
@@ -85,15 +158,38 @@ public suspend fun List<FileScanner>.copyAndScan(source: FileObject, destination
     }
 }
 
+/**
+ * A FileScanner that validates files by checking their magic numbers (file signatures).
+ *
+ * This scanner reads the first 16 bytes of a file to verify that the binary signature
+ * matches the claimed media type. This helps prevent users from uploading malicious
+ * files disguised with incorrect extensions.
+ *
+ * Currently supports validation for:
+ * - JPEG images (including EXIF format)
+ * - GIF images
+ * - TIFF images
+ * - PNG images
+ * - XML-based formats
+ */
 public class CheckMimeFileScanner(
     override val name: String,
     override val context: SettingContext
 ) : FileScanner {
     override fun requires(claimedType: MediaType): FileScanner.Requires = FileScanner.Requires.FirstSixteenBytes
+
     override suspend fun scan(claimedType: MediaType, data: Source) {
         val bytes = data.use {
             data.readByteArray(16)
         }
+
+        // Validate we have enough bytes to perform magic number checks
+        if (bytes.size < 16) {
+            throw FileScanException(
+                "File too small to validate (${bytes.size} bytes, need at least 16 bytes for magic number validation)"
+            )
+        }
+
         val c1 = bytes[0].toUByte().toInt()
         val c2 = bytes[1].toUByte().toInt()
         val c3 = bytes[2].toUByte().toInt()
@@ -169,4 +265,30 @@ public class CheckMimeFileScanner(
 
     override suspend fun healthCheck(): HealthStatus = HealthStatus(HealthStatus.Level.OK)
 }
+
+/*
+ * TODO: API Recommendations
+ *
+ * 2. The CheckMimeFileScanner only validates a small set of image formats and XML.
+ *    Consider:
+ *    - Adding more common formats (PDF, ZIP, MP4, etc.)
+ *    - Making the validation rules configurable/extensible
+ *    - Providing a registry pattern for adding custom validators
+ *
+ * 3. The List<FileScanner>.scan() extension downloads the entire file to enable multiple
+ *    scanners to read it. For large files with many scanners, consider:
+ *    - Implementing a splittable/tee'd stream
+ *    - Caching file content in memory for small files
+ *    - Allowing scanners to declare if they can share a single pass
+ *
+ * 4. Consider adding a result type instead of throwing exceptions for some use cases:
+ *    sealed class ScanResult {
+ *        object Valid : ScanResult()
+ *        data class Invalid(val reason: String) : ScanResult()
+ *    }
+ *    This would allow collecting all validation failures instead of failing fast.
+ *
+ * 5. The FileScanner.Requires enum doesn't have a way to specify custom byte amounts.
+ *    Consider: data class Requires(val bytes: Int?) where null means whole file.
+ */
 
