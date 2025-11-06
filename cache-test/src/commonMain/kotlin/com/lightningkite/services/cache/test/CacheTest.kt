@@ -56,7 +56,8 @@ abstract class CacheTest {
             return
         }
         runSuspendingTest {
-            assertEquals(HealthStatus.Level.OK, cache.healthCheck().level)
+            val h = cache.healthCheck()
+            assertEquals(HealthStatus.Level.OK, h.level, "Health status not OK; got ${h}")
         }
     }
 

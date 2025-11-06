@@ -175,13 +175,15 @@ public data class OpenTelemetrySettings(
         init {
 //            this.register("none") { _, _, _ -> null}
             this.register("otlp-grpc") { name: String, setting: OpenTelemetrySettings, context ->
+                val target = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4317"
+                println("otlp-grpc target: '$target'")
                 val resource =
                     Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
                 val telemetry = OpenTelemetrySdk.builder()
                     .setTracerProvider(
                         setting.builder(
                             OtlpGrpcSpanExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("otlp-grpc").let { "http$it" }).build()
+                                .setEndpoint(target).build()
                         )
                             .setResource(resource)
                             .build()
@@ -189,7 +191,7 @@ public data class OpenTelemetrySettings(
                     .setMeterProvider(
                         setting.builder(
                             OtlpGrpcMetricExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("otlp-grpc").let { "http$it" }).build()
+                                .setEndpoint(target).build()
                         )
                             .setResource(resource)
                             .build()
@@ -197,7 +199,7 @@ public data class OpenTelemetrySettings(
                     .setLoggerProvider(
                         setting.builder(
                             OtlpGrpcLogRecordExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("otlp-grpc").let { "http$it" }).build()
+                                .setEndpoint(target).build()
                         )
                             .setResource(resource)
                             .build()
@@ -208,13 +210,15 @@ public data class OpenTelemetrySettings(
                 telemetry
             }
             this.register("otlp-http") { name: String, setting: OpenTelemetrySettings, context ->
+                val target = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4318"
+                println("otlp-http target: '$target'")
                 val resource =
                     Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
                 val telemetry = OpenTelemetrySdk.builder()
                     .setTracerProvider(
                         setting.builder(
                             OtlpHttpSpanExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("otlp-http").let { "http$it" }).build()
+                                .setEndpoint(target).build()
                         )
                             .setResource(resource)
                             .build()
@@ -222,7 +226,7 @@ public data class OpenTelemetrySettings(
                     .setMeterProvider(
                         setting.builder(
                             OtlpHttpMetricExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("otlp-http").let { "http$it" }).build()
+                                .setEndpoint(target).build()
                         )
                             .setResource(resource)
                             .build()
@@ -230,7 +234,7 @@ public data class OpenTelemetrySettings(
                     .setLoggerProvider(
                         setting.builder(
                             OtlpHttpLogRecordExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("otlp-http").let { "http$it" }).build()
+                                .setEndpoint(target).build()
                         )
                             .setResource(resource)
                             .build()
