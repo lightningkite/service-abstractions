@@ -428,10 +428,21 @@ private fun File.runTerraform(vararg args: String): String {
     return text
 }
 
+fun noTerraform(): Boolean {
+    val result = ProcessBuilder("terraform")
+        .also { it.environment()["AWS_PROFILE"] = "lk" }
+        .inheritIO()
+        .start()
+        .waitFor()
+    if(result == 2) return false
+    else return true
+}
+
 inline fun <reified T> assertPlannableAws(
     name: String,
     fulfill: context(TerraformEmitterAws) (TerraformNeed<T>) -> Unit,
 ) {
+    if(noTerraform()) return
     for (tester in listOf(
         TerraformEmitterAwsTest(File("build/test/$name"), "test", serializer<T>()),
         TerraformEmitterAwsTestWithVpc(File("build/test/$name-vpc"), "test", serializer<T>()),
@@ -451,6 +462,7 @@ inline fun <reified T> assertPlannableAwsDomain(
     name: String,
     fulfill: context(TerraformEmitterAwsDomain) (TerraformNeed<T>) -> Unit,
 ) {
+    if(noTerraform()) return
     for (tester in listOf(
         TerraformEmitterAwsTestWithDomain(File("build/test/$name"), "test", serializer<T>()),
         TerraformEmitterAwsTestWithDomainVpc(File("build/test/$name-vpc"), "test", serializer<T>()),
@@ -468,6 +480,7 @@ inline fun <reified T> assertPlannableAwsVpc(
     name: String,
     fulfill: context(TerraformEmitterAwsVpc) (TerraformNeed<T>) -> Unit,
 ) {
+    if(noTerraform()) return
     for (tester in listOf(
         TerraformEmitterAwsTestWithVpc(File("build/test/$name"), "test", serializer<T>()),
         TerraformEmitterAwsTestWithDomainVpc(File("build/test/$name-dom"), "test", serializer<T>()),
