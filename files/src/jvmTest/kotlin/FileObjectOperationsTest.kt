@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * Tests for FileObject operations and edge cases.
@@ -23,7 +24,12 @@ class FileObjectOperationsTest {
         val destination = fileSystem.root.then("destination.txt")
 
         // copyTo silently does nothing if source doesn't exist
-        source.copyTo(destination)
+        try {
+            source.copyTo(destination)
+            fail("Should have thrown")
+        } catch(e: IllegalArgumentException) {
+            //OK cool
+        }
 
         // Destination should not exist since source doesn't exist
         assertNull(destination.get(), "Destination should not exist after copying from non-existent source")
