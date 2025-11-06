@@ -232,7 +232,8 @@ fun TerraformEmitterAwsVpc.bastion(
     virtualization_type: String = "hvm",
     volume_type: String = "ebs-gp3",
 ) {
-    @Serializable data class Admin(
+    @Serializable
+    data class Admin(
         val username: String = "jivie",
         val email: String = "joseph@lightningkite.com",
         val name: String = "Joseph Ivie",
@@ -248,7 +249,7 @@ fun TerraformEmitterAwsVpc.bastion(
     emit("bastion") {
         val admins = listOf(Admin())
 
-        val instanceProfile = if(policyStatements.isNotEmpty()) {
+        val instanceProfile = if (policyStatements.isNotEmpty()) {
             "resource.aws_iam_role.bastion_exec" {
                 "name" - "$projectPrefix-bastion-exec"
                 "assume_role_policy" - Json.encodeToString(buildJsonObject {
@@ -263,13 +264,13 @@ fun TerraformEmitterAwsVpc.bastion(
                     put(
                         "Statement", Json.encodeToJsonElement(
                             listOfNotNull(
-                        AwsPolicyStatement(
-                        action = listOf("sts:AssumeRole"),
-                        resource = listOf(expression("aws_iam_role.bastion_exec.arn")),
-                        principal = buildJsonObject {
-                            put("service", "ec2.amazonaws.com")
-                        }
-                    ))))
+                                AwsPolicyStatement(
+                                    action = listOf("sts:AssumeRole"),
+                                    resource = listOf(expression("aws_iam_role.bastion_exec.arn")),
+                                    principal = buildJsonObject {
+                                        put("service", "ec2.amazonaws.com")
+                                    }
+                                ))))
                 })
             }
             "resource.aws_iam_instance_profile.bastion_instance_profile" {
@@ -315,7 +316,7 @@ fun TerraformEmitterAwsVpc.bastion(
         "resource.aws_vpc_security_group_ingress_rule.allow_tls_ipv4" {
             "security_group_id" - expression("aws_security_group.bastion.id")
             "cidr_ipv4" - "75.148.99.49/32"
-            "from_port"-22
+            "from_port" - 22
             "ip_protocol" - "tcp"
             "to_port" - 22
         }
@@ -331,7 +332,10 @@ fun TerraformEmitterAwsVpc.bastion(
             instanceProfile?.let { "iam_instance_profile" - it }
             "key_name" - expression("aws_key_pair.bastion.key_name")
 
-            "vpc_security_group_ids" - listOf(expression(applicationVpc.securityGroup), expression("aws_security_group.bastion.id"))
+            "vpc_security_group_ids" - listOf(
+                expression(applicationVpc.securityGroup),
+                expression("aws_security_group.bastion.id")
+            )
             "subnet_id" - expression("element(${applicationVpc.publicSubnets}, 0)")
 
             "tags" {
@@ -428,21 +432,24 @@ private fun File.runTerraform(vararg args: String): String {
     return text
 }
 
-fun noTerraform(): Boolean {
-    val result = ProcessBuilder("terraform")
-        .also { it.environment()["AWS_PROFILE"] = "lk" }
-        .inheritIO()
-        .start()
-        .waitFor()
-    if(result == 2) return false
-    else return true
+fun hasTerraform(): Boolean {
+    try {
+        val result = ProcessBuilder("terraform", "--version")
+            .also { it.environment()["AWS_PROFILE"] = "lk" }
+            .inheritIO()
+            .start()
+            .waitFor()
+        return result == 0
+    } catch(e: Exception) {
+        return false
+    }
 }
 
 inline fun <reified T> assertPlannableAws(
     name: String,
     fulfill: context(TerraformEmitterAws) (TerraformNeed<T>) -> Unit,
 ) {
-    if(noTerraform()) return
+    if (!hasTerraform()) return
     for (tester in listOf(
         TerraformEmitterAwsTest(File("build/test/$name"), "test", serializer<T>()),
         TerraformEmitterAwsTestWithVpc(File("build/test/$name-vpc"), "test", serializer<T>()),
@@ -462,7 +469,7 @@ inline fun <reified T> assertPlannableAwsDomain(
     name: String,
     fulfill: context(TerraformEmitterAwsDomain) (TerraformNeed<T>) -> Unit,
 ) {
-    if(noTerraform()) return
+    if (!hasTerraform()) return
     for (tester in listOf(
         TerraformEmitterAwsTestWithDomain(File("build/test/$name"), "test", serializer<T>()),
         TerraformEmitterAwsTestWithDomainVpc(File("build/test/$name-vpc"), "test", serializer<T>()),
@@ -480,7 +487,7 @@ inline fun <reified T> assertPlannableAwsVpc(
     name: String,
     fulfill: context(TerraformEmitterAwsVpc) (TerraformNeed<T>) -> Unit,
 ) {
-    if(noTerraform()) return
+    if (!hasTerraform()) return
     for (tester in listOf(
         TerraformEmitterAwsTestWithVpc(File("build/test/$name"), "test", serializer<T>()),
         TerraformEmitterAwsTestWithDomainVpc(File("build/test/$name-dom"), "test", serializer<T>()),
