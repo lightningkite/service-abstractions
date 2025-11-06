@@ -66,7 +66,7 @@ private class SynchronizedMap<K, V> : MutableMap<K, V> {
 
     // Note: This is not atomic like ConcurrentHashMap.getOrPut on JVM
     // but it's synchronized so only one thread can execute it at a time
-    override fun getOrPut(key: K, defaultValue: () -> V): V = synchronized(lock) {
+    fun getOrPut(key: K, defaultValue: () -> V): V = synchronized(lock) {
         map.getOrPut(key, defaultValue)
     }
 }
