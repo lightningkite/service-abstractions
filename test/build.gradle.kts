@@ -46,6 +46,7 @@ kotlin {
                 api(libs.coroutinesCore)
                 api(libs.kotlinTest)
                 api(libs.coroutinesTesting)
+                api(libs.logBackClassic)
             }
             kotlin {
                 compilerOptions {
@@ -83,7 +84,6 @@ kotlin {
         }
         val jvmTest by getting {
             dependencies {
-                implementation(libs.logBackClassic)
             }
         }
     }

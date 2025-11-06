@@ -13,6 +13,7 @@ import java.io.File
 import com.google.firebase.messaging.Notification as FCMNotification
 import com.lightningkite.services.notifications.*
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlin.time.Duration
 
 
 /**
@@ -40,11 +41,18 @@ public class FcmNotificationClient(
                     assert(file.exists()) { "FCM credentials file not found at '$file'" }
                     creds = file.readText()
                 }
-                FirebaseApp.initializeApp(
-                    FirebaseOptions.builder()
-                        .setCredentials(GoogleCredentials.fromStream(creds.byteInputStream()))
-                        .build()
-                )
+
+                // Check if a FirebaseApp with this name already exists
+                val existingApp = FirebaseApp.getApps().firstOrNull { it.name == name }
+                if (existingApp == null) {
+                    FirebaseApp.initializeApp(
+                        FirebaseOptions.builder()
+                            .setCredentials(GoogleCredentials.fromStream(creds.byteInputStream()))
+                            .build(),
+                        name
+                    )
+                }
+
                 FcmNotificationClient(name, context)
             }
         }
@@ -70,7 +78,8 @@ public class FcmNotificationClient(
             setApnsConfig(
                 with(ApnsConfig.builder()) {
                     data.timeToLive?.let {
-                        this.putHeader("apns-expiration", it.toString())
+                        val expirationTime = (System.currentTimeMillis() / 1000) + it.inWholeSeconds
+                        this.putHeader("apns-expiration", expirationTime.toString())
                     }
                     if (notification != null) {
                         setFcmOptions(
@@ -106,7 +115,7 @@ public class FcmNotificationClient(
                     with(AndroidConfig.builder()) {
                         setPriority(android.priority.toAndroid())
                         data.timeToLive?.let {
-                            setTtl(it.inWholeSeconds)
+                            setTtl(it.inWholeMilliseconds)
                         }
                         setNotification(
                             AndroidNotification.builder()
@@ -157,17 +166,14 @@ public class FcmNotificationClient(
         val errorCodes = HashSet<MessagingErrorCode>()
         targets
             .chunked(500)
-            .map {
-                builder()
-                    .addAllTokens(it)
-                    .build()
-            }
-            .forEach {
+            .map { chunk -> chunk to builder().addAllTokens(chunk).build() }
+            .forEach { (chunk, message) ->
                 withContext(Dispatchers.IO) {
-                    val result = FirebaseMessaging.getInstance().sendEachForMulticast(it)
+                    val result = FirebaseMessaging.getInstance().sendEachForMulticast(message)
                     result.responses.forEachIndexed { index, sendResponse ->
-                        log.debug { "Send $index: ${sendResponse.messageId} / ${sendResponse.exception?.message} ${sendResponse.exception?.messagingErrorCode}" }
-                        results[targets[index]] = when (val errorCode = sendResponse.exception?.messagingErrorCode) {
+                        val targetToken = chunk[index]
+                        log.debug { "Send: ${sendResponse.messageId} / ${sendResponse.exception?.message} ${sendResponse.exception?.messagingErrorCode}" }
+                        results[targetToken] = when (val errorCode = sendResponse.exception?.messagingErrorCode) {
                             null -> NotificationSendResult.Success
                             MessagingErrorCode.UNREGISTERED -> NotificationSendResult.DeadToken
                             else -> {
@@ -183,6 +189,22 @@ public class FcmNotificationClient(
         }
         return results
     }
+
+    override suspend fun connect() {
+        // Firebase client initializes lazily, no explicit connection needed
+    }
+
+    override suspend fun disconnect() {
+        // Important for serverless environments - clean up Firebase resources
+        try {
+            FirebaseApp.getInstance(name).delete()
+        } catch (e: IllegalStateException) {
+            // App already deleted or doesn't exist
+            log.debug { "FirebaseApp '$name' already deleted or doesn't exist" }
+        }
+    }
+
+    override val healthCheckFrequency: Duration = Duration.INFINITE
 
     override suspend fun healthCheck(): HealthStatus {
         return HealthStatus(HealthStatus.Level.OK, additionalMessage = "Firebase Notification Service - No direct health checks available.")

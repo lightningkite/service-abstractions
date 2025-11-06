@@ -63,4 +63,99 @@ public class RedisCache(
     override suspend fun remove(key: String) {
         lettuceConnection.del(key).collect { }
     }
+
+    override suspend fun <T> compareAndSet(
+        key: String,
+        serializer: KSerializer<T>,
+        expected: T?,
+        new: T?,
+        timeToLive: Duration?
+    ): Boolean {
+        // Early return if expected equals new
+        if (expected == new) return true
+
+        // Use a Lua script for atomic compare-and-set
+        // This is more reliable than WATCH/MULTI/EXEC in reactive contexts
+        val expectedJson = expected?.let { json.encodeToString(serializer, it) }
+        val newJson = new?.let { json.encodeToString(serializer, it) }
+
+        val script = when {
+            expected == null && new == null -> {
+                // Both null - nothing to do
+                return true
+            }
+            expected == null && new != null -> {
+                // Insert if not exists
+                """
+                if redis.call('EXISTS', KEYS[1]) == 0 then
+                    if ARGV[2] then
+                        redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
+                    else
+                        redis.call('SET', KEYS[1], ARGV[1])
+                    end
+                    return 1
+                else
+                    return 0
+                end
+                """.trimIndent()
+            }
+            expected != null && new == null -> {
+                // Delete if matches
+                """
+                local current = redis.call('GET', KEYS[1])
+                if current == ARGV[1] then
+                    redis.call('DEL', KEYS[1])
+                    return 1
+                else
+                    return 0
+                end
+                """.trimIndent()
+            }
+            else -> {
+                // Update if matches
+                """
+                local current = redis.call('GET', KEYS[1])
+                if current == ARGV[1] then
+                    if ARGV[3] then
+                        redis.call('PSETEX', KEYS[1], ARGV[3], ARGV[2])
+                    else
+                        redis.call('SET', KEYS[1], ARGV[2])
+                    end
+                    return 1
+                else
+                    return 0
+                end
+                """.trimIndent()
+            }
+        }
+
+        val args = when {
+            expected == null && new != null -> {
+                // Insert: ARGV[1] = newJson, ARGV[2] = ttl (optional)
+                if (timeToLive != null) {
+                    arrayOf(newJson!!, timeToLive.inWholeMilliseconds.toString())
+                } else {
+                    arrayOf(newJson!!)
+                }
+            }
+            expected != null && new == null -> {
+                // Delete: ARGV[1] = expectedJson
+                arrayOf(expectedJson!!)
+            }
+            else -> {
+                // Update: ARGV[1] = expectedJson, ARGV[2] = newJson, ARGV[3] = ttl (optional)
+                if (timeToLive != null) {
+                    arrayOf(expectedJson!!, newJson!!, timeToLive.inWholeMilliseconds.toString())
+                } else {
+                    arrayOf(expectedJson!!, newJson!!)
+                }
+            }
+        }
+
+        val result = lettuceConnection.eval<Long>(script, io.lettuce.core.ScriptOutputType.INTEGER, arrayOf(key), *args)
+            .awaitFirstOrNull()
+
+        return result == 1L
+    }
+
 }

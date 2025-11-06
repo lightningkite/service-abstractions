@@ -102,4 +102,73 @@ public class MemcachedCache(
         client.delete(key)
         Unit
     }
+
+    override suspend fun <T> compareAndSet(
+        key: String,
+        serializer: KSerializer<T>,
+        expected: T?,
+        new: T?,
+        timeToLive: Duration?
+    ): Boolean = withContext(Dispatchers.IO) {
+        // Early return if expected equals new
+        if (expected == new) return@withContext true
+
+        // Get the current value with CAS token
+        val getsResult = client.gets<String>(key)
+        val currentValue = try {
+            getsResult?.value?.let { json.decodeFromString(serializer, it) }
+        } catch (e: Exception) {
+            null
+        }
+
+        // Check if current value matches expected
+        if (currentValue != expected) {
+            return@withContext false
+        }
+
+        // Now perform the CAS operation based on the state transition
+        when {
+            new == null && expected == null -> {
+                // Both null, nothing to do
+                true
+            }
+            new == null -> {
+                // Delete the key (expected is not null, so key exists)
+                client.delete(key)
+                true
+            }
+            expected == null -> {
+                // Key doesn't exist, use add (atomic set-if-not-exists)
+                client.add(
+                    key,
+                    timeToLive?.inWholeSeconds?.toInt() ?: 0,
+                    json.encodeToString(serializer, new)
+                )
+            }
+            else -> {
+                // Key exists and we have a CAS token, use it for atomic update
+                client.cas(
+                    key,
+                    timeToLive?.inWholeSeconds?.toInt() ?: 0,
+                    json.encodeToString(serializer, new),
+                    getsResult!!.cas
+                )
+            }
+        }
+    }
+
+    override suspend fun <T> modify(
+        key: String,
+        serializer: KSerializer<T>,
+        maxTries: Int,
+        timeToLive: Duration?,
+        modification: (T?) -> T?
+    ): Boolean {
+        repeat(maxTries) {
+            val current = get(key, serializer)
+            val new = modification(current)
+            if (compareAndSet(key, serializer, current, new, timeToLive)) return true
+        }
+        return false
+    }
 }
