@@ -181,7 +181,7 @@ public data class OpenTelemetrySettings(
                     .setTracerProvider(
                         setting.builder(
                             OtlpGrpcSpanExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                                .setEndpoint(setting.url.removePrefix("otlp-grpc").let { "http$it" }).build()
                         )
                             .setResource(resource)
                             .build()
@@ -189,7 +189,7 @@ public data class OpenTelemetrySettings(
                     .setMeterProvider(
                         setting.builder(
                             OtlpGrpcMetricExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                                .setEndpoint(setting.url.removePrefix("otlp-grpc").let { "http$it" }).build()
                         )
                             .setResource(resource)
                             .build()
@@ -197,7 +197,7 @@ public data class OpenTelemetrySettings(
                     .setLoggerProvider(
                         setting.builder(
                             OtlpGrpcLogRecordExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                                .setEndpoint(setting.url.removePrefix("otlp-grpc").let { "http$it" }).build()
                         )
                             .setResource(resource)
                             .build()
@@ -214,7 +214,7 @@ public data class OpenTelemetrySettings(
                     .setTracerProvider(
                         setting.builder(
                             OtlpHttpSpanExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                                .setEndpoint(setting.url.removePrefix("otlp-http").let { "http$it" }).build()
                         )
                             .setResource(resource)
                             .build()
@@ -222,7 +222,7 @@ public data class OpenTelemetrySettings(
                     .setMeterProvider(
                         setting.builder(
                             OtlpHttpMetricExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                                .setEndpoint(setting.url.removePrefix("otlp-http").let { "http$it" }).build()
                         )
                             .setResource(resource)
                             .build()
@@ -230,7 +230,7 @@ public data class OpenTelemetrySettings(
                     .setLoggerProvider(
                         setting.builder(
                             OtlpHttpLogRecordExporter.builder()
-                                .setEndpoint(setting.url.removePrefix("oltp-grpc").let { "http$it" }).build()
+                                .setEndpoint(setting.url.removePrefix("otlp-http").let { "http$it" }).build()
                         )
                             .setResource(resource)
                             .build()
