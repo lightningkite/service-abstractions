@@ -36,9 +36,12 @@ import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import io.opentelemetry.sdk.trace.export.SpanExporter
 import io.opentelemetry.sdk.trace.samplers.Sampler
 import io.opentelemetry.sdk.common.CompletableResultCode
+import io.opentelemetry.sdk.logs.SdkLoggerProviderBuilder
 import kotlinx.serialization.Serializable
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -88,7 +91,7 @@ public data class OpenTelemetrySettings(
         val ratio: Double = 1.0,
         val parentBased: Boolean = true,
     ) {
-        internal fun make() = if (parentBased) {
+        public fun make(): Sampler = if (parentBased) {
             Sampler.parentBasedBuilder(
                 Sampler.traceIdRatioBased(ratio)
             ).build()
@@ -106,7 +109,7 @@ public data class OpenTelemetrySettings(
         val maxNumberOfAttributesPerEvent: Int = 32,
         val maxNumberOfAttributesPerLink: Int = 32,
     ) {
-        internal fun make() =
+        public fun make(): SpanLimits =
             SpanLimits.builder()
                 .setMaxAttributeValueLength(maxAttributeValueLength)
                 .setMaxNumberOfAttributes(maxNumberOfAttributes)
@@ -117,7 +120,7 @@ public data class OpenTelemetrySettings(
                 .build()
     }
 
-    private fun builder(exporter: SpanExporter): SdkTracerProviderBuilder {
+    public fun builder(exporter: SpanExporter): SdkTracerProviderBuilder {
         val wrappedExporter = maxSpansPerSecond?.let {
             RateLimitedSpanExporter(exporter, it)
         } ?: exporter
@@ -143,7 +146,7 @@ public data class OpenTelemetrySettings(
             )
     }
 
-    private fun builder(exporter: LogRecordExporter) = SdkLoggerProvider.builder().apply {
+    public fun builder(exporter: LogRecordExporter): SdkLoggerProviderBuilder = SdkLoggerProvider.builder().apply {
         val safeExporter = SafeLogRecordExporter(exporter, logLimits.maxBodyLength, logLimits.maxStackTraceDepth)
         val wrappedExporter = maxLogsPerSecond?.let {
             RateLimitedLogRecordExporter(safeExporter, it)
@@ -161,7 +164,7 @@ public data class OpenTelemetrySettings(
         )
     }
 
-    private fun builder(exporter: MetricExporter): SdkMeterProviderBuilder {
+    public fun builder(exporter: MetricExporter): SdkMeterProviderBuilder {
         return SdkMeterProvider.builder().registerMetricReader(
             (metricReportBatching?.frequency ?: 5.seconds).let {
                 PeriodicMetricReader.builder(
@@ -175,7 +178,8 @@ public data class OpenTelemetrySettings(
         init {
 //            this.register("none") { _, _, _ -> null}
             this.register("otlp-grpc") { name: String, setting: OpenTelemetrySettings, context ->
-                val target = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4317"
+                val targetWithoutSchema = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4317"
+                val target = "http://$targetWithoutSchema"
                 println("otlp-grpc target: '$target'")
                 val resource =
                     Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
@@ -210,7 +214,8 @@ public data class OpenTelemetrySettings(
                 telemetry
             }
             this.register("otlp-http") { name: String, setting: OpenTelemetrySettings, context ->
-                val target = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4318"
+                val targetWithoutSchema = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4318"
+                val target = "http://$targetWithoutSchema"
                 println("otlp-http target: '$target'")
                 val resource =
                     Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
@@ -314,7 +319,7 @@ public data class OpenTelemetrySettings(
     }
 
     override fun invoke(name: String, context: SettingContext): OpenTelemetry {
-        return Companion.parse(name, this, context)
+        return parse(name, this, context)
     }
 }
 
@@ -370,8 +375,8 @@ private class RateLimitedSpanExporter(
     private val delegate: SpanExporter,
     private val maxSpansPerSecond: Int
 ) : SpanExporter {
-    private val permits = java.util.concurrent.Semaphore(maxSpansPerSecond)
-    private val refillScheduler = java.util.concurrent.Executors.newScheduledThreadPool(1)
+    private val permits = Semaphore(maxSpansPerSecond)
+    private val refillScheduler = Executors.newScheduledThreadPool(1)
 
     init {
         // Refill permits every second
@@ -423,8 +428,8 @@ private class RateLimitedLogRecordExporter(
     private val delegate: LogRecordExporter,
     private val maxLogsPerSecond: Int
 ) : LogRecordExporter {
-    private val permits = java.util.concurrent.Semaphore(maxLogsPerSecond)
-    private val refillScheduler = java.util.concurrent.Executors.newScheduledThreadPool(1)
+    private val permits = Semaphore(maxLogsPerSecond)
+    private val refillScheduler = Executors.newScheduledThreadPool(1)
 
     init {
         // Refill permits every second
