@@ -5,6 +5,7 @@ import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.files.test.FileSystemTests
 import com.lightningkite.services.test.performance
 import io.ktor.client.request.*
+import java.io.File
 import kotlin.test.Test
 
 /**
@@ -14,11 +15,6 @@ import kotlin.test.Test
  * against the S3 implementation. It also includes S3-specific tests for performance
  * and configuration parsing.
  *
- * Note: These tests require AWS credentials and access to a real S3 bucket.
- * The tests use the AWS profile "lk" and bucket "lightningkite-unit-test-bucket" in us-west-2.
- * To run these tests locally, configure your AWS credentials using:
- * - AWS CLI: `aws configure --profile lk`
- * - Or set environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
  */
 class S3PublicFileSystemTest : FileSystemTests() {
 
@@ -30,7 +26,10 @@ class S3PublicFileSystemTest : FileSystemTests() {
     override val system: S3PublicFileSystem? by lazy {
         S3PublicFileSystem
         PublicFileSystem.Settings(
-            "s3://lk@lightningkite-unit-test-bucket.us-west-2.amazonaws.com"
+            File("../local/s3.txt").takeIf { it.exists() }?.readText() ?: run {
+                println("Skipping; need ../local/s3.txt to run the tests")
+                return@lazy null
+            }
         ).invoke("test", TestSettingContext()) as? S3PublicFileSystem
     }
 
