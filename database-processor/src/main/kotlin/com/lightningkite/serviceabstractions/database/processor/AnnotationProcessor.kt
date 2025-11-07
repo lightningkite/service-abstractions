@@ -17,7 +17,48 @@ import kotlin.collections.plus
 import kotlin.text.appendLine
 import kotlin.text.substringAfterLast
 
-
+/**
+ * KSP (Kotlin Symbol Processor) that generates type-safe DataClassPath field accessors.
+ *
+ * This processor scans for classes annotated with @GenerateDataClassPaths or @DatabaseModel
+ * and generates extension properties that enable type-safe field references in database queries.
+ *
+ * ## What It Generates
+ *
+ * For a model like:
+ * ```kotlin
+ * @GenerateDataClassPaths
+ * @Serializable
+ * data class User(val name: String, val age: Int)
+ * ```
+ *
+ * It generates:
+ * ```kotlin
+ * val User.Companion.path: DataClassPath<User, User>
+ * val User_name: SerializableProperty<User, String>
+ * val User_age: SerializableProperty<User, Int>
+ * val <ROOT> DataClassPath<ROOT, User>.name: DataClassPath<ROOT, String>
+ * val <ROOT> DataClassPath<ROOT, User>.age: DataClassPath<ROOT, Int>
+ * ```
+ *
+ * This enables queries like: `User.path.age gte 18`
+ *
+ * ## Processing Flow
+ *
+ * 1. Scans all Kotlin source files for annotated classes
+ * 2. Groups classes by package
+ * 3. Generates ModelFields{hash}.kt files with path accessors
+ * 4. Caches results to avoid regeneration when sources unchanged
+ *
+ * ## Important Implementation Details
+ *
+ * - **Hash-based caching**: Uses file content checksums to skip regeneration
+ * - **Generic type support**: Handles type parameters correctly
+ * - **Lock files**: Prevents concurrent generation in multi-module builds
+ * - **Common/platform**: Generates code in commonMain when applicable
+ *
+ * @see com.lightningkite.services.data.GenerateDataClassPaths
+ */
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
@@ -202,3 +243,17 @@ class MyProvider : SymbolProcessorProvider {
         )
     }
 }
+
+// TODO: API Recommendation - Add incremental processing support
+//  KSP supports incremental processing to speed up builds, but this processor uses ALL_FILES dependencies.
+//  Consider tracking per-file dependencies to enable incremental builds in large projects.
+//  This would significantly improve developer experience during iterative development.
+//
+// TODO: API Recommendation - Generate IDE completion helpers
+//  Consider generating synthetic properties that improve IDE autocomplete experience.
+//  For example, generate User.Companion.fields object with all field names as string constants.
+//  This would help when building dynamic queries or debugging field names.
+//
+// TODO: API Recommendation - Add validation for supported field types
+//  Some field types may not work well with all database backends (e.g., complex nested generics).
+//  Add validation warnings during code generation to catch unsupported patterns early.

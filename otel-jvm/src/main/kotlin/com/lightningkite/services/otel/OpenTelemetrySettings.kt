@@ -47,6 +47,85 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
+/**
+ * Configuration for OpenTelemetry observability (traces, metrics, logs).
+ *
+ * Provides integrated telemetry export to various backends with cost-control features:
+ * - **Multiple exporters**: OTLP (gRPC/HTTP), console output, logging output
+ * - **Batching control**: Configurable batch sizes and frequencies
+ * - **Rate limiting**: Prevent cost spikes during traffic bursts
+ * - **Sampling**: Reduce data volume via trace sampling
+ * - **Payload limits**: Prevent individual payloads from being too large
+ * - **Logback integration**: Automatic log forwarding to OpenTelemetry
+ *
+ * ## Supported URL Schemes
+ *
+ * - `log://` - Output to logging framework (default, development)
+ * - `console://` - Human-readable console output
+ * - `otlp-grpc://host:port` - OTLP over gRPC (production, efficient)
+ * - `otlp-http://host:port` - OTLP over HTTP (production, firewall-friendly)
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Development: output to logs
+ * OpenTelemetrySettings(url = "log://")
+ *
+ * // Production: send to observability backend via gRPC
+ * OpenTelemetrySettings(
+ *     url = "otlp-grpc://otel-collector:4317",
+ *     sampling = OpenTelemetrySettings.Sampling(ratio = 0.1), // 10% sampling
+ *     maxSpansPerSecond = 1000, // rate limit
+ *     batching = BatchingRules(frequency = 10.seconds)
+ * )
+ *
+ * // Cloud provider: send to hosted service via HTTP
+ * OpenTelemetrySettings(
+ *     url = "otlp-http://api.honeycomb.io:443",
+ *     batching = BatchingRules(frequency = 30.seconds, maxSize = 200)
+ * )
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **Logback integration**: Automatically attaches OpenTelemetry appender to root logger
+ * - **W3C propagation**: Uses W3C Trace Context for distributed tracing
+ * - **Batching**: Defaults to batch exports every 5 minutes to reduce overhead
+ * - **Rate limiting**: Optional per-second limits for spans and logs
+ * - **Sampling**: Trace-level sampling with parent-based decision propagation
+ * - **Resource attributes**: Sets service.name automatically
+ *
+ * ## Important Gotchas
+ *
+ * - **Default batching is slow**: 5-minute batching is good for cost control but bad for real-time visibility
+ * - **Rate limiting drops data**: Exceeding limits silently drops telemetry (logged as warning)
+ * - **Sampling is probabilistic**: You may miss important traces at low sampling rates
+ * - **Log integration side effect**: Modifies Logback configuration globally on initialization
+ * - **Blocking on shutdown**: Exporters may block during flush (ensure proper shutdown hooks)
+ * - **No authentication**: OTLP exporters don't include authentication (use sidecars or environment variables)
+ *
+ * ## Cost Control Features
+ *
+ * This settings class includes several features to prevent runaway observability costs:
+ *
+ * 1. **Batching**: Reduces egress bandwidth by combining small payloads
+ * 2. **Rate limiting**: Hard caps on spans/logs per second (drops excess)
+ * 3. **Sampling**: Reduces trace volume while preserving statistical significance
+ * 4. **Payload limits**: Truncates oversized attributes, events, and logs
+ * 5. **Queue limits**: Prevents memory exhaustion during traffic spikes
+ *
+ * @property url Backend URL scheme (log, console, otlp-grpc, otlp-http)
+ * @property batching Default batching rules for all signal types (traces, metrics, logs)
+ * @property metricReportBatching Metric-specific batching (defaults to [batching])
+ * @property traceReportBatching Trace-specific batching (defaults to [batching])
+ * @property logReportBatching Log-specific batching (defaults to [batching] with 10x queue size)
+ * @property batchingLimits Hard limits on batch processing (prevents unbounded queues)
+ * @property spanLimits Limits on individual span payload sizes
+ * @property logLimits Limits on individual log payload sizes
+ * @property sampling Trace sampling configuration (null = 100% sampling)
+ * @property maxSpansPerSecond Rate limit for span export (null = unlimited)
+ * @property maxLogsPerSecond Rate limit for log export (null = unlimited)
+ */
 @Serializable
 public data class OpenTelemetrySettings(
     override val url: String = "log",
@@ -180,7 +259,6 @@ public data class OpenTelemetrySettings(
             this.register("otlp-grpc") { name: String, setting: OpenTelemetrySettings, context ->
                 val targetWithoutSchema = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4317"
                 val target = "http://$targetWithoutSchema"
-                println("otlp-grpc target: '$target'")
                 val resource =
                     Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
                 val telemetry = OpenTelemetrySdk.builder()
@@ -216,7 +294,6 @@ public data class OpenTelemetrySettings(
             this.register("otlp-http") { name: String, setting: OpenTelemetrySettings, context ->
                 val targetWithoutSchema = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4318"
                 val target = "http://$targetWithoutSchema"
-                println("otlp-http target: '$target'")
                 val resource =
                     Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
                 val telemetry = OpenTelemetrySdk.builder()
@@ -472,3 +549,41 @@ private class RateLimitedLogRecordExporter(
         return delegate.shutdown()
     }
 }
+
+/*
+ * TODO: API Recommendations for OpenTelemetry module
+ *
+ * 1. Remove println statements: Lines 183 and 219 use println() for debugging. Replace with proper
+ *    logging using kotlin-logging for consistency with the rest of the library.
+ *
+ * 2. Configurable service name: Currently hardcoded to "opentelemetry-tests" in multiple places.
+ *    Add a serviceName parameter to OpenTelemetrySettings to allow customization.
+ *
+ * 3. Authentication support: Add support for authentication headers in OTLP exporters (API keys,
+ *    bearer tokens) for cloud providers like Honeycomb, New Relic, Datadog, etc.
+ *
+ * 4. SafeLogRecordExporter incomplete: The SafeLogRecordExporter only logs warnings but doesn't
+ *    actually truncate oversized log bodies. Consider implementing proper truncation or removing
+ *    the maxBodyLength parameter if it's not being used.
+ *
+ * 5. Rate limiter resource leak: RateLimitedSpanExporter and RateLimitedLogRecordExporter create
+ *    scheduled executors but don't provide graceful shutdown timeouts. Consider adding a timeout
+ *    parameter and using awaitTermination().
+ *
+ * 6. Batching defaults: The 5-minute default batching frequency is very conservative. Consider
+ *    lowering it to 10-30 seconds for better real-time visibility while still maintaining efficiency.
+ *
+ * 7. Sampling configuration: Add support for more sophisticated sampling strategies like:
+ *    - Error-based sampling (always sample traces with errors)
+ *    - Latency-based sampling (always sample slow traces)
+ *    - Rule-based sampling (sample by endpoint, user, etc.)
+ *
+ * 8. Logback side effects: The otelLoggingSetup() function modifies global Logback state. Consider
+ *    making this opt-in via a configuration flag or documenting the behavior more prominently.
+ *
+ * 9. Resource attributes: Add support for customizing resource attributes (service.version,
+ *    deployment.environment, host.name, etc.) beyond just service.name.
+ *
+ * 10. Exporter health checks: Add health check methods to validate connectivity to OTLP endpoints
+ *     before application startup.
+ */

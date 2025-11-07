@@ -5,9 +5,94 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
 
 /**
- * An abstract way to communicate with a database on a specific table
- * using conditions and modifications. The underlying database is irrelevant and
- * will have its own implementation of this interface.
+ * Type-safe interface for querying and modifying a database collection/table.
+ *
+ * Table provides a uniform CRUD API across different database backends using
+ * [Condition] for queries and [Modification] for updates. All operations are
+ * type-safe via the generic Model parameter.
+ *
+ * ## Core Operations
+ *
+ * ### Queries
+ * - [find] - Stream matching records with sorting and pagination
+ * - [count] - Count matching records
+ * - [aggregate] - Compute statistics (sum, average, etc.)
+ *
+ * ### Writes
+ * - [insert] - Insert new records
+ * - [updateOne]/[updateMany] - Modify existing records
+ * - [replaceOne] - Replace entire record
+ * - [upsertOne] - Insert or update (atomic)
+ * - [deleteOne]/[deleteMany] - Remove records
+ *
+ * ## Usage Examples
+ *
+ * ```kotlin
+ * val userTable: Table<User> = database.table<User>()
+ *
+ * // Query
+ * val adults = userTable.find(
+ *     condition = User.path.age gte 18,
+ *     orderBy = listOf(SortPart(User.path.name, ascending = true)),
+ *     limit = 100
+ * ).toList()
+ *
+ * // Update
+ * userTable.updateOne(
+ *     condition = User.path._id eq userId,
+ *     modification = modification<User> { it ->
+ *         it.age += 1
+ *         it.lastLoginAt assign Clock.System.now()
+ *     }
+ * )
+ *
+ * // Insert
+ * val newUser = User(name = "Alice", age = 30)
+ * userTable.insert(listOf(newUser))
+ *
+ * // Delete
+ * userTable.deleteMany(condition = User.path.active eq false)
+ * ```
+ *
+ * ## Performance Variants
+ *
+ * Most operations have "*IgnoringResult" variants that skip returning old values:
+ *
+ * ```kotlin
+ * // Returns EntryChange<User> with old and new values
+ * val change = userTable.updateOne(condition, modification)
+ *
+ * // Returns Boolean - faster, less memory
+ * val wasUpdated = userTable.updateOneIgnoringResult(condition, modification)
+ * ```
+ *
+ * Use ignoring-result variants when you don't need the old/new values for better performance.
+ *
+ * ## Streaming Results
+ *
+ * [find] returns a Flow<Model> that streams results incrementally:
+ *
+ * ```kotlin
+ * userTable.find(condition).collect { user ->
+ *     processUser(user)  // Handles one at a time
+ * }
+ * ```
+ *
+ * This is memory-efficient for large result sets.
+ *
+ * ## Important Gotchas
+ *
+ * - **Ordering**: Without orderBy, result order is database-dependent
+ * - **Transactions**: Not all backends support multi-document transactions
+ * - **Indexes**: Ensure proper indexes for performance (use @Index annotation)
+ * - **Serialization**: Model must be @Serializable and registered in SerializersModule
+ * - **maxQueryMs**: Prevents runaway queries (default: 15 seconds)
+ *
+ * @param Model The data model type stored in this table (must be @Serializable)
+ * @property serializer KSerializer for Model type
+ * @see Database
+ * @see Condition
+ * @see Modification
  */
 public interface Table<Model : Any> {
     public val serializer: KSerializer<Model>
@@ -216,3 +301,20 @@ public interface Table<Model : Any> {
         condition: Condition<Model>
     ): Int
 }
+
+// TODO: API Recommendation - Add batch insert optimization
+//  insert() currently takes an Iterable and inserts all records.
+//  Consider adding insertBatch() that takes a batch size parameter for chunked inserts,
+//  which can significantly improve performance for large datasets by reducing round trips.
+//  Example: suspend fun insertBatch(models: Iterable<Model>, batchSize: Int = 1000): List<Model>
+//
+// TODO: API Recommendation - Add cursor-based pagination
+//  Current skip/limit pagination is inefficient for large offsets.
+//  Add cursor-based pagination using _id or custom fields:
+//  suspend fun findAfter(cursor: Model?, condition: Condition<Model>, limit: Int): Flow<Model>
+//  This would enable efficient "infinite scroll" patterns.
+//
+// TODO: API Recommendation - Consider adding findOne convenience method
+//  Common pattern is find().firstOrNull() for single results.
+//  Add: suspend fun findOne(condition: Condition<Model>, orderBy: List<SortPart<Model>> = listOf()): Model?
+//  This would allow backends to optimize single-result queries (LIMIT 1)

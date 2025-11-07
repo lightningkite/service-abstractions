@@ -4,10 +4,75 @@ import com.lightningkite.services.data.TypedData
 import kotlin.time.Duration
 
 /**
- * An abstraction that allows FileSystem implementations to access and manipulate the underlying files.
+ * Represents a file or directory in a [PublicFileSystem].
  *
- * FileObject represents a file or directory in a [PublicFileSystem]. It provides operations for
- * reading, writing, copying, moving, and deleting files, as well as listing directory contents.
+ * FileObject provides a path-based abstraction for file operations across different
+ * storage backends. Each FileObject points to a specific location that may or may not
+ * exist in the underlying storage.
+ *
+ * ## Basic Operations
+ *
+ * ```kotlin
+ * val fs: PublicFileSystem = ...
+ * val file = fs.root.then("uploads/document.pdf")
+ *
+ * // Write
+ * file.put(TypedData(pdfBytes, MediaType.Application.Pdf))
+ *
+ * // Read
+ * val content = file.get()  // null if doesn't exist
+ *
+ * // Check existence
+ * val exists = file.head() != null
+ *
+ * // Delete
+ * file.delete()
+ *
+ * // Copy
+ * val backup = fs.root.then("backups/document.pdf")
+ * file.copyTo(backup)
+ *
+ * // Move
+ * val archive = fs.root.then("archive/document.pdf")
+ * file.moveTo(archive)
+ * ```
+ *
+ * ## Directory Operations
+ *
+ * ```kotlin
+ * // List directory
+ * val dir = fs.root.then("uploads/")
+ * val files = dir.list()  // List<FileObject>?, null if not a directory
+ *
+ * // Navigate
+ * val parent = file.parent  // Parent directory
+ * val name = file.name      // "document.pdf"
+ * ```
+ *
+ * ## URL Access
+ *
+ * ```kotlin
+ * // Internal URL (unsigned, server-side only)
+ * val internalUrl = file.url
+ *
+ * // Signed URL (includes signature, safe for clients)
+ * val signedUrl = file.signedUrl(duration = 30.minutes)
+ * ```
+ *
+ * ## Important Gotchas
+ *
+ * - **Existence**: Most operations don't check if file exists first (use [head] to check)
+ * - **Overwrite**: [put] overwrites existing files without warning
+ * - **Move atomicity**: [moveTo] is not atomic (copy + delete)
+ * - **Directory deletion**: May fail if directory is not empty (implementation-specific)
+ * - **Path normalization**: Paths are normalized to prevent .. traversal attacks
+ * - **Concurrent writes**: No locking - last write wins
+ * - **Parent directories**: [put] creates parent directories automatically
+ * - **URL expiration**: Signed URLs expire based on PublicFileSystem settings
+ *
+ * @see PublicFileSystem
+ * @see TypedData
+ * @see FileInfo
  */
 public interface FileObject {
     /**

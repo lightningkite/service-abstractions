@@ -20,9 +20,86 @@ import jakarta.mail.util.ByteArrayDataSource
 import java.util.Properties
 import kotlin.use
 
-
 /**
- * An email client that will send real emails through SMTP.
+ * SMTP email implementation using Jakarta Mail (JavaMail) for sending emails.
+ *
+ * Provides production-ready email sending with support for:
+ * - **SMTP authentication**: Username/password authentication
+ * - **TLS/SSL encryption**: Automatic configuration based on port (465 SSL, 587 STARTTLS)
+ * - **Bulk sending**: Efficient batch operations with persistent connections
+ * - **HTML + Plain text**: Multipart alternative format for client compatibility
+ * - **Attachments**: Full MIME attachment support (inline and regular)
+ * - **Custom headers**: Support for reply-to, CC, BCC, and custom headers
+ *
+ * ## Supported URL Schemes
+ *
+ * - `smtp://host:port` - Unauthenticated SMTP (rare)
+ * - `smtp://username:password@host:port?fromEmail=...&fromLabel=...` - Authenticated SMTP
+ *
+ * Format: `smtp://[username]:[password]@[host]:[port]?[params]`
+ *
+ * Query parameters:
+ * - `fromEmail` (required): Default sender email address
+ * - `fromLabel` (optional): Default sender display name (defaults to context.projectName)
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Gmail SMTP
+ * EmailService.Settings("smtp://myuser@gmail.com:app-password@smtp.gmail.com:587?fromEmail=noreply@example.com&fromLabel=My App")
+ *
+ * // SendGrid SMTP
+ * EmailService.Settings("smtp://apikey:SG.xxx@smtp.sendgrid.net:587?fromEmail=support@example.com")
+ *
+ * // Office 365
+ * EmailService.Settings("smtp://user@company.com:password@smtp.office365.com:587?fromEmail=noreply@company.com")
+ *
+ * // Using helper function
+ * EmailService.Settings.Companion.smtp(
+ *     username = "apikey",
+ *     password = "SG.xxx",
+ *     host = "smtp.sendgrid.net",
+ *     port = "587",
+ *     fromEmail = "support@example.com",
+ *     fromLabel = "Support Team"
+ * )
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **Port-based TLS**: Automatically enables SSL on port 465, STARTTLS on port 587
+ * - **Multipart emails**: Always sends both HTML and plain text alternatives
+ * - **Attachment handling**: Closes attachment streams after sending (important for memory)
+ * - **Bulk optimization**: Reuses SMTP connection for bulk sends (faster than individual)
+ * - **Session caching**: Jakarta Mail session created once and reused
+ *
+ * ## Important Gotchas
+ *
+ * - **Gmail requires app passwords**: Regular passwords don't work with 2FA enabled
+ * - **Port 25 often blocked**: Use 587 (STARTTLS) or 465 (SSL) instead
+ * - **Attachment memory**: Attachments are loaded into memory; beware of large files
+ * - **sendBulk reuses connection**: More efficient but connection failures affect entire batch
+ * - **HTML rendering**: Different email clients render HTML differently (test thoroughly)
+ * - **From address**: Some providers (Gmail, SendGrid) restrict from addresses to verified domains
+ * - **Rate limiting**: SMTP servers may rate limit; consider queuing for high volumes
+ *
+ * ## Common SMTP Providers
+ *
+ * | Provider | Host | Port | Notes |
+ * |----------|------|------|-------|
+ * | Gmail | smtp.gmail.com | 587 | Requires app password |
+ * | SendGrid | smtp.sendgrid.net | 587 | Username is always "apikey" |
+ * | Mailgun | smtp.mailgun.org | 587 | Region-specific hosts |
+ * | Office 365 | smtp.office365.com | 587 | Requires modern auth |
+ * | AWS SES | email-smtp.region.amazonaws.com | 587 | Requires SMTP credentials |
+ *
+ * @property name Service name for logging/metrics
+ * @property context Service context
+ * @property hostName SMTP server hostname
+ * @property port SMTP server port (465 for SSL, 587 for STARTTLS, 25 for plain)
+ * @property username SMTP authentication username (null for no auth)
+ * @property password SMTP authentication password (null for no auth)
+ * @property from Default sender address and name
  */
 public class JavaSmtpEmailService(
     override val name: String,

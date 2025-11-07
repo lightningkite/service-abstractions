@@ -96,13 +96,31 @@ data class MyServerSettings(
 )
 ```
 
+## Documentation
+
+Comprehensive user guides are available for all major modules:
+
+### Core Services
+- **[Database](docs/database-module.md)** - Type-safe database abstraction with MongoDB, PostgreSQL, and in-memory implementations
+  - [Query DSL Reference](docs/database-query-dsl.md) - Complete guide to Condition and Modification syntax
+- **[Cache](docs/cache-module.md)** - Unified caching interface for Redis, Memcached, DynamoDB, and in-memory
+- **[Files](docs/files-module.md)** - File storage abstraction for local filesystem and AWS S3
+
+### Communication Services
+- **[Email](docs/email-module.md)** - Send emails via SMTP (Gmail, SendGrid, Office 365, AWS SES)
+- **[SMS](docs/sms-module.md)** - Send text messages via Twilio and other providers
+- **[Push Notifications](docs/notifications-module.md)** - Multi-platform push notifications via Firebase Cloud Messaging
+- **[PubSub](docs/pubsub-module.md)** - Publish-subscribe messaging for real-time event broadcasting
+
+### Additional Resources
+- [Code Review Priorities](plans/CODE_REVIEW_PRIORITIES.md) - Known issues and enhancement opportunities
+- [Code Review Summary](plans/CODE_REVIEW_SUMMARY.md) - Detailed code review findings
+
 ## Status
 
 Incomplete and in progress.  You can use Lightning Server if you want access immediately.
 
 ### Roadmap
 
-- [ ] Finish moving all implemented resources from [Lightning Server](https://github.com/lightningkite/lightning-server) and polish.
-- [ ] Move tools for generating [Terraform](https://developer.hashicorp.com/terraform) files for your needed services.
 - [ ] Add a convenient loader for Ktor and potentially other server libraries.
   - Are there even any other coroutine-based server libraries?  What else is desired?

@@ -11,6 +11,64 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
+/**
+ * AWS DynamoDB implementation of the Cache abstraction using Kotlin Multiplatform SDK.
+ *
+ * Stores cache entries in a DynamoDB table with automatic table creation and TTL management.
+ * This is a KMP-compatible implementation (supports JVM, JS, Native targets).
+ *
+ * ## Features
+ *
+ * - **Auto-provisioned tables**: Creates table automatically if it doesn't exist
+ * - **TTL support**: Native DynamoDB TTL for automatic expiration (uses `expires` attribute)
+ * - **Conditional writes**: Atomic setIfNotExists via DynamoDB condition expressions
+ * - **Pay-per-request billing**: Uses on-demand billing mode (no capacity planning)
+ * - **Strong consistency**: All reads use consistent reads
+ *
+ * ## Supported URL Schemes
+ *
+ * - `dynamodb-kmp://us-east-1/cache-table` - KMP DynamoDB cache
+ *
+ * Format: `dynamodb-kmp://[region]/[tableName]`
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Production cache in us-east-1
+ * Cache.Settings("dynamodb-kmp://us-east-1/prod-cache")
+ *
+ * // Development cache in eu-west-1
+ * Cache.Settings("dynamodb-kmp://eu-west-1/dev-cache")
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **Serialization**: Values stored as JSON strings in the `value` attribute
+ * - **Table schema**: Primary key is `key` (String), with optional `expires` (Number) for TTL
+ * - **Auto-provisioning**: Creates table on first access if missing (waits for ACTIVE status)
+ * - **TTL enablement**: Automatically enables TTL on the `expires` attribute
+ * - **Credentials**: Uses AWS default credential chain (env vars, IAM roles, etc.)
+ *
+ * ## Important Gotchas
+ *
+ * - **No CAS**: This implementation doesn't support atomic compareAndSet (uses default retry-based modify)
+ * - **Table creation latency**: First access may be slow (~10-30 seconds for table creation)
+ * - **TTL delay**: DynamoDB TTL is best-effort, may take minutes to hours to expire items
+ * - **get() checks expiration**: Manually filters expired items (don't rely solely on TTL deletion)
+ * - **Costs**: Pay-per-request billing charges per operation (economical for low traffic)
+ * - **Strong consistency**: All reads use consistent reads (higher cost than eventually consistent)
+ *
+ * ## Comparison with cache-dynamodb (JVM-only)
+ *
+ * - **KMP vs JVM**: This module supports all KMP targets, `cache-dynamodb` is JVM-only
+ * - **No CAS**: This implementation lacks atomic CAS, JVM version may support it
+ * - **SDK**: Uses AWS SDK for Kotlin (KMP), JVM uses AWS SDK for Java v2
+ *
+ * @property name Service name for logging/metrics
+ * @property region AWS region (e.g., "us-east-1")
+ * @property tableName DynamoDB table name for cache storage
+ * @property context Service context with serializers
+ */
 public class DynamoDbCacheKmp(
     override val name: String,
     private val region: String,

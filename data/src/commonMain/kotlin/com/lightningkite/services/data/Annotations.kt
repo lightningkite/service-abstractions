@@ -8,12 +8,46 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialKind
 import kotlin.reflect.KClass
 
+/**
+ * Data model annotations for validation, admin UI generation, and database indexing.
+ *
+ * This file contains annotations used to:
+ * - Define validation rules ([MaxLength], [IntegerRange], [FloatRange], [ExpectedPattern])
+ * - Configure admin UI behavior ([AdminSearchFields], [AdminTableColumns], [AdminHidden], etc.)
+ * - Specify database indexes ([Index], [IndexSet], [TextIndex])
+ * - Add metadata ([DisplayName], [Description], [Hint])
+ * - Define relationships ([References], [MultipleReferences])
+ *
+ * These annotations are processed by:
+ * - `database-processor` KSP plugin for code generation
+ * - Validation framework in validate.kt
+ * - Admin UI generators
+ * - Database schema generators
+ */
+
+/**
+ * Marks that the return value of this function should not be ignored.
+ *
+ * Used for static analysis tools to warn when important return values are discarded.
+ */
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.FUNCTION)
 annotation class CheckReturnValue
 
 /**
- * The natural sorting order of the items.  Uses field names with prefixed '-' and '~' for ordering.  See [SortPart]'s serialization format.
+ * Specifies the default sorting order for query results.
+ *
+ * Field names can be prefixed with:
+ * - `-` for descending order
+ * - `~` for case-insensitive sorting (text fields only)
+ *
+ * ## Example
+ * ```kotlin
+ * @NaturalSort(["-createdAt", "~name"])  // Sort by createdAt descending, then name ascending (case-insensitive)
+ * data class Article(val createdAt: Instant, val name: String)
+ * ```
+ *
+ * @param fields Array of field names with optional prefixes
  */
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
@@ -21,7 +55,9 @@ annotation class CheckReturnValue
 annotation class NaturalSort(val fields: Array<String>)
 
 /**
- * Which fields are text searched in the admin
+ * Specifies which fields should be searchable via text search in admin interfaces.
+ *
+ * @param fields Array of field names to include in text search
  */
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
@@ -29,7 +65,9 @@ annotation class NaturalSort(val fields: Array<String>)
 annotation class AdminSearchFields(val fields: Array<String>)
 
 /**
- * Which fields are columns in the admin
+ * Specifies which fields should appear as columns in admin list views.
+ *
+ * @param fields Array of field names to show as columns
  */
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
@@ -37,7 +75,11 @@ annotation class AdminSearchFields(val fields: Array<String>)
 annotation class AdminTableColumns(val fields: Array<String>)
 
 /**
- * Which fields are used to create a title in the admin
+ * Specifies which fields should be used to generate display titles in admin views.
+ *
+ * Fields will be concatenated to create a human-readable title.
+ *
+ * @param fields Array of field names to use for the title
  */
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
@@ -45,7 +87,9 @@ annotation class AdminTableColumns(val fields: Array<String>)
 annotation class AdminTitleFields(val fields: Array<String>)
 
 /**
- * Hide this field in admin forms.
+ * Hides this field from admin forms (both create and edit).
+ *
+ * Use for computed fields, internal IDs, or fields that shouldn't be user-editable.
  */
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
@@ -53,7 +97,9 @@ annotation class AdminTitleFields(val fields: Array<String>)
 annotation class AdminHidden()
 
 /**
- * Hide this field in admin forms.
+ * Makes this field read-only in admin forms.
+ *
+ * The field will be visible but not editable.
  */
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)

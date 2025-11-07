@@ -17,7 +17,74 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 
 /**
- * An SMS implementation that sends messages using the Twilio API.
+ * Twilio SMS implementation for sending text messages via Twilio API.
+ *
+ * Provides reliable SMS delivery with:
+ * - **Global coverage**: Twilio supports 180+ countries
+ * - **HTTP API**: REST-based API using Ktor HTTP client
+ * - **Basic authentication**: Simple account SID + auth token authentication
+ * - **Delivery tracking**: Can track message status via Twilio dashboard
+ * - **Two-way messaging**: Supports receiving SMS via webhooks (not implemented here)
+ *
+ * ## Supported URL Schemes
+ *
+ * - `twilio://accountSid:authToken@fromPhoneNumber` - Complete Twilio configuration
+ *
+ * Format: `twilio://[accountSid]:[authToken]@[fromPhoneNumber]`
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Production Twilio account
+ * SMS.Settings("twilio://ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:your_auth_token@+15551234567")
+ *
+ * // Using helper function
+ * SMS.Settings.Companion.twilio(
+ *     account = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+ *     key = "your_auth_token",
+ *     from = "+15551234567"
+ * )
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **HTTP client**: Uses Ktor with Java engine for HTTP requests
+ * - **Authentication**: HTTP Basic Auth with account SID as username, auth token as password
+ * - **API version**: Uses Twilio API 2010-04-01 (current stable version)
+ * - **Error handling**: Throws SMSException on non-201 responses with error details
+ * - **JSON parsing**: Configured to ignore unknown keys for API resilience
+ *
+ * ## Important Gotchas
+ *
+ * - **Phone number format**: Must use E.164 format (e.g., +15551234567)
+ * - **From number must be verified**: Twilio requires you to own/verify the from number
+ * - **Cost per message**: Twilio charges per SMS sent (varies by destination country)
+ * - **Rate limits**: Twilio has API rate limits (default: 1000 req/sec)
+ * - **Message length**: SMS limited to 160 characters (longer messages split into segments)
+ * - **Trial accounts**: Limited to verified phone numbers only
+ * - **No health check**: Health check returns OK but doesn't validate Twilio connectivity
+ * - **Character encoding**: Non-GSM-7 characters reduce message length (70 chars per segment)
+ *
+ * ## Twilio Setup
+ *
+ * 1. Create a Twilio account at https://www.twilio.com
+ * 2. Get your Account SID and Auth Token from the console
+ * 3. Purchase a phone number or use a Twilio number
+ * 4. Configure messaging settings (optional: webhooks for replies)
+ * 5. Use the credentials and phone number in your configuration
+ *
+ * ## Message Pricing
+ *
+ * Twilio charges vary by country:
+ * - **US/Canada**: ~$0.0079 per SMS
+ * - **UK**: ~$0.04 per SMS
+ * - **International**: Varies widely (check Twilio pricing)
+ *
+ * @property name Service name for logging/metrics
+ * @property context Service context
+ * @property account Twilio Account SID (starts with AC)
+ * @property key Twilio Auth Token
+ * @property from Sender phone number in E.164 format (e.g., +15551234567)
  */
 public class TwilioSMS(
     override val name: String,

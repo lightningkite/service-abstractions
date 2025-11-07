@@ -1,5 +1,70 @@
 package com.lightningkite.services.cache.dynamodb
 
+/**
+ * AWS DynamoDB implementation of the Cache abstraction using AWS SDK for Java v2.
+ *
+ * Stores cache entries in a DynamoDB table with automatic table creation and TTL management.
+ * This is the JVM-only implementation (for KMP support, see cache-dynamodb-kmp).
+ *
+ * ## Features
+ *
+ * - **Auto-provisioned tables**: Creates table automatically if it doesn't exist
+ * - **TTL support**: Native DynamoDB TTL for automatic expiration (uses `expires` attribute)
+ * - **Native type serialization**: Uses DynamoDB's AttributeValue serialization (not JSON strings)
+ * - **Pay-per-request billing**: Uses on-demand billing mode (no capacity planning)
+ * - **Strong consistency**: All reads use consistent reads
+ * - **AWS SDK v2**: Uses modern async AWS SDK with connection pooling
+ *
+ * ## Supported URL Schemes
+ *
+ * - `dynamodb://region/tableName` - Using default AWS credentials
+ * - `dynamodb://accessKey:secretKey@region/tableName` - Using explicit credentials
+ * - `dynamodb-local://` - Embedded DynamoDB Local for testing
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Production with default credentials (IAM role, env vars, etc.)
+ * Cache.Settings("dynamodb://us-east-1/prod-cache")
+ *
+ * // Development with explicit credentials
+ * Cache.Settings("dynamodb://AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY@us-east-1/dev-cache")
+ *
+ * // Local testing with DynamoDB Local
+ * Cache.Settings("dynamodb-local://")
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **Serialization**: Uses AWS SDK's native AttributeValue serialization (supports nested types)
+ * - **Table schema**: Primary key is `key` (String), with optional `expires` (Number) for TTL
+ * - **Auto-provisioning**: Creates table on first access if missing (waits for ACTIVE status)
+ * - **TTL enablement**: Automatically enables TTL on the `expires` attribute
+ * - **Health checks**: Integrates with AwsConnections for connection pool health
+ * - **Lazy initialization**: Table creation happens on first operation (not during construction)
+ *
+ * ## Important Gotchas
+ *
+ * - **No CAS**: This implementation doesn't expose atomic compareAndSet to users (uses default retry-based modify)
+ * - **Table creation latency**: First access may be slow (~10-30 seconds for table creation)
+ * - **TTL delay**: DynamoDB TTL is best-effort, may take minutes to hours to expire items
+ * - **get() checks expiration**: Manually filters expired items (don't rely solely on TTL deletion)
+ * - **Costs**: Pay-per-request billing charges per operation (economical for low traffic)
+ * - **Strong consistency**: All reads use consistent reads (higher cost than eventually consistent)
+ * - **Async operations**: Uses AWS SDK async client (coroutines via .await())
+ *
+ * ## Comparison with cache-dynamodb-kmp
+ *
+ * - **JVM-only**: This module is JVM/Android only, KMP version supports all targets
+ * - **Native types**: Uses AttributeValue serialization, KMP version uses JSON strings
+ * - **SDK**: Uses AWS SDK for Java v2, KMP uses AWS SDK for Kotlin
+ * - **AwsConnections**: Integrates with shared HTTP client pool for better resource management
+ *
+ * @property name Service name for logging/metrics
+ * @property makeClient Lazy factory for creating DynamoDB client (enables disconnect/reconnect)
+ * @property tableName DynamoDB table name for cache storage
+ * @property context Service context with serializers and AwsConnections
+ */
 
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
@@ -186,16 +251,6 @@ public class DynamoDbCache(
     override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
         ready.await()
         try {
-            println("DEBUG PREVIEW: ${try {
-                client.getItem {
-                    it.tableName(tableName)
-                    it.consistentRead(true)
-                    it.key(mapOf("key" to AttributeValue.fromS(key)))
-                }.await().toString()
-            } catch(e: Exception) {
-                "nah"
-            }}")
-            println("NOW: ${now().epochSeconds}")
             client.updateItem {
                 it.tableName(tableName)
                 it.key(mapOf("key" to AttributeValue.fromS(key)))
@@ -214,7 +269,6 @@ public class DynamoDbCache(
                 )
             }.await()
         } catch(e: ConditionalCheckFailedException) {
-            println("FAILED CONDITIONAL CHECK: ${e.message}")
             set(key, value, Int.serializer(), timeToLive)
         }
     }

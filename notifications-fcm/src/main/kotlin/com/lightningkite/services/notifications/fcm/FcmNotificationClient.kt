@@ -15,10 +15,119 @@ import com.lightningkite.services.notifications.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlin.time.Duration
 
-
 /**
- * The concrete implementation of NotificationClient that will use Firebase Messaging to send push notifications to
- * clients.
+ * Firebase Cloud Messaging (FCM) implementation for sending push notifications.
+ *
+ * Provides cross-platform push notification delivery with:
+ * - **Multi-platform support**: Android, iOS, and Web push notifications
+ * - **Rich notifications**: Images, actions, badges, sounds, and custom data
+ * - **Platform-specific options**: Android channels, iOS critical alerts, Web actions
+ * - **Batch sending**: Efficiently sends up to 500 notifications per request
+ * - **Token management**: Identifies and reports dead/unregistered tokens
+ * - **TTL control**: Message expiration for offline devices
+ *
+ * ## Supported URL Schemes
+ *
+ * - `fcm://path/to/credentials.json` - Path to Firebase service account JSON file
+ * - `fcm://{...json...}` - Inline JSON credentials string
+ *
+ * Format: `fcm://[file-path-or-json-string]`
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Using file path
+ * NotificationService.Settings("fcm:///etc/secrets/firebase-adminsdk.json")
+ *
+ * // Using inline JSON (not recommended for production - use secrets management)
+ * NotificationService.Settings("fcm://{\"type\":\"service_account\",...}")
+ *
+ * // Using helper functions
+ * NotificationService.Settings.Companion.fcm(File("/path/to/credentials.json"))
+ * NotificationService.Settings.Companion.fcm(jsonString)
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **Firebase SDK**: Uses Firebase Admin SDK for sending messages
+ * - **Batch size**: Chunks notifications into groups of 500 (FCM limit)
+ * - **Token validation**: Reports DeadToken result for unregistered device tokens
+ * - **Platform detection**: Automatically configures platform-specific options (Android, iOS, Web)
+ * - **Serverless support**: Implements connect() and disconnect() for AWS Lambda compatibility
+ * - **Lazy initialization**: FirebaseApp initialized on first use
+ *
+ * ## Important Gotchas
+ *
+ * - **Service account required**: Needs Firebase service account JSON (not client credentials)
+ * - **Token management**: Your app must collect and update device tokens
+ * - **Dead tokens**: Unregistered tokens return DeadToken - remove them from your database
+ * - **Rate limiting**: FCM has quota limits (free tier: unlimited, but throttled)
+ * - **Payload size**: Total message payload limited to 4KB
+ * - **iOS requires APNs**: FCM uses Apple Push Notification service for iOS
+ * - **Android channels**: Android 8+ requires notification channels (set via android.channel)
+ * - **Web requires VAPID**: Web push requires VAPID keys configured in Firebase console
+ * - **No health check**: Health check always returns OK (no FCM connectivity test)
+ * - **FirebaseApp singleton**: Multiple instances with same name share the same FirebaseApp
+ *
+ * ## Platform-Specific Configuration
+ *
+ * ### Android
+ * - **Priority**: HIGH for urgent notifications, NORMAL for background
+ * - **Channel**: Required for Android 8+, defines notification behavior
+ * - **Sound**: Custom sound files must be in app's res/raw folder
+ * - **TTL**: How long FCM stores message if device is offline
+ *
+ * ### iOS
+ * - **Critical alerts**: Requires special entitlement from Apple
+ * - **Sound**: Custom sounds must be in app bundle
+ * - **Badge**: App icon badge number
+ * - **Mutable content**: Enables notification service extensions
+ *
+ * ### Web
+ * - **Image**: Full image URL (not local file)
+ * - **Actions**: Buttons/actions in notification
+ * - **VAPID**: Requires VAPID keys configured in Firebase console
+ *
+ * ## Firebase Setup
+ *
+ * 1. Create a Firebase project at https://console.firebase.google.com
+ * 2. Add your app (Android, iOS, or Web) to the project
+ * 3. Download the service account JSON:
+ *    - Go to Project Settings → Service Accounts
+ *    - Click "Generate new private key"
+ *    - Save the JSON file securely
+ * 4. For iOS: Upload APNs authentication key or certificate
+ * 5. For Web: Generate VAPID keys in Cloud Messaging settings
+ *
+ * ## Example Usage
+ *
+ * ```kotlin
+ * val fcm = NotificationService.Settings.Companion.fcm(File("firebase-adminsdk.json"))
+ *     .invoke("fcm-service", context)
+ *
+ * val results = fcm.send(
+ *     targets = listOf("device-token-1", "device-token-2"),
+ *     data = NotificationData(
+ *         notification = NotificationData.Notification(
+ *             title = "New Message",
+ *             body = "You have a new message!",
+ *             imageUrl = "https://example.com/image.png"
+ *         ),
+ *         android = NotificationData.Android(
+ *             channel = "messages",
+ *             priority = NotificationPriority.HIGH
+ *         ),
+ *         timeToLive = Duration.hours(24)
+ *     )
+ * )
+ *
+ * // Remove dead tokens from database
+ * results.filterValues { it == NotificationSendResult.DeadToken }
+ *     .keys.forEach { token -> database.removeToken(token) }
+ * ```
+ *
+ * @property name Service name for logging/metrics (also used as FirebaseApp name)
+ * @property context Service context
  */
 public class FcmNotificationClient(
     override val name: String,

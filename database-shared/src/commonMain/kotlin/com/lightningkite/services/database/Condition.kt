@@ -9,6 +9,68 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.jvm.JvmName
 
+/**
+ * Represents a boolean query condition for filtering database records.
+ *
+ * Condition forms a composable query DSL that can be:
+ * - **Serialized**: All conditions are @Serializable for network transport/storage
+ * - **Evaluated**: Can test against in-memory objects via invoke()
+ * - **Translated**: Database implementations convert to native queries (MongoDB, SQL, etc.)
+ *
+ * ## Core Conditions
+ *
+ * - [Never]/[Always] - Constant true/false (useful for dynamic query building)
+ * - [Equal]/[NotEqual] - Equality comparisons
+ * - [Inside]/[NotInside] - Set membership
+ * - [GreaterThan]/[LessThan] etc. - Numeric comparisons
+ * - [And]/[Or]/[Not] - Boolean logic combinators
+ *
+ * ## Special Conditions
+ *
+ * - [StringContains]/[RawStringContains] - Substring search (case-insensitive by default)
+ * - [FullTextSearch] - Full-text search with fuzzy matching and Levenshtein distance
+ * - [RegexMatches] - Regular expression matching (may not be supported by all backends)
+ * - [GeoDistance] - Geospatial queries by distance
+ * - [IntBitsClear]/[IntBitsSet] etc. - Bitwise operations
+ *
+ * ## Collection Conditions
+ *
+ * - [ListAllElements]/[ListAnyElements] - Test all/any list elements
+ * - [SetAllElements]/[SetAnyElements] - Test all/any set elements
+ * - [ListSizesEquals]/[SetSizesEquals] - Size checks (deprecated in favor of empty checks)
+ *
+ * ## Nested Conditions
+ *
+ * - [OnField] - Navigate to nested object fields (created by DataClassPath)
+ * - [OnKey] - Access map values by key
+ * - [IfNotNull] - Null-safe condition wrapper
+ *
+ * ## Usage with Type-Safe DSL
+ *
+ * ```kotlin
+ * // Using generated DataClassPath extensions
+ * val adults = userTable.find(
+ *     condition = User.path.age gte 18
+ * )
+ *
+ * // Complex conditions
+ * val activeVips = User.path.status eq UserStatus.Active and
+ *                  (User.path.tier eq Tier.VIP)
+ *
+ * // Nested conditions
+ * val hasVerifiedEmail = User.path.email.notNull eq "verified@example.com"
+ * ```
+ *
+ * ## Important Gotchas
+ *
+ * - **Backend support varies**: Not all database backends support all conditions (e.g., RegexMatches)
+ * - **FullTextSearch approximation**: In-memory evaluation is a rough approximation of database behavior
+ * - **Case sensitivity**: String operations default to case-insensitive (StringContains, RawStringContains)
+ * - **hashCode/equals**: Throw NotImplementedError by default - only specific implementations override
+ * - **Type variance**: Condition is contravariant (Condition<Any?> is a valid Condition<String>)
+ *
+ * @param T The type of values this condition can test
+ */
 @Serializable(ConditionSerializer::class)
 public sealed class Condition<in T> {
     open override fun hashCode(): Int = throw NotImplementedError()
@@ -325,5 +387,17 @@ public fun <T> Condition.Companion.ifThen(if_: Condition<T>, then: Condition<T>)
  */
 public fun <T> Condition.Companion.ifThenElse(if_: Condition<T>, then: Condition<T>, else_: Condition<T>): Condition.Or<T> =
     (if_ and then) or (!if_ and else_)
+
+// TODO: API Recommendation - Add empty/notEmpty collection conditions
+//  ListSizesEquals/SetSizesEquals are deprecated. Add explicit isEmpty/isNotEmpty conditions
+//  that backends can optimize (e.g., MongoDB $size operator, SQL WHERE array_length(field) > 0)
+//
+// TODO: API Recommendation - Consider adding case-sensitive string operations
+//  StringContains defaults to case-insensitive. Add startsWith/endsWith/exactMatch variants
+//  for performance-critical queries where case-insensitive search isn't needed
+//
+// TODO: API Recommendation - Document RegexMatches backend support matrix
+//  Not all backends support regex (e.g., DynamoDB). Consider adding a feature detection API
+//  or documenting which backends support which Condition types
 
 

@@ -4,9 +4,9 @@ package com.lightningkite.services
  * Creates a thread-safe mutable map suitable for concurrent access.
  *
  * This factory function provides platform-specific implementations of concurrent maps:
- * - **JVM/Android**: Returns [java.util.concurrent.ConcurrentHashMap]
+ * - **JVM/Android**: Returns [java.util.concurrent.ConcurrentHashMap] (lock-free)
  * - **JS**: Returns regular [mutableMapOf] (JS is single-threaded, no concurrency needed)
- * - **Native**: Returns [HashMap] (TODO: Not thread-safe, needs proper implementation)
+ * - **Native**: Returns synchronized wrapper around HashMap (thread-safe via locking)
  *
  * ## Usage
  *
@@ -16,7 +16,7 @@ package com.lightningkite.services
  *     private val services = ConcurrentMutableMap<String, Service>()
  *
  *     fun register(name: String, service: Service) {
- *         services[name] = service // Thread-safe on JVM
+ *         services[name] = service // Thread-safe on all platforms
  *     }
  *
  *     fun get(name: String): Service? = services[name]
@@ -27,7 +27,7 @@ package com.lightningkite.services
  *
  * - **JVM/Android**: Fully thread-safe, lock-free for most operations
  * - **JS**: No threading, so regular map is sufficient
- * - **Native**: Currently returns non-thread-safe HashMap (see Native implementation TODO)
+ * - **Native**: Thread-safe via synchronized locking; iteration requires external synchronization
  *
  * @param K The type of keys in the map
  * @param V The type of values in the map

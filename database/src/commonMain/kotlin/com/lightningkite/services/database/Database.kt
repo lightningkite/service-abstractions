@@ -18,8 +18,60 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * An abstracted model for communicating with a Database.
- * Every implementation will handle how to return a table to perform actions on a table in the underlying database system.
+ * Database abstraction providing uniform access to different database systems.
+ *
+ * Implementations wrap various database backends (MongoDB, PostgreSQL, in-memory, etc.)
+ * behind a common interface. Applications can switch databases via configuration without
+ * code changes.
+ *
+ * ## Available Implementations
+ *
+ * - **InMemoryDatabase** (`ram://`) - In-memory HashMap-based storage, no persistence
+ * - **MongoDatabase** (`mongodb://`) - MongoDB with native query translation
+ * - **PostgresDatabase** (`postgresql://`) - PostgreSQL via Exposed ORM
+ * - **JsonFileDatabase** (`file://`) - JSON file-based storage (dev/testing)
+ *
+ * ## Configuration
+ *
+ * Databases are configured via [Settings] using URL strings:
+ *
+ * ```kotlin
+ * @Serializable
+ * data class ServerSettings(
+ *     val database: Database.Settings = Database.Settings("mongodb://localhost:27017/mydb")
+ * )
+ *
+ * val context = SettingContext(...)
+ * val db: Database = settings.database("main-db", context)
+ * ```
+ *
+ * ## Usage
+ *
+ * Access tables using type-safe generic functions:
+ *
+ * ```kotlin
+ * val userTable: Table<User> = db.table<User>()
+ * val users = userTable.find(condition = User.path.age gte 18)
+ * ```
+ *
+ * ## Special URL Schemes
+ *
+ * - `ram` or `ram://` - In-memory database
+ * - `ram-preload://path/to/data.json` - Pre-populated in-memory database
+ * - `delay://100-500ms/mongodb://...` - Add artificial latency (useful for testing)
+ *
+ * ## Health Checks
+ *
+ * Database health is monitored via [healthCheck], which performs a test insert/read
+ * to verify connectivity and write permissions.
+ *
+ * ## Serverless Support
+ *
+ * Databases support [connect]/[disconnect] lifecycle methods for serverless environments
+ * like AWS Lambda where connections should be managed explicitly.
+ *
+ * @see Table
+ * @see InMemoryDatabase
  */
 public interface Database : Service {
     /**
@@ -109,3 +161,18 @@ public data class HealthCheckTestModel(override val _id: String) : HasId<String>
 public inline fun <reified T : Any> Database.table(name: String = T::class.simpleName!!): Table<T> {
     return table(context.internalSerializersModule.serializer<T>(), name)
 }
+
+// TODO: API Recommendation - Add transaction support API
+//  Many databases support multi-document ACID transactions, but there's no common interface.
+//  Consider adding: suspend fun <R> transaction(block: suspend () -> R): R
+//  This would allow backends to wrap operations in DB-specific transactions (MongoDB sessions, PostgreSQL BEGIN/COMMIT)
+//
+// TODO: API Recommendation - Add schema migration support
+//  Database.Settings could include schema version tracking and migration hooks.
+//  This would help manage schema evolution across deployments.
+//  Example: suspend fun migrate(from: Int, to: Int, migrations: List<Migration>)
+//
+// TODO: API Recommendation - Consider adding read replicas support
+//  Add Database.table() variant that specifies read preference (primary vs replica).
+//  This would allow read-heavy operations to use read replicas for scaling.
+//  Example: fun <T> table(serializer: KSerializer<T>, name: String, readPreference: ReadPreference = Primary)

@@ -22,6 +22,53 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 import kotlin.text.get
 
+/**
+ * MongoDB implementation of the Database abstraction.
+ *
+ * Provides native MongoDB query translation for Condition/Modification DSL with:
+ * - **Efficient queries**: Translates type-safe queries to native MongoDB aggregation pipeline
+ * - **Index support**: Respects @Index annotations for performance
+ * - **Atlas Search**: Optional full-text search via MongoDB Atlas Search
+ * - **Connection pooling**: Configurable pool sizes (serverless-aware)
+ * - **OpenTelemetry**: Automatic instrumentation when available
+ *
+ * ## Supported URL Schemes
+ *
+ * - `mongodb://host:port/dbName` - Standard MongoDB connection
+ * - `mongodb+srv://host/dbName` - MongoDB Atlas (SRV records)
+ * - `mongodb+srv://host/dbName?atlasSearch=true` - With Atlas Search enabled
+ * - `mongodb-test://?version=7.0` - Ephemeral test instance (specific version)
+ * - `mongodb-file://path/to/folder` - Embedded MongoDB (development only)
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Production Atlas
+ * Database.Settings("mongodb+srv://user:pass@cluster.mongodb.net/mydb?retryWrites=true")
+ *
+ * // Local development
+ * Database.Settings("mongodb://localhost:27017/dev")
+ *
+ * // Testing with ephemeral instance
+ * Database.Settings("mongodb-test://?version=7.0")
+ *
+ * // Embedded for CI/local dev
+ * Database.Settings("mongodb-file:///tmp/mongo-data")
+ * ```
+ *
+ * ## Performance Considerations
+ *
+ * - **Serverless**: Connection pool automatically sized for AWS Lambda/serverless (4 connections)
+ * - **Atlas Search**: Requires atlas Search indexes configured in Atlas UI
+ * - **Indexes**: Ensure @Index annotations match your query patterns
+ * - **Aggregation**: Complex queries use aggregation pipeline (efficient for large datasets)
+ *
+ * @property name Service name for logging/metrics
+ * @property databaseName MongoDB database name
+ * @property atlasSearch Enable Atlas Search for full-text queries (requires Atlas)
+ * @property clientSettings MongoDB client configuration
+ * @property context Service context with serializers and observability
+ */
 public class MongoDatabase(
     override val name: String,
     public val databaseName: String,

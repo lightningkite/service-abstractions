@@ -15,11 +15,106 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 
 /**
- * A service for sending emails.
+ * Service abstraction for sending transactional and bulk emails.
+ *
+ * EmailService provides a unified interface for sending emails across different providers
+ * (SMTP, SendGrid, AWS SES, etc.). Applications can switch email providers via configuration
+ * without code changes.
+ *
+ * ## Available Implementations
+ *
+ * - **ConsoleEmailService** (`console`) - Prints emails to console (development/testing)
+ * - **TestEmailService** (`test`) - Collects emails in memory for testing
+ * - **JavaSmtpEmailService** (`smtp://`) - SMTP implementation (Gmail, SendGrid, Office 365, etc.)
+ *
+ * ## Configuration
+ *
+ * Configure via [Settings] using URL strings:
+ *
+ * ```kotlin
+ * @Serializable
+ * data class ServerSettings(
+ *     val email: EmailService.Settings = EmailService.Settings("smtp://user:pass@smtp.gmail.com:587")
+ * )
+ *
+ * val context = SettingContext(...)
+ * val emailService: EmailService = settings.email("mailer", context)
+ * ```
+ *
+ * ## Basic Usage
+ *
+ * ```kotlin
+ * // Send single email
+ * emailService.send(Email(
+ *     subject = "Welcome!",
+ *     to = listOf(EmailAddressWithName("user@example.com", "John Doe")),
+ *     html = "<h1>Welcome to our service!</h1>",
+ *     plainText = "Welcome to our service!"
+ * ))
+ * ```
+ *
+ * ## Bulk Email
+ *
+ * For sending personalized emails to multiple recipients:
+ *
+ * ```kotlin
+ * val template = Email(
+ *     subject = "Hello {{name}}!",
+ *     to = listOf(),  // Will be filled by personalizations
+ *     html = "<p>Hi {{name}}, your order {{orderId}} is ready!</p>"
+ * )
+ *
+ * val personalizations = listOf(
+ *     EmailPersonalization(
+ *         to = listOf(EmailAddressWithName("alice@example.com")),
+ *         substitutions = mapOf("name" to "Alice", "orderId" to "12345")
+ *     ),
+ *     EmailPersonalization(
+ *         to = listOf(EmailAddressWithName("bob@example.com")),
+ *         substitutions = mapOf("name" to "Bob", "orderId" to "67890")
+ *     )
+ * )
+ *
+ * emailService.sendBulk(template, personalizations)
+ * ```
+ *
+ * ## Features
+ *
+ * - **HTML and plain text**: All emails include both formats
+ * - **Attachments**: Support for inline and regular attachments
+ * - **Custom headers**: Add provider-specific headers
+ * - **CC/BCC**: Standard email features
+ * - **Personalization**: Template substitution for bulk sends
+ *
+ * ## Health Checks
+ *
+ * Health checks send a test email to verify connectivity. The default implementation
+ * sends to "health-check@example.com", which providers may reject. Override [healthCheck]
+ * to use a valid recipient address.
+ *
+ * ## Important Gotchas
+ *
+ * - **From address**: Many providers require verified sender addresses
+ * - **Rate limits**: Most email providers have rate limits (check provider docs)
+ * - **Plain text fallback**: Always provide both HTML and plain text
+ * - **Attachment size**: Most providers limit total email size to 10-25MB
+ * - **Spam filters**: Avoid spam trigger words, use verified domains
+ * - **Health check**: Default health check uses fake address, override for production
+ * - **Bulk sending**: [sendBulk] is sequential, not parallel - consider provider rate limits
+ *
+ * @see Email
+ * @see EmailPersonalization
  */
 public interface EmailService : Service {
     /**
-     * Settings for configuring an email service.
+     * Configuration for instantiating an EmailService.
+     *
+     * The URL scheme determines the email provider:
+     * - `console` - Print emails to console (default)
+     * - `test` - Collect emails in memory for testing
+     * - `smtp://user:pass@host:port` - SMTP provider (requires email-javasmtp module)
+     *
+     * @property url Connection string defining the email provider and credentials
      */
     @Serializable
     @JvmInline
@@ -84,7 +179,49 @@ public interface EmailService : Service {
 }
 
 /**
- * Represents an email to be sent.
+ * Represents an email message with recipients, content, and attachments.
+ *
+ * ## Usage
+ *
+ * ```kotlin
+ * // HTML email
+ * val email = Email(
+ *     subject = "Welcome!",
+ *     to = listOf(EmailAddressWithName("user@example.com", "John Doe")),
+ *     html = "<h1>Welcome</h1><p>Thanks for signing up!</p>"
+ * )
+ *
+ * // Plain text email
+ * val email = Email(
+ *     subject = "Welcome!",
+ *     to = listOf(EmailAddressWithName("user@example.com")),
+ *     plainText = "Welcome! Thanks for signing up!"
+ * )
+ *
+ * // With attachments
+ * val email = Email(
+ *     subject = "Invoice",
+ *     to = listOf(EmailAddressWithName("customer@example.com")),
+ *     html = "<p>Your invoice is attached.</p>",
+ *     attachments = listOf(
+ *         Email.Attachment(
+ *             inline = false,
+ *             filename = "invoice.pdf",
+ *             typedData = TypedData(pdfData, MediaType.Application.Pdf)
+ *         )
+ *     )
+ * )
+ * ```
+ *
+ * @property subject Email subject line
+ * @property from Sender address (if null, provider default is used)
+ * @property to Primary recipients (required, at least one)
+ * @property cc Carbon copy recipients
+ * @property bcc Blind carbon copy recipients (hidden from other recipients)
+ * @property html HTML body content
+ * @property plainText Plain text body (auto-generated from HTML if not provided)
+ * @property attachments File attachments
+ * @property customHeaders Provider-specific headers (e.g., tracking, priority)
  */
 public data class Email(
     public val subject: String,
@@ -119,7 +256,11 @@ public data class Email(
     )
 
     /**
-     * Represents an attachment to an email.
+     * Represents a file attachment in an email.
+     *
+     * @property inline If true, attachment is embedded in HTML (for images via cid:). If false, appears as downloadable attachment.
+     * @property filename Name shown to recipients (e.g., "invoice.pdf")
+     * @property typedData File content with media type
      */
     public data class Attachment(
         public val inline: Boolean,
@@ -150,7 +291,25 @@ public data class Email(
 }
 
 /**
- * Represents a labeled email address.
+ * Email address with optional display name.
+ *
+ * Used for from/to/cc/bcc fields in [Email].
+ *
+ * ## Examples
+ *
+ * ```kotlin
+ * // Just email address
+ * EmailAddressWithName("user@example.com")
+ *
+ * // With display name
+ * EmailAddressWithName("user@example.com".toEmailAddress(), "John Doe")
+ *
+ * // Using helper
+ * EmailAddressWithName("user@example.com", "John Doe")
+ * ```
+ *
+ * @property value The email address
+ * @property label Display name shown to recipients (e.g., "John Doe <john@example.com>")
  */
 public data class EmailAddressWithName(
     public val value: EmailAddress,
@@ -164,7 +323,41 @@ public fun EmailAddressWithName(value: String, label: String): EmailAddressWithN
     EmailAddressWithName(value.toEmailAddress(), label)
 
 /**
- * Represents personalization data for an email.
+ * Personalization data for bulk email template substitution.
+ *
+ * Used with [EmailService.sendBulk] to send customized emails to multiple recipients
+ * from a single template.
+ *
+ * ## Template Syntax
+ *
+ * Use `{{variableName}}` in the template for substitution:
+ *
+ * ```kotlin
+ * val template = Email(
+ *     subject = "Order {{orderId}} Update",
+ *     to = listOf(),  // Overridden per personalization
+ *     html = "<p>Hi {{name}}, order {{orderId}} status: {{status}}</p>"
+ * )
+ *
+ * val personalization = EmailPersonalization(
+ *     to = listOf(EmailAddressWithName("customer@example.com")),
+ *     substitutions = mapOf(
+ *         "name" to "Alice",
+ *         "orderId" to "12345",
+ *         "status" to "shipped"
+ *     )
+ * )
+ *
+ * // Resulting email:
+ * // Subject: "Order 12345 Update"
+ * // Body: "<p>Hi Alice, order 12345 status: shipped</p>"
+ * ```
+ *
+ * @property to Override template recipients (if null, uses template's to field)
+ * @property cc Override template CC recipients
+ * @property bcc Override template BCC recipients
+ * @property subject Override template subject (if null, subject is still processed for substitutions)
+ * @property substitutions Map of variable names to replacement values
  */
 public data class EmailPersonalization(
     public val to: List<EmailAddressWithName>? = null,

@@ -13,7 +13,57 @@ import java.net.InetSocketAddress
 import kotlin.time.Duration
 
 /**
- * A cache implementation that uses Memcached as the backend.
+ * Memcached implementation of the Cache abstraction using XMemcached client.
+ *
+ * Provides distributed caching with:
+ * - **True CAS operations**: Atomic compare-and-set via Memcached CAS tokens
+ * - **TTL support**: Native Memcached expiration (seconds precision)
+ * - **High performance**: Binary protocol, connection pooling
+ * - **AWS ElastiCache**: Special support for AWS ElastiCache configuration endpoint
+ *
+ * ## Supported URL Schemes
+ *
+ * Standard Memcached URLs:
+ * - `memcached://localhost:11211` - Single server
+ * - `memcached://host1:11211,host2:11211` - Multiple servers (automatic sharding)
+ * - `memcached://host1:11211 host2:11211` - Space-separated servers
+ * - `memcached-aws://config-endpoint.cache.amazonaws.com:11211` - AWS ElastiCache
+ * - `memcached-test://` - Embedded Memcached for testing
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Local development
+ * Cache.Settings("memcached://localhost:11211")
+ *
+ * // Multiple servers with automatic sharding
+ * Cache.Settings("memcached://cache1:11211,cache2:11211,cache3:11211")
+ *
+ * // AWS ElastiCache cluster
+ * Cache.Settings("memcached-aws://my-cluster.cfg.cache.amazonaws.com:11211")
+ *
+ * // Testing with embedded instance
+ * Cache.Settings("memcached-test://")
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **Serialization**: Values stored as JSON strings
+ * - **CAS operations**: Uses Memcached GETS/CAS for atomic compareAndSet
+ * - **TTL precision**: Seconds only (not milliseconds like Redis)
+ * - **Connection pooling**: Managed by XMemcached client
+ * - **Error handling**: Returns null on deserialization errors (graceful degradation)
+ *
+ * ## Important Gotchas
+ *
+ * - **TTL 0 means no expiration**: Unlike some systems, 0 = infinite TTL
+ * - **1MB value limit**: Memcached has a default 1MB limit per item
+ * - **No transactions**: Operations are atomic individually but not across multiple keys
+ * - **ElastiCache auto-discovery**: AWS URL requires ElastiCache client with config endpoint
+ *
+ * @property name Service name for logging/metrics
+ * @property client XMemcached client instance (supports both standard and ElastiCache)
+ * @property context Service context with serializers
  */
 public class MemcachedCache(
     override val name: String,

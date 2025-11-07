@@ -9,7 +9,47 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
 
-
+/**
+ * Type-safe value classes for physical quantities and measurements.
+ *
+ * Provides value classes similar to kotlin.time.Duration but for various physical quantities:
+ * - [DataSize]: Computer storage sizes (bytes, KiB, MiB, GiB, etc.)
+ * - [Length]: Distances (meters, kilometers, miles, feet, etc.)
+ * - [Area]: Surface areas (square meters, acres, hectares, etc.)
+ * - [Volume]: 3D volumes (cubic meters, liters, gallons, etc.)
+ * - [Mass]: Weights (kilograms, grams, pounds, ounces, etc.)
+ * - [Speed]: Velocities (m/s, km/h, mph, etc.)
+ * - [Acceleration]: Rates of velocity change
+ * - [Force]: Forces in Newtons or pound-force
+ * - [Pressure]: Pressures (Pascals, PSI, bars, etc.)
+ * - [Energy]: Energy in Joules, kcal, BTU
+ * - [Power]: Power in Watts, kilowatts
+ * - [Temperature]: Absolute temperatures (Celsius, Fahrenheit, Kelvin)
+ * - [RelativeTemperature]: Temperature differences
+ *
+ * All types support:
+ * - Arithmetic operations (+, -, *, /)
+ * - Comparison operations
+ * - Unit conversions via extension properties
+ * - Serialization
+ *
+ * ## Usage Examples
+ *
+ * ```kotlin
+ * val fileSize = 5.mebibytes + 512.kibibytes
+ * val distance = 100.meters + 50.feet
+ * val speed = distance / 10.seconds
+ * val force = 50.kilograms * 9.8.metersPerSecondPerSecond
+ * ```
+ *
+ * ## DataSize: Binary vs Decimal Units
+ *
+ * Note that [DataSize] correctly distinguishes between binary (1024-based) and decimal (1000-based) units:
+ * - **Binary**: kibibytes (KiB), mebibytes (MiB), gibibytes (GiB), tebibytes (TiB)
+ * - **Decimal**: decimalKilobytes (KB), decimalMegabytes (MB), decimalGigabytes (GB)
+ *
+ * The deprecated properties (kilobytes, megabytes, etc.) map to binary units for backwards compatibility.
+ */
 
 @JvmInline
 @Serializable

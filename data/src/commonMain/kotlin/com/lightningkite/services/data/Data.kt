@@ -7,6 +7,34 @@ import kotlinx.io.readString
 import kotlinx.io.writeString
 import kotlin.js.JsName
 
+/**
+ * Represents data that can be read in multiple formats.
+ *
+ * Provides a unified interface for handling data that may originate from different sources:
+ * - In-memory byte arrays or strings ([Bytes], [Text])
+ * - Streaming sources ([Source])
+ * - Lazy-generated data ([Sink])
+ *
+ * ## Important Gotchas
+ *
+ * - **Single-use**: [Source] and [Sink] implementations can only be consumed **once**
+ * - **Must close**: Always call [close] when done, especially with [Source]
+ * - **Size may be unknown**: [size] returns -1 if the size is not known ahead of time
+ *
+ * ## Usage
+ *
+ * ```kotlin
+ * // In-memory data (reusable)
+ * val textData = Data.Text("Hello, world!")
+ * val byteData = Data.Bytes(byteArrayOf(1, 2, 3))
+ *
+ * // Streaming data (single-use, must close)
+ * val streamData = Data.Source(inputStream.asSource())
+ * streamData.use { data ->
+ *     val content = data.text()
+ * }
+ * ```
+ */
 public sealed interface Data: AutoCloseable {
     public val size: Long get() = -1
     public fun bytes(): ByteArray

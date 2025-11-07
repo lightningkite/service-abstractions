@@ -142,16 +142,16 @@ val service = serviceRegistry["user-service"]
 ```
 
 **Platform Behavior:**
-- **JVM/Android**: Returns `java.util.concurrent.ConcurrentHashMap` (fully thread-safe)
+- **JVM/Android**: Returns `java.util.concurrent.ConcurrentHashMap` (lock-free, fully thread-safe)
 - **JavaScript**: Returns regular `HashMap` (single-threaded, no concurrency needed)
-- **Native**: Currently returns non-thread-safe `HashMap` ⚠️ (see implementation TODO)
+- **Native**: Returns synchronized wrapper around `HashMap` (thread-safe via locking)
 
 **Use Cases:**
 - Service registries with concurrent access
 - Shared caches accessed from multiple threads
 - Any map that needs thread-safe operations
 
-**⚠️ Native Platform:** The Kotlin/Native implementation currently returns a regular HashMap which is NOT thread-safe. Use with caution on Native platforms with multi-threading.
+**⚠️ Native Platform:** The Kotlin/Native implementation uses coarse-grained locking (single lock for all operations). Iterator operations require external synchronization. Performance is acceptable for moderate contention.
 
 ### URL-Based Configuration
 

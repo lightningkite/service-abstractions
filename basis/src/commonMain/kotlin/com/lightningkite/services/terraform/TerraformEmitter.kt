@@ -68,9 +68,12 @@ public interface TerraformEmitterAwsDomain: TerraformEmitterAws  {
 
 // sample fulfillment
 
+@PublishedApi
+internal val terraformJson: Json = Json { encodeDefaults = true }
+
 context(emitter: TerraformEmitter)
 public inline fun <reified T> TerraformNeed<T>.direct(value: T): Unit = with(emitter) {
-    fulfillSetting(name, Json { encodeDefaults = true }.encodeToJsonElement(value))
+    fulfillSetting(name, terraformJson.encodeToJsonElement(value))
 }
 
 context(emitter: TerraformEmitter)

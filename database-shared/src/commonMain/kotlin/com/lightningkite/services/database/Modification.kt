@@ -4,6 +4,84 @@ import com.lightningkite.IsRawString
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * Represents an update operation that transforms a value of type T.
+ *
+ * Modification forms a composable update DSL that can be:
+ * - **Serialized**: All modifications are @Serializable for network transport/storage
+ * - **Applied**: Can transform in-memory objects via invoke()
+ * - **Translated**: Database implementations convert to native update operations (MongoDB $set/$inc, SQL UPDATE)
+ *
+ * ## Core Modifications
+ *
+ * - [Nothing] - No-op modification (useful for conditional updates)
+ * - [Assign] - Set field to a specific value
+ * - [Chain] - Sequence multiple modifications (applied left-to-right)
+ *
+ * ## Numeric Modifications
+ *
+ * - [Increment] - Add a value (supports all Number types)
+ * - [Multiply] - Multiply by a value
+ * - [CoerceAtMost]/[CoerceAtLeast] - Clamp values to min/max
+ *
+ * ## String Modifications
+ *
+ * - [AppendString] - Concatenate string
+ * - [AppendRawString] - Concatenate to wrapped string types (EmailAddress, etc.)
+ *
+ * ## Collection Modifications
+ *
+ * - [ListAppend]/[SetAppend] - Add elements
+ * - [ListRemove]/[SetRemove] - Remove elements matching a condition
+ * - [ListRemoveInstances]/[SetRemoveInstances] - Remove specific elements
+ * - [ListDropFirst]/[ListDropLast] etc. - Remove first/last element
+ * - [ListPerElement]/[SetPerElement] - Apply modification to each element matching a condition
+ *
+ * ## Map Modifications
+ *
+ * - [Combine] - Merge map entries (overwrites existing keys)
+ * - [ModifyByKey] - Apply different modifications to specific keys
+ * - [RemoveKeys] - Delete map entries
+ *
+ * ## Nested Modifications
+ *
+ * - [OnField] - Navigate to nested object fields (created by DataClassPath)
+ * - [IfNotNull] - Null-safe modification wrapper
+ *
+ * ## Usage with Type-Safe DSL
+ *
+ * ```kotlin
+ * // Using generated DataClassPath extensions
+ * userTable.updateOne(
+ *     condition = User.path._id eq userId,
+ *     modification = modification<User> { it ->
+ *         it.age += 1
+ *         it.lastLoginAt assign Clock.System.now()
+ *     }
+ * )
+ *
+ * // Collection modifications
+ * modification<Post> { it ->
+ *     it.tags += "featured"
+ *     it.comments.removeAll { comment -> comment.isSpam eq true }
+ * }
+ *
+ * // Chained modifications
+ * modification<Counter> { it ->
+ *     it.value += 1
+ *     it.value coerceAtMost 100  // Cap at 100
+ * }
+ * ```
+ *
+ * ## Important Gotchas
+ *
+ * - **Chain order matters**: Modifications in Chain are applied sequentially left-to-right
+ * - **Nothing is special**: isNothing property allows optimizing out no-op updates
+ * - **Type safety via DataClassPath**: Direct field access creates OnField wrappers automatically
+ * - **Backend support varies**: Some complex modifications may not be supported by all databases
+ *
+ * @param T The type of values this modification transforms
+ */
 @Serializable(ModificationSerializer::class)
 public sealed class Modification<T> {
     public abstract operator fun invoke(on: T): T
@@ -204,3 +282,12 @@ public sealed class Modification<T> {
         }
     }
 }
+
+// TODO: API Recommendation - Add atomic compare-and-swap modification
+//  Add a CompareAndSet modification that only updates if current value matches expected value.
+//  Useful for optimistic locking without external version fields.
+//  Example: Modification.CompareAndSet(expected = oldValue, new = newValue)
+//
+// TODO: API Recommendation - Consider adding list insert/replace at index
+//  Currently only support append/remove. Add ListInsertAt/ListReplaceAt for positional updates.
+//  This would require index-based access which not all backends support efficiently.

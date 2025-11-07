@@ -13,13 +13,98 @@ import kotlinx.serialization.json.Json
 import kotlin.collections.HashMap
 
 /**
- * A Database implementation whose data manipulation is entirely in the application Heap, but it will attempt to store the data into a Folder on the system before shutdown.
- * On startup it will load in the Folder contents and populate the database.
- * It uses InMemoryUnsafePersistentFieldCollection in its implementation. This is NOT meant for long term storage.
- * It is NOT guaranteed that it will store the data before the application is shut down. There is a HIGH chance that the changes will not persist between runs.
- * This is useful in places that persistent data is not important and speed is desired.
+ * JSON file-based database implementation for development and testing.
  *
- * @param folder The File references a directory where you wish the data to be stored.
+ * Provides a simple file-based database that stores each table as a JSON file on disk.
+ * This is designed for development, testing, and scenarios where persistence is needed
+ * but a full database server is overkill.
+ *
+ * ## Features
+ *
+ * - **File-based storage**: Each table stored as a separate JSON file
+ * - **In-memory operations**: All data loaded into memory for fast queries
+ * - **Automatic persistence**: Changes written to disk periodically
+ * - **Development friendly**: Easy to inspect/edit data files manually
+ * - **No server required**: Perfect for local development and CI tests
+ * - **Migration support**: Automatically migrates old single-file format to new .json extension
+ *
+ * ## Supported URL Schemes
+ *
+ * - `json-files://path/to/folder` - Store database files in specified folder
+ * - `json-files://./data` - Relative path from working directory
+ *
+ * Format: `json-files://[folder-path]`
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Development database in project folder
+ * Database.Settings("json-files://./local-data")
+ *
+ * // Testing database in temp folder
+ * Database.Settings("json-files:///tmp/test-db")
+ *
+ * // Using helper function
+ * Database.Settings.Companion.jsonFile(workingDirectory.resolve("data"))
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **In-memory first**: All data loaded into memory on table access
+ * - **Lazy loading**: Tables loaded on first access, not on database creation
+ * - **File naming**: Table names sanitized (only letters/digits) for filenames
+ * - **JSON format**: Stores table data as JSON array of objects
+ * - **Thread-safe**: Uses synchronized collections for concurrent access
+ * - **Serialization**: Uses context.internalSerializersModule for custom types
+ * - **Migration**: Automatically moves old files without .json extension to .json format
+ *
+ * ## Important Gotchas
+ *
+ * - **NOT production-ready**: This is for development/testing only
+ * - **No persistence guarantee**: Changes may be lost if app crashes before write
+ * - **Memory constraints**: Entire database must fit in memory
+ * - **No transactions**: No ACID guarantees across operations
+ * - **Single-process only**: No locking between processes (data corruption possible)
+ * - **Performance**: Slow for large datasets (full table scans)
+ * - **No concurrent writes**: Synchronization prevents true parallelism
+ * - **File corruption**: Manual edits can corrupt data (invalid JSON)
+ *
+ * ## When to Use
+ *
+ * **Good for:**
+ * - Local development without database setup
+ * - Integration tests in CI pipelines
+ * - Simple CLI tools with small datasets
+ * - Prototyping and demos
+ * - Configuration storage
+ *
+ * **Avoid for:**
+ * - Production applications
+ * - Large datasets (> 10MB per table)
+ * - High concurrency scenarios
+ * - Multi-process applications
+ * - Critical data requiring ACID guarantees
+ *
+ * ## File Structure
+ *
+ * ```
+ * data/
+ * ├── Users.json       # Table: Users
+ * ├── Posts.json       # Table: Posts
+ * └── Comments.json    # Table: Comments
+ * ```
+ *
+ * Each file contains a JSON array:
+ * ```json
+ * [
+ *   {"_id": "...", "name": "Alice", "age": 30},
+ *   {"_id": "...", "name": "Bob", "age": 25}
+ * ]
+ * ```
+ *
+ * @property name Service name for logging/metrics
+ * @property folder Directory where JSON files are stored
+ * @property context Service context with serializers
  */
 public class JsonFileDatabase(
     override val name: String,

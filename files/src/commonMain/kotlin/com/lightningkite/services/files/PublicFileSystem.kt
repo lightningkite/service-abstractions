@@ -15,11 +15,100 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * An abstracted model for reading and writing files in a storage solution.
- * Every implementation will handle how to resolve FileObjects in their own system.
+ * Service abstraction for cloud file storage and content delivery.
  *
- * This interface provides a way to work with file systems across different storage
- * backends (local filesystem, S3, etc.) using a consistent API.
+ * PublicFileSystem provides a unified interface for storing and serving files across
+ * different storage backends (local filesystem, AWS S3, etc.). Files are accessible
+ * via public URLs with optional signed URL support for access control.
+ *
+ * ## Available Implementations
+ *
+ * - **KotlinxIoPublicFileSystem** (`file://`) - Local filesystem storage
+ * - **S3PublicFileSystem** (`s3://`) - AWS S3 storage (JVM-only: files-s3, KMP: files-s3-kmp)
+ *
+ * ## Configuration
+ *
+ * Configure via [Settings] using URL strings:
+ *
+ * ```kotlin
+ * @Serializable
+ * data class ServerSettings(
+ *     // Local filesystem
+ *     val files: PublicFileSystem.Settings = PublicFileSystem.Settings(
+ *         "file:///var/app/uploads?serveUrl=https://example.com/files"
+ *     ),
+ *     // S3 with signed URLs
+ *     val s3Files: PublicFileSystem.Settings = PublicFileSystem.Settings(
+ *         "s3://my-bucket.s3-us-east-1.amazonaws.com?signedUrlDuration=1h"
+ *     )
+ * )
+ * ```
+ *
+ * ## Basic Usage
+ *
+ * ```kotlin
+ * val fs: PublicFileSystem = settings.files("storage", context)
+ *
+ * // Upload file
+ * val file = fs.root.then("uploads/avatar.jpg")
+ * file.put(TypedData(imageBytes, MediaType.Image.Jpeg))
+ *
+ * // Get public URL
+ * val url = file.url  // https://example.com/files/uploads/avatar.jpg
+ *
+ * // Read file
+ * val content = file.get()  // TypedData with content and media type
+ *
+ * // Delete file
+ * file.delete()
+ *
+ * // List files
+ * val uploadDir = fs.root.then("uploads/")
+ * uploadDir.list().collect { fileInfo ->
+ *     println("${fileInfo.name}: ${fileInfo.size} bytes")
+ * }
+ * ```
+ *
+ * ## Signed URLs
+ *
+ * For access control, signed URLs include signatures that expire:
+ *
+ * ```kotlin
+ * // Configure with signed URLs (1 hour expiration)
+ * val fs = PublicFileSystem.Settings(
+ *     "s3://bucket.s3-us-east-1.amazonaws.com?signedUrlDuration=1h"
+ * )("storage", context)
+ *
+ * val file = fs.root.then("private/document.pdf")
+ * val signedUrl = file.url  // Includes signature, expires in 1 hour
+ * ```
+ *
+ * ## URL Parsing
+ *
+ * Parse URLs back into FileObject references:
+ *
+ * ```kotlin
+ * // Internal URL (server-side only)
+ * val file = fs.parseInternalUrl("https://cdn.example.com/files/image.jpg")
+ *
+ * // External URL (validates signature)
+ * val file = fs.parseExternalUrl(signedUrlFromClient)
+ * ```
+ *
+ * ## Important Gotchas
+ *
+ * - **Public access**: Files are publicly accessible unless using signed URLs
+ * - **URL persistence**: File URLs should not be stored long-term if using signed URLs
+ * - **Path traversal**: FileObject normalizes paths to prevent .. attacks
+ * - **Concurrency**: Concurrent writes to same file may result in race conditions
+ * - **Storage costs**: Cloud storage (S3) charges for storage and bandwidth
+ * - **serveUrl required**: Local filesystem requires serveUrl parameter (base URL for file access)
+ * - **Health check writes**: Creates test file at `health-check/test-file.txt`
+ * - **Media type detection**: Set MediaType explicitly, don't rely on auto-detection
+ * - **Large files**: For uploads >5MB on S3, consider multipart upload (handled automatically by some implementations)
+ *
+ * @see FileObject
+ * @see TypedData
  */
 public interface PublicFileSystem : Service {
     /**
@@ -99,14 +188,41 @@ public interface PublicFileSystem : Service {
     }
 
     /**
-     * Configuration settings for a PublicFileSystem.
+     * Configuration for instantiating a PublicFileSystem.
      *
-     * Example URLs:
-     * - `file:///path/to/directory?serveUrl=files` - Local filesystem with relative serve URL
-     * - `file:///path/to/directory?serveUrl=https://example.com/files` - Local filesystem with absolute serve URL
-     * - `file:///path/to/directory?serveUrl=files&signedUrlDuration=PT1H` - With 1 hour signed URL duration
-     * - `file:///path/to/directory?serveUrl=files&signedUrlDuration=3600` - With 3600 seconds signed URL duration
-     * - `file:///path/to/directory?serveUrl=files&signedUrlDuration=forever` - Without signed URL expiration
+     * The URL scheme determines the storage backend:
+     * - `file://path?serveUrl=baseUrl` - Local filesystem (requires serveUrl parameter)
+     * - `s3://bucket.s3-region.amazonaws.com` - AWS S3 storage
+     *
+     * ## Query Parameters
+     *
+     * - `serveUrl` (required for file://): Base URL for serving files
+     *   - Relative: `?serveUrl=files` → `${context.publicUrl}/files/`
+     *   - Absolute: `?serveUrl=https://cdn.example.com/files` → `https://cdn.example.com/files/`
+     *
+     * - `signedUrlDuration` (optional): How long signed URLs remain valid
+     *   - ISO 8601 duration: `?signedUrlDuration=PT1H` (1 hour)
+     *   - Seconds: `?signedUrlDuration=3600` (1 hour)
+     *   - No expiration: `?signedUrlDuration=forever` or `?signedUrlDuration=null`
+     *   - Default: 1 hour if not specified
+     *
+     * ## Examples
+     *
+     * ```kotlin
+     * // Local filesystem with relative URL
+     * PublicFileSystem.Settings("file:///var/uploads?serveUrl=files")
+     *
+     * // Local filesystem with absolute URL and signed URLs
+     * PublicFileSystem.Settings("file:///var/uploads?serveUrl=https://cdn.example.com/files&signedUrlDuration=PT30M")
+     *
+     * // S3 with default credentials
+     * PublicFileSystem.Settings("s3://my-bucket.s3-us-east-1.amazonaws.com")
+     *
+     * // S3 with access key and no signed URLs
+     * PublicFileSystem.Settings("s3://AKIAIOSFODNN7EXAMPLE:secretKey@my-bucket.s3-us-east-1.amazonaws.com?signedUrlDuration=forever")
+     * ```
+     *
+     * @property url Connection string defining the storage backend and parameters
      */
     @Serializable
     @JvmInline

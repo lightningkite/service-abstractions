@@ -8,6 +8,17 @@ import kotlinx.serialization.Serializable
 import kotlin.js.JsName
 import kotlin.jvm.JvmName
 
+/**
+ * Base class for type-safe field references in database queries.
+ *
+ * Represents a path through a data class structure to a specific field.
+ * Used to build type-safe [Condition] and [Modification] queries.
+ *
+ * DataClassPath is the foundation of the type-safe query DSL. Database implementations
+ * use paths to generate native queries (e.g., MongoDB dot notation, SQL column names).
+ *
+ * @param K The root type containing this field
+ */
 @Serializable(DataClassPathSerializer::class)
 public abstract class DataClassPathPartial<K> {
     public abstract fun getAny(key: K): Any?
@@ -20,6 +31,69 @@ public abstract class DataClassPathPartial<K> {
     public abstract val serializerAny: KSerializer<*>
 }
 
+/**
+ * Type-safe reference to a field of type V within a root object of type K.
+ *
+ * DataClassPath is the core of the type-safe query DSL, enabling field access
+ * that can be serialized, type-checked, and translated to database queries.
+ *
+ * ## Key Implementations
+ *
+ * - [DataClassPathSelf] - The root object itself (identity path)
+ * - [DataClassPathAccess] - Access to a nested field via dot notation
+ * - [DataClassPathNotNull] - Null-safe wrapper for nullable fields
+ * - [DataClassPathList]/[DataClassPathSet] - Collection element access
+ *
+ * ## Generated Paths
+ *
+ * The database-processor KSP plugin generates path objects for models annotated with
+ * `@GenerateDataClassPaths`. These provide compile-time safety:
+ *
+ * ```kotlin
+ * @GenerateDataClassPaths
+ * @Serializable
+ * data class User(val name: String, val age: Int)
+ *
+ * // Generated: User.path.name, User.path.age
+ * val adults = User.path.age gte 18  // Type-safe!
+ * ```
+ *
+ * ## Usage with DSL
+ *
+ * Paths are used with infix functions (from ConditionBuilder.kt/ModificationBuilder.kt):
+ *
+ * ```kotlin
+ * // Conditions
+ * User.path.name eq "Alice"
+ * User.path.age gt 18
+ * User.path.email contains "@example.com"
+ *
+ * // Modifications
+ * modification<User> { it ->
+ *     it.age += 1
+ *     it.lastLogin assign now()
+ * }
+ *
+ * // Nested paths
+ * User.path.address.city eq "New York"
+ *
+ * // Nullable fields
+ * User.path.middleName.notNull eq "Marie"
+ *
+ * // Collection elements
+ * User.path.tags.elements eq "vip"
+ * ```
+ *
+ * ## Important Gotchas
+ *
+ * - **KSP generation required**: Paths must be generated for your models via database-processor
+ * - **Serialization required**: Only works with @Serializable data classes
+ * - **Runtime vs compile-time**: While paths provide type safety, database errors happen at runtime
+ * - **Path composition**: mapCondition/mapModification wrap nested conditions/modifications
+ *
+ * @param K The root object type
+ * @param V The field value type
+ */
 public abstract class DataClassPath<K, V> : DataClassPathPartial<K>() {
     public abstract fun get(key: K): V?
     public abstract fun set(key: K, value: V): K

@@ -9,6 +9,8 @@ import kotlin.time.Clock
  */
 class ClockTest {
 
+    // TODO: Deprecated API - Replace kotlinx.datetime.Instant with kotlin.time.Instant
+    //  kotlinx.datetime.Instant is deprecated in favor of kotlin.time.Instant
     private class TestClock(private val instant: kotlinx.datetime.Instant) : Clock {
         override fun now() = instant
     }

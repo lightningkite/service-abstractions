@@ -13,6 +13,52 @@ import kotlinx.serialization.json.Json
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
+/**
+ * Redis implementation of the Cache abstraction using Lettuce (reactive client).
+ *
+ * Provides distributed caching with:
+ * - **Atomic operations**: True CAS via Lua scripts
+ * - **TTL support**: Native Redis expiration
+ * - **High performance**: Reactive/non-blocking via Lettuce
+ * - **Cluster support**: Works with Redis Cluster
+ * - **Persistence options**: RDB/AOF configurable on Redis server
+ *
+ * ## Supported URL Schemes
+ *
+ * Standard Redis URLs (Lettuce format):
+ * - `redis://localhost:6379` - Local Redis
+ * - `redis://localhost:6379/0` - Specific database number
+ * - `redis://user:password@host:6379` - Authenticated
+ * - `rediss://host:6379` - TLS/SSL connection
+ * - `redis-sentinel://host1:26379,host2:26379/mymaster` - Sentinel setup
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Local development
+ * Cache.Settings("redis://localhost:6379")
+ *
+ * // Production with auth
+ * Cache.Settings("redis://user:pass@cache.example.com:6379")
+ *
+ * // ElastiCache/Redis Cloud
+ * Cache.Settings("redis://my-cluster.cache.amazonaws.com:6379")
+ *
+ * // With TLS
+ * Cache.Settings("rediss://secure-cache.example.com:6380")
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **Serialization**: Values stored as JSON strings
+ * - **Compare-and-set**: Lua script for true atomicity (not WATCH/MULTI)
+ * - **Reactive**: Uses Lettuce reactive API for non-blocking operations
+ * - **Connection pooling**: Managed by Lettuce client
+ *
+ * @property name Service name for logging/metrics
+ * @property lettuceClient Lettuce Redis client instance
+ * @property context Service context with serializers
+ */
 public class RedisCache(
     override val name: String,
     public val lettuceClient: RedisClient,

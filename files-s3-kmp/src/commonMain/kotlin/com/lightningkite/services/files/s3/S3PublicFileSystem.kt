@@ -20,7 +20,107 @@ import kotlinx.io.files.Path
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * An implementation of [PublicFileSystem] that uses AWS S3 for storage.
+ * Kotlin Multiplatform implementation of PublicFileSystem using AWS S3.
+ *
+ * Provides cloud file storage with S3 using the AWS SDK for Kotlin (KMP-compatible).
+ * This is the multiplatform version of the S3 file system implementation.
+ *
+ * ## Features
+ *
+ * - **Multiplatform support**: Works on JVM, JS, and Native targets
+ * - **S3 storage**: Reliable cloud storage with 99.999999999% durability
+ * - **Signed URLs**: Optional temporary signed URLs for secure access
+ * - **Health checks**: Comprehensive health monitoring with write/read/delete tests
+ * - **Multiple credential sources**: Static credentials, profiles, or default chain
+ * - **AWS SDK for Kotlin**: Uses modern KMP-compatible AWS SDK
+ *
+ * ## Supported URL Schemes
+ *
+ * - `s3://bucket.s3-region.amazonaws.com` - Default credentials
+ * - `s3://user:password@bucket.s3-region.amazonaws.com` - Static credentials
+ * - `s3://profile@bucket.s3-region.amazonaws.com` - AWS profile
+ * - `s3://bucket.s3-region.amazonaws.com?signedUrlDuration=1h` - With signed URL config
+ * - `s3://bucket.s3-region.amazonaws.com?signedUrlDuration=forever` - No signed URLs
+ *
+ * Format: `s3://[user]:[password]@[bucket].[s3-][region].amazonaws.com[?params]`
+ *
+ * Query parameters:
+ * - `signedUrlDuration`: Duration for signed URLs (e.g., "1h", "30m", "forever", "null")
+ *
+ * ## Configuration Examples
+ *
+ * ```kotlin
+ * // Production with IAM role (default credentials)
+ * PublicFileSystem.Settings("s3://my-app-files.s3-us-east-1.amazonaws.com")
+ *
+ * // Development with access key
+ * PublicFileSystem.Settings("s3://AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLE@my-bucket.s3-us-west-2.amazonaws.com")
+ *
+ * // Using AWS profile
+ * PublicFileSystem.Settings("s3://production@my-bucket.s3-eu-west-1.amazonaws.com")
+ *
+ * // With signed URLs (1 hour expiration)
+ * PublicFileSystem.Settings("s3://my-bucket.s3-ap-southeast-1.amazonaws.com?signedUrlDuration=1h")
+ *
+ * // Public bucket (no signed URLs)
+ * PublicFileSystem.Settings("s3://public-assets.s3-us-east-1.amazonaws.com?signedUrlDuration=forever")
+ *
+ * // Using helper functions
+ * PublicFileSystem.Settings.Companion.s3(
+ *     user = "AKIAIOSFODNN7EXAMPLE",
+ *     password = "secretKey",
+ *     region = "us-east-1",
+ *     bucket = "my-bucket"
+ * )
+ *
+ * PublicFileSystem.Settings.Companion.s3(
+ *     profile = "production",
+ *     region = "us-east-1",
+ *     bucket = "my-bucket"
+ * )
+ * ```
+ *
+ * ## Implementation Notes
+ *
+ * - **AWS SDK for Kotlin**: Uses multiplatform AWS SDK (not Java SDK)
+ * - **Credential providers**: Supports static, profile, and default chain
+ * - **Lazy S3 client**: Client initialized on first use
+ * - **Multiple root URLs**: Supports both bucket.s3.region and s3-region.amazonaws.com/bucket formats
+ * - **Signed URL validation**: Validates signatures on external URLs
+ * - **Health check**: Writes/reads/deletes test file in health-check/ folder
+ *
+ * ## Important Gotchas
+ *
+ * - **Region required**: Must specify AWS region in URL
+ * - **Bucket must exist**: S3 bucket must be created beforehand
+ * - **IAM permissions**: Requires s3:GetObject, s3:PutObject, s3:DeleteObject permissions
+ * - **CORS for web**: Web apps need CORS configuration on S3 bucket
+ * - **Signed URL security**: Don't use "forever" for sensitive files
+ * - **Health check writes**: Creates test file in health-check/ prefix
+ * - **Costs**: S3 charges for storage, requests, and data transfer
+ * - **Multipart uploads**: Large files use multipart upload (handled automatically)
+ *
+ * ## Comparison with files-s3 (JVM-only)
+ *
+ * - **SDK**: This uses AWS SDK for Kotlin (KMP), files-s3 uses AWS SDK for Java v2
+ * - **Platforms**: This supports all KMP targets, files-s3 is JVM-only
+ * - **Signature**: This uses AWS Signature V4 signing, files-s3 has custom implementation
+ * - **Features**: Both have similar feature parity for S3 operations
+ *
+ * ## S3 Bucket Setup
+ *
+ * 1. Create S3 bucket in AWS Console or via AWS CLI
+ * 2. Configure bucket policy for required permissions
+ * 3. (Optional) Enable CORS for web access
+ * 4. (Optional) Configure lifecycle rules for old files
+ * 5. Set up IAM role or access keys with appropriate permissions
+ *
+ * @property name Service name for logging/metrics
+ * @property region AWS region (e.g., "us-east-1")
+ * @property credentialProvider AWS credentials provider
+ * @property bucket S3 bucket name
+ * @property signedUrlDuration How long signed URLs remain valid (null = no signing)
+ * @property context Service context
  */
 public class S3PublicFileSystem(
     override val name: String,
