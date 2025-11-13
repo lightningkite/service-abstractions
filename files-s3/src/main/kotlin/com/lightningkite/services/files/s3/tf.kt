@@ -50,7 +50,9 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
     emitter.emit(name) {
         "resource.aws_s3_bucket.${name}" {
-            "bucket_prefix" - "${emitter.projectPrefix}-${name.lowercase()}"
+            // .lowercase().replace("_", "") on projectPrefix is backwards compatibility with V4 and earlier.
+            // We can't really remove this at this time.
+            "bucket_prefix" - "${emitter.projectPrefix.lowercase().replace("_", "")}-${name.lowercase()}"
             "force_destroy" - forceDestroy
         }
         if (signedUrlDuration == null) {
