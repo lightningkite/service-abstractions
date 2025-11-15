@@ -1,10 +1,13 @@
 package com.lightningkite.services.terraform
 
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.SerialKind
+import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.KSerializer
 
 /**
  * Interface for emitting Terraform configuration programmatically.
@@ -27,12 +30,16 @@ public interface TerraformEmitter {
 
     /** Registers a required Terraform provider (e.g., AWS, Google Cloud). */
     public fun require(provider: TerraformProviderImport)
+
     /** Registers a configured provider instance. */
     public fun require(provider: TerraformProvider)
+
     /** Emits Terraform configuration into a named context. */
-    public fun emit(context: String? = null, action: TerraformJsonObject.()->Unit)
+    public fun emit(context: String? = null, action: TerraformJsonObject.() -> Unit)
+
     /** Records a configuration value that was determined/generated. */
     public fun fulfillSetting(settingName: String, element: JsonElement)
+
     /** Declares a variable that needs to be provided to Terraform. */
     public fun variable(need: TerraformNeed<*>)
 }
@@ -47,21 +54,21 @@ public class TerraformAwsVpcInfo(
     public val cidr: String,
 )
 
-public interface TerraformEmitterAws: TerraformEmitter {
+public interface TerraformEmitterAws : TerraformEmitter {
     public val applicationRegion: String
     public val policyStatements: MutableCollection<AwsPolicyStatement>
 }
 
-public interface TerraformEmitterKnownIpAddresses: TerraformEmitterAws  {
+public interface TerraformEmitterKnownIpAddresses : TerraformEmitterAws {
     public val applicationIpAddresses: String
 }
 
-public interface TerraformEmitterAwsVpc: TerraformEmitterAws, TerraformEmitterKnownIpAddresses  {
+public interface TerraformEmitterAwsVpc : TerraformEmitterAws, TerraformEmitterKnownIpAddresses {
     public val applicationVpc: TerraformAwsVpcInfo
     override val applicationIpAddresses: String get() = applicationVpc.natGatewayIps
 }
 
-public interface TerraformEmitterAwsDomain: TerraformEmitterAws  {
+public interface TerraformEmitterAwsDomain : TerraformEmitterAws {
     public val domainZoneId: String
     public val domain: String
 }
@@ -76,12 +83,38 @@ public inline fun <reified T> TerraformNeed<T>.direct(value: T): Unit = with(emi
     fulfillSetting(name, terraformJson.encodeToJsonElement(value))
 }
 
+public fun SerialDescriptor.toTerraformType(): String = if(isInline){
+    getElementDescriptor(0).toTerraformType()
+} else when (kind) {
+    PrimitiveKind.CHAR,
+    SerialKind.ENUM,
+    PrimitiveKind.STRING,
+        -> "string"
+
+    PrimitiveKind.BOOLEAN -> "bool"
+    PrimitiveKind.BYTE,
+    PrimitiveKind.DOUBLE,
+    PrimitiveKind.FLOAT,
+    PrimitiveKind.INT,
+    PrimitiveKind.LONG,
+    PrimitiveKind.SHORT,
+        -> "number"
+
+    StructureKind.LIST -> "list(${getElementDescriptor(0).toTerraformType()})"
+
+    else -> "map(any)"
+}
+
 context(emitter: TerraformEmitter)
 public inline fun <reified T> TerraformNeed<T>.byVariable(): Unit = with(emitter) {
     variable(this@byVariable)
+
     emit("variables") {
-        "variable.$name" {}
+        "variable.$name" {
+            "type" - serializer.descriptor.toTerraformType()
+        }
     }
+
     fulfillSetting(name, JsonPrimitive(TerraformJsonObject.expression("var.$name")))
 }
 
@@ -91,7 +124,7 @@ public inline fun <reified T> TerraformNeed<T>.oldStyle(
     setting: JsonElement,
     requireProviders: Collection<TerraformProviderImport> = emptyList(),
     providers: Collection<TerraformProvider> = emptyList(),
-    crossinline content: TerraformJsonObject.()->Unit
+    crossinline content: TerraformJsonObject.() -> Unit,
 ) {
     emitter.fulfillSetting(name, setting)
     providers.forEach { emitter.require(it) }
