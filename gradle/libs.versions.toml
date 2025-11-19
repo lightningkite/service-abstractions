@@ -15,6 +15,7 @@ firebaseAdmin = "9.5.0"
 graalVmNative = "0.11.2"
 guava = "33.5.0-jre"
 kbson = "0.5.0"
+koogAgents = "0.5.4-SNAPSHOT"
 kotlin = "2.2.20"
 kotlinLogging = "7.0.13"
 kotlinXDatetime = "0.7.1"
@@ -27,6 +28,8 @@ lkGradleHelpers = "4.0.6"
 logBackClassic = "1.5.21"
 memcached = "2.4.8"
 mongoDriver = "5.6.1"
+openSearchJava = "3.3.0"
+openSearchAws = "2.35.8"
 postgresql = "42.7.8"
 proguard = "7.8.1"
 shadow = "8.1.1"
@@ -60,6 +63,7 @@ exposedJdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "ex
 firebaseAdmin = { module = "com.google.firebase:firebase-admin", version.ref = "firebaseAdmin" }
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 kBson = { module = "com.github.jershell:kbson", version.ref = "kbson" }
+koog-agents = { module = "ai.koog:koog-agents", version.ref = "koogAgents" }
 kotlinXIO = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinXIO" }
 kotlinCompiler = { module = "org.jetbrains.kotlin:kotlin-compiler", version.ref = "kotlin" }
 kotlinLogging = { module = "io.github.oshai:kotlin-logging", version.ref = "kotlinLogging" }
@@ -80,6 +84,8 @@ logBackClassic = { module = "ch.qos.logback:logback-classic", version.ref = "log
 memcached = { module = "com.googlecode.xmemcached:xmemcached", version.ref = "memcached" }
 mongoDriver = { module = "org.mongodb:mongodb-driver-kotlin-coroutine", version.ref = "mongoDriver" }
 mongoDriverOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-mongo-3.1", version.ref = "openTelemetryInstrumentationAlpha" }
+openSearchJava = { module = "org.opensearch.client:opensearch-java", version.ref = "openSearchJava" }
+openSearchAws = { module = "software.amazon.awssdk:opensearch", version.ref = "openSearchAws" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 proguard = { module = "com.guardsquare:proguard-gradle", version.ref = "proguard" }
 openTelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version = "1.56.0" }
@@ -88,6 +94,7 @@ openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = "
 openTelemetry-exporter-logging = { module = "io.opentelemetry:opentelemetry-exporter-logging", version = "1.56.0" }
 openTelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version = "1.56.0" }
 openTelemetryInstrumentation-logback = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version = "2.19.0-alpha" }
+koog-vector-storage = { module = "ai.koog:vector-storage", version.ref = "koogAgents" }
 
 [plugins]
 androidApp = { id = "com.android.application", version.ref = "agp" }
