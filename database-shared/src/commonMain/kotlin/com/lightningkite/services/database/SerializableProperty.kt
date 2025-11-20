@@ -1,19 +1,9 @@
 package com.lightningkite.services.database
 
-import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationStrategy
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.encoding.AbstractDecoder
-import kotlinx.serialization.encoding.AbstractEncoder
-import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.internal.GeneratedSerializer
-import kotlinx.serialization.modules.EmptySerializersModule
-import kotlinx.serialization.modules.SerializersModule
-import kotlin.text.get
 
 public interface SerializableProperty<A, B> {
     public val name: String
@@ -48,13 +38,30 @@ public interface SerializableProperty<A, B> {
 
         override fun toString(): String = parent.descriptor.serialName + "." + name
         override fun hashCode(): Int = parent.descriptor.serialName.hashCode() + index
-        override fun equals(other: Any?): Boolean = other is Generated<*, *> && other.parent == parent && other.index == index
+
+        private fun GeneratedSerializer<*>.isEqual(other: GeneratedSerializer<*>): Boolean {
+            val myParams = typeParametersSerializers()
+            val otherParams = other.typeParametersSerializers()
+
+            return myParams.size == otherParams.size &&
+                    (myParams.isEmpty() ||
+                    myParams.withIndex().all { (index, p1) ->
+                        val p2 = otherParams[index]
+                        if (p1 is GeneratedSerializer<*>) {
+                            if (p2 is GeneratedSerializer<*>) p1.isEqual(p2)
+                            else false
+                        } else (p1 == p2)
+                    })
+        }
+
+        override fun equals(other: Any?): Boolean =
+            other is Generated<*, *> && other.parent.isEqual(parent) && other.index == index
     }
 
     public class FromVirtualField(
         public val source: VirtualField,
         public val registry: SerializationRegistry,
-        public val context: Map<String, KSerializer<*>>
+        public val context: Map<String, KSerializer<*>>,
     ) : SerializableProperty<VirtualInstance, Any?> {
         override val name: String get() = source.name
         override val serializer: KSerializer<Any?> by lazy { source.type.serializer(registry, context) }
@@ -85,7 +92,7 @@ private val serNameToProperties = HashMap<String, Array<SerializableProperty<*, 
 @Suppress("UNCHECKED_CAST")
 public val <T> KSerializer<T>.serializableProperties: Array<SerializableProperty<T, *>>?
     get() {
-        if(this is VirtualStruct.Concrete) return this.serializableProperties as Array<SerializableProperty<T, *>>
+        if (this is VirtualStruct.Concrete) return this.serializableProperties as Array<SerializableProperty<T, *>>
         return if (this !is GeneratedSerializer<*>) null
         else if (this.typeParametersSerializers().isEmpty()) serNameToProperties.getOrPut(this.descriptor.serialName) {
             (0..<descriptor.elementsCount).map<Int, SerializableProperty<T, *>> { index ->
