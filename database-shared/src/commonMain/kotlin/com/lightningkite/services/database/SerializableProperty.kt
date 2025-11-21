@@ -40,22 +40,23 @@ public interface SerializableProperty<A, B> {
         override fun hashCode(): Int = parent.descriptor.serialName.hashCode() + index
 
         private fun GeneratedSerializer<*>.isEqual(other: GeneratedSerializer<*>): Boolean {
-            val myParams = typeParametersSerializers()
+            val myParams = this.typeParametersSerializers()
             val otherParams = other.typeParametersSerializers()
 
-            return myParams.size == otherParams.size &&
+            return this.descriptor.serialName == other.descriptor.serialName &&
+                    myParams.size == otherParams.size &&
                     (myParams.isEmpty() ||
-                    myParams.withIndex().all { (index, p1) ->
-                        val p2 = otherParams[index]
-                        if (p1 is GeneratedSerializer<*>) {
-                            if (p2 is GeneratedSerializer<*>) p1.isEqual(p2)
-                            else false
-                        } else (p1 == p2)
-                    })
+                            myParams.withIndex().all { (index, p1) ->
+                                val p2 = otherParams[index]
+                                if (p1 is GeneratedSerializer<*>) {
+                                    if (p2 is GeneratedSerializer<*>) p1.isEqual(p2)
+                                    else false
+                                } else (p1.descriptor.serialName == p2.descriptor.serialName)
+                            })
         }
 
         override fun equals(other: Any?): Boolean =
-            other is Generated<*, *> && other.parent.isEqual(parent) && other.index == index
+            other is Generated<*, *> && other.parent.isEqual(this.parent) && other.index == this.index
     }
 
     public class FromVirtualField(
