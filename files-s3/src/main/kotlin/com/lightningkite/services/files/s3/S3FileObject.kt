@@ -1,29 +1,30 @@
 package com.lightningkite.services.files.s3
 
 import com.lightningkite.MediaType
-import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
 import com.lightningkite.services.http.client
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.http.isSuccess
+import io.ktor.client.request.*
+import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.io.asInputStream
 import kotlinx.io.asSource
 import kotlinx.io.buffered
-import kotlin.time.toKotlinInstant
 import software.amazon.awssdk.core.sync.RequestBody
-import software.amazon.awssdk.services.s3.model.*
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import java.io.File
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.time.ZoneOffset
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
+import kotlin.time.toKotlinInstant
 
 /**
  * An implementation of [FileObject] that uses AWS S3 for storage.
@@ -39,16 +40,19 @@ import kotlin.time.toJavaDuration
  */
 public class S3FileObject(
     public val system: S3PublicFileSystem,
-    public val path: File
+    public val path: File,
 ) : FileObject {
-    
+
     /**
      * The Unix-style path for this file.
      * Converts Windows-style backslashes to forward slashes for S3 compatibility.
      */
     private val unixPath: String get() = path.toString().replace('\\', '/')
 
-    override fun then(path: String): S3FileObject = S3FileObject(system, this.path.resolve(path))
+    override fun then(path: String): S3FileObject = S3FileObject(
+        system,
+        this.path.resolve(path.also { if (it.contains("+")) throw IllegalArgumentException("File Path cannot contain '+'") })
+    )
 
     override val name: String get() = path.name
 
@@ -119,7 +123,7 @@ public class S3FileObject(
                 it.key(unixPath)
                 it.contentType(content.mediaType.toString())
             }.build(), content.data.size.let { size ->
-                RequestBody.fromBytes(content.data.bytes())
+                RequestBody.fromInputStream(content.data.source().asInputStream(), size)
             })
         }
     }
@@ -197,7 +201,7 @@ public class S3FileObject(
      * This URL will only work if the bucket has public read access configured.
      */
     override val url: String
-        get() = "https://${system.bucket}.s3.${system.region.id()}.amazonaws.com/${unixPath.encodeURLPathSafe()}"
+        get() = "https://${system.bucket}.s3.${system.region.id()}.amazonaws.com/${unixPath}"
 
     /**
      * A signed URL for secure, time-limited access to this file.
@@ -300,10 +304,10 @@ public class S3FileObject(
             } ?: run {
                 "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKey}%2F$dateOnly%2F$region%2Fs3%2Faws4_request&X-Amz-Date=$date&X-Amz-Expires=${timeout.inWholeSeconds}&X-Amz-SignedHeaders=host"
             }
-            
+
             // For PUT requests, we need to modify the canonical request
             val putConstantBytesA = "PUT\n/".toByteArray()
-            
+
             val hashHolder = ByteArray(32)
             val canonicalRequestHasher = java.security.MessageDigest.getInstance("SHA-256")
             canonicalRequestHasher.update(putConstantBytesA)
@@ -370,7 +374,8 @@ public class S3FileObject(
 
     override fun toString(): String = url
 
-    override fun equals(other: Any?): Boolean = other is S3FileObject && other.system == system && other.unixPath == unixPath
+    override fun equals(other: Any?): Boolean =
+        other is S3FileObject && other.system == system && other.unixPath == unixPath
 
     override fun hashCode(): Int = 31 * system.hashCode() + unixPath.hashCode()
 
@@ -396,9 +401,12 @@ public class S3FileObject(
                 }
                 val secretKey = system.credentialProvider.resolveCredentials().secretAccessKey()
                 val objectPath = path.path.replace("\\", "/")
-                val date = headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
-                val algorithm = headers["X-Amz-Algorithm"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Algorithm' found.")
-                val credential = headers["X-Amz-Credential"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Credential' found.")
+                val date =
+                    headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
+                val algorithm = headers["X-Amz-Algorithm"]
+                    ?: throw IllegalArgumentException("No query parameter 'X-Amz-Algorithm' found.")
+                val credential = headers["X-Amz-Credential"]
+                    ?: throw IllegalArgumentException("No query parameter 'X-Amz-Credential' found.")
                 val scope = credential.substringAfter("/")
 
                 val canonicalRequest = """
@@ -433,11 +441,11 @@ public class S3FileObject(
                 val response = client.get("$url?$queryParams") {
                     header("Range", "0-0")
                 }
-                if(!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
+                if (!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
             }
         }
     }
-    
+
     public companion object {
         private val CONSTANT_BYTES_A = "GET\n/".toByteArray()
         private val CONSTANT_BYTES_C = "\nhost:".toByteArray()
@@ -447,27 +455,28 @@ public class S3FileObject(
         private val CONSTANT_BYTE_NEWLINE = '\n'.code.toByte()
         private val CONSTANT_BYTE_SLASH = '/'.code.toByte()
         private val CONSTANT_BYTES_H = "/s3/aws4_request\n".toByteArray()
-        
+
         /**
          * Converts a byte array to a hexadecimal string.
          */
         private fun ByteArray.toHex(): String = buildString {
-            for(item in this@toHex) {
+            for (item in this@toHex) {
                 append(item.toUByte().toString(16).padStart(2, '0'))
             }
         }
-        
+
         /**
          * Applies a MAC operation to this byte array using the given key.
          */
         private fun ByteArray.mac(key: ByteArray): ByteArray = javax.crypto.Mac.getInstance("HmacSHA256").apply {
             init(javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"))
         }.doFinal(this)
-        
+
         /**
          * Computes the SHA-256 hash of this string.
          */
-        private fun String.sha256(): String = java.security.MessageDigest.getInstance("SHA-256").digest(toByteArray()).toHex()
+        private fun String.sha256(): String =
+            java.security.MessageDigest.getInstance("SHA-256").digest(toByteArray()).toHex()
     }
 }
 
