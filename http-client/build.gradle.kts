@@ -47,6 +47,7 @@ kotlin {
                 api(libs.ktorClientCio)
                 api(libs.ktorContentNegotiation)
                 api(libs.ktorJson)
+                api(libs.ktorClientAuth)
             }
             kotlin {
                 compilerOptions {

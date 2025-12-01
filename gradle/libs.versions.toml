@@ -77,6 +77,7 @@ ksp = { module = "com.google.devtools.ksp:symbol-processing-api", version.ref = 
 ktorClientCio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 ktorContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktorJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktorClientAuth = { module = "io.ktor:ktor-client-auth", version.ref = "ktor" }
 lettuce = { module = "io.lettuce:lettuce-core", version.ref = "lettuce" }
 lettuceOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-lettuce-5.1", version.ref = "openTelemetryInstrumentationAlpha" }
 lkGradleHelpers = { module = "com.lightningkite:lk-gradle-helpers", version.ref = "lkGradleHelpers" }

@@ -6,7 +6,7 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
 import io.ktor.client.*
-import io.ktor.client.engine.java.*
+import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -94,7 +94,7 @@ public class TwilioSMS(
     private val from: String
 ) : SMS {
 
-    private val client = HttpClient(Java) {
+    private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true

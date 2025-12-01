@@ -14,6 +14,10 @@ import kotlin.time.Duration.Companion.hours
  */
 class TfTest {
 
+    init {
+        S3PublicFileSystem
+    }
+
     /**
      * Tests Terraform configuration for a public S3 bucket.
      *

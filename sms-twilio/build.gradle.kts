@@ -19,11 +19,7 @@ dependencies {
     api(project(path = ":sms"))
     
     // Ktor dependencies for HTTP client
-    implementation("io.ktor:ktor-client-core:2.3.7")
-    implementation("io.ktor:ktor-client-java:2.3.7")
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.7")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.7")
-    implementation("io.ktor:ktor-client-auth:2.3.7")
+    implementation(project(":http-client"))
 
     testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)

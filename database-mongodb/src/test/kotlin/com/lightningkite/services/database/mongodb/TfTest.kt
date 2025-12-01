@@ -12,6 +12,9 @@ import kotlin.math.exp
 import kotlin.test.Test
 
 class TfTest {
+    init {
+        MongoDatabase
+    }
     @Test
     fun testServerless() {
         assertPlannableAws<Database.Settings>(

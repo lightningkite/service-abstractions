@@ -202,10 +202,6 @@ public value class LLMClientAndModelSettings(
                     ?: System.getenv("OPENAI_API_KEY")
                     ?: throw IllegalArgumentException("OpenAI API key not provided in URL or OPENAI_API_KEY environment variable")
 
-                //apiKey: kotlin.String, settings: ai.koog.prompt.executor.clients.openai.OpenAIClientSettings = COMPILED_CODE, baseClient: io.ktor.client.HttpClient = COMPILED_CODE, clock: kotlinx.datetime.Clock = COMPILED_CODE
-                OpenAILLMClient::class.java.constructors.forEach {
-                    println("CTOR: ${it.name} ${it.parameters.joinToString { it.type.toString() }}")
-                }
                 val client = OpenAILLMClient(
 
                     apiKey = apiKey,
