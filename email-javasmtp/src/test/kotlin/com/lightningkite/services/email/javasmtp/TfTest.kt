@@ -1,46 +1,31 @@
 package com.lightningkite.services.email.javasmtp
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.services.email.Email
-import com.lightningkite.services.email.EmailAddressWithName
 import com.lightningkite.services.email.EmailService
 import com.lightningkite.services.terraform.TerraformNeed
-import com.lightningkite.services.test.assertPlannableAws
 import com.lightningkite.services.test.assertPlannableAwsDomain
-import com.lightningkite.services.test.expensive
 import com.lightningkite.toEmailAddress
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 
 class TfTest {
     init {
         JavaSmtpEmailService
     }
-    @Test fun test() {
+
+    @Test
+    fun testSesSmtpWithDomain() {
         assertPlannableAwsDomain<EmailService.Settings>("aws-ses") {
-            it.awsSesSmtp("joseph@lightningkite.com".toEmailAddress())
+            // First create shared domain resources
+            TerraformNeed<Unit>("ses_domain").awsSesDomain("joseph@lightningkite.com".toEmailAddress())
+            // Then create SMTP-specific resources (this fulfills the "test" setting)
+            it.awsSesSmtp(sesDomainName = "ses_domain")
         }
     }
-//    @Test fun expensiveTest() {
-//        expensive {
-//            withAwsSpecific(
-//                name = "aws-email",
-//                domain = true,
-//                vpc = false,
-//                serializer = EmailService.Settings.serializer(),
-//                fulfill = {
-//                    it.aws("joseph@lightningkite.com")
-//                },
-//                test = {
-//                    runBlocking {
-//                        it.send(Email(
-//                            subject = "Full Test Email",
-//                            to = listOf(EmailAddressWithName("joseph@lightningkite.com", "Joseph")),
-//                            plainText = "This is a test from a real, external domain.  Kinda nuts."
-//                        ))
-//                    }
-//                }
-//            )
-//        }
-//    }
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun testLegacySesSmtp() {
+        assertPlannableAwsDomain<EmailService.Settings>("aws-ses-legacy") {
+            it.awsSesSmtpLegacy("joseph@lightningkite.com".toEmailAddress())
+        }
+    }
 }

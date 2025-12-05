@@ -1,0 +1,31 @@
+version: '3.8'
+
+# MongoDB Atlas Local for vector search testing
+# Uses the bundled mongodb-atlas-local image which includes mongod + mongot pre-integrated
+#
+# Run with: docker-compose up -d
+# Stop with: docker-compose down -v
+#
+# Connection URL: mongodb://localhost:27017/test?directConnection=true
+
+services:
+  mongodb:
+    image: mongodb/mongodb-atlas-local:8.0.4
+    container_name: mongodb-atlas-local
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGODB_INITDB_ROOT_USERNAME=
+      - MONGODB_INITDB_ROOT_PASSWORD=
+    volumes:
+      - mongodb_data:/data/db
+      - mongot_data:/data/mongot
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+volumes:
+  mongodb_data:
+  mongot_data:

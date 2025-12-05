@@ -2,6 +2,7 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.data.Description
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SealedSerializationApi
@@ -27,7 +28,9 @@ public class SortPartSerializer<T>(public val inner: KSerializer<T>) : KSerializ
         override fun getElementAnnotations(index: Int): List<Annotation> = error()
         override fun toString(): String = "PrimitiveDescriptor($serialName)"
         private fun error(): Nothing = throw IllegalStateException("Primitive descriptor does not have elements")
-        override val annotations: List<Annotation> = listOf()
+        override val annotations: List<Annotation> = listOf(
+            Description("The name of the property to sort by.  Prepend a '-' if you wish to sort descending.  Prepend '~' if you wish to ignore case.")
+        )
     }
 
     private val sub = DataClassPathSerializer(inner)

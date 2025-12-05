@@ -4,14 +4,21 @@ import com.lightningkite.services.database.Aggregate
 import com.lightningkite.services.database.CollectionChanges
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.DataClassPath
+import com.lightningkite.services.database.DenseVectorSearchParams
+import com.lightningkite.services.database.Embedding
 import com.lightningkite.services.database.EntryChange
 import com.lightningkite.services.database.Modification
+import com.lightningkite.services.database.ScoredResult
+import com.lightningkite.services.database.SimilarityMetric
 import com.lightningkite.services.database.SortPart
+import com.lightningkite.services.database.SparseEmbedding
+import com.lightningkite.services.database.SparseVectorSearchParams
 import com.lightningkite.services.database.Table
 import com.lightningkite.services.database.findOne
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -285,6 +292,7 @@ public class PostgresCollection<T : Any>(
     }
 
     override suspend fun deleteMany(condition: Condition<T>): List<T> {
+        prepare.await()
         return t {
             table.deleteReturningWhere(
                 where = { condition(condition, serializer, table, format).asOp() }
@@ -293,6 +301,7 @@ public class PostgresCollection<T : Any>(
     }
 
     override suspend fun deleteManyIgnoringOld(condition: Condition<T>): Int {
+        prepare.await()
         return t {
             table.deleteWhere(
                 op = { it.condition(condition, serializer, table, format).asOp() }
@@ -300,4 +309,265 @@ public class PostgresCollection<T : Any>(
         }
     }
 
+    override suspend fun findSimilar(
+        vectorField: DataClassPath<T, Embedding>,
+        params: DenseVectorSearchParams,
+        condition: Condition<T>,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<T>> = flow {
+        prepare.await()
+
+        // Get the column for the vector field
+        @Suppress("UNCHECKED_CAST")
+        val vectorCol = table.col[vectorField.colName] as Column<List<Float>>
+
+        // Convert embedding to pgvector array format
+        val queryVector = params.queryVector.values.toList()
+
+        // Get the distance operator for the similarity metric
+        val distanceOp = when (params.metric) {
+            SimilarityMetric.Cosine -> VectorCosineDistanceOp(vectorCol, queryVector)
+            SimilarityMetric.Euclidean -> VectorEuclideanDistanceOp(vectorCol, queryVector)
+            SimilarityMetric.DotProduct -> VectorDotProductDistanceOp(vectorCol, queryVector)
+            SimilarityMetric.Manhattan -> VectorManhattanDistanceOp(vectorCol, queryVector)
+        }
+
+        val minScore = params.minScore
+        val results = t {
+            // Build the query - include distance expression in select
+            // We need to select all table columns plus the distance expression
+            table
+                .select(table.columns + distanceOp)
+                .where { condition(condition, serializer, table, format).asOp() }
+                .orderBy(distanceOp to SortOrder.ASC)
+                .limit(params.limit)
+                .toList()
+                .map { resultRow ->
+                    // Decode the model
+                    val model = format.decode(serializer, resultRow)
+
+                    // Get the distance value from the result
+                    val distance = resultRow[distanceOp]
+
+                    // Normalize the distance to a similarity score
+                    val score = when (params.metric) {
+                        SimilarityMetric.Cosine -> {
+                            // Cosine distance is 0-2, convert to similarity -1 to 1, then normalize to 0-1
+                            val similarity = 1f - distance
+                            // Normalize from [-1, 1] to [0, 1]
+                            (similarity + 1f) / 2f
+                        }
+                        SimilarityMetric.Euclidean -> {
+                            // Euclidean: 1 / (1 + distance)
+                            1f / (1f + distance)
+                        }
+                        SimilarityMetric.DotProduct -> {
+                            // DotProduct: pgvector uses negative inner product, so negate to get the score
+                            -distance
+                        }
+                        SimilarityMetric.Manhattan -> {
+                            // Manhattan: 1 / (1 + distance)
+                            1f / (1f + distance)
+                        }
+                    }
+
+                    ScoredResult(model, score)
+                }
+                .filter { minScore == null || it.score >= minScore }
+        }
+
+        results.forEach { emit(it) }
+    }
+
+    override suspend fun findSimilarSparse(
+        vectorField: DataClassPath<T, SparseEmbedding>,
+        params: SparseVectorSearchParams,
+        condition: Condition<T>,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<T>> = flow {
+        prepare.await()
+
+        // Get the column for the sparse vector field
+        // Note: SparseEmbedding is stored as JSON or custom type in PostgreSQL
+        // For pgvector sparsevec support, we need pgvector 0.7.0+
+        @Suppress("UNCHECKED_CAST")
+        val vectorCol = table.col[vectorField.colName] as? Column<String>
+            ?: throw IllegalStateException("Sparse vector column '${vectorField.colName}' not found in table")
+
+        // Get the distance operator for the similarity metric
+        val distanceOp = when (params.metric) {
+            SimilarityMetric.Cosine -> SparseVectorCosineDistanceOp(vectorCol, params.queryVector)
+            SimilarityMetric.Euclidean -> SparseVectorEuclideanDistanceOp(vectorCol, params.queryVector)
+            SimilarityMetric.DotProduct -> SparseVectorDotProductDistanceOp(vectorCol, params.queryVector)
+            SimilarityMetric.Manhattan -> throw UnsupportedOperationException(
+                "Manhattan distance is not supported for sparse vectors in pgvector. " +
+                "Use Cosine, Euclidean, or DotProduct instead."
+            )
+        }
+
+        val minScore = params.minScore
+        val results = t {
+            // Build the query - include distance expression in select
+            table
+                .select(table.columns + distanceOp)
+                .where { condition(condition, serializer, table, format).asOp() }
+                .orderBy(distanceOp to SortOrder.ASC)
+                .limit(params.limit)
+                .toList()
+                .map { resultRow ->
+                    val model = format.decode(serializer, resultRow)
+                    val distance = resultRow[distanceOp]
+
+                    val score = when (params.metric) {
+                        SimilarityMetric.Cosine -> {
+                            val similarity = 1f - distance
+                            (similarity + 1f) / 2f
+                        }
+                        SimilarityMetric.Euclidean -> {
+                            1f / (1f + distance)
+                        }
+                        SimilarityMetric.DotProduct -> {
+                            -distance
+                        }
+                        else -> distance
+                    }
+
+                    ScoredResult(model, score)
+                }
+                .filter { minScore == null || it.score >= minScore }
+        }
+
+        results.forEach { emit(it) }
+    }
+
 }
+
+// ===== pgvector distance operators =====
+
+/**
+ * Base class for pgvector distance operators.
+ * These operators compute distance between vectors using pgvector extension operators.
+ */
+private sealed class VectorDistanceOp(
+    private val column: Expression<List<Float>>,
+    private val queryVector: List<Float>,
+    private val operator: String
+) : ExpressionWithColumnType<Float>() {
+    override val columnType: IColumnType<Float> = FloatColumnType()
+
+    override fun toQueryBuilder(queryBuilder: QueryBuilder) {
+        // Cast the column to vector type for pgvector compatibility
+        queryBuilder.append("(")
+        queryBuilder.append(column)
+        queryBuilder.append("::vector)")
+        queryBuilder.append(" ")
+        queryBuilder.append(operator)
+        queryBuilder.append(" ")
+        // Format query vector as pgvector array: '[1.0, 2.0, 3.0]'
+        queryBuilder.append("'[")
+        queryVector.forEachIndexed { index, value ->
+            if (index > 0) queryBuilder.append(", ")
+            queryBuilder.append(value.toString())
+        }
+        queryBuilder.append("]'::vector")
+    }
+}
+
+/**
+ * Cosine distance operator (<=>)
+ * Returns distance in range [0, 2]
+ */
+private class VectorCosineDistanceOp(
+    column: Expression<List<Float>>,
+    queryVector: List<Float>
+) : VectorDistanceOp(column, queryVector, "<=>")
+
+/**
+ * Euclidean distance operator (<->)
+ * Returns L2 distance
+ */
+private class VectorEuclideanDistanceOp(
+    column: Expression<List<Float>>,
+    queryVector: List<Float>
+) : VectorDistanceOp(column, queryVector, "<->")
+
+/**
+ * Dot product distance operator (<#>)
+ * Returns negative inner product
+ */
+private class VectorDotProductDistanceOp(
+    column: Expression<List<Float>>,
+    queryVector: List<Float>
+) : VectorDistanceOp(column, queryVector, "<#>")
+
+/**
+ * Manhattan distance operator (<+>)
+ * Returns L1 distance
+ */
+private class VectorManhattanDistanceOp(
+    column: Expression<List<Float>>,
+    queryVector: List<Float>
+) : VectorDistanceOp(column, queryVector, "<+>")
+
+
+// ===== pgvector sparse vector distance operators =====
+
+/**
+ * Base class for pgvector sparse vector distance operators.
+ * Uses the sparsevec type from pgvector 0.7.0+.
+ * Sparse vectors are stored in the format '{index1:value1,index2:value2,...}/dimensions'
+ * Note: pgvector uses 1-based indices.
+ */
+private sealed class SparseVectorDistanceOp(
+    private val column: Expression<String>,
+    private val queryVector: SparseEmbedding,
+    private val operator: String
+) : ExpressionWithColumnType<Float>() {
+    override val columnType: IColumnType<Float> = FloatColumnType()
+
+    override fun toQueryBuilder(queryBuilder: QueryBuilder) {
+        // Cast the column to sparsevec type
+        queryBuilder.append("(")
+        queryBuilder.append(column)
+        queryBuilder.append("::sparsevec)")
+        queryBuilder.append(" ")
+        queryBuilder.append(operator)
+        queryBuilder.append(" ")
+        // Format query sparse vector as pgvector sparsevec: '{1:1.0,3:2.0}/5'
+        // Note: pgvector uses 1-based indices, so we add 1 to each index
+        queryBuilder.append("'{")
+        queryVector.indices.forEachIndexed { i, idx ->
+            if (i > 0) queryBuilder.append(",")
+            queryBuilder.append((idx + 1).toString()) // Convert to 1-based
+            queryBuilder.append(":")
+            queryBuilder.append(queryVector.values[i].toString())
+        }
+        queryBuilder.append("}/")
+        queryBuilder.append(queryVector.dimensions.toString())
+        queryBuilder.append("'::sparsevec")
+    }
+}
+
+/**
+ * Sparse vector cosine distance operator (<=>)
+ */
+private class SparseVectorCosineDistanceOp(
+    column: Expression<String>,
+    queryVector: SparseEmbedding
+) : SparseVectorDistanceOp(column, queryVector, "<=>")
+
+/**
+ * Sparse vector Euclidean distance operator (<->)
+ */
+private class SparseVectorEuclideanDistanceOp(
+    column: Expression<String>,
+    queryVector: SparseEmbedding
+) : SparseVectorDistanceOp(column, queryVector, "<->")
+
+/**
+ * Sparse vector dot product distance operator (<#>)
+ */
+private class SparseVectorDotProductDistanceOp(
+    column: Expression<String>,
+    queryVector: SparseEmbedding
+) : SparseVectorDistanceOp(column, queryVector, "<#>")

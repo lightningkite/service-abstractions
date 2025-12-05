@@ -300,6 +300,69 @@ public interface Table<Model : Any> {
     public suspend fun deleteManyIgnoringOld(
         condition: Condition<Model>
     ): Int
+
+    // ===== Vector Search Methods =====
+
+    /**
+     * Find records similar to a query vector, ranked by similarity.
+     *
+     * Results are returned in order of similarity (most similar first).
+     * This is the primary method for semantic/vector search.
+     *
+     * @param vectorField Path to the embedding field to search
+     * @param params Vector search parameters (query vector, metric, limits)
+     * @param condition Additional filter condition (pre-filter for databases that support it)
+     * @param maxQueryMs Query timeout in milliseconds
+     * @return Flow of scored results, ordered by similarity (highest first)
+     *
+     * ```kotlin
+     * val results = documentTable.findSimilar(
+     *     vectorField = Document.path.embedding,
+     *     params = VectorSearchParams(
+     *         queryVector = embedder.embed("machine learning"),
+     *         limit = 10,
+     *         minScore = 0.7f
+     *     ),
+     *     condition = Document.path.category eq "tech"
+     * )
+     * ```
+     *
+     * @throws UnsupportedOperationException if the backend does not support vector search
+     */
+    public suspend fun findSimilar(
+        vectorField: DataClassPath<Model, Embedding>,
+        params: DenseVectorSearchParams,
+        condition: Condition<Model> = Condition.Always,
+        maxQueryMs: Long = 15_000,
+    ): Flow<ScoredResult<Model>> {
+        throw UnsupportedOperationException(
+            "This database backend does not support vector search. " +
+            "Use InMemoryDatabase for testing or a vector-capable backend (MongoDB Atlas, PostgreSQL+pgvector)."
+        )
+    }
+
+    /**
+     * Find records similar to a sparse query vector, ranked by similarity.
+     *
+     * @param vectorField Path to the sparse embedding field to search
+     * @param params Sparse vector search parameters
+     * @param condition Additional filter condition
+     * @param maxQueryMs Query timeout in milliseconds
+     * @return Flow of scored results, ordered by similarity (highest first)
+     *
+     * @see findSimilar for dense vectors
+     * @throws UnsupportedOperationException if the backend does not support sparse vector search
+     */
+    public suspend fun findSimilarSparse(
+        vectorField: DataClassPath<Model, SparseEmbedding>,
+        params: SparseVectorSearchParams,
+        condition: Condition<Model> = Condition.Always,
+        maxQueryMs: Long = 15_000,
+    ): Flow<ScoredResult<Model>> {
+        throw UnsupportedOperationException(
+            "This database backend does not support sparse vector search."
+        )
+    }
 }
 
 // TODO: API Recommendation - Add batch insert optimization

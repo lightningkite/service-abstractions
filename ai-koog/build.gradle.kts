@@ -12,6 +12,7 @@ plugins {
 
 dependencies {
     api(project(path = ":basis"))
+    api(project(path = ":database-shared"))
     testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 

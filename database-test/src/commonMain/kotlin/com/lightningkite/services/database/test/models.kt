@@ -225,3 +225,24 @@ data class HasGenerics2<T>(
     override val _id: Uuid,
     val value: T
 ) : HasId<Uuid>
+
+@GenerateDataClassPaths
+@Serializable
+data class VectorTestModel(
+    override val _id: Uuid = Uuid.random(),
+    val title: String = "",
+    @Index val category: String = "",
+    @VectorIndex(dimensions = 3) val embedding: Embedding = Embedding(floatArrayOf()),
+) : HasId<Uuid> {
+    companion object
+}
+
+@GenerateDataClassPaths
+@Serializable
+data class SparseVectorTestModel(
+    override val _id: Uuid = Uuid.random(),
+    val title: String = "",
+    val sparseEmbedding: SparseEmbedding = SparseEmbedding(intArrayOf(), floatArrayOf(), 0),
+) : HasId<Uuid> {
+    companion object
+}

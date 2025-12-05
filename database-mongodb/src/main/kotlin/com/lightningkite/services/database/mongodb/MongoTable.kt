@@ -9,10 +9,17 @@ import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.DataClassPath
 import com.lightningkite.services.database.DataClassPathPartial
 import com.lightningkite.services.database.DataClassPathSerializer
+import com.lightningkite.services.database.DenseVectorSearchParams
+import com.lightningkite.services.database.Embedding
 import com.lightningkite.services.database.EntryChange
 import com.lightningkite.services.database.Table
 import com.lightningkite.services.database.Modification
+import com.lightningkite.services.database.ScoredResult
+import com.lightningkite.services.database.SimilarityMetric
 import com.lightningkite.services.database.SortPart
+import com.lightningkite.services.database.SparseEmbedding
+import com.lightningkite.services.database.SparseVectorSearchParams
+import com.lightningkite.services.database.VectorIndex
 import com.lightningkite.services.database.collectChunked
 import com.lightningkite.services.database.indexes
 import com.lightningkite.services.database.innerElement
@@ -438,13 +445,181 @@ public class MongoTable<Model : Any>(
         }
     }
 
+    private data class NeededVectorIndex(
+        val field: String,
+        val dimensions: Int,
+        val metric: SimilarityMetric,
+        val sparse: Boolean,
+        val indexType: String,
+    )
+
+    private fun getVectorIndexes(): List<NeededVectorIndex> {
+        val result = mutableListOf<NeededVectorIndex>()
+        for (i in 0 until serializer.descriptor.elementsCount) {
+            serializer.descriptor.getElementAnnotations(i).forEach { annotation ->
+                if (annotation is VectorIndex) {
+                    result.add(
+                        NeededVectorIndex(
+                            field = serializer.descriptor.getElementName(i),
+                            dimensions = annotation.dimensions,
+                            metric = annotation.metric,
+                            sparse = annotation.sparse,
+                            indexType = annotation.indexType,
+                        )
+                    )
+                }
+            }
+        }
+        return result
+    }
+
     private var preparedAlready = false
+
+    /**
+     * Wait for a search index to become queryable.
+     * MongoDB Atlas and mongot build search indexes asynchronously, so after creating
+     * an index we need to poll until it's ready before we can use it for queries.
+     */
+    private suspend fun MongoCollection<BsonDocument>.waitForSearchIndexReady(
+        indexName: String,
+        timeoutMs: Long = 60_000,
+        pollIntervalMs: Long = 500
+    ) {
+        val startTime = System.currentTimeMillis()
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            val index = listSearchIndexes().name(indexName).toList().firstOrNull()
+            if (index != null) {
+                val queryable = index.getBoolean("queryable", false)
+                val status = index.getString("status")
+                if (queryable && status == "READY") {
+                    return
+                }
+            }
+            kotlinx.coroutines.delay(pollIntervalMs)
+        }
+        context.report { Exception(
+            "Search index '$indexName' on ${this.namespace.fullName} did not become ready within ${timeoutMs}ms"
+        ) }
+    }
 
     @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
     private suspend fun MongoCollection<BsonDocument>.prepare() {
         if (preparedAlready) return
         coroutineScope {
             val requireCompletion = ArrayList<Job>()
+
+            // Create vector search indexes for Atlas
+            if (atlasSearch) {
+                getVectorIndexes().forEach { vectorIndex ->
+                    requireCompletion += launch {
+                        val indexName = "${vectorIndex.field}_vector_index"
+                        val similarity = when (vectorIndex.metric) {
+                            SimilarityMetric.Cosine -> "cosine"
+                            SimilarityMetric.Euclidean -> "euclidean"
+                            SimilarityMetric.DotProduct -> "dotProduct"
+                            SimilarityMetric.Manhattan -> {
+                                context.report { Exception(
+                                    "Manhattan distance is not supported for MongoDB Atlas vector indexes on ${this@prepare.namespace.fullName}.${vectorIndex.field}"
+                                ) }
+                                return@launch
+                            }
+                        }
+
+                        if (vectorIndex.sparse) {
+                            context.report { Exception(
+                                "Sparse vector indexes are not yet supported by MongoDB Atlas on ${this@prepare.namespace.fullName}.${vectorIndex.field}"
+                            ) }
+                            return@launch
+                        }
+
+                        // Collect filter fields from @Index annotations
+                        val filterFields = serializer.descriptor.indexes()
+                            .filter { it.fields.size == 1 } // Only single-field indexes can be filters
+                            .map { it.fields.first() }
+                            .filter { it != vectorIndex.field } // Don't include the vector field itself
+
+                        val existing = listSearchIndexes().name(indexName).toList().firstOrNull()
+                        if (existing == null) {
+                            // Build fields list with vector field and filter fields
+                            val fieldsDefinition = buildList {
+                                add(documentOf(
+                                    "type" to "vector",
+                                    "path" to vectorIndex.field,
+                                    "numDimensions" to vectorIndex.dimensions,
+                                    "similarity" to similarity
+                                ))
+                                // Add filter fields for @Index annotated fields
+                                filterFields.forEach { filterField ->
+                                    add(documentOf(
+                                        "type" to "filter",
+                                        "path" to filterField
+                                    ))
+                                }
+                            }
+
+                            // Use SearchIndexModel with type="vectorSearch" for vector indexes
+                            val searchIndexModel = SearchIndexModel(
+                                indexName,
+                                documentOf("fields" to fieldsDefinition),
+                                SearchIndexType.vectorSearch()
+                            )
+                            try {
+                                createSearchIndexes(listOf(searchIndexModel)).toList()
+                                // Wait for the index to become queryable (mongot builds it asynchronously)
+                                waitForSearchIndexReady(indexName)
+                            } catch (e: MongoCommandException) {
+                                if (e.errorCode == 26) {
+                                    access.wholeDb {
+                                        createCollection(this@prepare.namespace.collectionName)
+                                    }
+                                    createSearchIndexes(listOf(searchIndexModel)).toList()
+                                    // Wait for the index to become queryable (mongot builds it asynchronously)
+                                    waitForSearchIndexReady(indexName)
+                                } else throw e
+                            }
+                        } else {
+                            // Check if index needs updating
+                            val existingFields = existing.getEmbedded(listOf("latestDefinition", "fields"), List::class.java) as? List<*>
+                            val existingVectorField = existingFields?.firstOrNull { field ->
+                                (field as? org.bson.Document)?.getString("type") == "vector"
+                            } as? org.bson.Document
+
+                            val needsUpdate = existingVectorField?.let { field ->
+                                field.getString("path") != vectorIndex.field ||
+                                field.getInteger("numDimensions") != vectorIndex.dimensions ||
+                                field.getString("similarity") != similarity
+                            } ?: true
+
+                            if (needsUpdate) {
+                                // Build updated fields list with vector field and filter fields
+                                val updatedFieldsDefinition = buildList {
+                                    add(documentOf(
+                                        "type" to "vector",
+                                        "path" to vectorIndex.field,
+                                        "numDimensions" to vectorIndex.dimensions,
+                                        "similarity" to similarity
+                                    ))
+                                    filterFields.forEach { filterField ->
+                                        add(documentOf(
+                                            "type" to "filter",
+                                            "path" to filterField
+                                        ))
+                                    }
+                                }
+                                try {
+                                    updateSearchIndex(
+                                        indexName,
+                                        documentOf("fields" to updatedFieldsDefinition)
+                                    )
+                                } catch (e: NoSuchElementException) {
+                                    // suppress dumb issue in library
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.let {
                 requireCompletion += launch {
                     if(atlasSearch) {
@@ -625,4 +800,102 @@ public class MongoTable<Model : Any>(
         else
             Sorts.descending(it.field.mongo)
     } + listOfNotNull(lastly))
+
+    override suspend fun findSimilar(
+        vectorField: DataClassPath<Model, Embedding>,
+        params: DenseVectorSearchParams,
+        condition: Condition<Model>,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> {
+        if (!atlasSearch) {
+            throw UnsupportedOperationException(
+                "Vector search requires MongoDB Atlas or MongoDB Community 8.2+ with mongot. " +
+                "Set atlasSearch=true in your MongoDB connection settings."
+            )
+        }
+
+        val cs = condition.simplify()
+        if (cs is Condition.Never) return emptyFlow()
+
+        // Map similarity metric to MongoDB Atlas format
+        val similarity = when (params.metric) {
+            SimilarityMetric.Cosine -> "cosine"
+            SimilarityMetric.Euclidean -> "euclidean"
+            SimilarityMetric.DotProduct -> "dotProduct"
+            SimilarityMetric.Manhattan -> throw UnsupportedOperationException(
+                "Manhattan distance is not supported by MongoDB Atlas vector search. " +
+                "Use Cosine, Euclidean, or DotProduct instead."
+            )
+        }
+
+        // Build the vector search pipeline
+        return access {
+            val pipeline = buildList {
+                // $vectorSearch must be the first stage
+                add(documentOf(
+                    "\$vectorSearch" to documentOf(
+                        "index" to "${vectorField.mongo}_vector_index",
+                        "path" to vectorField.mongo,
+                        "queryVector" to params.queryVector.values.toList(),
+                        "numCandidates" to (params.numCandidates ?: (params.limit * 10)),
+                        "limit" to params.limit,
+                        "similarity" to similarity
+                    ).apply {
+                        // Add exact search if requested
+                        if (params.exact) {
+                            this["exact"] = true
+                        }
+                        // Add filter condition if not always
+                        if (cs !is Condition.Always) {
+                            this["filter"] = cs.bson(serializer, atlasSearch = true, bson = bson)
+                        }
+                    }
+                ))
+
+                // Add $project stage to get the vector search score
+                add(Aggregates.project(
+                    Projections.fields(
+                        Projections.metaVectorSearchScore("vector_search_score"),
+                        Projections.include(*serializer.descriptor.elementNames.toList().toTypedArray())
+                    )
+                ))
+            }
+
+            aggregate<BsonDocument>(pipeline)
+                .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
+                .mapNotNull { doc ->
+                    val score = doc.getNumber("vector_search_score")?.doubleValue()?.toFloat() ?: return@mapNotNull null
+
+                    // Apply minScore filter if specified
+                    val minScore = params.minScore
+                    if (minScore != null && score < minScore) {
+                        return@mapNotNull null
+                    }
+
+                    // MongoDB Atlas already returns scores in 0-1 range for cosine
+                    // For euclidean, we need to normalize using 1/(1+distance)
+                    val normalizedScore = when (params.metric) {
+                        SimilarityMetric.Euclidean -> 1f / (1f + score)
+                        SimilarityMetric.Cosine, SimilarityMetric.DotProduct -> score
+                        else -> score
+                    }
+
+                    val model = bson.parse(serializer, doc)
+                    ScoredResult(model, normalizedScore)
+                }
+        }
+    }
+
+    override suspend fun findSimilarSparse(
+        vectorField: DataClassPath<Model, SparseEmbedding>,
+        params: SparseVectorSearchParams,
+        condition: Condition<Model>,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> {
+        throw UnsupportedOperationException(
+            "Sparse vector search is not supported by MongoDB. " +
+            "MongoDB currently only supports dense vectors (Embedding). " +
+            "Consider using dense embeddings or a different database backend that supports sparse vectors."
+        )
+    }
 }
