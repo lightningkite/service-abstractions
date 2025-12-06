@@ -26,13 +26,22 @@ private val logger = KotlinLogging.logger("OpenAISpeechToTextService")
  *
  * ## URL Format
  *
+ * Uses standard URI format with auth before the host/model:
+ *
  * ```
- * openai-stt://?apiKey=xxx&model=whisper-1
+ * openai://apiKey@model
+ * openai://apiKey@whisper-1
+ * openai://sk-abc123@whisper-1
  * ```
  *
- * Query parameters:
- * - `apiKey` - OpenAI API key (required, or set OPENAI_API_KEY env var)
- * - `model` - Model to use (optional, defaults to "whisper-1")
+ * Components:
+ * - `apiKey` - OpenAI API key (before @). Use `${OPENAI_API_KEY}` for env var.
+ * - `model` - Model name (after @). Defaults to "whisper-1" if omitted.
+ *
+ * Legacy format (still supported):
+ * ```
+ * openai://?apiKey=xxx&model=yyy
+ * ```
  *
  * ## Models
  *
@@ -233,13 +242,8 @@ public class OpenAISpeechToTextService(
 
     public companion object {
         init {
-            SpeechToTextService.Settings.register("openai-stt") { name, url, context ->
-                val params = parseUrlParams(url)
-                val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-                    ?: System.getenv("OPENAI_API_KEY")
-                    ?: throw IllegalArgumentException("OpenAI API key required. Provide via URL parameter or OPENAI_API_KEY environment variable.")
-                val model = params["model"] ?: "whisper-1"
-
+            SpeechToTextService.Settings.register("openai") { name, url, context ->
+                val (apiKey, model) = parseOpenAISttUrl(url)
                 OpenAISpeechToTextService(name, context, apiKey, model)
             }
         }
@@ -253,8 +257,51 @@ public class OpenAISpeechToTextService(
         public fun SpeechToTextService.Settings.Companion.openai(
             apiKey: String,
             model: String = "whisper-1"
-        ): SpeechToTextService.Settings = SpeechToTextService.Settings("openai-stt://?apiKey=$apiKey&model=$model")
+        ): SpeechToTextService.Settings = SpeechToTextService.Settings("openai://$apiKey@$model")
     }
+}
+
+/**
+ * Parses OpenAI STT URL in either standard or legacy format.
+ *
+ * Standard format: `openai://apiKey@model`
+ * Legacy format: `openai://?apiKey=xxx&model=yyy`
+ *
+ * @return Pair of (apiKey, model)
+ */
+private fun parseOpenAISttUrl(url: String): Pair<String, String> {
+    val defaultModel = "whisper-1"
+
+    // Remove scheme prefix
+    val withoutScheme = url.substringAfter("://")
+
+    // Check for standard URI format: apiKey@model
+    if (withoutScheme.contains("@") && !withoutScheme.startsWith("?")) {
+        val apiKeyPart = withoutScheme.substringBefore("@")
+        val modelPart = withoutScheme.substringAfter("@").substringBefore("?").ifEmpty { defaultModel }
+
+        val apiKey = resolveEnvVars(apiKeyPart)
+        if (apiKey.isBlank() || apiKey.startsWith("\${")) {
+            throw IllegalArgumentException(
+                "OpenAI API key required. " +
+                    "Format: openai://apiKey@model or openai://\${OPENAI_API_KEY}@model"
+            )
+        }
+
+        return apiKey to modelPart
+    }
+
+    // Fall back to legacy query parameter format: ?apiKey=xxx&model=yyy
+    val params = parseUrlParams(url)
+    val apiKey = params["apiKey"]?.let(::resolveEnvVars)
+        ?: System.getenv("OPENAI_API_KEY")
+        ?: throw IllegalArgumentException(
+            "OpenAI API key required. " +
+                "Format: openai://apiKey@model or set OPENAI_API_KEY environment variable."
+        )
+    val model = params["model"] ?: defaultModel
+
+    return apiKey to model
 }
 
 private fun parseUrlParams(url: String): Map<String, String> {

@@ -34,7 +34,7 @@ class ElevenLabsSpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val tts = ElevenLabsTextToSpeechService(
-            name = "test-tts",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
@@ -49,7 +49,7 @@ class ElevenLabsSpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val stt = ElevenLabsSpeechToTextService(
-            name = "test-stt",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
@@ -64,7 +64,7 @@ class ElevenLabsSpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val tts = ElevenLabsTextToSpeechService(
-            name = "test-tts",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
@@ -89,13 +89,13 @@ class ElevenLabsSpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val tts = ElevenLabsTextToSpeechService(
-            name = "test-tts",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
 
         val stt = ElevenLabsSpeechToTextService(
-            name = "test-stt",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
@@ -142,13 +142,13 @@ class ElevenLabsSpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val tts = ElevenLabsTextToSpeechService(
-            name = "test-tts",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
 
         val stt = ElevenLabsSpeechToTextService(
-            name = "test-stt",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
@@ -187,7 +187,7 @@ class ElevenLabsSpeechRoundTripTest {
 
         // Test with flash model (low latency)
         val ttsFlash = ElevenLabsTextToSpeechService(
-            name = "test-tts-flash",
+            name = "test-flash",
             context = testContext,
             apiKey = apiKey!!,
             defaultModel = "eleven_flash_v2_5"
@@ -211,7 +211,7 @@ class ElevenLabsSpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val tts = ElevenLabsTextToSpeechService(
-            name = "test-tts",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )

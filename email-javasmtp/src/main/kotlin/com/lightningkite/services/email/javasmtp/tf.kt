@@ -52,7 +52,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * @param dmarcPercent Percentage of messages to apply DMARC policy to (0-100). Default is 75.
  */
 context(emitter: TerraformEmitterAwsDomain)
-public fun TerraformNeed<Unit>.awsSesDomain(
+public fun awsSesDomain(
     reportingEmail: EmailAddress,
     dmarcPolicy: String = "quarantine",
     dmarcPercent: Int = 75,

@@ -28,13 +28,22 @@ private val logger = KotlinLogging.logger("OpenAITextToSpeechService")
  *
  * ## URL Format
  *
+ * Uses standard URI format with auth before the host/model:
+ *
  * ```
- * openai-tts://?apiKey=xxx&model=tts-1
+ * openai://apiKey@model
+ * openai://apiKey@tts-1
+ * openai://sk-abc123@tts-1-hd
  * ```
  *
- * Query parameters:
- * - `apiKey` - OpenAI API key (required, or set OPENAI_API_KEY env var)
- * - `model` - Default model (optional, defaults to "tts-1")
+ * Components:
+ * - `apiKey` - OpenAI API key (before @). Use `${OPENAI_API_KEY}` for env var.
+ * - `model` - Model name (after @). Defaults to "tts-1" if omitted.
+ *
+ * Legacy format (still supported):
+ * ```
+ * openai://?apiKey=xxx&model=yyy
+ * ```
  *
  * ## Models
  *
@@ -274,13 +283,8 @@ public class OpenAITextToSpeechService(
 
     public companion object {
         init {
-            TextToSpeechService.Settings.register("openai-tts") { name, url, context ->
-                val params = parseUrlParams(url)
-                val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-                    ?: System.getenv("OPENAI_API_KEY")
-                    ?: throw IllegalArgumentException("OpenAI API key required. Provide via URL parameter or OPENAI_API_KEY environment variable.")
-                val model = params["model"] ?: "tts-1"
-
+            TextToSpeechService.Settings.register("openai") { name, url, context ->
+                val (apiKey, model) = parseOpenAITtsUrl(url)
                 OpenAITextToSpeechService(name, context, apiKey, model)
             }
         }
@@ -294,8 +298,51 @@ public class OpenAITextToSpeechService(
         public fun TextToSpeechService.Settings.Companion.openai(
             apiKey: String,
             model: String = "tts-1"
-        ): TextToSpeechService.Settings = TextToSpeechService.Settings("openai-tts://?apiKey=$apiKey&model=$model")
+        ): TextToSpeechService.Settings = TextToSpeechService.Settings("openai://$apiKey@$model")
     }
+}
+
+/**
+ * Parses OpenAI TTS URL in either standard or legacy format.
+ *
+ * Standard format: `openai://apiKey@model`
+ * Legacy format: `openai://?apiKey=xxx&model=yyy`
+ *
+ * @return Pair of (apiKey, model)
+ */
+private fun parseOpenAITtsUrl(url: String): Pair<String, String> {
+    val defaultModel = "tts-1"
+
+    // Remove scheme prefix
+    val withoutScheme = url.substringAfter("://")
+
+    // Check for standard URI format: apiKey@model
+    if (withoutScheme.contains("@") && !withoutScheme.startsWith("?")) {
+        val apiKeyPart = withoutScheme.substringBefore("@")
+        val modelPart = withoutScheme.substringAfter("@").substringBefore("?").ifEmpty { defaultModel }
+
+        val apiKey = resolveEnvVars(apiKeyPart)
+        if (apiKey.isBlank() || apiKey.startsWith("\${")) {
+            throw IllegalArgumentException(
+                "OpenAI API key required. " +
+                    "Format: openai://apiKey@model or openai://\${OPENAI_API_KEY}@model"
+            )
+        }
+
+        return apiKey to modelPart
+    }
+
+    // Fall back to legacy query parameter format: ?apiKey=xxx&model=yyy
+    val params = parseUrlParams(url)
+    val apiKey = params["apiKey"]?.let(::resolveEnvVars)
+        ?: System.getenv("OPENAI_API_KEY")
+        ?: throw IllegalArgumentException(
+            "OpenAI API key required. " +
+                "Format: openai://apiKey@model or set OPENAI_API_KEY environment variable."
+        )
+    val model = params["model"] ?: defaultModel
+
+    return apiKey to model
 }
 
 private fun parseUrlParams(url: String): Map<String, String> {

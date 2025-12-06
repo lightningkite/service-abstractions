@@ -32,8 +32,8 @@ class OpenAISpeechToTextServiceTest {
 
     @Test
     fun testUrlParsing_withApiKey() {
-        val settings = SpeechToTextService.Settings("openai-stt://?apiKey=sk-test123&model=whisper-1")
-        val service = settings("test-stt", testContext)
+        val settings = SpeechToTextService.Settings("openai://?apiKey=sk-test123&model=whisper-1")
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is OpenAISpeechToTextService)
@@ -41,8 +41,8 @@ class OpenAISpeechToTextServiceTest {
 
     @Test
     fun testUrlParsing_defaultModel() {
-        val settings = SpeechToTextService.Settings("openai-stt://?apiKey=sk-test123")
-        val service = settings("test-stt", testContext)
+        val settings = SpeechToTextService.Settings("openai://?apiKey=sk-test123")
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is OpenAISpeechToTextService)
@@ -57,10 +57,10 @@ class OpenAISpeechToTextServiceTest {
             return
         }
 
-        val settings = SpeechToTextService.Settings("openai-stt://")
+        val settings = SpeechToTextService.Settings("openai://")
 
         assertFailsWith<IllegalArgumentException> {
-            settings("test-stt", testContext)
+            settings("test", testContext)
         }
     }
 
@@ -74,7 +74,7 @@ class OpenAISpeechToTextServiceTest {
                 model = "whisper-1"
             )
 
-            assertEquals("openai-stt://?apiKey=sk-test123&model=whisper-1", settings.url)
+            assertEquals("openai://?apiKey=sk-test123&model=whisper-1", settings.url)
         }
     }
 

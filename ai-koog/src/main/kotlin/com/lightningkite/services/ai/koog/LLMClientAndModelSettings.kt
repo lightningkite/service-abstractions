@@ -129,6 +129,19 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
             public fun ollama(model: LLModel, apiKey: String? = null): LLMClientAndModelSettings = LLMClientAndModelSettings("ollama://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
             public fun openrouter(model: LLModel, apiKey: String? = null): LLMClientAndModelSettings = LLMClientAndModelSettings("openrouter://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
 
+            /**
+             * Creates settings for Ollama with automatic server start and model pull.
+             *
+             * This is a convenience method that automatically:
+             * - Starts the Ollama server if not running
+             * - Pulls the model if not available locally
+             *
+             * @param model The model to use
+             * @param baseUrl Ollama server URL (default: http://localhost:11434)
+             */
+            public fun ollamaAuto(model: LLModel, baseUrl: String? = null): LLMClientAndModelSettings =
+                LLMClientAndModelSettings("ollama-auto://${model.id}" + (baseUrl?.let { "?baseUrl=$it" } ?: ""))
+
             public val knownModels: Map<Pair<LLMProvider, String>, LLModel> = listOf(
                 OpenAIModels.Moderation.Omni,
                 OpenAIModels.Reasoning.O4Mini,
@@ -330,6 +343,44 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                     val params = parseUrlParams(url)
                     val modelName = url.substringAfter("://", "").substringBefore("?")
                     val baseUrl = params["baseUrl"] ?: "http://localhost:11434"
+                    val autoStart = params["autoStart"]?.toBooleanStrictOrNull() ?: false
+                    val autoPull = params["autoPull"]?.toBooleanStrictOrNull() ?: autoStart
+
+                    // Handle auto-start and auto-pull if requested
+                    if (autoStart || autoPull) {
+                        val manager = OllamaManager(baseUrl)
+                        kotlinx.coroutines.runBlocking {
+                            manager.ensureReady(
+                                model = modelName,
+                                startServer = autoStart,
+                                pullModel = autoPull
+                            )
+                        }
+                    }
+
+                    val client = OllamaClient(baseUrl = baseUrl)
+                    val model = knownModels.get(client.llmProvider() to modelName)
+                        ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
+                    LLMClientAndModel(client, model)
+                }
+
+                // Register Ollama with auto-start enabled by default
+                register("ollama-auto") { name, url, context ->
+                    val params = parseUrlParams(url)
+                    val modelName = url.substringAfter("://", "").substringBefore("?")
+                    val baseUrl = params["baseUrl"] ?: "http://localhost:11434"
+                    val autoStart = params["autoStart"]?.toBooleanStrictOrNull() ?: true
+                    val autoPull = params["autoPull"]?.toBooleanStrictOrNull() ?: true
+
+                    // Auto-start and auto-pull by default
+                    val manager = OllamaManager(baseUrl)
+                    kotlinx.coroutines.runBlocking {
+                        manager.ensureReady(
+                            model = modelName,
+                            startServer = autoStart,
+                            pullModel = autoPull
+                        )
+                    }
 
                     val client = OllamaClient(baseUrl = baseUrl)
                     val model = knownModels.get(client.llmProvider() to modelName)

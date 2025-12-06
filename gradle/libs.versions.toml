@@ -4,36 +4,36 @@ agp = "8.11.2"
 androidDesugaring = "2.1.5"
 angusMail = "2.0.5"
 atomicfu = "0.29.0"
-awsVersion = "2.38.5"
+awsVersion = "2.39.6"
 clamAv = "2.1.2"
 coroutines = "1.10.2"
 dokka = "2.1.0"
-dynamodb = "2.38.5"
+dynamodb = "2.39.6"
 embedMongo = "4.21.0"
-embeddedPostgres = "2.1.1"
+embeddedPostgres = "2.2.0"
 embeddedRedis = "0.9.1"
 exposed = "0.61.0"
 firebaseAdmin = "9.5.0"
-bouncyCastle = "1.80"
+bouncyCastle = "1.83"
 greenmail = "2.1.7"
-graalVmNative = "0.11.2"
+graalVmNative = "0.11.3"
 guava = "33.5.0-jre"
 kbson = "0.5.0"
 koogAgents = "0.5.4-SNAPSHOT"
 kotlin = "2.2.20"
 kotlinLogging = "7.0.13"
 kotlinXDatetime = "0.7.1"
-kotlinXIO = "0.8.0"
+kotlinXIO = "0.8.2"
 kotlinXSerialization = "1.9.0"
-ksp = "2.2.20-2.0.3"
-ktor = "3.3.2"
+ksp = "2.2.20-2.0.4"
+ktor = "3.3.3"
 lettuce = "6.7.1.RELEASE"
 lightningServer = "5.0.0-prerelease-233"
 lkGradleHelpers = "4.0.6"
 logBackClassic = "1.5.21"
-memcached = "2.4.8"
+memcached = "2.4.9"
 mongoDriver = "5.6.1"
-openSearchAws = "2.35.8"
+openSearchAws = "2.39.6"
 openSearchJava = "3.3.0"
 openTelemetry = "1.54.1"
 openTelemetryInstrumentationAlpha = "2.19.0-alpha"
@@ -42,8 +42,9 @@ postgresql = "42.7.8"
 proguard = "7.8.1"
 shadow = "8.1.1"
 slf4j = "2.0.17"
-testcontainers = "1.20.4"
-vanniktechMavenPublish = "0.34.0"
+stripe = "31.0.0"
+testcontainers = "1.21.3"
+vanniktechMavenPublish = "0.35.0"
 versionCatalogUpdate = "1.0.1"
 
 [libraries]
@@ -94,6 +95,8 @@ ktorClientAuth = { module = "io.ktor:ktor-client-auth", version = { ref = "ktor"
 ktorClientCio = { module = "io.ktor:ktor-client-cio", version = { ref = "ktor" } }
 ktorContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version = { ref = "ktor" } }
 ktorJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version = { ref = "ktor" } }
+ktorClientCore = { module = "io.ktor:ktor-client-core", version = { ref = "ktor" } }
+ktorClientWebsockets = { module = "io.ktor:ktor-client-websockets", version = { ref = "ktor" } }
 ktorServerContentNegotiation = { module = "io.ktor:ktor-server-content-negotiation", version = { ref = "ktor" } }
 ktorServerCore = { module = "io.ktor:ktor-server-core", version = { ref = "ktor" } }
 ktorServerNetty = { module = "io.ktor:ktor-server-netty", version = { ref = "ktor" } }
@@ -114,6 +117,7 @@ openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = "
 openTelemetryInstrumentation-logback = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version = "2.19.0-alpha" }
 postgresql = { module = "org.postgresql:postgresql", version = { ref = "postgresql" } }
 proguard = { module = "com.guardsquare:proguard-gradle", version = { ref = "proguard" } }
+stripe = { module = "com.stripe:stripe-java", version = { ref = "stripe" } }
 testcontainers = { module = "org.testcontainers:testcontainers", version = { ref = "testcontainers" } }
 testcontainersJunit = { module = "org.testcontainers:junit-jupiter", version = { ref = "testcontainers" } }
 testcontainersMongodb = { module = "org.testcontainers:mongodb", version = { ref = "testcontainers" } }

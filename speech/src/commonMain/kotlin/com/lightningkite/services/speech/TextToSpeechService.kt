@@ -19,16 +19,35 @@ import kotlin.time.Duration.Companion.minutes
  *
  * - **TestTextToSpeechService** (`test`) - Returns mock audio for testing
  * - **ConsoleTextToSpeechService** (`console`) - Logs TTS requests (development)
+ * - **FreeTtsTextToSpeechService** (`freetts://`, `local://`) - Local/offline (requires speech-local)
  * - **ElevenLabsTextToSpeechService** (`elevenlabs://`) - ElevenLabs TTS (requires speech-elevenlabs)
  * - **OpenAITextToSpeechService** (`openai-tts://`) - OpenAI TTS (requires speech-openai)
  *
- * ## Configuration
+ * ## URL Format
+ *
+ * All implementations use standard URI format: `scheme://auth@host[/path][?query]`
+ *
+ * The auth (API key) goes **before** the @ symbol, following standard URI conventions:
+ *
+ * ```
+ * elevenlabs://apiKey@model
+ * openai-tts://apiKey@model
+ * freetts://?voice=kevin16
+ * ```
+ *
+ * Use environment variable references for credentials:
+ * ```
+ * elevenlabs://${ELEVENLABS_API_KEY}@eleven_multilingual_v2
+ * openai-tts://${OPENAI_API_KEY}@tts-1
+ * ```
+ *
+ * ## Configuration Example
  *
  * ```kotlin
  * @Serializable
  * data class ServerSettings(
  *     val tts: TextToSpeechService.Settings = TextToSpeechService.Settings(
- *         "elevenlabs://?apiKey=\${ELEVENLABS_API_KEY}"
+ *         "elevenlabs://\${ELEVENLABS_API_KEY}@eleven_multilingual_v2"
  *     )
  * )
  *
@@ -80,11 +99,25 @@ public interface TextToSpeechService : Service {
     /**
      * Configuration for instantiating a TextToSpeechService.
      *
+     * ## URL Format
+     *
+     * Uses standard URI format: `scheme://auth@host[?query]`
+     *
      * The URL scheme determines the TTS provider:
      * - `test` - Return mock audio for testing (default)
      * - `console` - Log TTS requests for development
-     * - `elevenlabs://?apiKey=xxx` - ElevenLabs (requires speech-elevenlabs module)
-     * - `openai-tts://?apiKey=xxx` - OpenAI (requires speech-openai module)
+     * - `freetts://` or `local://` - Local FreeTTS (requires speech-local module)
+     * - `elevenlabs://apiKey@model` - ElevenLabs (requires speech-elevenlabs module)
+     * - `openai-tts://apiKey@model` - OpenAI (requires speech-openai module)
+     *
+     * ## Examples
+     *
+     * ```
+     * test                                           // Mock for testing
+     * freetts://                                     // Local with default voice
+     * elevenlabs://xi-abc123@eleven_multilingual_v2 // ElevenLabs with API key
+     * openai-tts://${OPENAI_API_KEY}@tts-1          // OpenAI with env var
+     * ```
      *
      * @property url Connection string defining the TTS provider and credentials
      */

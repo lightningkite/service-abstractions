@@ -30,7 +30,7 @@ class ElevenLabsTextToSpeechServiceTest {
     @Test
     fun testUrlParsing_withApiKey() {
         val settings = TextToSpeechService.Settings("elevenlabs://?apiKey=test-key-123&model=eleven_multilingual_v2")
-        val service = settings("test-tts", testContext)
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is ElevenLabsTextToSpeechService)
@@ -39,7 +39,7 @@ class ElevenLabsTextToSpeechServiceTest {
     @Test
     fun testUrlParsing_defaultModel() {
         val settings = TextToSpeechService.Settings("elevenlabs://?apiKey=test-key-123")
-        val service = settings("test-tts", testContext)
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is ElevenLabsTextToSpeechService)
@@ -48,7 +48,7 @@ class ElevenLabsTextToSpeechServiceTest {
     @Test
     fun testUrlParsing_flashModel() {
         val settings = TextToSpeechService.Settings("elevenlabs://?apiKey=test-key-123&model=eleven_flash_v2_5")
-        val service = settings("test-tts", testContext)
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is ElevenLabsTextToSpeechService)
@@ -57,7 +57,7 @@ class ElevenLabsTextToSpeechServiceTest {
     @Test
     fun testUrlParsing_turboModel() {
         val settings = TextToSpeechService.Settings("elevenlabs://?apiKey=test-key-123&model=eleven_turbo_v2_5")
-        val service = settings("test-tts", testContext)
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is ElevenLabsTextToSpeechService)
@@ -75,7 +75,7 @@ class ElevenLabsTextToSpeechServiceTest {
         val settings = TextToSpeechService.Settings("elevenlabs://")
 
         assertFailsWith<IllegalArgumentException> {
-            settings("test-tts", testContext)
+            settings("test", testContext)
         }
     }
 

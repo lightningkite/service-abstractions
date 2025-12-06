@@ -29,8 +29,8 @@ class OpenAITextToSpeechServiceTest {
 
     @Test
     fun testUrlParsing_withApiKey() {
-        val settings = TextToSpeechService.Settings("openai-tts://?apiKey=sk-test123&model=tts-1")
-        val service = settings("test-tts", testContext)
+        val settings = TextToSpeechService.Settings("openai://?apiKey=sk-test123&model=tts-1")
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is OpenAITextToSpeechService)
@@ -38,8 +38,8 @@ class OpenAITextToSpeechServiceTest {
 
     @Test
     fun testUrlParsing_defaultModel() {
-        val settings = TextToSpeechService.Settings("openai-tts://?apiKey=sk-test123")
-        val service = settings("test-tts", testContext)
+        val settings = TextToSpeechService.Settings("openai://?apiKey=sk-test123")
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is OpenAITextToSpeechService)
@@ -47,8 +47,8 @@ class OpenAITextToSpeechServiceTest {
 
     @Test
     fun testUrlParsing_hdModel() {
-        val settings = TextToSpeechService.Settings("openai-tts://?apiKey=sk-test123&model=tts-1-hd")
-        val service = settings("test-tts", testContext)
+        val settings = TextToSpeechService.Settings("openai://?apiKey=sk-test123&model=tts-1-hd")
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is OpenAITextToSpeechService)
@@ -63,10 +63,10 @@ class OpenAITextToSpeechServiceTest {
             return
         }
 
-        val settings = TextToSpeechService.Settings("openai-tts://")
+        val settings = TextToSpeechService.Settings("openai://")
 
         assertFailsWith<IllegalArgumentException> {
-            settings("test-tts", testContext)
+            settings("test", testContext)
         }
     }
 
@@ -80,7 +80,7 @@ class OpenAITextToSpeechServiceTest {
                 model = "tts-1"
             )
 
-            assertEquals("openai-tts://?apiKey=sk-test123&model=tts-1", settings.url)
+            assertEquals("openai://?apiKey=sk-test123&model=tts-1", settings.url)
         }
     }
 
@@ -92,7 +92,7 @@ class OpenAITextToSpeechServiceTest {
                 model = "tts-1-hd"
             )
 
-            assertEquals("openai-tts://?apiKey=sk-test123&model=tts-1-hd", settings.url)
+            assertEquals("openai://?apiKey=sk-test123&model=tts-1-hd", settings.url)
         }
     }
 

@@ -26,13 +26,22 @@ private val logger = KotlinLogging.logger("ElevenLabsSpeechToTextService")
  *
  * ## URL Format
  *
+ * Uses standard URI format with auth before the host/model:
+ *
  * ```
- * elevenlabs-stt://?apiKey=xxx&model=scribe_v1
+ * elevenlabs-stt://apiKey@model
+ * elevenlabs-stt://apiKey@scribe_v1
+ * elevenlabs-stt://xi-abc123@scribe_v1
  * ```
  *
- * Query parameters:
- * - `apiKey` - ElevenLabs API key (required, or set ELEVENLABS_API_KEY env var)
- * - `model` - Model to use (optional, defaults to "scribe_v1")
+ * Components:
+ * - `apiKey` - ElevenLabs API key (before @). Use `${ELEVENLABS_API_KEY}` for env var.
+ * - `model` - Model name (after @). Defaults to "scribe_v1" if omitted.
+ *
+ * Legacy format (still supported):
+ * ```
+ * elevenlabs-stt://?apiKey=xxx&model=yyy
+ * ```
  *
  * ## Models
  *
@@ -347,13 +356,8 @@ public class ElevenLabsSpeechToTextService(
 
     public companion object {
         init {
-            SpeechToTextService.Settings.register("elevenlabs-stt") { name, url, context ->
-                val params = parseUrlParams(url)
-                val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-                    ?: System.getenv("ELEVENLABS_API_KEY")
-                    ?: throw IllegalArgumentException("ElevenLabs API key required. Provide via URL parameter or ELEVENLABS_API_KEY environment variable.")
-                val model = params["model"] ?: "scribe_v1"
-
+            SpeechToTextService.Settings.register("elevenlabs") { name, url, context ->
+                val (apiKey, model) = parseElevenLabsSttUrl(url)
                 ElevenLabsSpeechToTextService(name, context, apiKey, model)
             }
         }
@@ -367,8 +371,51 @@ public class ElevenLabsSpeechToTextService(
         public fun SpeechToTextService.Settings.Companion.elevenlabs(
             apiKey: String,
             model: String = "scribe_v1"
-        ): SpeechToTextService.Settings = SpeechToTextService.Settings("elevenlabs-stt://?apiKey=$apiKey&model=$model")
+        ): SpeechToTextService.Settings = SpeechToTextService.Settings("elevenlabs://$apiKey@$model")
     }
+}
+
+/**
+ * Parses ElevenLabs STT URL in either standard or legacy format.
+ *
+ * Standard format: `elevenlabs-stt://apiKey@model`
+ * Legacy format: `elevenlabs-stt://?apiKey=xxx&model=yyy`
+ *
+ * @return Pair of (apiKey, model)
+ */
+private fun parseElevenLabsSttUrl(url: String): Pair<String, String> {
+    val defaultModel = "scribe_v1"
+
+    // Remove scheme prefix
+    val withoutScheme = url.substringAfter("://")
+
+    // Check for standard URI format: apiKey@model
+    if (withoutScheme.contains("@") && !withoutScheme.startsWith("?")) {
+        val apiKeyPart = withoutScheme.substringBefore("@")
+        val modelPart = withoutScheme.substringAfter("@").substringBefore("?").ifEmpty { defaultModel }
+
+        val apiKey = resolveEnvVars(apiKeyPart)
+        if (apiKey.isBlank() || apiKey.startsWith("\${")) {
+            throw IllegalArgumentException(
+                "ElevenLabs API key required. " +
+                    "Format: elevenlabs-stt://apiKey@model or elevenlabs-stt://\${ELEVENLABS_API_KEY}@model"
+            )
+        }
+
+        return apiKey to modelPart
+    }
+
+    // Fall back to legacy query parameter format: ?apiKey=xxx&model=yyy
+    val params = parseUrlParams(url)
+    val apiKey = params["apiKey"]?.let(::resolveEnvVars)
+        ?: System.getenv("ELEVENLABS_API_KEY")
+        ?: throw IllegalArgumentException(
+            "ElevenLabs API key required. " +
+                "Format: elevenlabs-stt://apiKey@model or set ELEVENLABS_API_KEY environment variable."
+        )
+    val model = params["model"] ?: defaultModel
+
+    return apiKey to model
 }
 
 private fun parseUrlParams(url: String): Map<String, String> {

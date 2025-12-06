@@ -33,8 +33,8 @@ class ElevenLabsSpeechToTextServiceTest {
 
     @Test
     fun testUrlParsing_withApiKey() {
-        val settings = SpeechToTextService.Settings("elevenlabs-stt://?apiKey=test-key-123&model=scribe_v1")
-        val service = settings("test-stt", testContext)
+        val settings = SpeechToTextService.Settings("elevenlabs://?apiKey=test-key-123&model=scribe_v1")
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is ElevenLabsSpeechToTextService)
@@ -42,8 +42,8 @@ class ElevenLabsSpeechToTextServiceTest {
 
     @Test
     fun testUrlParsing_defaultModel() {
-        val settings = SpeechToTextService.Settings("elevenlabs-stt://?apiKey=test-key-123")
-        val service = settings("test-stt", testContext)
+        val settings = SpeechToTextService.Settings("elevenlabs://?apiKey=test-key-123")
+        val service = settings("test", testContext)
 
         assertNotNull(service)
         assertTrue(service is ElevenLabsSpeechToTextService)
@@ -58,10 +58,10 @@ class ElevenLabsSpeechToTextServiceTest {
             return
         }
 
-        val settings = SpeechToTextService.Settings("elevenlabs-stt://")
+        val settings = SpeechToTextService.Settings("elevenlabs://")
 
         assertFailsWith<IllegalArgumentException> {
-            settings("test-stt", testContext)
+            settings("test", testContext)
         }
     }
 
@@ -75,7 +75,7 @@ class ElevenLabsSpeechToTextServiceTest {
                 model = "scribe_v1"
             )
 
-            assertEquals("elevenlabs-stt://?apiKey=test-key-123&model=scribe_v1", settings.url)
+            assertEquals("elevenlabs://?apiKey=test-key-123&model=scribe_v1", settings.url)
         }
     }
 

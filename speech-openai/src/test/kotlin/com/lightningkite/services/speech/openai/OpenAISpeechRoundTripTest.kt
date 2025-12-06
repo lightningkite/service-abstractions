@@ -34,7 +34,7 @@ class OpenAISpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val tts = OpenAITextToSpeechService(
-            name = "test-tts",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
@@ -48,7 +48,7 @@ class OpenAISpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val stt = OpenAISpeechToTextService(
-            name = "test-stt",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
@@ -62,13 +62,13 @@ class OpenAISpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val tts = OpenAITextToSpeechService(
-            name = "test-tts",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
 
         val stt = OpenAISpeechToTextService(
-            name = "test-stt",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
@@ -104,13 +104,13 @@ class OpenAISpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val tts = OpenAITextToSpeechService(
-            name = "test-tts",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
 
         val stt = OpenAISpeechToTextService(
-            name = "test-stt",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
@@ -141,13 +141,13 @@ class OpenAISpeechRoundTripTest {
         if (skipIfNoCredentials()) return@runTest
 
         val tts = OpenAITextToSpeechService(
-            name = "test-tts",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )
 
         val stt = OpenAISpeechToTextService(
-            name = "test-stt",
+            name = "test",
             context = testContext,
             apiKey = apiKey!!
         )

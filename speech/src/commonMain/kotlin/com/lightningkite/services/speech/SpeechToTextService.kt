@@ -19,16 +19,35 @@ import kotlin.time.Duration.Companion.minutes
  *
  * - **TestSpeechToTextService** (`test`) - Returns mock transcriptions for testing
  * - **ConsoleSpeechToTextService** (`console`) - Logs STT requests (development)
+ * - **VoskSpeechToTextService** (`vosk://`, `local://`) - Local/offline (requires speech-local)
  * - **ElevenLabsSpeechToTextService** (`elevenlabs-stt://`) - ElevenLabs Scribe (requires speech-elevenlabs)
  * - **OpenAISpeechToTextService** (`openai-stt://`) - OpenAI Whisper (requires speech-openai)
  *
- * ## Configuration
+ * ## URL Format
+ *
+ * All implementations use standard URI format: `scheme://auth@host[/path][?query]`
+ *
+ * The auth (API key) goes **before** the @ symbol, following standard URI conventions:
+ *
+ * ```
+ * elevenlabs-stt://apiKey@model
+ * openai-stt://apiKey@model
+ * vosk://?modelName=vosk-model-small-en-us-0.15
+ * ```
+ *
+ * Use environment variable references for credentials:
+ * ```
+ * elevenlabs-stt://${ELEVENLABS_API_KEY}@scribe_v1
+ * openai-stt://${OPENAI_API_KEY}@whisper-1
+ * ```
+ *
+ * ## Configuration Example
  *
  * ```kotlin
  * @Serializable
  * data class ServerSettings(
  *     val stt: SpeechToTextService.Settings = SpeechToTextService.Settings(
- *         "elevenlabs-stt://?apiKey=\${ELEVENLABS_API_KEY}"
+ *         "elevenlabs-stt://\${ELEVENLABS_API_KEY}@scribe_v1"
  *     )
  * )
  *
@@ -84,11 +103,25 @@ public interface SpeechToTextService : Service {
     /**
      * Configuration for instantiating a SpeechToTextService.
      *
+     * ## URL Format
+     *
+     * Uses standard URI format: `scheme://auth@host[?query]`
+     *
      * The URL scheme determines the STT provider:
      * - `test` - Return mock transcriptions for testing (default)
      * - `console` - Log STT requests for development
-     * - `elevenlabs-stt://?apiKey=xxx` - ElevenLabs Scribe (requires speech-elevenlabs module)
-     * - `openai-stt://?apiKey=xxx` - OpenAI Whisper (requires speech-openai module)
+     * - `vosk://` or `local://` - Local Vosk (requires speech-local module)
+     * - `elevenlabs-stt://apiKey@model` - ElevenLabs Scribe (requires speech-elevenlabs module)
+     * - `openai-stt://apiKey@model` - OpenAI Whisper (requires speech-openai module)
+     *
+     * ## Examples
+     *
+     * ```
+     * test                                    // Mock for testing
+     * vosk://                                 // Local with default model
+     * elevenlabs-stt://xi-abc123@scribe_v1   // ElevenLabs with API key
+     * openai-stt://${OPENAI_API_KEY}@whisper-1  // OpenAI with env var
+     * ```
      *
      * @property url Connection string defining the STT provider and credentials
      */

@@ -45,6 +45,7 @@ kotlin {
                 api(project(":basis"))
                 api(libs.coroutinesCore)
                 api(libs.ktorClientCio)
+                api(libs.ktorClientWebsockets)
                 api(libs.ktorContentNegotiation)
                 api(libs.ktorJson)
                 api(libs.ktorClientAuth)
