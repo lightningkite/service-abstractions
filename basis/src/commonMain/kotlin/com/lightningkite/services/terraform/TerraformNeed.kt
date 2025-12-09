@@ -8,11 +8,29 @@ public interface TerraformNeed<T> {
     public val serializer: KSerializer<T>
     public val default: T? get() = null
     public val instructions: String get() = "No instructions provided."
-
-    public companion object {
-        public inline operator fun <reified T> invoke(name: String): TerraformNeed<T> = object : TerraformNeed<T> {
-            override val name: String = name
-            override val serializer: KSerializer<T> = serializer()
-        }
-    }
 }
+
+public fun <T> TerraformNeed(
+    name: String,
+    serializer: KSerializer<T>,
+    default: T? = null,
+    instructions: String = "No instructions provided.",
+): TerraformNeed<T> =
+    object : TerraformNeed<T> {
+        override val name: String = name
+        override val serializer: KSerializer<T> = serializer
+        override val instructions: String = instructions
+        override val default: T? = default
+    }
+
+public inline fun <reified T> TerraformNeed(
+    name: String,
+    default: T? = null,
+    instructions: String = "No instructions provided.",
+): TerraformNeed<T>  =
+    object : TerraformNeed<T> {
+        override val name: String = name
+        override val serializer: KSerializer<T> = serializer()
+        override val instructions: String = instructions
+        override val default: T? = default
+    }
