@@ -15,7 +15,7 @@ class TfTest {
     fun testSesSmtpWithDomain() {
         assertPlannableAwsDomain<EmailService.Settings>("aws-ses") {
             // First create shared domain resources
-            TerraformNeed<Unit>("ses_domain").awsSesDomain("joseph@lightningkite.com".toEmailAddress())
+            awsSesDomain("ses_domain", "joseph@lightningkite.com".toEmailAddress())
             // Then create SMTP-specific resources (this fulfills the "test" setting)
             it.awsSesSmtp(sesDomainName = "ses_domain")
         }

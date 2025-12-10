@@ -80,7 +80,7 @@ class OpenAITextToSpeechServiceTest {
                 model = "tts-1"
             )
 
-            assertEquals("openai://?apiKey=sk-test123&model=tts-1", settings.url)
+            assertEquals("openai://sk-test123@tts-1", settings.url)
         }
     }
 
@@ -92,7 +92,7 @@ class OpenAITextToSpeechServiceTest {
                 model = "tts-1-hd"
             )
 
-            assertEquals("openai://?apiKey=sk-test123&model=tts-1-hd", settings.url)
+            assertEquals("openai://sk-test123@tts-1-hd", settings.url)
         }
     }
 

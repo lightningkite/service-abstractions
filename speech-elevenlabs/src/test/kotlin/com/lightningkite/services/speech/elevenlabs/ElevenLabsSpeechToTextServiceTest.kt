@@ -75,7 +75,7 @@ class ElevenLabsSpeechToTextServiceTest {
                 model = "scribe_v1"
             )
 
-            assertEquals("elevenlabs://?apiKey=test-key-123&model=scribe_v1", settings.url)
+            assertEquals("elevenlabs://test-key-123@scribe_v1", settings.url)
         }
     }
 

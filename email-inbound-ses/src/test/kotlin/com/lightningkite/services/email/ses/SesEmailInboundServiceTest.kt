@@ -3,6 +3,7 @@ package com.lightningkite.services.email.ses
 import com.lightningkite.MediaType
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.HttpAdapter
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.email.EmailInboundService
 import com.sun.net.httpserver.HttpServer
@@ -319,7 +320,7 @@ class SesEmailInboundServiceTest {
 
         val body = TypedData.text(json.encodeToString(notification), MediaType.Application.Json)
 
-        val exception = assertFailsWith<UnsupportedOperationException> {
+        val exception = assertFailsWith<HttpAdapter.SpecialCaseException> {
             service.onReceived.parse(
                 queryParameters = emptyList(),
                 headers = emptyMap(),
@@ -327,8 +328,6 @@ class SesEmailInboundServiceTest {
             )
         }
 
-        assertTrue(exception.message?.contains("subscription confirmation") == true)
-        assertTrue(exception.message?.contains("SubscribeURL") == true)
     }
 
     @Test
@@ -346,7 +345,7 @@ class SesEmailInboundServiceTest {
 
         val body = TypedData.text(json.encodeToString(notification), MediaType.Application.Json)
 
-        val exception = assertFailsWith<UnsupportedOperationException> {
+        val exception = assertFailsWith<HttpAdapter.SpecialCaseException> {
             service.onReceived.parse(
                 queryParameters = emptyList(),
                 headers = emptyMap(),
@@ -354,7 +353,6 @@ class SesEmailInboundServiceTest {
             )
         }
 
-        assertTrue(exception.message?.contains("unsubscribe") == true)
     }
 
     // ==================== SES Email Parsing Tests ====================

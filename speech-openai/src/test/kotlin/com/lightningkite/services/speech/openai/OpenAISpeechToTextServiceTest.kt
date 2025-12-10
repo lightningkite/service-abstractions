@@ -74,7 +74,7 @@ class OpenAISpeechToTextServiceTest {
                 model = "whisper-1"
             )
 
-            assertEquals("openai://?apiKey=sk-test123&model=whisper-1", settings.url)
+            assertEquals("openai://sk-test123@whisper-1", settings.url)
         }
     }
 

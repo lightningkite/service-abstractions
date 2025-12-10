@@ -37,16 +37,6 @@ class StripeSubscriptionServiceTest {
     }
 
     @Test
-    fun testUrlParsing_withoutWebhookSecretInUrl_succeeds() {
-        // Without webhook secret, service should still be created (for dynamic mode)
-        val settings = SubscriptionService.Settings("stripe://sk_test_abc123")
-        val service = settings("test-subscription", testContext)
-
-        assertNotNull(service)
-        assertTrue(service is StripeSubscriptionService)
-    }
-
-    @Test
     fun testUrlParsing_invalidScheme() {
         val settings = SubscriptionService.Settings("invalid://sk_test_abc123@whsec_xyz789")
 

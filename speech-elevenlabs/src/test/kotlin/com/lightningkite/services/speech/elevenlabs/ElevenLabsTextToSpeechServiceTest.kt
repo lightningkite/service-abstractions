@@ -89,7 +89,7 @@ class ElevenLabsTextToSpeechServiceTest {
                 model = "eleven_multilingual_v2"
             )
 
-            assertEquals("elevenlabs://?apiKey=test-key-123&model=eleven_multilingual_v2", settings.url)
+            assertEquals("elevenlabs://test-key-123@eleven_multilingual_v2", settings.url)
         }
     }
 
@@ -101,7 +101,7 @@ class ElevenLabsTextToSpeechServiceTest {
                 model = "eleven_flash_v2_5"
             )
 
-            assertEquals("elevenlabs://?apiKey=test-key-123&model=eleven_flash_v2_5", settings.url)
+            assertEquals("elevenlabs://test-key-123@eleven_flash_v2_5", settings.url)
         }
     }
 

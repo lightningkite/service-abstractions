@@ -16,7 +16,7 @@ class TfTest {
     fun testSesInboundWithDomain() {
         assertPlannableAwsDomain<EmailInboundService.Settings>("aws-ses-inbound") {
             // First create shared domain resources
-            TerraformNeed<Unit>("ses_domain").awsSesDomain("joseph@lightningkite.com".toEmailAddress())
+            awsSesDomain("ses_domain", "joseph@lightningkite.com".toEmailAddress())
             // Then create inbound-specific resources
             it.awsSesInbound(
                 sesDomainName = "ses_domain",
@@ -29,7 +29,7 @@ class TfTest {
     fun testSesInboundWithS3() {
         assertPlannableAwsDomain<EmailInboundService.Settings>("aws-ses-inbound-s3") {
             // First create shared domain resources
-            TerraformNeed<Unit>("ses_domain").awsSesDomain("joseph@lightningkite.com".toEmailAddress())
+            awsSesDomain("ses_domain", "joseph@lightningkite.com".toEmailAddress())
             // Then create inbound-specific resources with S3 storage
             it.awsSesInbound(
                 sesDomainName = "ses_domain",
