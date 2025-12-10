@@ -53,6 +53,7 @@ import kotlinx.serialization.json.JsonPrimitive
  */
 context(emitter: TerraformEmitterAwsDomain)
 public fun awsSesDomain(
+    name: String,
     reportingEmail: EmailAddress,
     dmarcPolicy: String = "quarantine",
     dmarcPercent: Int = 75,

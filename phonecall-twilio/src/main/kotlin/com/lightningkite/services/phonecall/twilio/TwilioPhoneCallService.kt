@@ -75,6 +75,9 @@ private val logger = KotlinLogging.logger("TwilioPhoneCallService")
  * - **TwiML responses**: Webhook handlers must return valid TwiML XML
  * - **Webhook timeout**: Twilio expects responses within 15 seconds
  * - **Media Streams**: Require WebSocket support for bidirectional audio
+ * - **Signature validation**: Webhook signature validation is ALWAYS enforced.
+ *   You MUST call [configureWebhook] on webhook subservices before processing webhooks.
+ *   For unit tests, use [computeSignature] to generate valid signatures.
  *
  * ## Twilio Pricing (approximate)
  *
@@ -167,21 +170,27 @@ public class TwilioPhoneCallService(
 
     /**
      * Validates the Twilio webhook signature from headers and body.
-     * Throws SecurityException if signature is missing or invalid.
      *
-     * Note: Signature validation is skipped if the webhook URL has not been configured.
-     * This allows for testing scenarios where configureWebhook() has not been called.
-     * In production, always call configureWebhook() before processing webhooks.
+     * Signature validation is ALWAYS enforced - there is no way to disable it.
+     * This ensures that webhook requests actually come from Twilio and not an attacker.
+     *
+     * @throws SecurityException if:
+     * - The webhook URL has not been configured (call [configureWebhook] first)
+     * - The X-Twilio-Signature header is missing
+     * - The signature is invalid
      */
     private fun validateWebhookSignature(
         headers: Map<String, List<String>>,
         params: Map<String, String>,
         webhookUrl: String?
     ) {
-        // Skip validation if webhook URL not configured (e.g., in tests)
+        // Webhook URL MUST be configured before processing webhooks
         if (webhookUrl == null) {
-            logger.warn { "[$name] Skipping signature validation - webhook URL not configured. Call configureWebhook() in production." }
-            return
+            throw SecurityException(
+                "Webhook URL not configured. You must call configureWebhook() before processing webhooks. " +
+                "This is required to validate that webhook requests actually come from Twilio. " +
+                "For unit tests, call configureWebhook() with a test URL and use computeSignature() to generate valid signatures."
+            )
         }
 
         val signature = headers["X-Twilio-Signature"]?.firstOrNull()
@@ -191,6 +200,89 @@ public class TwilioPhoneCallService(
         if (!validateSignature(webhookUrl, params, signature)) {
             throw SecurityException("Invalid Twilio webhook signature")
         }
+    }
+
+    /**
+     * Computes a Twilio webhook signature for the given URL and parameters.
+     *
+     * This is useful for unit tests that need to simulate Twilio webhook requests
+     * with valid signatures. In production, Twilio computes this signature automatically.
+     *
+     * ## Usage in Tests
+     *
+     * ```kotlin
+     * // Set up the webhook URLs for testing (without calling Twilio API)
+     * service.setWebhookUrlsForTesting(
+     *     incomingCallUrl = "https://test.example.com/incoming",
+     *     statusCallbackUrl = "https://test.example.com/status"
+     * )
+     *
+     * // Build your test parameters
+     * val params = mapOf(
+     *     "CallSid" to "CA123",
+     *     "From" to "+15551234567",
+     *     "To" to "+15559876543"
+     * )
+     *
+     * // Compute a valid signature
+     * val signature = service.computeSignature("https://test.example.com/incoming", params)
+     *
+     * // Call parse with the valid signature
+     * val event = service.onIncomingCall.parse(
+     *     queryParameters = emptyList(),
+     *     headers = mapOf("X-Twilio-Signature" to listOf(signature)),
+     *     body = TypedData.text(params.toFormUrlEncoded(), MediaType.Application.FormUrlEncoded)
+     * )
+     * ```
+     *
+     * @param url The full webhook URL (must match what was passed to setWebhookUrlsForTesting)
+     * @param params The form parameters that will be sent in the request body
+     * @return The computed X-Twilio-Signature value
+     */
+    @OptIn(ExperimentalEncodingApi::class)
+    public fun computeSignature(url: String, params: Map<String, String>): String {
+        val data = buildString {
+            append(url)
+            params.keys.sorted().forEach { key ->
+                append(key)
+                append(params[key] ?: "")
+            }
+        }
+
+        val mac = Mac.getInstance("HmacSHA1")
+        val keySpec = SecretKeySpec(authSecret.toByteArray(Charsets.UTF_8), "HmacSHA1")
+        mac.init(keySpec)
+        val rawHmac = mac.doFinal(data.toByteArray(Charsets.UTF_8))
+        return Base64.encode(rawHmac)
+    }
+
+    /**
+     * Sets webhook URLs for testing purposes WITHOUT calling the Twilio API.
+     *
+     * In production, use [configureWebhook] on each webhook subservice instead,
+     * which both sets the URL AND configures it in Twilio's system.
+     *
+     * This method is intended for unit tests that need to test webhook parsing
+     * with signature validation, but don't want to make real API calls to Twilio.
+     *
+     * **Important**: This does NOT bypass signature validation. You must still
+     * provide valid signatures using [computeSignature] when calling webhook parse methods.
+     *
+     * @param incomingCallUrl URL for incoming call webhooks (null to leave unchanged)
+     * @param statusCallbackUrl URL for call status webhooks (null to leave unchanged)
+     * @param transcriptionCallbackUrl URL for transcription webhooks (null to leave unchanged)
+     * @param dtmfCallbackUrl URL for DTMF/gather webhooks (null to leave unchanged)
+     */
+    public fun setWebhookUrlsForTesting(
+        incomingCallUrl: String? = null,
+        statusCallbackUrl: String? = null,
+        transcriptionCallbackUrl: String? = null,
+        dtmfCallbackUrl: String? = null
+    ) {
+        incomingCallUrl?.let { this.incomingCallWebhookUrl = it }
+        statusCallbackUrl?.let { this.statusCallbackUrl = it }
+        transcriptionCallbackUrl?.let { this.transcriptionCallbackUrl = it }
+        dtmfCallbackUrl?.let { this.dtmfCallbackUrl = it }
     }
 
     override suspend fun startCall(to: PhoneNumber, options: OutboundCallOptions): String {

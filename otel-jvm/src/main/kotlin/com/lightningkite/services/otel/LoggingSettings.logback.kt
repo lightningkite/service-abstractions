@@ -29,7 +29,8 @@ private fun LoggingSettings.ContextSettings.apply(
     logCtx: LoggerContext = LoggerFactory.getILoggerFactory() as LoggerContext,
 ) {
     to.isAdditive = additive
-    to.level = Level.toLevel(level.toInt())
+    // Convert by name since kotlin-logging Level.toInt() values don't match Logback's integer values
+    to.level = Level.toLevel(level.name)
     if (filePattern?.isNotBlank() == true) {
         to.addAppender(RollingFileAppender<ILoggingEvent>().apply rolling@{
             context = logCtx

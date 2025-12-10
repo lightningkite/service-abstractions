@@ -6,6 +6,8 @@ import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.executor.clients.LLMClient
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
+import ai.koog.prompt.executor.clients.bedrock.BedrockClientSettings
+import ai.koog.prompt.executor.clients.bedrock.BedrockLLMClient
 import ai.koog.prompt.executor.clients.bedrock.BedrockModels
 import ai.koog.prompt.executor.clients.deepseek.DeepSeekModels
 import ai.koog.prompt.executor.clients.google.GoogleLLMClient
@@ -23,6 +25,9 @@ import ai.koog.prompt.message.LLMChoice
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
+import aws.sdk.kotlin.runtime.auth.credentials.DefaultChainCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
+import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
@@ -130,6 +135,38 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
             public fun openrouter(model: LLModel, apiKey: String? = null): LLMClientAndModelSettings = LLMClientAndModelSettings("openrouter://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
 
             /**
+             * Creates settings for AWS Bedrock using the default credential chain.
+             *
+             * Uses the AWS default credential chain (environment variables, IAM role, etc.)
+             * which is appropriate for Lambda, EC2, ECS, and other AWS environments.
+             *
+             * @param model The Bedrock model to use (from BedrockModels)
+             * @param region Optional AWS region override (defaults to AWS_REGION env var or us-east-1)
+             */
+            public fun bedrock(model: LLModel, region: String? = null): LLMClientAndModel.Settings =
+                LLMClientAndModel.Settings("bedrock://${model.id}" + (region?.let { "?region=$it" } ?: ""))
+
+            /**
+             * Creates settings for AWS Bedrock with explicit static credentials.
+             *
+             * Use this when you need to provide AWS credentials explicitly rather than
+             * relying on the default credential chain. Supports environment variable
+             * resolution using ${VAR_NAME} syntax.
+             *
+             * @param model The Bedrock model to use (from BedrockModels)
+             * @param accessKeyId AWS access key ID (or ${ENV_VAR} reference)
+             * @param secretAccessKey AWS secret access key (or ${ENV_VAR} reference)
+             * @param region Optional AWS region override (defaults to AWS_REGION env var or us-east-1)
+             */
+            public fun bedrock(
+                model: LLModel,
+                accessKeyId: String,
+                secretAccessKey: String,
+                region: String? = null
+            ): LLMClientAndModel.Settings =
+                LLMClientAndModel.Settings("bedrock://${accessKeyId}:${secretAccessKey}@${model.id}" + (region?.let { "?region=$it" } ?: ""))
+
+            /**
              * Creates settings for Ollama with automatic server start and model pull.
              *
              * This is a convenience method that automatically:
@@ -144,10 +181,10 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
 
             public val knownModels: Map<Pair<LLMProvider, String>, LLModel> = listOf(
                 OpenAIModels.Moderation.Omni,
-                OpenAIModels.Reasoning.O4Mini,
-                OpenAIModels.Reasoning.O3Mini,
-                OpenAIModels.Reasoning.O3,
-                OpenAIModels.Reasoning.O1,
+                OpenAIModels.Chat.O4Mini,
+                OpenAIModels.Chat.O3Mini,
+                OpenAIModels.Chat.O3,
+                OpenAIModels.Chat.O1,
                 OpenAIModels.Chat.GPT4o,
                 OpenAIModels.Chat.GPT4_1,
                 OpenAIModels.Chat.GPT5,
@@ -157,11 +194,6 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                 OpenAIModels.Audio.GptAudio,
                 OpenAIModels.Audio.GPT4oMiniAudio,
                 OpenAIModels.Audio.GPT4oAudio,
-                OpenAIModels.CostOptimized.GPT4_1Nano,
-                OpenAIModels.CostOptimized.GPT4_1Mini,
-                OpenAIModels.CostOptimized.GPT4oMini,
-                OpenAIModels.CostOptimized.O4Mini,
-                OpenAIModels.CostOptimized.O3Mini,
                 OpenAIModels.Embeddings.TextEmbedding3Small,
                 OpenAIModels.Embeddings.TextEmbedding3Large,
                 OpenAIModels.Embeddings.TextEmbeddingAda002,
@@ -193,6 +225,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                 BedrockModels.MetaLlama3_2_11BInstruct,
                 BedrockModels.MetaLlama3_2_90BInstruct,
                 BedrockModels.MetaLlama3_3_70BInstruct,
+                BedrockModels.MoonshotKimiK2Thinking,
                 BedrockModels.Embeddings.AmazonTitanEmbedText,
                 BedrockModels.Embeddings.AmazonTitanEmbedTextV2,
                 BedrockModels.Embeddings.CohereEmbedEnglishV3,
@@ -399,6 +432,41 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                     val client = OpenRouterLLMClient(apiKey = apiKey)
                     val model = knownModels.get(client.llmProvider() to modelName)
                         ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
+                    LLMClientAndModel(client, model)
+                }
+
+                // Register AWS Bedrock
+                // URL formats:
+                //   bedrock://{model-id}?region={region}  - Uses AWS default credential chain
+                //   bedrock://{accessKeyId}:{secretKey}@{model-id}?region={region}  - Static credentials
+                register("bedrock") { _, url, _ ->
+                    val params = parseUrlParams(url)
+                    val region = params["region"]?.let(::resolveEnvVars)
+                        ?: System.getenv("AWS_REGION")
+                        ?: "us-east-1"
+
+                    // Parse the authority part to check for credentials
+                    val authority = url.substringAfter("://", "").substringBefore("?")
+                    val (credentialsProvider, modelName) = if (authority.contains("@")) {
+                        // Format: accessKeyId:secretKey@model-id
+                        val credentials = authority.substringBefore("@")
+                        val model = authority.substringAfter("@")
+                        val accessKeyId = resolveEnvVars(credentials.substringBefore(":"))
+                        val secretKey = resolveEnvVars(credentials.substringAfter(":"))
+                        StaticCredentialsProvider(Credentials(accessKeyId, secretKey)) to model
+                    } else {
+                        // No credentials in URL - use default chain
+                        // This automatically picks up IAM role credentials in Lambda/EC2/ECS
+                        DefaultChainCredentialsProvider() to authority
+                    }
+
+                    val settings = BedrockClientSettings(region = region)
+                    val client = BedrockLLMClient(
+                        identityProvider = credentialsProvider,
+                        settings = settings
+                    )
+                    val model = knownModels[client.llmProvider() to modelName]
+                        ?: throw IllegalStateException("Unknown Bedrock model '$modelName'. Known Bedrock models: ${knownModels.keys.filter { it.first.id == "bedrock" }}")
                     LLMClientAndModel(client, model)
                 }
             }

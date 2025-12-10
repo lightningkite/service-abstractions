@@ -1,8 +1,9 @@
 package com.lightningkite.services.email.ses
 
-import com.lightningkite.EmailAddress
+import com.lightningkite.MediaType
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HttpAdapter
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.data.WebhookSubservice
 import com.lightningkite.services.email.EmailAddressWithName
@@ -156,18 +157,41 @@ public class SesEmailInboundService(
             // Verify SNS message signature (REQUIRED for all message types)
             verifySnsSignature(snsNotification)
 
-            // Handle subscription confirmation
+            // Handle subscription confirmation - auto-confirm and return success response
             if (snsNotification.Type == "SubscriptionConfirmation") {
-                logger.info { "[$name] Received SNS subscription confirmation. Subscribe URL: ${snsNotification.SubscribeURL}" }
-                throw UnsupportedOperationException(
-                    "SNS subscription confirmation received. Visit the SubscribeURL to confirm: ${snsNotification.SubscribeURL}"
+                val subscribeUrl = snsNotification.SubscribeURL
+                val topicArn = snsNotification.TopicArn ?: "unknown"
+                logger.info { "[$name] Received SNS subscription confirmation for topic: $topicArn" }
+
+                if (subscribeUrl != null) {
+                    val confirmed = autoConfirmSubscription(subscribeUrl)
+                    if (confirmed) {
+                        logger.info { "[$name] Successfully auto-confirmed SNS subscription for topic: $topicArn" }
+                    } else {
+                        logger.warn { "[$name] Failed to auto-confirm SNS subscription. Manual confirmation required: $subscribeUrl" }
+                    }
+                }
+
+                // Return 200 OK so SNS knows we received the confirmation
+                throw HttpAdapter.SpecialCaseException(
+                    HttpAdapter.HttpResponseLike(
+                        status = 200,
+                        headers = mapOf("Content-Type" to listOf("text/plain")),
+                        body = TypedData.text("Subscription confirmed", MediaType.Text.Plain)
+                    )
                 )
             }
 
             // Handle unsubscribe confirmation
             if (snsNotification.Type == "UnsubscribeConfirmation") {
                 logger.info { "[$name] Received SNS unsubscribe confirmation" }
-                throw UnsupportedOperationException("SNS unsubscribe confirmation received")
+                throw HttpAdapter.SpecialCaseException(
+                    HttpAdapter.HttpResponseLike(
+                        status = 200,
+                        headers = mapOf("Content-Type" to listOf("text/plain")),
+                        body = TypedData.text("Unsubscribe confirmed", MediaType.Text.Plain)
+                    )
+                )
             }
 
             // Parse SES notification from Message field
@@ -454,6 +478,41 @@ public class SesEmailInboundService(
             append("Type\n")
             append(notification.Type)
             append("\n")
+        }
+    }
+
+    /**
+     * Automatically confirms an SNS subscription by fetching the SubscribeURL.
+     *
+     * This is safe because we've already verified the SNS signature, which proves
+     * the message came from AWS SNS. The SubscribeURL is also validated to ensure
+     * it points to an amazonaws.com domain.
+     *
+     * @param subscribeUrl The URL to fetch to confirm the subscription
+     * @return true if confirmation was successful, false otherwise
+     */
+    private fun autoConfirmSubscription(subscribeUrl: String): Boolean {
+        return try {
+            // Validate URL is from AWS
+            val uri = URI(subscribeUrl)
+            val host = uri.host?.lowercase() ?: return false
+
+            if (!host.endsWith(".amazonaws.com")) {
+                logger.warn { "[$name] SubscribeURL is not from amazonaws.com ($host), skipping auto-confirm for security" }
+                return false
+            }
+
+            logger.debug { "[$name] Auto-confirming SNS subscription via: $subscribeUrl" }
+
+            val connection = URL(subscribeUrl).openConnection()
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.getInputStream().use { it.readBytes() }
+
+            true
+        } catch (e: Exception) {
+            logger.error(e) { "[$name] Failed to auto-confirm SNS subscription" }
+            false
         }
     }
 }

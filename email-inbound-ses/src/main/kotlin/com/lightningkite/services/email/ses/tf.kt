@@ -85,7 +85,7 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
         }
 
         // Data source for current AWS account
-        "data.aws_caller_identity.current" {}
+        "data.aws_caller_identity.$name" {}
 
         // SNS topic policy to allow SES to publish
         "resource.aws_sns_topic_policy.$name" {
@@ -104,7 +104,7 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
                         "Resource": "${aws_sns_topic.$${name}.arn}",
                         "Condition": {
                             "StringEquals": {
-                                "AWS:SourceAccount": "${data.aws_caller_identity.current.account_id}"
+                                "AWS:SourceAccount": "${data.aws_caller_identity.$$name.account_id}"
                             }
                         }
                     }
@@ -136,7 +136,7 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
                             "Resource": "arn:aws:s3:::${aws_s3_bucket.$${name}_emails.id}/*",
                             "Condition": {
                                 "StringEquals": {
-                                    "AWS:SourceAccount": "${data.aws_caller_identity.current.account_id}"
+                                    "AWS:SourceAccount": "${data.aws_caller_identity.$$name.account_id}"
                                 }
                             }
                         }

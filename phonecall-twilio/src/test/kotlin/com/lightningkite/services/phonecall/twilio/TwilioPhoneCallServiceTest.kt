@@ -94,45 +94,55 @@ class TwilioPhoneCallServiceTest {
 
     // ==================== Webhook Parsing Tests ====================
 
-    // Sample Twilio voice webhook payload
-    private val sampleIncomingCallWebhookBody = buildString {
-        append("AccountSid=AC1234567890")
-        append("&ApiVersion=2010-04-01")
-        append("&CallSid=CA1234567890abcdef1234567890abcdef")
-        append("&CallStatus=ringing")
-        append("&Called=%2B15551234567")
-        append("&CalledCity=SAN+FRANCISCO")
-        append("&CalledCountry=US")
-        append("&CalledState=CA")
-        append("&CalledZip=94107")
-        append("&Caller=%2B15559876543")
-        append("&CallerCity=LOS+ANGELES")
-        append("&CallerCountry=US")
-        append("&CallerState=CA")
-        append("&CallerZip=90001")
-        append("&Direction=inbound")
-        append("&From=%2B15559876543")
-        append("&FromCity=LOS+ANGELES")
-        append("&FromCountry=US")
-        append("&FromState=CA")
-        append("&FromZip=90001")
-        append("&To=%2B15551234567")
-        append("&ToCity=SAN+FRANCISCO")
-        append("&ToCountry=US")
-        append("&ToState=CA")
-        append("&ToZip=94107")
-    }
+    // Test webhook URLs
+    private val testIncomingCallUrl = "https://test.example.com/incoming"
+    private val testStatusCallbackUrl = "https://test.example.com/status"
 
-    private val sampleCallStatusWebhookBody = buildString {
-        append("AccountSid=AC1234567890")
-        append("&ApiVersion=2010-04-01")
-        append("&CallSid=CA1234567890abcdef1234567890abcdef")
-        append("&CallStatus=completed")
-        append("&CallDuration=30")
-        append("&Direction=outbound-api")
-        append("&From=%2B15551234567")
-        append("&To=%2B15559876543")
-    }
+    // Sample webhook parameters (decoded form)
+    private val sampleIncomingCallParams = mapOf(
+        "AccountSid" to "AC1234567890",
+        "ApiVersion" to "2010-04-01",
+        "CallSid" to "CA1234567890abcdef1234567890abcdef",
+        "CallStatus" to "ringing",
+        "Called" to "+15551234567",
+        "CalledCity" to "SAN FRANCISCO",
+        "CalledCountry" to "US",
+        "CalledState" to "CA",
+        "CalledZip" to "94107",
+        "Caller" to "+15559876543",
+        "CallerCity" to "LOS ANGELES",
+        "CallerCountry" to "US",
+        "CallerState" to "CA",
+        "CallerZip" to "90001",
+        "Direction" to "inbound",
+        "From" to "+15559876543",
+        "FromCity" to "LOS ANGELES",
+        "FromCountry" to "US",
+        "FromState" to "CA",
+        "FromZip" to "90001",
+        "To" to "+15551234567",
+        "ToCity" to "SAN FRANCISCO",
+        "ToCountry" to "US",
+        "ToState" to "CA",
+        "ToZip" to "94107"
+    )
+
+    private val sampleCallStatusParams = mapOf(
+        "AccountSid" to "AC1234567890",
+        "ApiVersion" to "2010-04-01",
+        "CallSid" to "CA1234567890abcdef1234567890abcdef",
+        "CallStatus" to "completed",
+        "CallDuration" to "30",
+        "Direction" to "outbound-api",
+        "From" to "+15551234567",
+        "To" to "+15559876543"
+    )
+
+    /** Converts params map to form-url-encoded string */
+    private fun Map<String, String>.toFormUrlEncoded(): String =
+        entries.joinToString("&") { (k, v) ->
+            "${java.net.URLEncoder.encode(k, "UTF-8")}=${java.net.URLEncoder.encode(v, "UTF-8")}"
+        }
 
     @Test
     fun testparse_incomingCall() = runTest {
@@ -144,11 +154,17 @@ class TwilioPhoneCallServiceTest {
             defaultFrom = "+15551234567"
         )
 
-        val body = TypedData(Data.Text(sampleIncomingCallWebhookBody), MediaType.Application.FormUrlEncoded)
+        // Set up webhook URL for testing
+        service.setWebhookUrlsForTesting(incomingCallUrl = testIncomingCallUrl)
+
+        // Compute valid signature
+        val signature = service.computeSignature(testIncomingCallUrl, sampleIncomingCallParams)
+
+        val body = TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
 
         val result = service.onIncomingCall.parse(
             queryParameters = emptyList(),
-            headers = emptyMap(),
+            headers = mapOf("X-Twilio-Signature" to listOf(signature)),
             body = body
         )
 
@@ -168,11 +184,17 @@ class TwilioPhoneCallServiceTest {
             defaultFrom = "+15551234567"
         )
 
-        val body = TypedData(Data.Text(sampleCallStatusWebhookBody), MediaType.Application.FormUrlEncoded)
+        // Set up webhook URL for testing
+        service.setWebhookUrlsForTesting(statusCallbackUrl = testStatusCallbackUrl)
+
+        // Compute valid signature
+        val signature = service.computeSignature(testStatusCallbackUrl, sampleCallStatusParams)
+
+        val body = TypedData(Data.Text(sampleCallStatusParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
 
         val result = service.onCallStatus.parse(
             queryParameters = emptyList(),
-            headers = emptyMap(),
+            headers = mapOf("X-Twilio-Signature" to listOf(signature)),
             body = body
         )
 
@@ -192,12 +214,18 @@ class TwilioPhoneCallServiceTest {
             defaultFrom = "+15551234567"
         )
 
-        val body = TypedData(Data.Text("From=%2B15559876543&To=%2B15551234567"), MediaType.Application.FormUrlEncoded)
+        // Set up webhook URL for testing
+        service.setWebhookUrlsForTesting(incomingCallUrl = testIncomingCallUrl)
+
+        val params = mapOf("From" to "+15559876543", "To" to "+15551234567")
+        val signature = service.computeSignature(testIncomingCallUrl, params)
+
+        val body = TypedData(Data.Text(params.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
 
         assertFailsWith<PhoneCallException> {
             service.onIncomingCall.parse(
                 queryParameters = emptyList(),
-                headers = emptyMap(),
+                headers = mapOf("X-Twilio-Signature" to listOf(signature)),
                 body = body
             )
         }
@@ -437,6 +465,9 @@ class TwilioPhoneCallServiceTest {
             defaultFrom = "+15551234567"
         )
 
+        // Set up webhook URL for testing
+        service.setWebhookUrlsForTesting(statusCallbackUrl = testStatusCallbackUrl)
+
         val statusMappings = listOf(
             "queued" to CallStatus.QUEUED,
             "ringing" to CallStatus.RINGING,
@@ -449,16 +480,94 @@ class TwilioPhoneCallServiceTest {
         )
 
         for ((twilioStatus, expectedStatus) in statusMappings) {
-            val webhookBody = "CallSid=CA123&CallStatus=$twilioStatus&Direction=outbound-api&From=%2B15551234567&To=%2B15559876543"
-            val body = TypedData(Data.Text(webhookBody), MediaType.Application.FormUrlEncoded)
+            val params = mapOf(
+                "CallSid" to "CA123",
+                "CallStatus" to twilioStatus,
+                "Direction" to "outbound-api",
+                "From" to "+15551234567",
+                "To" to "+15559876543"
+            )
+            val signature = service.computeSignature(testStatusCallbackUrl, params)
+            val body = TypedData(Data.Text(params.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
 
             val result = service.onCallStatus.parse(
                 queryParameters = emptyList(),
-                headers = emptyMap(),
+                headers = mapOf("X-Twilio-Signature" to listOf(signature)),
                 body = body
             )
 
             assertEquals(expectedStatus, result.status, "Expected $twilioStatus to map to $expectedStatus")
+        }
+    }
+
+    // ==================== Signature Validation Tests ====================
+
+    @Test
+    fun testSignatureValidation_missingSignature() = runTest {
+        val service = TwilioPhoneCallService(
+            name = "test",
+            context = testContext,
+            account = "AC1234567890",
+            authToken = "authtoken123",
+            defaultFrom = "+15551234567"
+        )
+
+        service.setWebhookUrlsForTesting(incomingCallUrl = testIncomingCallUrl)
+
+        val body = TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
+
+        assertFailsWith<SecurityException> {
+            service.onIncomingCall.parse(
+                queryParameters = emptyList(),
+                headers = emptyMap(), // No signature header
+                body = body
+            )
+        }
+    }
+
+    @Test
+    fun testSignatureValidation_invalidSignature() = runTest {
+        val service = TwilioPhoneCallService(
+            name = "test",
+            context = testContext,
+            account = "AC1234567890",
+            authToken = "authtoken123",
+            defaultFrom = "+15551234567"
+        )
+
+        service.setWebhookUrlsForTesting(incomingCallUrl = testIncomingCallUrl)
+
+        val body = TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
+
+        assertFailsWith<SecurityException> {
+            service.onIncomingCall.parse(
+                queryParameters = emptyList(),
+                headers = mapOf("X-Twilio-Signature" to listOf("invalid_signature")),
+                body = body
+            )
+        }
+    }
+
+    @Test
+    fun testSignatureValidation_webhookNotConfigured() = runTest {
+        val service = TwilioPhoneCallService(
+            name = "test",
+            context = testContext,
+            account = "AC1234567890",
+            authToken = "authtoken123",
+            defaultFrom = "+15551234567"
+        )
+
+        // Don't configure webhook URL
+
+        val body = TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
+
+        assertFailsWith<SecurityException> {
+            service.onIncomingCall.parse(
+                queryParameters = emptyList(),
+                headers = mapOf("X-Twilio-Signature" to listOf("some_signature")),
+                body = body
+            )
         }
     }
 }
