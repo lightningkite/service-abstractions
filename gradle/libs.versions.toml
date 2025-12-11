@@ -1,111 +1,137 @@
+
 [versions]
 agp = "8.11.2"
 androidDesugaring = "2.1.5"
 angusMail = "2.0.5"
-awsVersion = "2.38.5"
+atomicfu = "0.29.0"
+awsVersion = "2.39.6"
 clamAv = "2.1.2"
 coroutines = "1.10.2"
 dokka = "2.1.0"
-dynamodb = "2.38.5"
+dynamodb = "2.39.6"
 embedMongo = "4.21.0"
-embeddedPostgres = "2.1.1"
+embeddedPostgres = "2.2.0"
 embeddedRedis = "0.9.1"
 exposed = "0.61.0"
 firebaseAdmin = "9.5.0"
-graalVmNative = "0.11.2"
+bouncyCastle = "1.83"
+greenmail = "2.1.7"
+graalVmNative = "0.11.3"
 guava = "33.5.0-jre"
 kbson = "0.5.0"
-koogAgents = "0.5.4-SNAPSHOT"
+koogAgents = "0.5.7"
 kotlin = "2.2.20"
 kotlinLogging = "7.0.13"
 kotlinXDatetime = "0.7.1"
-kotlinXIO = "0.8.0"
+kotlinXIO = "0.8.2"
 kotlinXSerialization = "1.9.0"
-ksp = "2.2.20-2.0.3"
-ktor = "3.3.2"
+ksp = "2.2.20-2.0.4"
+ktor = "3.3.3"
 lettuce = "6.7.1.RELEASE"
+lightningServer = "5.0.0-prerelease-233"
 lkGradleHelpers = "4.0.6"
 logBackClassic = "1.5.21"
-memcached = "2.4.8"
+memcached = "2.4.9"
 mongoDriver = "5.6.1"
+openSearchAws = "2.39.6"
 openSearchJava = "3.3.0"
-openSearchAws = "2.35.8"
-postgresql = "42.7.8"
-proguard = "7.8.1"
-shadow = "8.1.1"
-vanniktechMavenPublish = "0.34.0"
-versionCatalogUpdate = "1.0.1"
-atomicfu = "0.29.0"
-slf4j = "2.0.17"
 openTelemetry = "1.54.1"
 openTelemetryInstrumentationAlpha = "2.19.0-alpha"
 openTelemetryInstrumentationRelease = "2.19.0"
+postgresql = "42.7.8"
+proguard = "7.8.1"
+shadow = "8.1.1"
+slf4j = "2.0.17"
+stripe = "31.0.0"
+testcontainers = "1.21.3"
+vanniktechMavenPublish = "0.35.0"
+versionCatalogUpdate = "1.0.1"
 
 [libraries]
-atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
-androidDesugaring = { module = "com.android.tools:desugar_jdk_libs", version.ref = "androidDesugaring" }
-angusMail = { module = "org.eclipse.angus:angus-mail", version.ref = "angusMail" }
-awsCloudWatch = { module = "software.amazon.awssdk:cloudwatch", version.ref = "awsVersion" }
-awsCrtClient = { module = "software.amazon.awssdk:aws-crt-client", version.ref = "awsVersion" }
-awsS3 = { module = "software.amazon.awssdk:s3", version.ref = "awsVersion" }
-awsOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-aws-sdk-2.2", version.ref = "openTelemetryInstrumentationAlpha" }
-clamAv = { module = "xyz.capybara:clamav-client", version.ref = "clamAv" }
-coroutinesCore = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
-coroutinesReactive = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-reactive", version.ref = "coroutines" }
-coroutinesTesting = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
-dynamodb = { module = "software.amazon.awssdk:dynamodb", version.ref = "dynamodb" }
-embedMongo = { module = "de.flapdoodle.embed:de.flapdoodle.embed.mongo", version.ref = "embedMongo" }
-embeddedPostgres = { module = "io.zonky.test:embedded-postgres", version.ref = "embeddedPostgres" }
-embeddedRedis = { module = "org.signal:embedded-redis", version.ref = "embeddedRedis" }
-exposedCore = { module = "org.jetbrains.exposed:exposed-core", version.ref = "exposed" }
-exposedJavaTime = { module = "org.jetbrains.exposed:exposed-java-time", version.ref = "exposed" }
-exposedJdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "exposed" }
-firebaseAdmin = { module = "com.google.firebase:firebase-admin", version.ref = "firebaseAdmin" }
-guava = { module = "com.google.guava:guava", version.ref = "guava" }
-kBson = { module = "com.github.jershell:kbson", version.ref = "kbson" }
-koog-agents = { module = "ai.koog:koog-agents", version.ref = "koogAgents" }
-kotlinXIO = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinXIO" }
-kotlinCompiler = { module = "org.jetbrains.kotlin:kotlin-compiler", version.ref = "kotlin" }
-kotlinLogging = { module = "io.github.oshai:kotlin-logging", version.ref = "kotlinLogging" }
-kotlinReflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
-kotlinTest = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
-kotlinTestJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
-kotlinTestJs = { module = "org.jetbrains.kotlin:kotlin-test-js", version.ref = "kotlin" }
-kotlinXDatetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinXDatetime" }
-kotlinXJson = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinXSerialization" }
-ksp = { module = "com.google.devtools.ksp:symbol-processing-api", version.ref = "ksp" }
-ktorClientCio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
-ktorContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
-ktorJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
-ktorClientAuth = { module = "io.ktor:ktor-client-auth", version.ref = "ktor" }
-lettuce = { module = "io.lettuce:lettuce-core", version.ref = "lettuce" }
-lettuceOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-lettuce-5.1", version.ref = "openTelemetryInstrumentationAlpha" }
-lkGradleHelpers = { module = "com.lightningkite:lk-gradle-helpers", version.ref = "lkGradleHelpers" }
-logBackClassic = { module = "ch.qos.logback:logback-classic", version.ref = "logBackClassic" }
-memcached = { module = "com.googlecode.xmemcached:xmemcached", version.ref = "memcached" }
-mongoDriver = { module = "org.mongodb:mongodb-driver-kotlin-coroutine", version.ref = "mongoDriver" }
-mongoDriverOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-mongo-3.1", version.ref = "openTelemetryInstrumentationAlpha" }
-openSearchJava = { module = "org.opensearch.client:opensearch-java", version.ref = "openSearchJava" }
-openSearchAws = { module = "software.amazon.awssdk:opensearch", version.ref = "openSearchAws" }
-postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
-proguard = { module = "com.guardsquare:proguard-gradle", version.ref = "proguard" }
+androidDesugaring = { module = "com.android.tools:desugar_jdk_libs", version = { ref = "androidDesugaring" } }
+angusMail = { module = "org.eclipse.angus:angus-mail", version = { ref = "angusMail" } }
+atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version = { ref = "atomicfu" } }
+awsCloudWatch = { module = "software.amazon.awssdk:cloudwatch", version = { ref = "awsVersion" } }
+awsCrtClient = { module = "software.amazon.awssdk:aws-crt-client", version = { ref = "awsVersion" } }
+awsOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-aws-sdk-2.2", version = { ref = "openTelemetryInstrumentationAlpha" } }
+awsS3 = { module = "software.amazon.awssdk:s3", version = { ref = "awsVersion" } }
+clamAv = { module = "xyz.capybara:clamav-client", version = { ref = "clamAv" } }
+lightningserver-core = { module = "com.lightningkite.lightningserver:core", version.ref = "lightningServer" }
+lightningserver-core-shared = { module = "com.lightningkite.lightningserver:core-shared", version.ref = "lightningServer" }
+lightningserver-files-shared = { module = "com.lightningkite.lightningserver:files-shared", version.ref = "lightningServer" }
+lightningserver-sessions-shared = { module = "com.lightningkite.lightningserver:sessions-shared", version.ref = "lightningServer" }
+lightningserver-typed = { module = "com.lightningkite.lightningserver:typed", version.ref = "lightningServer" }
+lightningserver-typed-shared = { module = "com.lightningkite.lightningserver:typed-shared", version.ref = "lightningServer" }
+lightningserver-engine-netty = { module = "com.lightningkite.lightningserver:engine-netty", version.ref = "lightningServer" }
+coroutinesCore = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = { ref = "coroutines" } }
+coroutinesReactive = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-reactive", version = { ref = "coroutines" } }
+coroutinesTesting = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version = { ref = "coroutines" } }
+dynamodb = { module = "software.amazon.awssdk:dynamodb", version = { ref = "dynamodb" } }
+embedMongo = { module = "de.flapdoodle.embed:de.flapdoodle.embed.mongo", version = { ref = "embedMongo" } }
+embeddedPostgres = { module = "io.zonky.test:embedded-postgres", version = { ref = "embeddedPostgres" } }
+embeddedRedis = { module = "org.signal:embedded-redis", version = { ref = "embeddedRedis" } }
+exposedCore = { module = "org.jetbrains.exposed:exposed-core", version = { ref = "exposed" } }
+exposedJavaTime = { module = "org.jetbrains.exposed:exposed-java-time", version = { ref = "exposed" } }
+exposedJdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version = { ref = "exposed" } }
+firebaseAdmin = { module = "com.google.firebase:firebase-admin", version = { ref = "firebaseAdmin" } }
+bouncyCastle = { module = "org.bouncycastle:bcpkix-jdk18on", version = { ref = "bouncyCastle" } }
+greenmail = { module = "com.icegreen:greenmail", version = { ref = "greenmail" } }
+greenmailJunit5 = { module = "com.icegreen:greenmail-junit5", version = { ref = "greenmail" } }
+guava = { module = "com.google.guava:guava", version = { ref = "guava" } }
+kBson = { module = "com.github.jershell:kbson", version = { ref = "kbson" } }
+koog-agents = { module = "ai.koog:koog-agents", version = { ref = "koogAgents" } }
+koog-vector-storage = { module = "ai.koog:vector-storage", version = { ref = "koogAgents" } }
+kotlinCompiler = { module = "org.jetbrains.kotlin:kotlin-compiler", version = { ref = "kotlin" } }
+kotlinLogging = { module = "io.github.oshai:kotlin-logging", version = { ref = "kotlinLogging" } }
+kotlinReflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version = { ref = "kotlin" } }
+kotlinTest = { module = "org.jetbrains.kotlin:kotlin-test", version = { ref = "kotlin" } }
+kotlinTestJs = { module = "org.jetbrains.kotlin:kotlin-test-js", version = { ref = "kotlin" } }
+kotlinTestJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version = { ref = "kotlin" } }
+kotlinXDatetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version = { ref = "kotlinXDatetime" } }
+kotlinXIO = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version = { ref = "kotlinXIO" } }
+kotlinXJson = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version = { ref = "kotlinXSerialization" } }
+ksp = { module = "com.google.devtools.ksp:symbol-processing-api", version = { ref = "ksp" } }
+ktorClientAuth = { module = "io.ktor:ktor-client-auth", version = { ref = "ktor" } }
+ktorClientCio = { module = "io.ktor:ktor-client-cio", version = { ref = "ktor" } }
+ktorContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version = { ref = "ktor" } }
+ktorJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version = { ref = "ktor" } }
+ktorClientCore = { module = "io.ktor:ktor-client-core", version = { ref = "ktor" } }
+ktorClientWebsockets = { module = "io.ktor:ktor-client-websockets", version = { ref = "ktor" } }
+ktorServerContentNegotiation = { module = "io.ktor:ktor-server-content-negotiation", version = { ref = "ktor" } }
+ktorServerCore = { module = "io.ktor:ktor-server-core", version = { ref = "ktor" } }
+ktorServerNetty = { module = "io.ktor:ktor-server-netty", version = { ref = "ktor" } }
+lettuce = { module = "io.lettuce:lettuce-core", version = { ref = "lettuce" } }
+lettuceOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-lettuce-5.1", version = { ref = "openTelemetryInstrumentationAlpha" } }
+lkGradleHelpers = { module = "com.lightningkite:lk-gradle-helpers", version = { ref = "lkGradleHelpers" } }
+logBackClassic = { module = "ch.qos.logback:logback-classic", version = { ref = "logBackClassic" } }
+memcached = { module = "com.googlecode.xmemcached:xmemcached", version = { ref = "memcached" } }
+mongoDriver = { module = "org.mongodb:mongodb-driver-kotlin-coroutine", version = { ref = "mongoDriver" } }
+mongoDriverOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-mongo-3.1", version = { ref = "openTelemetryInstrumentationAlpha" } }
+openSearchAws = { module = "software.amazon.awssdk:opensearch", version = { ref = "openSearchAws" } }
+openSearchJava = { module = "org.opensearch.client:opensearch-java", version = { ref = "openSearchJava" } }
 openTelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version = "1.56.0" }
-openTelemetry-kotlin = { module = "io.opentelemetry:opentelemetry-extension-kotlin", version = "1.56.0" }
-openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = "1.56.0" }
 openTelemetry-exporter-logging = { module = "io.opentelemetry:opentelemetry-exporter-logging", version = "1.56.0" }
 openTelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version = "1.56.0" }
+openTelemetry-kotlin = { module = "io.opentelemetry:opentelemetry-extension-kotlin", version = "1.56.0" }
+openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = "1.56.0" }
 openTelemetryInstrumentation-logback = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version = "2.19.0-alpha" }
-koog-vector-storage = { module = "ai.koog:vector-storage", version.ref = "koogAgents" }
+postgresql = { module = "org.postgresql:postgresql", version = { ref = "postgresql" } }
+proguard = { module = "com.guardsquare:proguard-gradle", version = { ref = "proguard" } }
+stripe = { module = "com.stripe:stripe-java", version = { ref = "stripe" } }
+testcontainers = { module = "org.testcontainers:testcontainers", version = { ref = "testcontainers" } }
+testcontainersJunit = { module = "org.testcontainers:junit-jupiter", version = { ref = "testcontainers" } }
+testcontainersMongodb = { module = "org.testcontainers:mongodb", version = { ref = "testcontainers" } }
+testcontainersPostgresql = { module = "org.testcontainers:postgresql", version = { ref = "testcontainers" } }
 
 [plugins]
-androidApp = { id = "com.android.application", version.ref = "agp" }
-androidLibrary = { id = "com.android.library", version.ref = "agp" }
-dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
-graalVmNative = { id = "org.graalvm.buildtools.native", version.ref = "graalVmNative" }
-kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
-kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-shadow = { id = "com.github.johnrengelman.shadow", version.ref = "shadow" }
-vanniktechMavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish" }
-versionCatalogUpdate = { id = "nl.littlerobots.version-catalog-update", version.ref = "versionCatalogUpdate" }
+androidApp = { id = "com.android.application", version = { ref = "agp" } }
+androidLibrary = { id = "com.android.library", version = { ref = "agp" } }
+dokka = { id = "org.jetbrains.dokka", version = { ref = "dokka" } }
+graalVmNative = { id = "org.graalvm.buildtools.native", version = { ref = "graalVmNative" } }
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version = { ref = "kotlin" } }
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version = { ref = "kotlin" } }
+ksp = { id = "com.google.devtools.ksp", version = { ref = "ksp" } }
+serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = { ref = "kotlin" } }
+shadow = { id = "com.github.johnrengelman.shadow", version = { ref = "shadow" } }
+vanniktechMavenPublish = { id = "com.vanniktech.maven.publish", version = { ref = "vanniktechMavenPublish" } }
+versionCatalogUpdate = { id = "nl.littlerobots.version-catalog-update", version = { ref = "versionCatalogUpdate" } }

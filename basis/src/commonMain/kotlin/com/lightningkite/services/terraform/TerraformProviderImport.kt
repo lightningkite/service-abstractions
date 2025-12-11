@@ -54,6 +54,11 @@ public data class TerraformProviderImport(
             source = "loafoe/ssh",
             version = "~>2.7.0",
         )
+        public val stripe: TerraformProviderImport = TerraformProviderImport(
+            name = "stripe",
+            source = "lukasaron/stripe",
+            version = "~> 3.4.0",
+        )
     }
     public fun toTerraformJson(): JsonObject = terraformJsonObject {
         name {

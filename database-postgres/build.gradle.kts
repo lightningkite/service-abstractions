@@ -24,6 +24,9 @@ dependencies {
     api(libs.exposedJdbc)
     api(libs.postgresql)
     testImplementation(libs.embeddedPostgres)
+    testImplementation(libs.testcontainers)
+    testImplementation(libs.testcontainersPostgresql)
+    testImplementation(libs.testcontainersJunit)
     testImplementation(libs.coroutinesTesting)
 }
 

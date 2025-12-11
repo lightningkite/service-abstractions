@@ -148,4 +148,110 @@ class OpenTelemetrySettingsTest {
         println("Generated 15 spans with maxQueueSize=10 - some should be dropped")
         Thread.sleep(2.seconds.inWholeMilliseconds)
     }
+
+    @Test
+    fun testDevMode() {
+        // Test dev:// mode - immediate output with pretty formatting
+        val telemetry = OpenTelemetrySettings("dev").invoke("my-service", TestSettingContext())
+        val logger = KotlinLogging.logger("dev-test")
+
+        println("\n=== Testing dev:// mode with immediate output ===\n")
+
+        // Test nested spans to show parent-child relationships
+        telemetry["api"].spanBuilder("GET /api/users").useBlocking {
+            logger.info { "Handling request" }
+            Thread.sleep(50)
+
+            telemetry["db"].spanBuilder("db.query users").useBlocking {
+                logger.debug { "Executing query: SELECT * FROM users" }
+                Thread.sleep(100)
+            }
+
+            telemetry["serializer"].spanBuilder("serialize response").useBlocking {
+                Thread.sleep(20)
+            }
+        }
+
+        // Test error span
+        telemetry["api"].spanBuilder("POST /api/orders").useBlocking { span ->
+            logger.warn { "Processing order..." }
+            Thread.sleep(30)
+            try {
+                throw IllegalStateException("Insufficient inventory")
+            } catch (e: Exception) {
+                span.recordException(e)
+                span.setStatus(io.opentelemetry.api.trace.StatusCode.ERROR, e.message ?: "")
+                logger.error(e) { "Order failed" }
+            }
+        }
+
+        // Test different log levels
+        logger.trace { "This is a trace message" }
+        logger.debug { "This is a debug message" }
+        logger.info { "This is an info message" }
+        logger.warn { "This is a warning message" }
+        logger.error { "This is an error message" }
+
+        println("\n=== Dev mode test complete ===\n")
+        Thread.sleep(500) // Brief wait for any async processing
+    }
+
+    @Test
+    fun testDevModeNoColor() {
+        // Test dev:// mode without ANSI colors
+        val telemetry = OpenTelemetrySettings("dev://?color=false").invoke("no-color-test", TestSettingContext())
+        val logger = KotlinLogging.logger("no-color-test")
+
+        println("\n=== Testing dev:// mode without colors ===\n")
+
+        telemetry["api"].spanBuilder("GET /api/test").useBlocking {
+            logger.info { "This should have no ANSI color codes" }
+            Thread.sleep(50)
+        }
+
+        println("\n=== No-color test complete ===\n")
+        Thread.sleep(500)
+    }
+
+    @Test
+    fun testDevModeFileOutput() {
+        // Test dev:// mode with file output
+        val outputFile = java.io.File("local/test-traces.log")
+        outputFile.parentFile?.mkdirs()
+        outputFile.delete() // Clean up from previous runs
+
+        println("Working directory: ${java.io.File(".").absolutePath}")
+        println("Output file path: ${outputFile.absolutePath}")
+
+        val telemetry = OpenTelemetrySettings("dev://local/test-traces.log?color=false")
+            .invoke("file-output-test", TestSettingContext()) as io.opentelemetry.sdk.OpenTelemetrySdk
+        val logger = KotlinLogging.logger("file-output-test")
+
+        telemetry["api"].spanBuilder("GET /api/file-test").useBlocking {
+            logger.info { "This should be written to file" }
+            Thread.sleep(50)
+
+            telemetry["db"].spanBuilder("db.query").useBlocking {
+                Thread.sleep(30)
+            }
+        }
+
+        // Shutdown to flush file output
+        telemetry.sdkTracerProvider.shutdown().join(5, java.util.concurrent.TimeUnit.SECONDS)
+        Thread.sleep(500)
+
+        println("Checking if file exists: ${outputFile.exists()}")
+        println("Local dir contents: ${java.io.File("local").listFiles()?.map { it.name }}")
+
+        // Verify file was created and has content
+        assertTrue("Output file should exist at ${outputFile.absolutePath}", outputFile.exists())
+        val content = outputFile.readText()
+        assertTrue("File should contain trace data", content.contains("GET /api/file-test"))
+        assertTrue("File should contain nested span", content.contains("db.query"))
+        // Verify no ANSI codes (since color=false)
+        assertFalse("File should not contain ANSI codes", content.contains("\u001B["))
+
+        println("File output test passed. Content:\n$content")
+    }
+
 }

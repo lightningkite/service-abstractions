@@ -264,5 +264,53 @@ public open class InMemoryTable<Model : Any>(
     public fun drop() {
         data.clear()
     }
+
+    // ===== Vector Search Implementation =====
+
+    override suspend fun findSimilar(
+        vectorField: DataClassPath<Model, Embedding>,
+        params: DenseVectorSearchParams,
+        condition: Condition<Model>,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> = flow {
+        val minScore = params.minScore
+        val results = lock.withLock {
+            data.asSequence()
+                .filter { condition(it) }
+                .mapNotNull { model ->
+                    val embedding = vectorField.get(model) ?: return@mapNotNull null
+                    val score = EmbeddingSimilarity.similarity(embedding, params.queryVector, params.metric)
+                    if (minScore != null && score < minScore) return@mapNotNull null
+                    ScoredResult(model, score)
+                }
+                .sortedByDescending { it.score }
+                .take(params.limit)
+                .toList()
+        }
+        results.forEach { emit(it) }
+    }
+
+    override suspend fun findSimilarSparse(
+        vectorField: DataClassPath<Model, SparseEmbedding>,
+        params: SparseVectorSearchParams,
+        condition: Condition<Model>,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> = flow {
+        val minScore = params.minScore
+        val results = lock.withLock {
+            data.asSequence()
+                .filter { condition(it) }
+                .mapNotNull { model ->
+                    val embedding = vectorField.get(model) ?: return@mapNotNull null
+                    val score = EmbeddingSimilarity.similarity(embedding, params.queryVector, params.metric)
+                    if (minScore != null && score < minScore) return@mapNotNull null
+                    ScoredResult(model, score)
+                }
+                .sortedByDescending { it.score }
+                .take(params.limit)
+                .toList()
+        }
+        results.forEach { emit(it) }
+    }
 }
 

@@ -392,6 +392,59 @@ public data class OpenTelemetrySettings(
                 otelLoggingSetup(telemetry)
                 telemetry
             }
+            this.register("dev") { name: String, setting: OpenTelemetrySettings, context ->
+                val resource = Resource.create(
+                    Attributes.builder()
+                        .put("service.name", name.ifBlank { "dev" })
+                        .build()
+                )
+
+                // Parse URL options: dev://path/to/file?color=false
+                val urlWithoutScheme = setting.url.substringAfter("://", "").let {
+                    if (it.isEmpty()) setting.url.substringAfter("dev:", "") else it
+                }
+                val pathPart = urlWithoutScheme.substringBefore("?").takeIf { it.isNotBlank() }
+                val queryPart = if (urlWithoutScheme.contains("?")) urlWithoutScheme.substringAfter("?") else ""
+                val queryParams = queryPart.split("&")
+                    .filter { it.contains("=") }
+                    .associate { it.substringBefore("=") to it.substringAfter("=") }
+
+                val colorEnabled = queryParams["color"]?.lowercase() != "false"
+                val outputFile = pathPart?.let { java.io.File(it) }
+
+                val config = DevExporterConfig(color = colorEnabled, output = outputFile)
+
+                // Dev mode: NO batching - use SimpleProcessor for immediate output
+                val telemetry = OpenTelemetrySdk.builder()
+                    .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+                    .setTracerProvider(
+                        SdkTracerProvider.builder()
+                            .addSpanProcessor(SimpleSpanProcessor.create(DevSpanExporter(config)))
+                            .setResource(resource)
+                            .setSpanLimits(setting.spanLimits.make())
+                            .build()
+                    )
+                    .setMeterProvider(
+                        SdkMeterProvider.builder()
+                            .registerMetricReader(
+                                PeriodicMetricReader.builder(DevMetricExporter(config))
+                                    .setInterval(10, TimeUnit.SECONDS)
+                                    .build()
+                            )
+                            .setResource(resource)
+                            .build()
+                    )
+                    .setLoggerProvider(
+                        SdkLoggerProvider.builder()
+                            .addLogRecordProcessor(SimpleLogRecordProcessor.create(DevLogExporter(config)))
+                            .setResource(resource)
+                            .build()
+                    )
+                    .build()
+
+                otelLoggingSetup(telemetry)
+                telemetry
+            }
         }
     }
 
