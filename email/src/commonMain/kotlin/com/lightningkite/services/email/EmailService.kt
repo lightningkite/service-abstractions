@@ -8,6 +8,9 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.toEmailAddress
+import kotlinx.html.HTML
+import kotlinx.html.html
+import kotlinx.html.stream.appendHTML
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.jvm.JvmName
@@ -223,7 +226,7 @@ public interface EmailService : Service {
  * @property attachments File attachments
  * @property customHeaders Provider-specific headers (e.g., tracking, priority)
  */
-public data class Email(
+public data class Email @Deprecated("Use KotlinX HTML to build HTML emails.") constructor(
     public val subject: String,
     public val from: EmailAddressWithName? = null,
     public val to: List<EmailAddressWithName>,
@@ -234,6 +237,7 @@ public data class Email(
     public val attachments: List<Attachment> = listOf(),
     public val customHeaders: Map<String, List<String>> = mapOf(),
 ) {
+    @Suppress("DEPRECATION")
     public constructor(
         subject: String,
         from: EmailAddressWithName? = null,
@@ -250,6 +254,33 @@ public data class Email(
         cc = cc,
         bcc = bcc,
         html = plainText.emailPlainTextToHtml(),
+        plainText = plainText,
+        attachments = attachments,
+        customHeaders = customHeaders,
+    )
+    @Suppress("DEPRECATION")
+    public constructor(
+        subject: String,
+        from: EmailAddressWithName? = null,
+        to: List<EmailAddressWithName>,
+        cc: List<EmailAddressWithName> = listOf(),
+        bcc: List<EmailAddressWithName> = listOf(),
+        html: HTML.()->Unit,
+        plainText: String = buildString {
+            appendHTML(true).html(block = html)
+        }.emailApproximatePlainText(),
+        attachments: List<Attachment> = listOf(),
+        customHeaders: Map<String, List<String>> = mapOf(),
+    ) : this(
+        subject = subject,
+        from = from,
+        to = to,
+        cc = cc,
+        bcc = bcc,
+        html = buildString {
+            appendLine("<!doctype html>")
+            appendHTML(true).html(block = html)
+        },
         plainText = plainText,
         attachments = attachments,
         customHeaders = customHeaders,
@@ -410,4 +441,6 @@ public fun String.emailApproximatePlainText(): String {
         .replace(Regex("&lt;"), "<")
         .replace(Regex("&gt;"), ">")
         .replace(Regex("&amp;"), "&")
+        .replace(Regex(" +"), "")
+        .replace(Regex("\n+"), "\n")
 }

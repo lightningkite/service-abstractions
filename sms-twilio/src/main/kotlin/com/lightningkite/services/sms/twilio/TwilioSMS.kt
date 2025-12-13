@@ -3,6 +3,7 @@ package com.lightningkite.services.sms.twilio
 import com.lightningkite.PhoneNumber
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.otel.TelemetrySanitization
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
 import io.ktor.client.*
@@ -14,6 +15,10 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
 /**
@@ -94,6 +99,8 @@ public class TwilioSMS(
     private val from: String
 ) : SMS {
 
+    private val tracer: Tracer? = context.openTelemetry?.getTracer("sms-twilio")
+
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
             json(Json {
@@ -113,20 +120,50 @@ public class TwilioSMS(
 
     /**
      * Sends an SMS message using the Twilio API.
+     *
+     * Creates a high-level span for the SMS operation, with HTTP details traced automatically
+     * by the http-client's OpenTelemetry plugin.
      */
     override suspend fun send(to: PhoneNumber, message: String) {
-        val response = client.submitForm(
-            url = "https://api.twilio.com/2010-04-01/Accounts/${account}/Messages.json",
-            formParameters = Parameters.build {
-                append("From", from)
-                append("To", to.toString())
-                append("Body", message)
-            }
-        )
+        val span = tracer?.spanBuilder("sms.send")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("sms.operation", "send")
+            ?.setAttribute("sms.to", TelemetrySanitization.redactPhoneNumber(to.toString()))
+            ?.setAttribute("sms.from", TelemetrySanitization.redactPhoneNumber(from))
+            ?.setAttribute("sms.body_length", message.length.toLong())
+            ?.setAttribute("sms.provider", "twilio")
+            ?.startSpan()
 
-        if (response.status != HttpStatusCode.Created) {
-            val errorMessage = response.bodyAsText()
-            throw SMSException("Failed to send SMS: $errorMessage")
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    client.submitForm(
+                        url = "https://api.twilio.com/2010-04-01/Accounts/${account}/Messages.json",
+                        formParameters = Parameters.build {
+                            append("From", from)
+                            append("To", to.toString())
+                            append("Body", message)
+                        }
+                    )
+                }
+
+                if (response.status != HttpStatusCode.Created) {
+                    val errorMessage = response.bodyAsText()
+                    span?.setStatus(StatusCode.ERROR, "Failed to send SMS: HTTP ${response.status.value}")
+                    throw SMSException("Failed to send SMS: $errorMessage")
+                }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to send SMS: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
     }
 

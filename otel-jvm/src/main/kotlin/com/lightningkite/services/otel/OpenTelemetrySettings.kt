@@ -62,6 +62,8 @@ import kotlin.time.Duration.Companion.seconds
  *
  * - `log://` - Output to logging framework (default, development)
  * - `console://` - Human-readable console output
+ * - `dev://[path]?color=false` - Immediate hierarchical trace output (development)
+ * - `debounced-dev://[path]?debounce=1000&debounce_min=3` - Aggregated trace output for high-frequency operations
  * - `otlp-grpc://host:port` - OTLP over gRPC (production, efficient)
  * - `otlp-http://host:port` - OTLP over HTTP (production, firewall-friendly)
  *
@@ -70,6 +72,13 @@ import kotlin.time.Duration.Companion.seconds
  * ```kotlin
  * // Development: output to logs
  * OpenTelemetrySettings(url = "log://")
+ *
+ * // Development: immediate hierarchical trace output
+ * OpenTelemetrySettings(url = "dev://")
+ *
+ * // Development: debounced traces for high-frequency operations (e.g. websocket messages)
+ * // First occurrence prints immediately, subsequent occurrences aggregate over window
+ * OpenTelemetrySettings(url = "debounced-dev://?debounce=30000") // 30s window
  *
  * // Production: send to observability backend via gRPC
  * OpenTelemetrySettings(
@@ -420,6 +429,66 @@ public data class OpenTelemetrySettings(
                     .setTracerProvider(
                         SdkTracerProvider.builder()
                             .addSpanProcessor(SimpleSpanProcessor.create(DevSpanExporter(config)))
+                            .setResource(resource)
+                            .setSpanLimits(setting.spanLimits.make())
+                            .build()
+                    )
+                    .setMeterProvider(
+                        SdkMeterProvider.builder()
+                            .registerMetricReader(
+                                PeriodicMetricReader.builder(DevMetricExporter(config))
+                                    .setInterval(10, TimeUnit.SECONDS)
+                                    .build()
+                            )
+                            .setResource(resource)
+                            .build()
+                    )
+                    .setLoggerProvider(
+                        SdkLoggerProvider.builder()
+                            .addLogRecordProcessor(SimpleLogRecordProcessor.create(DevLogExporter(config)))
+                            .setResource(resource)
+                            .build()
+                    )
+                    .build()
+
+                otelLoggingSetup(telemetry)
+                telemetry
+            }
+            this.register("debounced-dev") { name: String, setting: OpenTelemetrySettings, context ->
+                val resource = Resource.create(
+                    Attributes.builder()
+                        .put("service.name", name.ifBlank { "dev" })
+                        .build()
+                )
+
+                // Parse URL options: debounced-dev://path/to/file?color=false&debounce=1000&debounce_min=3
+                val urlWithoutScheme = setting.url.substringAfter("://", "").let {
+                    if (it.isEmpty()) setting.url.substringAfter("debounced-dev:", "") else it
+                }
+                val pathPart = urlWithoutScheme.substringBefore("?").takeIf { it.isNotBlank() }
+                val queryPart = if (urlWithoutScheme.contains("?")) urlWithoutScheme.substringAfter("?") else ""
+                val queryParams = queryPart.split("&")
+                    .filter { it.contains("=") }
+                    .associate { it.substringBefore("=") to it.substringAfter("=") }
+
+                val colorEnabled = queryParams["color"]?.lowercase() != "false"
+                val outputFile = pathPart?.let { java.io.File(it) }
+                val debounceWindowMs = queryParams["debounce"]?.toLongOrNull()
+                val debounceMinCount = queryParams["debounce_min"]?.toIntOrNull() ?: 1
+
+                val config = DevExporterConfig(
+                    color = colorEnabled,
+                    output = outputFile,
+                    debounceWindowMs = debounceWindowMs,
+                    debounceMinCount = debounceMinCount
+                )
+
+                // Debounced dev mode: NO batching - use SimpleProcessor for immediate output
+                val telemetry = OpenTelemetrySdk.builder()
+                    .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+                    .setTracerProvider(
+                        SdkTracerProvider.builder()
+                            .addSpanProcessor(SimpleSpanProcessor.create(DebouncedDevSpanExporter(config)))
                             .setResource(resource)
                             .setSpanLimits(setting.spanLimits.make())
                             .build()

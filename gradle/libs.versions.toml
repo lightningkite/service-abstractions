@@ -115,6 +115,7 @@ openTelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporte
 openTelemetry-kotlin = { module = "io.opentelemetry:opentelemetry-extension-kotlin", version = "1.56.0" }
 openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = "1.56.0" }
 openTelemetryInstrumentation-logback = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version = "2.19.0-alpha" }
+openTelemetryInstrumentation-ktor = { module = "io.opentelemetry.instrumentation:opentelemetry-ktor-3.0", version = "2.21.0-alpha" }
 postgresql = { module = "org.postgresql:postgresql", version = { ref = "postgresql" } }
 proguard = { module = "com.guardsquare:proguard-gradle", version = { ref = "proguard" } }
 stripe = { module = "com.stripe:stripe-java", version = { ref = "stripe" } }
@@ -122,6 +123,7 @@ testcontainers = { module = "org.testcontainers:testcontainers", version = { ref
 testcontainersJunit = { module = "org.testcontainers:junit-jupiter", version = { ref = "testcontainers" } }
 testcontainersMongodb = { module = "org.testcontainers:mongodb", version = { ref = "testcontainers" } }
 testcontainersPostgresql = { module = "org.testcontainers:postgresql", version = { ref = "testcontainers" } }
+kotlinxHtml = { module = "org.jetbrains.kotlinx:kotlinx-html", version = "0.12.0" }
 
 [plugins]
 androidApp = { id = "com.android.application", version = { ref = "agp" } }

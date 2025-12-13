@@ -15,6 +15,9 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
 import kotlinx.serialization.json.Json
 import java.net.URLDecoder
 import javax.crypto.Mac
@@ -86,6 +89,8 @@ public class TwilioSmsInboundService(
     private val phoneNumber: String,
 ) : SmsInboundService {
 
+    private val tracer: Tracer? = context.openTelemetry?.getTracer("sms-inbound-twilio")
+
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
             json(Json {
@@ -109,26 +114,49 @@ public class TwilioSmsInboundService(
         var httpUrl: String? = null
 
         override suspend fun configureWebhook(httpUrl: String) {
-            this.httpUrl = httpUrl
+            val span = tracer?.spanBuilder("sms.webhook.configure")
+                ?.setSpanKind(SpanKind.CLIENT)
+                ?.setAttribute("sms.webhook.operation", "configure")
+                ?.setAttribute("sms.provider", "twilio")
+                ?.setAttribute("sms.phone_number", phoneNumber)
+                ?.setAttribute("webhook.url", httpUrl)
+                ?.startSpan()
 
-            // Look up the phone number SID
-            val phoneNumberSid = lookupPhoneNumberSid(phoneNumber)
+            try {
+                val scope = span?.makeCurrent()
+                try {
+                    this.httpUrl = httpUrl
 
-            // Update the phone number's SMS webhook URL
-            val response = client.submitForm(
-                url = "$baseUrl/IncomingPhoneNumbers/$phoneNumberSid.json",
-                formParameters = io.ktor.http.Parameters.build {
-                    append("SmsUrl", httpUrl)
-                    append("SmsMethod", "POST")
+                    // Look up the phone number SID
+                    val phoneNumberSid = lookupPhoneNumberSid(phoneNumber)
+                    span?.setAttribute("sms.phone_number_sid", phoneNumberSid)
+
+                    // Update the phone number's SMS webhook URL
+                    val response = client.submitForm(
+                        url = "$baseUrl/IncomingPhoneNumbers/$phoneNumberSid.json",
+                        formParameters = io.ktor.http.Parameters.build {
+                            append("SmsUrl", httpUrl)
+                            append("SmsMethod", "POST")
+                        }
+                    )
+
+                    if (!response.status.isSuccess()) {
+                        val errorBody = response.bodyAsText()
+                        throw IllegalStateException("Failed to configure Twilio SMS webhook: $errorBody")
+                    }
+
+                    span?.setStatus(StatusCode.OK)
+                    logger.info { "[$name] Configured Twilio SMS webhook for $phoneNumber -> $httpUrl" }
+                } finally {
+                    scope?.close()
                 }
-            )
-
-            if (!response.status.isSuccess()) {
-                val errorBody = response.bodyAsText()
-                throw IllegalStateException("Failed to configure Twilio SMS webhook: $errorBody")
+            } catch (e: Exception) {
+                span?.setStatus(StatusCode.ERROR, "Failed to configure webhook: ${e.message}")
+                span?.recordException(e)
+                throw e
+            } finally {
+                span?.end()
             }
-
-            logger.info { "[$name] Configured Twilio SMS webhook for $phoneNumber -> $httpUrl" }
         }
 
         override suspend fun parse(
@@ -136,40 +164,68 @@ public class TwilioSmsInboundService(
             headers: Map<String, List<String>>,
             body: TypedData
         ): InboundSms {
-            // Parse URL-encoded form data from Twilio
-            val bodyText = body.text()
-            val params = parseUrlEncodedForm(bodyText)
+            val span = tracer?.spanBuilder("sms.webhook.parse")
+                ?.setSpanKind(SpanKind.SERVER)
+                ?.setAttribute("sms.webhook.operation", "parse")
+                ?.setAttribute("sms.provider", "twilio")
+                ?.startSpan()
 
-            // Validate Twilio signature for security
-            validateWebhookSignature(headers, params, httpUrl)
+            return try {
+                val scope = span?.makeCurrent()
+                try {
+                    // Parse URL-encoded form data from Twilio
+                    val bodyText = body.text()
+                    val params = parseUrlEncodedForm(bodyText)
 
-            // Extract required fields
-            val from = params["From"]
-                ?: throw IllegalArgumentException("Missing 'From' parameter in Twilio webhook")
-            val to = params["To"]
-                ?: throw IllegalArgumentException("Missing 'To' parameter in Twilio webhook")
-            val messageBody = params["Body"] ?: ""
-            val messageSid = params["MessageSid"]
+                    // Validate Twilio signature for security
+                    validateWebhookSignature(headers, params, httpUrl)
 
-            // Extract MMS media (if present)
-            val numMedia = params["NumMedia"]?.toIntOrNull() ?: 0
-            val mediaUrls = mutableListOf<String>()
-            val mediaContentTypes = mutableListOf<String>()
+                    // Extract required fields
+                    val from = params["From"]
+                        ?: throw IllegalArgumentException("Missing 'From' parameter in Twilio webhook")
+                    val to = params["To"]
+                        ?: throw IllegalArgumentException("Missing 'To' parameter in Twilio webhook")
+                    val messageBody = params["Body"] ?: ""
+                    val messageSid = params["MessageSid"]
 
-            for (i in 0 until numMedia) {
-                params["MediaUrl$i"]?.let { mediaUrls.add(it) }
-                params["MediaContentType$i"]?.let { mediaContentTypes.add(it) }
+                    // Extract MMS media (if present)
+                    val numMedia = params["NumMedia"]?.toIntOrNull() ?: 0
+                    val mediaUrls = mutableListOf<String>()
+                    val mediaContentTypes = mutableListOf<String>()
+
+                    for (i in 0 until numMedia) {
+                        params["MediaUrl$i"]?.let { mediaUrls.add(it) }
+                        params["MediaContentType$i"]?.let { mediaContentTypes.add(it) }
+                    }
+
+                    // Set span attributes
+                    span?.setAttribute("sms.from", from)
+                    span?.setAttribute("sms.to", to)
+                    span?.setAttribute("sms.body_length", messageBody.length.toLong())
+                    span?.setAttribute("sms.media_count", numMedia.toLong())
+                    messageSid?.let { span?.setAttribute("sms.message_id", it) }
+
+                    span?.setStatus(StatusCode.OK)
+
+                    InboundSms(
+                        from = from.toPhoneNumber(),
+                        to = to.toPhoneNumber(),
+                        body = messageBody,
+                        receivedAt = Clock.System.now(),
+                        mediaUrls = mediaUrls,
+                        mediaContentTypes = mediaContentTypes,
+                        providerMessageId = messageSid
+                    )
+                } finally {
+                    scope?.close()
+                }
+            } catch (e: Exception) {
+                span?.setStatus(StatusCode.ERROR, "Failed to parse webhook: ${e.message}")
+                span?.recordException(e)
+                throw e
+            } finally {
+                span?.end()
             }
-
-            return InboundSms(
-                from = from.toPhoneNumber(),
-                to = to.toPhoneNumber(),
-                body = messageBody,
-                receivedAt = Clock.System.now(),
-                mediaUrls = mediaUrls,
-                mediaContentTypes = mediaContentTypes,
-                providerMessageId = messageSid
-            )
         }
 
         override suspend fun onSchedule() {

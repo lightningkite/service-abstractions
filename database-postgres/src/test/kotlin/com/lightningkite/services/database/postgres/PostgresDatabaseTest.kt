@@ -40,7 +40,7 @@ class BasicTest() {
 
     @Test fun schema2() {
         val db = Database.connect(pg.embeddedPostgres.postgresDatabase)
-        val collection = PostgresCollection(db, "LargeTestModel", LargeTestModel.serializer(), EmptySerializersModule())
+        val collection = PostgresCollection(db, "LargeTestModel", LargeTestModel.serializer(), EmptySerializersModule(), null)
         runBlocking {
             // Quick test
             val t = LargeTestModel()

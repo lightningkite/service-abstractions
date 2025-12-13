@@ -40,11 +40,15 @@ public open class MapCache(
 
     @Suppress("UNCHECKED_CAST")
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
-        return entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }?.value as? T
+        return instrumentedGet(context, key) {
+            entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }?.value as? T
+        }
     }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
-        entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
+        instrumentedSet<T>(context, key, timeToLive) {
+            entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
+        }
     }
 
     /**
@@ -63,32 +67,39 @@ public open class MapCache(
         serializer: KSerializer<T>,
         timeToLive: Duration?
     ): Boolean {
-        val existing = entries[key]
-        // Check if key doesn't exist OR if it exists but has expired
-        if (existing == null || (existing.expires != null && existing.expires <= Clock.default().now())) {
-            entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
-            return true
+        return instrumentedSetIfNotExists(context, key, timeToLive) {
+            val existing = entries[key]
+            // Check if key doesn't exist OR if it exists but has expired
+            if (existing == null || (existing.expires != null && existing.expires <= Clock.default().now())) {
+                entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
+                true
+            } else {
+                false
+            }
         }
-        return false
     }
 
     override suspend fun add(key: String, value: Int, timeToLive: Duration?): Unit {
-        val entry = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
-        val current = entry?.value
-        val new = when (current) {
-            is Byte -> (current + value).toByte()
-            is Short -> (current + value).toShort()
-            is Int -> (current + value)
-            is Long -> (current + value)
-            is Float -> (current + value)
-            is Double -> (current + value)
-            else -> value
+        instrumentedAdd(context, key, value, timeToLive) {
+            val entry = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
+            val current = entry?.value
+            val new = when (current) {
+                is Byte -> (current + value).toByte()
+                is Short -> (current + value).toShort()
+                is Int -> (current + value)
+                is Long -> (current + value)
+                is Float -> (current + value)
+                is Double -> (current + value)
+                else -> value
+            }
+            entries[key] = Entry(new, timeToLive?.let { Clock.default().now() + it })
         }
-        entries[key] = Entry(new, timeToLive?.let { Clock.default().now() + it })
     }
 
     override suspend fun remove(key: String): Unit {
-        entries.remove(key)
+        instrumentedRemove(context, key) {
+            entries.remove(key)
+        }
     }
 
     override suspend fun <T> modify(
@@ -98,23 +109,25 @@ public open class MapCache(
         timeToLive: Duration?,
         modification: (T?) -> T?
     ): Boolean {
-        // For MapCache, we can provide a synchronized implementation
-        // Note: This works for in-memory but isn't distributed-safe
-        repeat(maxTries) {
-            val current = get(key, serializer)
-            val new = modification(current)
+        return instrumentedModify<T>(context, key, maxTries, timeToLive) {
+            // For MapCache, we can provide a synchronized implementation
+            // Note: This works for in-memory but isn't distributed-safe
+            repeat(maxTries) {
+                val current = get(key, serializer)
+                val new = modification(current)
 
-            // Simple check - not perfect but better than nothing for single-process scenarios
-            if (current == get(key, serializer)) {
-                if (new != null) {
-                    set(key, new, serializer, timeToLive)
-                } else {
-                    remove(key)
+                // Simple check - not perfect but better than nothing for single-process scenarios
+                if (current == get(key, serializer)) {
+                    if (new != null) {
+                        set(key, new, serializer, timeToLive)
+                    } else {
+                        remove(key)
+                    }
+                    return@instrumentedModify true
                 }
-                return true
             }
+            false
         }
-        return false
     }
 }
 

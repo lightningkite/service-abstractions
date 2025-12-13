@@ -71,6 +71,9 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.get
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.KSerializer
@@ -92,6 +95,8 @@ public class DynamoDbCache(
     override val context: SettingContext,
 ) : Cache {
     public val client: DynamoDbAsyncClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED, makeClient)
+
+    private val tracer: Tracer? = context.openTelemetry?.getTracer("cache-dynamodb")
 
     public companion object {
         public fun Cache.Settings.Companion.dynamoDbLocal(): Cache.Settings = Cache.Settings("dynamodb-local")
@@ -193,32 +198,81 @@ public class DynamoDbCache(
     private var ready = ready()
 
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
-        ready.await()
-        val r = client.getItem {
-            it.tableName(tableName)
-            it.consistentRead(true)
-            it.key(mapOf("key" to AttributeValue.fromS(key)))
-        }.await()
-        if (r.hasItem()) {
-            val item = r.item()
-            item["expires"]?.n()?.toLongOrNull()?.let {
-                if (System.currentTimeMillis().div(1000L) > it) return null
+        val span = tracer?.spanBuilder("cache.get")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("cache.operation", "get")
+            ?.setAttribute("cache.key", key)
+            ?.setAttribute("cache.system", "dynamodb")
+            ?.setAttribute("db.system", "dynamodb")
+            ?.setAttribute("db.name", tableName)
+            ?.startSpan()
+
+        return try {
+            val scope = span?.makeCurrent()
+            try {
+                ready.await()
+                val r = client.getItem {
+                    it.tableName(tableName)
+                    it.consistentRead(true)
+                    it.key(mapOf("key" to AttributeValue.fromS(key)))
+                }.await()
+                val result = if (r.hasItem()) {
+                    val item = r.item()
+                    item["expires"]?.n()?.toLongOrNull()?.let {
+                        if (System.currentTimeMillis().div(1000L) > it) return@let null
+                        else serializer.fromDynamo(item["value"]!!, context)
+                    } ?: serializer.fromDynamo(item["value"]!!, context)
+                } else null
+                span?.setAttribute("cache.hit", result != null)
+                span?.setStatus(StatusCode.OK)
+                result
+            } finally {
+                scope?.close()
             }
-            return serializer.fromDynamo(item["value"]!!, context)
-        } else return null
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to get from cache: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
-        ready.await()
-        client.putItem {
-            it.tableName(tableName)
-            it.item(mapOf(
-                "key" to AttributeValue.fromS(key),
-                "value" to serializer.toDynamo(value, context),
-            ) + (timeToLive?.let {
-                mapOf("expires" to AttributeValue.fromN(now().plus(it).epochSeconds.toString()))
-            } ?: mapOf()))
-        }.await()
+        val span = tracer?.spanBuilder("cache.set")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("cache.operation", "set")
+            ?.setAttribute("cache.key", key)
+            ?.setAttribute("cache.system", "dynamodb")
+            ?.setAttribute("db.system", "dynamodb")
+            ?.setAttribute("db.name", tableName)
+            ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                ready.await()
+                client.putItem {
+                    it.tableName(tableName)
+                    it.item(mapOf(
+                        "key" to AttributeValue.fromS(key),
+                        "value" to serializer.toDynamo(value, context),
+                    ) + (timeToLive?.let {
+                        mapOf("expires" to AttributeValue.fromN(now().plus(it).epochSeconds.toString()))
+                    } ?: mapOf()))
+                }.await()
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to set cache value: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
     override suspend fun <T> setIfNotExists(
@@ -227,58 +281,133 @@ public class DynamoDbCache(
         serializer: KSerializer<T>,
         timeToLive: Duration?,
     ): Boolean {
-        ready.await()
-        try {
-            client.putItem {
-                it.tableName(tableName)
-                it.expressionAttributeNames(mapOf("#k" to "key"))
-                it.conditionExpression("attribute_not_exists(#k)")
-                it.item(
-                    mapOf(
-                        "key" to AttributeValue.fromS(key),
-                        "value" to serializer.toDynamo(value, context),
-                    ) + (timeToLive?.let {
-                        mapOf("expires" to AttributeValue.fromN(now().plus(it).epochSeconds.toString()))
-                    } ?: mapOf())
-                )
-            }.await()
-        } catch (e: ConditionalCheckFailedException) {
-            return false
+        val span = tracer?.spanBuilder("cache.setIfNotExists")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("cache.operation", "setIfNotExists")
+            ?.setAttribute("cache.key", key)
+            ?.setAttribute("cache.system", "dynamodb")
+            ?.setAttribute("db.system", "dynamodb")
+            ?.setAttribute("db.name", tableName)
+            ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
+            ?.startSpan()
+
+        return try {
+            val scope = span?.makeCurrent()
+            try {
+                ready.await()
+                try {
+                    client.putItem {
+                        it.tableName(tableName)
+                        it.expressionAttributeNames(mapOf("#k" to "key"))
+                        it.conditionExpression("attribute_not_exists(#k)")
+                        it.item(
+                            mapOf(
+                                "key" to AttributeValue.fromS(key),
+                                "value" to serializer.toDynamo(value, context),
+                            ) + (timeToLive?.let {
+                                mapOf("expires" to AttributeValue.fromN(now().plus(it).epochSeconds.toString()))
+                            } ?: mapOf())
+                        )
+                    }.await()
+                    span?.setAttribute("cache.added", true)
+                    true
+                } catch (e: ConditionalCheckFailedException) {
+                    span?.setAttribute("cache.added", false)
+                    false
+                } finally {
+                    span?.setStatus(StatusCode.OK)
+                }
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to setIfNotExists: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
-        return true
     }
 
     override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
-        ready.await()
+        val span = tracer?.spanBuilder("cache.add")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("cache.operation", "add")
+            ?.setAttribute("cache.key", key)
+            ?.setAttribute("cache.system", "dynamodb")
+            ?.setAttribute("db.system", "dynamodb")
+            ?.setAttribute("db.name", tableName)
+            ?.setAttribute("cache.value", value.toLong())
+            ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
+            ?.startSpan()
+
         try {
-            client.updateItem {
-                it.tableName(tableName)
-                it.key(mapOf("key" to AttributeValue.fromS(key)))
-                it.conditionExpression("attribute_not_exists(#exp) OR #exp = :null OR #exp > :now")
-                it.updateExpression("SET #exp = :exp, #v = if_not_exists(#v, :z) + :v")
-                it.expressionAttributeNames(mapOf("#v" to "value", "#exp" to "expires"))
-                it.expressionAttributeValues(
-                    mapOf(
-                        ":null" to AttributeValue.fromNul(true),
-                        ":now" to AttributeValue.fromN(now().epochSeconds.toString()),
-                        ":z" to AttributeValue.fromN("0"),
-                        ":v" to AttributeValue.fromN(value.toString()),
-                        ":exp" to (timeToLive?.let { AttributeValue.fromN(now().plus(it).epochSeconds.toString()) }
-                            ?: AttributeValue.fromNul(true))
-                    )
-                )
-            }.await()
-        } catch(e: ConditionalCheckFailedException) {
-            set(key, value, Int.serializer(), timeToLive)
+            val scope = span?.makeCurrent()
+            try {
+                ready.await()
+                try {
+                    client.updateItem {
+                        it.tableName(tableName)
+                        it.key(mapOf("key" to AttributeValue.fromS(key)))
+                        it.conditionExpression("attribute_not_exists(#exp) OR #exp = :null OR #exp > :now")
+                        it.updateExpression("SET #exp = :exp, #v = if_not_exists(#v, :z) + :v")
+                        it.expressionAttributeNames(mapOf("#v" to "value", "#exp" to "expires"))
+                        it.expressionAttributeValues(
+                            mapOf(
+                                ":null" to AttributeValue.fromNul(true),
+                                ":now" to AttributeValue.fromN(now().epochSeconds.toString()),
+                                ":z" to AttributeValue.fromN("0"),
+                                ":v" to AttributeValue.fromN(value.toString()),
+                                ":exp" to (timeToLive?.let { AttributeValue.fromN(now().plus(it).epochSeconds.toString()) }
+                                    ?: AttributeValue.fromNul(true))
+                            )
+                        )
+                    }.await()
+                } catch(e: ConditionalCheckFailedException) {
+                    set(key, value, Int.serializer(), timeToLive)
+                }
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to add to cache: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
     }
 
     override suspend fun remove(key: String) {
-        ready.await()
-        client.deleteItem {
-            it.tableName(tableName)
-            it.key(mapOf("key" to AttributeValue.fromS(key)))
-        }.await()
+        val span = tracer?.spanBuilder("cache.remove")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("cache.operation", "remove")
+            ?.setAttribute("cache.key", key)
+            ?.setAttribute("cache.system", "dynamodb")
+            ?.setAttribute("db.system", "dynamodb")
+            ?.setAttribute("db.name", tableName)
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                ready.await()
+                client.deleteItem {
+                    it.tableName(tableName)
+                    it.key(mapOf("key" to AttributeValue.fromS(key)))
+                }.await()
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to remove from cache: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
 }

@@ -1,4 +1,5 @@
 import com.lightningkite.deployhelpers.*
+import org.gradle.kotlin.dsl.api
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -83,7 +84,9 @@ kotlin {
         }
         val jvmMain by getting {
             dependencies {
-//                api(libs.kotlinTestJunit)
+                compileOnly(project(":otel-jvm"))
+                compileOnly(libs.openTelemetry.api)
+                compileOnly(libs.openTelemetryInstrumentation.ktor)
             }
         }
         val jvmTest by getting {

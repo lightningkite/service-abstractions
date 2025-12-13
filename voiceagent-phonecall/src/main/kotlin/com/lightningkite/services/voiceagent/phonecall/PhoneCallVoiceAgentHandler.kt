@@ -9,6 +9,9 @@ import com.lightningkite.services.voiceagent.VoiceAgentService
 import com.lightningkite.services.voiceagent.VoiceAgentSession
 import com.lightningkite.services.voiceagent.VoiceAgentSessionConfig
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -66,6 +69,7 @@ public class PhoneCallVoiceAgentHandler(
     private val sessionConfig: VoiceAgentSessionConfig,
     private val toolHandler: (suspend (toolName: String, arguments: String) -> String)? = null,
 ) {
+    private val tracer: Tracer? = voiceAgentService.context.openTelemetry?.getTracer("voiceagent-phonecall")
     /**
      * Handles a WebSocket connection, bridging phone audio with the voice agent.
      *
@@ -78,40 +82,59 @@ public class PhoneCallVoiceAgentHandler(
         incomingFrames: Flow<WebsocketAdapter.Frame>,
         sendFrame: suspend (WebsocketAdapter.Frame) -> Unit,
     ) {
-        // Channel for parsed audio events
-        val audioEventChannel = Channel<AudioStreamEvent>(Channel.UNLIMITED)
+        val span = tracer?.spanBuilder("voiceagent.handle_call")
+            ?.setSpanKind(SpanKind.SERVER)
+            ?.setAttribute("voiceagent.operation", "handle_call")
+            ?.startSpan()
 
-        // Create the bridge
-        val bridge = PhoneCallVoiceAgentBridge(
-            voiceAgentService = voiceAgentService,
-            sessionConfig = sessionConfig,
-            toolHandler = toolHandler,
-        )
-
-        // Start the bridge and get commands flow
-        val commands = bridge.start(
-            phoneAudioEvents = audioEventChannel.consumeAsFlow(),
-            scope = scope,
-        )
-
-        // Job to send commands back to phone
-        val sendJob = scope.launch {
-            commands.collect { command ->
-                val frame = audioStreamAdapter.render(command)
-                sendFrame(frame)
-            }
-        }
-
-        // Process incoming frames
         try {
-            incomingFrames.collect { frame ->
-                val event = audioStreamAdapter.parse(frame)
-                audioEventChannel.send(event)
+            val spanScope = span?.makeCurrent()
+            try {
+                // Channel for parsed audio events
+                val audioEventChannel = Channel<AudioStreamEvent>(Channel.UNLIMITED)
+
+                // Create the bridge
+                val bridge = PhoneCallVoiceAgentBridge(
+                    voiceAgentService = voiceAgentService,
+                    sessionConfig = sessionConfig,
+                    toolHandler = toolHandler,
+                )
+
+                // Start the bridge and get commands flow
+                val commands = bridge.start(
+                    phoneAudioEvents = audioEventChannel.consumeAsFlow(),
+                    scope = scope,
+                )
+
+                // Job to send commands back to phone
+                val sendJob = scope.launch {
+                    commands.collect { command ->
+                        val frame = audioStreamAdapter.render(command)
+                        sendFrame(frame)
+                    }
+                }
+
+                // Process incoming frames
+                try {
+                    incomingFrames.collect { frame ->
+                        val event = audioStreamAdapter.parse(frame)
+                        audioEventChannel.send(event)
+                    }
+                    span?.setStatus(StatusCode.OK)
+                } finally {
+                    audioEventChannel.close()
+                    sendJob.cancel()
+                    bridge.close()
+                }
+            } finally {
+                spanScope?.close()
             }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to handle voice agent call: ${e.message}")
+            span?.recordException(e)
+            throw e
         } finally {
-            audioEventChannel.close()
-            sendJob.cancel()
-            bridge.close()
+            span?.end()
         }
     }
 }
@@ -254,6 +277,7 @@ public class PubSubVoiceAgentHandler(
      */
     private val onTranscript: (suspend (TranscriptEntry) -> Unit)? = null,
 ) {
+    private val tracer: Tracer? = voiceAgentService.context.openTelemetry?.getTracer("voiceagent-phonecall")
     /**
      * State tracked for each WebSocket connection.
      */
@@ -298,35 +322,57 @@ public class PubSubVoiceAgentHandler(
         sendFrame: suspend (String) -> Unit,
     ) {
         val connectionId = state.connectionId
-        logger.info { "Voice agent WebSocket connected: connectionId=$connectionId" }
+        val span = tracer?.spanBuilder("voiceagent.connect")
+            ?.setSpanKind(SpanKind.SERVER)
+            ?.setAttribute("voiceagent.operation", "connect")
+            ?.setAttribute("voiceagent.connection_id", connectionId)
+            ?.startSpan()
 
-        // Create voice agent session
-        // Enable input transcription if transcript callback is provided and not already configured
-        val effectiveConfig = sessionConfig.copy(
-            inputAudioFormat = com.lightningkite.services.voiceagent.AudioFormat.PCM16_24K,
-            outputAudioFormat = com.lightningkite.services.voiceagent.AudioFormat.PCM16_24K,
-            inputTranscription = sessionConfig.inputTranscription
-                ?: if (onTranscript != null) com.lightningkite.services.voiceagent.TranscriptionConfig() else null,
-        )
-        val session = voiceAgentService.createSession(effectiveConfig)
-        state.session = session
-        logger.info { "Voice agent session created: ${session.sessionId}" }
+        try {
+            val spanScope = span?.makeCurrent()
+            try {
+                logger.info { "Voice agent WebSocket connected: connectionId=$connectionId" }
 
-        // Subscribe to phone audio via PubSub
-        val audioChannel = pubsub.string("phone-audio:$connectionId")
-        state.audioJob = state.scope.launch {
-            audioChannel.collect { audioBase64 ->
-                val mulawBytes = Base64.decode(audioBase64)
-                val pcm16Bytes = AudioConverter.mulawToPcm16_24k(mulawBytes)
-                session.sendAudio(pcm16Bytes)
+                // Create voice agent session
+                // Enable input transcription if transcript callback is provided and not already configured
+                val effectiveConfig = sessionConfig.copy(
+                    inputAudioFormat = com.lightningkite.services.voiceagent.AudioFormat.PCM16_24K,
+                    outputAudioFormat = com.lightningkite.services.voiceagent.AudioFormat.PCM16_24K,
+                    inputTranscription = sessionConfig.inputTranscription
+                        ?: if (onTranscript != null) com.lightningkite.services.voiceagent.TranscriptionConfig() else null,
+                )
+                val session = voiceAgentService.createSession(effectiveConfig)
+                state.session = session
+                logger.info { "Voice agent session created: ${session.sessionId}" }
+                span?.setAttribute("voiceagent.session_id", session.sessionId)
+
+                // Subscribe to phone audio via PubSub
+                val audioChannel = pubsub.string("phone-audio:$connectionId")
+                state.audioJob = state.scope.launch {
+                    audioChannel.collect { audioBase64 ->
+                        val mulawBytes = Base64.decode(audioBase64)
+                        val pcm16Bytes = AudioConverter.mulawToPcm16_24k(mulawBytes)
+                        session.sendAudio(pcm16Bytes)
+                    }
+                }
+
+                // Handle voice agent events
+                state.agentJob = state.scope.launch {
+                    session.events.collect { event ->
+                        handleAgentEvent(event, state, session, sendFrame)
+                    }
+                }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                spanScope?.close()
             }
-        }
-
-        // Handle voice agent events
-        state.agentJob = state.scope.launch {
-            session.events.collect { event ->
-                handleAgentEvent(event, state, session, sendFrame)
-            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to connect voice agent: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
     }
 
@@ -340,27 +386,48 @@ public class PubSubVoiceAgentHandler(
      * @param frameText The raw WebSocket frame text
      */
     public suspend fun onMessage(state: ConnectionState, frameText: String) {
-        val frame = WebsocketAdapter.Frame.Text(frameText)
+        val span = tracer?.spanBuilder("voiceagent.process_message")
+            ?.setSpanKind(SpanKind.SERVER)
+            ?.setAttribute("voiceagent.operation", "process_message")
+            ?.setAttribute("voiceagent.connection_id", state.connectionId)
+            ?.startSpan()
+
         try {
-            when (val event = audioStreamAdapter.parse(frame)) {
-                is AudioStreamEvent.Connected -> {
-                    logger.info { "Audio stream connected: callId=${event.callId}, streamId=${event.streamId}" }
-                    state.streamId = event.streamId
-                    state.callId = event.callId
+            val spanScope = span?.makeCurrent()
+            try {
+                val frame = WebsocketAdapter.Frame.Text(frameText)
+                when (val event = audioStreamAdapter.parse(frame)) {
+                    is AudioStreamEvent.Connected -> {
+                        logger.info { "Audio stream connected: callId=${event.callId}, streamId=${event.streamId}" }
+                        state.streamId = event.streamId
+                        state.callId = event.callId
+                        span?.setAttribute("voiceagent.call_id", event.callId)
+                        span?.setAttribute("voiceagent.stream_id", event.streamId)
+                    }
+                    is AudioStreamEvent.Audio -> {
+                        // Publish to PubSub - the onConnect handler will receive it
+                        pubsub.string("phone-audio:${state.connectionId}").emit(event.payload)
+                        span?.setAttribute("voiceagent.audio_bytes", event.payload.length.toLong())
+                    }
+                    is AudioStreamEvent.Dtmf -> {
+                        logger.debug { "DTMF received: ${event.digit}" }
+                        span?.setAttribute("voiceagent.dtmf_digit", event.digit)
+                    }
+                    is AudioStreamEvent.Stop -> {
+                        logger.info { "Audio stream stopping: ${event.streamId}" }
+                        span?.setAttribute("voiceagent.stream_id", event.streamId)
+                    }
                 }
-                is AudioStreamEvent.Audio -> {
-                    // Publish to PubSub - the onConnect handler will receive it
-                    pubsub.string("phone-audio:${state.connectionId}").emit(event.payload)
-                }
-                is AudioStreamEvent.Dtmf -> {
-                    logger.debug { "DTMF received: ${event.digit}" }
-                }
-                is AudioStreamEvent.Stop -> {
-                    logger.info { "Audio stream stopping: ${event.streamId}" }
-                }
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                spanScope?.close()
             }
         } catch (e: Exception) {
             logger.error(e) { "Error parsing audio stream message" }
+            span?.setStatus(StatusCode.ERROR, "Failed to process message: ${e.message}")
+            span?.recordException(e)
+        } finally {
+            span?.end()
         }
     }
 

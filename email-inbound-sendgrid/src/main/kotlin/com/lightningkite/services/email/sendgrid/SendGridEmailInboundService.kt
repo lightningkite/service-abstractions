@@ -10,6 +10,9 @@ import com.lightningkite.services.data.WebhookSubservice
 import com.lightningkite.services.email.*
 import com.lightningkite.toEmailAddress
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -81,6 +84,8 @@ public class SendGridEmailInboundService(
     private val verificationKey: String,
 ) : EmailInboundService {
 
+    private val tracer: Tracer? = context.openTelemetry?.getTracer("email-inbound-sendgrid")
+
     public companion object {
         private const val SIGNATURE_HEADER = "x-twilio-email-event-webhook-signature"
         private const val TIMESTAMP_HEADER = "x-twilio-email-event-webhook-timestamp"
@@ -131,29 +136,61 @@ public class SendGridEmailInboundService(
             headers: Map<String, List<String>>,
             body: TypedData
         ): ReceivedEmail {
-            logger.debug { "[$name] Parsing SendGrid webhook" }
+            val span = tracer?.spanBuilder("email.webhook.parse")
+                ?.setSpanKind(SpanKind.SERVER)
+                ?.setAttribute("email.webhook.operation", "inbound_parse")
+                ?.setAttribute("email.provider", "sendgrid")
+                ?.startSpan()
 
-            // Get raw body bytes BEFORE any parsing (required for signature verification)
-            val rawBodyBytes = body.data.bytes()
+            return try {
+                val scope = span?.makeCurrent()
+                try {
+                    logger.debug { "[$name] Parsing SendGrid webhook" }
 
-            // Verify signature (required for all webhooks)
-            verifySignature(headers, rawBodyBytes, verificationKey)
+                    // Get raw body bytes BEFORE any parsing (required for signature verification)
+                    val rawBodyBytes = body.data.bytes()
 
-            // Verify content type
-            if (!body.mediaType.accepts(MediaType.MultiPart.FormData)) {
-                throw IllegalArgumentException(
-                    "Expected multipart/form-data but got ${body.mediaType}. " +
-                    "Ensure SendGrid Inbound Parse is configured correctly."
-                )
+                    // Verify signature (required for all webhooks)
+                    verifySignature(headers, rawBodyBytes, verificationKey)
+
+                    span?.setAttribute("email.webhook.signature_verified", true)
+
+                    // Verify content type
+                    if (!body.mediaType.accepts(MediaType.MultiPart.FormData)) {
+                        throw IllegalArgumentException(
+                            "Expected multipart/form-data but got ${body.mediaType}. " +
+                            "Ensure SendGrid Inbound Parse is configured correctly."
+                        )
+                    }
+
+                    // Parse multipart form data
+                    val boundary = body.mediaType.parameters["boundary"]
+                        ?: throw IllegalArgumentException("Missing boundary parameter in Content-Type")
+
+                    val parts = parseMultipartFormData(rawBodyBytes, boundary)
+
+                    val receivedEmail = parseReceivedEmail(parts)
+
+                    // Add email-specific attributes
+                    span?.setAttribute("email.from", receivedEmail.from.value.raw)
+                    span?.setAttribute("email.to", receivedEmail.to.joinToString(",") { it.value.raw })
+                    span?.setAttribute("email.subject", receivedEmail.subject)
+                    span?.setAttribute("email.attachments_count", receivedEmail.attachments.size.toLong())
+                    span?.setAttribute("email.message_id", receivedEmail.messageId)
+                    receivedEmail.spamScore?.let { span?.setAttribute("email.spam_score", it) }
+
+                    span?.setStatus(StatusCode.OK)
+                    receivedEmail
+                } finally {
+                    scope?.close()
+                }
+            } catch (e: Exception) {
+                span?.setStatus(StatusCode.ERROR, "Failed to parse webhook: ${e.message}")
+                span?.recordException(e)
+                throw e
+            } finally {
+                span?.end()
             }
-
-            // Parse multipart form data
-            val boundary = body.mediaType.parameters["boundary"]
-                ?: throw IllegalArgumentException("Missing boundary parameter in Content-Type")
-
-            val parts = parseMultipartFormData(rawBodyBytes, boundary)
-
-            return parseReceivedEmail(parts)
         }
 
         override suspend fun onSchedule() {

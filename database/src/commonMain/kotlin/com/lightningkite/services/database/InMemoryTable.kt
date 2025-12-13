@@ -1,5 +1,6 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.OpenTelemetry
 import kotlinx.atomicfu.AtomicRef
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.ReentrantLock
@@ -15,7 +16,9 @@ import kotlinx.serialization.KSerializer
  */
 public open class InMemoryTable<Model : Any>(
     public val data: MutableList<Model> = ArrayList(),
-    override val serializer: KSerializer<Model>
+    override val serializer: KSerializer<Model>,
+    private val tableName: String = "unknown",
+    private val tracer: OpenTelemetry? = null
 ) : Table<Model> {
 
     private val lock = ReentrantLock()
@@ -70,17 +73,27 @@ public open class InMemoryTable<Model : Any>(
         limit: Int,
         maxQueryMs: Long,
     ): Flow<Model> = flow {
-        val result = lock.withLock {
-            data.asSequence()
-                .filter { condition(it) }
-                .let {
-                    orderBy.comparator?.let { c ->
-                        it.sortedWith(c)
-                    } ?: it
-                }
-                .drop(skip)
-                .take(limit)
-                .toList()
+        val result = traced(
+            tracer = tracer,
+            operation = "find",
+            tableName = tableName,
+            attributes = mapOf(
+                "db.limit" to limit,
+                "db.skip" to skip
+            )
+        ) {
+            lock.withLock {
+                data.asSequence()
+                    .filter { condition(it) }
+                    .let {
+                        orderBy.comparator?.let { c ->
+                            it.sortedWith(c)
+                        } ?: it
+                    }
+                    .drop(skip)
+                    .take(limit)
+                    .toList()
+            }
         }
         result
             .forEach {
@@ -88,53 +101,89 @@ public open class InMemoryTable<Model : Any>(
             }
     }
 
-    override suspend fun count(condition: Condition<Model>): Int = data.count { condition(it) }
+    override suspend fun count(condition: Condition<Model>): Int = traced(
+        tracer = tracer,
+        operation = "count",
+        tableName = tableName
+    ) {
+        data.count { condition(it) }
+    }
 
     @Suppress("UNCHECKED_CAST")
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
-    ): Map<Key, Int> =
+    ): Map<Key, Int> = traced(
+        tracer = tracer,
+        operation = "groupCount",
+        tableName = tableName
+    ) {
         data.filter { condition(it) }.groupingBy { groupBy.get(it) }.eachCount().minus(null) as Map<Key, Int>
+    }
 
     override suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
         property: DataClassPath<Model, N>,
-    ): Double? =
+    ): Double? = traced(
+        tracer = tracer,
+        operation = "aggregate",
+        tableName = tableName,
+        attributes = mapOf("db.aggregate" to aggregate.toString())
+    ) {
         data.asSequence().filter { condition(it) }.mapNotNull { property.get(it)?.toDouble() }.aggregate(aggregate)
+    }
 
     override suspend fun <N : Number?, Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
         property: DataClassPath<Model, N>,
-    ): Map<Key, Double?> = data.asSequence().filter { condition(it) }
-        .mapNotNull {
-            (groupBy.get(it) ?: return@mapNotNull null) to (property.get(it)?.toDouble() ?: return@mapNotNull null)
-        }.aggregate(aggregate)
+    ): Map<Key, Double?> = traced(
+        tracer = tracer,
+        operation = "groupAggregate",
+        tableName = tableName,
+        attributes = mapOf("db.aggregate" to aggregate.toString())
+    ) {
+        data.asSequence().filter { condition(it) }
+            .mapNotNull {
+                (groupBy.get(it) ?: return@mapNotNull null) to (property.get(it)?.toDouble() ?: return@mapNotNull null)
+            }.aggregate(aggregate)
+    }
 
-    override suspend fun insert(models: Iterable<Model>): List<Model> = lock.withLock {
-        uniqueCheck(models.map { EntryChange(null, it) })
-        data.addAll(models)
-        return models.toList()
+    override suspend fun insert(models: Iterable<Model>): List<Model> = traced(
+        tracer = tracer,
+        operation = "insert",
+        tableName = tableName
+    ) {
+        lock.withLock {
+            uniqueCheck(models.map { EntryChange(null, it) })
+            data.addAll(models)
+            return@traced models.toList()
+        }
     }
 
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
         orderBy: List<SortPart<Model>>,
-    ): EntryChange<Model> = lock.withLock {
-        for (it in sortIndices(orderBy)) {
-            val old = data[it]
-            if (condition(old)) {
-                val changed = EntryChange(old, model)
-                uniqueCheck(changed)
-                data[it] = model
-                return changed
+    ): EntryChange<Model> = traced(
+        tracer = tracer,
+        operation = "replaceOne",
+        tableName = tableName
+    ) {
+        lock.withLock {
+            for (it in sortIndices(orderBy)) {
+                val old = data[it]
+                if (condition(old)) {
+                    val changed = EntryChange(old, model)
+                    uniqueCheck(changed)
+                    data[it] = model
+                    return@traced changed
+                }
             }
+            return@traced EntryChange(null, null)
         }
-        return EntryChange(null, null)
     }
 
     private fun sortIndices(orderBy: List<SortPart<Model>>): Iterable<Int> {
@@ -149,82 +198,111 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         modification: Modification<Model>,
         model: Model,
-    ): EntryChange<Model> = lock.withLock {
-        for (it in data.indices) {
-            val old = data[it]
-            if (condition(old)) {
-                val new = modification(old)
-                val changed = EntryChange(old, new)
-                uniqueCheck(changed)
-                data[it] = new
-                return changed
+    ): EntryChange<Model> = traced(
+        tracer = tracer,
+        operation = "upsertOne",
+        tableName = tableName
+    ) {
+        lock.withLock {
+            for (it in data.indices) {
+                val old = data[it]
+                if (condition(old)) {
+                    val new = modification(old)
+                    val changed = EntryChange(old, new)
+                    uniqueCheck(changed)
+                    data[it] = new
+                    return@traced changed
+                }
             }
+            data.add(model)
+            return@traced EntryChange(null, model)
         }
-        data.add(model)
-        return EntryChange(null, model)
     }
 
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
         orderBy: List<SortPart<Model>>,
-    ): EntryChange<Model> = lock.withLock {
-        for (it in sortIndices(orderBy)) {
-            val old = data[it]
-            if (condition(old)) {
-                val new = modification(old)
-                val changed = EntryChange(old, new)
-                uniqueCheck(changed)
-                data[it] = new
-                return changed
+    ): EntryChange<Model> = traced(
+        tracer = tracer,
+        operation = "updateOne",
+        tableName = tableName
+    ) {
+        lock.withLock {
+            for (it in sortIndices(orderBy)) {
+                val old = data[it]
+                if (condition(old)) {
+                    val new = modification(old)
+                    val changed = EntryChange(old, new)
+                    uniqueCheck(changed)
+                    data[it] = new
+                    return@traced changed
+                }
             }
+            return@traced EntryChange(null, null)
         }
-        return EntryChange(null, null)
     }
 
     override suspend fun updateMany(
         condition: Condition<Model>,
         modification: Modification<Model>,
-    ): CollectionChanges<Model> = lock.withLock {
-        return data.indices
-            .mapNotNull {
-                val old = data[it]
-                if (condition(old)) {
-                    val new = modification(old)
-                    it to EntryChange(old, new)
-                } else null
-            }
-            .let {
-                val changes = it.map { it.second }
-                uniqueCheck(changes)
-                it.forEach { (index, change) -> data[index] = change.new!! }
-                CollectionChanges(changes = changes)
-            }
+    ): CollectionChanges<Model> = traced(
+        tracer = tracer,
+        operation = "updateMany",
+        tableName = tableName
+    ) {
+        lock.withLock {
+            return@traced data.indices
+                .mapNotNull {
+                    val old = data[it]
+                    if (condition(old)) {
+                        val new = modification(old)
+                        it to EntryChange(old, new)
+                    } else null
+                }
+                .let {
+                    val changes = it.map { it.second }
+                    uniqueCheck(changes)
+                    it.forEach { (index, change) -> data[index] = change.new!! }
+                    CollectionChanges(changes = changes)
+                }
+        }
     }
 
-    override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? =
+    override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? = traced(
+        tracer = tracer,
+        operation = "deleteOne",
+        tableName = tableName
+    ) {
         lock.withLock {
             for (it in sortIndices(orderBy)) {
                 val old = data[it]
                 if (condition(old)) {
                     data.removeAt(it)
-                    return old
+                    return@traced old
                 }
             }
-            return null
+            return@traced null
         }
+    }
 
-    override suspend fun deleteMany(condition: Condition<Model>): List<Model> = lock.withLock {
-        val removed = ArrayList<Model>()
-        data.removeAll {
-            if (condition(it)) {
-                removed.add(it)
-                true
-            } else {
-                false
+    override suspend fun deleteMany(condition: Condition<Model>): List<Model> = traced(
+        tracer = tracer,
+        operation = "deleteMany",
+        tableName = tableName
+    ) {
+        lock.withLock {
+            val removed = ArrayList<Model>()
+            data.removeAll {
+                if (condition(it)) {
+                    removed.add(it)
+                    true
+                } else {
+                    false
+                }
             }
+            return@traced removed
         }
-        return removed
     }
 
     override suspend fun replaceOneIgnoringResult(
@@ -273,19 +351,29 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> = flow {
-        val minScore = params.minScore
-        val results = lock.withLock {
-            data.asSequence()
-                .filter { condition(it) }
-                .mapNotNull { model ->
-                    val embedding = vectorField.get(model) ?: return@mapNotNull null
-                    val score = EmbeddingSimilarity.similarity(embedding, params.queryVector, params.metric)
-                    if (minScore != null && score < minScore) return@mapNotNull null
-                    ScoredResult(model, score)
-                }
-                .sortedByDescending { it.score }
-                .take(params.limit)
-                .toList()
+        val results = traced(
+            tracer = tracer,
+            operation = "findSimilar",
+            tableName = tableName,
+            attributes = mapOf(
+                "db.limit" to params.limit,
+                "db.similarity_metric" to params.metric.toString()
+            )
+        ) {
+            val minScore = params.minScore
+            lock.withLock {
+                data.asSequence()
+                    .filter { condition(it) }
+                    .mapNotNull { model ->
+                        val embedding = vectorField.get(model) ?: return@mapNotNull null
+                        val score = EmbeddingSimilarity.similarity(embedding, params.queryVector, params.metric)
+                        if (minScore != null && score < minScore) return@mapNotNull null
+                        ScoredResult(model, score)
+                    }
+                    .sortedByDescending { it.score }
+                    .take(params.limit)
+                    .toList()
+            }
         }
         results.forEach { emit(it) }
     }
@@ -296,19 +384,29 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> = flow {
-        val minScore = params.minScore
-        val results = lock.withLock {
-            data.asSequence()
-                .filter { condition(it) }
-                .mapNotNull { model ->
-                    val embedding = vectorField.get(model) ?: return@mapNotNull null
-                    val score = EmbeddingSimilarity.similarity(embedding, params.queryVector, params.metric)
-                    if (minScore != null && score < minScore) return@mapNotNull null
-                    ScoredResult(model, score)
-                }
-                .sortedByDescending { it.score }
-                .take(params.limit)
-                .toList()
+        val results = traced(
+            tracer = tracer,
+            operation = "findSimilarSparse",
+            tableName = tableName,
+            attributes = mapOf(
+                "db.limit" to params.limit,
+                "db.similarity_metric" to params.metric.toString()
+            )
+        ) {
+            val minScore = params.minScore
+            lock.withLock {
+                data.asSequence()
+                    .filter { condition(it) }
+                    .mapNotNull { model ->
+                        val embedding = vectorField.get(model) ?: return@mapNotNull null
+                        val score = EmbeddingSimilarity.similarity(embedding, params.queryVector, params.metric)
+                        if (minScore != null && score < minScore) return@mapNotNull null
+                        ScoredResult(model, score)
+                    }
+                    .sortedByDescending { it.score }
+                    .take(params.limit)
+                    .toList()
+            }
         }
         results.forEach { emit(it) }
     }

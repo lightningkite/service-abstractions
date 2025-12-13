@@ -5,6 +5,8 @@ import com.lightningkite.services.cache.Cache
 import io.lettuce.core.RedisClient
 import io.lettuce.core.SetArgs
 import io.lettuce.core.api.reactive.RedisReactiveCommands
+import io.lettuce.core.resource.ClientResources
+import io.opentelemetry.instrumentation.lettuce.v5_1.LettuceTelemetry
 import kotlinx.coroutines.reactive.awaitFirst
 import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.reactive.collect
@@ -70,7 +72,15 @@ public class RedisCache(
         public fun Cache.Settings.Companion.redis(url: String): Cache.Settings = Cache.Settings("redis://$url")
         init {
             Cache.Settings.register("redis") { name, url, context ->
-                RedisCache(name, RedisClient.create(url), context)
+                val telemetry = context.openTelemetry?.let { LettuceTelemetry.create(it) }
+                val clientResources = telemetry?.let {
+                    ClientResources.builder()
+                        .tracing(it.newTracing())
+                        .build()
+                } ?: ClientResources.create()
+
+                val client = RedisClient.create(clientResources, url)
+                RedisCache(name, client, context)
             }
         }
     }

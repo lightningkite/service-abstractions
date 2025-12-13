@@ -19,6 +19,7 @@ dependencies {
     api(project(path = ":files"))
     api(project(path = ":http-client"))
     api(project(path = ":aws-client"))
+    compileOnly(project(path = ":otel-jvm"))
     testImplementation(project(path = ":files-test"))
 
     // AWS S3 dependencies

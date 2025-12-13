@@ -8,6 +8,7 @@ import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.get
+import io.opentelemetry.api.trace.Tracer
 import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3AsyncClient
@@ -45,6 +46,8 @@ public class S3PublicFileSystem(
     public val signedUrlDuration: Duration? = null,
     override val context: SettingContext
 ) : PublicFileSystem {
+
+    internal val tracer: Tracer? = context.openTelemetry?.getTracer("files-s3")
 
     override val rootUrls: List<String> = listOf(
         "https://${bucket}.s3.${region.id()}.amazonaws.com/",
@@ -387,7 +390,4 @@ internal fun ByteArray.toHex(): String = buildString {
  *
  * 9. Bucket Validation: Consider adding an optional bucket existence check during initialization to fail
  *    fast if the bucket doesn't exist or is inaccessible.
- *
- * 10. Metrics/Observability: Consider adding OpenTelemetry spans for S3 operations to track performance
- *     and errors in production environments.
  */

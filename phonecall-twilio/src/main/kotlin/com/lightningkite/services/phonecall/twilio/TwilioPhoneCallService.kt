@@ -20,7 +20,11 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.net.URLDecoder
 import javax.crypto.Mac
@@ -114,6 +118,8 @@ public class TwilioPhoneCallService(
     ) : this(name, context, account, account, authToken, defaultFrom)
 
     private val baseUrl = "https://api.twilio.com/2010-04-01/Accounts/$account"
+
+    private val tracer: Tracer? = context.openTelemetry?.getTracer("phonecall-twilio")
 
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
@@ -288,169 +294,262 @@ public class TwilioPhoneCallService(
     override suspend fun startCall(to: PhoneNumber, options: OutboundCallOptions): String {
         val from = options.from?.raw ?: defaultFrom
 
-        val response = client.submitForm(
-            url = "$baseUrl/Calls.json",
-            formParameters = Parameters.build {
-                append("From", from)
-                append("To", to.raw)
-                append("Timeout", options.timeout.inWholeSeconds.toString())
+        val span = tracer?.spanBuilder("phonecall.start")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "start")
+            ?.setAttribute("phonecall.to", to.raw)
+            ?.setAttribute("phonecall.from", from)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.setAttribute("phonecall.recording_enabled", options.recordingEnabled)
+            ?.setAttribute("phonecall.machine_detection", options.machineDetection.name)
+            ?.startSpan()
 
-                // If we have an initial message, use TwiML
-                val initialMessage = options.initialMessage
-                if (initialMessage != null) {
-                    append("Twiml", buildTwimlInternal {
-                        say(initialMessage)
-                        // Keep call alive after initial message
-                        appendLine("""<Pause length="3600"/>""")
-                    })
-                } else {
-                    // Default: just connect the call and keep it alive
-                    append("Twiml", "<Response><Pause length=\"3600\"/></Response>")
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    client.submitForm(
+                        url = "$baseUrl/Calls.json",
+                        formParameters = Parameters.build {
+                            append("From", from)
+                            append("To", to.raw)
+                            append("Timeout", options.timeout.inWholeSeconds.toString())
+
+                            // If we have an initial message, use TwiML
+                            val initialMessage = options.initialMessage
+                            if (initialMessage != null) {
+                                append("Twiml", buildTwimlInternal {
+                                    say(initialMessage)
+                                    // Keep call alive after initial message
+                                    appendLine("""<Pause length="3600"/>""")
+                                })
+                            } else {
+                                // Default: just connect the call and keep it alive
+                                append("Twiml", "<Response><Pause length=\"3600\"/></Response>")
+                            }
+
+
+                            if (options.recordingEnabled) {
+                                append("Record", "true")
+                            }
+
+                            // Add status callback URL if configured
+                            statusCallbackUrl?.let {
+                                append("StatusCallback", it)
+                                append("StatusCallbackEvent", "initiated ringing answered completed")
+                            }
+
+                            // Set caller name if provided
+                            options.callerName?.let { append("CallerName", it) }
+
+                            // Send DTMF digits after connection
+                            options.sendDigitsOnConnect?.let { append("SendDigits", it) }
+
+                            // Enable answering machine detection if requested
+                            // This is especially useful for trial accounts where user must press a key
+                            when (options.machineDetection) {
+                                MachineDetectionMode.ENABLED -> {
+                                    append("MachineDetection", "Enable")
+                                }
+                                MachineDetectionMode.DETECT_MESSAGE_END -> {
+                                    append("MachineDetection", "DetectMessageEnd")
+                                }
+                                MachineDetectionMode.DISABLED -> { /* Don't add parameter */ }
+                            }
+                        }
+                    )
                 }
 
-
-                if (options.recordingEnabled) {
-                    append("Record", "true")
+                if (!response.status.isSuccess()) {
+                    val errorMessage = response.bodyAsText()
+                    span?.setStatus(StatusCode.ERROR, "Failed to start call: HTTP ${response.status.value}")
+                    throw PhoneCallException("Failed to start call: $errorMessage")
                 }
 
-                // Add status callback URL if configured
-                statusCallbackUrl?.let {
-                    append("StatusCallback", it)
-                    append("StatusCallbackEvent", "initiated ringing answered completed")
-                }
+                val responseBody = response.bodyAsText()
+                // Parse the SID from JSON response
+                val sidMatch = Regex(""""sid"\s*:\s*"([^"]+)"""").find(responseBody)
+                val callId = sidMatch?.groupValues?.get(1)
+                    ?: throw PhoneCallException("Could not parse call SID from response: $responseBody")
 
-                // Set caller name if provided
-                options.callerName?.let { append("CallerName", it) }
+                span?.setAttribute("phonecall.call_id", callId)
 
-                // Send DTMF digits after connection
-                options.sendDigitsOnConnect?.let { append("SendDigits", it) }
+                // Wait for call to be answered
+                val maxWaitTime = options.timeout + 30.seconds  // Extra time for trial account message
+                val pollInterval = 500.milliseconds
+                var elapsed = 0.milliseconds
 
-                // Enable answering machine detection if requested
-                // This is especially useful for trial accounts where user must press a key
-                when (options.machineDetection) {
-                    MachineDetectionMode.ENABLED -> {
-                        append("MachineDetection", "Enable")
-                    }
-                    MachineDetectionMode.DETECT_MESSAGE_END -> {
-                        append("MachineDetection", "DetectMessageEnd")
-                    }
-                    MachineDetectionMode.DISABLED -> { /* Don't add parameter */ }
-                }
-            }
-        )
+                logger.debug { "[$name] Waiting for call $callId to be answered (max wait: $maxWaitTime)" }
 
-        if (!response.status.isSuccess()) {
-            val errorMessage = response.bodyAsText()
-            throw PhoneCallException("Failed to start call: $errorMessage")
-        }
+                while (elapsed < maxWaitTime) {
+                    delay(pollInterval)
+                    elapsed += pollInterval
 
-        val responseBody = response.bodyAsText()
-        // Parse the SID from JSON response
-        val sidMatch = Regex(""""sid"\s*:\s*"([^"]+)"""").find(responseBody)
-        val callId = sidMatch?.groupValues?.get(1)
-            ?: throw PhoneCallException("Could not parse call SID from response: $responseBody")
+                    val status = getCallStatus(callId)
+                    logger.debug { "[$name] Call $callId status: ${status?.status}, answeredBy: ${status?.answeredBy}, elapsed: $elapsed" }
 
-        // Wait for call to be answered
-        val maxWaitTime = options.timeout + 30.seconds  // Extra time for trial account message
-        val pollInterval = 500.milliseconds
-        var elapsed = 0.milliseconds
-
-        logger.debug { "[$name] Waiting for call $callId to be answered (max wait: $maxWaitTime)" }
-
-        while (elapsed < maxWaitTime) {
-            delay(pollInterval)
-            elapsed += pollInterval
-
-            val status = getCallStatus(callId)
-            logger.debug { "[$name] Call $callId status: ${status?.status}, answeredBy: ${status?.answeredBy}, elapsed: $elapsed" }
-
-            when (status?.status) {
-                CallStatus.IN_PROGRESS -> {
-                    // If machine detection is enabled, wait for human detection
-                    if (options.machineDetection != MachineDetectionMode.DISABLED) {
-                        when (status.answeredBy) {
-                            AnsweredBy.HUMAN, AnsweredBy.UNKNOWN -> {
-                                // UNKNOWN means AMD finished but couldn't determine - treat as human
-                                // This commonly happens with trial accounts after user presses key
-                                // Apply postAnswerDelay for trial accounts or other scenarios needing extra wait
-                                logger.info { "[$name] Call $callId answered (answeredBy: ${status.answeredBy})" }
+                    when (status?.status) {
+                        CallStatus.IN_PROGRESS -> {
+                            // If machine detection is enabled, wait for human detection
+                            if (options.machineDetection != MachineDetectionMode.DISABLED) {
+                                when (status.answeredBy) {
+                                    AnsweredBy.HUMAN, AnsweredBy.UNKNOWN -> {
+                                        // UNKNOWN means AMD finished but couldn't determine - treat as human
+                                        // This commonly happens with trial accounts after user presses key
+                                        // Apply postAnswerDelay for trial accounts or other scenarios needing extra wait
+                                        logger.info { "[$name] Call $callId answered (answeredBy: ${status.answeredBy})" }
+                                        status.answeredBy?.let { span?.setAttribute("phonecall.answered_by", it.name) }
+                                        if (options.postAnswerDelay > Duration.ZERO) {
+                                            logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
+                                            delay(options.postAnswerDelay)
+                                        }
+                                        span?.setStatus(StatusCode.OK)
+                                        return callId
+                                    }
+                                    AnsweredBy.MACHINE_START, AnsweredBy.MACHINE_END_BEEP,
+                                    AnsweredBy.MACHINE_END_SILENCE, AnsweredBy.MACHINE_END_OTHER -> {
+                                        // Still return the call ID, let caller decide what to do
+                                        logger.info { "[$name] Call $callId answered by machine (answeredBy: ${status.answeredBy})" }
+                                        status.answeredBy?.let { span?.setAttribute("phonecall.answered_by", it.name) }
+                                        if (options.postAnswerDelay > Duration.ZERO) {
+                                            logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
+                                            delay(options.postAnswerDelay)
+                                        }
+                                        span?.setStatus(StatusCode.OK)
+                                        return callId
+                                    }
+                                    AnsweredBy.FAX -> {
+                                        logger.warn { "[$name] Call $callId answered by fax machine" }
+                                        span?.setAttribute("phonecall.answered_by", "FAX")
+                                        span?.setStatus(StatusCode.ERROR, "Fax machine detected")
+                                        throw PhoneCallException("Fax machine detected")
+                                    }
+                                    null -> {
+                                        // Still waiting for AMD to complete
+                                        logger.trace { "[$name] Call $callId IN_PROGRESS but AMD not yet complete" }
+                                    }
+                                }
+                            } else {
+                                // No machine detection - apply postAnswerDelay if set
+                                logger.info { "[$name] Call $callId connected (no AMD)" }
                                 if (options.postAnswerDelay > Duration.ZERO) {
                                     logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
                                     delay(options.postAnswerDelay)
                                 }
+                                span?.setStatus(StatusCode.OK)
                                 return callId
                             }
-                            AnsweredBy.MACHINE_START, AnsweredBy.MACHINE_END_BEEP,
-                            AnsweredBy.MACHINE_END_SILENCE, AnsweredBy.MACHINE_END_OTHER -> {
-                                // Still return the call ID, let caller decide what to do
-                                logger.info { "[$name] Call $callId answered by machine (answeredBy: ${status.answeredBy})" }
-                                if (options.postAnswerDelay > Duration.ZERO) {
-                                    logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
-                                    delay(options.postAnswerDelay)
-                                }
-                                return callId
-                            }
-                            AnsweredBy.FAX -> {
-                                logger.warn { "[$name] Call $callId answered by fax machine" }
-                                throw PhoneCallException("Fax machine detected")
-                            }
-                            null -> {
-                                // Still waiting for AMD to complete
-                                logger.trace { "[$name] Call $callId IN_PROGRESS but AMD not yet complete" }
-                            }
                         }
-                    } else {
-                        // No machine detection - apply postAnswerDelay if set
-                        logger.info { "[$name] Call $callId connected (no AMD)" }
-                        if (options.postAnswerDelay > Duration.ZERO) {
-                            logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
-                            delay(options.postAnswerDelay)
+                        CallStatus.COMPLETED, CallStatus.BUSY, CallStatus.NO_ANSWER,
+                        CallStatus.REJECTED, CallStatus.CANCELED, CallStatus.FAILED -> {
+                            logger.warn { "[$name] Call $callId ended before connecting: ${status.status}" }
+                            span?.setAttribute("phonecall.status", status.status.name)
+                            span?.setStatus(StatusCode.ERROR, "Call ended before connecting: ${status.status}")
+                            throw PhoneCallException("Call ended before connecting: ${status.status}")
                         }
-                        return callId
+                        else -> {
+                            // Keep waiting (QUEUED, RINGING)
+                            logger.trace { "[$name] Call $callId still waiting: ${status?.status}" }
+                        }
                     }
                 }
-                CallStatus.COMPLETED, CallStatus.BUSY, CallStatus.NO_ANSWER,
-                CallStatus.REJECTED, CallStatus.CANCELED, CallStatus.FAILED -> {
-                    logger.warn { "[$name] Call $callId ended before connecting: ${status.status}" }
-                    throw PhoneCallException("Call ended before connecting: ${status.status}")
-                }
-                else -> {
-                    // Keep waiting (QUEUED, RINGING)
-                    logger.trace { "[$name] Call $callId still waiting: ${status?.status}" }
-                }
-            }
-        }
 
-        logger.error { "[$name] Call $callId timed out waiting for answer after $elapsed" }
-        throw PhoneCallException("Call timed out waiting for answer")
+                logger.error { "[$name] Call $callId timed out waiting for answer after $elapsed" }
+                span?.setStatus(StatusCode.ERROR, "Call timed out waiting for answer")
+                throw PhoneCallException("Call timed out waiting for answer")
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to start call: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
     override suspend fun speak(callId: String, text: String, voice: TtsVoice) {
         logger.debug { "[$name] speak() called for call $callId, text length: ${text.length} chars" }
-        val twiml = buildTwimlInternal {
-            say(text, voice)
-            // Keep call alive after speaking - use a long pause
-            appendLine("""<Pause length="3600"/>""")
-        }
-        logger.trace { "[$name] TwiML for speak: $twiml" }
-        updateCallWithTwiml(callId, twiml)
-        logger.debug { "[$name] TwiML sent for call $callId" }
 
-        // Estimate TTS duration: ~150 words per minute, average 5 chars per word
-        // So roughly 750 chars per minute, or ~80ms per character
-        val estimatedDuration = (text.length * 80).milliseconds
-        logger.debug { "[$name] Waiting $estimatedDuration for TTS to complete" }
-        delay(estimatedDuration)
-        logger.debug { "[$name] speak() completed for call $callId" }
+        val span = tracer?.spanBuilder("phonecall.speak")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "speak")
+            ?.setAttribute("phonecall.call_id", callId)
+            ?.setAttribute("phonecall.text_length", text.length.toLong())
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.setAttribute("phonecall.voice", voice.name ?: voice.gender.name)
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val twiml = buildTwimlInternal {
+                    say(text, voice)
+                    // Keep call alive after speaking - use a long pause
+                    appendLine("""<Pause length="3600"/>""")
+                }
+                logger.trace { "[$name] TwiML for speak: $twiml" }
+
+                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    updateCallWithTwiml(callId, twiml)
+                }
+                logger.debug { "[$name] TwiML sent for call $callId" }
+
+                // Estimate TTS duration: ~150 words per minute, average 5 chars per word
+                // So roughly 750 chars per minute, or ~80ms per character
+                val estimatedDuration = (text.length * 80).milliseconds
+                logger.debug { "[$name] Waiting $estimatedDuration for TTS to complete" }
+                delay(estimatedDuration)
+                logger.debug { "[$name] speak() completed for call $callId" }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to speak: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
     override suspend fun playAudioUrl(callId: String, url: String, loop: Int) {
-        val twiml = buildTwimlInternal {
-            appendLine("""  <Play loop="$loop">${escapeXml(url)}</Play>""")
-            // Keep call alive after playing
-            appendLine("""  <Pause length="3600"/>""")
+        val span = tracer?.spanBuilder("phonecall.play_audio")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "play_audio")
+            ?.setAttribute("phonecall.call_id", callId)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.setAttribute("phonecall.audio_url", url)
+            ?.setAttribute("phonecall.loop", loop.toLong())
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val twiml = buildTwimlInternal {
+                    appendLine("""  <Play loop="$loop">${escapeXml(url)}</Play>""")
+                    // Keep call alive after playing
+                    appendLine("""  <Pause length="3600"/>""")
+                }
+
+                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    updateCallWithTwiml(callId, twiml)
+                }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to play audio: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
-        updateCallWithTwiml(callId, twiml)
     }
 
     override suspend fun playAudio(callId: String, audio: TypedData) {
@@ -460,62 +559,219 @@ public class TwilioPhoneCallService(
     }
 
     override suspend fun sendDtmf(callId: String, digits: String) {
-        val twiml = buildTwimlInternal {
-            appendLine("""<Play digits="$digits"/>""")
+        val span = tracer?.spanBuilder("phonecall.send_dtmf")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "send_dtmf")
+            ?.setAttribute("phonecall.call_id", callId)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.setAttribute("phonecall.digits", digits)
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val twiml = buildTwimlInternal {
+                    appendLine("""<Play digits="$digits"/>""")
+                }
+
+                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    updateCallWithTwiml(callId, twiml)
+                }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to send DTMF: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
-        updateCallWithTwiml(callId, twiml)
     }
 
     override suspend fun hold(callId: String) {
-        val twiml = buildTwimlInternal {
-            appendLine("""<Play loop="0">http://com.twilio.sounds.music.s3.amazonaws.com/hold-music.mp3</Play>""")
+        val span = tracer?.spanBuilder("phonecall.hold")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "hold")
+            ?.setAttribute("phonecall.call_id", callId)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val twiml = buildTwimlInternal {
+                    appendLine("""<Play loop="0">http://com.twilio.sounds.music.s3.amazonaws.com/hold-music.mp3</Play>""")
+                }
+
+                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    updateCallWithTwiml(callId, twiml)
+                }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to hold call: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
-        updateCallWithTwiml(callId, twiml)
     }
 
     override suspend fun resume(callId: String) {
-        // Resume by providing new instructions
-        val twiml = buildTwimlInternal {
-            appendLine("""<Pause length="3600"/>""")
+        val span = tracer?.spanBuilder("phonecall.resume")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "resume")
+            ?.setAttribute("phonecall.call_id", callId)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                // Resume by providing new instructions
+                val twiml = buildTwimlInternal {
+                    appendLine("""<Pause length="3600"/>""")
+                }
+
+                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    updateCallWithTwiml(callId, twiml)
+                }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to resume call: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
-        updateCallWithTwiml(callId, twiml)
     }
 
     override suspend fun hangup(callId: String) {
         logger.info { "[$name] Hanging up call $callId" }
-        val response = client.submitForm(
-            url = "$baseUrl/Calls/$callId.json",
-            formParameters = Parameters.build {
-                append("Status", "completed")
-            }
-        )
 
-        if (!response.status.isSuccess()) {
-            val errorMessage = response.bodyAsText()
-            logger.error { "[$name] Failed to hangup call $callId: $errorMessage" }
-            throw PhoneCallException("Failed to hangup call: $errorMessage")
+        val span = tracer?.spanBuilder("phonecall.hangup")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "hangup")
+            ?.setAttribute("phonecall.call_id", callId)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    client.submitForm(
+                        url = "$baseUrl/Calls/$callId.json",
+                        formParameters = Parameters.build {
+                            append("Status", "completed")
+                        }
+                    )
+                }
+
+                if (!response.status.isSuccess()) {
+                    val errorMessage = response.bodyAsText()
+                    logger.error { "[$name] Failed to hangup call $callId: $errorMessage" }
+                    span?.setStatus(StatusCode.ERROR, "Failed to hangup call: HTTP ${response.status.value}")
+                    throw PhoneCallException("Failed to hangup call: $errorMessage")
+                }
+                logger.debug { "[$name] Call $callId hangup successful" }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to hangup call: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
-        logger.debug { "[$name] Call $callId hangup successful" }
     }
 
     override suspend fun getCallStatus(callId: String): CallInfo? {
-        val response = client.get("$baseUrl/Calls/$callId.json")
+        val span = tracer?.spanBuilder("phonecall.get_status")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "get_status")
+            ?.setAttribute("phonecall.call_id", callId)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.startSpan()
 
-        if (response.status == HttpStatusCode.NotFound) {
-            return null
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    client.get("$baseUrl/Calls/$callId.json")
+                }
+
+                if (response.status == HttpStatusCode.NotFound) {
+                    span?.setAttribute("phonecall.found", false)
+                    span?.setStatus(StatusCode.OK)
+                    return null
+                }
+
+                if (!response.status.isSuccess()) {
+                    val errorMessage = response.bodyAsText()
+                    span?.setStatus(StatusCode.ERROR, "Failed to get call status: HTTP ${response.status.value}")
+                    throw PhoneCallException("Failed to get call status: $errorMessage")
+                }
+
+                val body = response.bodyAsText()
+                val callInfo = parseTwilioCallResponse(body)
+
+                span?.setAttribute("phonecall.found", true)
+                callInfo?.status?.let { span?.setAttribute("phonecall.status", it.name) }
+                span?.setStatus(StatusCode.OK)
+
+                return callInfo
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to get call status: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
-
-        if (!response.status.isSuccess()) {
-            val errorMessage = response.bodyAsText()
-            throw PhoneCallException("Failed to get call status: $errorMessage")
-        }
-
-        val body = response.bodyAsText()
-        return parseTwilioCallResponse(body)
     }
 
     override suspend fun updateCall(callId: String, instructions: CallInstructions) {
-        updateCallWithTwiml(callId, renderInstructions(instructions))
+        val span = tracer?.spanBuilder("phonecall.update")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "update")
+            ?.setAttribute("phonecall.call_id", callId)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    updateCallWithTwiml(callId, renderInstructions(instructions))
+                }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to update call: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
     /**
@@ -526,19 +782,45 @@ public class TwilioPhoneCallService(
      */
     public suspend fun updateCallRaw(callId: String, instructions: String) {
         logger.debug { "[$name] Updating call $callId with TwiML" }
-        val response = client.submitForm(
-            url = "$baseUrl/Calls/$callId.json",
-            formParameters = Parameters.build {
-                append("Twiml", instructions)
-            }
-        )
 
-        if (!response.status.isSuccess()) {
-            val responseBody = response.bodyAsText()
-            logger.error { "[$name] Failed to update call $callId: $responseBody" }
-            throw PhoneCallException("Failed to update call: $responseBody")
+        val span = tracer?.spanBuilder("phonecall.update_raw")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "update_raw")
+            ?.setAttribute("phonecall.call_id", callId)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    client.submitForm(
+                        url = "$baseUrl/Calls/$callId.json",
+                        formParameters = Parameters.build {
+                            append("Twiml", instructions)
+                        }
+                    )
+                }
+
+                if (!response.status.isSuccess()) {
+                    val responseBody = response.bodyAsText()
+                    logger.error { "[$name] Failed to update call $callId: $responseBody" }
+                    span?.setStatus(StatusCode.ERROR, "Failed to update call: HTTP ${response.status.value}")
+                    throw PhoneCallException("Failed to update call: $responseBody")
+                }
+                logger.debug { "[$name] Call $callId TwiML update successful" }
+
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to update call: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
-        logger.debug { "[$name] Call $callId TwiML update successful" }
     }
 
     private suspend fun updateCallWithTwiml(callId: String, twiml: String) {
@@ -921,20 +1203,47 @@ public class TwilioPhoneCallService(
      * @throws PhoneCallException if the phone number is not found
      */
     private suspend fun lookupPhoneNumberSid(phoneNumber: String): String {
-        val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
-        val response = client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
+        val span = tracer?.spanBuilder("phonecall.lookup_number_sid")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("phonecall.operation", "lookup_number_sid")
+            ?.setAttribute("phonecall.phone_number", phoneNumber)
+            ?.setAttribute("phonecall.provider", "twilio")
+            ?.startSpan()
 
-        if (!response.status.isSuccess()) {
-            val errorBody = response.bodyAsText()
-            throw PhoneCallException("Failed to look up Twilio phone number: $errorBody")
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
+                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                    client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
+                }
+
+                if (!response.status.isSuccess()) {
+                    val errorBody = response.bodyAsText()
+                    span?.setStatus(StatusCode.ERROR, "Failed to lookup phone number: HTTP ${response.status.value}")
+                    throw PhoneCallException("Failed to look up Twilio phone number: $errorBody")
+                }
+
+                val responseBody = response.bodyAsText()
+                // Parse the SID from the JSON response
+                // Response format: {"incoming_phone_numbers": [{"sid": "PN...", ...}], ...}
+                val sidMatch = Regex(""""sid"\s*:\s*"(PN[^"]+)"""").find(responseBody)
+                val sid = sidMatch?.groupValues?.get(1)
+                    ?: throw PhoneCallException("Phone number $phoneNumber not found in Twilio account $account")
+
+                span?.setAttribute("phonecall.phone_number_sid", sid)
+                span?.setStatus(StatusCode.OK)
+                return sid
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to lookup phone number: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
-
-        val responseBody = response.bodyAsText()
-        // Parse the SID from the JSON response
-        // Response format: {"incoming_phone_numbers": [{"sid": "PN...", ...}], ...}
-        val sidMatch = Regex(""""sid"\s*:\s*"(PN[^"]+)"""").find(responseBody)
-        return sidMatch?.groupValues?.get(1)
-            ?: throw PhoneCallException("Phone number $phoneNumber not found in Twilio account $account")
     }
 
     private fun parseFormUrlEncoded(body: String): Map<String, String> {

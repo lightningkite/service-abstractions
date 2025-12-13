@@ -14,6 +14,9 @@ import com.lightningkite.services.email.ReceivedAttachment
 import com.lightningkite.services.email.ReceivedEmail
 import com.lightningkite.toEmailAddress
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
 import kotlinx.io.readByteArray
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -85,6 +88,8 @@ public class MailgunEmailInboundService(
     private val domain: String = "",
 ) : EmailInboundService {
 
+    private val tracer: Tracer? = context.openTelemetry?.getTracer("email-inbound-mailgun")
+
     public companion object {
         init {
             EmailInboundService.Settings.Companion.register("mailgun") { name, url, context ->
@@ -134,14 +139,53 @@ public class MailgunEmailInboundService(
             headers: Map<String, List<String>>,
             body: TypedData
         ): ReceivedEmail {
-            // Parse form data from body
-            val formData = parseFormData(body)
+            val span = tracer?.spanBuilder("email.webhook.parse")
+                ?.setSpanKind(SpanKind.SERVER)
+                ?.setAttribute("email.operation", "webhook_parse")
+                ?.setAttribute("email.provider", "mailgun")
+                ?.setAttribute("email.webhook.event_type", "inbound")
+                ?.startSpan()
 
-            // Verify signature (required for all webhooks)
-            verifySignature(formData, apiKey)
+            return try {
+                val scope = span?.makeCurrent()
+                try {
+                    // Parse form data from body
+                    val formData = parseFormData(body)
 
-            // Parse email fields
-            return parseMailgunEmail(formData, body.mediaType)
+                    // Verify signature (required for all webhooks)
+                    verifySignature(formData, apiKey)
+
+                    // Parse email fields
+                    val receivedEmail = parseMailgunEmail(formData, body.mediaType)
+
+                    // Add email metadata to span
+                    span?.setAttribute("email.from", receivedEmail.from.value.toString())
+                    span?.setAttribute("email.to", receivedEmail.to.joinToString(", ") { it.value.toString() })
+                    span?.setAttribute("email.subject", receivedEmail.subject)
+                    span?.setAttribute("email.message_id", receivedEmail.messageId)
+                    if (receivedEmail.attachments.isNotEmpty()) {
+                        span?.setAttribute("email.attachments.count", receivedEmail.attachments.size.toLong())
+                    }
+                    receivedEmail.spamScore?.let { score ->
+                        span?.setAttribute("email.spam_score", score)
+                    }
+
+                    span?.setStatus(StatusCode.OK)
+                    receivedEmail
+                } finally {
+                    scope?.close()
+                }
+            } catch (e: SecurityException) {
+                span?.setStatus(StatusCode.ERROR, "Webhook signature verification failed: ${e.message}")
+                span?.recordException(e)
+                throw e
+            } catch (e: Exception) {
+                span?.setStatus(StatusCode.ERROR, "Failed to parse Mailgun webhook: ${e.message}")
+                span?.recordException(e)
+                throw e
+            } finally {
+                span?.end()
+            }
         }
 
         override suspend fun onSchedule() {

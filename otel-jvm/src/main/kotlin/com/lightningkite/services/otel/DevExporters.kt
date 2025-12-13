@@ -24,10 +24,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * @property color Whether to use ANSI color codes in output (default: true)
  * @property output Where to write output - null for stdout, or a file path
+ * @property debounceWindowMs Debounce window in milliseconds (null = no debouncing)
+ * @property debounceMinCount Minimum occurrences to show aggregate (default: 1)
  */
 internal data class DevExporterConfig(
     val color: Boolean = true,
-    val output: File? = null
+    val output: File? = null,
+    val debounceWindowMs: Long? = null,
+    val debounceMinCount: Int = 1
 ) {
     private var _writer: PrintWriter? = null
 
@@ -45,6 +49,10 @@ internal data class DevExporterConfig(
         output?.let { _writer?.close() }
     }
 
+    // Shared buffer for correlating logs with spans
+    // Map of traceId -> (spanId -> List<LogRecordData>)
+    val logBuffer = ConcurrentHashMap<String, ConcurrentHashMap<String, MutableList<LogRecordData>>>()
+
     // ANSI codes - empty strings if color is disabled
     val RESET = if (color) "\u001B[0m" else ""
     val RED = if (color) "\u001B[31m" else ""
@@ -54,6 +62,7 @@ internal data class DevExporterConfig(
     val DIM = if (color) "\u001B[2m" else ""
     val BOLD = if (color) "\u001B[1m" else ""
     val YELLOW = if (color) "\u001B[33m" else ""
+    val MAGENTA = if (color) "\u001B[35m" else ""
 }
 
 /**
@@ -134,6 +143,9 @@ internal class DevSpanExporter(private val config: DevExporterConfig = DevExport
         out.println("${config.DIM}$timestamp${config.RESET} ${config.DIM}trace=${rootSpan.traceId.take(8)}…${config.RESET}")
         printSpanNode(rootSpan, spansByParent, prefix = "", isLast = true)
         out.println() // Blank line between traces
+
+        // Clean up buffered logs for this trace
+        config.logBuffer.remove(rootSpan.traceId)
     }
 
     private fun printSpanNode(
@@ -193,6 +205,32 @@ internal class DevSpanExporter(private val config: DevExporterConfig = DevExport
                 if (exType != null || exMsg != null) {
                     out.println("$childPrefix  ${config.RED}$exType: $exMsg${config.RESET}")
                 }
+            }
+        }
+
+        // Print logs associated with this span
+        val logs = config.logBuffer[span.traceId]?.get(span.spanId)?.sortedBy { it.timestampEpochNanos }
+        if (!logs.isNullOrEmpty()) {
+            for (log in logs) {
+                val logOffsetNanos = log.timestampEpochNanos - span.startEpochNanos
+                val logOffsetStr = formatDuration(logOffsetNanos)
+
+                val severityNum = log.severity.severityNumber
+                val (levelColor, levelStr) = when {
+                    severityNum >= 21 -> config.RED to "FATAL"
+                    severityNum >= 17 -> config.RED to "ERROR"
+                    severityNum >= 13 -> config.YELLOW to "WARN"
+                    severityNum >= 9 -> config.MAGENTA to "INFO"
+                    severityNum >= 5 -> config.CYAN to "DEBUG"
+                    severityNum >= 1 -> config.DIM to "TRACE"
+                    else -> "" to "LOG"
+                }
+
+                @Suppress("DEPRECATION")
+                val body = log.body?.asString() ?: ""
+                val displayBody = if (body.length > 100) body.take(97) + "..." else body
+
+                out.println("$childPrefix$levelColor▸ $levelStr${config.RESET} $displayBody ${config.DIM}+$logOffsetStr${config.RESET}")
             }
         }
 
@@ -300,50 +338,59 @@ internal class DevMetricExporter(private val config: DevExporterConfig = DevExpo
 }
 
 /**
- * Development-mode log exporter with readable, colorized console output.
+ * Development-mode log exporter that buffers logs for display within span trees.
+ *
+ * Instead of printing logs immediately, this exporter buffers them by trace/span ID
+ * so they can be displayed inline with their associated spans by DevSpanExporter.
  */
 internal class DevLogExporter(private val config: DevExporterConfig = DevExporterConfig()) : LogRecordExporter {
     private val isShutdown = AtomicBoolean()
-
-    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
-        .withZone(ZoneId.systemDefault())
 
     override fun export(logs: Collection<LogRecordData>): CompletableResultCode {
         if (isShutdown.get()) {
             return CompletableResultCode.ofFailure()
         }
 
-        val out = config.writer
+        // Buffer logs by trace and span ID for correlation with spans
         for (log in logs) {
-            val timestamp = timeFormatter.format(Instant.ofEpochMilli(log.timestampEpochNanos / 1_000_000))
+            if (log.spanContext.isValid) {
+                val traceId = log.spanContext.traceId
+                val spanId = log.spanContext.spanId
 
-            // Severity numbers: TRACE=1-4, DEBUG=5-8, INFO=9-12, WARN=13-16, ERROR=17-20, FATAL=21-24
-            val severityNum = log.severity.severityNumber
-            val (levelColor, levelStr) = when {
-                severityNum >= 21 -> config.RED to "FATAL"
-                severityNum >= 17 -> config.RED to "ERROR"
-                severityNum >= 13 -> config.YELLOW to "WARN "
-                severityNum >= 9 -> config.BLUE to "INFO "
-                severityNum >= 5 -> config.CYAN to "DEBUG"
-                severityNum >= 1 -> config.DIM to "TRACE"
-                else -> "" to "LOG  "
+                config.logBuffer.computeIfAbsent(traceId) { ConcurrentHashMap() }
+                    .computeIfAbsent(spanId) { mutableListOf() }
+                    .add(log)
+            } else {
+                // Log without span context - print immediately
+                printOrphanLog(log)
             }
-
-            @Suppress("DEPRECATION")
-            val body = log.body?.asString() ?: ""
-
-            // Truncate very long messages
-            val displayBody = if (body.length > 500) body.take(497) + "..." else body
-
-            // Show trace context if present
-            val traceInfo = if (log.spanContext.isValid) {
-                " ${config.DIM}[${log.spanContext.traceId.take(8)}…]${config.RESET}"
-            } else ""
-
-            out.println("${config.DIM}$timestamp${config.RESET} $levelColor${config.BOLD}$levelStr${config.RESET}$traceInfo $displayBody")
         }
 
         return CompletableResultCode.ofSuccess()
+    }
+
+    private fun printOrphanLog(log: LogRecordData) {
+        val out = config.writer
+        val timestamp = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
+            .withZone(ZoneId.systemDefault())
+            .format(Instant.ofEpochMilli(log.timestampEpochNanos / 1_000_000))
+
+        val severityNum = log.severity.severityNumber
+        val (levelColor, levelStr) = when {
+            severityNum >= 21 -> config.RED to "FATAL"
+            severityNum >= 17 -> config.RED to "ERROR"
+            severityNum >= 13 -> config.YELLOW to "WARN "
+            severityNum >= 9 -> config.BLUE to "INFO "
+            severityNum >= 5 -> config.CYAN to "DEBUG"
+            severityNum >= 1 -> config.DIM to "TRACE"
+            else -> "" to "LOG  "
+        }
+
+        @Suppress("DEPRECATION")
+        val body = log.body?.asString() ?: ""
+        val displayBody = if (body.length > 500) body.take(497) + "..." else body
+
+        out.println("${config.DIM}$timestamp${config.RESET} $levelColor${config.BOLD}$levelStr${config.RESET} $displayBody")
     }
 
     override fun flush(): CompletableResultCode = CompletableResultCode.ofSuccess()
@@ -351,5 +398,223 @@ internal class DevLogExporter(private val config: DevExporterConfig = DevExporte
     override fun shutdown(): CompletableResultCode {
         isShutdown.set(true)
         return CompletableResultCode.ofSuccess()
+    }
+}
+
+/**
+ * Debounced development-mode span exporter that aggregates high-frequency traces.
+ *
+ * Behavior:
+ * - First occurrence of a span name: Prints immediately in full detail
+ * - Subsequent occurrences within debounce window: Aggregated silently
+ * - When window expires: Prints aggregate summary of additional occurrences
+ *
+ * This provides immediate feedback for new operations while preventing spam from
+ * high-frequency operations like websocket messages.
+ *
+ * Features:
+ * - Aggregation by root span name
+ * - Configurable debounce window (e.g., 30 seconds)
+ * - Statistics: count, min/avg/max duration, error rate
+ * - Automatic window expiration and flushing
+ *
+ * Example with 30s window and websocket messages firing every second:
+ * - t=0s: First websocket.message prints immediately
+ * - t=1-29s: 29 more websocket.message spans aggregate silently
+ * - t=30s: Aggregate summary prints: "29 additional occurrences"
+ */
+internal class DebouncedDevSpanExporter(private val config: DevExporterConfig = DevExporterConfig()) : SpanExporter {
+    private val isShutdown = AtomicBoolean()
+    private val delegate = DevSpanExporter(config)
+
+    private data class AggregateStats(
+        var count: Int = 0,
+        var minDurationNanos: Long = Long.MAX_VALUE,
+        var maxDurationNanos: Long = Long.MIN_VALUE,
+        var totalDurationNanos: Long = 0,
+        var errorCount: Int = 0,
+        var firstSeenMs: Long = System.currentTimeMillis(),
+        var lastSeenMs: Long = System.currentTimeMillis(),
+        var sampleTraceIds: MutableList<String> = mutableListOf(),
+        var firstTrace: Pair<SpanData, List<SpanData>>? = null
+    )
+
+    // Map of root span name -> aggregate stats
+    private val aggregates = ConcurrentHashMap<String, AggregateStats>()
+
+    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
+        .withZone(ZoneId.systemDefault())
+
+    // Background thread for window expiration
+    private val expirationThread = Thread({
+        while (!isShutdown.get()) {
+            try {
+                Thread.sleep(100) // Check every 100ms
+                checkExpiredWindows()
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                break
+            }
+        }
+        // Flush all remaining aggregates on shutdown
+        flushAllAggregates()
+    }, "debounced-otel-expiration").apply {
+        isDaemon = true
+        start()
+    }
+
+    override fun export(spans: MutableCollection<SpanData>): CompletableResultCode {
+        if (isShutdown.get()) {
+            return CompletableResultCode.ofFailure()
+        }
+
+        val debounceWindow = config.debounceWindowMs
+        if (debounceWindow == null) {
+            // No debouncing - delegate directly
+            return delegate.export(spans)
+        }
+
+        for (span in spans) {
+            val isRoot = span.parentSpanId == "0000000000000000" || span.parentSpanId.isEmpty()
+            if (!isRoot) continue // Only track root spans for aggregation
+
+            val spanName = span.name
+            val durationNanos = span.endEpochNanos - span.startEpochNanos
+            val isError = span.status.statusCode == StatusCode.ERROR
+            val now = System.currentTimeMillis()
+
+            val isFirstOccurrence = aggregates.compute(spanName) { _, existing ->
+                if (existing != null && (now - existing.firstSeenMs) >= debounceWindow) {
+                    // Window expired - flush old aggregate and start new window
+                    flushAggregate(spanName, existing)
+                    null // Will create new stats below
+                } else {
+                    existing
+                }
+            } == null
+
+            if (isFirstOccurrence) {
+                // First occurrence - print immediately and start tracking
+                val allSpans = spans.toList()
+                delegate.export((mutableListOf(span) + allSpans).toMutableList())
+
+                aggregates[spanName] = AggregateStats().also { newStats ->
+                    newStats.count = 1
+                    newStats.minDurationNanos = durationNanos
+                    newStats.maxDurationNanos = durationNanos
+                    newStats.totalDurationNanos = durationNanos
+                    newStats.errorCount = if (isError) 1 else 0
+                    newStats.firstSeenMs = now
+                    newStats.lastSeenMs = now
+                    newStats.sampleTraceIds.add(span.traceId)
+                    newStats.firstTrace = span to allSpans
+                }
+            } else {
+                // Subsequent occurrence - aggregate silently
+                aggregates.computeIfPresent(spanName) { _, stats ->
+                    stats.count++
+                    stats.minDurationNanos = minOf(stats.minDurationNanos, durationNanos)
+                    stats.maxDurationNanos = maxOf(stats.maxDurationNanos, durationNanos)
+                    stats.totalDurationNanos += durationNanos
+                    if (isError) stats.errorCount++
+                    stats.lastSeenMs = now
+                    if (stats.sampleTraceIds.size < 5) {
+                        stats.sampleTraceIds.add(span.traceId)
+                    }
+                    stats
+                }
+            }
+        }
+
+        return CompletableResultCode.ofSuccess()
+    }
+
+    private fun checkExpiredWindows() {
+        val debounceWindow = config.debounceWindowMs ?: return
+        val now = System.currentTimeMillis()
+
+        val expired = aggregates.filterValues { stats ->
+            (now - stats.lastSeenMs) >= debounceWindow
+        }
+
+        expired.forEach { (name, stats) ->
+            if (aggregates.remove(name, stats)) {
+                flushAggregate(name, stats)
+            }
+        }
+    }
+
+    private fun flushAllAggregates() {
+        aggregates.forEach { (name, stats) ->
+            flushAggregate(name, stats)
+        }
+        aggregates.clear()
+    }
+
+    private fun flushAggregate(name: String, stats: AggregateStats) {
+        // Only print aggregate if there were additional occurrences after the first
+        // (First occurrence is always printed immediately)
+        if (stats.count <= 1) {
+            return
+        }
+
+        // Check minimum count threshold (excluding the first occurrence)
+        if (stats.count < config.debounceMinCount) {
+            return
+        }
+
+        val out = config.writer
+        val timestamp = timeFormatter.format(Instant.ofEpochMilli(stats.lastSeenMs))
+        val avgDurationNanos = stats.totalDurationNanos / stats.count
+        val windowDurationMs = stats.lastSeenMs - stats.firstSeenMs
+        val windowDurationSec = windowDurationMs / 1000.0
+
+        val marker = if (stats.errorCount > 0) "${config.RED}✗${config.RESET}" else "${config.GREEN}✓${config.RESET}"
+        val errorRate = (stats.errorCount.toDouble() / stats.count * 100)
+        val additionalCount = stats.count - 1 // Exclude first occurrence already printed
+
+        out.println("${config.DIM}$timestamp${config.RESET} ${config.DIM}trace=${stats.sampleTraceIds.lastOrNull()?.take(8) ?: "unknown"}…${config.RESET}")
+        out.println("  $marker ${config.BOLD}$name${config.RESET} ${config.DIM}(${additionalCount} additional)${config.RESET}")
+        out.println("    ${config.CYAN}↳ Summary:${config.RESET} ${config.BOLD}${stats.count}${config.RESET} total in ${config.DIM}${String.format("%.1fs", windowDurationSec)}${config.RESET}")
+        out.println("      ${config.DIM}•${config.RESET} avg: ${config.BOLD}${formatDuration(avgDurationNanos)}${config.RESET}, min: ${formatDuration(stats.minDurationNanos)}, max: ${formatDuration(stats.maxDurationNanos)}")
+
+        if (stats.errorCount > 0) {
+            out.println("      ${config.DIM}•${config.RESET} errors: ${config.RED}${stats.errorCount}${config.RESET} ${config.DIM}(${String.format("%.1f%%", errorRate)})${config.RESET}")
+        }
+
+        if (stats.sampleTraceIds.size > 1) {
+            val sampleIds = stats.sampleTraceIds.takeLast(3).joinToString(", ") { it.take(8) + "…" }
+            out.println("      ${config.DIM}•${config.RESET} recent samples: ${config.DIM}$sampleIds${config.RESET}")
+        }
+
+        out.println() // Blank line between aggregates
+
+        // Clean up buffered logs for these traces
+        stats.sampleTraceIds.forEach { traceId ->
+            config.logBuffer.remove(traceId)
+        }
+    }
+
+    private fun formatDuration(nanos: Long): String = when {
+        nanos >= 60_000_000_000 -> String.format("%.1fm", nanos / 60_000_000_000.0)
+        nanos >= 1_000_000_000 -> String.format("%.2fs", nanos / 1_000_000_000.0)
+        nanos >= 1_000_000 -> String.format("%.1fms", nanos / 1_000_000.0)
+        nanos >= 1_000 -> String.format("%.1fµs", nanos / 1_000.0)
+        else -> "${nanos}ns"
+    }
+
+    override fun flush(): CompletableResultCode {
+        flushAllAggregates()
+        return delegate.flush()
+    }
+
+    override fun shutdown(): CompletableResultCode {
+        if (!isShutdown.compareAndSet(false, true)) {
+            return CompletableResultCode.ofSuccess()
+        }
+        expirationThread.interrupt()
+        expirationThread.join(5000)
+        flushAllAggregates()
+        return delegate.shutdown()
     }
 }

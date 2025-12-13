@@ -71,6 +71,24 @@ kotlin {
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
+        val nonJvmMain by creating {
+            dependsOn(commonMain)
+        }
+        val nativeMain by getting {
+            dependsOn(nonJvmMain)
+        }
+        val jsMain by getting {
+            dependsOn(nonJvmMain)
+        }
+        val androidMain by getting {
+            dependsOn(nonJvmMain)
+        }
+        val jvmMain by getting {
+            dependencies {
+                api(libs.openTelemetry.api)
+                api(libs.openTelemetry.kotlin)
+            }
+        }
     }
 }
 

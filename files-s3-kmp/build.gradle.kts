@@ -44,7 +44,6 @@ kotlin {
             dependencies {
                 api(project(path = ":files"))
                 api(project(path = ":http-client"))
-                api(awssdk.services.s3)
             }
             kotlin {
                 compilerOptions {
@@ -58,7 +57,6 @@ kotlin {
             dependencies {
                 implementation(libs.kotlinTest)
                 implementation(libs.coroutinesTesting)
-                implementation(project(":files-test"))
             }
             kotlin {
                 compilerOptions {
@@ -66,6 +64,17 @@ kotlin {
                     optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
                 }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
+            }
+        }
+        val jvmMain by getting {
+            dependencies {
+                api(awssdk.services.s3)
+                api(libs.openTelemetry.api)
+            }
+        }
+        val jvmTest by getting {
+            dependencies {
+                implementation(project(":files-test"))
             }
         }
     }

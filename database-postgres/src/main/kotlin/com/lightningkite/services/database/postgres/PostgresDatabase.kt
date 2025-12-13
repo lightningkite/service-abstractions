@@ -64,6 +64,7 @@ public class PostgresDatabase(
     private var _db = lazy(makeDb)
 
     public val db: Database get() = _db.value
+    internal val tracer by lazy { context.openTelemetry?.getTracer("database-postgres") }
 
     override suspend fun disconnect() {
         if (_db.isInitialized()) TransactionManager.closeAndUnregister(_db.value)
@@ -122,7 +123,8 @@ public class PostgresDatabase(
                     db,
                     name,
                     serializer,
-                    context.internalSerializersModule
+                    context.internalSerializersModule,
+                    tracer
                 )
             }
         } as Lazy<PostgresCollection<T>>).value
