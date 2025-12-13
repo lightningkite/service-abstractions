@@ -94,11 +94,11 @@ mongoDriver = { module = "org.mongodb:mongodb-driver-kotlin-coroutine", version 
 mongoDriverOtel = { module = "io.opentelemetry.instrumentation:opentelemetry-mongo-3.1", version = { ref = "openTelemetryInstrumentationAlpha" } }
 openSearchAws = { module = "software.amazon.awssdk:opensearch", version = { ref = "openSearchAws" } }
 openSearchJava = { module = "org.opensearch.client:opensearch-java", version = { ref = "openSearchJava" } }
-openTelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version = "1.56.0" }
-openTelemetry-exporter-logging = { module = "io.opentelemetry:opentelemetry-exporter-logging", version = "1.56.0" }
-openTelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version = "1.56.0" }
-openTelemetry-kotlin = { module = "io.opentelemetry:opentelemetry-extension-kotlin", version = "1.56.0" }
-openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = "1.56.0" }
+openTelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version = { ref = "openTelemetry" } }
+openTelemetry-exporter-logging = { module = "io.opentelemetry:opentelemetry-exporter-logging", version = { ref = "openTelemetry" } }
+openTelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version = { ref = "openTelemetry" } }
+openTelemetry-kotlin = { module = "io.opentelemetry:opentelemetry-extension-kotlin", version = { ref = "openTelemetry" } }
+openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = { ref = "openTelemetry" } }
 openTelemetryInstrumentation-logback = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version = "2.19.0-alpha" }
 openTelemetryInstrumentation-ktor = { module = "io.opentelemetry.instrumentation:opentelemetry-ktor-3.0", version = "2.21.0-alpha" }
 postgresql = { module = "org.postgresql:postgresql", version = { ref = "postgresql" } }
