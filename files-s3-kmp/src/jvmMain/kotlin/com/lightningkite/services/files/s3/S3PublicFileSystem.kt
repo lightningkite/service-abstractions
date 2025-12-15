@@ -13,6 +13,7 @@ import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.get
+import io.ktor.http.decodeURLPart
 import kotlinx.io.files.Path
 import javax.crypto.spec.SecretKeySpec
 import kotlin.time.Duration
@@ -153,7 +154,7 @@ public class S3PublicFileSystem(
     override fun parseInternalUrl(url: String): S3FileObject? {
         if (rootUrls.none { prefix -> url.startsWith(prefix) }) return null
         val path = url.substringAfter(rootUrls.first()).substringBefore('?')
-        return S3FileObject(this, Path(path))
+        return S3FileObject(this, Path(path.decodeURLPart()))
     }
 
     override fun parseExternalUrl(url: String): S3FileObject? {

@@ -1,4 +1,5 @@
 import com.lightningkite.deployhelpers.*
+import org.gradle.kotlin.dsl.project
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 
@@ -44,6 +45,7 @@ kotlin {
             dependencies {
                 api(project(path = ":files"))
                 api(project(path = ":http-client"))
+                compileOnly(project(path = ":otel-jvm"))
             }
             kotlin {
                 compilerOptions {

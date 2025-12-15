@@ -1,19 +1,13 @@
 package com.lightningkite.services.files.s3
 
-import aws.sdk.kotlin.services.s3.copyObject
-import aws.sdk.kotlin.services.s3.deleteObject
-import aws.sdk.kotlin.services.s3.headObject
-import aws.sdk.kotlin.services.s3.listObjectsV2
+import aws.sdk.kotlin.services.s3.*
 import aws.sdk.kotlin.services.s3.model.GetObjectRequest
 import aws.sdk.kotlin.services.s3.model.NoSuchKey
 import aws.sdk.kotlin.services.s3.model.PutObjectRequest
 import aws.sdk.kotlin.services.s3.presigners.presignGetObject
 import aws.sdk.kotlin.services.s3.presigners.presignPutObject
-import aws.sdk.kotlin.services.s3.putObject
-import aws.smithy.kotlin.runtime.collections.Attributes
 import aws.smithy.kotlin.runtime.content.ByteStream
 import aws.smithy.kotlin.runtime.content.toByteArray
-import aws.smithy.kotlin.runtime.http.request.header
 import aws.smithy.kotlin.runtime.time.epochMilliseconds
 import com.lightningkite.MediaType
 import com.lightningkite.services.data.Data
@@ -22,39 +16,46 @@ import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
 import com.lightningkite.services.http.client
 import com.lightningkite.services.otel.TelemetrySanitization
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.http.isSuccess
+import io.ktor.client.request.*
+import io.ktor.http.*
+import io.ktor.utils.io.charsets.encode
+import io.ktor.utils.io.core.canRead
+import io.ktor.utils.io.core.takeWhile
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.io.Source
 import kotlinx.io.files.Path
 import java.net.URLEncoder
-import kotlin.time.toKotlinInstant
 import kotlin.time.Duration
 import kotlin.time.Instant
-import kotlin.time.toJavaDuration
 
 /**
  * An implementation of [FileObject] that uses AWS S3 for storage.
  */
 public class S3FileObject(
     public val system: S3PublicFileSystem,
-    public val path: Path
+    public val path: Path,
 ) : FileObject {
-    
+
     /**
      * The Unix-style path for this file.
      */
     private val unixPath: String get() = path.toString().replace('\\', '/')
-    
-    override fun then(path: String): S3FileObject = S3FileObject(system, Path(this.path, path))
-    
+
+    override fun then(path: String): S3FileObject = S3FileObject(
+        system,
+        Path(
+            this.path,
+            path.decodeURLPart()
+                .also { if (it.contains("+")) throw IllegalArgumentException("File Path cannot contain '+'") }
+        )
+    )
+
     override val name: String get() = path.name
-    
+
     override val parent: FileObject?
         get() = path.parent?.let { S3FileObject(system, it) } ?: if (unixPath.isNotEmpty()) system.root else null
 
@@ -202,7 +203,7 @@ public class S3FileObject(
                         span?.setAttribute("file.size", len ?: -1L)
                         span?.setAttribute("file.content_type", it.contentType!!)
 
-                        if(len == null || len > 100_000 || len < 0) {
+                        if (len == null || len > 100_000 || len < 0) {
                             // copy to file first
                             TypedData(
                                 data = Data.Bytes(body.toByteArray()),
@@ -242,7 +243,10 @@ public class S3FileObject(
             ?.setAttribute("storage.system", "s3")
             ?.also { builder ->
                 if (other is S3FileObject) {
-                    builder.setAttribute("file.destination.path", TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath))
+                    builder.setAttribute(
+                        "file.destination.path",
+                        TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath)
+                    )
                     builder.setAttribute("file.destination.bucket", other.system.bucket)
                     builder.setAttribute("file.same_bucket", other.system.bucket == system.bucket)
                 }
@@ -307,15 +311,58 @@ public class S3FileObject(
         }
     }
 
-    /**
-     * Encodes a string for use in a URL path, preserving slashes.
-     */
-    private fun String.encodeURLPathSafe(): String = URLEncoder.encode(this, Charsets.UTF_8)
-        .replace("%2F", "/")
-        .replace("+", "%20")
+    private val URL_ALPHABET_CHARS = ((('a'..'z') + ('A'..'Z') + ('0'..'9'))).toSet()
+    private val VALID_PATH_PART = setOf('-', '.', '_', '/')
+
+    private fun Source.forEach(block: (Byte) -> Unit) {
+        takeWhile { buffer ->
+            while (buffer.canRead()) {
+                block(buffer.readByte())
+            }
+            true
+        }
+    }
+
+    private fun hexDigitToChar(digit: Int): Char = when (digit) {
+        in 0..9 -> '0' + digit
+        else -> 'A' + digit - 10
+    }
+
+    private fun Byte.percentEncode(): String {
+        val code = toInt() and 0xff
+        val array = CharArray(3)
+        array[0] = '%'
+        array[1] = hexDigitToChar(code shr 4)
+        array[2] = hexDigitToChar(code and 0xf)
+        return array.concatToString()
+    }
+
+    private fun String.aggressiveEncodeURLPath(): String = buildString {
+        val charset = io.ktor.utils.io.charsets.Charsets.UTF_8
+
+        var index = 0
+        while (index < this@aggressiveEncodeURLPath.length) {
+            val current = this@aggressiveEncodeURLPath[index]
+            if (current in URL_ALPHABET_CHARS || current in VALID_PATH_PART) {
+                append(current)
+                index++
+                continue
+            }
+
+            val symbolSize = if (current.isSurrogate()) 2 else 1
+            // we need to call newEncoder() for every symbol, otherwise it won't work
+            charset.newEncoder().encode(this@aggressiveEncodeURLPath, index, index + symbolSize).forEach {
+                append(it.percentEncode())
+            }
+            index += symbolSize
+        }
+    }
 
     override val url: String
-        get() = "https://${system.bucket}.s3.${system.region}.amazonaws.com/${unixPath.encodeURLPathSafe()}"
+        get() = "https://${system.bucket}.s3.${system.region}.amazonaws.com/${unixPath}"
+
+    private val encodedUrl: String
+        get() = "https://${system.bucket}.s3.${system.region}.amazonaws.com/${unixPath.aggressiveEncodeURLPath()}"
 
     override val signedUrl: String
         get() = system.signedUrlDuration?.let { duration ->
@@ -325,7 +372,7 @@ public class S3FileObject(
                     key = unixPath
                 }, duration = duration).url.toString()
             }
-        } ?: url
+        } ?: encodedUrl
 
     override fun uploadUrl(timeout: Duration): String {
         return runBlocking {
@@ -337,7 +384,9 @@ public class S3FileObject(
     }
 
     override fun toString(): String = url
-    override fun equals(other: Any?): Boolean = other is S3FileObject && other.system == system && other.unixPath == unixPath
+    override fun equals(other: Any?): Boolean =
+        other is S3FileObject && other.system == system && other.unixPath == unixPath
+
     override fun hashCode(): Int = 31 * system.hashCode() + unixPath.hashCode()
 
     internal fun assertSignatureValid(queryParams: String) {
@@ -346,7 +395,7 @@ public class S3FileObject(
                 val response = client.get("$url?$queryParams") {
                     header("Range", "0-0")
                 }
-                if(!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
+                if (!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
             }
         }
     }
