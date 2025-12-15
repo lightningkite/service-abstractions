@@ -224,12 +224,21 @@ public class S3PublicFileSystem(
         ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$bucket.s3-$region.amazonaws.com")
 
         init {
+            // Registers the "s3" URL scheme with the PublicFileSystem.Settings parser
+            // Supports formats:
+            // - s3://bucket.region.amazonaws.com/                           (default credentials)
+            // - s3://profile@bucket.region.amazonaws.com/                   (named profile)
+            // - s3://user:password@bucket.region.amazonaws.com/             (static credentials)
+            // Query parameters:
+            // - signedUrlDuration: Duration for signed URLs (default: 1h, "forever"/"null" for unsigned)
             PublicFileSystem.Settings.register("s3") { name, url, context ->
                 val regex =
-                    Regex("""s3://(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com/?""")
+                    Regex("""s3:\/\/(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com\/?(?:\?(?<params>.*))?""")
                 val match = regex.matchEntire(url) ?: throw IllegalArgumentException(
-                    "Invalid S3 URL. The URL should match the pattern: s3:" +
-                            "//[user]:[password]@[bucket].[region].amazonaws.com/"
+                    "Invalid S3 URL. The URL should match the pattern:" +
+                            "   s3://[user]:[password]@[bucket].[region].amazonaws.com/?[params],"+
+                            "   s3://[profile]@[bucket].[region].amazonaws.com/?[params],"+
+                            "       Available params are: signedUrlDuration"
                 )
 
                 val user = match.groups["user"]?.value ?: ""
@@ -238,18 +247,24 @@ public class S3PublicFileSystem(
                 val bucket = match.groups["bucket"]?.value ?: throw IllegalArgumentException("No bucket provided")
                 val region = match.groups["region"]?.value ?: throw IllegalArgumentException("No region provided")
 
-                val params = url.substringAfter("?", "").substringBefore("#", "")
-                    .takeIf { it.isNotEmpty() }
+                val params: Map<String, List<String>> = match.groups["params"]?.value
+                    ?.takeIf { it.isNotBlank() }
                     ?.split("&")
-                    ?.associate { it.substringBefore("=") to it.substringAfter("=", "") }
+                    ?.filter { it.isNotBlank() }
+                    ?.map {
+                        it.substringBefore('=') to it.substringAfter('=', "")
+                    }
+                    ?.groupBy { it.first }
+                    ?.mapValues { it.value.map { it.second } }
                     ?: emptyMap()
 
                 val signedUrlDuration = params["signedUrlDuration"].let {
+                    val value = it?.firstOrNull()
                     when{
-                        it == null -> 1.hours
-                        it == "forever" || it == "null" -> null
-                        it.all { it.isDigit() } -> it.toLong().seconds
-                        else -> Duration.parse(it)
+                        value == null -> 1.hours
+                        value == "forever" || value == "null" -> null
+                        value.all { it.isDigit() } -> value.toLong().seconds
+                        else -> Duration.parse(value)
                     }
                 }
 
