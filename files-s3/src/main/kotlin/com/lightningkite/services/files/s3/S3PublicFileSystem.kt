@@ -9,6 +9,7 @@ import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.get
 import io.opentelemetry.api.trace.Tracer
+import io.ktor.http.decodeURLPart
 import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3AsyncClient
@@ -173,7 +174,7 @@ public class S3PublicFileSystem(
     override fun parseInternalUrl(url: String): S3FileObject? {
         val matchingPrefix = rootUrls.firstOrNull { prefix -> url.startsWith(prefix) } ?: return null
         val path = url.substringAfter(matchingPrefix).substringBefore('?')
-        return S3FileObject(this, File(path))
+        return S3FileObject(this, File(path.decodeURLPart()))
     }
 
     override fun parseExternalUrl(url: String): S3FileObject? {

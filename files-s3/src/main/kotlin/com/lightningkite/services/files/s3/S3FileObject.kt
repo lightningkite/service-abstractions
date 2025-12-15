@@ -8,12 +8,16 @@ import com.lightningkite.services.http.client
 import com.lightningkite.services.otel.TelemetrySanitization
 import io.ktor.client.request.*
 import io.ktor.http.*
+import io.ktor.utils.io.charsets.encode
+import io.ktor.utils.io.core.canRead
+import io.ktor.utils.io.core.takeWhile
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.io.Source
 import kotlinx.io.asInputStream
 import kotlinx.io.asSource
 import kotlinx.io.buffered
@@ -54,7 +58,8 @@ public class S3FileObject(
 
     override fun then(path: String): S3FileObject = S3FileObject(
         system,
-        this.path.resolve(path.also { if (it.contains("+")) throw IllegalArgumentException("File Path cannot contain '+'") })
+        this.path.resolve(path.decodeURLPart()
+            .also { if (it.contains("+")) throw IllegalArgumentException("File Path cannot contain '+'") })
     )
 
     override val name: String get() = path.name
@@ -346,13 +351,53 @@ public class S3FileObject(
         }
     }
 
-    /**
-     * Encodes a string for use in a URL path, preserving slashes.
-     * Converts spaces to %20 instead of + for URL path compatibility.
-     */
-    private fun String.encodeURLPathSafe(): String = URLEncoder.encode(this, Charsets.UTF_8)
-        .replace("%2F", "/")
-        .replace("+", "%20")
+
+    private val URL_ALPHABET_CHARS = ((('a'..'z') + ('A'..'Z') + ('0'..'9'))).toSet()
+    private val VALID_PATH_PART = setOf('-', '.', '_', '/')
+
+    private fun Source.forEach(block: (Byte) -> Unit) {
+        takeWhile { buffer ->
+            while (buffer.canRead()) {
+                block(buffer.readByte())
+            }
+            true
+        }
+    }
+
+    private fun hexDigitToChar(digit: Int): Char = when (digit) {
+        in 0..9 -> '0' + digit
+        else -> 'A' + digit - 10
+    }
+
+    private fun Byte.percentEncode(): String {
+        val code = toInt() and 0xff
+        val array = CharArray(3)
+        array[0] = '%'
+        array[1] = hexDigitToChar(code shr 4)
+        array[2] = hexDigitToChar(code and 0xf)
+        return array.concatToString()
+    }
+
+    private fun String.aggressiveEncodeURLPath(): String = buildString {
+        val charset = io.ktor.utils.io.charsets.Charsets.UTF_8
+
+        var index = 0
+        while (index < this@aggressiveEncodeURLPath.length) {
+            val current = this@aggressiveEncodeURLPath[index]
+            if (current in URL_ALPHABET_CHARS || current in VALID_PATH_PART) {
+                append(current)
+                index++
+                continue
+            }
+
+            val symbolSize = if (current.isSurrogate()) 2 else 1
+            // we need to call newEncoder() for every symbol, otherwise it won't work
+            charset.newEncoder().encode(this@aggressiveEncodeURLPath, index, index + symbolSize).forEach {
+                append(it.percentEncode())
+            }
+            index += symbolSize
+        }
+    }
 
     /**
      * The unsigned URL for this file.
@@ -360,6 +405,10 @@ public class S3FileObject(
      */
     override val url: String
         get() = "https://${system.bucket}.s3.${system.region.id()}.amazonaws.com/${unixPath}"
+
+
+    private val encodedUrl: String
+        get() = "https://${system.bucket}.s3.${system.region.id()}.amazonaws.com/${unixPath.aggressiveEncodeURLPath()}"
 
     /**
      * A signed URL for secure, time-limited access to this file.
@@ -401,7 +450,7 @@ public class S3FileObject(
             val hashHolder = ByteArray(32)
             val canonicalRequestHasher = java.security.MessageDigest.getInstance("SHA-256")
             canonicalRequestHasher.update(CONSTANT_BYTES_A)
-            canonicalRequestHasher.update(objectPath.removePrefix("/").encodeURLPathSafe().toByteArray())
+            canonicalRequestHasher.update(objectPath.removePrefix("/").aggressiveEncodeURLPath().toByteArray())
             canonicalRequestHasher.update(CONSTANT_BYTE_NEWLINE)
             canonicalRequestHasher.update(preHeaders.toByteArray())
             canonicalRequestHasher.update(CONSTANT_BYTES_C)
@@ -423,9 +472,9 @@ public class S3FileObject(
             finalHasher.update(canonicalRequestHash.toByteArray())
             finalHasher.doFinal(hashHolder, 0)
             val regeneratedSig = hashHolder.toHex()
-            val result = "${url}?$preHeaders&X-Amz-Signature=$regeneratedSig"
+            val result = "${encodedUrl}?$preHeaders&X-Amz-Signature=$regeneratedSig"
             result
-        } ?: url
+        } ?: encodedUrl
 
     /**
      * Generates a signed URL for uploading content to this file.
@@ -469,7 +518,7 @@ public class S3FileObject(
             val hashHolder = ByteArray(32)
             val canonicalRequestHasher = java.security.MessageDigest.getInstance("SHA-256")
             canonicalRequestHasher.update(putConstantBytesA)
-            canonicalRequestHasher.update(objectPath.removePrefix("/").encodeURLPathSafe().toByteArray())
+            canonicalRequestHasher.update(objectPath.removePrefix("/").aggressiveEncodeURLPath().toByteArray())
             canonicalRequestHasher.update(CONSTANT_BYTE_NEWLINE)
             canonicalRequestHasher.update(preHeaders.toByteArray())
             canonicalRequestHasher.update(CONSTANT_BYTES_C)
@@ -491,7 +540,7 @@ public class S3FileObject(
             finalHasher.update(canonicalRequestHash.toByteArray())
             finalHasher.doFinal(hashHolder, 0)
             val regeneratedSig = hashHolder.toHex()
-            val result = "${url}?$preHeaders&X-Amz-Signature=$regeneratedSig"
+            val result = "${encodedUrl}?$preHeaders&X-Amz-Signature=$regeneratedSig"
             result
         } ?: system.signer.presignPutObject {
             it.signatureDuration(timeout.toJavaDuration())
