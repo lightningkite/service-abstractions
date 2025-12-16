@@ -13,6 +13,7 @@ pluginManagement {
         kotlin("plugin.serialization") version "2.0.0"
         id("com.google.devtools.ksp") version "2.0.21-1.0.25"
         id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+        id("com.lightningkite.serviceabstractions.database-defaults") version "0.0.1-99-local"
     }
 
     dependencyResolutionManagement {
@@ -44,6 +45,8 @@ include(":cache-test")
 include(":data")
 include(":database")
 include(":database-shared")
+include(":database-compiler-plugin")
+include(":database-gradle-plugin")
 include(":database-jsonfile")
 include(":database-mongodb")
 include(":database-postgres")

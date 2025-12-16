@@ -22,7 +22,7 @@ public interface SerializableProperty<A, B> {
 
     @Suppress("UNCHECKED_CAST")
     @OptIn(InternalSerializationApi::class)
-    public class Generated<A, B>(
+    public open class Generated<A, B>(
         public val parent: GeneratedSerializer<A>,
         public val index: Int,
     ) : SerializableProperty<A, B> {
@@ -35,6 +35,10 @@ public interface SerializableProperty<A, B> {
                 index
             ).mapNotNull { SerializableAnnotation.parseOrNull(it) }
         }
+
+        // Default is null unless overridden by KSP-generated subclass
+        override val default: B? get() = null
+        override val defaultCode: String? get() = null
 
         override fun toString(): String = parent.descriptor.serialName + "." + name
         override fun hashCode(): Int = parent.descriptor.serialName.hashCode() + index
@@ -89,11 +93,29 @@ public fun <T> KSerializer<T>.tryFindAnnotations(propertyName: String): List<Ann
 
 private val serNameToProperties = HashMap<String, Array<SerializableProperty<*, *>>>()
 
+/**
+ * Internal API for KSP-generated code to populate the serializableProperties cache.
+ * This ensures that custom property instances with defaults are used instead of
+ * creating fresh instances without defaults.
+ */
+public fun populateSerializablePropertiesCache(
+    serialName: String,
+    properties: Array<SerializableProperty<*, *>>
+) {
+    serNameToProperties[serialName] = properties
+}
+
 @OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
 public val <T> KSerializer<T>.serializableProperties: Array<SerializableProperty<T, *>>?
     get() {
         if (this is VirtualStruct.Concrete) return this.serializableProperties as Array<SerializableProperty<T, *>>
+
+        // Check if the serializer implements SerializablePropertiesProvider (injected by compiler plugin)
+        if (this is SerializablePropertiesProvider<*>) {
+            return (this as SerializablePropertiesProvider<T>).getSerializablePropertiesWithDefaults()
+        }
+
         return if (this !is GeneratedSerializer<*>) null
         else if (this.typeParametersSerializers().isEmpty()) serNameToProperties.getOrPut(this.descriptor.serialName) {
             (0..<descriptor.elementsCount).map<Int, SerializableProperty<T, *>> { index ->

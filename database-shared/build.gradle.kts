@@ -11,6 +11,7 @@ plugins {
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
     id("org.jetbrains.kotlinx.atomicfu") version "0.29.0"
+    // Removed custom Gradle plugin - using kotlinCompilerPluginClasspath directly
 }
 
 kotlin {
@@ -64,6 +65,7 @@ kotlin {
                     optIn.add("kotlin.time.ExperimentalTime")
                     optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
                 }
+                srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
@@ -100,6 +102,8 @@ dependencies {
     configurations.filter { it.name.startsWith("ksp") }.forEach {
         add(it.name, project(":database-processor"))
     }
+    // Add compiler plugin directly to classpath
+    kotlinCompilerPluginClasspath(project(":database-compiler-plugin"))
 }
 
 lkLibrary("lightningkite", "service-abstractions") {}

@@ -195,16 +195,52 @@ class TableGenerator(
                                             if (it.isLowerCase()) it.titlecase(getDefault()) else it.toString()
                                         }
                                         val serPropName = "field$propName"
+                                        val hasDefault = field.default != null
 
                                         val prefix = declaration.safeLocalReference().camelCase()
-                                        appendLine(
-                                            "@get:JvmName(\"${prefix}_field_$propName\") public val <${
+
+                                        if (hasDefault) {
+                                            val defaultValue = field.default!!
+                                            val escapedCode = defaultValue.replace("\\", "\\\\").replace("\"", "\\\"")
+
+                                            // For generic types with defaults, create anonymous class in getter
+                                            appendLine("@get:JvmName(\"${prefix}_field_$propName\") public val <${
                                                 declaration.typeParameters.joinToString(", ") {
                                                     it.name.asString() + ": " + (it.bounds.firstOrNull()
                                                         ?.toKotlin() ?: "Any?")
                                                 }
-                                            }> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(this as GeneratedSerializer<$typeReference>, $index)"
-                                        )
+                                            }> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = object : SerializableProperty.Generated<$typeReference, ${field.kotlinType.toKotlin()}>(this as GeneratedSerializer<$typeReference>, $index) {")
+
+                                            append("    override val default: ${field.kotlinType.toKotlin()}? = ")
+                                            when {
+                                                defaultValue.matches(Regex("""^[0-9]+$""")) ||
+                                                defaultValue.matches(Regex("""^[0-9]+\.[0-9]+[fF]?$""")) ||
+                                                defaultValue.matches(Regex("""^(true|false)$""")) ||
+                                                defaultValue == "null" -> {
+                                                    appendLine(defaultValue)
+                                                }
+                                                defaultValue.startsWith("\"") -> {
+                                                    appendLine(defaultValue)
+                                                }
+                                                else -> {
+                                                    appendLine("null /* complex default: $escapedCode */")
+                                                }
+                                            }
+
+                                            appendLine("    override val defaultCode: String = \"$escapedCode\"")
+                                            appendLine("}")
+                                        } else {
+                                            // No default - use base SerializableProperty.Generated
+                                            appendLine(
+                                                "@get:JvmName(\"${prefix}_field_$propName\") public val <${
+                                                    declaration.typeParameters.joinToString(", ") {
+                                                        it.name.asString() + ": " + (it.bounds.firstOrNull()
+                                                            ?.toKotlin() ?: "Any?")
+                                                    }
+                                                }> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(this as GeneratedSerializer<$typeReference>, $index)"
+                                            )
+                                        }
+
                                         appendLine(
                                             "@get:JvmName(\"${prefix}_path_$propName\") public val <ROOT, ${
                                                 declaration.typeParameters.joinToString(", ") {
@@ -215,13 +251,83 @@ class TableGenerator(
                                         )
                                     }
                                 } else {
-                                    appendLine("public inline val $typeReference.Companion.path: DataClassPath<$typeReference, $typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
-                                    appendLine("private val ${simpleName}__properties = $classReference.serializer().serializableProperties!!")
+                                    appendLine("@OptIn(InternalSerializationApi::class)")
+                                    appendLine("public inline val $typeReference.Companion.path: DataClassPath<$typeReference, $typeReference> get() {")
+                                    appendLine("    // Populate cache with our custom properties that have defaults embedded")
+                                    appendLine("    com.lightningkite.services.database.populateSerializablePropertiesCache(")
+                                    appendLine("        $classReference.serializer().descriptor.serialName,")
+                                    appendLine("        ${simpleName}__serializableProperties as Array<SerializableProperty<*, *>>")
+                                    appendLine("    )")
+                                    appendLine("    return com.lightningkite.services.database.path<$typeReference>()")
+                                    appendLine("}")
+
+                                    // Generate SerializableProperty instances with defaults embedded
+                                    val propertyNames = mutableListOf<String>()
                                     for ((index, field) in fields.withIndex()) {
                                         val serPropName = "${simpleName}_${field.name}"
-                                        appendLine("public val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = ${simpleName}__properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
+                                        val hasDefault = field.default != null
+
+                                        if (hasDefault) {
+                                            val defaultValue = field.default!!
+                                            // Escape the default code string
+                                            val escapedCode = defaultValue.replace("\\", "\\\\").replace("\"", "\\\"")
+
+                                            // Generate custom SerializableProperty with default override
+                                            appendLine("public val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = object : SerializableProperty.Generated<$typeReference, ${field.kotlinType.toKotlin()}>(")
+                                            appendLine("    $classReference.serializer() as GeneratedSerializer<$typeReference>,")
+                                            appendLine("    $index")
+                                            appendLine(") {")
+
+                                            // Override default property with actual value
+                                            append("    override val default: ${field.kotlinType.toKotlin()}? = ")
+                                            when {
+                                                // For simple types, emit the value directly
+                                                defaultValue.matches(Regex("""^[0-9]+$""")) ||
+                                                defaultValue.matches(Regex("""^[0-9]+\.[0-9]+[fF]?$""")) ||
+                                                defaultValue.matches(Regex("""^(true|false)$""")) ||
+                                                defaultValue == "null" -> {
+                                                    appendLine(defaultValue)
+                                                }
+                                                defaultValue.startsWith("\"") -> {
+                                                    // String literal
+                                                    appendLine(defaultValue)
+                                                }
+                                                else -> {
+                                                    // Complex default - can't evaluate, set to null
+                                                    appendLine("null /* complex default: $escapedCode */")
+                                                }
+                                            }
+
+                                            appendLine("    override val defaultCode: String = \"$escapedCode\"")
+                                            appendLine("}")
+                                        } else {
+                                            // No default - use base SerializableProperty.Generated
+                                            appendLine("public val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = SerializableProperty.Generated(")
+                                            appendLine("    $classReference.serializer() as GeneratedSerializer<$typeReference>,")
+                                            appendLine("    $index")
+                                            appendLine(")")
+                                        }
+
+                                        propertyNames.add(serPropName)
                                         appendLine("@get:JvmName(\"path$serPropName\") public val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[$serPropName]")
                                     }
+
+                                    // Generate custom serializableProperties array that uses our generated properties
+                                    appendLine("@OptIn(InternalSerializationApi::class)")
+                                    appendLine("public val ${simpleName}__serializableProperties: Array<SerializableProperty<$typeReference, *>> = arrayOf<SerializableProperty<$typeReference, *>>(")
+                                    propertyNames.forEachIndexed { index, propName ->
+                                        append("    $propName")
+                                        if (index < propertyNames.size - 1) appendLine(",")
+                                        else appendLine()
+                                    }
+                                    appendLine(")")
+
+                                    // Generate more specific extension that returns our custom array
+                                    // This overrides the generic version and ensures our properties with defaults are used
+                                    appendLine("@OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)")
+                                    appendLine("@get:JvmName(\"get${simpleName}SerializableProperties\")")
+                                    appendLine("public val KSerializer<$typeReference>.serializableProperties: Array<SerializableProperty<$typeReference, *>>")
+                                    appendLine("    get() = ${simpleName}__serializableProperties")
                                 }
                             } catch (e: Exception) {
                                 appendLine("/*" + e.stackTraceToString() + "*/")
