@@ -13,6 +13,9 @@ import java.io.File
 import com.google.firebase.messaging.Notification as FCMNotification
 import com.lightningkite.services.notifications.*
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
 import kotlin.time.Duration
 
 /**
@@ -135,6 +138,7 @@ public class FcmNotificationClient(
 ) : NotificationService {
 
     private val log = KotlinLogging.logger("com.lightningkite.services.notifications.fcm.FcmNotificationClient")
+    private val tracer: Tracer? = context.openTelemetry?.getTracer("notifications-fcm")
 
     public companion object {
         public fun NotificationService.Settings.Companion.fcm(jsonString: String): NotificationService.Settings =
@@ -172,6 +176,45 @@ public class FcmNotificationClient(
      * If you need a more complicated set of messages you should use the other functions.
      */
     override suspend fun send(
+        targets: List<String>,
+        data: NotificationData
+    ): Map<String, NotificationSendResult> {
+        val span = tracer?.spanBuilder("notification.send")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("notification.operation", "send")
+            ?.setAttribute("notification.system", "fcm")
+            ?.setAttribute("notification.target.count", targets.size.toLong())
+            ?.also { data.notification?.title?.let { title -> it.setAttribute("notification.title", title) } }
+            ?.also { data.notification?.body?.let { body -> it.setAttribute("notification.body", body) } }
+            ?.also { data.timeToLive?.let { ttl -> it.setAttribute("notification.ttl", ttl.inWholeSeconds) } }
+            ?.startSpan()
+
+        return try {
+            val scope = span?.makeCurrent()
+            try {
+                sendInternal(targets, data).also { results ->
+                    val successCount = results.values.count { it == NotificationSendResult.Success }
+                    val failureCount = results.values.count { it == NotificationSendResult.Failure }
+                    val deadTokenCount = results.values.count { it == NotificationSendResult.DeadToken }
+
+                    span?.setAttribute("notification.success.count", successCount.toLong())
+                    span?.setAttribute("notification.failure.count", failureCount.toLong())
+                    span?.setAttribute("notification.dead_token.count", deadTokenCount.toLong())
+                    span?.setStatus(StatusCode.OK)
+                }
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to send notifications: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
+    }
+
+    private suspend fun sendInternal(
         targets: List<String>,
         data: NotificationData
     ): Map<String, NotificationSendResult> {
@@ -300,16 +343,56 @@ public class FcmNotificationClient(
     }
 
     override suspend fun connect() {
-        // Firebase client initializes lazily, no explicit connection needed
+        val span = tracer?.spanBuilder("notification.connect")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("notification.operation", "connect")
+            ?.setAttribute("notification.system", "fcm")
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                // Firebase client initializes lazily, no explicit connection needed
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to connect: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
     override suspend fun disconnect() {
-        // Important for serverless environments - clean up Firebase resources
+        val span = tracer?.spanBuilder("notification.disconnect")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("notification.operation", "disconnect")
+            ?.setAttribute("notification.system", "fcm")
+            ?.startSpan()
+
         try {
-            FirebaseApp.getInstance(name).delete()
-        } catch (e: IllegalStateException) {
-            // App already deleted or doesn't exist
-            log.debug { "FirebaseApp '$name' already deleted or doesn't exist" }
+            val scope = span?.makeCurrent()
+            try {
+                // Important for serverless environments - clean up Firebase resources
+                try {
+                    FirebaseApp.getInstance(name).delete()
+                } catch (e: IllegalStateException) {
+                    // App already deleted or doesn't exist
+                    log.debug { "FirebaseApp '$name' already deleted or doesn't exist" }
+                }
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to disconnect: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
         }
     }
 

@@ -4,6 +4,11 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.lettuce.core.RedisClient
+import io.lettuce.core.resource.ClientResources
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.instrumentation.lettuce.v5_1.LettuceTelemetry
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.reactive.awaitFirst
@@ -129,6 +134,7 @@ public class RedisPubSub(
     override val context: SettingContext,
     private val client: RedisClient
 ) : PubSub {
+    private val tracer: Tracer? = context.openTelemetry?.getTracer("pubsub-redis")
     private val observables = ConcurrentHashMap<String, Flux<String>>()
     private val subscribeConnection = client.connectPubSub().reactive()
     private val publishConnection = client.connectPubSub().reactive()
@@ -138,7 +144,15 @@ public class RedisPubSub(
         public fun PubSub.Settings.Companion.redis(url: String): PubSub.Settings = PubSub.Settings("redis://$url")
         init {
             PubSub.Settings.register("redis") { name, url, context ->
-                RedisPubSub(name, context, RedisClient.create(url))
+                val telemetry = context.openTelemetry?.let { LettuceTelemetry.create(it) }
+                val clientResources = telemetry?.let {
+                    ClientResources.builder()
+                        .tracing(it.newTracing())
+                        .build()
+                } ?: ClientResources.create()
+
+                val client = RedisClient.create(clientResources, url)
+                RedisPubSub(name, context, client)
             }
         }
     }
@@ -160,11 +174,76 @@ public class RedisPubSub(
     override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
         return object : PubSubChannel<T> {
             override suspend fun collect(collector: FlowCollector<T>) {
-                key(key).map { json.decodeFromString(serializer, it) }.collect { collector.emit(it) }
+                val span = tracer?.spanBuilder("pubsub.subscribe")
+                    ?.setSpanKind(SpanKind.CONSUMER)
+                    ?.setAttribute("pubsub.operation", "subscribe")
+                    ?.setAttribute("pubsub.channel", key)
+                    ?.setAttribute("pubsub.system", "redis")
+                    ?.startSpan()
+
+                try {
+                    val scope = span?.makeCurrent()
+                    try {
+                        key(key).map { message ->
+                            val receiveSpan = tracer?.spanBuilder("pubsub.receive")
+                                ?.setSpanKind(SpanKind.CONSUMER)
+                                ?.setAttribute("pubsub.operation", "receive")
+                                ?.setAttribute("pubsub.channel", key)
+                                ?.setAttribute("pubsub.system", "redis")
+                                ?.setAttribute("message.size", message.length.toLong())
+                                ?.startSpan()
+
+                            try {
+                                val decoded = json.decodeFromString(serializer, message)
+                                receiveSpan?.setStatus(StatusCode.OK)
+                                decoded
+                            } catch (e: Exception) {
+                                receiveSpan?.setStatus(StatusCode.ERROR, "Failed to deserialize message: ${e.message}")
+                                receiveSpan?.recordException(e)
+                                throw e
+                            } finally {
+                                receiveSpan?.end()
+                            }
+                        }.collect { collector.emit(it) }
+                        span?.setStatus(StatusCode.OK)
+                    } finally {
+                        scope?.close()
+                    }
+                } catch (e: Exception) {
+                    span?.setStatus(StatusCode.ERROR, "Failed to subscribe: ${e.message}")
+                    span?.recordException(e)
+                    throw e
+                } finally {
+                    span?.end()
+                }
             }
 
             override suspend fun emit(value: T) {
-                publishConnection.publish(key, json.encodeToString(serializer, value)).awaitFirst()
+                val span = tracer?.spanBuilder("pubsub.publish")
+                    ?.setSpanKind(SpanKind.PRODUCER)
+                    ?.setAttribute("pubsub.operation", "publish")
+                    ?.setAttribute("pubsub.channel", key)
+                    ?.setAttribute("pubsub.system", "redis")
+                    ?.startSpan()
+
+                try {
+                    val scope = span?.makeCurrent()
+                    try {
+                        val message = json.encodeToString(serializer, value)
+                        span?.setAttribute("message.size", message.length.toLong())
+                        val result = publishConnection.publish(key, message).awaitFirst()
+                        span?.setAttribute("pubsub.subscribers_reached", result)
+                        span?.setStatus(StatusCode.OK)
+                    } finally {
+                        scope?.close()
+                    }
+                } catch (e: Exception) {
+                    span?.setStatus(StatusCode.ERROR, "Failed to publish: ${e.message}")
+                    span?.recordException(e)
+                    throw e
+                } finally {
+                    span?.end()
+                }
             }
         }
     }
@@ -172,11 +251,70 @@ public class RedisPubSub(
     override fun string(key: String): PubSubChannel<String> {
         return object : PubSubChannel<String> {
             override suspend fun collect(collector: FlowCollector<String>) {
-                key(key).asFlow().collect { collector.emit(it) }
+                val span = tracer?.spanBuilder("pubsub.subscribe")
+                    ?.setSpanKind(SpanKind.CONSUMER)
+                    ?.setAttribute("pubsub.operation", "subscribe")
+                    ?.setAttribute("pubsub.channel", key)
+                    ?.setAttribute("pubsub.system", "redis")
+                    ?.startSpan()
+
+                try {
+                    val scope = span?.makeCurrent()
+                    try {
+                        key(key).asFlow().collect { message ->
+                            val receiveSpan = tracer?.spanBuilder("pubsub.receive")
+                                ?.setSpanKind(SpanKind.CONSUMER)
+                                ?.setAttribute("pubsub.operation", "receive")
+                                ?.setAttribute("pubsub.channel", key)
+                                ?.setAttribute("pubsub.system", "redis")
+                                ?.setAttribute("message.size", message.length.toLong())
+                                ?.startSpan()
+
+                            try {
+                                receiveSpan?.setStatus(StatusCode.OK)
+                                collector.emit(message)
+                            } finally {
+                                receiveSpan?.end()
+                            }
+                        }
+                        span?.setStatus(StatusCode.OK)
+                    } finally {
+                        scope?.close()
+                    }
+                } catch (e: Exception) {
+                    span?.setStatus(StatusCode.ERROR, "Failed to subscribe: ${e.message}")
+                    span?.recordException(e)
+                    throw e
+                } finally {
+                    span?.end()
+                }
             }
 
             override suspend fun emit(value: String) {
-                publishConnection.publish(key, value).awaitFirst()
+                val span = tracer?.spanBuilder("pubsub.publish")
+                    ?.setSpanKind(SpanKind.PRODUCER)
+                    ?.setAttribute("pubsub.operation", "publish")
+                    ?.setAttribute("pubsub.channel", key)
+                    ?.setAttribute("pubsub.system", "redis")
+                    ?.setAttribute("message.size", value.length.toLong())
+                    ?.startSpan()
+
+                try {
+                    val scope = span?.makeCurrent()
+                    try {
+                        val result = publishConnection.publish(key, value).awaitFirst()
+                        span?.setAttribute("pubsub.subscribers_reached", result)
+                        span?.setStatus(StatusCode.OK)
+                    } finally {
+                        scope?.close()
+                    }
+                } catch (e: Exception) {
+                    span?.setStatus(StatusCode.ERROR, "Failed to publish: ${e.message}")
+                    span?.recordException(e)
+                    throw e
+                } finally {
+                    span?.end()
+                }
             }
         }
     }

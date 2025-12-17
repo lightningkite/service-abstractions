@@ -6,6 +6,9 @@ import com.lightningkite.services.email.Email
 import com.lightningkite.services.email.EmailAddressWithName
 import com.lightningkite.services.email.EmailPersonalization
 import com.lightningkite.services.email.EmailService
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
 import jakarta.activation.DataHandler
 import jakarta.mail.Authenticator
 import jakarta.mail.Message
@@ -111,6 +114,8 @@ public class JavaSmtpEmailService(
     public val from: EmailAddressWithName,
 ) : EmailService {
 
+    private val tracer: Tracer? = context.openTelemetry?.getTracer("email-javasmtp")
+
     public companion object {
         private fun parseParameterString(params: String): Map<String, List<String>> = params
             .takeIf { it.isNotBlank() }
@@ -183,62 +188,147 @@ public class JavaSmtpEmailService(
 
     override suspend fun send(email: Email) {
         if (email.to.isEmpty() && email.cc.isEmpty() && email.bcc.isEmpty()) return
-        Transport.send(
-            email.copy(
-                from = email.from ?: from,
-            ).toJavaX(session)
-        )
-        email.attachments.forEach { it.typedData.data.close() }
+
+        val span = tracer?.spanBuilder("email.send")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("email.operation", "send")
+            ?.setAttribute("email.system", "smtp")
+            ?.setAttribute("email.smtp.host", hostName)
+            ?.setAttribute("email.smtp.port", port.toLong())
+            ?.setAttribute("email.from", email.from?.value.toString() ?: from.value.toString())
+            ?.setAttribute("email.to", email.to.joinToString(", ") { it.value.toString() })
+            ?.setAttribute("email.subject", email.subject)
+            ?.also { builder ->
+                if (email.cc.isNotEmpty()) {
+                    builder.setAttribute("email.cc", email.cc.joinToString(", ") { it.value.toString() })
+                }
+                if (email.attachments.isNotEmpty()) {
+                    builder.setAttribute("email.attachments.count", email.attachments.size.toLong())
+                }
+            }
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                Transport.send(
+                    email.copy(
+                        from = email.from ?: from,
+                    ).toJavaX(session)
+                )
+                email.attachments.forEach { it.typedData.data.close() }
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
+            }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to send email: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
     override suspend fun sendBulk(template: Email, personalizations: List<EmailPersonalization>) {
         if (personalizations.isEmpty()) return
-        session.transport
-            .also { it.connect() }
-            .use { transport ->
-                personalizations
-                    .asSequence()
-                    .map {
-                        it(template).copy(
-                            from = template.from ?: from,
-                        )
+
+        val span = tracer?.spanBuilder("email.sendBulk")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("email.operation", "sendBulk")
+            ?.setAttribute("email.system", "smtp")
+            ?.setAttribute("email.smtp.host", hostName)
+            ?.setAttribute("email.smtp.port", port.toLong())
+            ?.setAttribute("email.from", template.from?.value.toString() ?: from.value.toString())
+            ?.setAttribute("email.subject", template.subject)
+            ?.setAttribute("email.personalizations.count", personalizations.size.toLong())
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                session.transport
+                    .also { it.connect() }
+                    .use { transport ->
+                        personalizations
+                            .asSequence()
+                            .map {
+                                it(template).copy(
+                                    from = template.from ?: from,
+                                )
+                            }
+                            .forEach { email ->
+                                transport.sendMessage(
+                                    email.toJavaX(session).also { it.saveChanges() },
+                                    email.to
+                                        .plus(email.cc)
+                                        .plus(email.bcc)
+                                        .map { InternetAddress(it.value.toString(), it.label) }
+                                        .toTypedArray()
+                                        .also { if (it.isEmpty()) return@forEach }
+                                )
+                            }
                     }
-                    .forEach { email ->
-                        transport.sendMessage(
-                            email.toJavaX(session).also { it.saveChanges() },
-                            email.to
-                                .plus(email.cc)
-                                .plus(email.bcc)
-                                .map { InternetAddress(it.value.toString(), it.label) }
-                                .toTypedArray()
-                                .also { if (it.isEmpty()) return@forEach }
-                        )
-                    }
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
             }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
 
     override suspend fun sendBulk(emails: Collection<Email>) {
         if (emails.isEmpty()) return
-        session.transport
-            .also { it.connect() }
-            .use { transport ->
-                emails.forEach { email ->
-                    transport.sendMessage(
-                        email.copy(
-                            from = from
-                        )
-                            .toJavaX(session)
-                            .also { it.saveChanges() },
-                        email.to
-                            .plus(email.cc)
-                            .plus(email.bcc)
-                            .map { InternetAddress(it.value.toString(), it.label) }
-                            .toTypedArray()
-                            .also { if (it.isEmpty()) return@forEach }
-                    )
-                }
+
+        val span = tracer?.spanBuilder("email.sendBulk")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("email.operation", "sendBulk")
+            ?.setAttribute("email.system", "smtp")
+            ?.setAttribute("email.smtp.host", hostName)
+            ?.setAttribute("email.smtp.port", port.toLong())
+            ?.setAttribute("email.from", from.value.toString())
+            ?.setAttribute("email.count", emails.size.toLong())
+            ?.startSpan()
+
+        try {
+            val scope = span?.makeCurrent()
+            try {
+                session.transport
+                    .also { it.connect() }
+                    .use { transport ->
+                        emails.forEach { email ->
+                            transport.sendMessage(
+                                email.copy(
+                                    from = from
+                                )
+                                    .toJavaX(session)
+                                    .also { it.saveChanges() },
+                                email.to
+                                    .plus(email.cc)
+                                    .plus(email.bcc)
+                                    .map { InternetAddress(it.value.toString(), it.label) }
+                                    .toTypedArray()
+                                    .also { if (it.isEmpty()) return@forEach }
+                            )
+                        }
+                    }
+                span?.setStatus(StatusCode.OK)
+            } finally {
+                scope?.close()
             }
+        } catch (e: Exception) {
+            span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
+            span?.recordException(e)
+            throw e
+        } finally {
+            span?.end()
+        }
     }
 
     private suspend fun Email.toJavaX(session: Session = Session.getDefaultInstance(Properties(), null)): Message =

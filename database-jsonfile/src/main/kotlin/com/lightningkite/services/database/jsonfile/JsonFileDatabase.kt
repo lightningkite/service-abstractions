@@ -112,6 +112,8 @@ public class JsonFileDatabase(
     override val context: SettingContext
 ) :
     Database {
+    internal val tracer by lazy { context.openTelemetry?.getTracer("database-jsonfile") }
+
     init {
         folder.createDirectories()
     }
@@ -148,7 +150,9 @@ public class JsonFileDatabase(
                 JsonFileTable(
                     json,
                     serializer,
-                    storage
+                    storage,
+                    name,
+                    tracer
                 )
             } as Table<T>
         }

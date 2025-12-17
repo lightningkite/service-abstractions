@@ -12,12 +12,18 @@ plugins {
 
 dependencies {
     api(project(path = ":basis"))
+    api(project(path = ":database-shared"))
     testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
 
     // Koog agents framework - includes all LLM clients
     api(libs.koog.agents)
     api(libs.koog.vector.storage)
+
+    // Ktor client for Ollama management REST API
+    implementation(libs.ktorClientCio)
+    implementation(libs.ktorContentNegotiation)
+    implementation(libs.ktorJson)
 }
 
 kotlin {

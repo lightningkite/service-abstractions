@@ -102,13 +102,18 @@ public class MongoDatabase(
                 Regex("""mongodb://.*/(?<databaseName>[^?]+)(?:\?.*)?""")
                     .matchEntire(url)
                     ?.let { match ->
+                        val atlasSearch = url.contains("atlasSearch=true")
+                        val withoutAtlasSearch =
+                            url.replace("?atlasSearch=true&", "?")
+                                .replace("&atlasSearch=true", "")
+                                .replace("?atlasSearch=true", "")
                         MongoDatabase(
                             name = name,
                             databaseName = match.groups["databaseName"]!!.value,
                             clientSettings = MongoClientSettings.builder()
-                                .applyConnectionString(ConnectionString(url))
+                                .applyConnectionString(ConnectionString(withoutAtlasSearch))
                                 .build(),
-                            atlasSearch = false,
+                            atlasSearch = atlasSearch,
                             context = context
                         )
                     }

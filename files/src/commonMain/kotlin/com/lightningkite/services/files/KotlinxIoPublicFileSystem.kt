@@ -227,8 +227,13 @@ public class KotlinxIoPublicFileSystem(
          *
          * @return A list of FileObjects, null if this is a file (not a directory) or doesn't exist
          */
-        override suspend fun list(): List<FileObject>? {
-            return try {
+        override suspend fun list(): List<FileObject>? = traceFileOperation(
+            context = context,
+            operation = "list",
+            path = relativePath,
+            storageSystem = "file"
+        ) {
+            try {
                 kfile.list().filter { !it.name.endsWith(".contenttype") && it.name != ".signingKey" }.map {
                     KotlinxIoFile(it)
                 }
@@ -251,8 +256,13 @@ public class KotlinxIoPublicFileSystem(
          *
          * @return FileInfo with type and size, or null if the file doesn't exist
          */
-        override suspend fun head(): FileInfo? {
-            val metadata = kfile.metadataOrNull() ?: return null
+        override suspend fun head(): FileInfo? = traceFileOperation(
+            context = context,
+            operation = "head",
+            path = relativePath,
+            storageSystem = "file"
+        ) {
+            val metadata = kfile.metadataOrNull() ?: return@traceFileOperation null
             val mediaType = if (contentTypePath.exists()) {
                 contentTypePath.source().use { source ->
                     MediaType(source.buffered().readString())
@@ -261,7 +271,7 @@ public class KotlinxIoPublicFileSystem(
                 MediaType.fromExtension(kfile.path.name.substringAfterLast('.', ""))
             }
 
-            return FileInfo(
+            FileInfo(
                 type = mediaType,
                 size = metadata.size,
                 lastModified = null,
@@ -275,7 +285,16 @@ public class KotlinxIoPublicFileSystem(
          *
          * @param content The typed data to write
          */
-        override suspend fun put(content: TypedData) {
+        override suspend fun put(content: TypedData): Unit = traceFileOperation(
+            context = context,
+            operation = "put",
+            path = relativePath,
+            storageSystem = "file",
+            attributes = mapOf(
+                "file.size" to content.data.size,
+                "file.content_type" to content.mediaType.toString()
+            )
+        ) {
             // Create parent directories if they don't exist
             val parent = kfile.parent
             if (parent != null && !parent.exists()) {
@@ -300,9 +319,14 @@ public class KotlinxIoPublicFileSystem(
          *
          * @return The file's content as TypedData, or null if the file doesn't exist
          */
-        override suspend fun get(): TypedData? {
+        override suspend fun get(): TypedData? = traceFileOperation(
+            context = context,
+            operation = "get",
+            path = relativePath,
+            storageSystem = "file"
+        ) {
             if (!kfile.exists()) {
-                return null
+                return@traceFileOperation null
             }
 
             val mediaType = if (contentTypePath.exists()) {
@@ -313,7 +337,7 @@ public class KotlinxIoPublicFileSystem(
                 MediaType.fromExtension(kfile.path.name.substringAfterLast('.', ""))
             }
 
-            return TypedData(Data.Source(kfile.source().buffered(), kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1), mediaType)
+            TypedData(Data.Source(kfile.source().buffered(), kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1), mediaType)
         }
 
         /**
@@ -321,7 +345,12 @@ public class KotlinxIoPublicFileSystem(
          *
          * @throws RuntimeException if deletion fails
          */
-        override suspend fun delete() {
+        override suspend fun delete(): Unit = traceFileOperation(
+            context = context,
+            operation = "delete",
+            path = relativePath,
+            storageSystem = "file"
+        ) {
             try {
                 if (contentTypePath.exists()) {
                     contentTypePath.delete()

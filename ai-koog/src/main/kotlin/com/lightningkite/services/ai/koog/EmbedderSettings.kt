@@ -10,6 +10,7 @@ import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
 import com.lightningkite.services.ai.koog.LLMClientAndModelSettings
+import com.lightningkite.services.ai.koog.OllamaManager
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
@@ -51,6 +52,19 @@ public value class EmbedderSettings(
 //        public fun google(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("google://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
         public fun ollama(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("ollama://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
 //        public fun openrouter(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("openrouter://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+
+        /**
+         * Creates settings for Ollama embeddings with automatic server start and model pull.
+         *
+         * This is a convenience method that automatically:
+         * - Starts the Ollama server if not running
+         * - Pulls the embedding model if not available locally
+         *
+         * @param model The embedding model to use
+         * @param baseUrl Ollama server URL (default: http://localhost:11434)
+         */
+        public fun ollamaAuto(model: LLModel, baseUrl: String? = null): EmbedderSettings =
+            EmbedderSettings("ollama-auto://${model.id}" + (baseUrl?.let { "?baseUrl=$it" } ?: ""))
 
         init {
 
@@ -104,6 +118,45 @@ public value class EmbedderSettings(
                 val params = parseUrlParams(url)
                 val modelName = url.substringAfter("://", "").substringBefore("?")
                 val baseUrl = params["baseUrl"] ?: "http://localhost:11434"
+                val autoStart = params["autoStart"]?.toBooleanStrictOrNull() ?: false
+                val autoPull = params["autoPull"]?.toBooleanStrictOrNull() ?: autoStart
+
+                // Handle auto-start and auto-pull if requested
+                if (autoStart || autoPull) {
+                    val manager = OllamaManager(baseUrl)
+                    kotlinx.coroutines.runBlocking {
+                        manager.ensureReady(
+                            model = modelName,
+                            startServer = autoStart,
+                            pullModel = autoPull
+                        )
+                    }
+                }
+
+                val client = OllamaClient(baseUrl = baseUrl)
+                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
+                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
+                if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
+                LLMEmbedder(client, model)
+            }
+
+            // Register Ollama with auto-start enabled by default
+            register("ollama-auto") { name, url, context ->
+                val params = parseUrlParams(url)
+                val modelName = url.substringAfter("://", "").substringBefore("?")
+                val baseUrl = params["baseUrl"] ?: "http://localhost:11434"
+                val autoStart = params["autoStart"]?.toBooleanStrictOrNull() ?: true
+                val autoPull = params["autoPull"]?.toBooleanStrictOrNull() ?: true
+
+                // Auto-start and auto-pull by default
+                val manager = OllamaManager(baseUrl)
+                kotlinx.coroutines.runBlocking {
+                    manager.ensureReady(
+                        model = modelName,
+                        startServer = autoStart,
+                        pullModel = autoPull
+                    )
+                }
 
                 val client = OllamaClient(baseUrl = baseUrl)
                 val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]

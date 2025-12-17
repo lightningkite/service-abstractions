@@ -3,6 +3,7 @@ package com.lightningkite.services.database.postgres
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.test.*
+import com.lightningkite.services.database.test.VectorSearchTests
 import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
@@ -39,7 +40,7 @@ class BasicTest() {
 
     @Test fun schema2() {
         val db = Database.connect(pg.embeddedPostgres.postgresDatabase)
-        val collection = PostgresCollection(db, "LargeTestModel", LargeTestModel.serializer(), EmptySerializersModule())
+        val collection = PostgresCollection(db, "LargeTestModel", LargeTestModel.serializer(), EmptySerializersModule(), null)
         runBlocking {
             // Quick test
             val t = LargeTestModel()
@@ -245,4 +246,51 @@ class PostgresSortTest : SortTest() {
     override val database: com.lightningkite.services.database.Database by lazy {
         PostgresDatabase("test", TestSettingContext(EmptySerializersModule())){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
     }
+}
+
+/**
+ * Vector search tests using Testcontainers with pgvector.
+ *
+ * These tests require Docker to be running. If Docker is unavailable,
+ * the tests will be skipped gracefully.
+ *
+ * The pgvector/pgvector:pg16 Docker image provides PostgreSQL 16 with
+ * the pgvector extension pre-installed.
+ */
+class PostgresVectorSearchTests : VectorSearchTests() {
+    companion object {
+        // Use environment variable override if set, otherwise use Testcontainers
+        private val manualUrl = System.getenv("POSTGRES_VECTOR_TEST_URL")
+
+        private val containerAvailable: Boolean by lazy {
+            manualUrl != null || PostgresDockerContainer.isAvailable
+        }
+    }
+
+    override val database: com.lightningkite.services.database.Database by lazy {
+        if (manualUrl != null) {
+            // Use manually specified URL (for CI/CD or custom setups)
+            PostgresDatabase("test", TestSettingContext(EmptySerializersModule())) {
+                Database.connect(manualUrl, driver = "org.postgresql.Driver")
+            }
+        } else {
+            // Use Testcontainers
+            val container = PostgresDockerContainer.getContainer()
+                ?: throw IllegalStateException("pgvector container not available")
+            PostgresDatabase("test", TestSettingContext(EmptySerializersModule())) {
+                Database.connect(
+                    url = container.jdbcUrl,
+                    user = container.username,
+                    password = container.password,
+                    driver = "org.postgresql.Driver"
+                )
+            }
+        }
+    }
+
+    // pgvector is available when Docker/Testcontainers is running
+    override val supportsVectorSearch: Boolean = containerAvailable
+    // Sparse vector support requires additional column type mapping work
+    // pgvector's sparsevec type needs special serialization handling
+    override val supportsSparseVectorSearch: Boolean = false
 }

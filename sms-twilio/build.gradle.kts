@@ -17,9 +17,13 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":sms"))
-    
+    compileOnly(project(path = ":otel-jvm"))
+
     // Ktor dependencies for HTTP client
     implementation(project(":http-client"))
+
+    // OpenTelemetry for instrumentation
+    compileOnly(libs.openTelemetry.api)
 
     testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)

@@ -44,7 +44,7 @@ kotlin {
             dependencies {
                 api(project(path = ":basis"))
                 api(project(path = ":data"))
-
+                implementation(libs.kotlinxHtml)
             }
             kotlin {
                 compilerOptions {

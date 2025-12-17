@@ -20,7 +20,7 @@ public class InMemoryDatabase(override val name: String, private val premadeData
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
-            val made = InMemoryTable(serializer = serializer)
+            val made = InMemoryTable(serializer = serializer, tableName = name, tracer = context.openTelemetry)
             premadeData?.get(name)?.let {
                 val json = Json { this.serializersModule = context.internalSerializersModule }
 

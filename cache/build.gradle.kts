@@ -69,6 +69,10 @@ kotlin {
         }
         val commonJvmMain by creating {
             dependsOn(commonMain)
+            dependencies {
+                compileOnly(project(":otel-jvm"))
+                compileOnly(libs.openTelemetry.api)
+            }
         }
         val nonJvmMain by creating {
             dependsOn(commonMain)
