@@ -28,6 +28,7 @@ import org.bson.types.Binary
 import org.bson.types.ObjectId
 import java.math.BigDecimal
 import kotlinx.datetime.*
+import kotlinx.serialization.builtins.SetSerializer
 import kotlinx.serialization.modules.SerializersModule
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
@@ -77,8 +78,8 @@ private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = D
         is Condition.GreaterThanOrEqual -> into.sub(key)["\$gte"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.LessThanOrEqual -> into.sub(key)["\$lte"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.IfNotNull<*> -> (condition as Condition<Any?>).dump(serializer.nullElement()!! as KSerializer<Any?>, into, key, atlasSearch = atlasSearch, bson = bson)
-        is Condition.Inside -> into.sub(key)["\$in"] = values.let { bson.stringifyAny(ListSerializer(serializer), it) }
-        is Condition.NotInside -> into.sub(key)["\$nin"] = values.let { bson.stringifyAny(ListSerializer(serializer), it) }
+        is Condition.Inside -> into.sub(key)["\$in"] = values.let { bson.stringifyAny(SetSerializer(serializer), it) }
+        is Condition.NotInside -> into.sub(key)["\$nin"] = values.let { bson.stringifyAny(SetSerializer(serializer), it) }
         is Condition.IntBitsAnyClear -> into.sub(key)["\$bitsAllClear"] = mask
         is Condition.IntBitsAnySet -> into.sub(key)["\$bitsAllSet"] = mask
         is Condition.IntBitsClear -> into.sub(key)["\$bitsAnyClear"] = mask

@@ -197,17 +197,17 @@ internal class ConditionNotEqualSerializer<T>(private val inner: KSerializer<T>)
 }
 
 internal class ConditionInsideSerializer<T>(private val inner: KSerializer<T>) :
-    WrappingSerializer<Condition.Inside<T>, List<T>>("Inside") {
-    override fun getDeferred(): KSerializer<List<T>> = ListSerializer(inner)
-    override fun inner(it: Condition.Inside<T>): List<T> = it.values
-    override fun outer(it: List<T>): Condition.Inside<T> = Condition.Inside(it)
+    WrappingSerializer<Condition.Inside<T>, Set<T>>("Inside") {
+    override fun getDeferred(): KSerializer<Set<T>> = SetSerializer(inner)
+    override fun inner(it: Condition.Inside<T>): Set<T> = it.values
+    override fun outer(it: Set<T>): Condition.Inside<T> = Condition.Inside(it)
 }
 
 internal class ConditionNotInsideSerializer<T>(private val inner: KSerializer<T>) :
-    WrappingSerializer<Condition.NotInside<T>, List<T>>("NotInside") {
-    override fun getDeferred(): KSerializer<List<T>> = ListSerializer(inner)
-    override fun inner(it: Condition.NotInside<T>): List<T> = it.values
-    override fun outer(it: List<T>): Condition.NotInside<T> = Condition.NotInside(it)
+    WrappingSerializer<Condition.NotInside<T>, Set<T>>("NotInside") {
+    override fun getDeferred(): KSerializer<Set<T>> = SetSerializer(inner)
+    override fun inner(it: Condition.NotInside<T>): Set<T> = it.values
+    override fun outer(it: Set<T>): Condition.NotInside<T> = Condition.NotInside(it)
 }
 
 internal class ConditionGreaterThanSerializer<T : Comparable<T>>(private val inner: KSerializer<T>) :

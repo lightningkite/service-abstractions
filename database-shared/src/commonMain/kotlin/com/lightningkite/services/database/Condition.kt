@@ -136,14 +136,16 @@ public sealed class Condition<in T> {
 
     @Serializable(ConditionInsideSerializer::class)
     @SerialName("Inside")
-    public data class Inside<T>(val values: List<T>) : Condition<T>() {
+    public data class Inside<T>(val values: Set<T>) : Condition<T>() {
+        public constructor(values: Collection<T>) : this(values.toSet())
         override fun invoke(on: T): Boolean = values.contains(on)
         override fun toString(): String = " in $values"
     }
 
     @Serializable(ConditionNotInsideSerializer::class)
     @SerialName("NotInside")
-    public data class NotInside<T>(val values: List<T>) : Condition<T>() {
+    public data class NotInside<T>(val values: Set<T>) : Condition<T>() {
+        public constructor(values: Collection<T>) : this(values.toSet())
         override fun invoke(on: T): Boolean = !values.contains(on)
         override fun toString(): String = " !in $values"
     }
