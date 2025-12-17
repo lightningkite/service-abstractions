@@ -185,7 +185,7 @@ public class S3FileObject(
             ?.setAttribute("file.operation", "put")
             ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
             ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("file.size", content.data.size)
+            ?.setAttribute("file.size", content.data.size ?: -1)
             ?.setAttribute("file.content_type", content.mediaType.toString())
             ?.setAttribute("storage.system", "s3")
             ?.startSpan()
@@ -198,8 +198,10 @@ public class S3FileObject(
                         it.bucket(system.bucket)
                         it.key(unixPath)
                         it.contentType(content.mediaType.toString())
-                    }.build(), content.data.size.let { size ->
+                    }.build(), content.data.size?.let { size ->
                         RequestBody.fromInputStream(content.data.source().asInputStream(), size)
+                    } ?: run {
+                        RequestBody.fromBytes(content.data.bytes())
                     })
                 }
                 span?.setStatus(StatusCode.OK)
@@ -249,7 +251,7 @@ public class S3FileObject(
                     }
                 }
                 result?.let {
-                    span?.setAttribute("file.size", it.data.size)
+                    span?.setAttribute("file.size", it.data.size ?: -1)
                     span?.setAttribute("file.content_type", it.mediaType.toString())
                 }
                 span?.setStatus(StatusCode.OK)

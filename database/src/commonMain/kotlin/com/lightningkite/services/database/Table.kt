@@ -334,12 +334,7 @@ public interface Table<Model : Any> {
         params: DenseVectorSearchParams,
         condition: Condition<Model> = Condition.Always,
         maxQueryMs: Long = 15_000,
-    ): Flow<ScoredResult<Model>> {
-        throw UnsupportedOperationException(
-            "This database backend does not support vector search. " +
-            "Use InMemoryDatabase for testing or a vector-capable backend (MongoDB Atlas, PostgreSQL+pgvector)."
-        )
-    }
+    ): Flow<ScoredResult<Model>>
 
     /**
      * Find records similar to a sparse query vector, ranked by similarity.
@@ -358,11 +353,7 @@ public interface Table<Model : Any> {
         params: SparseVectorSearchParams,
         condition: Condition<Model> = Condition.Always,
         maxQueryMs: Long = 15_000,
-    ): Flow<ScoredResult<Model>> {
-        throw UnsupportedOperationException(
-            "This database backend does not support sparse vector search."
-        )
-    }
+    ): Flow<ScoredResult<Model>>
 }
 
 // TODO: API Recommendation - Add batch insert optimization

@@ -11,13 +11,17 @@ import io.ktor.serialization.kotlinx.json.json
  *
  * This is a basic HTTP client without OpenTelemetry instrumentation,
  * as OpenTelemetry support is currently limited to JVM and Android platforms.
+ *
+ * Note: Lazy initialization to avoid eager instantiation issues in serverless environments.
  */
-actual val client: HttpClient = HttpClient(CIO) {
-    install(ContentNegotiation) {
-        json()
-    }
-    install(WebSockets)
-    engine {
-        this.requestTimeout = 60000
+actual val client: HttpClient by lazy {
+    HttpClient(CIO) {
+        install(ContentNegotiation) {
+            json()
+        }
+        install(WebSockets)
+        engine {
+            this.requestTimeout = 60000
+        }
     }
 }

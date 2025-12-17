@@ -15,6 +15,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.crac.Context
+import org.crac.Core
+import org.crac.Resource
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -31,11 +34,11 @@ import kotlin.time.Duration.Companion.seconds
  * ```
  * Client (this class)
  *    │
- *    │ WebSocket connection
+ *    │ WebSocket connection (with secret in query params)
  *    ▼
  * API Gateway WebSocket
  *    │
- *    │ Routes: $connect, $disconnect, $default
+ *    │ Routes: $connect (validates secret), $disconnect, $default
  *    ▼
  * Lambda (single function)
  *    │
@@ -44,20 +47,30 @@ import kotlin.time.Duration.Companion.seconds
  *    └─► API Gateway Management API (fan-out)
  * ```
  *
+ * ## Security
+ *
+ * The WebSocket connection requires a secret for authentication. The secret is passed
+ * as a query parameter (`?secret=...`) and validated on connection. Connections without
+ * a valid secret are rejected with HTTP 403.
+ *
+ * The Terraform configuration automatically generates a random 32-character secret
+ * and includes it in the URL returned by the deployment. Keep this URL confidential
+ * as it contains the authentication secret.
+ *
  * ## Supported URL Schemes
  *
- * - `aws-ws://API_ID.execute-api.REGION.amazonaws.com/STAGE` - Standard connection
- * - `aws-wss://API_ID.execute-api.REGION.amazonaws.com/STAGE` - TLS connection (recommended)
+ * - `aws-ws://API_ID.execute-api.REGION.amazonaws.com/STAGE?secret=SECRET` - Standard connection
+ * - `aws-wss://API_ID.execute-api.REGION.amazonaws.com/STAGE?secret=SECRET` - TLS connection (recommended)
  *
  * The URL is converted to the appropriate WebSocket URL format automatically.
  *
  * ## Configuration Examples
  *
  * ```kotlin
- * // From Terraform output
- * PubSub.Settings("aws-wss://abc123.execute-api.us-east-1.amazonaws.com/prod")
+ * // From Terraform output (includes secret)
+ * PubSub.Settings("aws-wss://abc123.execute-api.us-east-1.amazonaws.com/prod?secret=mySecretToken")
  *
- * // Local development with LocalStack
+ * // Local development with LocalStack (no auth)
  * PubSub.Settings("aws-ws://localhost:4510")
  * ```
  *
@@ -91,34 +104,89 @@ import kotlin.time.Duration.Companion.seconds
  *
  * Use the Terraform configuration in the `terraform/` directory to deploy the required
  * AWS infrastructure. After deployment, use the `websocket_url` output as the URL.
+ * The URL will include the secret required for authentication.
  *
  * ## Important Gotchas
  *
+ * - **Security**: The URL contains a secret - do not expose it publicly
  * - **Connection lifecycle**: WebSocket connection is maintained for subscriptions
  * - **Reconnection**: Automatic reconnection on connection loss (with backoff)
  * - **Message size**: API Gateway limits messages to 128KB
  * - **Connection timeout**: API Gateway closes idle connections after 10 minutes
  * - **Latency**: Expect 50-150ms for message delivery (Lambda cold start can add more)
  * - **Ordering**: Message order is preserved per channel, but not guaranteed across channels
+ * - **AWS Lambda SnapStart**: Compatible with SnapStart/CRaC - HTTP client is lazily initialized
  *
  * @property name Service name for logging/metrics
  * @property context Service context with serializers
- * @property websocketUrl The API Gateway WebSocket URL
- * @property httpClient Optional custom Ktor HttpClient (creates one if not provided)
+ * @property websocketUrl The API Gateway WebSocket URL (including secret query parameter)
+ * @param httpClientFactory Optional factory to create a custom Ktor HttpClient (creates default if not provided)
  */
 public class AwsWebSocketPubSub(
     override val name: String,
     override val context: SettingContext,
     private val websocketUrl: String,
-    private val httpClient: HttpClient = HttpClient { install(WebSockets) }
-) : PubSub {
+    private val httpClientFactory: () -> HttpClient = { HttpClient { install(WebSockets) } }
+) : PubSub, Resource {
+
+    @Volatile
+    private var httpClient: HttpClient? = null
+
+    @Volatile
+    private var scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val clientLock = Any()
+
+    init {
+        Core.getGlobalContext().register(this)
+    }
+
+    override fun beforeCheckpoint(context: Context<out Resource>) {
+        // Close HTTP client and WebSocket before checkpoint
+        synchronized(clientLock) {
+            // Cancel the scope first to stop coroutines
+            scope.cancel()
+            // Null out session - coroutine will clean it up
+            session = null
+            httpClient?.close()
+            httpClient = null
+            subscribedChannels.clear()
+            channelFlows.clear()
+        }
+    }
+
+    override fun afterRestore(context: Context<out Resource>) {
+        // Recreate the coroutine scope after restore
+        synchronized(clientLock) {
+            scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        }
+        // Client and session will be recreated on next access
+    }
+
+    private fun getHttpClient(): HttpClient {
+        return httpClient ?: synchronized(clientLock) {
+            httpClient ?: httpClientFactory().also { httpClient = it }
+        }
+    }
+
+    private fun getScope(): CoroutineScope {
+        // Fast path: check if scope is active
+        val currentScope = scope
+        if (currentScope.isActive) return currentScope
+
+        // Slow path: recreate if cancelled (defensive, in case afterRestore wasn't called)
+        return synchronized(clientLock) {
+            val s = scope
+            if (s.isActive) s
+            else CoroutineScope(Dispatchers.IO + SupervisorJob()).also { scope = it }
+        }
+    }
 
     private val json = Json {
         serializersModule = context.internalSerializersModule
         ignoreUnknownKeys = true
+        encodeDefaults = true  // Required to send action field
     }
-
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Shared WebSocket session management
     private var session: WebSocketSession? = null
@@ -127,6 +195,7 @@ public class AwsWebSocketPubSub(
     private val incomingMessages = MutableSharedFlow<IncomingMessage>(extraBufferCapacity = 1000)
 
     // Message routing
+    // replay=1 allows late collectors to receive the last message
     private val channelFlows = ConcurrentHashMap<String, MutableSharedFlow<String>>()
 
     @Serializable
@@ -147,14 +216,16 @@ public class AwsWebSocketPubSub(
             // Double-check after acquiring the lock (another coroutine may have connected)
             session?.let { if (it.isActive) return@withLock it }
 
-            val wsUrl = websocketUrl
+            // Strip query parameters (used for Terraform dependency tracking)
+            val cleanUrl = websocketUrl.substringBefore('?')
+            val wsUrl = cleanUrl
                 .replace("aws-wss://", "wss://")
                 .replace("aws-ws://", "ws://")
 
-            val newSession = httpClient.webSocketSession(wsUrl)
+            val newSession = getHttpClient().webSocketSession(wsUrl)
 
             // Start message receiver
-            scope.launch {
+            getScope().launch {
                 try {
                     for (frame in newSession.incoming) {
                         if (frame is Frame.Text) {
@@ -203,12 +274,17 @@ public class AwsWebSocketPubSub(
             override suspend fun collect(collector: kotlinx.coroutines.flow.FlowCollector<T>) {
                 val session = ensureConnected()
 
-                // Get or create channel flow
-                val flow = channelFlows.getOrPut(key) { MutableSharedFlow(extraBufferCapacity = 100) }
+                // Get or create channel flow BEFORE subscribing
+                // This ensures the flow exists when messages arrive from WebSocket
+                val flow = channelFlows.getOrPut(key) { 
+                    MutableSharedFlow(replay = 1, extraBufferCapacity = 100) 
+                }
 
                 // Subscribe if not already subscribed
                 if (subscribedChannels.add(key)) {
                     session.send(json.encodeToString(SubscribeRequest.serializer(), SubscribeRequest(channel = key)))
+                    // Give server time to register subscription
+                    delay(100)
                 }
 
                 // Collect and deserialize messages
@@ -216,6 +292,8 @@ public class AwsWebSocketPubSub(
                     try {
                         val value = json.decodeFromString(serializer, messageJson)
                         collector.emit(value)
+                    } catch (e: CancellationException) {
+                        throw e  // Re-throw cancellation
                     } catch (e: Exception) {
                         // Skip malformed messages
                     }
@@ -235,10 +313,13 @@ public class AwsWebSocketPubSub(
             override suspend fun collect(collector: kotlinx.coroutines.flow.FlowCollector<String>) {
                 val session = ensureConnected()
 
-                val flow = channelFlows.getOrPut(key) { MutableSharedFlow(extraBufferCapacity = 100) }
+                // Get or create channel flow BEFORE subscribing
+                val flow = channelFlows.getOrPut(key) { MutableSharedFlow(replay = 1, extraBufferCapacity = 100) }
 
                 if (subscribedChannels.add(key)) {
                     session.send(json.encodeToString(SubscribeRequest.serializer(), SubscribeRequest(channel = key)))
+                    // Give server time to register subscription
+                    delay(100)
                 }
 
                 flow.collect { message ->
@@ -264,11 +345,19 @@ public class AwsWebSocketPubSub(
     }
 
     override suspend fun disconnect() {
-        scope.cancel()
-        session?.close()
-        session = null
-        subscribedChannels.clear()
-        channelFlows.clear()
+        val (sessionToClose, clientToClose) = synchronized(clientLock) {
+            scope.cancel()
+            val s = session
+            val c = httpClient
+            session = null
+            httpClient = null
+            subscribedChannels.clear()
+            channelFlows.clear()
+            Pair(s, c)
+        }
+        // Close outside synchronized to avoid critical section
+        sessionToClose?.close()
+        clientToClose?.close()
     }
 
     public companion object {

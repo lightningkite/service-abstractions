@@ -81,7 +81,7 @@ class OpenAISpeechRoundTripTest {
             options = TtsSynthesisOptions(outputFormat = AudioFormat.MP3_44100_128)
         )
 
-        assertTrue(audio.data.size > 0, "TTS should generate audio data")
+        assertTrue(audio.data.size!! > 0, "TTS should generate audio data")
 
         // Transcribe the audio back to text
         val result = stt.transcribe(
@@ -162,7 +162,7 @@ class OpenAISpeechRoundTripTest {
                 options = TtsSynthesisOptions()
             )
 
-            assertTrue(audio.data.size > 0, "Voice $voice should generate audio")
+            assertTrue(audio.data.size!! > 0, "Voice $voice should generate audio")
 
             val result = stt.transcribe(audio, TranscriptionOptions(language = "en"))
             assertTrue(result.text.isNotEmpty(), "Should transcribe audio from voice $voice")

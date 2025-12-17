@@ -26,12 +26,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  * @property output Where to write output - null for stdout, or a file path
  * @property debounceWindowMs Debounce window in milliseconds (null = no debouncing)
  * @property debounceMinCount Minimum occurrences to show aggregate (default: 1)
+ * @property logCorrelationDelayMs Delay before printing spans to allow logs to arrive (default: 0, increase if logs appear outside spans)
  */
 internal data class DevExporterConfig(
     val color: Boolean = true,
     val output: File? = null,
     val debounceWindowMs: Long? = null,
-    val debounceMinCount: Int = 1
+    val debounceMinCount: Int = 1,
+    val logCorrelationDelayMs: Long = 0
 ) {
     private var _writer: PrintWriter? = null
 
@@ -88,17 +90,26 @@ internal class DevSpanExporter(private val config: DevExporterConfig = DevExport
     // Background thread for I/O to avoid blocking application threads
     private val printQueue = java.util.concurrent.LinkedBlockingQueue<Pair<SpanData, List<SpanData>>>()
     private val printThread = Thread({
+        var pendingItem: Pair<SpanData, List<SpanData>>? = null
         while (!isShutdown.get() || printQueue.isNotEmpty()) {
             try {
                 val item = printQueue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                 if (item != null) {
+                    pendingItem = item
+                    // Wait a bit for logs to arrive and be correlated with spans
+                    if (config.logCorrelationDelayMs > 0 && !isShutdown.get()) {
+                        Thread.sleep(config.logCorrelationDelayMs)
+                    }
                     printTraceTree(item.first, item.second)
+                    pendingItem = null
                 }
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
                 break
             }
         }
+        // Print any item that was polled but not yet printed when interrupted
+        pendingItem?.let { printTraceTree(it.first, it.second) }
         // Drain remaining items on shutdown
         while (true) {
             val item = printQueue.poll() ?: break

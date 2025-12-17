@@ -238,6 +238,10 @@ public class ConsolePhoneCallService(
                 appendLine("$indent<Dial timeout=\"${instructions.timeout.inWholeSeconds}\">${instructions.to}</Dial>")
                 instructions.then?.let { appendInstructions(it, indent) }
             }
+            is CallInstructions.Conference -> {
+                appendLine("$indent<Conference name=\"${instructions.name}\" startOnEnter=\"${instructions.startOnEnter}\" endOnExit=\"${instructions.endOnExit}\"/>")
+                instructions.then?.let { appendInstructions(it, indent) }
+            }
             is CallInstructions.Hangup -> appendLine("$indent<Hangup/>")
             is CallInstructions.Pause -> {
                 appendLine("$indent<Pause length=\"${instructions.duration.inWholeSeconds}\"/>")

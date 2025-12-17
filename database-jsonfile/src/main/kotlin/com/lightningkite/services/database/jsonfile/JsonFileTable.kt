@@ -121,7 +121,7 @@ internal class JsonFileTable<Model : Any>(
         limit: Int,
         maxQueryMs: Long
     ): Flow<Model> = flow {
-        traced(
+        val results = traced(
             operation = "find",
             attributes = {
                 setAttribute("db.limit", limit.toLong())
@@ -130,8 +130,9 @@ internal class JsonFileTable<Model : Any>(
         ) { span ->
             val results = super.find(condition, orderBy, skip, limit, maxQueryMs).toList()
             span?.setAttribute("db.result_count", results.size.toLong())
-            results.forEach { emit(it) }
+            results
         }
+        results.forEach { emit(it) }
     }
 
     override suspend fun count(condition: Condition<Model>): Int = traced(
@@ -335,7 +336,7 @@ internal class JsonFileTable<Model : Any>(
         condition: Condition<Model>,
         maxQueryMs: Long
     ): Flow<ScoredResult<Model>> = flow {
-        traced(
+        val results = traced(
             operation = "findSimilar",
             attributes = {
                 setAttribute("db.vectorField", vectorField.toString())
@@ -346,8 +347,9 @@ internal class JsonFileTable<Model : Any>(
         ) { span ->
             val results = super.findSimilar(vectorField, params, condition, maxQueryMs).toList()
             span?.setAttribute("db.result_count", results.size.toLong())
-            results.forEach { emit(it) }
+            results
         }
+        results.forEach { emit(it) }
     }
 
     override suspend fun findSimilarSparse(
@@ -356,7 +358,7 @@ internal class JsonFileTable<Model : Any>(
         condition: Condition<Model>,
         maxQueryMs: Long
     ): Flow<ScoredResult<Model>> = flow {
-        traced(
+        val results = traced(
             operation = "findSimilarSparse",
             attributes = {
                 setAttribute("db.vectorField", vectorField.toString())
@@ -367,7 +369,8 @@ internal class JsonFileTable<Model : Any>(
         ) { span ->
             val results = super.findSimilarSparse(vectorField, params, condition, maxQueryMs).toList()
             span?.setAttribute("db.result_count", results.size.toLong())
-            results.forEach { emit(it) }
+            results
         }
+        results.forEach { emit(it) }
     }
 }

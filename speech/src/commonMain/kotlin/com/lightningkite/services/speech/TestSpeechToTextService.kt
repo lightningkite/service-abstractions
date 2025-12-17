@@ -70,7 +70,7 @@ public class TestSpeechToTextService(
         audio: TypedData,
         options: TranscriptionOptions
     ): TranscriptionResult {
-        transcriptionHistory.add(TranscriptionRequest(audio.data.size.toInt(), null, options))
+        transcriptionHistory.add(TranscriptionRequest(audio.data.size?.toInt(), null, options))
         return buildMockResult(options)
     }
 

@@ -62,8 +62,8 @@ import kotlin.time.Duration.Companion.seconds
  *
  * - `log://` - Output to logging framework (default, development)
  * - `console://` - Human-readable console output
- * - `dev://[path]?color=false` - Immediate hierarchical trace output (development)
- * - `debounced-dev://[path]?debounce=1000&debounce_min=3` - Aggregated trace output for high-frequency operations
+ * - `dev://[path]?color=false&log_delay=50` - Hierarchical trace output with logs inside spans
+ * - `debounced-dev://[path]?debounce=1000&debounce_min=3&log_delay=50` - Aggregated trace output for high-frequency operations
  * - `otlp-grpc://host:port` - OTLP over gRPC (production, efficient)
  * - `otlp-http://host:port` - OTLP over HTTP (production, firewall-friendly)
  *
@@ -391,14 +391,7 @@ public data class OpenTelemetrySettings(
                         .build()
 
                 // Silence the log's console output lest we blow a hole in it
-                (LoggerFactory.getILoggerFactory() as LoggerContext).apply {
-                    getLogger(Logger.ROOT_LOGGER_NAME).apply {
-                        iteratorForAppenders().asSequence().find {
-                            it is ConsoleAppender<*>
-                        }?.let { detachAppender(it) }
-                    }
-                }
-                otelLoggingSetup(telemetry)
+                otelLoggingSetup(telemetry, silenceConsole = true)
                 telemetry
             }
             this.register("dev") { name: String, setting: OpenTelemetrySettings, context ->
@@ -408,7 +401,7 @@ public data class OpenTelemetrySettings(
                         .build()
                 )
 
-                // Parse URL options: dev://path/to/file?color=false
+                // Parse URL options: dev://path/to/file?color=false&log_delay=100
                 val urlWithoutScheme = setting.url.substringAfter("://", "").let {
                     if (it.isEmpty()) setting.url.substringAfter("dev:", "") else it
                 }
@@ -420,8 +413,9 @@ public data class OpenTelemetrySettings(
 
                 val colorEnabled = queryParams["color"]?.lowercase() != "false"
                 val outputFile = pathPart?.let { java.io.File(it) }
+                val logDelayMs = queryParams["log_delay"]?.toLongOrNull() ?: 0
 
-                val config = DevExporterConfig(color = colorEnabled, output = outputFile)
+                val config = DevExporterConfig(color = colorEnabled, output = outputFile, logCorrelationDelayMs = logDelayMs)
 
                 // Dev mode: NO batching - use SimpleProcessor for immediate output
                 val telemetry = OpenTelemetrySdk.builder()
@@ -451,7 +445,8 @@ public data class OpenTelemetrySettings(
                     )
                     .build()
 
-                otelLoggingSetup(telemetry)
+                // Silence console - logs appear inside span trees instead
+                otelLoggingSetup(telemetry, silenceConsole = true)
                 telemetry
             }
             this.register("debounced-dev") { name: String, setting: OpenTelemetrySettings, context ->
@@ -461,7 +456,7 @@ public data class OpenTelemetrySettings(
                         .build()
                 )
 
-                // Parse URL options: debounced-dev://path/to/file?color=false&debounce=1000&debounce_min=3
+                // Parse URL options: debounced-dev://path/to/file?color=false&debounce=1000&debounce_min=3&log_delay=100
                 val urlWithoutScheme = setting.url.substringAfter("://", "").let {
                     if (it.isEmpty()) setting.url.substringAfter("debounced-dev:", "") else it
                 }
@@ -475,12 +470,14 @@ public data class OpenTelemetrySettings(
                 val outputFile = pathPart?.let { java.io.File(it) }
                 val debounceWindowMs = queryParams["debounce"]?.toLongOrNull()
                 val debounceMinCount = queryParams["debounce_min"]?.toIntOrNull() ?: 1
+                val logDelayMs = queryParams["log_delay"]?.toLongOrNull() ?: 0
 
                 val config = DevExporterConfig(
                     color = colorEnabled,
                     output = outputFile,
                     debounceWindowMs = debounceWindowMs,
-                    debounceMinCount = debounceMinCount
+                    debounceMinCount = debounceMinCount,
+                    logCorrelationDelayMs = logDelayMs
                 )
 
                 // Debounced dev mode: NO batching - use SimpleProcessor for immediate output
@@ -511,7 +508,8 @@ public data class OpenTelemetrySettings(
                     )
                     .build()
 
-                otelLoggingSetup(telemetry)
+                // Silence console - logs appear inside span trees instead
+                otelLoggingSetup(telemetry, silenceConsole = true)
                 telemetry
             }
         }
@@ -522,9 +520,15 @@ public data class OpenTelemetrySettings(
     }
 }
 
-private fun otelLoggingSetup(telemetry: OpenTelemetrySdk?) {
+private fun otelLoggingSetup(telemetry: OpenTelemetrySdk?, silenceConsole: Boolean = false) {
     (LoggerFactory.getILoggerFactory() as LoggerContext).apply logCtx@{
         getLogger(Logger.ROOT_LOGGER_NAME).apply {
+            // Optionally silence console output so logs only appear in span trees
+            if (silenceConsole) {
+                iteratorForAppenders().asSequence().find {
+                    it is ConsoleAppender<*>
+                }?.let { detachAppender(it) }
+            }
             addAppender(OpenTelemetryAppender().apply {
                 this.context = this@logCtx
                 this.name = "OpenTelemetry"

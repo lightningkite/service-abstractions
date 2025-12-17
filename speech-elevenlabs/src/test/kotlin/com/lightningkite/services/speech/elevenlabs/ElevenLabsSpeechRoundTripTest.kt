@@ -117,7 +117,7 @@ class ElevenLabsSpeechRoundTripTest {
             options = TtsSynthesisOptions(outputFormat = AudioFormat.MP3_44100_128)
         )
 
-        assertTrue(audio.data.size > 0, "TTS should generate audio data")
+        assertTrue(audio.data.size!! > 0, "TTS should generate audio data")
         println("Generated ${audio.data.size} bytes of audio")
 
         // Transcribe the audio back to text
@@ -202,7 +202,7 @@ class ElevenLabsSpeechRoundTripTest {
             options = TtsSynthesisOptions()
         )
 
-        assertTrue(audioFlash.data.size > 0, "Flash model should generate audio")
+        assertTrue(audioFlash.data.size!! > 0, "Flash model should generate audio")
         println("Flash model generated ${audioFlash.data.size} bytes")
     }
 
@@ -232,6 +232,6 @@ class ElevenLabsSpeechRoundTripTest {
             options = TtsSynthesisOptions()
         )
 
-        assertTrue(audio.data.size > 0, "Should generate audio with custom settings")
+        assertTrue(audio.data.size!! > 0, "Should generate audio with custom settings")
     }
 }

@@ -234,6 +234,31 @@ object TwilioPhoneCallServiceLiveTest {
             println("   \n   Sample TwiML output:")
             println("   " + complex.lines().joinToString("\n   "))
 
+            // Test conference
+            println("   Testing Conference...")
+            val conference = service.renderInstructions(
+                CallInstructions.Conference(
+                    name = "my-test-conference",
+                    startOnEnter = true,
+                    endOnExit = false,
+                    muted = false,
+                    beep = true,
+                    waitUrl = "https://example.com/hold-music.mp3",
+                    statusCallbackUrl = "https://example.com/conference-status",
+                    statusCallbackEvents = listOf("join", "leave")
+                )
+            )
+            println("   Conference TwiML: $conference")
+            check(conference.contains("<Dial")) { "Missing Dial tag" }
+            check(conference.contains("<Conference")) { "Missing Conference tag" }
+            check(conference.contains("my-test-conference")) { "Missing conference name" }
+            check(conference.contains("startConferenceOnEnter=\"true\"")) { "Missing startConferenceOnEnter" }
+            check(conference.contains("endConferenceOnExit=\"false\"")) { "Missing endConferenceOnExit" }
+            check(conference.contains("waitUrl=")) { "Missing waitUrl" }
+            check(conference.contains("statusCallback=")) { "Missing statusCallback" }
+            check(conference.contains("statusCallbackEvent=\"join leave\"")) { "Missing statusCallbackEvent" }
+            println("   ✅ Conference TwiML rendered correctly")
+
             true
         } catch (e: Exception) {
             println("   ❌ TwiML rendering failed: ${e.message}")
@@ -270,6 +295,116 @@ object TwilioPhoneCallServiceLiveTest {
     }
 
     // ==================== Main ====================
+
+    /**
+     * Interactive conference demo - demonstrates conference call functionality!
+     */
+    suspend fun interactiveConferenceDemo(service: TwilioPhoneCallService, phoneNumber1: String, phoneNumber2: String? = null) {
+        println("\n" + "=".repeat(60))
+        println("🎙️  Interactive Conference Demo")
+        println("=".repeat(60))
+        println("\n⚠️  WARNING: This will make REAL phone calls and incur Twilio charges!")
+        println("   Conference room: test-conference-${System.currentTimeMillis()}")
+        println("   Participant 1: $phoneNumber1")
+        if (phoneNumber2 != null) {
+            println("   Participant 2: $phoneNumber2")
+        }
+        println("\n   This demo will:")
+        println("   1. Add participant 1 to the conference")
+        if (phoneNumber2 != null) {
+            println("   2. Add participant 2 to the conference")
+            println("   3. Both participants can talk to each other")
+        } else {
+            println("   2. You'll join the conference alone (useful for testing)")
+        }
+        println("   4. Calls will be ended after you hang up")
+        println("\n   Press Enter to continue or Ctrl+C to cancel...")
+        readlnOrNull()
+
+        try {
+            val conferenceName = "test-conference-${System.currentTimeMillis()}"
+
+            println("\n📞 Adding participant 1 to conference: $phoneNumber1...")
+            val call1Id = service.startCall(
+                phoneNumber1.toPhoneNumber(),
+                OutboundCallOptions(
+                    machineDetection = MachineDetectionMode.ENABLED,
+                    postAnswerDelay = 12.seconds
+                )
+            )
+            println("   ✅ Call 1 connected! Call ID: $call1Id")
+
+            println("\n   🎤 Greeting participant 1...")
+            service.speak(call1Id, "Hello! Welcome to the conference call test. " +
+                    "Please wait while we connect other participants.")
+
+            println("\n   🎙️  Adding participant 1 to conference room: $conferenceName...")
+            service.updateCall(call1Id, CallInstructions.Conference(
+                name = conferenceName,
+                startOnEnter = true,
+                endOnExit = phoneNumber2 == null, // End conference if only one participant
+                muted = false,
+                beep = true
+            ))
+            println("   ✅ Participant 1 is now in the conference!")
+
+            if (phoneNumber2 != null) {
+                println("\n📞 Adding participant 2 to conference: $phoneNumber2...")
+                val call2Id = service.startCall(
+                    phoneNumber2.toPhoneNumber(),
+                    OutboundCallOptions(
+                        machineDetection = MachineDetectionMode.ENABLED,
+                        postAnswerDelay = 12.seconds
+                    )
+                )
+                println("   ✅ Call 2 connected! Call ID: $call2Id")
+
+                println("\n   🎤 Greeting participant 2...")
+                service.speak(call2Id, "Hello! Welcome to the conference call test. " +
+                        "Connecting you now.")
+
+                println("\n   🎙️  Adding participant 2 to conference room: $conferenceName...")
+                service.updateCall(call2Id, CallInstructions.Conference(
+                    name = conferenceName,
+                    startOnEnter = true,
+                    endOnExit = true, // End conference when last person leaves
+                    muted = false,
+                    beep = true
+                ))
+                println("   ✅ Participant 2 is now in the conference!")
+
+                println("\n🎉 Both participants are now in the conference!")
+                println("   Conference room: $conferenceName")
+                println("   Participant 1 (Call ID: $call1Id)")
+                println("   Participant 2 (Call ID: $call2Id)")
+                println("\n   💬 The participants can now talk to each other.")
+                println("   📴 Press Enter to end all calls...")
+                readlnOrNull()
+
+                println("\n   📴 Hanging up both calls...")
+                service.hangup(call1Id)
+                service.hangup(call2Id)
+                println("   ✅ Conference ended!")
+            } else {
+                println("\n🎉 You are now in the conference!")
+                println("   Conference room: $conferenceName")
+                println("   Call ID: $call1Id")
+                println("\n   💬 You're alone in the conference (useful for testing).")
+                println("   📴 Press Enter to end the call...")
+                readlnOrNull()
+
+                println("\n   📴 Hanging up...")
+                service.hangup(call1Id)
+                println("   ✅ Conference ended!")
+            }
+
+            println("\n🎉 Interactive conference demo completed successfully!")
+
+        } catch (e: Exception) {
+            println("\n   ❌ Conference demo failed: ${e.message}")
+            e.printStackTrace()
+        }
+    }
 
     /**
      * Interactive call demo - makes a real phone call!
@@ -342,9 +477,51 @@ object TwilioPhoneCallServiceLiveTest {
 
         val service = createService(credentials)
 
-        // Check for command line arguments
-        println("Enter the target phone number:")
-        val callTo = readln()
-        interactiveCallDemo(service, callTo)
+        // Menu
+        println("\n" + "=".repeat(60))
+        println("Select a test to run:")
+        println("  1. Health Check")
+        println("  2. TwiML Rendering Tests")
+        println("  3. Interactive Call Demo (single call)")
+        println("  4. Interactive Conference Demo (multi-party call)")
+        println("  5. Run All Tests")
+        println("=".repeat(60))
+        print("\nEnter your choice (1-5): ")
+
+        when (readln().trim()) {
+            "1" -> {
+                testHealthCheck(service)
+            }
+            "2" -> {
+                testTwimlRendering(service)
+            }
+            "3" -> {
+                println("\nEnter the target phone number:")
+                val callTo = readln()
+                interactiveCallDemo(service, callTo)
+            }
+            "4" -> {
+                println("\nConference Demo - Connect two phone numbers in a conference call")
+                println("Enter participant 1 phone number:")
+                val phone1 = readln()
+                println("Enter participant 2 phone number (or press Enter to test with just one participant):")
+                val phone2 = readln().trim()
+                if (phone2.isEmpty()) {
+                    interactiveConferenceDemo(service, phone1)
+                } else {
+                    interactiveConferenceDemo(service, phone1, phone2)
+                }
+            }
+            "5" -> {
+                testHealthCheck(service)
+                testUrlSettingsParsing(credentials)
+                testTwimlRendering(service)
+                println("\n✅ All automated tests completed!")
+                println("   To test interactive features, run options 3 or 4.")
+            }
+            else -> {
+                println("❌ Invalid choice")
+            }
+        }
     }
 }

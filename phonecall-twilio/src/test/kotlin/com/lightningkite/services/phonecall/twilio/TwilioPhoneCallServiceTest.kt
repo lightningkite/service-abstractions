@@ -343,6 +343,40 @@ class TwilioPhoneCallServiceTest {
     }
 
     @Test
+    fun testRenderInstructions_conference() {
+        val service = TwilioPhoneCallService(
+            name = "test",
+            context = testContext,
+            account = "AC1234567890",
+            authToken = "authtoken123",
+            defaultFrom = "+15551234567"
+        )
+
+        val instructions = CallInstructions.Conference(
+            name = "my-conference-room",
+            startOnEnter = true,
+            endOnExit = false,
+            muted = false,
+            beep = true,
+            waitUrl = "https://example.com/hold-music.mp3",
+            statusCallbackUrl = "https://example.com/conference-status",
+            statusCallbackEvents = listOf("join", "leave")
+        )
+
+        val twiml = service.renderInstructions(instructions)
+
+        println("Conference TwiML: $twiml")
+        assertTrue(twiml.contains("<Dial"), "Missing <Dial> tag. TwiML: $twiml")
+        assertTrue(twiml.contains("<Conference"), "Missing <Conference> tag. TwiML: $twiml")
+        assertTrue(twiml.contains("my-conference-room"), "Missing conference name. TwiML: $twiml")
+        assertTrue(twiml.contains("startConferenceOnEnter=\"true\""), "Missing startConferenceOnEnter. TwiML: $twiml")
+        assertTrue(twiml.contains("endConferenceOnExit=\"false\""), "Missing endConferenceOnExit. TwiML: $twiml")
+        assertTrue(twiml.contains("waitUrl=\"https://example.com/hold-music.mp3\""), "Missing waitUrl. TwiML: $twiml")
+        assertTrue(twiml.contains("statusCallback=\"https://example.com/conference-status\""), "Missing statusCallback. TwiML: $twiml")
+        assertTrue(twiml.contains("statusCallbackEvent=\"join leave\""), "Missing statusCallbackEvent. TwiML: $twiml")
+    }
+
+    @Test
     fun testRenderInstructions_complexFlow() {
         val service = TwilioPhoneCallService(
             name = "test",

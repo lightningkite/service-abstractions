@@ -424,7 +424,7 @@ public class PostgresCollection<T : Any>(
         condition: Condition<T>,
         maxQueryMs: Long,
     ): Flow<ScoredResult<T>> = flow {
-        traced(
+        val results = traced(
             operation = "findSimilar",
             attributes = {
                 setAttribute("db.vectorField", vectorField.colName)
@@ -495,8 +495,9 @@ public class PostgresCollection<T : Any>(
             }
 
             span?.setAttribute("db.result_count", results.size.toLong())
-            results.forEach { emit(it) }
+            results
         }
+        results.forEach { emit(it) }
     }
 
     override suspend fun findSimilarSparse(
@@ -505,7 +506,7 @@ public class PostgresCollection<T : Any>(
         condition: Condition<T>,
         maxQueryMs: Long,
     ): Flow<ScoredResult<T>> = flow {
-        traced(
+        val results = traced(
             operation = "findSimilarSparse",
             attributes = {
                 setAttribute("db.vectorField", vectorField.colName)
@@ -567,8 +568,9 @@ public class PostgresCollection<T : Any>(
             }
 
             span?.setAttribute("db.result_count", results.size.toLong())
-            results.forEach { emit(it) }
+            results
         }
+        results.forEach { emit(it) }
     }
 
 }

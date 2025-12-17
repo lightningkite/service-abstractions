@@ -19,7 +19,7 @@ import kotlin.js.JsName
  *
  * - **Single-use**: [Source] and [Sink] implementations can only be consumed **once**
  * - **Must close**: Always call [close] when done, especially with [Source]
- * - **Size may be unknown**: [size] returns -1 if the size is not known ahead of time
+ * - **Size may be unknown**: [size] returns null if the size is not known ahead of time
  *
  * ## Usage
  *
@@ -36,7 +36,7 @@ import kotlin.js.JsName
  * ```
  */
 public sealed interface Data: AutoCloseable {
-    public val size: Long get() = -1
+    public val size: Long? get() = null
     public fun bytes(): ByteArray
     public fun write(to: kotlinx.io.Sink)
     public fun text(): String
@@ -46,7 +46,7 @@ public sealed interface Data: AutoCloseable {
      * You can only consume this once.
      * Make sure you close it.
      */
-    public class Sink(override val size: Long = -1, public val emit: (kotlinx.io.Sink) -> Unit): Data {
+    public class Sink(override val size: Long? = null, public val emit: (kotlinx.io.Sink) -> Unit): Data {
         override fun write(to: kotlinx.io.Sink) { to.use { emit(to) } }
         override fun text(): String {
             val dest = Buffer()
@@ -66,7 +66,7 @@ public sealed interface Data: AutoCloseable {
      * You can only consume this once.
      * Make sure you close it.
      */
-    public class Source(@JsName("sourceValue") public val source: kotlinx.io.Source, override val size: Long = -1): Data {
+    public class Source(@JsName("sourceValue") public val source: kotlinx.io.Source, override val size: Long? = null): Data {
         override fun write(to: kotlinx.io.Sink): Unit = source.use { source ->
             source.transferTo(to)
         }
@@ -111,8 +111,8 @@ public data class TypedData(val data: Data, val mediaType: MediaType): AutoClose
     public companion object {
         public fun text(text: String, mediaType: MediaType): TypedData = TypedData(Data.Text(text), mediaType)
         public fun bytes(bytes: ByteArray, mediaType: MediaType): TypedData = TypedData(Data.Bytes(bytes), mediaType)
-        public fun source(source: kotlinx.io.Source, mediaType: MediaType, size: Long = -1): TypedData = TypedData(Data.Source(source, size), mediaType)
-        public fun sink(mediaType: MediaType, size: Long = -1, emit: (kotlinx.io.Sink) -> Unit): TypedData = TypedData(Data.Sink(size, emit), mediaType)
+        public fun source(source: kotlinx.io.Source, mediaType: MediaType, size: Long? = null): TypedData = TypedData(Data.Source(source, size), mediaType)
+        public fun sink(mediaType: MediaType, size: Long? = null, emit: (kotlinx.io.Sink) -> Unit): TypedData = TypedData(Data.Sink(size, emit), mediaType)
     }
     public fun text(): String = data.text()
     public fun write(to: kotlinx.io.Sink) = data.write(to)

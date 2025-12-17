@@ -172,6 +172,26 @@ public open class DelayedTable<Model : Any>(
         doDelay()
         return wraps.deleteManyIgnoringOld(condition)
     }
+
+    override suspend fun findSimilar(
+        vectorField: DataClassPath<Model, Embedding>,
+        params: DenseVectorSearchParams,
+        condition: Condition<Model>,
+        maxQueryMs: Long
+    ): Flow<ScoredResult<Model>> {
+        doDelay()
+        return wraps.findSimilar(vectorField, params, condition, maxQueryMs)
+    }
+
+    override suspend fun findSimilarSparse(
+        vectorField: DataClassPath<Model, SparseEmbedding>,
+        params: SparseVectorSearchParams,
+        condition: Condition<Model>,
+        maxQueryMs: Long
+    ): Flow<ScoredResult<Model>> {
+        doDelay()
+        return wraps.findSimilarSparse(vectorField, params, condition, maxQueryMs)
+    }
 }
 
 public fun <Model : Any> Table<Model>.delayed(range: ClosedRange<Duration>): Table<Model> =

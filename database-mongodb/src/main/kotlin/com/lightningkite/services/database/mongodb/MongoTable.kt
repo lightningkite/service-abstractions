@@ -35,7 +35,6 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.*
-import kotlinx.serialization.modules.overwriteWith
 import org.bson.BsonBoolean
 import org.bson.BsonDocument
 import org.bson.conversions.Bson

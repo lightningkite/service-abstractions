@@ -1120,6 +1120,27 @@ public class TwilioPhoneCallService(
                 appendLine("  </Dial>")
                 inst.then?.let { renderInstruction(it) }
             }
+            is CallInstructions.Conference -> {
+                append("  <Dial")
+                inst.statusCallbackUrl?.let { append(""" action="${escapeXml(it)}"""") }
+                appendLine(">")
+                append("    <Conference")
+                append(""" startConferenceOnEnter="${inst.startOnEnter}"""")
+                append(""" endConferenceOnExit="${inst.endOnExit}"""")
+                if (inst.muted) append(""" muted="true"""")
+                if (!inst.beep) append(""" beep="false"""")
+                inst.waitUrl?.let { append(""" waitUrl="${escapeXml(it)}"""") }
+                val callbackUrl = inst.statusCallbackUrl
+                if (callbackUrl != null && inst.statusCallbackEvents.isNotEmpty()) {
+                    append(""" statusCallback="${escapeXml(callbackUrl)}"""")
+                    append(""" statusCallbackEvent="${inst.statusCallbackEvents.joinToString(" ")}"""")
+                }
+                appendLine(">")
+                appendLine("      ${escapeXml(inst.name)}")
+                appendLine("    </Conference>")
+                appendLine("  </Dial>")
+                inst.then?.let { renderInstruction(it) }
+            }
             is CallInstructions.Record -> {
                 append("  <Record")
                 append(""" maxLength="${inst.maxDuration.inWholeSeconds}"""")
