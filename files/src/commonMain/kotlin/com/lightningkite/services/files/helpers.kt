@@ -22,7 +22,7 @@ public suspend fun FileObject.download(
  * @param file The KFile to write to. Defaults to a temporary file with the appropriate extension.
  * @return The KFile containing the downloaded content
  */
-public suspend fun TypedData.download(
+public fun TypedData.download(
     file: KFile = SystemFileSystem.temporary(extension = mediaType.extension)
 ): KFile {
     write(file.sink())
