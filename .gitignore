@@ -10,3 +10,4 @@ old-lightning-server
 .DS_Store
 LocalTest.kt
 settings.json
+.terraform

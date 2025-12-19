@@ -1,0 +1,37 @@
+{
+    "output": {
+        "result": {
+            "sensitive": true,
+            "value": "aws-wss://${aws_apigatewayv2_api.Test.id}.execute-api.us-west-2.amazonaws.com/prod?secret=${random_password.Test_secret.result}&ready=${local.Test_ready}"
+        }
+    },
+    "provider": {
+        "aws": [
+            {
+                "region": "us-west-2"
+            }
+        ]
+    },
+    "terraform": {
+        "required_providers": {
+            "random": {
+                "source": "hashicorp/random",
+                "version": "~> 3.7.1"
+            },
+            "archive": {
+                "source": "hashicorp/archive",
+                "version": "~> 2.7.0"
+            },
+            "aws": {
+                "source": "hashicorp/aws",
+                "version": "~> 5.89.0"
+            }
+        },
+        "required_version": "~> 1.0",
+        "backend": {
+            "local": {
+                "path": "./build/terraform.tfstate"
+            }
+        }
+    }
+}

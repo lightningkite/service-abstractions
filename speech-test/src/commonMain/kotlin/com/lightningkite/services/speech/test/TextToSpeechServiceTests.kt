@@ -56,7 +56,7 @@ public abstract class TextToSpeechServiceTests {
             options = TtsSynthesisOptions()
         )
 
-        assertTrue(result.data.size > 0, "synthesize should return non-empty audio data")
+        assertTrue(result.data.size!! > 0, "synthesize should return non-empty audio data")
         assertNotNull(result.mediaType, "synthesize should return audio with media type")
     }
 
@@ -70,7 +70,7 @@ public abstract class TextToSpeechServiceTests {
                 options = TtsSynthesisOptions()
             )
 
-            assertTrue(result.data.size > 0, "synthesize with voice ID should return audio")
+            assertTrue(result.data.size!! > 0, "synthesize with voice ID should return audio")
         }
     }
 
@@ -84,7 +84,7 @@ public abstract class TextToSpeechServiceTests {
 
         assertTrue(chunks.isNotEmpty(), "synthesizeStream should return at least one chunk")
         chunks.forEach { chunk ->
-            assertTrue(chunk.data.size > 0, "each chunk should have data")
+            assertTrue(chunk.data.size!! > 0, "each chunk should have data")
         }
     }
 
@@ -98,7 +98,7 @@ public abstract class TextToSpeechServiceTests {
             options = TtsSynthesisOptions()
         )
 
-        assertTrue(result.data.size > 0, "synthesize should handle long text")
+        assertTrue(result.data.size!! > 0, "synthesize should handle long text")
     }
 
     @Test
@@ -113,8 +113,8 @@ public abstract class TextToSpeechServiceTests {
             options = TtsSynthesisOptions(speed = 1.5f)
         )
 
-        assertTrue(normalResult.data.size > 0, "normal speed should work")
-        assertTrue(fastResult.data.size > 0, "fast speed should work")
+        assertTrue(normalResult.data.size!! > 0, "normal speed should work")
+        assertTrue(fastResult.data.size!! > 0, "fast speed should work")
     }
 
     @Test

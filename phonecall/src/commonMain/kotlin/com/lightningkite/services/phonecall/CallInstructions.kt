@@ -149,6 +149,35 @@ public sealed class CallInstructions {
     ) : CallInstructions()
 
     /**
+     * Join or create a conference call (multi-party).
+     *
+     * This enables multiple participants to be connected in a single call.
+     * Useful for call transfers where an agent can introduce parties before leaving.
+     *
+     * @property name Unique name for the conference room
+     * @property startOnEnter Whether to start the conference when this participant joins
+     * @property endOnExit Whether to end the conference when this participant leaves
+     * @property muted Whether this participant joins muted
+     * @property beep Whether to play a beep when participants join/leave
+     * @property waitUrl URL for hold music while waiting for other participants
+     * @property statusCallbackUrl URL for conference status webhooks
+     * @property statusCallbackEvents Events to send to callback (e.g., "join", "leave")
+     * @property then Instructions to execute after leaving the conference
+     */
+    @Serializable
+    public data class Conference(
+        val name: String,
+        val startOnEnter: Boolean = true,
+        val endOnExit: Boolean = false,
+        val muted: Boolean = false,
+        val beep: Boolean = true,
+        val waitUrl: String? = null,
+        val statusCallbackUrl: String? = null,
+        val statusCallbackEvents: List<String> = listOf("join", "leave"),
+        val then: CallInstructions? = null
+    ) : CallInstructions()
+
+    /**
      * End the call.
      */
     @Serializable

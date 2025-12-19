@@ -1,13 +1,15 @@
 package com.lightningkite.services.pubsub.aws
 
-import com.lightningkite.services.SettingContext
+import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.pubsub.PubSub
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.modules.SerializersModule
+import org.crac.Core
+import org.crac.Resource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -172,5 +174,90 @@ class AwsWebSocketPubSubTest {
 
         assertEquals(event, deserialized)
         assertEquals(emptyList(), deserialized.nested?.items)
+    }
+
+    /**
+     * Tests that CRaC checkpoint/restore lifecycle correctly recreates the coroutine scope.
+     * This simulates what happens during AWS Lambda SnapStart.
+     */
+    @Test
+    fun `CRaC checkpoint and restore recreates scope correctly`() {
+        val settingContext = TestSettingContext()
+        val pubsub = AwsWebSocketPubSub(
+            name = "test",
+            context = settingContext,
+            websocketUrl = "aws-wss://test.example.com/prod"
+        )
+
+        // Verify pubsub implements Resource interface
+        assertTrue(pubsub is Resource)
+
+        // Get the global CRaC context for testing
+        val cracContext = Core.getGlobalContext()
+
+        // Simulate checkpoint - this should cancel the scope
+        pubsub.beforeCheckpoint(cracContext)
+
+        // Simulate restore - this should recreate the scope
+        pubsub.afterRestore(cracContext)
+
+        // Verify the service can still provide channels after restore
+        // (This tests that getScope() returns an active scope)
+        val channel = pubsub.string("test-channel")
+        assertNotNull(channel)
+    }
+
+    /**
+     * Tests that multiple checkpoint/restore cycles work correctly.
+     * This could happen if Lambda decides to re-checkpoint.
+     */
+    @Test
+    fun `multiple CRaC checkpoint and restore cycles work`() {
+        val settingContext = TestSettingContext()
+        val pubsub = AwsWebSocketPubSub(
+            name = "test",
+            context = settingContext,
+            websocketUrl = "aws-wss://test.example.com/prod"
+        )
+
+        val cracContext = Core.getGlobalContext()
+
+        // First cycle
+        pubsub.beforeCheckpoint(cracContext)
+        pubsub.afterRestore(cracContext)
+
+        // Second cycle
+        pubsub.beforeCheckpoint(cracContext)
+        pubsub.afterRestore(cracContext)
+
+        // Third cycle
+        pubsub.beforeCheckpoint(cracContext)
+        pubsub.afterRestore(cracContext)
+
+        // Should still work
+        val channel = pubsub.string("test-channel")
+        assertNotNull(channel)
+    }
+
+    /**
+     * Tests that disconnect() properly cancels the scope and allows reuse.
+     * This tests the serverless disconnect/reconnect pattern.
+     */
+    @Test
+    fun `disconnect and reconnect works`() = runTest {
+        val settingContext = TestSettingContext()
+        val pubsub = AwsWebSocketPubSub(
+            name = "test",
+            context = settingContext,
+            websocketUrl = "aws-wss://test.example.com/prod"
+        )
+
+        // Disconnect
+        pubsub.disconnect()
+
+        // After disconnect, getting a channel should still work
+        // (getScope() will defensively recreate the scope)
+        val channel = pubsub.string("test-channel")
+        assertNotNull(channel)
     }
 }

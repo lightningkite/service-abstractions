@@ -349,6 +349,10 @@ public class TestPhoneCallService(
                 appendLine("$indent<Dial>${inst.to}</Dial>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
+            is CallInstructions.Conference -> {
+                appendLine("$indent<Conference name=\"${inst.name}\"/>")
+                inst.then?.let { appendInstruction(it, indent) }
+            }
             is CallInstructions.Record -> {
                 appendLine("$indent<Record action=\"${inst.actionUrl}\"/>")
                 inst.then?.let { appendInstruction(it, indent) }

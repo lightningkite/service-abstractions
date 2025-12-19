@@ -4,11 +4,13 @@ import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.get
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -18,12 +20,10 @@ import kotlin.time.Duration.Companion.seconds
  * Integration tests for AWS WebSocket PubSub.
  *
  * These tests require a deployed AWS WebSocket PubSub infrastructure.
- * Set the PUBSUB_AWS_URL environment variable to run these tests.
+ * Run DeployForTesting.main() first to deploy the infrastructure and save the URL.
+ * The URL (including secret) will be saved to pubsub-aws/local/deployed-url.json.
  *
- * Example:
- * ```
- * PUBSUB_AWS_URL=aws-wss://abc123.execute-api.us-east-1.amazonaws.com/prod ./gradlew :pubsub-aws:test
- * ```
+ * Alternatively, set the PUBSUB_AWS_URL environment variable directly.
  */
 class IntegrationTest {
 
@@ -38,7 +38,22 @@ class IntegrationTest {
         val timestamp: Long = System.currentTimeMillis()
     )
 
-    private val websocketUrl: String? = System.getenv("PUBSUB_AWS_URL")
+    private val websocketUrl: String? = run {
+        // First check environment variable
+        System.getenv("PUBSUB_AWS_URL")?.let { return@run it }
+
+        // Then try to read from local file saved by DeployForTesting
+        val file = DeployForTesting.urlFile
+        if (file.exists()) {
+            try {
+                val settings = Json.decodeFromString<PubSub.Settings>(file.readText())
+                return@run settings.url
+            } catch (e: Exception) {
+                println("Failed to read URL from ${file.absolutePath}: ${e.message}")
+            }
+        }
+        null
+    }
 
     private fun createPubSub(): PubSub? {
         val url = websocketUrl ?: return null
@@ -47,10 +62,10 @@ class IntegrationTest {
     }
 
     @Test
-    fun `publish and receive single message`() = runTest(timeout = 30.seconds) {
+    fun `publish and receive single message`() = runBlocking {
         val pubsub = createPubSub() ?: run {
             println("Skipping integration test: PUBSUB_AWS_URL not set")
-            return@runTest
+            return@runBlocking
         }
 
         try {
@@ -59,34 +74,36 @@ class IntegrationTest {
             val channel = pubsub.get<TestMessage>("integration-test-single")
             val testMessage = TestMessage(id = "test-1", content = "Hello from integration test")
 
-            // Start subscriber in background
-            val receivedDeferred = async {
-                withTimeout(10.seconds) {
+            // Start collecting BEFORE publishing
+            // Use launch so collection starts immediately, not deferred with async
+            var received: TestMessage? = null
+            val job = launch {
+                received = withTimeout(10.seconds) {
                     channel.first()
                 }
             }
 
-            // Give subscriber time to connect
-            delay(500)
+            // Give time for subscription to be established on server
+            delay(1500)
 
             // Publish message
             channel.emit(testMessage)
 
-            // Wait for message
-            val received = receivedDeferred.await()
-
-            assertEquals(testMessage.id, received.id)
-            assertEquals(testMessage.content, received.content)
+            // Wait for collection to complete
+            job.join()
+            
+            assertEquals(testMessage.id, received?.id)
+            assertEquals(testMessage.content, received?.content)
         } finally {
             pubsub.disconnect()
         }
     }
 
     @Test
-    fun `publish and receive multiple messages`() = runTest(timeout = 30.seconds) {
+    fun `publish and receive multiple messages`() = runBlocking {
         val pubsub = createPubSub() ?: run {
             println("Skipping integration test: PUBSUB_AWS_URL not set")
-            return@runTest
+            return@runBlocking
         }
 
         try {
@@ -125,10 +142,10 @@ class IntegrationTest {
     }
 
     @Test
-    fun `string channel works`() = runTest(timeout = 30.seconds) {
+    fun `string channel works`() = runBlocking {
         val pubsub = createPubSub() ?: run {
             println("Skipping integration test: PUBSUB_AWS_URL not set")
-            return@runTest
+            return@runBlocking
         }
 
         try {
@@ -137,28 +154,28 @@ class IntegrationTest {
             val channel = pubsub.string("integration-test-string")
             val testString = "Hello, String Channel!"
 
-            val receivedDeferred = async {
-                withTimeout(10.seconds) {
+            val job = launch {
+                val received = withTimeout(10.seconds) {
                     channel.first()
                 }
+                assertEquals(testString, received)
             }
 
-            delay(500)
+            delay(1500)
 
             channel.emit(testString)
 
-            val received = receivedDeferred.await()
-            assertEquals(testString, received)
+            job.join()
         } finally {
             pubsub.disconnect()
         }
     }
 
     @Test
-    fun `multiple subscribers receive same message`() = runTest(timeout = 30.seconds) {
+    fun `multiple subscribers receive same message`() = runBlocking {
         val pubsub = createPubSub() ?: run {
             println("Skipping integration test: PUBSUB_AWS_URL not set")
-            return@runTest
+            return@runBlocking
         }
 
         try {
@@ -168,34 +185,36 @@ class IntegrationTest {
             val testMessage = TestMessage(id = "fanout-1", content = "Broadcast message")
 
             // Start multiple subscribers
-            val subscriber1 = async {
-                withTimeout(10.seconds) { channel.first() }
+            var received1: TestMessage? = null
+            var received2: TestMessage? = null
+            val job1 = launch {
+                received1 = withTimeout(10.seconds) { channel.first() }
             }
-            val subscriber2 = async {
-                withTimeout(10.seconds) { channel.first() }
+            val job2 = launch {
+                received2 = withTimeout(10.seconds) { channel.first() }
             }
 
-            delay(500)
+            delay(1500)
 
             // Publish once
             channel.emit(testMessage)
 
             // Both should receive
-            val received1 = subscriber1.await()
-            val received2 = subscriber2.await()
+            job1.join()
+            job2.join()
 
-            assertEquals(testMessage.id, received1.id)
-            assertEquals(testMessage.id, received2.id)
+            assertEquals(testMessage.id, received1?.id)
+            assertEquals(testMessage.id, received2?.id)
         } finally {
             pubsub.disconnect()
         }
     }
 
     @Test
-    fun `channel isolation works`() = runTest(timeout = 30.seconds) {
+    fun `channel isolation works`() = runBlocking {
         val pubsub = createPubSub() ?: run {
             println("Skipping integration test: PUBSUB_AWS_URL not set")
-            return@runTest
+            return@runBlocking
         }
 
         try {
@@ -207,37 +226,84 @@ class IntegrationTest {
             val message1 = TestMessage(id = "iso-1", content = "For channel 1")
             val message2 = TestMessage(id = "iso-2", content = "For channel 2")
 
-            val received1 = async {
-                withTimeout(10.seconds) { channel1.first() }
+            var received1: TestMessage? = null
+            var received2: TestMessage? = null
+            val job1 = launch {
+                received1 = withTimeout(10.seconds) { channel1.first() }
             }
-            val received2 = async {
-                withTimeout(10.seconds) { channel2.first() }
+            val job2 = launch {
+                received2 = withTimeout(10.seconds) { channel2.first() }
             }
 
-            delay(500)
+            delay(1500)
 
             // Publish to each channel
             channel1.emit(message1)
             channel2.emit(message2)
 
             // Each should only get its own message
-            assertEquals("iso-1", received1.await().id)
-            assertEquals("iso-2", received2.await().id)
+            job1.join()
+            job2.join()
+            
+            assertEquals("iso-1", received1?.id)
+            assertEquals("iso-2", received2?.id)
         } finally {
             pubsub.disconnect()
         }
     }
 
     @Test
-    fun `health check passes with valid connection`() = runTest(timeout = 30.seconds) {
+    fun `health check passes with valid connection`() = runBlocking {
         val pubsub = createPubSub() ?: run {
             println("Skipping integration test: PUBSUB_AWS_URL not set")
-            return@runTest
+            return@runBlocking
         }
 
         try {
             val status = pubsub.healthCheck()
             assertEquals(com.lightningkite.services.HealthStatus.Level.OK, status.level)
+        } finally {
+            pubsub.disconnect()
+        }
+    }
+
+    @Test
+    fun `connection without secret is rejected`() = runBlocking {
+        val url = websocketUrl ?: run {
+            println("Skipping integration test: PUBSUB_AWS_URL not set")
+            return@runBlocking
+        }
+
+        // Strip the secret from the URL to test unauthorized access
+        val urlWithoutSecret = url.replace(Regex("[?&]secret=[^&]*"), "")
+        val context = TestSettingContext()
+        val pubsub = PubSub.Settings(urlWithoutSecret).invoke("test-no-secret", context)
+
+        try {
+            val status = pubsub.healthCheck()
+            // Should fail to connect without the secret
+            assertEquals(com.lightningkite.services.HealthStatus.Level.ERROR, status.level)
+        } finally {
+            pubsub.disconnect()
+        }
+    }
+
+    @Test
+    fun `connection with wrong secret is rejected`() = runBlocking {
+        val url = websocketUrl ?: run {
+            println("Skipping integration test: PUBSUB_AWS_URL not set")
+            return@runBlocking
+        }
+
+        // Replace the secret with a wrong one
+        val urlWithWrongSecret = url.replace(Regex("secret=[^&]*"), "secret=wrongsecret123")
+        val context = TestSettingContext()
+        val pubsub = PubSub.Settings(urlWithWrongSecret).invoke("test-wrong-secret", context)
+
+        try {
+            val status = pubsub.healthCheck()
+            // Should fail to connect with wrong secret
+            assertEquals(com.lightningkite.services.HealthStatus.Level.ERROR, status.level)
         } finally {
             pubsub.disconnect()
         }

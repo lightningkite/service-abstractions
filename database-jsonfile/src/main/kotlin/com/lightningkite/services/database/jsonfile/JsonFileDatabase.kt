@@ -122,9 +122,17 @@ public class JsonFileDatabase(
         public fun Database.Settings.Companion.jsonFile(folder: KFile): Database.Settings = Database.Settings("json-files://$folder")
         init {
             Database.Settings.register("json-files") { name, url, context ->
+                val pathString = url.substringAfter("://")
+                val folder = if (pathString.startsWith("/")) {
+                    // Absolute path - create KFile directly
+                    KFile(pathString)
+                } else {
+                    // Relative path - resolve from working directory
+                    workingDirectory.resolve(pathString)
+                }
                 JsonFileDatabase(
                     name,
-                    workingDirectory.resolve(url.substringAfter("://")),
+                    folder,
                     context
                 )
             }

@@ -18,6 +18,7 @@ dependencies {
     implementation(libs.ktorClientCore)
     implementation(libs.ktorClientCio)
     implementation(libs.ktorClientWebsockets)
+    implementation(libs.crac)
     testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
     testImplementation(project(":test"))

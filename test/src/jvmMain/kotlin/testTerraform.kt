@@ -92,8 +92,9 @@ open class TerraformEmitterAwsTest<S>(
                         .forEach { include(it) }
                 }
                 "required_version" - "~> 1.0"
+                // Store state in terraform directory, NOT in build/ which may be cleaned by gradle
                 "backend.local" {
-                    "path" - "./build/terraform.tfstate"
+                    "path" - "./terraform.tfstate"
                 }
             }
             "output.result" {

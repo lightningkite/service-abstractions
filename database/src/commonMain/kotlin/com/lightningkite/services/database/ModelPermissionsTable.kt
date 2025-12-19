@@ -39,6 +39,34 @@ public open class ModelPermissionsTable<Model : Any>(
         ).map { permissions.mask(it) }
     }
 
+    override suspend fun findSimilar(
+        vectorField: DataClassPath<Model, Embedding>,
+        params: DenseVectorSearchParams,
+        condition: Condition<Model>,
+        maxQueryMs: Long
+    ): Flow<ScoredResult<Model>> {
+        return wraps.findSimilar(
+            vectorField = vectorField,
+            params = params,
+            condition = condition and permissions.read and permissions.readMask(condition, textIndexPaths) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
+            maxQueryMs = maxQueryMs
+        ).map { it.copy(model = permissions.mask(it.model)) }
+    }
+
+    override suspend fun findSimilarSparse(
+        vectorField: DataClassPath<Model, SparseEmbedding>,
+        params: SparseVectorSearchParams,
+        condition: Condition<Model>,
+        maxQueryMs: Long
+    ): Flow<ScoredResult<Model>> {
+        return wraps.findSimilarSparse(
+            vectorField = vectorField,
+            params = params,
+            condition = condition and permissions.read and permissions.readMask(condition, textIndexPaths) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
+            maxQueryMs = maxQueryMs
+        ).map { it.copy(model = permissions.mask(it.model)) }
+    }
+
     override suspend fun findPartial(
         fields: Set<DataClassPathPartial<Model>>,
         condition: Condition<Model>,

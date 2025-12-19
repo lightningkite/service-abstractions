@@ -87,6 +87,7 @@ kotlin {
                 compileOnly(project(":otel-jvm"))
                 compileOnly(libs.openTelemetry.api)
                 compileOnly(libs.openTelemetryInstrumentation.ktor)
+                implementation(libs.crac)
             }
         }
         val jvmTest by getting {

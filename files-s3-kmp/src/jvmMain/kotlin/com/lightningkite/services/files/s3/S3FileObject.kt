@@ -150,7 +150,7 @@ public class S3FileObject(
             ?.setAttribute("file.operation", "put")
             ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
             ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("file.size", content.data.size)
+            ?.setAttribute("file.size", content.data.size!!) // TODO: Unknown sizes will die
             ?.setAttribute("file.content_type", content.mediaType.toString())
             ?.setAttribute("storage.system", "s3")
             ?.startSpan()

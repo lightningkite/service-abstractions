@@ -291,7 +291,7 @@ public class KotlinxIoPublicFileSystem(
             path = relativePath,
             storageSystem = "file",
             attributes = mapOf(
-                "file.size" to content.data.size,
+                "file.size" to (content.data.size ?: -1L),
                 "file.content_type" to content.mediaType.toString()
             )
         ) {

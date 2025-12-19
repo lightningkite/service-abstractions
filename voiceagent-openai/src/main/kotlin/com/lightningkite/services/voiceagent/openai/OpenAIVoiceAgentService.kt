@@ -13,6 +13,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.crac.Context
+import org.crac.Core
+import org.crac.Resource
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
@@ -52,11 +55,35 @@ public class OpenAIVoiceAgentService(
     override val context: SettingContext,
     private val model: String,
     private val apiKey: String,
-) : VoiceAgentService {
+) : VoiceAgentService, Resource {
 
-    private val httpClient = HttpClient(CIO) {
-        install(WebSockets) {
-            pingIntervalMillis = 30_000
+    @Volatile
+    private var httpClient: HttpClient? = null
+    private val clientLock = Any()
+
+    init {
+        Core.getGlobalContext().register(this)
+    }
+
+    override fun beforeCheckpoint(context: Context<out Resource>) {
+        // Close HTTP client before checkpoint
+        synchronized(clientLock) {
+            httpClient?.close()
+            httpClient = null
+        }
+    }
+
+    override fun afterRestore(context: Context<out Resource>) {
+        // Client will be recreated on next access
+    }
+
+    private fun getHttpClient(): HttpClient {
+        return httpClient ?: synchronized(clientLock) {
+            httpClient ?: HttpClient(CIO) {
+                install(WebSockets) {
+                    pingIntervalMillis = 30_000
+                }
+            }.also { httpClient = it }
         }
     }
 
@@ -74,13 +101,16 @@ public class OpenAIVoiceAgentService(
             model = model,
             apiKey = apiKey,
             initialConfig = config,
-            httpClient = httpClient,
+            httpClient = getHttpClient(),
             json = json,
         )
     }
 
     override suspend fun disconnect() {
-        httpClient.close()
+        synchronized(clientLock) {
+            httpClient?.close()
+            httpClient = null
+        }
     }
 
     override suspend fun healthCheck(): HealthStatus {
