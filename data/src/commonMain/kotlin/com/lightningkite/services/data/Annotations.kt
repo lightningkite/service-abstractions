@@ -261,18 +261,23 @@ annotation class Sentence(val text: String)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
 annotation class Importance(val size: Int)
 
+enum class IndexUniqueness(val isUnique: Boolean) {
+    NotUnique(false),
+    Unique(true),
+    UniqueNullSparse(true)
+}
 
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
-annotation class Index(val unique: Boolean = false, val name:String = "")
+annotation class Index(val unique: IndexUniqueness = IndexUniqueness.NotUnique, val name:String = "")
 
 
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.CLASS)
 @Repeatable
-annotation class IndexSet(val fields: Array<String>, val unique: Boolean = false, val name:String = "")
+annotation class IndexSet(val fields: Array<String>, val unique: IndexUniqueness = IndexUniqueness.NotUnique, val name:String = "")
 
 
 @SerialInfo

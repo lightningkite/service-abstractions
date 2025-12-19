@@ -2,6 +2,7 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.data.Index
 import com.lightningkite.services.data.IndexSet
+import com.lightningkite.services.data.IndexUniqueness
 import kotlinx.serialization.descriptors.SerialDescriptor
 
 /**
@@ -10,7 +11,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
  */
 public data class NeededIndex(
     val fields: List<String>,
-    val unique: Boolean = false,
+    val unique: IndexUniqueness,
     val name: String? = null,
     val type: String? = null,
 )
@@ -26,7 +27,7 @@ public fun SerialDescriptor.indexes(): Set<NeededIndex> {
         if (!seen.add(descriptor)) return
         descriptor.annotations.forEach {
             when (it) {
-                is IndexSet -> out.add(NeededIndex(fields = it.fields.map { it }, unique = it.unique, name = it.name.takeIf { it.isNotBlank() }))
+                is IndexSet -> out.add(NeededIndex(fields = it.fields.map { it }, unique = it.unique, name = it.name.takeIf { it.isNotBlank() }, type = null))
             }
         }
         (0 until descriptor.elementsCount).forEach { index ->

@@ -58,7 +58,7 @@ internal class SerialDescriptorTable(
                 when (it) {
                     is IndexSet -> index(
                         customIndexName = it.name.takeIf { it.isNotBlank() },
-                        isUnique = it.unique,
+                        isUnique = it.unique.isUnique,
                         columns = it.fields.flatMap { columnsByDotPath[it.split('.')]!! }.toTypedArray()
                     )
 
@@ -74,7 +74,7 @@ internal class SerialDescriptorTable(
                     when (it) {
                         is Index -> index(
                             customIndexName = it.name.takeIf { it.isNotBlank() },
-                            isUnique = it.unique,
+                            isUnique = it.unique.isUnique,
                             columns = columnsByDotPath[listOf(descriptor.getElementName(index))]!!.toTypedArray()
                         )
                     }

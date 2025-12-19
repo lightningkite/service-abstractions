@@ -67,8 +67,16 @@ public fun <T> Condition<T>.simplify(): Condition<T> {
 private fun <T> Condition<T>.finalSimplify(): Condition<T> = when (this) {
     is Condition.And -> if (conditions.any { it == Condition.Never }) Condition.Never else this
     is Condition.Or -> if (conditions.any { it == Condition.Always }) Condition.Always else this
-    is Condition.Inside -> if (values.isEmpty()) Condition.Never else this
-    is Condition.NotInside -> if (values.isEmpty()) Condition.Always else this
+    is Condition.Inside -> when (values.size) {
+        0 -> Condition.Never
+        1 -> Condition.Equal(values.first())
+        else -> this
+    }
+    is Condition.NotInside -> when (values.size) {
+        0 -> Condition.Always
+        1 -> Condition.NotEqual(values.first())
+        else -> this
+    }
     else -> this
 }
 
@@ -199,8 +207,8 @@ private fun <T> reduceAnd(a: Condition<T>, b: Condition<T>): Condition<T> {
         }
 
         is Condition.Inside -> when (b) {
-            is Condition.Inside -> Condition.Inside(a.values.toSet().intersect(b.values.toSet()).toList())
-            is Condition.NotInside -> Condition.Inside(a.values.toSet().minus(b.values.toSet()).toList())
+            is Condition.Inside -> Condition.Inside(a.values.toSet().intersect(b.values.toSet()))
+            is Condition.NotInside -> Condition.Inside(a.values.toSet().minus(b.values.toSet()))
             is Condition.GreaterThan,
             is Condition.LessThan,
             is Condition.Always,
@@ -212,7 +220,7 @@ private fun <T> reduceAnd(a: Condition<T>, b: Condition<T>): Condition<T> {
         }
 
         is Condition.NotInside -> when (b) {
-            is Condition.NotInside -> Condition.NotInside(a.values.toSet().union(b.values.toSet()).toList())
+            is Condition.NotInside -> Condition.NotInside(a.values.toSet().union(b.values.toSet()))
             is Condition.Inside,
             is Condition.GreaterThan,
             is Condition.LessThan,

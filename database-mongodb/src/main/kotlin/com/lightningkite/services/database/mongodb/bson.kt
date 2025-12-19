@@ -43,9 +43,14 @@ internal fun documentOf(pair: Pair<String, Any?>): Document {
 }
 internal fun documentOf(vararg pairs: Pair<String, Any?>): Document {
     return Document().apply {
-        for(entry in pairs) {
+        for (entry in pairs) {
             this[entry.first] = entry.second
         }
+    }
+}
+internal fun <T> Iterable<Pair<String, T>>.toDocument(): Document {
+    return Document().also {
+        for (entry in this) it[entry.first] = entry.second
     }
 }
 
