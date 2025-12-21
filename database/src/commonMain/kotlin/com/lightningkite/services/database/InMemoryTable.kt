@@ -19,7 +19,7 @@ public open class InMemoryTable<Model : Any>(
     public val data: MutableList<Model> = ArrayList(),
     override val serializer: KSerializer<Model>,
     private val tableName: String = "unknown",
-    private val tracer: OpenTelemetry? = null
+    private val tracer: OpenTelemetry? = null,
 ) : Table<Model> {
 
     private val lock = ReentrantLock()
@@ -33,7 +33,9 @@ public open class InMemoryTable<Model : Any>(
     init {
         serializer.descriptor.indexes().plus(NeededIndex(fields = listOf("_id"), IndexUniqueness.Unique, "primary key"))
             .forEach { index: NeededIndex ->
-                if (index.unique in setOf(IndexUniqueness.Unique, IndexUniqueness.UniqueNullSparse)) {      // TODO: Implement sparse
+                if (index.unique in
+                    setOf(IndexUniqueness.Unique, IndexUniqueness.UniqueNullSparse)
+                ) {
                     val fields = serializer.serializableProperties!!.filter { index.fields.contains(it.name) }
                     uniqueIndexChecks.update { it ->
                         it.plus({ changes: List<EntryChange<Model>> ->
@@ -49,16 +51,31 @@ public open class InMemoryTable<Model : Any>(
                                     null
                             }
                             fieldChanges.forEach { fieldValues ->
-                                if (data.any { fromDb ->
-                                        fieldValues.all { (property, value) ->
-                                            property.get(fromDb) == value
-                                        }
-                                    }) {
-                                    throw UniqueViolationException(
-                                        table = serializer.descriptor.serialName,
-                                        key = fields.joinToString { it.name },
-                                        cause = IllegalStateException()
-                                    )
+                                if (index.unique == IndexUniqueness.Unique) {
+                                    if (data.any { fromDb ->
+                                            fieldValues.all { (property, value) ->
+                                                property.get(fromDb) == value
+                                            }
+                                        }) {
+                                        throw UniqueViolationException(
+                                            table = serializer.descriptor.serialName,
+                                            key = fields.joinToString { it.name },
+                                            cause = IllegalStateException()
+                                        )
+                                    }
+                                } else {
+                                    if (data.any { fromDb ->
+                                            fieldValues
+                                                .all { (property, value) ->
+                                                    value != null && property.get(fromDb) == value
+                                                }
+                                        }) {
+                                        throw UniqueViolationException(
+                                            table = serializer.descriptor.serialName,
+                                            key = fields.joinToString { it.name },
+                                            cause = IllegalStateException()
+                                        )
+                                    }
                                 }
                             }
                         })

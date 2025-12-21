@@ -858,8 +858,17 @@ public class MongoTable<Model : Any>(
                                         IndexOptions().name(it.name)
                                     )
                                     makeIndex(
-                                        IndexOptions()
-                                            .name(it.name + "_sparse")
+                                        IndexOptions().apply {
+                                            name( "${it.name ?: run{
+                                                if(it.fields.size == 1) {
+                                                    val field = it.fields.first()
+                                                    if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
+                                                } else
+                                                    it.fields.joinToString("_") { field ->
+                                                        if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
+                                                    }
+                                            }}_sparse")
+                                        }
                                             .unique(true)
                                             .partialFilterExpression(
                                                 nullableFields.map { (field, descriptor) ->
