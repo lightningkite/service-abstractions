@@ -838,12 +838,12 @@ public class MongoTable<Model : Any>(
                             IndexUniqueness.UniqueNullSparse -> {
                                 val nullableFields = it.fields
                                     .associateWith { field ->
-                                        serializer.descriptor.getElementDescriptor(
-                                            serializer.descriptor.getElementIndex(field).also { idx ->
-                                                if (idx == CompositeDecoder.UNKNOWN_NAME)
-                                                    throw IllegalArgumentException("Field $field is unrecognized for ${serializer.descriptor.serialName}")
-                                            }
-                                        )
+                                        val idx = serializer.descriptor.getElementIndex(field)
+
+                                        if (idx == CompositeDecoder.UNKNOWN_NAME)
+                                            throw IllegalArgumentException("Field $field is unrecognized for ${serializer.descriptor.serialName}")
+
+                                        serializer.descriptor.getElementDescriptor(idx)
                                     }
                                     .filter { it.value.isNullable }
 
@@ -857,27 +857,25 @@ public class MongoTable<Model : Any>(
                                     makeIndex(
                                         IndexOptions().name(it.name)
                                     )
-                                    makeIndex(
-                                        IndexOptions().apply {
-                                            name( "${it.name ?: run{
-                                                if(it.fields.size == 1) {
-                                                    val field = it.fields.first()
-                                                    if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
-                                                } else
-                                                    it.fields.joinToString("_") { field ->
-                                                        if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
-                                                    }
-                                            }}_sparse")
-                                        }
-                                            .unique(true)
-                                            .partialFilterExpression(
-                                                nullableFields.map { (field, descriptor) ->
-                                                    field to documentOf(    // Mongo partial indexes don't support the $ne operator, if they did this would say `$ne to null`
-                                                        "\$type" to descriptor.bsonType(context.internalSerializersModule).value
-                                                    )
-                                                }.toDocument()
-                                            )
-                                    )
+                                    makeIndex(IndexOptions().apply {
+                                        val name = it.name ?: if (it.fields.size == 1) {
+                                            val field = it.fields.first()
+                                            if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
+                                        } else
+                                            it.fields.joinToString("_") { field ->
+                                                if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
+                                            }
+
+                                        name("${name}_sparse")
+                                        unique(true)
+                                        partialFilterExpression(
+                                            nullableFields.map { (field, descriptor) ->
+                                                field to documentOf(    // Mongo partial indexes don't support the $ne operator, if they did this would say `$ne to null`
+                                                    "\$type" to descriptor.bsonType(context.internalSerializersModule).value
+                                                )
+                                            }.toDocument()
+                                        )
+                                    })
                                 }
                             }
                         }
