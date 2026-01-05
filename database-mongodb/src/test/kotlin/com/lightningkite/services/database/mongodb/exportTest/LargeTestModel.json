@@ -1,0 +1,492 @@
+[
+  {
+    "_id": {
+      "$binary": {
+        "base64": "C94XCrITRUSE/xDDghjg3g==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  },
+  {
+    "_id": {
+      "$binary": {
+        "base64": "gfAQDyJqTqeVhEdjP0jllw==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  },
+  {
+    "_id": {
+      "$binary": {
+        "base64": "h2P3fNl9Si2yKWv+HEg9VQ==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  },
+  {
+    "_id": {
+      "$binary": {
+        "base64": "2r65BN2lRICpOmE6hXNpug==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  },
+  {
+    "_id": {
+      "$binary": {
+        "base64": "ReHPpkc0TqiUboOrxvTrOQ==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  },
+  {
+    "_id": {
+      "$binary": {
+        "base64": "l02QY3N7QJCzUWqkJDMdcA==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  },
+  {
+    "_id": {
+      "$binary": {
+        "base64": "EhSqEhHNTmaT0h2+mgCG6Q==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  },
+  {
+    "_id": {
+      "$binary": {
+        "base64": "wyvg+zDqR9KpTxMvF3Zj2w==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  },
+  {
+    "_id": {
+      "$binary": {
+        "base64": "Iy/dYA4XSRGjh4us4maPUQ==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  },
+  {
+    "_id": {
+      "$binary": {
+        "base64": "TFf/zXA7Q1CJUuWydVbrdA==",
+        "subType": "04"
+      }
+    },
+    "boolean": false,
+    "byte": 0,
+    "short": 0,
+    "int": 0,
+    "long": 0,
+    "float": 0.0,
+    "double": 0.0,
+    "char": " ",
+    "string": "",
+    "uuid": {
+      "$binary": {
+        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
+        "subType": "04"
+      }
+    },
+    "instant": {
+      "$date": "1970-01-01T00:00:00Z"
+    },
+    "list": [],
+    "listEmbedded": [],
+    "set": [],
+    "setEmbedded": [],
+    "map": {},
+    "embedded": {
+      "value1": "default",
+      "value2": 1
+    },
+    "booleanNullable": null,
+    "byteNullable": null,
+    "shortNullable": null,
+    "intNullable": null,
+    "longNullable": null,
+    "floatNullable": null,
+    "doubleNullable": null,
+    "charNullable": null,
+    "stringNullable": null,
+    "uuidNullable": null,
+    "instantNullable": null,
+    "listNullable": null,
+    "mapNullable": null,
+    "embeddedNullable": null
+  }
+]

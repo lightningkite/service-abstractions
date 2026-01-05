@@ -7,9 +7,15 @@ import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.ReentrantLock
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.atomicfu.update
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.chunked
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
 
 /**
  * A FieldCollection who's underlying implementation is actually manipulating a MutableList.
@@ -427,6 +433,28 @@ public open class InMemoryTable<Model : Any>(
             }
         }
         results.forEach { emit(it) }
+    }
+
+    public fun export(module: SerializersModule): TableExport {
+        val json = Json { serializersModule = module }
+
+        return TableExport(
+            tableName,
+            data.asFlow().map { json.encodeToJsonElement(serializer, it) }
+        )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    public suspend fun import(data: TableExport, module: SerializersModule) {
+        if (data.tableName != tableName) throw IllegalArgumentException("Table names do not match, expected $tableName got ${data.tableName}")
+        val json = Json { serializersModule = module }
+
+        data.items
+            .map { json.decodeFromJsonElement(serializer, it) }
+            .chunked(1000)
+            .collect { items ->
+                insert(items)
+            }
     }
 }
 
