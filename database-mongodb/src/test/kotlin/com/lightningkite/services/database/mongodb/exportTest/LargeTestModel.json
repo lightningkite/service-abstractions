@@ -1,11 +1,6 @@
 [
   {
-    "_id": {
-      "$binary": {
-        "base64": "C94XCrITRUSE/xDDghjg3g==",
-        "subType": "04"
-      }
-    },
+    "_id": "2ca06f65-5399-42ef-b868-967ed2d2f18e",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -15,15 +10,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],
@@ -49,12 +37,7 @@
     "embeddedNullable": null
   },
   {
-    "_id": {
-      "$binary": {
-        "base64": "gfAQDyJqTqeVhEdjP0jllw==",
-        "subType": "04"
-      }
-    },
+    "_id": "70587893-c53f-4126-bab1-7ba199c463f8",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -64,15 +47,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],
@@ -98,12 +74,7 @@
     "embeddedNullable": null
   },
   {
-    "_id": {
-      "$binary": {
-        "base64": "h2P3fNl9Si2yKWv+HEg9VQ==",
-        "subType": "04"
-      }
-    },
+    "_id": "fa56ee6f-d13e-4589-b4a6-fb0d431a947b",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -113,15 +84,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],
@@ -147,12 +111,7 @@
     "embeddedNullable": null
   },
   {
-    "_id": {
-      "$binary": {
-        "base64": "2r65BN2lRICpOmE6hXNpug==",
-        "subType": "04"
-      }
-    },
+    "_id": "b0f1ad02-fe28-47cf-a58c-a2e980b3889e",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -162,15 +121,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],
@@ -196,12 +148,7 @@
     "embeddedNullable": null
   },
   {
-    "_id": {
-      "$binary": {
-        "base64": "ReHPpkc0TqiUboOrxvTrOQ==",
-        "subType": "04"
-      }
-    },
+    "_id": "3e2a45b5-444c-4fa9-bbe7-e873ac31cd1f",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -211,15 +158,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],
@@ -245,12 +185,7 @@
     "embeddedNullable": null
   },
   {
-    "_id": {
-      "$binary": {
-        "base64": "l02QY3N7QJCzUWqkJDMdcA==",
-        "subType": "04"
-      }
-    },
+    "_id": "262d891f-31e9-4d72-b2b5-04afa5d27b68",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -260,15 +195,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],
@@ -294,12 +222,7 @@
     "embeddedNullable": null
   },
   {
-    "_id": {
-      "$binary": {
-        "base64": "EhSqEhHNTmaT0h2+mgCG6Q==",
-        "subType": "04"
-      }
-    },
+    "_id": "7557c3a2-3c7e-41ef-894f-31b410c07793",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -309,15 +232,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],
@@ -343,12 +259,7 @@
     "embeddedNullable": null
   },
   {
-    "_id": {
-      "$binary": {
-        "base64": "wyvg+zDqR9KpTxMvF3Zj2w==",
-        "subType": "04"
-      }
-    },
+    "_id": "480894c7-d04f-4964-a6d6-396bd26c8a56",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -358,15 +269,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],
@@ -392,12 +296,7 @@
     "embeddedNullable": null
   },
   {
-    "_id": {
-      "$binary": {
-        "base64": "Iy/dYA4XSRGjh4us4maPUQ==",
-        "subType": "04"
-      }
-    },
+    "_id": "6ff44550-dcb3-4b15-8410-f18cb8394f89",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -407,15 +306,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],
@@ -441,12 +333,7 @@
     "embeddedNullable": null
   },
   {
-    "_id": {
-      "$binary": {
-        "base64": "TFf/zXA7Q1CJUuWydVbrdA==",
-        "subType": "04"
-      }
-    },
+    "_id": "3196295e-41a5-47da-9b82-9624c7789aa5",
     "boolean": false,
     "byte": 0,
     "short": 0,
@@ -456,15 +343,8 @@
     "double": 0.0,
     "char": " ",
     "string": "",
-    "uuid": {
-      "$binary": {
-        "base64": "AAAAAAAAAAAAAAAAAAAAAA==",
-        "subType": "04"
-      }
-    },
-    "instant": {
-      "$date": "1970-01-01T00:00:00Z"
-    },
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "instant": 0,
     "list": [],
     "listEmbedded": [],
     "set": [],

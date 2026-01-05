@@ -29,18 +29,6 @@ public data class TableExport(
 
 public typealias DatabaseExport = Flow<TableExport>
 
-public interface Exportable {
-    public fun export(): DatabaseExport
-}
-
-public interface Importable {
-    public suspend fun import(data: DatabaseExport)
-}
-
-public suspend fun Importable.import(data: Exportable) {
-    import(data.export())
-}
-
 @OptIn(ExperimentalSerializationApi::class)
 public suspend fun DatabaseExport.toJsonObject(): JsonObject = buildJsonObject {
     collect { tableExport ->
@@ -60,7 +48,7 @@ public suspend fun DatabaseExport.writeToJsonFiles(
     folder.createDirectories()
 
     collect { tableExport ->
-        val filename = tableExport.tableName.filter { it.isLetterOrDigit() } + ".json"
+        val filename = tableExport.tableName + ".json"
         val file = folder.then(filename)
         val temp = folder.then("$filename.saving")
         temp.writeString(
@@ -68,21 +56,4 @@ public suspend fun DatabaseExport.writeToJsonFiles(
         )
         temp.atomicMove(file)
     }
-}
-
-public suspend fun Importable.importFromJsonFiles(
-    files: List<KFile>,
-    json: Json
-) {
-    import(
-        files.map { file ->
-            TableExport(
-                tableName = file.nameWithoutExtension,
-                items = json.decodeFromString(
-                    JsonArray.serializer(),
-                    file.readString()
-                ).asFlow()
-            )
-        }.asFlow()
-    )
 }

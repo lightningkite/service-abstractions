@@ -1,13 +1,10 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.database.Database
-import com.lightningkite.services.database.UniqueViolationException
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.database.DatabaseExport
-import com.lightningkite.services.database.Exportable
-import com.lightningkite.services.database.TableExport
+import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.Table
+import com.lightningkite.services.database.UniqueViolationException
 import com.mongodb.*
 import com.mongodb.event.ConnectionCheckedInEvent
 import com.mongodb.event.ConnectionCheckedOutEvent
@@ -15,10 +12,7 @@ import com.mongodb.event.ConnectionPoolListener
 import com.mongodb.kotlin.client.coroutine.MongoClient
 import com.mongodb.kotlin.client.coroutine.MongoCollection
 import io.opentelemetry.instrumentation.mongo.v3_1.MongoTelemetry
-import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
 import org.bson.BsonDocument
 import org.bson.UuidRepresentation
 import java.io.File
@@ -26,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
-import kotlin.text.get
 
 /**
  * MongoDB implementation of the Database abstraction.
@@ -81,7 +74,7 @@ public class MongoDatabase(
     public val atlasSearch: Boolean = false,
     public val clientSettings: MongoClientSettings,
     override val context: SettingContext,
-) : Database, Exportable {
+) : Database {
 
     public companion object {
         private val isServerless: Boolean by lazy {
@@ -309,22 +302,4 @@ public class MongoDatabase(
                 }, context)
             }
         } as Lazy<MongoTable<T>>).value
-
-    override fun export(): DatabaseExport {
-        val json = Json { serializersModule = context.internalSerializersModule }
-
-        return database
-            .listCollectionNames()
-            .map { name ->
-                TableExport(
-                    tableName = name,
-                    items = database
-                        .getCollection(name, BsonDocument::class.java)
-                        .aggregate(emptyList())
-                        .map { document ->
-                            json.parseToJsonElement(document.toJson()).jsonObject
-                        }
-                )
-            }
-    }
 }
