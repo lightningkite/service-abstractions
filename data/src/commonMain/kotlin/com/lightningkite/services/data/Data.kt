@@ -47,18 +47,25 @@ public sealed interface Data: AutoCloseable {
      * Make sure you close it.
      */
     public class Sink(override val size: Long? = null, public val emit: (kotlinx.io.Sink) -> Unit): Data {
-        override fun write(to: kotlinx.io.Sink) { to.use { emit(to) } }
+        private var consumed = false
+        private fun checkNotConsumed() {
+            check(!consumed) { "Sink has already been consumed. Sink data can only be read once." }
+            consumed = true
+        }
+        override fun write(to: kotlinx.io.Sink) { checkNotConsumed(); to.use { emit(to) } }
         override fun text(): String {
+            checkNotConsumed()
             val dest = Buffer()
             emit(dest)
             return dest.readString()
         }
         override fun bytes(): ByteArray {
+            checkNotConsumed()
             val dest = Buffer()
             emit(dest)
             return dest.readByteArray()
         }
-        override fun source(): kotlinx.io.Source = Buffer().also { emit(it) }
+        override fun source(): kotlinx.io.Source { checkNotConsumed(); return Buffer().also { emit(it) } }
         override fun close() {}
     }
 
@@ -67,17 +74,25 @@ public sealed interface Data: AutoCloseable {
      * Make sure you close it.
      */
     public class Source(@JsName("sourceValue") public val source: kotlinx.io.Source, override val size: Long? = null): Data {
-        override fun write(to: kotlinx.io.Sink): Unit = source.use { source ->
-            source.transferTo(to)
+        private var consumed = false
+        private fun checkNotConsumed() {
+            check(!consumed) { "Source has already been consumed. Source data can only be read once." }
+            consumed = true
+        }
+        override fun write(to: kotlinx.io.Sink): Unit {
+            checkNotConsumed()
+            source.use { source -> source.transferTo(to) }
         }
 
-        override fun text(): String = source.use { source ->
-            source.readString()
+        override fun text(): String {
+            checkNotConsumed()
+            return source.use { source -> source.readString() }
         }
-        override fun bytes(): ByteArray = source.use { source ->
-            source.readByteArray()
+        override fun bytes(): ByteArray {
+            checkNotConsumed()
+            return source.use { source -> source.readByteArray() }
         }
-        override fun source(): kotlinx.io.Source = source
+        override fun source(): kotlinx.io.Source { checkNotConsumed(); return source }
         override fun close() = source.close()
     }
     public class Bytes(public val data: ByteArray): Data {

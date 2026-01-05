@@ -97,7 +97,7 @@ public class TestVoiceAgentSession(
     public val toolResults: MutableList<Pair<String, String>> = mutableListOf()
 
     /** Messages added via [addMessage] */
-    public val messagesAdded: MutableList<Pair<String, String>> = mutableListOf()
+    public val messagesAdded: MutableList<Pair<VoiceAgentSession.MessageRole, String>> = mutableListOf()
 
     /** Whether [commitAudio] was called */
     public var audioCommitted: Boolean = false
@@ -181,9 +181,13 @@ public class TestVoiceAgentSession(
         toolResults.add(callId to result)
     }
 
-    override suspend fun addMessage(role: String, text: String) {
+    override suspend fun addMessage(role: VoiceAgentSession.MessageRole, text: String) {
         check(!isClosed) { "Session is closed" }
         messagesAdded.add(role to text)
+    }
+
+    override suspend fun awaitConnection() {
+        // Test service is always "connected" - no-op
     }
 
     override suspend fun close() {

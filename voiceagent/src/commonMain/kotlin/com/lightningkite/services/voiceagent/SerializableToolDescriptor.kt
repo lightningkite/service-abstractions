@@ -104,8 +104,8 @@ public sealed class SerializableToolParameterType {
     @Serializable
     @SerialName("object")
     public data class Object(
-        val properties: kotlin.collections.List<SerializableToolParameterDescriptor> = emptyList(),
-        val requiredProperties: kotlin.collections.List<kotlin.String> = emptyList(),
+        val properties: List<SerializableToolParameterDescriptor> = emptyList(),
+        val requiredProperties: List<kotlin.String> = emptyList(),
         val additionalProperties: kotlin.Boolean = false,
     ) : SerializableToolParameterType()
 

@@ -21,29 +21,15 @@ class TfTest {
 
     init {
         // Ensure the companion object is initialized (registers URL schemes)
-        AwsWebSocketPubSub
+        DynamoDbPubSub
     }
 
     @Test
-    fun `terraform plan for aws websocket pubsub`() {
+    fun `terraform plan for aws dynamodb pubsub`() {
         assertPlannableAws<PubSub.Settings>(
             name = "pubsub-ws",
             fulfill = {
-                it.awsApiGatewayWebSocket()
-            }
-        )
-    }
-
-    @Test
-    fun `terraform plan with custom settings`() {
-        assertPlannableAws<PubSub.Settings>(
-            name = "pubsub-ws-custom",
-            fulfill = {
-                it.awsApiGatewayWebSocket(
-                    lambdaMemoryMb = 512,
-                    lambdaTimeoutSeconds = 60,
-                    logRetentionDays = 7
-                )
+                it.dynamoDb()
             }
         )
     }

@@ -20,6 +20,8 @@ dependencies {
     implementation(libs.ktorContentNegotiation)
     implementation(libs.ktorJson)
 
+    implementation(libs.coroutinesCore)
+
     // CRaC for AWS Lambda SnapStart support
     implementation(libs.crac)
 

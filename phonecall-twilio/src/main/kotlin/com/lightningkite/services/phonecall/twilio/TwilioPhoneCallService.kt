@@ -134,6 +134,7 @@ public class TwilioPhoneCallService(
                     BasicAuthCredentials(username = authUser, password = authSecret)
                 }
                 realm = "Twilio API"
+                sendWithoutRequest { true }  // Send auth proactively to avoid 401 challenge
             }
         }
     }

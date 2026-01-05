@@ -288,5 +288,10 @@ public sealed class CallInstructions {
         val track: AudioTrack = AudioTrack.INBOUND,
         val customParameters: Map<String, String> = emptyMap(),
         val then: CallInstructions? = null
-    ) : CallInstructions()
+    ) : CallInstructions() {
+        init {
+            require(websocketUrl.startsWith("wss://")) { "WebSocket URL (${websocketUrl}) must start with wss://" }
+            require(!websocketUrl.contains("?")) { "WebSocket URL (${websocketUrl}) has query parameters, which is not allowed. Use customParameters instead." }
+        }
+    }
 }

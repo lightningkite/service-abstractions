@@ -11,3 +11,4 @@ old-lightning-server
 LocalTest.kt
 settings.json
 .terraform
+database-cassandra/target

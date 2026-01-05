@@ -487,6 +487,118 @@ class TwilioPhoneCallServiceTest {
         assertTrue(twiml.contains("<Stream"), "Missing <Stream> tag. TwiML: $twiml")
     }
 
+    @Test
+    fun testRenderInstructions_streamAudioWithQuestionMarkInValue() {
+        val service = TwilioPhoneCallService(
+            name = "test",
+            context = testContext,
+            account = "AC1234567890",
+            authToken = "authtoken123",
+            defaultFrom = "+15551234567"
+        )
+
+        // Test custom parameter with a URL containing ? in its value
+        val instructions = CallInstructions.StreamAudio(
+            websocketUrl = "wss://myserver.com/audio-stream",
+            track = AudioTrack.BOTH,
+            customParameters = mapOf(
+                "redirectUrl" to "https://other.example.com/callback?param=value&other=123"
+            )
+        )
+
+        val twiml = service.renderInstructions(instructions)
+        println("StreamAudio with ? in param value TwiML: $twiml")
+
+        // The parameter value should be XML-escaped (& becomes &amp;)
+        assertTrue(twiml.contains("<Parameter"), "Missing <Parameter> tag. TwiML: $twiml")
+        assertTrue(twiml.contains("name=\"redirectUrl\""), "Missing redirectUrl parameter. TwiML: $twiml")
+        // The value should have the ? preserved and & escaped
+        assertTrue(twiml.contains("https://other.example.com/callback?param=value&amp;other=123"),
+            "Parameter value not properly XML-escaped. TwiML: $twiml")
+    }
+
+    @Test
+    fun testRenderInstructions_streamAudioParameterWithComplexUrl() {
+        val service = TwilioPhoneCallService(
+            name = "test",
+            context = testContext,
+            account = "AC1234567890",
+            authToken = "authtoken123",
+            defaultFrom = "+15551234567"
+        )
+
+        // Test customParameter with a URL value containing ? and & characters
+        // This is a common use case: passing a callback URL with its own query params
+        val instructions = CallInstructions.StreamAudio(
+            websocketUrl = "wss://myserver.com/stream",
+            track = AudioTrack.BOTH,
+            customParameters = mapOf(
+                "callbackUrl" to "https://api.example.com/callback?token=abc123&session=xyz789&redirect=https://other.com?foo=bar"
+            )
+        )
+
+        val twiml = service.renderInstructions(instructions)
+        println("StreamAudio with complex URL parameter TwiML:\n$twiml")
+
+        assertTrue(twiml.contains("<Connect>"), "Missing <Connect> tag. TwiML: $twiml")
+        assertTrue(twiml.contains("<Stream"), "Missing <Stream> tag. TwiML: $twiml")
+        assertTrue(twiml.contains("<Parameter"), "Missing <Parameter> tag. TwiML: $twiml")
+        assertTrue(twiml.contains("name=\"callbackUrl\""), "Missing callbackUrl parameter name. TwiML: $twiml")
+        // The & should be escaped to &amp; for valid XML
+        assertTrue(twiml.contains("token=abc123&amp;session=xyz789"),
+            "& not properly escaped to &amp;. TwiML: $twiml")
+        // The nested ? should be preserved as-is
+        assertTrue(twiml.contains("redirect=https://other.com?foo=bar"),
+            "Nested ? not preserved. TwiML: $twiml")
+    }
+
+    // ==================== Audio Stream Adapter Parsing Tests ====================
+
+    @Test
+    fun testAudioStreamAdapter_parseStartEventWithUrlParams() = runTest {
+        val service = TwilioPhoneCallService(
+            name = "test",
+            context = testContext,
+            account = "AC1234567890",
+            authToken = "authtoken123",
+            defaultFrom = "+15551234567"
+        )
+
+        val adapter = service.audioStream
+
+        // Simulate Twilio "start" event with customParameters containing a URL with ? and &
+        val startEventJson = """
+            {
+                "event": "start",
+                "streamSid": "MZ123456789",
+                "start": {
+                    "callSid": "CA987654321",
+                    "customParameters": {
+                        "callbackUrl": "https://api.example.com/callback?token=abc123&session=xyz",
+                        "redirectUrl": "https://other.com/api?key=secret&extra=value?nested=param"
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val frame = com.lightningkite.services.data.WebsocketAdapter.Frame.Text(startEventJson)
+        val event = adapter.parse(frame)
+
+        assertTrue(event is AudioStreamEvent.Connected, "Expected Connected event, got $event")
+        val connected = event as AudioStreamEvent.Connected
+
+        assertEquals("CA987654321", connected.callId)
+        assertEquals("MZ123456789", connected.streamId)
+
+        // Verify the customParameters are parsed correctly including ? and & in values
+        assertEquals("https://api.example.com/callback?token=abc123&session=xyz",
+            connected.customParameters["callbackUrl"],
+            "callbackUrl param should preserve ? and &")
+        assertEquals("https://other.com/api?key=secret&extra=value?nested=param",
+            connected.customParameters["redirectUrl"],
+            "redirectUrl param should preserve nested ?")
+    }
+
     // ==================== Call Status Mapping Tests ====================
 
     @Test

@@ -13,16 +13,20 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":pubsub"))
+    api(libs.dynamodb)
     implementation(libs.coroutinesCore)
+    implementation(libs.coroutinesReactive)
     implementation(libs.kotlinXJson)
     implementation(libs.ktorClientCore)
     implementation(libs.ktorClientCio)
     implementation(libs.ktorClientWebsockets)
     implementation(libs.crac)
+    implementation(project(":aws-client"))
     testImplementation(libs.kotlinTest)
     testImplementation(libs.coroutinesTesting)
     testImplementation(project(":test"))
     testImplementation(project(":pubsub-test"))
+    testImplementation(project(":cache-dynamodb"))  // For embeddedDynamo()
 }
 
 kotlin {

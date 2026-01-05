@@ -161,9 +161,26 @@ public interface VoiceAgentSession {
      * @param role Who sent this message ("user" or "assistant")
      * @param text The message content
      */
-    public suspend fun addMessage(role: String, text: String)
+    public suspend fun addMessage(role: MessageRole, text: String)
+
+    public enum class MessageRole {
+        User, Assistant
+    }
 
     // ============ Lifecycle ============
+
+    /**
+     * Wait for the session to fully connect to the voice agent provider.
+     *
+     * Call this after [VoiceAgentService.createSession] to ensure the WebSocket
+     * connection is established before sending audio or messages.
+     *
+     * This is particularly important in serverless environments (like AWS Lambda)
+     * where the function may return before an async connection completes.
+     *
+     * @throws Exception if connection fails
+     */
+    public suspend fun awaitConnection()
 
     /**
      * Close the session and release resources.

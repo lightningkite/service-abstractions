@@ -182,18 +182,11 @@ public class TwilioAudioStreamAdapter(
             }
 
             "mark" -> {
-                // Mark events are acknowledgments - we can log but don't need to surface
+                // Mark events are acknowledgments - log and drop
                 val streamSid = jsonObj["streamSid"]?.jsonPrimitive?.contentOrNull ?: currentStreamSid ?: ""
                 val markName = jsonObj["mark"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
                 logger.debug { "Mark received: $markName on stream $streamSid" }
-
-                // Return as a connected event (no-op) since we don't have a Mark event type
-                // The caller can ignore these
-                AudioStreamEvent.Connected(
-                    callId = currentCallSid ?: "",
-                    streamId = streamSid,
-                    customParameters = mapOf("_markReceived" to (markName ?: ""))
-                )
+                AudioStreamEvent.NoOp
             }
 
             else -> {

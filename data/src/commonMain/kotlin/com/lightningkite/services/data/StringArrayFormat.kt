@@ -163,7 +163,28 @@ class StringArrayFormat(override val serializersModule: SerializersModule) : Str
     }
 
     override fun <T> decodeFromString(deserializer: DeserializationStrategy<T>, string: String): T {
-        val list = string.replace("\\,", "___COMMA___").replace("\\\\", "\\").split(',').map { it.replace("___COMMA___", ",") }
+        val list = buildList {
+            val current = StringBuilder()
+            var i = 0
+            while (i < string.length) {
+                when {
+                    string[i] == '\\' && i + 1 < string.length -> {
+                        current.append(string[i + 1])
+                        i += 2
+                    }
+                    string[i] == ',' -> {
+                        add(current.toString())
+                        current.clear()
+                        i++
+                    }
+                    else -> {
+                        current.append(string[i])
+                        i++
+                    }
+                }
+            }
+            add(current.toString())
+        }
         var index = 0
         return DataInputDecoder({ list[index++]}).decodeSerializableValue(deserializer)
     }

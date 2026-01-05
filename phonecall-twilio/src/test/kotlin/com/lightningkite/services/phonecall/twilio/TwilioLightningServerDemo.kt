@@ -414,6 +414,9 @@ object PhoneServer : ServerBuilder() {
                     is AudioStreamEvent.Stop -> {
                         println("🎙️ Stream stopping: ${event.streamId}")
                     }
+                    is AudioStreamEvent.NoOp -> {
+                        // Ignore no-op events
+                    }
                 }
             } catch (e: Exception) {
                 println("🎙️ Error parsing audio stream message: ${e.message}")

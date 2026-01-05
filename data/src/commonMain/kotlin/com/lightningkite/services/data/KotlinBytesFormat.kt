@@ -46,6 +46,9 @@ public class KotlinBytesFormat(override val serializersModule: SerializersModule
         override fun encodeChar(value: Char) = output.writeShort(value.code.toShort())
         override fun encodeString(value: String) {
             val encoded = value.encodeToByteArray()
+            require(encoded.size <= UShort.MAX_VALUE.toInt()) {
+                "String too long for binary encoding: ${encoded.size} bytes (max ${UShort.MAX_VALUE})"
+            }
             output.writeShort(encoded.size.toShort())
             output.write(encoded)
         }
@@ -154,7 +157,10 @@ public class KotlinBytesFormat(override val serializersModule: SerializersModule
         override fun decodeSequentially(): Boolean = seq
 
         override fun decodeCollectionSize(descriptor: SerialDescriptor): Int =
-            decodeInt().also { elementsCount = it }
+            decodeInt().also {
+                require(it >= 0) { "Invalid negative collection size: $it" }
+                elementsCount = it
+            }
 
         override fun decodeNotNullMark(): Boolean = decodeBoolean()
     }

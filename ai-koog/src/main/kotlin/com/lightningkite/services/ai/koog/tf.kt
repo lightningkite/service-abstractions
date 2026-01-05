@@ -7,6 +7,75 @@ import com.lightningkite.services.terraform.TerraformProviderImport
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
+ * Regional prefixes that indicate a model ID is a cross-region inference profile.
+ * When a model ID starts with one of these prefixes (e.g., "us.", "eu.", "ap."),
+ * it uses the inference-profile ARN format instead of foundation-model ARN format.
+ */
+private val inferenceProfilePrefixes = listOf("us.", "eu.", "ap.", "us-", "eu-", "ap-")
+
+/**
+ * Determines if a Bedrock model ID represents a cross-region inference profile.
+ *
+ * Cross-region inference profiles have regional prefixes like "us.", "eu.", or "ap."
+ * and require a different ARN format than foundation models.
+ *
+ * @param modelId The Bedrock model ID to check
+ * @return true if this is an inference profile, false if it's a foundation model
+ */
+internal fun isInferenceProfile(modelId: String): Boolean =
+    inferenceProfilePrefixes.any { modelId.startsWith(it) }
+
+/**
+ * Extracts the base model ID from an inference profile model ID by removing the regional prefix.
+ * For example: "us.anthropic.claude-haiku-4-5-20251001-v1:0" -> "anthropic.claude-haiku-4-5-20251001-v1:0"
+ *
+ * @param modelId The inference profile model ID with regional prefix
+ * @return The base model ID without the prefix, or the original ID if no prefix found
+ */
+internal fun getBaseModelId(modelId: String): String {
+    for (prefix in inferenceProfilePrefixes) {
+        if (modelId.startsWith(prefix)) {
+            return modelId.removePrefix(prefix)
+        }
+    }
+    return modelId
+}
+
+/**
+ * Generates the correct ARN(s) for a Bedrock model based on whether it's a foundation model
+ * or a cross-region inference profile.
+ *
+ * - Foundation models: Returns single ARN `arn:aws:bedrock:{region}::foundation-model/{modelId}`
+ * - Inference profiles: Returns TWO ARNs:
+ *   1. `arn:aws:bedrock:{region}:*:inference-profile/{modelId}` - for the inference profile itself
+ *   2. `arn:aws:bedrock:*::foundation-model/{baseModelId}` - for the underlying foundation model
+ *      (uses wildcard region because Bedrock routes requests to different regions internally)
+ *
+ * The wildcard (*) in inference profile ARNs matches any account ID, which is required
+ * because inference profiles are account-specific resources.
+ *
+ * @param modelId The Bedrock model ID
+ * @param region The AWS region
+ * @return List of ARN strings required for IAM permissions
+ */
+internal fun bedrockModelArns(modelId: String, region: String): List<String> =
+    if (isInferenceProfile(modelId)) {
+        val baseModelId = getBaseModelId(modelId)
+        listOf(
+            // Permission for the inference profile itself
+            "arn:aws:bedrock:${region}:*:inference-profile/${modelId}",
+            // Permission for the underlying foundation model (any region, since Bedrock routes internally)
+            "arn:aws:bedrock:*::foundation-model/${baseModelId}"
+        )
+    } else {
+        listOf("arn:aws:bedrock:${region}::foundation-model/${modelId}")
+    }
+
+// Keep for backwards compatibility with tests
+internal fun bedrockModelArn(modelId: String, region: String): String =
+    bedrockModelArns(modelId, region).first()
+
+/**
  * Configures AWS Bedrock access for LLM inference.
  *
  * AWS Bedrock is a fully managed service, so this function primarily:
@@ -53,14 +122,14 @@ public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrock(
 
     // Add IAM policy for Bedrock model invocation
     // Using specific model ARN for least-privilege access
+    // Note: Cross-region inference profiles (us., eu., ap. prefixes) require permissions on both
+    // the inference profile AND the underlying foundation model (which can be in any region)
     emitter.policyStatements += AwsPolicyStatement(
         action = listOf(
             "bedrock:InvokeModel",
             "bedrock:InvokeModelWithResponseStream"
         ),
-        resource = listOf(
-            "arn:aws:bedrock:${region}::foundation-model/${modelId}"
-        )
+        resource = bedrockModelArns(modelId, region)
     )
 }
 
@@ -90,14 +159,14 @@ public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrockMultiModel(
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
     // Add IAM policy for all specified models
+    // Note: Cross-region inference profiles (us., eu., ap. prefixes) require permissions on both
+    // the inference profile AND the underlying foundation model (which can be in any region)
     emitter.policyStatements += AwsPolicyStatement(
         action = listOf(
             "bedrock:InvokeModel",
             "bedrock:InvokeModelWithResponseStream"
         ),
-        resource = modelIds.map { modelId ->
-            "arn:aws:bedrock:${region}::foundation-model/${modelId}"
-        }
+        resource = modelIds.flatMap { modelId -> bedrockModelArns(modelId, region) }
     )
 }
 
@@ -123,14 +192,16 @@ public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrockAllModels(
 
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
-    // Wildcard access to all foundation models
+    // Wildcard access to all foundation models and inference profiles
+    // Uses wildcard region (*) because cross-region inference profiles route to different regions
     emitter.policyStatements += AwsPolicyStatement(
         action = listOf(
             "bedrock:InvokeModel",
             "bedrock:InvokeModelWithResponseStream"
         ),
         resource = listOf(
-            "arn:aws:bedrock:${region}::foundation-model/*"
+            "arn:aws:bedrock:*::foundation-model/*",
+            "arn:aws:bedrock:*:*:inference-profile/*"
         )
     )
 }

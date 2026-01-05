@@ -11,8 +11,11 @@ import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
-import kotlinx.serialization.encodeToString
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.crac.Context
 import org.crac.Core
 import org.crac.Resource
@@ -162,6 +165,13 @@ internal class OpenAIVoiceAgentSession(
     private val functionCallArguments = mutableMapOf<String, StringBuilder>()
     private val functionCallNames = mutableMapOf<String, String>()
 
+    // Cumulative token tracking for debugging rate limits
+    private var cumulativeInputTokens = 0
+    private var cumulativeOutputTokens = 0
+    private var cumulativeAudioInputTokens = 0
+    private var cumulativeAudioOutputTokens = 0
+    private var responseCount = 0
+
     init {
         // Start connection in background
         connectionJob = scope.launch {
@@ -227,6 +237,7 @@ internal class OpenAIVoiceAgentSession(
 
             when (event) {
                 is ServerEvent.Error -> {
+                    logger.error { "[$serviceName] OpenAI error: code=${event.error.code ?: event.error.type}, message=${event.error.message}, param=${event.error.param}" }
                     eventChannel.send(VoiceAgentEvent.Error(
                         code = event.error.code ?: event.error.type,
                         message = event.error.message,
@@ -278,6 +289,7 @@ internal class OpenAIVoiceAgentSession(
                 }
 
                 is ServerEvent.ResponseCreated -> {
+                    logger.info { "[$serviceName] Response started: ${event.response.id}" }
                     eventChannel.send(VoiceAgentEvent.ResponseStarted(event.response.id))
                 }
 
@@ -299,6 +311,23 @@ internal class OpenAIVoiceAgentSession(
                             inputTextTokens = it.inputTokenDetails?.textTokens,
                             outputTextTokens = it.outputTokenDetails?.textTokens,
                         )
+                    }
+
+                    // Track cumulative token usage
+                    responseCount++
+                    usage?.let {
+                        cumulativeInputTokens += it.inputTokens
+                        cumulativeOutputTokens += it.outputTokens
+                        it.inputAudioTokens?.let { a -> cumulativeAudioInputTokens += a }
+                        it.outputAudioTokens?.let { a -> cumulativeAudioOutputTokens += a }
+                    }
+
+                    if (status == ResponseStatus.FAILED) {
+                        logger.error { "[$serviceName] Response FAILED: ${event.response.id}, statusDetails=${event.response.statusDetails}" }
+                    } else {
+                        logger.info { "[$serviceName] Response #$responseCount done: ${event.response.id}, status=$status" }
+                        logger.info { "[$serviceName] This response: input=${usage?.inputTokens} (text=${usage?.inputTextTokens}, audio=${usage?.inputAudioTokens}), output=${usage?.outputTokens} (text=${usage?.outputTextTokens}, audio=${usage?.outputAudioTokens})" }
+                        logger.info { "[$serviceName] CUMULATIVE: input=$cumulativeInputTokens (audio=$cumulativeAudioInputTokens), output=$cumulativeOutputTokens (audio=$cumulativeAudioOutputTokens), total=${cumulativeInputTokens + cumulativeOutputTokens}" }
                     }
                     eventChannel.send(VoiceAgentEvent.ResponseDone(event.response.id, status, usage))
                 }
@@ -361,6 +390,7 @@ internal class OpenAIVoiceAgentSession(
                     if (event.item.type == "function_call") {
                         val callId = event.item.callId ?: return
                         val name = event.item.name ?: return
+                        logger.info { "[$serviceName] Tool call started: $name (callId=$callId)" }
                         functionCallNames[callId] = name
                         functionCallArguments[callId] = StringBuilder()
                         eventChannel.send(VoiceAgentEvent.ToolCallStarted(
@@ -382,6 +412,7 @@ internal class OpenAIVoiceAgentSession(
 
                 is ServerEvent.ResponseFunctionCallArgumentsDone -> {
                     val name = functionCallNames[event.callId] ?: event.name
+                    logger.info { "[$serviceName] Tool call ready: $name (callId=${event.callId}), args=${event.arguments}" }
                     eventChannel.send(VoiceAgentEvent.ToolCallDone(
                         callId = event.callId,
                         toolName = name,
@@ -414,7 +445,19 @@ internal class OpenAIVoiceAgentSession(
                 }
             }
         } catch (e: Exception) {
-            logger.error(e) { "[$serviceName] Error parsing server message: $text" }
+            // Try to extract the event type from the raw message for better logging
+            val eventType = try {
+                json.parseToJsonElement(text).jsonObject["type"]?.jsonPrimitive?.contentOrNull
+            } catch (_: Exception) { null }
+
+            // Check if this is an unregistered event type (intentional, not an error)
+            if (e is SerializationException && eventType != null) {
+                // Unregistered event type - log at DEBUG without stack trace (not parsing every event type is intentional)
+                logger.debug { "[$serviceName] Ignoring unregistered event type: $eventType" }
+            } else {
+                // Actual parsing error - log at ERROR with stack trace
+                logger.error(e) { "[$serviceName] Error parsing server message: ${text.take(500)}" }
+            }
         }
     }
 
@@ -435,6 +478,22 @@ internal class OpenAIVoiceAgentSession(
 
     private suspend fun sendSessionUpdate(config: VoiceAgentSessionConfig) {
         val tools = config.tools.map { it.toOpenAIToolDefinition() }.takeIf { it.isNotEmpty() }
+
+        // Log session config sizes for token analysis
+        val instructionsChars = config.instructions?.length ?: 0
+        val instructionsEstTokens = instructionsChars / 4  // rough estimate
+        val toolsJson = tools?.let { json.encodeToString(kotlinx.serialization.builtins.ListSerializer(ToolDefinition.serializer()), it) }
+        val toolsChars = toolsJson?.length ?: 0
+        val toolsEstTokens = toolsChars / 4
+
+        logger.info { "[$serviceName] SESSION UPDATE - Instructions: ${instructionsChars} chars (~${instructionsEstTokens} tokens), Tools: ${toolsChars} chars (~${toolsEstTokens} tokens), Total: ~${instructionsEstTokens + toolsEstTokens} tokens" }
+        if (tools != null) {
+            logger.debug { "[$serviceName] Tool names: ${tools.map { it.name }}" }
+            tools.forEach { tool ->
+                val toolJson = json.encodeToString(ToolDefinition.serializer(), tool)
+                logger.debug { "[$serviceName] Tool '${tool.name}': ${toolJson.length} chars" }
+            }
+        }
 
         val sessionConfig = SessionConfig(
             modalities = listOf("text", "audio"),
@@ -499,6 +558,7 @@ internal class OpenAIVoiceAgentSession(
     }
 
     override suspend fun sendToolResult(callId: String, result: String) {
+        logger.info { "[$serviceName] Sending tool result for callId=$callId: ${result.take(200)}${if (result.length > 200) "..." else ""}" }
         val item = ConversationItem(
             type = "function_call_output",
             callId = callId,
@@ -509,10 +569,13 @@ internal class OpenAIVoiceAgentSession(
         sendEvent(ClientEvent.ResponseCreate())
     }
 
-    override suspend fun addMessage(role: String, text: String) {
+    override suspend fun addMessage(role: VoiceAgentSession.MessageRole, text: String) {
         val item = ConversationItem(
             type = "message",
-            role = role,
+            role = when(role) {
+                VoiceAgentSession.MessageRole.User -> "user"
+                VoiceAgentSession.MessageRole.Assistant -> "assistant"
+            },
             content = listOf(ContentPart(type = "input_text", text = text)),
         )
         sendEvent(ClientEvent.ConversationItemCreate(item = item))
@@ -523,6 +586,21 @@ internal class OpenAIVoiceAgentSession(
         connectionJob?.cancel()
         webSocketSession?.close()
         scope.cancel()
+    }
+
+    override suspend fun awaitConnection() {
+        // Wait for WebSocket connection to be established
+        var waited = 0
+        while (!isConnected && waited < 10000) {
+            delay(50)
+            waited += 50
+        }
+
+        if (!isConnected) {
+            throw IllegalStateException("Failed to connect to OpenAI Realtime after 10 seconds")
+        }
+
+        logger.info { "[$serviceName] Connection ready after ${waited}ms" }
     }
 }
 

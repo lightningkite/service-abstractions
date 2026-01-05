@@ -49,6 +49,9 @@ suspend fun <T> Validators.validate(serializer: SerializationStrategy<T>, value:
 //}
 
 class Validators(val serializersModule: SerializersModule = EmptySerializersModule()) {
+    private val regexCache = HashMap<String, Regex>()
+    private fun cachedRegex(pattern: String): Regex = regexCache.getOrPut(pattern) { Regex(pattern) }
+
     internal val processors = ArrayList<(Annotation, value: Any?) -> ValidationIssuePart?>()
     inline fun <reified T : Annotation, V : Any> processor(crossinline action: (T, V) -> ValidationIssuePart?) {
         directProcessor(T::class) { a, b ->
@@ -148,13 +151,14 @@ class Validators(val serializersModule: SerializersModule = EmptySerializersModu
             }
         }
         processor<ExpectedPattern, Any> { t, v ->
+            val regex = cachedRegex(t.pattern)
             when (v) {
-                is String -> if (!Regex(t.pattern).matches(v)) ValidationIssuePart(
+                is String -> if (!regex.matches(v)) ValidationIssuePart(
                     2,
                     "Does not match pattern; expected to match ${t.pattern}"
                 ) else null
 
-                is IsRawString -> if (!Regex(t.pattern).matches(v.raw)) ValidationIssuePart(
+                is IsRawString -> if (!regex.matches(v.raw)) ValidationIssuePart(
                     2,
                     "Does not match pattern; expected to match ${t.pattern}"
                 ) else null

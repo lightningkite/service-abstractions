@@ -111,6 +111,15 @@ public sealed class AudioStreamEvent {
         val callId: String,
         val streamId: String
     ) : AudioStreamEvent()
+
+    /**
+     * A no-op event that should be ignored by handlers.
+     *
+     * Used for provider-specific events (like Twilio "mark" acknowledgments)
+     * that don't map to our event model and should be silently dropped.
+     */
+    @Serializable
+    public data object NoOp : AudioStreamEvent()
 }
 
 /**

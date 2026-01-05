@@ -441,6 +441,6 @@ public fun String.emailApproximatePlainText(): String {
         .replace(Regex("&lt;"), "<")
         .replace(Regex("&gt;"), ">")
         .replace(Regex("&amp;"), "&")
-        .replace(Regex(" +"), "")
+        .replace(Regex(" +"), " ")
         .replace(Regex("\n+"), "\n")
 }

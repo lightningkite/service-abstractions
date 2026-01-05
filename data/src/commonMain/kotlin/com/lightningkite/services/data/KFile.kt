@@ -84,7 +84,7 @@ public data class KFile(public val fileSystem: FileSystem, public val path: Path
     public fun takeIfExists(): KFile? = takeIf { fileSystem.exists(path) }
     public fun copyTo(target: KFile, overwrite: Boolean = false): KFile {
         val sourceMetadata = this.metadataOrNull() ?: throw FileNotFoundException("File '$this' does not exist.")
-        val targetMetadata = this.metadataOrNull()
+        val targetMetadata = target.metadataOrNull()
         if (targetMetadata != null && !overwrite)
             throw FileAlreadyExistsException(target)
         if (sourceMetadata.isDirectory) {

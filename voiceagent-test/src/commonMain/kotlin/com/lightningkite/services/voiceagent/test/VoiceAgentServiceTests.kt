@@ -170,7 +170,7 @@ public abstract class VoiceAgentServiceTests {
             session.events.first { it is VoiceAgentEvent.SessionCreated }
         }
 
-        session.addMessage("user", "Hello, how are you?")
+        session.addMessage(VoiceAgentSession.MessageRole.User, "Hello, how are you?")
 
         // Should not throw
         session.close()

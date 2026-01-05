@@ -119,9 +119,13 @@ public class ConsoleVoiceAgentSession(
         println("[$serviceName] Tool result for $callId: ${result.take(100)}...")
     }
 
-    override suspend fun addMessage(role: String, text: String) {
+    override suspend fun addMessage(role: VoiceAgentSession.MessageRole, text: String) {
         check(!isClosed) { "Session is closed" }
         println("[$serviceName] Added message [$role]: ${text.take(100)}...")
+    }
+
+    override suspend fun awaitConnection() {
+        // Console service is always "connected" - no-op
     }
 
     override suspend fun close() {
