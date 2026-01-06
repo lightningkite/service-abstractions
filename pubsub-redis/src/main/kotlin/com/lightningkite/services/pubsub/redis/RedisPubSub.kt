@@ -17,7 +17,6 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Redis implementation of PubSub (Publish/Subscribe) messaging using Lettuce client.
@@ -129,15 +128,22 @@ import java.util.concurrent.ConcurrentHashMap
  * @property context Service context with serializers
  * @property client Lettuce Redis client for connections
  */
+/**
+ * Stateless Redis PubSub implementation suitable for serverless environments.
+ *
+ * Each call to [get] creates a fresh subscription - no caching is done at the service level.
+ * This ensures that different Lambda invocations don't share stale subscriptions and
+ * prevents memory leaks from unbounded caches.
+ *
+ * Redis natively handles pub/sub fan-out, so multiple subscribers (even across different
+ * processes/Lambda instances) will all receive published messages.
+ */
 public class RedisPubSub(
     override val name: String,
     override val context: SettingContext,
     private val client: RedisClient
 ) : PubSub {
     private val tracer: Tracer? = context.openTelemetry?.getTracer("pubsub-redis")
-    private val observables = ConcurrentHashMap<String, Flux<String>>()
-    private val subscribeConnection = client.connectPubSub().reactive()
-    private val publishConnection = client.connectPubSub().reactive()
     private val json = Json { serializersModule = context.internalSerializersModule }
 
     public companion object {
@@ -157,18 +163,26 @@ public class RedisPubSub(
         }
     }
 
-    private fun key(key: String): Flux<String> = observables.getOrPut(key) {
-        val reactive = subscribeConnection
-        Flux.usingWhen(
-            reactive.subscribe(key).then(Mono.just(reactive)),
-            {
-                it.observeChannels()
+    /**
+     * Creates a fresh Redis subscription for the given key.
+     * No caching - each call creates a new subscription that will be cleaned up
+     * when the collector completes or cancels.
+     */
+    private fun createSubscription(key: String): Flux<String> {
+        val statefulConnection = client.connectPubSub()
+        val reactiveConnection = statefulConnection.reactive()
+        return Flux.usingWhen<String, io.lettuce.core.pubsub.api.reactive.RedisPubSubReactiveCommands<String, String>>(
+            reactiveConnection.subscribe(key).then(Mono.just(reactiveConnection)),
+            { conn ->
+                conn.observeChannels()
                     .filter { it.channel == key }
+                    .map { it.message }
             },
-            { it.unsubscribe(key) }
-        ).map { it.message }
-            .doOnError { it.printStackTrace() }
-            .share()
+            { _ ->
+                // Cleanup: unsubscribe and close the connection
+                reactiveConnection.unsubscribe(key).doFinally { statefulConnection.close() }.then()
+            }
+        ).doOnError { it.printStackTrace() }
     }
 
     override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
@@ -184,7 +198,8 @@ public class RedisPubSub(
                 try {
                     val scope = span?.makeCurrent()
                     try {
-                        key(key).map { message ->
+                        // Create fresh subscription - no caching for serverless compatibility
+                        createSubscription(key).map { message ->
                             val receiveSpan = tracer?.spanBuilder("pubsub.receive")
                                 ?.setSpanKind(SpanKind.CONSUMER)
                                 ?.setAttribute("pubsub.operation", "receive")
@@ -226,12 +241,14 @@ public class RedisPubSub(
                     ?.setAttribute("pubsub.system", "redis")
                     ?.startSpan()
 
+                // Create fresh connection for publish - no caching for serverless compatibility
+                val connection = client.connectPubSub()
                 try {
                     val scope = span?.makeCurrent()
                     try {
                         val message = json.encodeToString(serializer, value)
                         span?.setAttribute("message.size", message.length.toLong())
-                        val result = publishConnection.publish(key, message).awaitFirst()
+                        val result = connection.reactive().publish(key, message).awaitFirst()
                         span?.setAttribute("pubsub.subscribers_reached", result)
                         span?.setStatus(StatusCode.OK)
                     } finally {
@@ -242,6 +259,7 @@ public class RedisPubSub(
                     span?.recordException(e)
                     throw e
                 } finally {
+                    connection.close()
                     span?.end()
                 }
             }
@@ -261,7 +279,8 @@ public class RedisPubSub(
                 try {
                     val scope = span?.makeCurrent()
                     try {
-                        key(key).asFlow().collect { message ->
+                        // Create fresh subscription - no caching for serverless compatibility
+                        createSubscription(key).asFlow().collect { message ->
                             val receiveSpan = tracer?.spanBuilder("pubsub.receive")
                                 ?.setSpanKind(SpanKind.CONSUMER)
                                 ?.setAttribute("pubsub.operation", "receive")
@@ -299,10 +318,12 @@ public class RedisPubSub(
                     ?.setAttribute("message.size", value.length.toLong())
                     ?.startSpan()
 
+                // Create fresh connection for publish - no caching for serverless compatibility
+                val connection = client.connectPubSub()
                 try {
                     val scope = span?.makeCurrent()
                     try {
-                        val result = publishConnection.publish(key, value).awaitFirst()
+                        val result = connection.reactive().publish(key, value).awaitFirst()
                         span?.setAttribute("pubsub.subscribers_reached", result)
                         span?.setStatus(StatusCode.OK)
                     } finally {
@@ -313,6 +334,7 @@ public class RedisPubSub(
                     span?.recordException(e)
                     throw e
                 } finally {
+                    connection.close()
                     span?.end()
                 }
             }

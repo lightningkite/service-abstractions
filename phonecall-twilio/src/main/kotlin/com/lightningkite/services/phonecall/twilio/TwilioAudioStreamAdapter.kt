@@ -48,6 +48,12 @@ private val logger = KotlinLogging.logger("TwilioAudioStreamAdapter")
  * {"event": "mark", "streamSid": "MZ...", "mark": {"name": "my-mark"}}
  * ```
  *
+ * ## Stateless Design
+ *
+ * This adapter is completely stateless to support serverless environments like AWS Lambda
+ * where each WebSocket message may be handled by a different Lambda instance. All necessary
+ * information is extracted directly from each message's JSON payload.
+ *
  * @property authToken Twilio auth token for signature validation (optional)
  * @see <a href="https://www.twilio.com/docs/voice/media-streams">Twilio Media Streams</a>
  */
@@ -56,11 +62,6 @@ public class TwilioAudioStreamAdapter(
 ) : WebsocketAdapter<AudioStreamStart, AudioStreamEvent, AudioStreamCommand> {
 
     private val json = Json { ignoreUnknownKeys = true }
-
-    // Track stream state for correlation
-    private var currentStreamSid: String? = null
-    private var currentCallSid: String? = null
-    private var customParameters: Map<String, String> = emptyMap()
 
     override suspend fun parseStart(
         queryParameters: List<Pair<String, String>>,
@@ -93,23 +94,18 @@ public class TwilioAudioStreamAdapter(
         val event = jsonObj["event"]?.jsonPrimitive?.contentOrNull
             ?: throw IllegalArgumentException("Missing 'event' field in Twilio message")
 
+        // Extract streamSid from message (present in all events except "connected")
+        val streamSid = jsonObj["streamSid"]?.jsonPrimitive?.contentOrNull ?: ""
+
         return when (event) {
             "connected" -> {
                 // Initial connected event - doesn't have stream info yet
-                // We need to wait for the "start" event for actual stream metadata
+                // Return NoOp since we need to wait for "start" event for actual metadata
                 logger.debug { "Twilio stream connected (protocol: ${jsonObj["protocol"]?.jsonPrimitive?.contentOrNull})" }
-                // Return a connected event with placeholder values
-                // The caller should handle this and wait for the actual start
-                AudioStreamEvent.Connected(
-                    callId = currentCallSid ?: "",
-                    streamId = currentStreamSid ?: "",
-                    customParameters = emptyMap()
-                )
+                AudioStreamEvent.NoOp
             }
 
             "start" -> {
-                val streamSid = jsonObj["streamSid"]?.jsonPrimitive?.contentOrNull
-                    ?: throw IllegalArgumentException("Missing 'streamSid' in start event")
                 val startObj = jsonObj["start"]?.jsonObject
                     ?: throw IllegalArgumentException("Missing 'start' object in start event")
                 val callSid = startObj["callSid"]?.jsonPrimitive?.contentOrNull
@@ -122,11 +118,6 @@ public class TwilioAudioStreamAdapter(
                     }
                 } ?: emptyMap()
 
-                // Store for later use
-                currentStreamSid = streamSid
-                currentCallSid = callSid
-                customParameters = params
-
                 logger.info { "Twilio stream started: streamSid=$streamSid, callSid=$callSid" }
 
                 AudioStreamEvent.Connected(
@@ -137,7 +128,6 @@ public class TwilioAudioStreamAdapter(
             }
 
             "media" -> {
-                val streamSid = jsonObj["streamSid"]?.jsonPrimitive?.contentOrNull ?: currentStreamSid ?: ""
                 val mediaObj = jsonObj["media"]?.jsonObject
                     ?: throw IllegalArgumentException("Missing 'media' object in media event")
 
@@ -146,8 +136,10 @@ public class TwilioAudioStreamAdapter(
                 val timestamp = mediaObj["timestamp"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
                 val chunk = mediaObj["chunk"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
 
+                // Note: callId is not available in media events, but streamId is sufficient
+                // for routing since the caller already has context from the Connected event
                 AudioStreamEvent.Audio(
-                    callId = currentCallSid ?: "",
+                    callId = "",
                     streamId = streamSid,
                     payload = payload,
                     timestamp = timestamp,
@@ -156,7 +148,6 @@ public class TwilioAudioStreamAdapter(
             }
 
             "dtmf" -> {
-                val streamSid = jsonObj["streamSid"]?.jsonPrimitive?.contentOrNull ?: currentStreamSid ?: ""
                 val dtmfObj = jsonObj["dtmf"]?.jsonObject
                     ?: throw IllegalArgumentException("Missing 'dtmf' object in dtmf event")
                 val digit = dtmfObj["digit"]?.jsonPrimitive?.contentOrNull
@@ -165,25 +156,23 @@ public class TwilioAudioStreamAdapter(
                 logger.debug { "DTMF received: $digit on stream $streamSid" }
 
                 AudioStreamEvent.Dtmf(
-                    callId = currentCallSid ?: "",
+                    callId = "",
                     streamId = streamSid,
                     digit = digit
                 )
             }
 
             "stop" -> {
-                val streamSid = jsonObj["streamSid"]?.jsonPrimitive?.contentOrNull ?: currentStreamSid ?: ""
                 logger.info { "Twilio stream stopping: $streamSid" }
 
                 AudioStreamEvent.Stop(
-                    callId = currentCallSid ?: "",
+                    callId = "",
                     streamId = streamSid
                 )
             }
 
             "mark" -> {
                 // Mark events are acknowledgments - log and drop
-                val streamSid = jsonObj["streamSid"]?.jsonPrimitive?.contentOrNull ?: currentStreamSid ?: ""
                 val markName = jsonObj["mark"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
                 logger.debug { "Mark received: $markName on stream $streamSid" }
                 AudioStreamEvent.NoOp

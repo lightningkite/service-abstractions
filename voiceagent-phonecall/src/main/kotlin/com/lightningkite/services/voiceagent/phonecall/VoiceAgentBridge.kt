@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.*
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.TimeSource
 
 private val logger = KotlinLogging.logger("VoiceAgentBridge")
 
@@ -60,45 +59,6 @@ public data class TranscriptEntry(
     val text: String,
 )
 
-/**
- * Buffer that smooths out audio playback by tracking accumulated audio duration
- * and delaying sends if we're ahead of real-time.
- */
-public class AudioPlaybackBuffer {
-    private val timeSource = TimeSource.Monotonic
-    private var startMark: TimeSource.Monotonic.ValueTimeMark? = null
-    private var accumulatedAudioMs: Long = 0
-    private var cleared = false
-
-    /**
-     * Queue audio for playback, returning the delay needed before sending.
-     * @param audioBytes Number of µ-law bytes (duration = bytes / 8 ms)
-     * @return Delay in milliseconds to wait before sending this audio
-     */
-    public fun queueAudio(audioBytes: Int): Long {
-        val durationMs = audioBytes / 8L
-
-        if (cleared) {
-            cleared = false
-            startMark = null
-            accumulatedAudioMs = 0
-        }
-
-        val mark = startMark ?: timeSource.markNow().also { startMark = it }
-        val elapsedMs = mark.elapsedNow().inWholeMilliseconds
-        val aheadMs = accumulatedAudioMs - elapsedMs
-        accumulatedAudioMs += durationMs
-
-        return maxOf(0, aheadMs)
-    }
-
-    /**
-     * Clear the buffer (e.g., when user starts speaking).
-     */
-    public fun clear() {
-        cleared = true
-    }
-}
 
 /**
  * Handles a phone call voice agent session.
@@ -116,6 +76,9 @@ public class AudioPlaybackBuffer {
  * @param toolHandler Handler for tool calls from the agent
  * @param onTranscript Callback for transcript entries
  * @param onStreamConnected Callback when phone stream is connected (for triggering greeting)
+ * @param jitterBufferMs Size of the jitter buffer in milliseconds. Higher values add latency
+ *   but smooth out irregular audio delivery (e.g., from DynamoDB PubSub polling). Set to 0
+ *   to disable jitter buffering. Default is 150ms.
  * @param tracer Optional OpenTelemetry tracer
  */
 @OptIn(ExperimentalEncodingApi::class)
@@ -129,6 +92,7 @@ public suspend fun handlePhoneVoiceSession(
     toolHandler: suspend (toolName: String, arguments: String) -> String,
     onTranscript: suspend (TranscriptEntry) -> Unit = {},
     onStreamConnected: suspend (VoiceAgentSession) -> Unit = {},
+    jitterBufferMs: Long = 150L,
     tracer: Tracer? = null,
 ) {
     val span = tracer?.spanBuilder("voiceagent.phone_session")
@@ -138,9 +102,9 @@ public suspend fun handlePhoneVoiceSession(
     try {
         val spanScope = span?.makeCurrent()
         try {
-            val audioBuffer = AudioPlaybackBuffer()
+            val jitterBuffer = if (jitterBufferMs > 0) AudioJitterBuffer(targetBufferMs = jitterBufferMs) else null
 
-            logger.info { "Phone stream ready: callId=$callId, streamId=$streamId" }
+            logger.info { "Phone stream ready: callId=$callId, streamId=$streamId, jitterBuffer=${jitterBufferMs}ms" }
             span?.setAttribute("voiceagent.call_id", callId)
             span?.setAttribute("voiceagent.stream_id", streamId)
 
@@ -161,6 +125,15 @@ public suspend fun handlePhoneVoiceSession(
 
             // Process events
             coroutineScope {
+                // Run jitter buffer playback (if enabled)
+                val jitterJob = jitterBuffer?.let { buffer ->
+                    launch {
+                        buffer.runPlayback { audio ->
+                            sendToPhone(AudioStreamCommand.Audio(streamId, Base64.encode(audio)))
+                        }
+                    }
+                }
+
                 // Forward phone audio to agent
                 launch {
                     phoneAudioEvents.collect { event ->
@@ -172,6 +145,7 @@ public suspend fun handlePhoneVoiceSession(
                             }
                             is AudioStreamEvent.Stop -> {
                                 logger.info { "Phone stream stopped: ${event.streamId}" }
+                                jitterBuffer?.stop()
                                 session.close()  // Close session to end events flow
                                 cancel()
                             }
@@ -180,13 +154,13 @@ public suspend fun handlePhoneVoiceSession(
                     }
                 }
 
-                // Forward agent events to phone
+                // Forward agent events to phone (via jitter buffer if enabled)
                 session.events.collect { event ->
                     handleAgentEvent(
                         event = event,
                         session = session,
                         streamId = streamId,
-                        audioBuffer = audioBuffer,
+                        jitterBuffer = jitterBuffer,
                         sendToPhone = sendToPhone,
                         toolHandler = toolHandler,
                         onTranscript = onTranscript,
@@ -319,7 +293,7 @@ private suspend fun handleAgentEvent(
     event: VoiceAgentEvent,
     session: VoiceAgentSession,
     streamId: String,
-    audioBuffer: AudioPlaybackBuffer,
+    jitterBuffer: AudioJitterBuffer?,
     sendToPhone: suspend (AudioStreamCommand) -> Unit,
     toolHandler: suspend (toolName: String, arguments: String) -> String,
     onTranscript: suspend (TranscriptEntry) -> Unit,
@@ -329,17 +303,17 @@ private suspend fun handleAgentEvent(
             val pcmBytes = Base64.decode(event.delta)
             val mulawBytes = AudioConverter.pcm16_24kToMulaw(pcmBytes)
 
-            // Smooth playback timing
-            val delayMs = audioBuffer.queueAudio(mulawBytes.size)
-            if (delayMs > 0) {
-                delay(delayMs)
+            if (jitterBuffer != null) {
+                // Add to jitter buffer for smooth playback
+                jitterBuffer.add(mulawBytes)
+            } else {
+                // No jitter buffer - send immediately
+                sendToPhone(AudioStreamCommand.Audio(streamId, Base64.encode(mulawBytes)))
             }
-
-            sendToPhone(AudioStreamCommand.Audio(streamId, Base64.encode(mulawBytes)))
         }
         is VoiceAgentEvent.SpeechStarted -> {
             logger.debug { "User started speaking" }
-            audioBuffer.clear()
+            jitterBuffer?.clear()
             sendToPhone(AudioStreamCommand.Clear(streamId))
         }
         is VoiceAgentEvent.SpeechEnded -> {

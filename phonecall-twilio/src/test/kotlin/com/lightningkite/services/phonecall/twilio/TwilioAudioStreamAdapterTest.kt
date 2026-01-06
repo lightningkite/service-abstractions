@@ -19,12 +19,14 @@ class TwilioAudioStreamAdapterTest {
 
     @Test
     fun testParse_connectedEvent() = runTest {
+        // The "connected" event doesn't contain useful info, so it returns NoOp
+        // We need to wait for the "start" event for actual stream metadata
         val json = """{"event":"connected","protocol":"Call","version":"1.0.0"}"""
         val frame = WebsocketAdapter.Frame.Text(json)
 
         val event = adapter.parse(frame)
 
-        assertTrue(event is AudioStreamEvent.Connected)
+        assertTrue(event is AudioStreamEvent.NoOp, "Expected NoOp for 'connected' event, got $event")
     }
 
     @Test
@@ -56,18 +58,7 @@ class TwilioAudioStreamAdapterTest {
 
     @Test
     fun testParse_mediaEvent() = runTest {
-        // First send a start event to set up state
-        val startJson = """{
-            "event": "start",
-            "streamSid": "MZ1234567890",
-            "start": {
-                "callSid": "CA9876543210",
-                "customParameters": {}
-            }
-        }"""
-        adapter.parse(WebsocketAdapter.Frame.Text(startJson))
-
-        // Now parse media event
+        // Adapter is stateless - each event is parsed independently
         val json = """{
             "event": "media",
             "streamSid": "MZ1234567890",
@@ -91,17 +82,7 @@ class TwilioAudioStreamAdapterTest {
 
     @Test
     fun testParse_dtmfEvent() = runTest {
-        // First send a start event to set up state
-        val startJson = """{
-            "event": "start",
-            "streamSid": "MZ1234567890",
-            "start": {
-                "callSid": "CA9876543210",
-                "customParameters": {}
-            }
-        }"""
-        adapter.parse(WebsocketAdapter.Frame.Text(startJson))
-
+        // Adapter is stateless - each event is parsed independently
         val json = """{
             "event": "dtmf",
             "streamSid": "MZ1234567890",
@@ -121,17 +102,7 @@ class TwilioAudioStreamAdapterTest {
 
     @Test
     fun testParse_stopEvent() = runTest {
-        // First send a start event to set up state
-        val startJson = """{
-            "event": "start",
-            "streamSid": "MZ1234567890",
-            "start": {
-                "callSid": "CA9876543210",
-                "customParameters": {}
-            }
-        }"""
-        adapter.parse(WebsocketAdapter.Frame.Text(startJson))
-
+        // Adapter is stateless - each event is parsed independently
         val json = """{"event":"stop","streamSid":"MZ1234567890"}"""
         val frame = WebsocketAdapter.Frame.Text(json)
 

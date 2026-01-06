@@ -291,7 +291,11 @@ public sealed class CallInstructions {
     ) : CallInstructions() {
         init {
             require(websocketUrl.startsWith("wss://")) { "WebSocket URL (${websocketUrl}) must start with wss://" }
-            require(!websocketUrl.contains("?")) { "WebSocket URL (${websocketUrl}) has query parameters, which is not allowed. Use customParameters instead." }
+            // Twilio does NOT pass query parameters from the WebSocket URL to the server.
+            // Use customParameters instead - they are sent in the "start" event.
+            require(!websocketUrl.contains('?')) {
+                "WebSocket URL cannot contain query parameters - Twilio strips them. Use customParameters instead."
+            }
         }
     }
 }

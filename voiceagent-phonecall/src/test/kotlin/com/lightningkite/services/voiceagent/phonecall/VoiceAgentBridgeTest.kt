@@ -28,65 +28,6 @@ class VoiceAgentBridgeTest {
         voiceAgentService = TestVoiceAgentService("test-voice-agent", context)
     }
 
-    // ==================== AudioPlaybackBuffer Tests ====================
-
-    @Test
-    fun `AudioPlaybackBuffer returns 0 delay for first audio chunk`() {
-        val buffer = AudioPlaybackBuffer()
-
-        // First chunk should have no delay
-        val delay = buffer.queueAudio(800) // 100ms of audio
-        assertEquals(0L, delay)
-    }
-
-    @Test
-    fun `AudioPlaybackBuffer accumulates audio duration`() {
-        val buffer = AudioPlaybackBuffer()
-
-        // First chunk: 800 bytes = 100ms at 8kHz µ-law
-        buffer.queueAudio(800)
-
-        // Immediately queue more - should need to wait
-        val delay = buffer.queueAudio(800)
-
-        // We're 100ms ahead (first chunk duration), so delay should be ~100ms
-        // Allow some margin for test execution time
-        assertTrue(delay >= 90, "Expected delay >= 90ms, got $delay")
-    }
-
-    @Test
-    fun `AudioPlaybackBuffer clear resets state`() {
-        val buffer = AudioPlaybackBuffer()
-
-        // Queue audio
-        buffer.queueAudio(8000) // 1 second
-        buffer.queueAudio(8000) // another second
-
-        // Clear the buffer
-        buffer.clear()
-
-        // Next audio should have no delay (buffer reset)
-        val delay = buffer.queueAudio(800)
-        assertEquals(0L, delay)
-    }
-
-    @Test
-    fun `AudioPlaybackBuffer delay decreases over time`() = runBlocking {
-        val buffer = AudioPlaybackBuffer()
-
-        // Queue 400ms of audio
-        buffer.queueAudio(3200) // 400ms
-
-        // Wait 200ms
-        delay(200.milliseconds)
-
-        // Queue more - we've consumed 200ms, so should be ~200ms ahead
-        val queueDelay = buffer.queueAudio(800)
-
-        // Should be around 200ms (400ms queued - 200ms elapsed)
-        assertTrue(queueDelay in 150..250, "Expected delay ~200ms, got $queueDelay")
-    }
-
     // ==================== createVoiceAgentStreamInstructions Tests ====================
 
     @Test
@@ -282,25 +223,31 @@ class VoiceAgentBridgeTest {
     // ==================== handlePhoneVoiceSession Tests ====================
 
     @Test
-    fun `handlePhoneVoiceSession waits for Connected event`() = runBlocking {
+    fun `handlePhoneVoiceSession creates session immediately with provided streamId and callId`() = runBlocking {
         val config = VoiceAgentSessionConfig(instructions = "Test")
 
-        // No Connected event - should timeout
+        // Empty flow - session should still be created since streamId/callId are provided
         val phoneEvents = emptyFlow<AudioStreamEvent>()
 
-        val result = withTimeoutOrNull(200.milliseconds) {
+        var streamConnectedCalled = false
+
+        val result = withTimeoutOrNull(500.milliseconds) {
             handlePhoneVoiceSession(
                 voiceAgentService = voiceAgentService,
                 sessionConfig = config,
+                streamId = "stream-123",
+                callId = "call-456",
                 phoneAudioEvents = phoneEvents,
                 sendToPhone = {},
                 toolHandler = { _, _ -> "{}" },
+                onStreamConnected = { streamConnectedCalled = true },
+                jitterBufferMs = 0,
             )
         }
 
-        // Should timeout waiting for start event
-        assertNull(result)
-        assertEquals(0, voiceAgentService.sessionsCreated.size)
+        // Session should be created (streamId/callId provided directly)
+        assertEquals(1, voiceAgentService.sessionsCreated.size)
+        assertTrue(streamConnectedCalled, "onStreamConnected should be called")
     }
 
     private fun connectedEvent(callId: String = "call-456", streamId: String = "stream-123") =
@@ -334,6 +281,8 @@ class VoiceAgentBridgeTest {
             handlePhoneVoiceSession(
                 voiceAgentService = voiceAgentService,
                 sessionConfig = config,
+                streamId = "stream-123",
+                callId = "call-456",
                 phoneAudioEvents = phoneEvents,
                 sendToPhone = {},
                 toolHandler = { _, _ -> "{}" },
@@ -365,6 +314,8 @@ class VoiceAgentBridgeTest {
             handlePhoneVoiceSession(
                 voiceAgentService = voiceAgentService,
                 sessionConfig = config,
+                streamId = "stream-123",
+                callId = "call-456",
                 phoneAudioEvents = phoneEvents,
                 sendToPhone = {},
                 toolHandler = { _, _ -> "{}" },
@@ -387,22 +338,25 @@ class VoiceAgentBridgeTest {
 
         val phoneEvents = flow {
             emit(connectedEvent())
-            delay(100.milliseconds)
+            delay(500.milliseconds)  // Extended to allow jitter buffer to fill
         }
 
         var session: TestVoiceAgentSession? = null
 
-        // Launch the session handler
+        // Launch the session handler with no jitter buffer for faster test
         val job = launch {
             handlePhoneVoiceSession(
                 voiceAgentService = voiceAgentService,
                 sessionConfig = config,
+                streamId = "stream-123",
+                callId = "call-456",
                 phoneAudioEvents = phoneEvents,
                 sendToPhone = { sentCommands.add(it) },
                 toolHandler = { _, _ -> "{}" },
                 onStreamConnected = { s ->
                     session = s as TestVoiceAgentSession
                 },
+                jitterBufferMs = 0,  // Disable jitter buffer for immediate send
             )
         }
 
@@ -443,10 +397,13 @@ class VoiceAgentBridgeTest {
             handlePhoneVoiceSession(
                 voiceAgentService = voiceAgentService,
                 sessionConfig = config,
+                streamId = "stream-123",
+                callId = "call-456",
                 phoneAudioEvents = phoneEvents,
                 sendToPhone = { sentCommands.add(it) },
                 toolHandler = { _, _ -> "{}" },
                 onStreamConnected = { s -> session = s as TestVoiceAgentSession },
+                jitterBufferMs = 0,
             )
         }
 
@@ -480,9 +437,12 @@ class VoiceAgentBridgeTest {
                 handlePhoneVoiceSession(
                     voiceAgentService = voiceAgentService,
                     sessionConfig = config,
+                    streamId = "stream-123",
+                    callId = "call-456",
                     phoneAudioEvents = phoneEvents,
                     sendToPhone = {},
                     toolHandler = { _, _ -> "{}" },
+                    jitterBufferMs = 0,
                 )
                 "completed"
             } catch (e: CancellationException) {
@@ -511,9 +471,12 @@ class VoiceAgentBridgeTest {
             handlePhoneVoiceSession(
                 voiceAgentService = voiceAgentService,
                 sessionConfig = config,
+                streamId = "stream-123",
+                callId = "call-456",
                 phoneAudioEvents = phoneEvents,
                 sendToPhone = {},
                 toolHandler = { _, _ -> "{}" },
+                jitterBufferMs = 0,
             )
         }
 

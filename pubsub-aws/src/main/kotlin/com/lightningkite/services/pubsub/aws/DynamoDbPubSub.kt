@@ -23,6 +23,7 @@ import software.amazon.awssdk.services.dynamodb.model.ReturnValue
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlin.coroutines.coroutineContext
 import kotlin.math.min
+import kotlin.random.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -92,6 +93,14 @@ public class DynamoDbPubSub(
     override val context: SettingContext,
     public val pollInterval: Duration = 15.milliseconds,
     public val messageTtl: Duration = 5.minutes,
+    /**
+     * When true, uses timestamp-based ordering instead of atomic counter.
+     * This reduces emit from 2 DynamoDB operations to 1, roughly halving latency.
+     * Trade-off: Messages within the same millisecond may not be strictly ordered.
+     * Recommended for high-throughput scenarios like real-time audio where
+     * slight reordering is acceptable (handled by jitter buffer).
+     */
+    public val fastEmit: Boolean = false,
 ) : PubSub {
 
     public val client: DynamoDbAsyncClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED, makeClient)
@@ -122,6 +131,7 @@ public class DynamoDbPubSub(
                     ?: emptyMap()
 
                 val pollInterval = params["pollInterval"]?.toLongOrNull()?.milliseconds ?: 15.milliseconds
+                val fastEmit = params["fastEmit"]?.toBoolean() ?: false
 
                 DynamoDbPubSub(
                     name = name,
@@ -142,6 +152,7 @@ public class DynamoDbPubSub(
                     tableName = tableName,
                     context = context,
                     pollInterval = pollInterval,
+                    fastEmit = fastEmit,
                 )
             }
         }
@@ -254,27 +265,32 @@ public class DynamoDbPubSub(
                 val message = json.encodeToString(serializer, value)
                 val now = System.currentTimeMillis()
 
-                // Atomically increment counter to get globally unique sequence number
-                // This ensures correct ordering even when Lambda clocks are out of sync
-                val counterResult = client.updateItem {
-                    it.tableName(tableName)
-                    it.key(mapOf(
-                        "channel" to AttributeValue.fromS(key),
-                        "seq" to AttributeValue.fromN("0") // seq=0 is reserved for counter
-                    ))
-                    it.updateExpression("SET #c = if_not_exists(#c, :zero) + :one")
-                    it.expressionAttributeNames(mapOf("#c" to "counter"))
-                    it.expressionAttributeValues(mapOf(
-                        ":zero" to AttributeValue.fromN("0"),
-                        ":one" to AttributeValue.fromN("1")
-                    ))
-                    it.returnValues(ReturnValue.UPDATED_NEW)
-                }.await()
+                val seq: Long = if (fastEmit) {
+                    // Fast path: Use timestamp + random suffix (single DynamoDB operation)
+                    // Multiply by 1000 to leave room for random suffix, add random 0-999
+                    now * 1000 + Random.nextInt(1000)
+                } else {
+                    // Strict ordering path: Atomically increment counter (2 DynamoDB operations)
+                    val counterResult = client.updateItem {
+                        it.tableName(tableName)
+                        it.key(mapOf(
+                            "channel" to AttributeValue.fromS(key),
+                            "seq" to AttributeValue.fromN("0") // seq=0 is reserved for counter
+                        ))
+                        it.updateExpression("SET #c = if_not_exists(#c, :zero) + :one")
+                        it.expressionAttributeNames(mapOf("#c" to "counter"))
+                        it.expressionAttributeValues(mapOf(
+                            ":zero" to AttributeValue.fromN("0"),
+                            ":one" to AttributeValue.fromN("1")
+                        ))
+                        it.returnValues(ReturnValue.UPDATED_NEW)
+                    }.await()
 
-                val seq = counterResult.attributes()["counter"]?.n()?.toLong()
-                    ?: throw IllegalStateException("Failed to get counter value")
+                    counterResult.attributes()["counter"]?.n()?.toLong()
+                        ?: throw IllegalStateException("Failed to get counter value")
+                }
 
-                logger.info { "EMIT channel=$key seq=$seq" }
+                logger.trace { "EMIT channel=$key seq=$seq" }
 
                 client.putItem {
                     it.tableName(tableName)
@@ -302,7 +318,7 @@ public class DynamoDbPubSub(
                 var lastSeq = maxSeqResponse.items().firstOrNull()?.get("seq")?.n() ?: "0"
                 var consecutiveErrors = 0
 
-                logger.info { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
+                logger.debug { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
 
                 while (coroutineContext.isActive) {
                     try {
@@ -323,7 +339,7 @@ public class DynamoDbPubSub(
                             val seq = item["seq"]?.n() ?: continue
                             lastSeq = seq
 
-                            logger.info { "RECV channel=$key seq=$seq" }
+                            logger.trace { "RECV channel=$key seq=$seq" }
 
                             try {
                                 val value = json.decodeFromString(serializer, message)
@@ -375,27 +391,31 @@ public class DynamoDbPubSub(
                 ensureReady()
                 val now = System.currentTimeMillis()
 
-                // Atomically increment counter to get globally unique sequence number
-                // This ensures correct ordering even when Lambda clocks are out of sync
-                val counterResult = client.updateItem {
-                    it.tableName(tableName)
-                    it.key(mapOf(
-                        "channel" to AttributeValue.fromS(key),
-                        "seq" to AttributeValue.fromN("0") // seq=0 is reserved for counter
-                    ))
-                    it.updateExpression("SET #c = if_not_exists(#c, :zero) + :one")
-                    it.expressionAttributeNames(mapOf("#c" to "counter"))
-                    it.expressionAttributeValues(mapOf(
-                        ":zero" to AttributeValue.fromN("0"),
-                        ":one" to AttributeValue.fromN("1")
-                    ))
-                    it.returnValues(ReturnValue.UPDATED_NEW)
-                }.await()
+                val seq: Long = if (fastEmit) {
+                    // Fast path: Use timestamp + random suffix (single DynamoDB operation)
+                    now * 1000 + Random.nextInt(1000)
+                } else {
+                    // Strict ordering path: Atomically increment counter (2 DynamoDB operations)
+                    val counterResult = client.updateItem {
+                        it.tableName(tableName)
+                        it.key(mapOf(
+                            "channel" to AttributeValue.fromS(key),
+                            "seq" to AttributeValue.fromN("0") // seq=0 is reserved for counter
+                        ))
+                        it.updateExpression("SET #c = if_not_exists(#c, :zero) + :one")
+                        it.expressionAttributeNames(mapOf("#c" to "counter"))
+                        it.expressionAttributeValues(mapOf(
+                            ":zero" to AttributeValue.fromN("0"),
+                            ":one" to AttributeValue.fromN("1")
+                        ))
+                        it.returnValues(ReturnValue.UPDATED_NEW)
+                    }.await()
 
-                val seq = counterResult.attributes()["counter"]?.n()?.toLong()
-                    ?: throw IllegalStateException("Failed to get counter value")
+                    counterResult.attributes()["counter"]?.n()?.toLong()
+                        ?: throw IllegalStateException("Failed to get counter value")
+                }
 
-                logger.info { "EMIT channel=$key seq=$seq" }
+                logger.trace { "EMIT channel=$key seq=$seq" }
 
                 client.putItem {
                     it.tableName(tableName)
@@ -423,7 +443,7 @@ public class DynamoDbPubSub(
                 var lastSeq = maxSeqResponse.items().firstOrNull()?.get("seq")?.n() ?: "0"
                 var consecutiveErrors = 0
 
-                logger.info { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
+                logger.debug { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
 
                 while (coroutineContext.isActive) {
                     try {
@@ -444,7 +464,7 @@ public class DynamoDbPubSub(
                             val seq = item["seq"]?.n() ?: continue
                             lastSeq = seq
 
-                            logger.info { "RECV channel=$key seq=$seq" }
+                            logger.trace { "RECV channel=$key seq=$seq" }
 
                             try {
                                 collector.emit(message)

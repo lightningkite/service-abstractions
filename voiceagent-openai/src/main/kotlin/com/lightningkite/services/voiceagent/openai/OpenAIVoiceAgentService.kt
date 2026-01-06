@@ -161,16 +161,9 @@ internal class OpenAIVoiceAgentSession(
     private var isConnected = false
     private var openaiSessionId: String? = null
 
-    // Track current function call being built
+    // Track current function call being built (per-session, cleaned up after each call completes)
     private val functionCallArguments = mutableMapOf<String, StringBuilder>()
     private val functionCallNames = mutableMapOf<String, String>()
-
-    // Cumulative token tracking for debugging rate limits
-    private var cumulativeInputTokens = 0
-    private var cumulativeOutputTokens = 0
-    private var cumulativeAudioInputTokens = 0
-    private var cumulativeAudioOutputTokens = 0
-    private var responseCount = 0
 
     init {
         // Start connection in background
@@ -313,21 +306,11 @@ internal class OpenAIVoiceAgentSession(
                         )
                     }
 
-                    // Track cumulative token usage
-                    responseCount++
-                    usage?.let {
-                        cumulativeInputTokens += it.inputTokens
-                        cumulativeOutputTokens += it.outputTokens
-                        it.inputAudioTokens?.let { a -> cumulativeAudioInputTokens += a }
-                        it.outputAudioTokens?.let { a -> cumulativeAudioOutputTokens += a }
-                    }
-
                     if (status == ResponseStatus.FAILED) {
                         logger.error { "[$serviceName] Response FAILED: ${event.response.id}, statusDetails=${event.response.statusDetails}" }
                     } else {
-                        logger.info { "[$serviceName] Response #$responseCount done: ${event.response.id}, status=$status" }
-                        logger.info { "[$serviceName] This response: input=${usage?.inputTokens} (text=${usage?.inputTextTokens}, audio=${usage?.inputAudioTokens}), output=${usage?.outputTokens} (text=${usage?.outputTextTokens}, audio=${usage?.outputAudioTokens})" }
-                        logger.info { "[$serviceName] CUMULATIVE: input=$cumulativeInputTokens (audio=$cumulativeAudioInputTokens), output=$cumulativeOutputTokens (audio=$cumulativeAudioOutputTokens), total=${cumulativeInputTokens + cumulativeOutputTokens}" }
+                        logger.info { "[$serviceName] Response done: ${event.response.id}, status=$status" }
+                        logger.debug { "[$serviceName] Usage: input=${usage?.inputTokens} (text=${usage?.inputTextTokens}, audio=${usage?.inputAudioTokens}), output=${usage?.outputTokens} (text=${usage?.outputTextTokens}, audio=${usage?.outputAudioTokens})" }
                     }
                     eventChannel.send(VoiceAgentEvent.ResponseDone(event.response.id, status, usage))
                 }
