@@ -11,7 +11,7 @@ pluginManagement {
 
     plugins {
         kotlin("plugin.serialization") version "2.0.0"
-        id("com.google.devtools.ksp") version "2.0.21-1.0.25"
+        id("com.google.devtools.ksp") version "2.2.20-2.0.4"
         id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
     }
 
