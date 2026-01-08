@@ -5,11 +5,13 @@ import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.mongodb.TestDatabase.mongoClient
 import com.lightningkite.services.database.test.AggregationsTest
 import com.lightningkite.services.database.test.ConditionTests
+import com.lightningkite.services.database.test.IndexTests
 import com.lightningkite.services.database.test.MetaTest
 import com.lightningkite.services.database.test.ModificationTests
 import com.lightningkite.services.database.test.OperationsTests
 import com.lightningkite.services.database.test.SortTest
 import com.lightningkite.services.database.test.VectorSearchTests
+import kotlin.test.Test
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -19,6 +21,10 @@ object TestDatabase {
     val mongoClient = MongoDatabase("default", clientSettings = settings, databaseName = "test", context = TestSettingContext())
 }
 fun db() = mongoClient
+
+object UniqueIndexTests {
+
+}
 
 /**
  * Test database configured for vector search testing.
@@ -83,6 +89,12 @@ class MongodbSortTest: SortTest() {
 }
 class MongodbMetaTest: MetaTest() {
     override val database: Database = db()
+}
+class MongodbIndexTest: IndexTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {}
 }
 
 class MongodbVectorSearchTests: VectorSearchTests() {

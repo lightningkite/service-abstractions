@@ -8,6 +8,7 @@ import com.lightningkite.services.database.HasId
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseContextualSerialization
+import kotlin.random.Random
 import kotlin.uuid.Uuid
 import kotlin.time.Instant
 
@@ -15,8 +16,8 @@ import kotlin.time.Instant
 @Serializable
 data class User(
     override val _id: Uuid = Uuid.random(),
-    @Index(unique = true) override var email: String,
-    @Index(unique = true) override val phoneNumber: String,
+    @Index(unique = IndexUniqueness.Unique) override var email: String,
+    @Index(unique = IndexUniqueness.Unique) override val phoneNumber: String,
     var age: Long = 0,
     var friends: List<Uuid> = listOf()
 ) : HasId<Uuid>, HasEmail, HasPhoneNumber {
@@ -246,3 +247,41 @@ data class SparseVectorTestModel(
 ) : HasId<Uuid> {
     companion object
 }
+
+@GenerateDataClassPaths
+@Serializable
+@IndexSet(["set1", "set2"], unique = IndexUniqueness.NotUnique)
+data class NotUniqueIndexTestModel(
+    override val _id: Uuid = Uuid.random(),
+
+    @Index(unique = IndexUniqueness.NotUnique) val value: String? = null,
+
+    val set1: String? = null,
+    val set2: String? = null,
+) : HasId<Uuid>
+
+private fun String.Companion.random() = Uuid.random().toString()
+
+@GenerateDataClassPaths
+@Serializable
+@IndexSet(["set1", "set2"], unique = IndexUniqueness.Unique, name = "uniqueSet")
+data class UniqueIndexTestModel(
+    override val _id: Uuid = Uuid.random(),
+
+    @Index(unique = IndexUniqueness.Unique, name = "uniqueValue") val value: String? = String.random(),
+
+    val set1: String? = String.random(),
+    val set2: String? = String.random(),
+) : HasId<Uuid>
+
+@GenerateDataClassPaths
+@Serializable
+@IndexSet(["set1", "set2"], unique = IndexUniqueness.UniqueNullSparse, name = "uniqueNullSparseSet")
+data class UniqueNullSparseIndexTestModel(
+    override val _id: Uuid = Uuid.random(),
+
+    @Index(unique = IndexUniqueness.UniqueNullSparse, name = "uniqueNullSparseValue") val value: String? = String.random(),
+
+    val set1: String? = String.random(),
+    val set2: String? = String.random(),
+) : HasId<Uuid>

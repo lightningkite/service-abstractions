@@ -225,7 +225,6 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                 BedrockModels.MetaLlama3_2_11BInstruct,
                 BedrockModels.MetaLlama3_2_90BInstruct,
                 BedrockModels.MetaLlama3_3_70BInstruct,
-                BedrockModels.MoonshotKimiK2Thinking,
                 BedrockModels.Embeddings.AmazonTitanEmbedText,
                 BedrockModels.Embeddings.AmazonTitanEmbedTextV2,
                 BedrockModels.Embeddings.CohereEmbedEnglishV3,

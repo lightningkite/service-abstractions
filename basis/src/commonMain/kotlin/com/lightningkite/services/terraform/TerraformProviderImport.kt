@@ -12,12 +12,12 @@ public data class TerraformProviderImport(
         public val aws: TerraformProviderImport = TerraformProviderImport(
             name = "aws",
             source  = "hashicorp/aws",
-            version = "~> 5.89.0",
+            version = "~> 6.28.0",
         )
         public val random: TerraformProviderImport = TerraformProviderImport(
             name = "random",
             source  = "hashicorp/random",
-            version = "~> 3.7.1",
+            version = "~> 3.7.0",
         )
         public val archive: TerraformProviderImport = TerraformProviderImport(
             name = "archive",
@@ -27,17 +27,17 @@ public data class TerraformProviderImport(
         public val google: TerraformProviderImport = TerraformProviderImport(
             name = "google",
             source  = "hashicorp/google",
-            version = "~> 5.0.0",
+            version = "~> 7.15.0",
         )
         public val mongodbAtlas: TerraformProviderImport = TerraformProviderImport(
             name = "mongodbatlas",
             source  = "mongodb/mongodbatlas",
-            version = "~> 1.33.0",
+            version = "~> 2.4.0",
         )
         public val local: TerraformProviderImport = TerraformProviderImport(
             name = "local",
             source = "hashicorp/local",
-            version = "~> 2.5.2",
+            version = "~> 2.6.0",
         )
         public val nullProvider: TerraformProviderImport = TerraformProviderImport(
             name = "null",
@@ -47,12 +47,12 @@ public data class TerraformProviderImport(
         public val tls: TerraformProviderImport = TerraformProviderImport(
             name = "tls",
             source = "hashicorp/tls",
-            version = "~>4.0.6",
+            version = "~> 4.1.0",
         )
         public val ssh: TerraformProviderImport = TerraformProviderImport(
             name = "ssh",
             source = "loafoe/ssh",
-            version = "~>2.7.0",
+            version = "~> 2.7.0",
         )
         public val stripe: TerraformProviderImport = TerraformProviderImport(
             name = "stripe",

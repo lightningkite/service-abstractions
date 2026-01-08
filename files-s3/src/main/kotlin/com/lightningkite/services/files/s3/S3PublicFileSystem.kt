@@ -288,7 +288,7 @@ public class S3PublicFileSystem(
             PublicFileSystem.Settings.register("s3") { name, url, context ->
                 val regex =
                     Regex("""s3:\/\/(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com\/?(?:\?(?<params>.*))?""")
-                val match = regex.matchEntire(url.substringBefore('?')) ?: throw IllegalArgumentException(
+                val match = regex.matchEntire(url) ?: throw IllegalArgumentException(
                     "Invalid S3 URL. The URL should match one of the patterns:" +
                             "   s3://[user]:[password]@[bucket].[region].amazonaws.com/?[params],"+
                             "   s3://[profile]@[bucket].[region].amazonaws.com/?[params],"+

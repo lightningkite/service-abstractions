@@ -2,14 +2,7 @@ package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.Untested
 import com.lightningkite.services.database.Database
-import com.lightningkite.services.terraform.TerraformEmitterAws
-import com.lightningkite.services.terraform.TerraformEmitterAwsVpc
-import com.lightningkite.services.terraform.TerraformEmitterKnownIpAddresses
-import com.lightningkite.services.terraform.TerraformJsonObject
-import com.lightningkite.services.terraform.TerraformNeed
-import com.lightningkite.services.terraform.TerraformProvider
-import com.lightningkite.services.terraform.TerraformProviderImport
-import com.lightningkite.services.terraform.terraformJsonObject
+import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -20,7 +13,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     continuousBackupEnabled: Boolean,
     existingProjectId: String? = null,
 ): Unit {
-    if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
+    if (!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
     val userName = "$projectName-main"
     emitter.fulfillSetting(
@@ -94,7 +87,8 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     }
 }
 
-context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlas(
+context(emitter: TerraformEmitterAws)
+public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     orgId: String,
     backupEnabled: Boolean = true,
     zoneName: String? = null,
@@ -102,13 +96,13 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     maxSize: String = "M40",
     existingProjectId: String? = null,
 ): Unit {
-    if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
+    if (!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
     val userName = "$projectName-main"
     emitter.fulfillSetting(
         this@mongodbAtlas.name, JsonPrimitive(
             value = $$"""
-        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings.standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent()
         )
     )
@@ -146,29 +140,33 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
 
             "backup_enabled" - backupEnabled
 
-            "replication_specs" {
-                "zone_name" - zoneName
-                "region_configs" {
-                    "auto_scaling" {
-                        "compute_enabled" - true
-                        "compute_min_instance_size" - minSize
-                        "compute_max_instance_size" - maxSize
-                        "compute_scale_down_enabled" - true
-                        "disk_gb_enabled" - true
-                    }
-                    "electable_specs" {
-                        "instance_size" - minSize
-                        "node_count" - 3
-                    }
-                    "analytics_specs" {
-                        "instance_size" - minSize
-                        "node_count" - 1
-                    }
-                    "priority" - 7
-                    "provider_name" - "AWS"
-                    "region_name" - region
+            "replication_specs" - listOf(
+                terraformJsonObject {
+                    "zone_name" - zoneName
+                    "region_configs" - listOf(
+                        terraformJsonObject {
+                            "auto_scaling" {
+                                "compute_enabled" - true
+                                "compute_min_instance_size" - minSize
+                                "compute_max_instance_size" - maxSize
+                                "compute_scale_down_enabled" - true
+                                "disk_gb_enabled" - true
+                            }
+                            "electable_specs" {
+                                "instance_size" - minSize
+                                "node_count" - 3
+                            }
+                            "analytics_specs" {
+                                "instance_size" - minSize
+                                "node_count" - 1
+                            }
+                            "priority" - 7
+                            "provider_name" - "AWS"
+                            "region_name" - region
+                        }
+                    )
                 }
-            }
+            )
         }
         "resource.mongodbatlas_database_user.$name" {
             "username" - userName
@@ -250,18 +248,19 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     }
 }
 
-context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
+context(emitter: TerraformEmitterAws)
+public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
     orgId: String,
     zoneName: String? = null,
     existingProjectId: String? = null,
 ): Unit {
-    if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
+    if (!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
     val userName = "$projectName-main"
     emitter.fulfillSetting(
         this@mongodbAtlasFree.name, JsonPrimitive(
             value = $$"""
-        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings.standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent()
         )
     )
@@ -298,18 +297,22 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "name" - "$projectName"
             "cluster_type" - "REPLICASET"
 
-            "replication_specs" {
-                "zone_name" - zoneName
-                "region_configs" {
-                    "electable_specs" {
-                        "instance_size" - "M0"
-                    }
-                    "priority" - 7
-                    "provider_name" - "TENANT"
-                    "backing_provider_name" - "AWS"
-                    "region_name" - region
+            "replication_specs" - listOf(
+                terraformJsonObject {
+                    "zone_name" - zoneName
+                    "region_configs" - listOf(
+                        terraformJsonObject {
+                            "electable_specs" {
+                                "instance_size" - "M0"
+                            }
+                            "priority" - 7
+                            "provider_name" - "TENANT"
+                            "backing_provider_name" - "AWS"
+                            "region_name" - region
+                        }
+                    )
                 }
-            }
+            )
         }
         "resource.mongodbatlas_database_user.$name" {
             "username" - userName
@@ -354,11 +357,11 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
 ): Unit {
     val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
     val userName = "$projectName-main"
-    if(!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
+    if (!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = $$"""
-        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings[0].standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
+        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings.standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
     """.trimIndent()
         )
     )
@@ -391,15 +394,19 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
 
             "backup_enabled" - backupEnabled
 
-            "replication_specs" {
-                "zone_name" - zoneName
-                "region_configs" {
-                    "provider_name" - "FLEX"
-                    "backing_provider_name" - "AWS"
-                    "region_name" - region1
-                    "priority" - 7
+            "replication_specs" - listOf(
+                terraformJsonObject {
+                    "zone_name" - zoneName
+                    "region_configs" - listOf(
+                        terraformJsonObject {
+                            "provider_name" - "FLEX"
+                            "backing_provider_name" - "AWS"
+                            "region_name" - region1
+                            "priority" - 7
+                        }
+                    )
                 }
-            }
+            )
         }
         "resource.mongodbatlas_database_user.${name}" {
             "username" - userName

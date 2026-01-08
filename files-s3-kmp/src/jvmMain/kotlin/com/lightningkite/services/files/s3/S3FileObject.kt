@@ -42,6 +42,7 @@ public class S3FileObject(
 
     /**
      * The Unix-style path for this file.
+     * Converts Windows-style backslashes to forward slashes for S3 compatibility.
      */
     private val unixPath: String get() = path.toString().replace('\\', '/')
 

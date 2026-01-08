@@ -152,8 +152,8 @@ public class S3PublicFileSystem(
     override val root: S3FileObject = S3FileObject(this, Path(""))
 
     override fun parseInternalUrl(url: String): S3FileObject? {
-        if (rootUrls.none { prefix -> url.startsWith(prefix) }) return null
-        val path = url.substringAfter(rootUrls.first()).substringBefore('?')
+        val matchingPrefix = rootUrls.firstOrNull { prefix -> url.startsWith(prefix) } ?: return null
+        val path = url.substringAfter(matchingPrefix).substringBefore('?')
         return S3FileObject(this, Path(path.decodeURLPart()))
     }
 
@@ -235,7 +235,7 @@ public class S3PublicFileSystem(
                 val regex =
                     Regex("""s3:\/\/(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com\/?(?:\?(?<params>.*))?""")
                 val match = regex.matchEntire(url) ?: throw IllegalArgumentException(
-                    "Invalid S3 URL. The URL should match the pattern:" +
+                    "Invalid S3 URL. The URL should match one of the pattern:" +
                             "   s3://[user]:[password]@[bucket].[region].amazonaws.com/?[params],"+
                             "   s3://[profile]@[bucket].[region].amazonaws.com/?[params],"+
                             "       Available params are: signedUrlDuration"

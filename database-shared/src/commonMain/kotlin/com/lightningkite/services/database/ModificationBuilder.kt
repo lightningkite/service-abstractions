@@ -75,14 +75,32 @@ public class ModificationBuilder<K>() {
         modifications.add(mapModification(Modification.SetAppend(items)))
     }
 
-    @JvmName("plusList")
+    @JvmName("plusAssignList")
     public infix operator fun <T> DataClassPath<K, List<T>>.plusAssign(item: T) {
         modifications.add(mapModification(Modification.ListAppend(listOf(item))))
     }
 
-    @JvmName("plusSet")
+    @JvmName("plusAssignSet")
     public infix operator fun <T> DataClassPath<K, Set<T>>.plusAssign(item: T) {
         modifications.add(mapModification(Modification.SetAppend(setOf(item))))
+    }
+
+    public infix operator fun <T> DataClassPath<K, List<T>>.minusAssign(items: List<T>) {
+        modifications.add(mapModification(Modification.ListRemoveInstances(items)))
+    }
+
+    public infix operator fun <T> DataClassPath<K, Set<T>>.minusAssign(items: Set<T>) {
+        modifications.add(mapModification(Modification.SetRemoveInstances(items)))
+    }
+
+    @JvmName("minusAssignList")
+    public infix operator fun <T> DataClassPath<K, List<T>>.minusAssign(item: T) {
+        modifications.add(mapModification(Modification.ListRemoveInstances(listOf(item))))
+    }
+
+    @JvmName("minusAssignSet")
+    public infix operator fun <T> DataClassPath<K, Set<T>>.minusAssign(item: T) {
+        modifications.add(mapModification(Modification.SetRemoveInstances(setOf(item))))
     }
 
     public infix fun <T> DataClassPath<K, List<T>>.addAll(items: List<T>) {

@@ -1,6 +1,7 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.OpenTelemetry
+import com.lightningkite.services.data.IndexUniqueness
 import kotlinx.atomicfu.AtomicRef
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.ReentrantLock
@@ -18,7 +19,7 @@ public open class InMemoryTable<Model : Any>(
     public val data: MutableList<Model> = ArrayList(),
     override val serializer: KSerializer<Model>,
     private val tableName: String = "unknown",
-    private val tracer: OpenTelemetry? = null
+    private val tracer: OpenTelemetry? = null,
 ) : Table<Model> {
 
     private val lock = ReentrantLock()
@@ -30,9 +31,11 @@ public open class InMemoryTable<Model : Any>(
         lock.withLock { uniqueIndexChecks.value.forEach { it(changes) } }
 
     init {
-        serializer.descriptor.indexes().plus(NeededIndex(fields = listOf("_id"), true, "primary key"))
+        serializer.descriptor.indexes().plus(NeededIndex(fields = listOf("_id"), IndexUniqueness.Unique, "primary key"))
             .forEach { index: NeededIndex ->
-                if (index.unique) {
+                if (index.unique in
+                    setOf(IndexUniqueness.Unique, IndexUniqueness.UniqueNullSparse)
+                ) {
                     val fields = serializer.serializableProperties!!.filter { index.fields.contains(it.name) }
                     uniqueIndexChecks.update { it ->
                         it.plus({ changes: List<EntryChange<Model>> ->
@@ -48,16 +51,31 @@ public open class InMemoryTable<Model : Any>(
                                     null
                             }
                             fieldChanges.forEach { fieldValues ->
-                                if (data.any { fromDb ->
-                                        fieldValues.all { (property, value) ->
-                                            property.get(fromDb) == value
-                                        }
-                                    }) {
-                                    throw UniqueViolationException(
-                                        table = serializer.descriptor.serialName,
-                                        key = fields.joinToString { it.name },
-                                        cause = IllegalStateException()
-                                    )
+                                if (index.unique == IndexUniqueness.Unique) {
+                                    if (data.any { fromDb ->
+                                            fieldValues.all { (property, value) ->
+                                                property.get(fromDb) == value
+                                            }
+                                        }) {
+                                        throw UniqueViolationException(
+                                            table = serializer.descriptor.serialName,
+                                            key = fields.joinToString { it.name },
+                                            cause = IllegalStateException()
+                                        )
+                                    }
+                                } else {
+                                    if (data.any { fromDb ->
+                                            fieldValues
+                                                .all { (property, value) ->
+                                                    value != null && property.get(fromDb) == value
+                                                }
+                                        }) {
+                                        throw UniqueViolationException(
+                                            table = serializer.descriptor.serialName,
+                                            key = fields.joinToString { it.name },
+                                            cause = IllegalStateException()
+                                        )
+                                    }
                                 }
                             }
                         })
