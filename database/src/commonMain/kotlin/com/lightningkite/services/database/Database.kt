@@ -2,6 +2,8 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.data.GenerateDataClassPaths
 import com.lightningkite.services.*
+import com.lightningkite.services.data.KFile
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.io.buffered
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.files.Path
@@ -11,6 +13,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.serializer
 import kotlin.jvm.JvmInline
 import kotlin.reflect.KType
@@ -90,13 +93,30 @@ public interface Database : Service {
                     InMemoryDatabase(name, context = context)
                 }
                 register("ram-preload") { name, url, context ->
-                    val json = Json { this.serializersModule = context.internalSerializersModule }
                     InMemoryDatabase(
                         name,
-                        json.parseToJsonElement(
-                            SystemFileSystem.source(Path(url.substringAfter("://"))).buffered().readByteString()
-                                .decodeToString()
-                        ) as? JsonObject,
+                        premadeData = url
+                            .substringAfter("://", "")
+                            .takeUnless { it.isBlank() }
+                            ?.let { path ->
+                                val file = KFile(path)
+                                val meta = file.metadataOrNull()
+
+                                when {
+                                    meta == null -> {
+                                        KotlinLogging.logger("com.lightningkite.services.database").warn { "Could not extract metadata from file $path" }
+                                        null
+                                    }
+                                    meta.isDirectory -> InMemoryDatabase.PreloadData.JsonFiles(file)
+                                    meta.isRegularFile -> {
+                                        val json = Json { serializersModule = context.internalSerializersModule }
+                                        InMemoryDatabase.PreloadData.InMemory(
+                                            json.parseToJsonElement(file.readString()).jsonObject
+                                        )
+                                    }
+                                    else -> null
+                                }
+                            },
                         context
                     )
                 }
@@ -114,7 +134,7 @@ public interface Database : Service {
                         }
                         ?: 350.milliseconds..750.milliseconds
                     val wraps = x.substringAfter("/")
-                    parse(name, wraps.substringBefore("://"), context).delayed(delay)
+                    parse(name, wraps, context).delayed(delay)
                 }
             }
         }

@@ -35,7 +35,11 @@ public fun embeddedMongo(
         deleteAfter = false,
         databaseFolder = databaseFolder,
         port = port ?: 54961,
-        version = version?.let { Version.Main.valueOf(it) } ?: Version.Main.V8_2
+        version = version?.let { version ->
+            var version = version.replace('.', '_')
+            if (!version.startsWith('V')) version = "V$version"
+            Version.Main.valueOf(version)
+        } ?: Version.Main.V8_2
     )
 
 private fun embeddedMongo(

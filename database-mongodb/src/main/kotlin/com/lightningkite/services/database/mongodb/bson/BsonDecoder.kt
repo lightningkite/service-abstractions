@@ -68,9 +68,7 @@ internal sealed class AbstractBsonDecoder(
     override val serializersModule: SerializersModule,
     val configuration: BsonConfiguration
 ) : BsonDecoder, AbstractDecoder() {
-
     companion object {
-
         val bsonValueCodec = BsonValueCodec()
         const val UNKNOWN_INDEX = -10
         val validKeyKinds = setOf(PrimitiveKind.STRING, PrimitiveKind.CHAR, SerialKind.ENUM)

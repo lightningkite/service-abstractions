@@ -33,7 +33,10 @@ import org.bson.BsonType
 import org.bson.UuidRepresentation
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.toJsonNamingStrategy
 import kotlinx.serialization.SealedSerializationApi
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.encodeToJsonElement
 import org.bson.internal.UuidHelper
+import kotlin.time.Instant
 
 @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
 internal interface JsonBsonDecoder : BsonDecoder, JsonDecoder {
@@ -62,7 +65,7 @@ internal interface JsonBsonDecoder : BsonDecoder, JsonDecoder {
                 BsonType.DOUBLE -> JsonPrimitive(decodeDouble())
                 BsonType.DECIMAL128 -> JsonPrimitive(reader.readDecimal128())
                 BsonType.OBJECT_ID -> JsonPrimitive(decodeObjectId().toHexString())
-                BsonType.DATE_TIME -> JsonPrimitive(reader.readDateTime())
+                BsonType.DATE_TIME -> json.encodeToJsonElement(Instant.serializer(), Instant.fromEpochMilliseconds(reader.readDateTime()))
                 BsonType.TIMESTAMP -> JsonPrimitive(reader.readTimestamp().value)
                 BsonType.BINARY -> {
                     val subtype = reader.peekBinarySubType()
