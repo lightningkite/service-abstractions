@@ -1,10 +1,10 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.database.Database
-import com.lightningkite.services.database.UniqueViolationException
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.Table
+import com.lightningkite.services.database.UniqueViolationException
 import com.mongodb.*
 import com.mongodb.event.ConnectionCheckedInEvent
 import com.mongodb.event.ConnectionCheckedOutEvent
@@ -20,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
-import kotlin.text.get
 
 /**
  * MongoDB implementation of the Database abstraction.
@@ -201,7 +200,7 @@ public class MongoDatabase(
         active.set(0)
         MongoClient.create(
             MongoClientSettings.builder(clientSettings)
-                .also { if(telemetry != null) it.addCommandListener(telemetry.newCommandListener()) else it }
+                .also { if(telemetry != null) it.addCommandListener(telemetry.newCommandListener()) }
                 .uuidRepresentation(UuidRepresentation.STANDARD)
                 .applyToConnectionPoolSettings {
                     it.maxSize(poolSize)
