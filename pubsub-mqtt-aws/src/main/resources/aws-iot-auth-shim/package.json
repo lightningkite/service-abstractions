@@ -1,9 +1,0 @@
-{
-  "name": "aws-iot-auth-shim",
-  "version": "1.0.0",
-  "description": "Thin Lambda shim for AWS IoT Core custom authorizer",
-  "main": "index.js",
-  "engines": {
-    "node": ">=18.0.0"
-  }
-}
