@@ -213,8 +213,15 @@ internal class DevSpanExporter(private val config: DevExporterConfig = DevExport
             if (isException) {
                 val exType = event.attributes.get(AttributeKey.stringKey("exception.type"))
                 val exMsg = event.attributes.get(AttributeKey.stringKey("exception.message"))
+                val exStacktrace = event.attributes.get(AttributeKey.stringKey("exception.stacktrace"))
                 if (exType != null || exMsg != null) {
                     out.println("$childPrefix  ${config.RED}$exType: $exMsg${config.RESET}")
+                }
+                if (exStacktrace != null) {
+                    // Print stack trace with proper indentation
+                    exStacktrace.lines().forEach { line ->
+                        out.println("$childPrefix  ${config.RED}$line${config.RESET}")
+                    }
                 }
             }
         }

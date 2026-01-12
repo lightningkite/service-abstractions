@@ -78,7 +78,7 @@ public data class TranscriptEntry(
  * @param onStreamConnected Callback when phone stream is connected (for triggering greeting)
  * @param jitterBufferMs Size of the jitter buffer in milliseconds. Higher values add latency
  *   but smooth out irregular audio delivery (e.g., from DynamoDB PubSub polling). Set to 0
- *   to disable jitter buffering. Default is 150ms.
+ *   to disable jitter buffering. Default is 300ms.
  * @param tracer Optional OpenTelemetry tracer
  */
 @OptIn(ExperimentalEncodingApi::class)
@@ -92,7 +92,7 @@ public suspend fun handlePhoneVoiceSession(
     toolHandler: suspend (toolName: String, arguments: String) -> String,
     onTranscript: suspend (TranscriptEntry) -> Unit = {},
     onStreamConnected: suspend (VoiceAgentSession) -> Unit = {},
-    jitterBufferMs: Long = 150L,
+    jitterBufferMs: Long = 300L,
     tracer: Tracer? = null,
 ) {
     val span = tracer?.spanBuilder("voiceagent.phone_session")
@@ -122,6 +122,11 @@ public suspend fun handlePhoneVoiceSession(
 
             // Trigger greeting
             onStreamConnected(session)
+
+            // Track current response ID for interleaving detection
+            val currentResponseId = java.util.concurrent.atomic.AtomicReference<String?>(null)
+            // Our own sequence counter since OpenAI doesn't provide one
+            val audioSeqCounter = java.util.concurrent.atomic.AtomicInteger(0)
 
             // Process events
             coroutineScope {
@@ -164,6 +169,8 @@ public suspend fun handlePhoneVoiceSession(
                         sendToPhone = sendToPhone,
                         toolHandler = toolHandler,
                         onTranscript = onTranscript,
+                        currentResponseId = currentResponseId,
+                        audioSeqCounter = audioSeqCounter,
                     )
                 }
             }
@@ -297,15 +304,32 @@ private suspend fun handleAgentEvent(
     sendToPhone: suspend (AudioStreamCommand) -> Unit,
     toolHandler: suspend (toolName: String, arguments: String) -> String,
     onTranscript: suspend (TranscriptEntry) -> Unit,
+    currentResponseId: java.util.concurrent.atomic.AtomicReference<String?>,
+    audioSeqCounter: java.util.concurrent.atomic.AtomicInteger,
 ) {
     when (event) {
         is VoiceAgentEvent.AudioDelta -> {
+            // Track response ID changes to detect interleaving
+            val prevResponseId = currentResponseId.get()
+            if (prevResponseId == null) {
+                logger.info { "AUDIO new response started: ${event.responseId}" }
+            } else if (prevResponseId != event.responseId) {
+                // Response ID changed mid-stream - clear buffer to avoid mixing audio from different responses
+                logger.warn { "AUDIO responseId changed mid-stream: $prevResponseId -> ${event.responseId}, clearing buffer" }
+                jitterBuffer?.clear()
+                audioSeqCounter.set(0)
+                sendToPhone(AudioStreamCommand.Clear(streamId))
+            }
+            currentResponseId.set(event.responseId)
+
             val pcmBytes = Base64.decode(event.delta)
             val mulawBytes = AudioConverter.pcm16_24kToMulaw(pcmBytes)
 
             if (jitterBuffer != null) {
-                // Add to jitter buffer for smooth playback
-                jitterBuffer.add(mulawBytes)
+                // Add to jitter buffer with our own sequence number for ordering
+                // (OpenAI doesn't provide a sequence number - contentIndex is always 0)
+                val seq = audioSeqCounter.getAndIncrement()
+                jitterBuffer.add(seq, mulawBytes)
             } else {
                 // No jitter buffer - send immediately
                 sendToPhone(AudioStreamCommand.Audio(streamId, Base64.encode(mulawBytes)))
@@ -313,6 +337,8 @@ private suspend fun handleAgentEvent(
         }
         is VoiceAgentEvent.SpeechStarted -> {
             logger.debug { "User started speaking" }
+            currentResponseId.set(null)  // Reset - new response expected
+            audioSeqCounter.set(0)  // Reset sequence for new response
             jitterBuffer?.clear()
             sendToPhone(AudioStreamCommand.Clear(streamId))
         }

@@ -138,6 +138,7 @@ import kotlin.time.Duration.Companion.seconds
 @Serializable
 public data class OpenTelemetrySettings(
     override val url: String = "log",
+    val serviceName: String = "my-service",
     val batching: BatchingRules? = BatchingRules(),
     val metricReportBatching: BatchingRules? = batching,
     val traceReportBatching: BatchingRules? = batching,
@@ -269,7 +270,7 @@ public data class OpenTelemetrySettings(
                 val targetWithoutSchema = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4317"
                 val target = "http://$targetWithoutSchema"
                 val resource =
-                    Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
+                    Resource.getDefault().merge(Resource.builder().put("service.name", setting.serviceName).build())
                 val telemetry = OpenTelemetrySdk.builder()
                     .setTracerProvider(
                         setting.builder(
@@ -304,12 +305,12 @@ public data class OpenTelemetrySettings(
                 val targetWithoutSchema = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4318"
                 val target = "http://$targetWithoutSchema"
                 val resource =
-                    Resource.getDefault().merge(Resource.builder().put("service.name", "opentelemetry-tests").build())
+                    Resource.getDefault().merge(Resource.builder().put("service.name", setting.serviceName).build())
                 val telemetry = OpenTelemetrySdk.builder()
                     .setTracerProvider(
                         setting.builder(
                             OtlpHttpSpanExporter.builder()
-                                .setEndpoint(target).build()
+                                .setEndpoint("$target/v1/traces").build()
                         )
                             .setResource(resource)
                             .build()
@@ -317,7 +318,7 @@ public data class OpenTelemetrySettings(
                     .setMeterProvider(
                         setting.builder(
                             OtlpHttpMetricExporter.builder()
-                                .setEndpoint(target).build()
+                                .setEndpoint("$target/v1/metrics").build()
                         )
                             .setResource(resource)
                             .build()
@@ -325,7 +326,42 @@ public data class OpenTelemetrySettings(
                     .setLoggerProvider(
                         setting.builder(
                             OtlpHttpLogRecordExporter.builder()
-                                .setEndpoint(target).build()
+                                .setEndpoint("$target/v1/logs").build()
+                        )
+                            .setResource(resource)
+                            .build()
+                    )
+                    .build()
+
+                otelLoggingSetup(telemetry)
+                telemetry
+            }
+            this.register("otlp-https") { name: String, setting: OpenTelemetrySettings, context ->
+                val targetWithoutSchema = setting.url.substringAfter("://", "")
+                val target = "https://$targetWithoutSchema"
+                val resource =
+                    Resource.getDefault().merge(Resource.builder().put("service.name", setting.serviceName).build())
+                val telemetry = OpenTelemetrySdk.builder()
+                    .setTracerProvider(
+                        setting.builder(
+                            OtlpHttpSpanExporter.builder()
+                                .setEndpoint("$target/v1/traces").build()
+                        )
+                            .setResource(resource)
+                            .build()
+                    )
+                    .setMeterProvider(
+                        setting.builder(
+                            OtlpHttpMetricExporter.builder()
+                                .setEndpoint("$target/v1/metrics").build()
+                        )
+                            .setResource(resource)
+                            .build()
+                    )
+                    .setLoggerProvider(
+                        setting.builder(
+                            OtlpHttpLogRecordExporter.builder()
+                                .setEndpoint("$target/v1/logs").build()
                         )
                             .setResource(resource)
                             .build()
@@ -338,7 +374,7 @@ public data class OpenTelemetrySettings(
             this.register("console") { name: String, setting: OpenTelemetrySettings, context ->
                 val resource = Resource.create(
                     Attributes.builder()
-                        .put(/*ResourceAttributes.SERVICE_NAME*/"service.name", "opentelemetry-tests")
+                        .put(/*ResourceAttributes.SERVICE_NAME*/"service.name", setting.serviceName)
                         .build()
                 )
                 val telemetry =
@@ -367,7 +403,7 @@ public data class OpenTelemetrySettings(
             this.register("log") { name: String, setting: OpenTelemetrySettings, context ->
                 val resource = Resource.create(
                     Attributes.builder()
-                        .put(/*ResourceAttributes.SERVICE_NAME*/"service.name", "opentelemetry-tests")
+                        .put(/*ResourceAttributes.SERVICE_NAME*/"service.name", setting.serviceName)
                         .build()
                 )
                 val telemetry =

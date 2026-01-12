@@ -1,20 +1,20 @@
 package com.lightningkite.services.voiceagent.phonecall
 
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.PriorityQueue
 import kotlin.time.TimeSource
 
 private val logger = KotlinLogging.logger("AudioJitterBuffer")
 
 /**
- * A jitter buffer that smooths out irregular audio delivery for real-time playback.
+ * A jitter buffer that smooths out irregular audio delivery and corrects ordering issues.
  *
- * Unlike a simple throttle buffer, this accumulates an initial buffer before starting
- * playback, then drains at a steady rate regardless of when audio arrives. This absorbs
- * jitter from network latency, PubSub polling, etc.
+ * This buffer accumulates audio chunks with sequence numbers, sorts them by sequence,
+ * and plays them back at a steady rate. This handles both timing jitter (from network
+ * latency, PubSub polling) and ordering issues (from PubSub reordering).
  *
  * ## Usage
  *
@@ -30,7 +30,7 @@ private val logger = KotlinLogging.logger("AudioJitterBuffer")
  *
  * // In another coroutine: add audio as it arrives
  * audioEvents.collect { event ->
- *     buffer.add(event.audio)
+ *     buffer.add(event.contentIndex, event.audio)
  * }
  *
  * // On interruption (user speaks):
@@ -45,8 +45,13 @@ public class AudioJitterBuffer(
     public val targetBufferMs: Long = 150L,
     private val bytesPerMs: Int = 8,  // µ-law: 8000 Hz = 8 bytes/ms
 ) {
+    private data class SequencedChunk(val seq: Int, val audio: ByteArray) : Comparable<SequencedChunk> {
+        override fun compareTo(other: SequencedChunk): Int = seq.compareTo(other.seq)
+    }
+
     private val timeSource = TimeSource.Monotonic
-    private val chunks = Channel<ByteArray>(Channel.UNLIMITED)
+    private val chunks = PriorityQueue<SequencedChunk>()
+    private val mutex = Mutex()
 
     @Volatile
     private var bufferedMs: Long = 0L
@@ -57,28 +62,34 @@ public class AudioJitterBuffer(
     @Volatile
     private var stopped = false
 
+    @Volatile
+    private var nextExpectedSeq = 0  // Track expected sequence for reorder detection
+
     /**
-     * Add audio to the buffer.
+     * Add audio to the buffer with a sequence number for ordering.
      *
+     * @param seq Sequence number (e.g., contentIndex from voice agent)
      * @param audio Raw audio bytes (µ-law by default)
      */
-    public fun add(audio: ByteArray) {
+    public suspend fun add(seq: Int, audio: ByteArray) {
         if (stopped) return
         val durationMs = audio.size / bytesPerMs
-        bufferedMs += durationMs
-        chunks.trySend(audio)
+        mutex.withLock {
+            chunks.add(SequencedChunk(seq, audio))
+            bufferedMs += durationMs
+        }
     }
 
     /**
      * Clear the buffer and restart buffering phase.
      * Call this when the user starts speaking to cancel pending audio.
      */
-    public fun clear() {
-        generation++
-        bufferedMs = 0
-        // Drain existing chunks
-        while (chunks.tryReceive().isSuccess) {
-            // discard
+    public suspend fun clear() {
+        mutex.withLock {
+            generation++
+            bufferedMs = 0
+            nextExpectedSeq = 0
+            chunks.clear()
         }
         logger.debug { "Buffer cleared, restarting buffering phase" }
     }
@@ -89,7 +100,6 @@ public class AudioJitterBuffer(
     public fun stop() {
         stopped = true
         generation++
-        chunks.close()
     }
 
     /**
@@ -125,8 +135,15 @@ public class AudioJitterBuffer(
             var playedMs = 0L
             var underrunCount = 0
 
+            // Safe diagnostic counters - can't affect control flow
+            var chunkCount = 0
+            var lastStatsMs = 0L
+            var behindCount = 0
+            var maxBehindMs = 0L
+            var reorderedCount = 0
+
             while (generation == currentGen && !stopped) {
-                val chunk = chunks.tryReceive().getOrNull()
+                val chunk = mutex.withLock { chunks.poll() }
                 if (chunk == null) {
                     // Buffer underrun - wait for more audio
                     underrunCount++
@@ -139,8 +156,17 @@ public class AudioJitterBuffer(
                 }
 
                 underrunCount = 0
-                val chunkMs = chunk.size / bytesPerMs
-                bufferedMs -= chunkMs
+                chunkCount++
+
+                // Track if this chunk was reordered (arrived out of sequence)
+                if (chunk.seq != nextExpectedSeq && nextExpectedSeq > 0) {
+                    reorderedCount++
+                    logger.debug { "Reordered chunk: expected seq=$nextExpectedSeq, got seq=${chunk.seq}" }
+                }
+                nextExpectedSeq = chunk.seq + 1
+
+                val chunkMs = chunk.audio.size / bytesPerMs
+                mutex.withLock { bufferedMs -= chunkMs }
 
                 // Calculate when this chunk should be sent
                 val targetTimeMs = playedMs
@@ -151,11 +177,26 @@ public class AudioJitterBuffer(
                     delay(waitMs)
                 }
 
-                sendAudio(chunk)
+                // Safe behind-schedule tracking (doesn't affect flow)
+                if (waitMs < -10) {
+                    behindCount++
+                    val behind = -waitMs
+                    if (behind > maxBehindMs) maxBehindMs = behind
+                }
+
+                sendAudio(chunk.audio)
                 playedMs += chunkMs
+
+                // Summary logging every second (safe - after sendAudio)
+                if (playedMs - lastStatsMs >= 1000) {
+                    logger.info { "JITTER played=${playedMs}ms buf=${bufferedMs}ms chunks=$chunkCount behind=$behindCount maxBehind=${maxBehindMs}ms reordered=$reorderedCount" }
+                    lastStatsMs = playedMs
+                    behindCount = 0
+                    maxBehindMs = 0
+                }
             }
 
-            logger.debug { "Playback interrupted after ${playedMs}ms" }
+            logger.debug { "Playback interrupted after ${playedMs}ms, $chunkCount chunks, $reorderedCount reordered" }
         }
 
         logger.debug { "Playback loop stopped" }

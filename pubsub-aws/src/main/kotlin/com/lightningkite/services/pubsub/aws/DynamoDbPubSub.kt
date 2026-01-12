@@ -98,7 +98,7 @@ public class DynamoDbPubSub(
      * This reduces emit from 2 DynamoDB operations to 1, roughly halving latency.
      * Trade-off: Messages within the same millisecond may not be strictly ordered.
      * Recommended for high-throughput scenarios like real-time audio where
-     * slight reordering is acceptable (handled by jitter buffer).
+     * slight reordering is acceptable (handled by jitter buffer for audio agent).
      */
     public val fastEmit: Boolean = false,
 ) : PubSub {
@@ -366,6 +366,7 @@ public class DynamoDbPubSub(
                             }
                         }
 
+
                         delay(pollInterval)
                     } catch (e: CancellationException) {
                         throw e
@@ -486,6 +487,7 @@ public class DynamoDbPubSub(
                                 }
                             }
                         }
+
 
                         delay(pollInterval)
                     } catch (e: CancellationException) {
