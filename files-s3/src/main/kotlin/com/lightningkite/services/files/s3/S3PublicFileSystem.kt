@@ -22,6 +22,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
+import kotlin.uuid.Uuid
 
 /**
  * An implementation of [PublicFileSystem] that uses AWS S3 for storage.
@@ -196,7 +197,7 @@ public class S3PublicFileSystem(
      */
     override suspend fun healthCheck(): HealthStatus {
         return try {
-            val testFile = root.then("health-check/test-file.txt")
+            val testFile = root.then("health-check/test-file-${Uuid.random()}.txt")
             val testContent = "Test Content ${System.currentTimeMillis()}"
 
             // Test write
