@@ -60,7 +60,7 @@ include(":files")
 include(":files-clamav")
 include(":files-client")
 include(":files-s3")
-include(":files-s3-kmp")
+//include(":files-s3-kmp") // EXPERIMENTAL
 include(":files-test")
 include(":http-client")
 include(":metrics-cloudwatch")
