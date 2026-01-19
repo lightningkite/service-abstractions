@@ -409,17 +409,21 @@ class OpenTelemetrySettingsTest {
                 logger.info { "Operation $i" }
                 Thread.sleep(5)
             }
+            println("Iter $i complete")
         }
 
         Thread.sleep(1600) // Wait for window to expire
+        println("Window should have expired")
 
         // Shutdown to flush
         telemetry.sdkTracerProvider.shutdown().join(5, java.util.concurrent.TimeUnit.SECONDS)
+        println("Flushing")
         Thread.sleep(500)
 
         // Verify file content
         assertTrue("Output file should exist", outputFile.exists())
         val content = outputFile.readText()
+        println("Content: " + content)
         assertTrue("File should contain additional count", content.contains("additional"))
         assertTrue("File should show 25 total", content.contains("25 total"))
         assertTrue("File should show summary", content.contains("Summary:"))
