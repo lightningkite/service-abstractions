@@ -8,6 +8,9 @@ import com.lightningkite.services.test.expensive
 import kotlin.test.Test
 
 class TfTest {
+    init {
+        MemcachedCache
+    }
     @Test fun test() {
         assertPlannableAwsVpc<Cache.Settings>("aws") {
             it.awsElasticacheMemcached()

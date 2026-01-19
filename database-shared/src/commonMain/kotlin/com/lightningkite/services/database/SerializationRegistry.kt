@@ -23,6 +23,9 @@ import kotlin.time.Duration
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
+// by Claude - Exception thrown when attempting to use a placeholder serializer for generic type parameters
+public class GenericPlaceholderException(message: String) : Exception(message)
+
 @OptIn(ExperimentalSerializationApi::class)
 public class SerializationRegistry(public val module: SerializersModule) {
     private val direct = HashMap<String, KSerializer<*>>()
@@ -310,11 +313,11 @@ public class SerializationRegistry(public val module: SerializersModule) {
         }
 
         override fun deserialize(decoder: Decoder): Nothing {
-            throw Error("Someone is trying to actually use the GenericPlaceholderSerializer.  This was used to produce info for $infoSource for parameter $index, nothing more.")
+            throw GenericPlaceholderException("Cannot deserialize generic type parameter $index of $infoSource - placeholder serializer is for metadata only")
         }
 
         override fun serialize(encoder: Encoder, value: Nothing) {
-            throw Error("Someone is trying to actually use the GenericPlaceholderSerializer.  This was used to produce info for $infoSource for parameter $index, nothing more.")
+            throw GenericPlaceholderException("Cannot serialize generic type parameter $index of $infoSource - placeholder serializer is for metadata only")
         }
     }
 
@@ -417,7 +420,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                             name = it.name,
                             type = it.serializer.virtualTypeReference(this),
                             optional = it.defaultCode != null,
-                            annotations = it.annotations.mapNotNull { SerializableAnnotation.Companion.parseOrNull(it) },
+                            annotations = it.serializableAnnotations,  // by Claude - use serializableAnnotations which includes field annotations
                             defaultJson = it.default?.let { default ->
                                 @Suppress("UNCHECKED_CAST")
                                 DefaultDecoder.json.encodeToString(it.serializer as KSerializer<Any?>, default)
@@ -554,11 +557,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                                 name = it.name,
                                 type = it.serializer.virtualTypeReference(this),
                                 optional = it.defaultCode != null,
-                                annotations = it.annotations.mapNotNull {
-                                    SerializableAnnotation.Companion.parseOrNull(
-                                        it
-                                    )
-                                },
+                                annotations = it.serializableAnnotations,  // by Claude - use serializableAnnotations which includes field annotations
                                 defaultJson = it.default?.let { default ->
                                     @Suppress("UNCHECKED_CAST")
                                     DefaultDecoder.json.encodeToString(it.serializer as KSerializer<Any?>, default)

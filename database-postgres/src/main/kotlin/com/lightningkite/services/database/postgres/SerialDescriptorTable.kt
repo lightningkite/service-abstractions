@@ -200,6 +200,17 @@ internal fun SerialDescriptor.columnType(serializersModule: SerializersModule): 
             }
 
         StructureKind.CLASS -> {
+            // Value classes (inline classes) should be treated as their underlying type
+            // by Claude
+            if (isInline) {
+                return getElementDescriptor(0).columnType(serializersModule).map { sub ->
+                    ColumnTypeInfo(
+                        key = sub.key,
+                        type = sub.type.also { it.nullable = it.nullable || this.isNullable },
+                        descriptorPath = listOf(0) + sub.descriptorPath
+                    )
+                }
+            }
             val nullCol = if (isNullable) listOf(
                 ColumnTypeInfo(
                     listOf<String>("exists"),

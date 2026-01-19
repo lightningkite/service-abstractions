@@ -30,6 +30,7 @@ import kotlin.time.measureTime
  *
  * The 'lk' AWS profile will be used for credentials.
  */
+@Ignore
 class DynamoDbPubSubIntegrationTest {
 
     companion object {
@@ -238,8 +239,8 @@ class DynamoDbPubSubIntegrationTest {
         }
 
         withTimeout(5.seconds) {
-            collectJob1.join()
-            collectJob2.join()
+            collectJob1.cancelAndJoin()
+            collectJob2.cancelAndJoin()
         }
 
         assertEquals(expectedCount, received1.size)

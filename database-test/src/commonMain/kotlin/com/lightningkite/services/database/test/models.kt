@@ -8,6 +8,7 @@ import com.lightningkite.services.database.HasId
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseContextualSerialization
+import kotlin.jvm.JvmInline
 import kotlin.random.Random
 import kotlin.uuid.Uuid
 import kotlin.time.Instant
@@ -149,6 +150,18 @@ data class LargeTestModel(
 ) : HasId<Uuid> {
     companion object
 }
+
+@GenerateDataClassPaths
+@Serializable
+data class ValueClassContainingTest(
+    override val _id: Uuid = Uuid.random(),
+    val direct: ValueClass = ValueClass("direct"),
+    val set: Set<ValueClass> = setOf(ValueClass("set")),
+): HasId<Uuid>
+
+@Serializable
+@JvmInline
+value class ValueClass(val value: String)
 
 @GenerateDataClassPaths
 @Serializable

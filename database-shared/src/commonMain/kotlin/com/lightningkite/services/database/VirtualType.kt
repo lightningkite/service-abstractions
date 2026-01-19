@@ -396,9 +396,12 @@ public data class SerializableAnnotation(
             __do_not_use_externally__parsers[name] = handler as ((Annotation) -> SerializableAnnotation)
         }
 
+        // by Claude - Modified to use reflection fallback
         public fun parseOrNull(annotation: Annotation): SerializableAnnotation? {
             val fqn = annotation.toString().removePrefix("@").substringBefore("(")
+            // First check registered parsers (for custom handling), then fall back to reflection
             return __do_not_use_externally__parsers[fqn]?.invoke(annotation)
+                ?: reflectAnnotation(annotation)
         }
     }
 }

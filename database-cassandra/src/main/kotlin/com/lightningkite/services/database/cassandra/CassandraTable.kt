@@ -5,8 +5,9 @@ import com.datastax.oss.driver.api.core.cql.*
 import com.datastax.oss.driver.api.core.servererrors.InvalidQueryException
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.database.*
-import com.lightningkite.services.database.cassandra.serialization.CassandraSerialization
-import com.lightningkite.services.database.cassandra.serialization.toCqlType
+import com.lightningkite.services.database.cassandra.serialization.generateFlattenedColumns
+import com.lightningkite.services.database.cassandra.serialization.FlattenedColumn
+import com.lightningkite.services.database.cassandra.serialization.expandKeyColumnNames
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -27,22 +28,31 @@ private const val MAX_PARALLEL_OR_QUERIES = 10
 
 /**
  * Cassandra implementation of the Table interface.
+ *
+ * @param useAwsKeyspaces When true, enables AWS Keyspaces compatibility mode which:
+ *   - Skips SASI index creation (not supported)
+ *   - Uses client-side counting (COUNT(*) not supported)
+ *   - Skips system_schema queries for migration
  */
+// by Claude - added useAwsKeyspaces parameter for Keyspaces compatibility
 @OptIn(ExperimentalSerializationApi::class)
 public class CassandraTable<Model : Any>(
     override val serializer: KSerializer<Model>,
     private val session: CqlSession,
     private val keyspace: String,
     private val tableName: String,
-    private val context: SettingContext
+    private val context: SettingContext,
+    private val useAwsKeyspaces: Boolean = false
 ) : Table<Model> {
 
     private val schema: CassandraSchema<Model> = CassandraSchema.fromSerializer(serializer, tableName)
-    private val serialization = CassandraSerialization(context.internalSerializersModule)
+    // by Claude - using CassandraMapFormat for proper flattening and inline class handling
+    private val mapFormat = CassandraMapFormat(context.internalSerializersModule)
     private val quotedKeyspace = keyspace.quoteCql()
     private val quotedTableName = tableName.quoteCql()
     private val fullyQualifiedTable = "$quotedKeyspace.$quotedTableName"
-    private val cqlGenerator = CqlGenerator(schema, fullyQualifiedTable)
+    // by Claude - pass SerializersModule for embedded type expansion in conditions
+    private val cqlGenerator = CqlGenerator(schema, fullyQualifiedTable, context.internalSerializersModule)
     private val analyzer = ConditionAnalyzer(schema)
     private val computedHandler = ComputedColumnsHandler(schema, serializer)
 
@@ -61,17 +71,21 @@ public class CassandraTable<Model : Any>(
         }
     }
 
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private suspend fun createTableIfNotExists() {
-        val columns = buildList {
-            for (i in 0 until serializer.descriptor.elementsCount) {
-                val name = serializer.descriptor.getElementName(i).quoteCql()
-                val type = serializer.descriptor.getElementDescriptor(i).toCqlType()
-                add("$name $type")
-            }
-        }
+        // by Claude - use generateFlattenedColumns to create flattened schema for embedded objects
+        val flattenedColumns = serializer.descriptor.generateFlattenedColumns()
+        val columns = flattenedColumns.map { "${it.name.quoteCql()} ${it.cqlType}" }
 
-        val partitionKeyNames = schema.partitionKeys.map { it.name.quoteCql() }
-        val clusteringKeyNames = schema.clusteringColumns.map { it.name.quoteCql() }
+        // by Claude - expand partition key and clustering column names for embedded types
+        // For example, if _id is CompoundTestKey { first: String, second: String },
+        // it becomes ["_id__first", "_id__second"] instead of ["_id"]
+        val partitionKeyNames = schema.partitionKeys.flatMap {
+            serializer.descriptor.expandKeyColumnNames(it.name)
+        }.map { it.quoteCql() }
+        val clusteringKeyNames = schema.clusteringColumns.flatMap {
+            serializer.descriptor.expandKeyColumnNames(it.name)
+        }.map { it.quoteCql() }
 
         val pkPart = if (partitionKeyNames.size == 1) {
             partitionKeyNames.first()
@@ -102,8 +116,38 @@ public class CassandraTable<Model : Any>(
 
         session.executeAsync(cql).toCompletableFuture().await()
 
+        // by Claude - AWS Keyspaces has a propagation delay after table creation
+        // Wait for the table to become available before proceeding
+        if (useAwsKeyspaces) {
+            waitForTableReady()
+        }
+
         // After table creation, check for schema migrations
         migrateSchema()
+    }
+
+    /**
+     * Waits for an AWS Keyspaces table to become ready after creation.
+     * Keyspaces tables have a propagation delay before they're available for queries.
+     */
+    // by Claude - added for AWS Keyspaces compatibility
+    private suspend fun waitForTableReady(maxAttempts: Int = 30, delayMs: Long = 1000) {
+        repeat(maxAttempts) { attempt ->
+            try {
+                // Try a simple query to check if the table is ready
+                val checkCql = "SELECT * FROM $fullyQualifiedTable LIMIT 1"
+                session.executeAsync(checkCql).toCompletableFuture().await()
+                logger.debug { "Table $fullyQualifiedTable is ready after ${attempt + 1} attempts" }
+                return
+            } catch (e: Exception) {
+                if (attempt < maxAttempts - 1) {
+                    logger.debug { "Table $fullyQualifiedTable not ready yet (attempt ${attempt + 1}/$maxAttempts): ${e.message}" }
+                    kotlinx.coroutines.delay(delayMs)
+                } else {
+                    logger.warn { "Table $fullyQualifiedTable may not be ready after $maxAttempts attempts, proceeding anyway" }
+                }
+            }
+        }
     }
 
     private suspend fun migrateSchema() {
@@ -134,13 +178,9 @@ public class CassandraTable<Model : Any>(
         }
 
         // Determine which columns need to be added
-        val modelColumns = buildMap {
-            for (i in 0 until serializer.descriptor.elementsCount) {
-                val name = serializer.descriptor.getElementName(i)
-                val type = serializer.descriptor.getElementDescriptor(i).toCqlType()
-                put(name, type)
-            }
-        }
+        // by Claude - use generateFlattenedColumns for flattened schema
+        val modelColumns = serializer.descriptor.generateFlattenedColumns()
+            .associate { it.name to it.cqlType }
 
         val columnsToAdd = if (existingColumns.isEmpty()) {
             // If we couldn't query schema, don't try to add anything
@@ -181,68 +221,84 @@ public class CassandraTable<Model : Any>(
     }
 
     private suspend fun createIndexes() {
-        // Create SASI indexes
-        for ((column, info) in schema.sasiIndexes) {
-            val mode = when (info.mode) {
-                SasiMode.PREFIX -> "PREFIX"
-                SasiMode.CONTAINS -> "CONTAINS"
-                SasiMode.SPARSE -> "SPARSE"
-            }
-            val analyzer = when (info.analyzer) {
-                SasiAnalyzer.NONE -> ""
-                SasiAnalyzer.STANDARD -> ", 'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.StandardAnalyzer'"
-                SasiAnalyzer.NON_TOKENIZING -> ", 'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.NonTokenizingAnalyzer'"
-            }
-            val caseSensitive = if (info.caseSensitive) "" else ", 'case_sensitive': 'false'"
-
-            val indexName = "${tableName}_${column}_sasi_idx".quoteCql()
-            val cql = """
-                CREATE CUSTOM INDEX IF NOT EXISTS $indexName
-                ON $fullyQualifiedTable (${column.quoteCql()})
-                USING 'org.apache.cassandra.index.sasi.SASIIndex'
-                WITH OPTIONS = {'mode': '$mode'$caseSensitive$analyzer}
-            """.trimIndent()
-
-            try {
-                session.executeAsync(cql).toCompletableFuture().await()
-                logger.debug { "Created SASI index on $fullyQualifiedTable.$column (mode=$mode)" }
-            } catch (e: InvalidQueryException) {
-                when {
-                    e.message?.contains("already exists", ignoreCase = true) == true -> {
-                        logger.debug { "SASI index on $fullyQualifiedTable.$column already exists" }
-                    }
-                    e.message?.contains("SASI", ignoreCase = true) == true ||
-                    e.message?.contains("custom index", ignoreCase = true) == true -> {
-                        // SASI not available (e.g., AWS Keyspaces doesn't support SASI)
-                        logger.warn { "SASI indexes not supported on this Cassandra instance. Column '$column' will not be indexed. Consider using @SaiIndex instead." }
-                    }
-                    else -> {
-                        logger.warn(e) { "Failed to create SASI index on $fullyQualifiedTable.$column: ${e.message}" }
-                    }
+        // by Claude - AWS Keyspaces doesn't support SASI indexes, skip them entirely
+        if (!useAwsKeyspaces) {
+            // Create SASI indexes (standard Cassandra only)
+            for ((column, info) in schema.sasiIndexes) {
+                val mode = when (info.mode) {
+                    SasiMode.PREFIX -> "PREFIX"
+                    SasiMode.CONTAINS -> "CONTAINS"
+                    SasiMode.SPARSE -> "SPARSE"
                 }
-            } catch (e: Exception) {
-                logger.error(e) { "Unexpected error creating SASI index on $fullyQualifiedTable.$column" }
+                val analyzer = when (info.analyzer) {
+                    SasiAnalyzer.NONE -> ""
+                    SasiAnalyzer.STANDARD -> ", 'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.StandardAnalyzer'"
+                    SasiAnalyzer.NON_TOKENIZING -> ", 'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.NonTokenizingAnalyzer'"
+                }
+                val caseSensitive = if (info.caseSensitive) "" else ", 'case_sensitive': 'false'"
+
+                val indexName = "${tableName}_${column}_sasi_idx".quoteCql()
+                val cql = """
+                    CREATE CUSTOM INDEX IF NOT EXISTS $indexName
+                    ON $fullyQualifiedTable (${column.quoteCql()})
+                    USING 'org.apache.cassandra.index.sasi.SASIIndex'
+                    WITH OPTIONS = {'mode': '$mode'$caseSensitive$analyzer}
+                """.trimIndent()
+
+                try {
+                    session.executeAsync(cql).toCompletableFuture().await()
+                    logger.debug { "Created SASI index on $fullyQualifiedTable.$column (mode=$mode)" }
+                } catch (e: InvalidQueryException) {
+                    when {
+                        e.message?.contains("already exists", ignoreCase = true) == true -> {
+                            logger.debug { "SASI index on $fullyQualifiedTable.$column already exists" }
+                        }
+                        e.message?.contains("SASI", ignoreCase = true) == true ||
+                        e.message?.contains("custom index", ignoreCase = true) == true -> {
+                            // SASI not available (e.g., AWS Keyspaces doesn't support SASI)
+                            logger.warn { "SASI indexes not supported on this Cassandra instance. Column '$column' will not be indexed. Consider using @SaiIndex instead." }
+                        }
+                        else -> {
+                            logger.warn(e) { "Failed to create SASI index on $fullyQualifiedTable.$column: ${e.message}" }
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "Unexpected error creating SASI index on $fullyQualifiedTable.$column" }
+                }
             }
+        } else if (schema.sasiIndexes.isNotEmpty()) {
+            logger.info { "Skipping SASI indexes for AWS Keyspaces (not supported): ${schema.sasiIndexes.keys.joinToString()}" }
         }
 
-        // Create SAI indexes
+        // Create SAI indexes (or regular secondary indexes for Keyspaces)
         for (column in schema.saiIndexes) {
             val indexName = "${tableName}_${column}_sai_idx".quoteCql()
-            val cql = """
-                CREATE INDEX IF NOT EXISTS $indexName
-                ON $fullyQualifiedTable (${column.quoteCql()})
-                USING 'sai'
-            """.trimIndent()
+
+            // by Claude - AWS Keyspaces uses regular secondary indexes, not SAI
+            val cql = if (useAwsKeyspaces) {
+                // AWS Keyspaces secondary index syntax
+                """
+                    CREATE INDEX IF NOT EXISTS $indexName
+                    ON $fullyQualifiedTable (${column.quoteCql()})
+                """.trimIndent()
+            } else {
+                // Standard Cassandra SAI syntax
+                """
+                    CREATE INDEX IF NOT EXISTS $indexName
+                    ON $fullyQualifiedTable (${column.quoteCql()})
+                    USING 'sai'
+                """.trimIndent()
+            }
 
             try {
                 session.executeAsync(cql).toCompletableFuture().await()
                 schema.actualSaiIndexes.add(column)
-                logger.debug { "Created SAI index on $fullyQualifiedTable.$column" }
+                logger.debug { "Created ${if (useAwsKeyspaces) "secondary" else "SAI"} index on $fullyQualifiedTable.$column" }
             } catch (e: InvalidQueryException) {
                 when {
                     e.message?.contains("already exists", ignoreCase = true) == true -> {
                         schema.actualSaiIndexes.add(column) // Index already exists, so it's usable
-                        logger.debug { "SAI index on $fullyQualifiedTable.$column already exists" }
+                        logger.debug { "${if (useAwsKeyspaces) "Secondary" else "SAI"} index on $fullyQualifiedTable.$column already exists" }
                     }
                     e.message?.contains("SAI", ignoreCase = true) == true ||
                     e.message?.contains("sai", ignoreCase = true) == true -> {
@@ -251,11 +307,11 @@ public class CassandraTable<Model : Any>(
                         logger.warn { "SAI indexes not supported on this Cassandra instance. Column '$column' will not be indexed. Upgrade to Cassandra 5.0+ for SAI support." }
                     }
                     else -> {
-                        logger.warn(e) { "Failed to create SAI index on $fullyQualifiedTable.$column: ${e.message}" }
+                        logger.warn(e) { "Failed to create index on $fullyQualifiedTable.$column: ${e.message}" }
                     }
                 }
             } catch (e: Exception) {
-                logger.error(e) { "Unexpected error creating SAI index on $fullyQualifiedTable.$column" }
+                logger.error(e) { "Unexpected error creating index on $fullyQualifiedTable.$column" }
             }
         }
 
@@ -329,7 +385,7 @@ public class CassandraTable<Model : Any>(
             // Collect and filter all rows
             val models = mutableListOf<Model>()
             rows.collect { row ->
-                val model = serialization.deserializeRow(row, serializer)
+                val model = mapFormat.decode(serializer, row)
 
                 // Apply app-side filter
                 val passesFilter = analysis.appFilter?.invoke(model) ?: true
@@ -498,7 +554,7 @@ public class CassandraTable<Model : Any>(
                         )
                         val models = mutableListOf<Model>()
                         executeQuery(query).collect { row ->
-                            models.add(serialization.deserializeRow(row, serializer))
+                            models.add(mapFormat.decode(serializer, row))
                         }
                         models
                     }
@@ -587,6 +643,11 @@ public class CassandraTable<Model : Any>(
         // Short-circuit for impossible conditions
         if (normalizedCondition is Condition.Never) {
             return 0
+        }
+
+        // by Claude - AWS Keyspaces doesn't support COUNT(*), always use client-side counting
+        if (useAwsKeyspaces) {
+            return find(condition).count()
         }
 
         val analysis = analyzer.analyze(normalizedCondition)
@@ -704,7 +765,7 @@ public class CassandraTable<Model : Any>(
 
         val result = mutableListOf<Model>()
         for (model in models) {
-            val values = serialization.serializeToMap(model, serializer)
+            val values = mapFormat.encode(serializer, model)
             val computedValues = computedHandler.computeDerivedValues(model, values)
 
             val columns = computedValues.keys.toList()
@@ -786,7 +847,7 @@ public class CassandraTable<Model : Any>(
         } else {
             // No matching record - insert the model using IF NOT EXISTS
             // If insert fails due to race, re-check and update instead
-            val values = serialization.serializeToMap(model, serializer)
+            val values = mapFormat.encode(serializer, model)
             val computedValues = computedHandler.computeDerivedValues(model, values)
             val columns = computedValues.keys.toList()
             val params = columns.map { computedValues[it] }
@@ -844,7 +905,7 @@ public class CassandraTable<Model : Any>(
             true
         } else {
             // No matching record - insert the model using IF NOT EXISTS
-            val values = serialization.serializeToMap(model, serializer)
+            val values = mapFormat.encode(serializer, model)
             val computedValues = computedHandler.computeDerivedValues(model, values)
             val columns = computedValues.keys.toList()
             val params = columns.map { computedValues[it] }
@@ -970,18 +1031,30 @@ public class CassandraTable<Model : Any>(
         return count
     }
 
+    // by Claude - updated to use flattened key column names for embedded primary keys
     @Suppress("UNCHECKED_CAST")
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private suspend fun deleteByPrimaryKey(model: Model) {
-        val pkNames = schema.partitionKeys.map { it.name.quoteCql() }
-        val ckNames = schema.clusteringColumns.map { it.name.quoteCql() }
-        val allKeys = pkNames + ckNames
+        // Expand partition/clustering key names for embedded types
+        val pkNames = schema.partitionKeys.flatMap {
+            serializer.descriptor.expandKeyColumnNames(it.name)
+        }.map { it.quoteCql() }
+        val ckNames = schema.clusteringColumns.flatMap {
+            serializer.descriptor.expandKeyColumnNames(it.name)
+        }.map { it.quoteCql() }
+        val allKeyNames = pkNames + ckNames
 
-        val whereClauses = allKeys.joinToString(" AND ") { "$it = ?" }
-        val params = (schema.partitionKeys.map { convertToCassandraType(it.property.get(model)) } +
-                schema.clusteringColumns.map { convertToCassandraType(it.property.get(model)) }).toTypedArray()
+        // Get key values from encoded map (which has flattened keys)
+        val encodedModel = mapFormat.encode(serializer, model)
+        val allKeyValues = allKeyNames.map { keyName ->
+            // Remove quotes from key name to match encoded map keys
+            val cleanName = keyName.trim('"')
+            encodedModel[cleanName]
+        }
 
+        val whereClauses = allKeyNames.joinToString(" AND ") { "$it = ?" }
         val cql = "DELETE FROM $fullyQualifiedTable WHERE $whereClauses"
-        session.executeAsync(SimpleStatement.newInstance(cql, *params)).toCompletableFuture().await()
+        session.executeAsync(SimpleStatement.newInstance(cql, *allKeyValues.toTypedArray())).toCompletableFuture().await()
     }
 
     /**
@@ -1008,28 +1081,35 @@ public class CassandraTable<Model : Any>(
         if (primaryKeyEquals(old, new)) {
             // Primary key unchanged - use UPDATE
             // We need to include ALL non-key columns (including null ones) to properly update
-            val newValues = serialization.serializeToMap(new, serializer)
+            val newValues = mapFormat.encode(serializer, new)
             val computedValues = computedHandler.computeDerivedValues(new, newValues)
 
-            val pkNames = schema.partitionKeys.map { it.name }.toSet()
-            val ckNames = schema.clusteringColumns.map { it.name }.toSet()
-            val keyNames = pkNames + ckNames
+            // by Claude - expand key names for embedded primary keys
+            val pkFlattenedNames = schema.partitionKeys.flatMap {
+                serializer.descriptor.expandKeyColumnNames(it.name)
+            }.toSet()
+            val ckFlattenedNames = schema.clusteringColumns.flatMap {
+                serializer.descriptor.expandKeyColumnNames(it.name)
+            }.toSet()
+            val keyNames = pkFlattenedNames + ckFlattenedNames
 
-            // Get all field names from the serializer, not just non-null ones
-            val allFieldNames = (0 until serializer.descriptor.elementsCount)
-                .map { serializer.descriptor.getElementName(it) }
-            val nonKeyColumns = allFieldNames.filter { it !in keyNames }
+            // by Claude - use keys from encoded map (flattened column names like embedded__value1)
+            // and filter out flattened key columns
+            val nonKeyColumns = computedValues.keys.filter { it !in keyNames }
 
             if (nonKeyColumns.isNotEmpty()) {
                 val setClauses = nonKeyColumns.joinToString(", ") { "${it.quoteCql()} = ?" }
-                val whereClauses = (schema.partitionKeys.map { it.name } + schema.clusteringColumns.map { it.name })
-                    .joinToString(" AND ") { "${it.quoteCql()} = ?" }
+
+                // by Claude - use flattened key column names for WHERE clause
+                val allKeyColumnNames = (pkFlattenedNames + ckFlattenedNames).toList()
+                val whereClauses = allKeyColumnNames.joinToString(" AND ") { "${it.quoteCql()} = ?" }
 
                 val updateCql = "UPDATE $fullyQualifiedTable SET $setClauses WHERE $whereClauses"
-                // Use computedValues if present, otherwise null (which is correct for Cassandra)
+
+                // by Claude - get key values from encoded old model (which has flattened keys)
+                val oldValues = mapFormat.encode(serializer, old)
                 val updateParams = nonKeyColumns.map { computedValues[it] } +
-                    schema.partitionKeys.map { convertToCassandraType(it.property.get(old)) } +
-                    schema.clusteringColumns.map { convertToCassandraType(it.property.get(old)) }
+                    allKeyColumnNames.map { oldValues[it] }
 
                 session.executeAsync(
                     SimpleStatement.newInstance(updateCql, *updateParams.toTypedArray())
@@ -1047,16 +1127,24 @@ public class CassandraTable<Model : Any>(
 
     /**
      * Builds a DELETE statement for a model.
+     * by Claude - updated to use flattened key column names for embedded primary keys
      */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private fun buildDeleteStatement(model: Model): SimpleStatement {
-        val pkNames = schema.partitionKeys.map { it.name.quoteCql() }
-        val ckNames = schema.clusteringColumns.map { it.name.quoteCql() }
-        val allKeys = pkNames + ckNames
+        // Expand partition/clustering key names for embedded types
+        val pkNames = schema.partitionKeys.flatMap {
+            serializer.descriptor.expandKeyColumnNames(it.name)
+        }
+        val ckNames = schema.clusteringColumns.flatMap {
+            serializer.descriptor.expandKeyColumnNames(it.name)
+        }
+        val allKeyNames = pkNames + ckNames
 
-        val whereClauses = allKeys.joinToString(" AND ") { "$it = ?" }
-        val params = (schema.partitionKeys.map { convertToCassandraType(it.property.get(model)) } +
-                schema.clusteringColumns.map { convertToCassandraType(it.property.get(model)) }).toTypedArray()
+        // Get key values from encoded map (which has flattened keys)
+        val encodedModel = mapFormat.encode(serializer, model)
+        val params = allKeyNames.map { encodedModel[it] }.toTypedArray()
 
+        val whereClauses = allKeyNames.joinToString(" AND ") { "${it.quoteCql()} = ?" }
         val cql = "DELETE FROM $fullyQualifiedTable WHERE $whereClauses"
         return SimpleStatement.newInstance(cql, *params)
     }
@@ -1065,7 +1153,7 @@ public class CassandraTable<Model : Any>(
      * Builds an INSERT statement for a model.
      */
     private fun buildInsertStatement(model: Model): SimpleStatement {
-        val values = serialization.serializeToMap(model, serializer)
+        val values = mapFormat.encode(serializer, model)
         val computedValues = computedHandler.computeDerivedValues(model, values)
 
         val columns = computedValues.keys.toList()

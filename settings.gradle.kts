@@ -49,7 +49,7 @@ include(":database-mongodb")
 include(":database-postgres")
 include(":database-processor")
 include(":database-test")
-include(":database-cassandra")
+//include(":database-cassandra")   // EXPERIMENTAL
 //include(":database-migration")   // EXPERIMENTAL
 include(":demo")
 include(":email")

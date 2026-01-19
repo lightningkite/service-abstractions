@@ -2,6 +2,10 @@ package com.lightningkite.services.database.cassandra
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.SortPart
+import com.lightningkite.services.database.cassandra.serialization.shouldFlatten
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
 
@@ -62,10 +66,47 @@ public data class CqlQuery(
 /**
  * Generates CQL queries from conditions and other query components.
  */
+@OptIn(ExperimentalSerializationApi::class)
 public class CqlGenerator<T : Any>(
     private val schema: CassandraSchema<T>,
-    private val tableName: String = schema.tableName
+    private val tableName: String = schema.tableName,
+    // by Claude - SerializersModule for encoding embedded types
+    private val serializersModule: kotlinx.serialization.modules.SerializersModule = kotlinx.serialization.modules.EmptySerializersModule()
 ) {
+    // by Claude - lazy MapFormat for encoding embedded types to flattened fields
+    private val mapFormat by lazy { CassandraMapFormat(serializersModule) }
+
+    /**
+     * by Claude - Find a field descriptor by path (e.g., "_id" or "_id__first").
+     * Returns null if the path doesn't exist.
+     */
+    private fun findFieldDescriptor(path: String): SerialDescriptor? {
+        val parts = path.split("__")
+        var current = schema.serializer.descriptor
+        for (part in parts) {
+            val index = (0 until current.elementsCount).firstOrNull { current.getElementName(it) == part }
+                ?: return null
+            current = current.getElementDescriptor(index)
+        }
+        return current
+    }
+
+    /**
+     * by Claude - Expand an embedded type value to individual field conditions.
+     * Returns a list of (columnName, value) pairs for each flattened field.
+     */
+    private fun expandEmbeddedValue(path: String, value: Any): List<Pair<String, Any?>> {
+        // Use reflection to get the serializer for the value's type
+        val valueSerializer = serializer(value::class.java)
+        @Suppress("UNCHECKED_CAST")
+        val encoded = mapFormat.encode(valueSerializer as kotlinx.serialization.KSerializer<Any>, value)
+
+        // Prefix each key with the path
+        return encoded.map { (key, v) ->
+            val fullKey = if (key.isEmpty()) path else "$path${"__"}$key"
+            fullKey to v
+        }
+    }
 
     /**
      * Generates a SELECT statement from a condition.
@@ -184,26 +225,48 @@ public class CqlGenerator<T : Any>(
                 }
             }
 
+            // by Claude - handle nested OnField for flattened embedded objects
             is Condition.OnField<*, *> -> buildFieldCondition(
                 condition.key.name,
                 condition.condition,
-                params
+                params,
+                pathPrefix = ""
             )
 
             else -> throw IllegalArgumentException("Condition type not supported in CQL: ${condition::class.simpleName}")
         }
     }
 
+    // by Claude - added pathPrefix parameter for flattened embedded objects
     private fun buildFieldCondition(
         column: String,
         condition: Condition<*>,
-        params: MutableList<Any?>
+        params: MutableList<Any?>,
+        pathPrefix: String = ""
     ): String {
-        val quotedColumn = column.quoteCql()
+        // Build full column path with __ separator for flattened embedded objects
+        val fullPath = if (pathPrefix.isEmpty()) column else "${pathPrefix}__${column}"
+        val quotedColumn = fullPath.quoteCql()
         return when (condition) {
             is Condition.Equal<*> -> {
-                params.add(convertToCassandraType(condition.value))
-                "$quotedColumn = ?"
+                // by Claude - check if the field is an embedded type that needs expansion
+                val fieldDescriptor = findFieldDescriptor(fullPath)
+                if (fieldDescriptor != null && fieldDescriptor.shouldFlatten() && condition.value != null) {
+                    // Expand embedded type to individual field conditions
+                    val expandedFields = expandEmbeddedValue(fullPath, condition.value!!)
+                    if (expandedFields.isEmpty()) {
+                        params.add(convertToCassandraType(condition.value))
+                        "$quotedColumn = ?"
+                    } else {
+                        expandedFields.joinToString(" AND ") { (colName, value) ->
+                            params.add(convertToCassandraType(value))
+                            "${colName.quoteCql()} = ?"
+                        }
+                    }
+                } else {
+                    params.add(convertToCassandraType(condition.value))
+                    "$quotedColumn = ?"
+                }
             }
 
             is Condition.NotEqual<*> -> {
@@ -269,8 +332,15 @@ public class CqlGenerator<T : Any>(
             }
 
             is Condition.IfNotNull<*> -> {
-                // Unwrap IfNotNull and process the inner condition
-                buildFieldCondition(column, condition.condition, params)
+                // Unwrap IfNotNull and process the inner condition, preserving path
+                // by Claude - fixed to pass pathPrefix through
+                buildFieldCondition(column, condition.condition, params, pathPrefix)
+            }
+
+            // by Claude - handle nested OnField for path traversal into embedded objects
+            is Condition.OnField<*, *> -> {
+                // Nested field access - accumulate the path
+                buildFieldCondition(condition.key.name, condition.condition, params, fullPath)
             }
 
             else -> throw IllegalArgumentException("Condition not translatable to CQL: ${condition::class.simpleName}")

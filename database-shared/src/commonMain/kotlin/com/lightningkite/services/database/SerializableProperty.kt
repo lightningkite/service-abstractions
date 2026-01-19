@@ -1,9 +1,13 @@
 package com.lightningkite.services.database
 
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
+import kotlin.time.Instant
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.internal.GeneratedSerializer
+import kotlin.uuid.Uuid
 
 public interface SerializableProperty<A, B> {
     public val name: String
@@ -30,11 +34,50 @@ public interface SerializableProperty<A, B> {
         override val serializer: KSerializer<B> by lazy { parent.childSerializers()[index] as KSerializer<B> }
         override fun setCopy(receiver: A, value: B): A = parent.set(receiver, index, serializer, value)
         override fun get(receiver: A): B = (parent as KSerializer<A>).get(receiver, index, serializer)
+        // by Claude - Combine annotations from both parent (field-level) and child serializer (type-level)
+        @OptIn(ExperimentalSerializationApi::class)
         override val serializableAnnotations: List<SerializableAnnotation> by lazy {
-            serializer.descriptor.getElementAnnotations(
-                index
-            ).mapNotNull { SerializableAnnotation.parseOrNull(it) }
+            (parent.descriptor.getElementAnnotations(index) + serializer.descriptor.annotations)
+                .mapNotNull { SerializableAnnotation.parseOrNull(it) }
         }
+
+        // by Claude - Detect dynamic defaults (Uuid.random(), Clock.System.now(), etc.) by deserializing twice
+        @OptIn(ExperimentalSerializationApi::class)
+        private val defaultInfo: Pair<B?, String?> by lazy {
+            // Skip for non-optional fields (no defaults)
+            if (!parent.descriptor.isElementOptional(index)) {
+                null to null
+            } else {
+                try {
+                    // Deserialize twice to detect dynamic defaults
+                    val instance1 = (parent as KSerializer<A>).default()
+                    val instance2 = (parent as KSerializer<A>).default()
+
+                    val value1 = get(instance1)
+                    val value2 = get(instance2)
+
+                    if (value1 != value2) {
+                        // Dynamic default detected - determine type
+                        when {
+                            value1 is Uuid && value2 is Uuid -> null to "Uuid.random()"
+                            value1 is Instant && value2 is Instant -> null to "Clock.System.now()"
+                            value1 is LocalDate && value2 is LocalDate -> null to "Clock.System.nowLocal().date"
+                            value1 is LocalTime && value2 is LocalTime -> null to "Clock.System.nowLocal().time"
+                            else -> null to null // Unknown dynamic default
+                        }
+                    } else {
+                        // Static default - return the value
+                        value1 to null
+                    }
+                } catch (e: GenericPlaceholderException) {
+                    // Field involves a generic type parameter that can't be deserialized
+                    null to null
+                }
+            }
+        }
+
+        override val default: B? get() = defaultInfo.first
+        override val defaultCode: String? get() = defaultInfo.second
 
         override fun toString(): String = parent.descriptor.serialName + "." + name
         override fun hashCode(): Int = parent.descriptor.serialName.hashCode() + index

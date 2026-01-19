@@ -13,7 +13,7 @@ abstract class AggregationsTest() {
     @Test
     fun test() = runTest {
 
-        val c = database.table<LargeTestModel>()
+        val c = database.table<LargeTestModel>("aggregationstest")
         c.insertMany(listOf(
             LargeTestModel(int = 32, byte = 0, embedded = ClassUsedForEmbedding(value2 = 32)),
             LargeTestModel(int = 42, byte = 0, embedded = ClassUsedForEmbedding(value2 = 42)),

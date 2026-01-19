@@ -171,10 +171,10 @@ class TestVoiceAgentServiceTest {
 
         session.events.first() // Session created
 
-        session.addMessage("user", "Hello!")
+        session.addMessage(VoiceAgentSession.MessageRole.User, "Hello!")
 
         assertEquals(1, session.messagesAdded.size)
-        assertEquals("user" to "Hello!", session.messagesAdded.first())
+        assertEquals(VoiceAgentSession.MessageRole.User to "Hello!", session.messagesAdded.first())
 
         session.close()
     }

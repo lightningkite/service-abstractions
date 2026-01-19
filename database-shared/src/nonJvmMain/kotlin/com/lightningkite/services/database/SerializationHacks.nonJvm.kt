@@ -8,3 +8,6 @@ import kotlinx.serialization.internal.GeneratedSerializer
 internal actual fun GeneratedSerializer<*>.factory(): (typeArguments: Array<KSerializer<*>>) -> KSerializer<*> {
     throw PlatformNotSupportedError()
 }
+
+// by Claude - Reflection not available on non-JVM platforms
+internal actual fun reflectAnnotation(annotation: Annotation): SerializableAnnotation? = null

@@ -8,6 +8,7 @@ import kotlin.test.*
 import kotlin.test.Test
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.uuid.Uuid
 
 abstract class CacheTest {
     abstract val cache: Cache?
@@ -21,7 +22,7 @@ abstract class CacheTest {
             return
         }
         runSuspendingTest {
-            val key = "key"
+            val key = "key-${Uuid.random()}"
             assertEquals(null, cache.get<Int>(key))
             cache.set(key, 8)
             assertEquals(8, cache.get<Int>(key))

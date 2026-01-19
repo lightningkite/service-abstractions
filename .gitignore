@@ -12,3 +12,5 @@ LocalTest.kt
 settings.json
 .terraform
 database-cassandra/target
+certificates
+pubsub-mqtt-paho/terraform

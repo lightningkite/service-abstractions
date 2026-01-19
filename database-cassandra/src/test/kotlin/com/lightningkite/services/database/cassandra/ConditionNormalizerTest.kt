@@ -99,7 +99,7 @@ class ConditionNormalizerTest {
         val original: Condition<Int> = Condition.Not(Condition.Inside(listOf(1, 2, 3)))
         val normalized = ConditionNormalizer.normalize(original)
         assertIs<Condition.NotInside<Int>>(normalized)
-        assertEquals(listOf(1, 2, 3), (normalized as Condition.NotInside).values)
+        assertEquals(setOf(1, 2, 3), normalized.values)
     }
 
     @Test
@@ -107,7 +107,7 @@ class ConditionNormalizerTest {
         val original: Condition<Int> = Condition.Not(Condition.NotInside(listOf(1, 2, 3)))
         val normalized = ConditionNormalizer.normalize(original)
         assertIs<Condition.Inside<Int>>(normalized)
-        assertEquals(listOf(1, 2, 3), (normalized as Condition.Inside).values)
+        assertEquals(setOf(1, 2, 3), normalized.values)
     }
 
     @Test

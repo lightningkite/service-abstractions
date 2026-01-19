@@ -24,6 +24,34 @@ import java.io.File
 
 private val prettyJson = Json { prettyPrint = true }
 
+// by Claude: Simple file-based lock to prevent parallel terraform operations (plugin cache is not concurrency-safe)
+private val terraformLockFile = File(System.getProperty("java.io.tmpdir"), "terraform-test.lock")
+private val terraformIntraJvmLock = Object()
+private fun <T> withTerraformLock(action: () -> T): T = synchronized(terraformIntraJvmLock) {
+    // Acquire cross-process lock using atomic file creation
+    val maxWaitMs = 1_800_000L  // 30 minutes max wait (tests queue up and each can take several minutes)
+    val staleLockMs = 900_000L  // 15 minutes = stale lock (individual ops shouldn't take this long)
+    val startTime = System.currentTimeMillis()
+    while (!terraformLockFile.createNewFile()) {
+        // Check for stale lock (probably dead process)
+        if (terraformLockFile.exists() && System.currentTimeMillis() - terraformLockFile.lastModified() > staleLockMs) {
+            terraformLockFile.delete()
+            continue
+        }
+        if (System.currentTimeMillis() - startTime > maxWaitMs) {
+            throw Exception("Timeout waiting for terraform lock")
+        }
+        Thread.sleep(1000)
+    }
+    try {
+        // Touch the file to show we're alive
+        terraformLockFile.setLastModified(System.currentTimeMillis())
+        action()
+    } finally {
+        terraformLockFile.delete()
+    }
+}
+
 open class TerraformEmitterAwsTest<S>(
     val root: File,
     val targetSetting: String = "Test",
@@ -144,11 +172,12 @@ open class TerraformEmitterAwsTest<S>(
         println(root)
     }
 
-    fun plan(): Plan {
+    fun plan(): Plan = withTerraformLock {
+        root.listFiles()?.forEach { it.deleteRecursively() }
         write()
         root.runTerraform("init", "-upgrade", "-input=false", "-no-color")
         root.runTerraform("plan", "-input=false", "-no-color", "-out=plan.tfplan")
-        return Plan(root.resolve("plan.tfplan"))
+        Plan(root.resolve("plan.tfplan"))
     }
 
     inner class Plan(
@@ -174,7 +203,7 @@ private fun TerraformEmitterAws.vpc(cidr: String = "10.0.0.0/16"): TerraformAwsV
     emit("cloud") {
         "module.vpc" {
             "source" - "terraform-aws-modules/vpc/aws"
-            "version" - "4.0.2"
+            "version" - "5.16.0"  // by Claude: Updated from 4.0.2 for AWS provider 6.x compatibility
 
             "name" - "$projectPrefix"
             "cidr" - cidr
@@ -420,6 +449,8 @@ private fun File.runTerraform(vararg args: String): String {
     val result = ProcessBuilder("terraform", *args)
         .directory(this)
         .also { it.environment()["AWS_PROFILE"] = "lk" }
+        // by Claude: Disable global plugin cache to avoid race conditions when tests run in parallel
+        .also { it.environment()["TF_PLUGIN_CACHE_DIR"] = "" }
         .inheritIO()
         .redirectOutput(tempOut)
         .redirectError(tempOut)
@@ -449,7 +480,7 @@ fun hasTerraform(): Boolean {
 inline fun <reified T> assertPlannableAws(
     name: String,
     fulfill: context(TerraformEmitterAws) (TerraformNeed<T>) -> Unit,
-) {
+) = expensive {
     if (!hasTerraform()) return
     for (tester in listOf(
         TerraformEmitterAwsTest(File("build/test/$name"), "test", serializer<T>()),
@@ -469,7 +500,7 @@ inline fun <reified T> assertPlannableAws(
 inline fun <reified T> assertPlannableAwsDomain(
     name: String,
     fulfill: context(TerraformEmitterAwsDomain) (TerraformNeed<T>) -> Unit,
-) {
+) = expensive {
     if (!hasTerraform()) return
     for (tester in listOf(
         TerraformEmitterAwsTestWithDomain(File("build/test/$name"), "test", serializer<T>()),
@@ -487,7 +518,7 @@ inline fun <reified T> assertPlannableAwsDomain(
 inline fun <reified T> assertPlannableAwsVpc(
     name: String,
     fulfill: context(TerraformEmitterAwsVpc) (TerraformNeed<T>) -> Unit,
-) {
+) = expensive {
     if (!hasTerraform()) return
     for (tester in listOf(
         TerraformEmitterAwsTestWithVpc(File("build/test/$name"), "test", serializer<T>()),

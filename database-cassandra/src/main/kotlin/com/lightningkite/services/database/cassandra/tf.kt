@@ -76,10 +76,13 @@ public fun TerraformNeed<Database.Settings>.awsKeyspaces(
         "resource.aws_keyspaces_keyspace.$name" {
             "name" - keyspaceName
         }
+        // by Claude - declare aws_caller_identity data source for IAM policy ARNs
+        "data.aws_caller_identity.$name" {}
     }
 
     // Add IAM permissions for Keyspaces operations
     // Includes schema modification permissions (Alter, Drop) to support migrations
+    // by Claude - fixed ARN format: must use actual account ID (not wildcard) and proper path format
     emitter.policyStatements += AwsPolicyStatement(
         action = listOf(
             "cassandra:Select",
@@ -91,8 +94,12 @@ public fun TerraformNeed<Database.Settings>.awsKeyspaces(
             "cassandra:UntagResource"
         ),
         resource = listOf(
-            "arn:aws:cassandra:${emitter.applicationRegion}:*:keyspace/$keyspaceName/*",
-            "arn:aws:cassandra:${emitter.applicationRegion}:*:table/$keyspaceName/*"
+            // Keyspace-level operations
+            "arn:aws:cassandra:${emitter.applicationRegion}:\${data.aws_caller_identity.$name.account_id}:/keyspace/$keyspaceName/",
+            // Table-level operations (all tables in keyspace)
+            "arn:aws:cassandra:${emitter.applicationRegion}:\${data.aws_caller_identity.$name.account_id}:/keyspace/$keyspaceName/table/*",
+            // System tables (required for SELECT operations to work)
+            "arn:aws:cassandra:${emitter.applicationRegion}:\${data.aws_caller_identity.$name.account_id}:/keyspace/system*"
         )
     )
 }
@@ -150,6 +157,8 @@ public fun TerraformNeed<Database.Settings>.awsKeyspacesProvisioned(
         "resource.aws_keyspaces_keyspace.$name" {
             "name" - keyspaceName
         }
+        // by Claude - declare aws_caller_identity data source for IAM policy ARNs
+        "data.aws_caller_identity.current" {}
 
         // Note: Table-level capacity is set per table in AWS Keyspaces
         // The keyspace itself doesn't have capacity settings
@@ -159,6 +168,7 @@ public fun TerraformNeed<Database.Settings>.awsKeyspacesProvisioned(
     }
 
     // Add IAM permissions including schema modification for migrations
+    // by Claude - fixed ARN format: must use actual account ID (not wildcard) and proper path format
     emitter.policyStatements += AwsPolicyStatement(
         action = listOf(
             "cassandra:Select",
@@ -170,8 +180,12 @@ public fun TerraformNeed<Database.Settings>.awsKeyspacesProvisioned(
             "cassandra:UntagResource"
         ),
         resource = listOf(
-            "arn:aws:cassandra:${emitter.applicationRegion}:*:keyspace/$keyspaceName/*",
-            "arn:aws:cassandra:${emitter.applicationRegion}:*:table/$keyspaceName/*"
+            // Keyspace-level operations
+            "arn:aws:cassandra:${emitter.applicationRegion}:\${data.aws_caller_identity.current.account_id}:/keyspace/$keyspaceName/",
+            // Table-level operations (all tables in keyspace)
+            "arn:aws:cassandra:${emitter.applicationRegion}:\${data.aws_caller_identity.current.account_id}:/keyspace/$keyspaceName/table/*",
+            // System tables (required for SELECT operations to work)
+            "arn:aws:cassandra:${emitter.applicationRegion}:\${data.aws_caller_identity.current.account_id}:/keyspace/system*"
         )
     )
 

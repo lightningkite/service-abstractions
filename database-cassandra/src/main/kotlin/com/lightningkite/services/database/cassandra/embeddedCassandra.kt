@@ -5,6 +5,7 @@ import com.github.nosan.embedded.cassandra.CassandraBuilder
 import com.github.nosan.embedded.cassandra.Settings
 import com.lightningkite.services.SettingContext
 import java.net.InetSocketAddress
+import kotlin.time.Duration
 
 /**
  * Creates a Cassandra database backed by embedded Cassandra for testing.
@@ -32,6 +33,8 @@ public fun embeddedCassandra(
         datacenter = "datacenter1",
         username = null,
         password = null,
+        // by Claude - Use zero debounce for fastest test performance
+        schemaDebounceWindow = Duration.ZERO,
         context = context
     )
 }
@@ -60,6 +63,8 @@ public fun embeddedCassandraPersistent(
         datacenter = "datacenter1",
         username = null,
         password = null,
+        // by Claude - Use zero debounce for fastest test/dev performance
+        schemaDebounceWindow = Duration.ZERO,
         context = context
     )
 }

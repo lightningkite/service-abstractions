@@ -221,7 +221,8 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
             "data.aws_vpc_peering_connection.vpc_peering_conn_ds" {
                 "vpc_id" - expression("mongodbatlas_network_peering.atlas_network_peering.atlas_vpc_name")
                 "cidr_block" - atlasCidr
-                "peer_region" - region.lowercase().replace("_", "-")
+                // by Claude: removed peer_region - it's a computed attribute in AWS provider 6.x, not configurable
+                "depends_on" - listOf("aws_vpc_peering_connection_accepter.peer")
             }
             "data.aws_route_table.application_subnets_route_table" {
                 "subnet_id" - expression("element(${emitter.applicationVpc.applicationSubnets}, 0)")

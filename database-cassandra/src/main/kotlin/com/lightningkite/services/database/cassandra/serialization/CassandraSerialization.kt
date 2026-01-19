@@ -302,8 +302,23 @@ public class CassandraSerialization(
                         instant?.let { java.time.Instant.parse(it) }
                     }
                     else -> {
-                        // Store complex types as JSON text
-                        element.toString()
+                        // by Claude - fix for inline value class escaping bug:
+                        // Inline value classes (like GrantedScope) serialize as primitives but have
+                        // non-primitive descriptors. If the element is a JsonPrimitive string,
+                        // return its content directly to avoid double-escaping on round-trips.
+                        // element.toString() on JsonPrimitive("*") returns "\"*\"" (with quotes!),
+                        // which causes progressive escaping: "*" -> "\"*\"" -> "\"\\\"*\\\"\""
+                        if (element is JsonPrimitive) {
+                            if (element.isString) {
+                                element.content  // Return unquoted string content
+                            } else {
+                                // Numbers, booleans - toString() is safe for these
+                                element.toString()
+                            }
+                        } else {
+                            // Store complex types as JSON text
+                            element.toString()
+                        }
                     }
                 }
             }
@@ -351,10 +366,126 @@ public class CassandraSerialization(
 }
 
 /**
- * Maps a KotlinX Serialization descriptor to a Cassandra CQL type.
+ * Represents a flattened column definition for Cassandra schema generation.
+ * by Claude - supports flattened embedded objects
+ */
+public data class FlattenedColumn(
+    val name: String,
+    val cqlType: String
+)
+
+/**
+ * Generates all columns for a SerialDescriptor, flattening embedded objects.
+ * Uses `__` as separator for nested field names to match MapFormat convention.
+ * by Claude - supports flattened embedded objects for MapFormat integration
  */
 @OptIn(ExperimentalSerializationApi::class)
-public fun SerialDescriptor.toCqlType(): String {
+public fun SerialDescriptor.generateFlattenedColumns(
+    prefix: String = "",
+    separator: String = "__",
+    visited: MutableSet<String> = mutableSetOf() // by Claude - track visited types to prevent infinite recursion
+): List<FlattenedColumn> {
+    return buildList {
+        for (i in 0 until elementsCount) {
+            val fieldName = getElementName(i)
+            val fieldDescriptor = getElementDescriptor(i)
+            val fullName = if (prefix.isEmpty()) fieldName else "$prefix$separator$fieldName"
+            val isNullable = isElementOptional(i) || fieldDescriptor.isNullable
+
+            // Check if this is an embedded class that should be flattened
+            // by Claude - also check we haven't visited this type before (prevents infinite recursion)
+            if (fieldDescriptor.shouldFlatten() && fieldDescriptor.serialName !in visited) {
+                // For nullable embedded classes, add an __exists marker column
+                if (isNullable) {
+                    add(FlattenedColumn("$fullName${separator}exists", "boolean"))
+                }
+                // Track this type to prevent infinite recursion for self-referential types
+                visited.add(fieldDescriptor.serialName)
+                // Recursively flatten embedded objects
+                addAll(fieldDescriptor.generateFlattenedColumns(fullName, separator, visited))
+            } else if (fieldDescriptor.shouldFlatten() && fieldDescriptor.serialName in visited) {
+                // by Claude - recursive type - store as JSON TEXT
+                add(FlattenedColumn(fullName, "text"))
+            } else {
+                // Leaf field - add as column
+                add(FlattenedColumn(fullName, fieldDescriptor.toCqlType()))
+            }
+        }
+    }
+}
+
+/**
+ * Determines if a SerialDescriptor represents an embedded class that should be flattened.
+ * by Claude - embedded objects are flattened, but special types (UUID, Instant, etc.),
+ * inline/value classes, and polymorphic types are not
+ */
+@OptIn(ExperimentalSerializationApi::class)
+public fun SerialDescriptor.shouldFlatten(): Boolean {
+    // Don't flatten primitives, enums, or collections
+    if (kind is PrimitiveKind || kind == SerialKind.ENUM) return false
+    if (kind == StructureKind.LIST || kind == StructureKind.MAP) return false
+
+    // by Claude - don't flatten polymorphic types (sealed classes) - they should be stored as JSON TEXT
+    // because Cassandra can't represent complex polymorphic type hierarchies
+    if (kind == PolymorphicKind.SEALED || kind == PolymorphicKind.OPEN) return false
+
+    // Don't flatten inline/value classes - they represent single values
+    if (isInline) return false
+
+    // Don't flatten known special types that serialize as objects but are atomic values
+    val knownAtomicTypes = setOf(
+        "kotlin.uuid.Uuid",
+        "com.lightningkite.UUID",
+        "kotlinx.datetime.Instant",
+        "kotlin.time.Instant",
+        "kotlinx.datetime.LocalDate",
+        "kotlinx.datetime.LocalDateTime",
+        "kotlinx.datetime.LocalTime",
+        "kotlin.time.Duration"
+    )
+    if (serialName in knownAtomicTypes) return false
+
+    // Flatten CLASS and OBJECT kinds (embedded objects)
+    return kind == StructureKind.CLASS || kind == StructureKind.OBJECT
+}
+
+/**
+ * Maps a KotlinX Serialization descriptor to a Cassandra CQL type.
+ *
+ * @param insideCollection When true, the type is inside a collection (list, set, map) and
+ *                         must use frozen<> for nested collections to comply with Cassandra's
+ *                         restriction against non-frozen nested collections.
+ * by Claude - added insideCollection parameter to handle nested collections
+ */
+@OptIn(ExperimentalSerializationApi::class)
+public fun SerialDescriptor.toCqlType(insideCollection: Boolean = false): String {
+    // by Claude - strip nullable suffix for type checking (e.g., "kotlin.uuid.Uuid?" -> "kotlin.uuid.Uuid")
+    val baseSerialName = serialName.removeSuffix("?")
+
+    // by Claude - polymorphic types (sealed classes) should be stored as TEXT (JSON)
+    // because Cassandra can't represent complex polymorphic type hierarchies
+    if (kind == PolymorphicKind.SEALED || kind == PolymorphicKind.OPEN) {
+        return "text"
+    }
+
+    // For inline/value classes, use the type of the underlying value
+    // by Claude - inline classes should use their wrapped type's CQL type
+    // BUT NOT for known types like Uuid, Instant, etc. that need special handling
+    if (isInline && elementsCount > 0) {
+        // Don't unwrap known special types that should NOT be treated as their inner type
+        val knownTypes = setOf(
+            "kotlin.uuid.Uuid",
+            "kotlinx.datetime.Instant",
+            "kotlinx.datetime.LocalDate",
+            "kotlinx.datetime.LocalDateTime",
+            "kotlinx.datetime.LocalTime",
+            "kotlin.time.Duration"
+        )
+        if (baseSerialName !in knownTypes) {
+            return getElementDescriptor(0).toCqlType(insideCollection)
+        }
+    }
+
     return when (kind) {
         PrimitiveKind.BOOLEAN -> "boolean"
         PrimitiveKind.BYTE -> "tinyint"
@@ -366,7 +497,8 @@ public fun SerialDescriptor.toCqlType(): String {
         PrimitiveKind.CHAR -> "text"
         PrimitiveKind.STRING -> {
             // Check for special types that serialize as STRING but need specific CQL types
-            when (serialName) {
+            // by Claude - use baseSerialName to handle nullable types
+            when (baseSerialName) {
                 "kotlin.uuid.Uuid", "com.lightningkite.UUID" -> "uuid"
                 "kotlinx.datetime.Instant", "kotlin.time.Instant" -> "timestamp"
                 else -> "text"
@@ -374,22 +506,28 @@ public fun SerialDescriptor.toCqlType(): String {
         }
         SerialKind.ENUM -> "text"
         StructureKind.LIST -> {
-            val elementType = getElementDescriptor(0).toCqlType()
-            // Check if this is actually a Set based on serial name
-            if (serialName.contains("Set") || serialName.contains("kotlin.collections.LinkedHashSet")) {
+            // by Claude - nested collections require frozen<> in Cassandra
+            val elementType = getElementDescriptor(0).toCqlType(insideCollection = true)
+            val collectionType = if (baseSerialName.contains("Set") || baseSerialName.contains("kotlin.collections.LinkedHashSet")) {
                 "set<$elementType>"
             } else {
                 "list<$elementType>"
             }
+            // Wrap in frozen<> if we're inside another collection
+            if (insideCollection) "frozen<$collectionType>" else collectionType
         }
         StructureKind.MAP -> {
-            val keyType = getElementDescriptor(0).toCqlType()
-            val valueType = getElementDescriptor(1).toCqlType()
-            "map<$keyType, $valueType>"
+            // by Claude - nested collections require frozen<> in Cassandra
+            val keyType = getElementDescriptor(0).toCqlType(insideCollection = true)
+            val valueType = getElementDescriptor(1).toCqlType(insideCollection = true)
+            val collectionType = "map<$keyType, $valueType>"
+            // Wrap in frozen<> if we're inside another collection
+            if (insideCollection) "frozen<$collectionType>" else collectionType
         }
         else -> {
             // Check for known types by serial name
-            when (serialName) {
+            // by Claude - use baseSerialName to handle nullable types
+            when (baseSerialName) {
                 "kotlin.uuid.Uuid", "com.lightningkite.UUID" -> "uuid"
                 "kotlinx.datetime.Instant", "kotlin.time.Instant" -> "timestamp"
                 "kotlinx.datetime.LocalDate" -> "date"
@@ -397,5 +535,31 @@ public fun SerialDescriptor.toCqlType(): String {
                 else -> "text" // Fallback to JSON-encoded text
             }
         }
+    }
+}
+
+/**
+ * Expands a key field name to its flattened column names if the field is an embedded class.
+ * For example, if `_id` is of type `CompoundTestKey { first: String, second: String }`,
+ * this returns `["_id__first", "_id__second"]`.
+ * For simple types (UUID, String, etc.), returns just the original field name.
+ * by Claude - handles embedded primary keys for flattened schema
+ */
+@OptIn(ExperimentalSerializationApi::class)
+public fun SerialDescriptor.expandKeyColumnNames(
+    fieldName: String,
+    separator: String = "__"
+): List<String> {
+    // Find the descriptor for this field
+    val fieldIndex = (0 until elementsCount).firstOrNull { getElementName(it) == fieldName }
+        ?: return listOf(fieldName) // Field not found, return as-is
+
+    val fieldDescriptor = getElementDescriptor(fieldIndex)
+
+    // If the field should be flattened (is an embedded class), expand to its columns
+    return if (fieldDescriptor.shouldFlatten()) {
+        fieldDescriptor.generateFlattenedColumns(fieldName, separator).map { it.name }
+    } else {
+        listOf(fieldName)
     }
 }

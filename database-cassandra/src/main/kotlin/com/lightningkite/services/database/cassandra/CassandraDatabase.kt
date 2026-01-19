@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.cassandra
 
+import com.datastax.oss.driver.api.core.ConsistencyLevel
 import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.CqlSessionBuilder
 import com.datastax.oss.driver.api.core.config.DefaultDriverOption
@@ -19,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import java.time.Duration as JavaDuration
 
@@ -92,6 +94,14 @@ public class CassandraDatabase(
      * **For production, use 3 or higher for fault tolerance.**
      */
     public val replicationFactor: Int = 1,
+    /**
+     * Schema metadata debounce window. The driver batches schema change events
+     * and refreshes metadata once per window. Lower values mean faster schema
+     * operations but more metadata refreshes. Default is 100ms.
+     * Set to Duration.ZERO to disable debouncing entirely.
+     */
+    // by Claude - configurable schema debounce for faster tests
+    public val schemaDebounceWindow: Duration = 100.milliseconds,
     override val context: SettingContext
 ) : Database {
 
@@ -172,12 +182,19 @@ public class CassandraDatabase(
         val configBuilder = DriverConfigLoader.programmaticBuilder()
             .withDuration(DefaultDriverOption.CONNECTION_CONNECT_TIMEOUT, JavaDuration.ofSeconds(30))
             .withDuration(DefaultDriverOption.REQUEST_TIMEOUT, JavaDuration.ofSeconds(30))
+            // by Claude - Configurable schema metadata debounce (driver default is 1s, we default to 100ms)
+            // The debounce batches multiple schema events into one refresh; lower = faster but more refreshes
+            .withDuration(DefaultDriverOption.METADATA_SCHEMA_WINDOW, JavaDuration.ofMillis(schemaDebounceWindow.inWholeMilliseconds))
 
         if (useAwsKeyspaces) {
-            // AWS Keyspaces requires specific driver configuration for optimal performance
+            // AWS Keyspaces requires specific driver configuration
+            // by Claude - AWS Keyspaces ONLY supports LOCAL_QUORUM consistency level
             configBuilder
                 .withInt(DefaultDriverOption.CONNECTION_POOL_LOCAL_SIZE, 3)
                 .withBoolean(DefaultDriverOption.METADATA_TOKEN_MAP_ENABLED, false)
+                // AWS Keyspaces only supports LOCAL_QUORUM - LOCAL_ONE will fail
+                .withString(DefaultDriverOption.REQUEST_CONSISTENCY, ConsistencyLevel.LOCAL_QUORUM.name())
+                .withString(DefaultDriverOption.REQUEST_SERIAL_CONSISTENCY, ConsistencyLevel.LOCAL_SERIAL.name())
         }
 
         val configLoader = configBuilder.build()
@@ -260,7 +277,9 @@ public class CassandraDatabase(
                     session = session,
                     keyspace = keyspace,
                     tableName = name,
-                    context = context
+                    context = context,
+                    // by Claude - pass Keyspaces flag for compatibility handling
+                    useAwsKeyspaces = useAwsKeyspaces
                 )
             }
         } as Lazy<CassandraTable<T>>).value
