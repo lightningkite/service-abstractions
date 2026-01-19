@@ -411,7 +411,7 @@ class OpenTelemetrySettingsTest {
             }
         }
 
-        Thread.sleep(600) // Wait for window to expire
+        Thread.sleep(1600) // Wait for window to expire
 
         // Shutdown to flush
         telemetry.sdkTracerProvider.shutdown().join(5, java.util.concurrent.TimeUnit.SECONDS)
