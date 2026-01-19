@@ -19,6 +19,7 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
+import kotlin.uuid.Uuid
 
 /**
  * Kotlin Multiplatform implementation of PublicFileSystem using AWS S3.
@@ -168,7 +169,7 @@ public class S3PublicFileSystem(
      */
     override suspend fun healthCheck(): HealthStatus {
         return try {
-            val testFile = root.then("health-check/test-file.txt")
+            val testFile = root.then("health-check/test-file-${Uuid.random()}.txt")
             val testContent = "Test Content ${System.currentTimeMillis()}"
 
             // Test write

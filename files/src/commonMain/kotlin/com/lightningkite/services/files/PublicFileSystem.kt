@@ -2,17 +2,13 @@ package com.lightningkite.services.files
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.*
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.KFile
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.workingDirectory
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
+import com.lightningkite.services.data.*
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
+import kotlin.uuid.Uuid
 
 /**
  * Service abstraction for cloud file storage and content delivery.
@@ -160,7 +156,7 @@ public interface PublicFileSystem : Service {
      */
     override suspend fun healthCheck(): HealthStatus {
         return try {
-            val testFile = root.then("health-check/test-file.txt")
+            val testFile = root.then("health-check/test-file-${Uuid.random()}.txt")
             val contentData = Data.Text("Test Content")
             val content = TypedData(contentData, MediaType.Text.Plain)
             testFile.put(content)
@@ -250,7 +246,8 @@ public interface PublicFileSystem : Service {
                         ?: emptyMap()
 
                     val relativeServeUrl = params["serveUrl"] ?: throw IllegalArgumentException("No serveUrl provided")
-                    val serveUrl = if(relativeServeUrl.contains("://")) relativeServeUrl.trim('/').plus('/') else "${context.publicUrl}/${relativeServeUrl.trim('/')}/"
+                    val serveUrl = if (relativeServeUrl.contains("://")) relativeServeUrl.trim('/')
+                        .plus('/') else "${context.publicUrl}/${relativeServeUrl.trim('/')}/"
 
                     val signedUrlDuration = params["signedUrlDuration"].let {
                         when {
