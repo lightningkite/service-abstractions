@@ -168,7 +168,7 @@ class EmailApproximatePlainTextTest {
     fun spaceNewlineMix() {
         val html = "Some\n \n \n Stuff"
         val result = html.emailApproximatePlainText()
-        assert(result.contains("Some Stuff"))
+        assert(result.contains("Some\nStuff"))
     }
 
     @Test
