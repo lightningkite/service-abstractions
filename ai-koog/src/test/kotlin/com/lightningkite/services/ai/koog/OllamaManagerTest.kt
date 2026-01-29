@@ -114,6 +114,165 @@ class OllamaManagerTest {
         assertEquals(2_000_000_000, info.size)
     }
 
+    // by Claude - Additional tests for better coverage
+
+    @Test
+    fun testOllamaModelInfoWithDetails() {
+        // Test OllamaModelInfo with full OllamaModelDetails
+        val details = OllamaModelDetails(
+            format = "gguf",
+            family = "llama",
+            families = listOf("llama", "llama3"),
+            parameter_size = "8B",
+            quantization_level = "Q4_0"
+        )
+        val info = OllamaModelInfo(
+            name = "llama3.2:8b-q4_0",
+            modified_at = "2024-01-15T10:30:00Z",
+            size = 4_500_000_000,
+            digest = "sha256:def456",
+            details = details
+        )
+        assertEquals("llama3.2:8b-q4_0", info.name)
+        assertEquals("2024-01-15T10:30:00Z", info.modified_at)
+        assertEquals(4_500_000_000, info.size)
+        assertEquals("sha256:def456", info.digest)
+        assertNotNull(info.details)
+        assertEquals("gguf", info.details?.format)
+        assertEquals("llama", info.details?.family)
+        assertEquals(listOf("llama", "llama3"), info.details?.families)
+        assertEquals("8B", info.details?.parameter_size)
+        assertEquals("Q4_0", info.details?.quantization_level)
+    }
+
+    @Test
+    fun testOllamaModelInfoMinimal() {
+        // Test OllamaModelInfo with only required name field
+        val info = OllamaModelInfo(name = "codellama")
+        assertEquals("codellama", info.name)
+        assertNull(info.modified_at)
+        assertNull(info.size)
+        assertNull(info.digest)
+        assertNull(info.details)
+    }
+
+    @Test
+    fun testOllamaModelDetailsMinimal() {
+        // Test OllamaModelDetails with all null fields
+        val details = OllamaModelDetails()
+        assertNull(details.format)
+        assertNull(details.family)
+        assertNull(details.families)
+        assertNull(details.parameter_size)
+        assertNull(details.quantization_level)
+    }
+
+    @Test
+    fun testProgressPercentNegativeTotal() {
+        // Edge case: negative total should return null (defensive check)
+        val progress = OllamaPullProgress(
+            status = "downloading",
+            total = -100,
+            completed = 50
+        )
+        // total <= 0 returns null per the implementation
+        assertNull(progress.progressPercent)
+    }
+
+    @Test
+    fun testProgressPercentCompletedGreaterThanTotal() {
+        // Edge case: completed > total (can happen briefly during downloads)
+        val progress = OllamaPullProgress(
+            status = "downloading",
+            total = 1000,
+            completed = 1050
+        )
+        // Should still calculate percentage even if > 100%
+        assertEquals(105.0, progress.progressPercent)
+    }
+
+    @Test
+    fun testProgressPercentCompletedNullButTotalNonNull() {
+        // Edge case: total is set but completed is null
+        val progress = OllamaPullProgress(
+            status = "downloading",
+            total = 1000,
+            completed = null
+        )
+        assertNull(progress.progressPercent)
+    }
+
+    @Test
+    fun testProgressPercentTotalNullButCompletedNonNull() {
+        // Edge case: completed is set but total is null
+        val progress = OllamaPullProgress(
+            status = "downloading",
+            total = null,
+            completed = 500
+        )
+        assertNull(progress.progressPercent)
+    }
+
+    @Test
+    fun testProgressStringWithError() {
+        // Test progressString when there's an error
+        val progress = OllamaPullProgress(
+            status = "download failed",
+            error = "Connection refused"
+        )
+        assertEquals("download failed", progress.progressString)
+        assertEquals("Connection refused", progress.error)
+    }
+
+    @Test
+    fun testOllamaManagerWithCustomBaseUrl() {
+        // Test creating manager with various custom base URLs
+        val manager1 = OllamaManager("http://192.168.1.100:11434")
+        assertEquals("http://192.168.1.100:11434", manager1.baseUrl)
+
+        val manager2 = OllamaManager("http://localhost:9999")
+        assertEquals("http://localhost:9999", manager2.baseUrl)
+
+        // HTTPS URL
+        val manager3 = OllamaManager("https://ollama.example.com")
+        assertEquals("https://ollama.example.com", manager3.baseUrl)
+    }
+
+    @Test
+    fun testOllamaManagerClose() {
+        // Test that close can be called without errors
+        val manager = OllamaManager()
+        manager.close()
+        // Should not throw
+    }
+
+    @Test
+    fun testPullProgressWithDigest() {
+        // Test progress with digest field populated (during layer download)
+        val progress = OllamaPullProgress(
+            status = "downloading sha256:abc123...",
+            digest = "sha256:abc123def456",
+            total = 2_000_000_000,
+            completed = 1_000_000_000
+        )
+        assertEquals("sha256:abc123def456", progress.digest)
+        assertEquals(50.0, progress.progressPercent)
+        assertTrue(progress.progressString.contains("50.0%"))
+    }
+
+    @Test
+    fun testPullProgressVerySmallPercentage() {
+        // Test very small progress percentage
+        val progress = OllamaPullProgress(
+            status = "downloading",
+            total = 10_000_000_000,
+            completed = 1_000_000
+        )
+        val pct = progress.progressPercent
+        assertNotNull(pct)
+        assertTrue(pct in 0.009..0.011, "Expected ~0.01%, got $pct%")
+    }
+
     // =========================================================================
     // Integration tests - require Ollama to be installed
     // =========================================================================

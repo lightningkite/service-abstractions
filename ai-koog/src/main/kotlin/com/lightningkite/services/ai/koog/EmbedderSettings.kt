@@ -21,17 +21,18 @@ import kotlin.jvm.JvmInline
  * This Settings class provides URL-based configuration for various embedding providers.
  *
  * The URL scheme determines which embedding provider to use:
- * - `embedder-ollama://model-name?baseUrl=...` - Ollama (local, no API key required)
- * - `embedder-openai://model-name?apiKey=...` - OpenAI embeddings
+ * - `ollama://model-name?baseUrl=...` - Ollama (local, no API key required)
+ * - `ollama-auto://model-name?baseUrl=...` - Ollama with auto-start and auto-pull
+ * - `openai://model-name?apiKey=...` - OpenAI embeddings
  *
  * Example usage:
  * ```kotlin
  * // Ollama (local)
- * val settings = EmbedderSettings("embedder-ollama://nomic-embed-text")
+ * val settings = EmbedderSettings("ollama://nomic-embed-text")
  * val embedder = settings("my-embedder", context)
  *
  * // OpenAI
- * val settings = EmbedderSettings("embedder-openai://text-embedding-3-small?apiKey=\${OPENAI_API_KEY}")
+ * val settings = EmbedderSettings("openai://text-embedding-3-small?apiKey=\${OPENAI_API_KEY}")
  * val embedder = settings("my-embedder", context)
  *
  * // Use the embedder
@@ -189,6 +190,9 @@ public value class EmbedderSettings(
         return parse(name, url, context)
     }
 }
+
+// Note by Claude: parseUrlParams and resolveEnvVars are duplicated from LLMClientAndModelSettings.kt.
+// Consider extracting to a shared utility if this pattern continues to grow.
 
 /**
  * Parses URL query parameters into a map.

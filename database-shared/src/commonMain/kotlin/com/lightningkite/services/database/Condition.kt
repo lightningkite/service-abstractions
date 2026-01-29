@@ -4,9 +4,15 @@ import com.lightningkite.GeoCoordinate
 import com.lightningkite.IsRawString
 import com.lightningkite.services.data.DisplayName
 import com.lightningkite.services.data.DoesNotNeedLabel
+import com.lightningkite.services.data.TextIndex
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.descriptors.StructureKind
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.jvm.JvmName
 
 /**
@@ -214,9 +220,32 @@ public sealed class Condition<in T> {
         val levenshteinDistance: Int = 2,
     ) :
         Condition<T>() {
+        @OptIn(ExperimentalSerializationApi::class)
         override fun invoke(on: T): Boolean {
-            // WARNING: This is a really really rough approximation
-            return TextQuery.fromString(value).fuzzyPresent(on.toString(), levenshteinDistance)
+            val ser = try {
+                if (on != null) {
+                    kotlinx.serialization.serializer(on::class, listOf(), false)
+                } else null
+            } catch(e: Exception) { null }
+            if(ser != null && ser.descriptor.kind == StructureKind.CLASS) {
+                val fieldNames = ser.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
+                val element = Json.encodeToJsonElement(ser, on) as? JsonObject
+                val fromString = element?.let { e -> fieldNames?.joinToString(" ") { fieldPath ->
+                    // by Claude: Handle nested field paths like "metadata.category" by traversing the JSON structure
+                    val pathParts = fieldPath.split(".")
+                    var current: kotlinx.serialization.json.JsonElement? = e
+                    for (part in pathParts) {
+                        current = (current as? JsonObject)?.get(part)
+                        if (current == null) break
+                    }
+                    when(val p = current) {
+                        is JsonPrimitive -> p.content
+                        null -> ""
+                        else -> p.toString()
+                    }
+                } } ?: on.toString()
+                return TextQuery.fromString(value).fuzzyPresent(fromString, levenshteinDistance)
+            } else return TextQuery.fromString(value).fuzzyPresent(on.toString(), levenshteinDistance)
         }
 
         override fun toString(): String = ".fullTextSearch($value, $requireAllTermsPresent, $levenshteinDistance)"

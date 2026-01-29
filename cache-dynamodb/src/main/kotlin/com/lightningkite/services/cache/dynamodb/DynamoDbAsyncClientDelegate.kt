@@ -8,6 +8,22 @@ import software.amazon.awssdk.services.dynamodb.waiters.DynamoDbAsyncWaiter
 import java.util.concurrent.CompletableFuture
 import java.util.function.Consumer
 
+/**
+ * Delegation wrapper for [DynamoDbAsyncClient] that enables subclasses to override
+ * specific methods while delegating all others to an underlying client.
+ *
+ * All methods in this class simply delegate to the [basis] client. Subclasses can
+ * override individual methods to customize behavior (e.g., adding logging, metrics,
+ * or lifecycle management).
+ *
+ * Primary usage is in [embeddedDynamo] to create a client wrapper that terminates
+ * the local DynamoDB process when [close] is called.
+ *
+ * Note: The companion object's [create] and [builder] methods return standard
+ * [DynamoDbAsyncClient] instances from the AWS SDK, not wrapped delegates.
+ *
+ * @param basis The underlying [DynamoDbAsyncClient] to delegate method calls to.
+ */
 public open class DynamoDbAsyncClientDelegate(private val basis: DynamoDbAsyncClient) : DynamoDbAsyncClient {
     override fun batchExecuteStatement(batchExecuteStatementRequest: BatchExecuteStatementRequest): CompletableFuture<BatchExecuteStatementResponse> {
         return basis.batchExecuteStatement(batchExecuteStatementRequest)

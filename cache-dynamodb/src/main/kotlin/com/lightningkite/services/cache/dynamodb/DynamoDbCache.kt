@@ -65,6 +65,9 @@ package com.lightningkite.services.cache.dynamodb
  * @property tableName DynamoDB table name for cache storage
  * @property context Service context with serializers and AwsConnections
  */
+// REVIEW NOTE: Documentation above mentions "Native type serialization" but serialization.kt
+// actually converts values via JSON intermediate (encodeToJsonElement -> toDynamoDb). The
+// AttributeValue structure matches native DynamoDB types, but the path is Kotlin -> JSON -> AttributeValue. - by Claude
 
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
@@ -84,6 +87,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.model.*
+// REVIEW NOTE: The import below (kotlin.text.get) appears to be unused and could be removed - by Claude
 import kotlin.text.get
 import kotlin.time.Clock.System.now
 import kotlin.time.Duration

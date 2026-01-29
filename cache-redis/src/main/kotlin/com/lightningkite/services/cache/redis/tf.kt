@@ -9,6 +9,19 @@ import com.lightningkite.services.terraform.TerraformProviderImport
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.json.JsonPrimitive
 
+/**
+ * Creates an AWS ElastiCache Redis cluster for caching.
+ *
+ * Emits Terraform resources for:
+ * - `aws_elasticache_subnet_group`: Subnet group for the cluster
+ * - `aws_elasticache_cluster`: The Redis cluster itself
+ *
+ * The generated settings URL connects to the first cache node on the default database (0).
+ *
+ * @param type The EC2 instance type for cache nodes (e.g., "cache.t2.micro", "cache.m5.large")
+ * @param parameterGroupName The Redis parameter group (default: "default.redis7")
+ * @param count The number of cache nodes to create (1 for non-cluster mode)
+ */
 @Untested
 context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedis(
     type: String = "cache.t2.micro",
@@ -43,11 +56,19 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
 
 
 /**
- * Creates an AWS ElastiCache Redis cluster for caching.
+ * Creates an AWS ElastiCache Serverless Redis cache.
  *
- * @param type The instance type to use for the cache nodes.
- * @param count The number of cache nodes to create.
- * @return A TerraformServiceResult with the configuration for the Redis cluster.
+ * Serverless caches automatically scale based on demand without managing nodes.
+ * Uses ECPU (ElastiCache Processing Units) for pricing.
+ *
+ * Emits Terraform resources for:
+ * - `aws_elasticache_serverless_cache`: The serverless Redis cache
+ *
+ * @param version The Redis major engine version (e.g., "7" for Redis 7.x)
+ * @param dailySnapshotTime Time of day for automatic snapshots (UTC)
+ * @param maxEcpuPerSecond Maximum ECPU per second (controls performance ceiling)
+ * @param maxStorageGb Maximum storage in gigabytes
+ * @param snapshotRetentionLimit Number of daily snapshots to retain
  */
 @Untested
 context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedisServerless(

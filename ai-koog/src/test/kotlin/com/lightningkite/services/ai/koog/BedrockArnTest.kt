@@ -138,4 +138,75 @@ class BedrockArnTest {
             apArns[1]
         )
     }
+
+    // Tests added by Claude for dash-prefixed inference profiles and edge cases
+    @Test
+    fun `dash-prefixed inference profiles are detected correctly`() {
+        // Dash prefixes (us-, eu-, ap-) are also valid inference profile prefixes
+        assertTrue(isInferenceProfile("us-anthropic.claude-3-5-sonnet-20241022-v2:0"))
+        assertTrue(isInferenceProfile("eu-anthropic.claude-3-5-sonnet-20241022-v2:0"))
+        assertTrue(isInferenceProfile("ap-anthropic.claude-3-5-sonnet-20241022-v2:0"))
+    }
+
+    @Test
+    fun `getBaseModelId removes dash-prefixed regional prefix`() {
+        assertEquals(
+            "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            getBaseModelId("us-anthropic.claude-3-5-sonnet-20241022-v2:0")
+        )
+        assertEquals(
+            "anthropic.claude-haiku-4-5-20251001-v1:0",
+            getBaseModelId("eu-anthropic.claude-haiku-4-5-20251001-v1:0")
+        )
+        assertEquals(
+            "amazon.nova-pro-v1:0",
+            getBaseModelId("ap-amazon.nova-pro-v1:0")
+        )
+    }
+
+    @Test
+    fun `dash-prefixed inference profile generates two ARNs`() {
+        val arns = bedrockModelArns("us-anthropic.claude-3-5-sonnet-20241022-v2:0", "us-east-1")
+
+        assertEquals(2, arns.size)
+        assertEquals(
+            "arn:aws:bedrock:us-east-1:*:inference-profile/us-anthropic.claude-3-5-sonnet-20241022-v2:0",
+            arns[0]
+        )
+        assertEquals(
+            "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0",
+            arns[1]
+        )
+    }
+
+    @Test
+    fun `empty model ID is not detected as inference profile`() {
+        assertFalse(isInferenceProfile(""))
+    }
+
+    @Test
+    fun `getBaseModelId returns empty string unchanged`() {
+        assertEquals("", getBaseModelId(""))
+    }
+
+    @Test
+    fun `model ID that happens to contain us or eu in middle is not inference profile`() {
+        // Model IDs that contain "us" or "eu" but don't START with the prefix
+        assertFalse(isInferenceProfile("anthropic.claude-opus-v1:0"))  // contains "us"
+        assertFalse(isInferenceProfile("anthropic.neural-v1:0"))  // contains "eu"
+        assertFalse(isInferenceProfile("cohere.command-r-plus-v1:0"))  // unrelated model
+    }
+
+    @Test
+    fun `backwards compatibility bedrockModelArn for foundation model`() {
+        val modelId = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        val region = "us-west-2"
+
+        val singleArn = bedrockModelArn(modelId, region)
+
+        assertEquals(
+            "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0",
+            singleArn
+        )
+    }
 }

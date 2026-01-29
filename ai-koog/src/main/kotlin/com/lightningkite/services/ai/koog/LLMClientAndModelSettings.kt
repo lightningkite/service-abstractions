@@ -74,8 +74,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
      *
      * @param prompt The prompt to execute
      * @param tools Optional list of tools that can be used by the LLM
-     * @param model The LLM model to use
-     *  @return List of LLM choices
+     * @return List of LLM choices
      */
     public suspend fun executeMultipleChoices(
         prompt: Prompt,
@@ -99,24 +98,22 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
      * executors for all major LLM providers, making it easy to switch between them.
      *
      * The URL scheme determines which LLM provider to use:
-     * - `koog-openai://model-name?apiKey=...` - OpenAI (GPT models)
-     * - `koog-anthropic://model-name?apiKey=...` - Anthropic (Claude models)
-     * - `koog-google://model-name?apiKey=...` - Google (Gemini models)
-     * - `koog-ollama://model-name?baseUrl=...` - Ollama (local models)
-     * - `koog-openrouter://model-name?apiKey=...` - OpenRouter
-     * - Other schemes registered by Koog or custom implementations
+     * - `openai://model-name?apiKey=...` - OpenAI (GPT models)
+     * - `anthropic://model-name?apiKey=...` - Anthropic (Claude models)
+     * - `google://model-name?apiKey=...` - Google (Gemini models)
+     * - `ollama://model-name?baseUrl=...` - Ollama (local models)
+     * - `ollama-auto://model-name?baseUrl=...` - Ollama with auto-start/auto-pull
+     * - `openrouter://model-name?apiKey=...` - OpenRouter
+     * - `bedrock://model-name?region=...` - AWS Bedrock
+     * - `mock://` - Mock client for testing
      *
      * Example usage:
      * ```kotlin
-     * val settings = LLMClientSettings("koog-openai://gpt-4?apiKey=\${OPENAI_API_KEY}")
-     * val executor: LLMClient = settings("my-executor", context)
+     * val settings = LLMClientAndModel.Settings("openai://gpt-4o?apiKey=\${OPENAI_API_KEY}")
+     * val llm: LLMClientAndModel = settings("my-llm", context)
      *
-     * // Use with Koog's AIAgent
-     * val agent = AIAgent(
-     *     executor = executor,
-     *     systemPrompt = "You are a helpful assistant.",
-     *     llmModel = OpenAIModels.Chat.GPT4o
-     * )
+     * // Use the client and model together
+     * val response = llm.execute(prompt)
      * ```
      *
      * @property url Connection string defining the provider and configuration
