@@ -73,7 +73,7 @@ public class KotlinxIoPublicFileSystem(
      * @param expires When the signed URL expires
      * @param upload Whether this URL permits uploads (true) or only reads (false)
      */
-    internal data class DataToSign constructor(val url: String, val expires: Instant, val upload: Boolean) {
+    internal data class DataToSign(val url: String, val expires: Instant, val upload: Boolean) {
         /**
          * Parses a signed URL string back into DataToSign components.
          */
@@ -182,7 +182,7 @@ public class KotlinxIoPublicFileSystem(
             ) throw IllegalArgumentException("Invalid path.  '${kfile.path}' does not start with '${rootKFile.path}'")
         }
 
-        internal val relativePath = kfile.path.toString().removePrefix(rootKFile.path.toString())
+        internal val relativePath = kfile.path.toString().removePrefix(rootKFile.path.toString()).replace('\\', '/')
 
         override fun toString(): String = relativePath
         override fun equals(other: Any?): Boolean = other is KotlinxIoFile && this.kfile == other.kfile
@@ -193,7 +193,7 @@ public class KotlinxIoPublicFileSystem(
 
         override val parent: FileObject? = if (kfile == rootKFile) null else kfile.parent?.let { KotlinxIoFile(it) }
 
-        override val url: String = serveUrl + relativePath.removePrefix("/")
+        override val url: String = serveUrl.removeSuffix("/") + '/' + relativePath.removePrefix("/")
 
         override val signedUrl: String
             get() = signedUrlDuration?.let { expiration ->
