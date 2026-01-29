@@ -17,8 +17,8 @@ import java.nio.file.Path
  * ```kotlin
  * @Serializable
  * data class AppSettings(
- *     val rag: TextFileRAGSettings = TextFileRAGSettings(
- *         embedder = EmbedderSettings("embedder-ollama://nomic-embed-text"),
+ *     val rag: EmbeddingBasedDocumentStorageSettings = EmbeddingBasedDocumentStorageSettings(
+ *         embedder = EmbedderSettings("ollama://nomic-embed-text"),
  *         storage = VectorStorageSettings("rag-file://./vectors")
  *     )
  * )
@@ -35,6 +35,9 @@ import java.nio.file.Path
  *
  * @property embedder Settings for the embedder (converts text to vectors)
  * @property storage Settings for the vector storage backend
+ *
+ * Note: The actual method names on [EmbeddingBasedDocumentStorage] depend on the Koog library API.
+ * Consult the Koog documentation for exact method signatures.
  */
 @Serializable
 public data class EmbeddingBasedDocumentStorageSettings(

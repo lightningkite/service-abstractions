@@ -2,6 +2,9 @@ package com.lightningkite.services.ai.koog
 
 import ai.koog.embeddings.base.Vector as KoogVector
 import com.lightningkite.services.database.Embedding as DbEmbedding
+// Note by Claude: DbSparseEmbedding is imported but unused. Consider removing this import
+// if sparse embedding adapters are not planned. If sparse embedding conversion is needed,
+// add corresponding toDbSparseEmbedding() / toKoogSparseVector() functions.
 import com.lightningkite.services.database.SparseEmbedding as DbSparseEmbedding
 
 /**
@@ -30,6 +33,10 @@ public object EmbeddingAdapter {
 
     /**
      * Convert Koog embedding to database embedding.
+     *
+     * Note: Double to Float conversion may result in slight precision loss (Float has ~6-9
+     * decimal digits precision vs Double's ~15-17). This is typically acceptable for embeddings
+     * since the loss is negligible for similarity computations.
      *
      * @param koogVector The Koog Vector (List<Double>)
      * @return Database Embedding (FloatArray)

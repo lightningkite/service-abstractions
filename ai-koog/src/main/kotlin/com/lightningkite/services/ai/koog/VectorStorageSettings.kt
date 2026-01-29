@@ -14,7 +14,7 @@ import kotlin.jvm.JvmInline
  * Settings for instantiating Koog's [VectorStorage].
  *
  * VectorStorage provides low-level vector storage and retrieval capabilities.
- * For most use cases, consider using [DocumentEmbeddingStorageSettings] instead, which
+ * For most use cases, consider using [EmbeddingBasedDocumentStorageSettings] instead, which
  * combines vector storage with document embedding for a complete RAG solution.
  *
  * The URL scheme determines which storage backend to use:
@@ -26,12 +26,18 @@ import kotlin.jvm.JvmInline
  * val settings = VectorStorageSettings<MyDocument>("rag-memory://")
  * val storage = settings("my-vector-storage", context)
  *
- * // Store documents with embeddings
+ * // Store documents with embeddings (where vectorEmbedding is an ai.koog.embeddings.base.Vector)
  * storage.store(document, vectorEmbedding)
  *
- * // Find similar documents
- * val similar = storage.findSimilar(queryEmbedding, count = 5)
+ * // Retrieve all documents with their embeddings
+ * storage.allDocumentsWithPayload().collect { (doc, vector) ->
+ *     // Process document and its embedding
+ * }
  * ```
+ *
+ * Note: VectorStorage does not provide similarity search directly. For similarity search,
+ * use [EmbeddingBasedDocumentStorageSettings] which wraps VectorStorage with an Embedder
+ * and provides the `rankDocuments(query)` method for similarity-based retrieval.
  *
  * @property url Connection string defining the storage backend and configuration
  */

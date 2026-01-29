@@ -14,6 +14,7 @@ import java.util.*
 import kotlinx.serialization.ExperimentalSerializationApi
 
 
+// REVIEW NOTE: This function appears to be unused (dead code). Consider removing it. - by Claude
 private fun <T> SdkPublisher<Map<String, AttributeValue>>.parse(serializer: KSerializer<T>, context: SettingContext): Flow<T> {
     return asFlow().map { serializer.fromDynamoMap(it, context) }
 }
@@ -34,7 +35,6 @@ internal fun <T> KSerializer<T>.toDynamo(value: T, context: SettingContext): Att
     }
 }
 
-// change test
 internal fun <T> KSerializer<T>.fromDynamo(value: AttributeValue, context: SettingContext): T {
     try {
         val element = value.toJson()
@@ -44,6 +44,7 @@ internal fun <T> KSerializer<T>.fromDynamo(value: AttributeValue, context: Setti
     }
 }
 
+// REVIEW NOTE: These two functions are only used by the unused `parse` function above (dead code). - by Claude
 private fun <T> KSerializer<T>.toDynamoMap(value: T, context: SettingContext): Map<String, AttributeValue> = toDynamo(value, context).m()
 private fun <T> KSerializer<T>.fromDynamoMap(value: Map<String, AttributeValue>, context: SettingContext): T = fromDynamo(AttributeValue.fromM(value), context)
 
@@ -74,10 +75,15 @@ private fun AttributeValue.toJson(): JsonElement {
         AttributeValue.Type.L -> JsonArray(this.l().map { it.toJson() })
         AttributeValue.Type.BOOL -> JsonPrimitive(this.bool())
         AttributeValue.Type.NUL -> JsonNull
+        // REVIEW NOTE: This TODO() will throw NotImplementedError if AWS introduces new types.
+        // Consider handling gracefully with a warning log or fallback. - by Claude
         AttributeValue.Type.UNKNOWN_TO_SDK_VERSION -> TODO()
     }
 }
 
+// REVIEW NOTE: This function appears to be unused (dead code). Consider removing it.
+// Also note: PolymorphicKind.OPEN and PolymorphicKind.SEALED use TODO() which would crash at runtime.
+// The outer `when { else -> ... }` construct is redundant. - by Claude
 @OptIn(ExperimentalSerializationApi::class)
 private fun SerialDescriptor.dynamoType(context: SettingContext): AttributeValue.Type = when {
     else -> when(this.kind) {

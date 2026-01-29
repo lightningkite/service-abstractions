@@ -12,9 +12,15 @@ import kotlinx.serialization.json.JsonPrimitive
 /**
  * Creates an AWS ElastiCache Memcached cluster for caching.
  *
- * @param type The instance type to use for the cache nodes.
- * @param count The number of cache nodes to create.
- * @return A TerraformServiceResult with the configuration for the Memcached cluster.
+ * Emits Terraform resources for:
+ * - `aws_elasticache_subnet_group`: Subnet group for the cluster
+ * - `aws_elasticache_cluster`: The Memcached cluster itself
+ *
+ * The generated settings URL uses the cluster's configuration endpoint.
+ *
+ * @param type The EC2 instance type for cache nodes (e.g., "cache.t2.micro", "cache.m5.large")
+ * @param parameterGroupName The Memcached parameter group (default: "default.memcached1.6")
+ * @param count The number of cache nodes to create (1-40)
  */
 @Untested
 context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings>.awsElasticacheMemcached(
@@ -48,11 +54,19 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
 }
 
 /**
- * Creates an AWS ElastiCache Memcached cluster for caching.
+ * Creates an AWS ElastiCache Serverless Memcached cache.
  *
- * @param type The instance type to use for the cache nodes.
- * @param count The number of cache nodes to create.
- * @return A TerraformServiceResult with the configuration for the Memcached cluster.
+ * Serverless caches automatically scale based on demand without managing nodes.
+ * Uses ECPU (ElastiCache Processing Units) for pricing.
+ *
+ * Emits Terraform resources for:
+ * - `aws_elasticache_serverless_cache`: The serverless Memcached cache
+ *
+ * @param version The Memcached major version (e.g., "1.6")
+ * @param dailySnapshotTime Time of day for automatic snapshots (UTC)
+ * @param maxEcpuPerSecond Maximum ECPU per second (controls performance ceiling)
+ * @param maxStorageGb Maximum storage in gigabytes
+ * @param snapshotRetentionLimit Number of daily snapshots to retain
  */
 @Untested
 context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings>.awsElasticacheMemcachedServerless(
