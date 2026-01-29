@@ -35,10 +35,15 @@ public class SerializationRegistry(public val module: SerializersModule) {
 
     public val registeredTypes: Set<String> get() = direct.keys + factory.keys
 
+    // by Claude - Cache VirtualStruct.Concrete instances to handle recursive types
+    // Key is (serialName, argumentSerialNames), value is the Concrete (may still be building)
+    internal val concreteCache = HashMap<Pair<String, List<String>>, VirtualStruct.Concrete>()
+
     private fun copy(): SerializationRegistry = SerializationRegistry(module).also {
         it.direct += direct
         it.factory += factory
         it.internalVirtualTypes += internalVirtualTypes
+        it.concreteCache += concreteCache  // by Claude
     }
 
     public companion object {
@@ -109,8 +114,17 @@ public class SerializationRegistry(public val module: SerializersModule) {
     }
 
     @Suppress("UNCHECKED_CAST")
-    public operator fun get(name: String, arguments: Array<KSerializer<*>>): KSerializer<Any?>? =
-        direct[name] as? KSerializer<Any?> ?: factory[name]?.invoke(arguments) as? KSerializer<Any?>
+    public operator fun get(name: String, arguments: Array<KSerializer<*>>): KSerializer<Any?>? {
+        // by Claude - Check direct cache first
+        direct[name]?.let { return it as KSerializer<Any?> }
+
+        // by Claude - Check if this is a VirtualStruct.Concrete that's cached (handles recursion)
+        val cacheKey = name to arguments.map { it.descriptor.serialName }
+        concreteCache[cacheKey]?.let { return it as KSerializer<Any?> }
+
+        // Invoke factory if available
+        return factory[name]?.invoke(arguments) as? KSerializer<Any?>
+    }
 
     init {
         // These are all very safe built-in classes, thus we just register them here.

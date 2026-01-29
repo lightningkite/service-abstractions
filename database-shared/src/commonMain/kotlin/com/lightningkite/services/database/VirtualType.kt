@@ -65,6 +65,9 @@ public data class VirtualStruct(
 
         private val typeArguments = parameters.indices.associate { parameters[it].name to arguments[it] }
 
+        // by Claude - Key for tracking this Concrete in the registry's building cache
+        private val buildingKey: Pair<String, List<String>> = serialName to arguments.map { it.descriptor.serialName }
+
         override val default: VirtualInstance
             get() = VirtualInstance(
                 this,
@@ -111,9 +114,16 @@ public data class VirtualStruct(
         }
 
         private val serializers by lazy {
+            // by Claude - Register ourselves in the cache before building field serializers
+            // This allows recursive/mutually recursive types to find us and get a placeholder
+            registry.concreteCache[buildingKey] = this
             fields.map {
-                if (it.type.serialName == serialName) placeholderSerializer
-                else it.type.serializer(registry, typeArguments)
+                if (it.type.serialName == serialName && it.type.arguments.isEmpty()) {
+                    // Direct self-reference with same type arguments - use our own placeholder
+                    placeholderSerializer
+                } else {
+                    it.type.serializerWithRecursionCheck(registry, typeArguments)
+                }
             }
         }
         private val defaultGenerators: List<(() -> Any?)?> by lazy {
@@ -179,7 +189,9 @@ public data class VirtualStruct(
                 for (field in fields)
                     element(
                         elementName = field.name,
-                        descriptor = serializers[field.index].descriptor,
+                        // by Claude - Use deferred descriptor to avoid triggering nested Concrete's descriptor during construction
+                        // This prevents infinite recursion for mutually recursive types
+                        descriptor = LazyRenamedSerialDescriptor(field.type.serialName) { serializers[field.index].descriptor },
                         annotations = listOf(),
                         isOptional = field.optional
                     )
@@ -381,6 +393,69 @@ public data class VirtualTypeReference(
             ?: registry[serialName, arguments.map { it.serializer(registry, context) }.toTypedArray()])
             ?.let { if (isNullable) it.nullable2 else it }
             ?: throw Exception("$serialName is not registered in either the registeredTypes or registeredGenericTypes.  virtualTypes are ${registry.virtualTypes.keys.joinToString()}")
+    }
+
+    // by Claude - Check for recursive types being built and return a lazy-resolving placeholder if found
+    @Suppress("UNCHECKED_CAST")
+    internal fun serializerWithRecursionCheck(registry: SerializationRegistry, context: Map<String, KSerializer<*>>): KSerializer<Any?> {
+        // First check type parameters (generics) - these always take precedence
+        context[serialName]?.let { return (if (isNullable) it.nullable2 else it) as KSerializer<Any?> }
+
+        // Check if this type is already cached (handles recursion - cached Concrete may still be building)
+        val argumentSerializers = arguments.map { it.serializerWithRecursionCheck(registry, context) }
+        val cacheKey = serialName to argumentSerializers.map { it.descriptor.serialName }
+        registry.concreteCache[cacheKey]?.let { cached ->
+            // Return a lazy-resolving placeholder that delegates to the cached Concrete
+            // This handles the case where the Concrete is still being built (recursive reference)
+            val placeholder = RecursivePlaceholderSerializer(cached)
+            return (if (isNullable) placeholder.nullable2 else placeholder) as KSerializer<Any?>
+        }
+
+        // Not in cache, get the serializer normally (this may add to cache)
+        return (registry[serialName, argumentSerializers.toTypedArray()])
+            ?.let { if (isNullable) it.nullable2 else it }
+            ?: throw Exception("$serialName is not registered in either the registeredTypes or registeredGenericTypes.  virtualTypes are ${registry.virtualTypes.keys.joinToString()}")
+    }
+}
+
+// by Claude - Placeholder serializer for recursive VirtualStruct references
+// Uses a deferred descriptor that only resolves the target when actually serializing/deserializing
+@OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
+private class RecursivePlaceholderSerializer(
+    private val target: VirtualStruct.Concrete
+) : KSerializer<VirtualInstance> {
+    // Create a standalone placeholder descriptor for use during construction
+    // This avoids triggering the target's descriptor during buildClassSerialDescriptor
+    private val placeholderDescriptor: SerialDescriptor = buildClassSerialDescriptor("${target.serialName}.recursive_placeholder")
+
+    // The descriptor lazily resolves to target.descriptor, but falls back to placeholder during construction
+    @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
+    override val descriptor: SerialDescriptor = object : SerialDescriptor by placeholderDescriptor {
+        // Override serialName to match the target
+        override val serialName: String = target.serialName
+
+        // Lazily delegate to target's descriptor for element access
+        // These are only called during actual serialization, not during descriptor construction
+        override val elementsCount: Int
+            get() = try { target.descriptor.elementsCount } catch (_: Exception) { 0 }
+        override fun getElementName(index: Int): String =
+            target.descriptor.getElementName(index)
+        override fun getElementIndex(name: String): Int =
+            target.descriptor.getElementIndex(name)
+        override fun getElementDescriptor(index: Int): SerialDescriptor =
+            target.descriptor.getElementDescriptor(index)
+        override fun getElementAnnotations(index: Int): List<Annotation> =
+            target.descriptor.getElementAnnotations(index)
+        override fun isElementOptional(index: Int): Boolean =
+            target.descriptor.isElementOptional(index)
+    }
+
+    override fun deserialize(decoder: Decoder): VirtualInstance {
+        return target.deserialize(decoder)
+    }
+
+    override fun serialize(encoder: Encoder, value: VirtualInstance) {
+        target.serialize(encoder, value)
     }
 }
 
