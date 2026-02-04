@@ -206,20 +206,24 @@ private fun <T> ISqlExpressionBuilder.condition(
 
         is Condition.Not -> NotOp(condition(condition.condition, fieldSet))
         is Condition.GeoDistance -> TODO()
+        // by Claude - wrap value with % for substring matching
         is Condition.StringContains -> {
             val col = fieldSet.single
+            val pattern = "%${condition.value}%"
             if (condition.ignoreCase)
-                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), condition.value), true, null)
+                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
             else
-                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), condition.value), true, null)
+                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
         }
 
+        // by Claude - wrap value with % for substring matching
         is Condition.RawStringContains -> {
             val col = fieldSet.single
+            val pattern = "%${condition.value}%"
             if (condition.ignoreCase)
-                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), condition.value), true, null)
+                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
             else
-                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), condition.value), true, null)
+                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
         }
 
         is Condition.RegexMatches -> {

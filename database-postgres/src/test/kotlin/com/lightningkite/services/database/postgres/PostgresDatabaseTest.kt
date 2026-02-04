@@ -210,6 +210,8 @@ class PostgresConditionTests : ConditionTests() {
         PostgresDatabase("test", TestSettingContext(EmptySerializersModule())){Database.connect(postgres.embeddedPostgres.postgresDatabase)}
     }
 
+    @Test fun stub(){}
+
     override fun test_geodistance_1() {
         println("Suppressed until this is supported")
     }
