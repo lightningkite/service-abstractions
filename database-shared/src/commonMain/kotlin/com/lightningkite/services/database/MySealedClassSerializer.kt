@@ -11,8 +11,9 @@ import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.JsonNames
 
-public interface MySealedClassSerializerInterface<T : Any> : KSerializer<T> {
+public interface MySealedClassSerializerInterface<T : Any> : KSerializerWithDefault<T> {
     public val options: List<MySealedClassSerializer.Option<T, out T>>
+    override val default: T get() = options.first().serializer.default()
 }
 
 public class MySealedClassSerializer<T : Any>(
@@ -23,16 +24,18 @@ public class MySealedClassSerializer<T : Any>(
 
     public class Option<Base, T : Base>(
         public val serializer: KSerializer<T>,
+        public val baseName: String,
         public val alternativeNames: Set<String> = setOf(),
         public val annotations: List<Annotation> = listOf(),
+        public val priority: Int,
         public val isInstance: (Base) -> Boolean,
     )
 
-    override val options: List<Option<T, out T>> by lazy(options)
+    override val options: List<Option<T, out T>> by lazy { options().sortedByDescending { it.priority } }
 
     private val nameToIndex by lazy {
         this.options.flatMapIndexed { index, it ->
-            (listOf(it.serializer.descriptor.serialName) + it.alternativeNames)
+            (listOf(it.baseName, it.serializer.descriptor.serialName) + it.alternativeNames)
                 .map { n -> n to index }
         }.associate { it }
     }
@@ -51,7 +54,7 @@ public class MySealedClassSerializer<T : Any>(
             this.annotations = this@MySealedClassSerializer.annotations
             for ((index, s) in this@MySealedClassSerializer.options.withIndex()) {
                 element(
-                    s.serializer.descriptor.serialName,
+                    s.baseName,
                     s.serializer.descriptor,
                     isOptional = true,
                     annotations = listOfNotNull(

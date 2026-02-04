@@ -19,8 +19,8 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 
-internal interface KSerializerWithDefault<T> : KSerializer<T> {
-    val default: T
+public interface KSerializerWithDefault<T> : KSerializer<T> {
+    public val default: T
 }
 
 @OptIn(ExperimentalSerializationApi::class)
