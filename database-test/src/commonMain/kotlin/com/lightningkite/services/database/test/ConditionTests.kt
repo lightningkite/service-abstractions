@@ -658,6 +658,36 @@ abstract class ConditionTests() {
         assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
         Unit
     }
+
+    @Test fun test_String_contains() = runTest {
+        val collection = database.collection<LargeTestModel>("LargeTestModel_test_String_contains")
+        val lower = LargeTestModel(string = "abc")
+        val higher = LargeTestModel(string = "bcd")
+        val manualList = listOf(lower, higher)
+        collection.insertOne(lower)
+        collection.insertOne(higher)
+        val condition = path<LargeTestModel>().string.contains("CD", ignoreCase = true)
+        val results = collection.find(condition).toList()
+        assertContains(results, higher)
+        assertTrue(lower !in results)
+        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
+        Unit
+    }
+
+    @Test fun test_email_contains() = runTest {
+        val collection = database.collection<LargeTestModel>("LargeTestModel_test_email_contains")
+        val lower = LargeTestModel(email = "abc@test.com".toEmailAddress())
+        val higher = LargeTestModel(email = "bcd@test.com".toEmailAddress())
+        val manualList = listOf(lower, higher)
+        collection.insertOne(lower)
+        collection.insertOne(higher)
+        val condition = path<LargeTestModel>().email.contains("CD", ignoreCase = true)
+        val results = collection.find(condition).toList()
+        assertContains(results, higher)
+        assertTrue(lower !in results)
+        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
+        Unit
+    }
     
     @Test fun test_String_ne() = runTest {
         val collection = database.collection<LargeTestModel>("LargeTestModel_test_String_ne")

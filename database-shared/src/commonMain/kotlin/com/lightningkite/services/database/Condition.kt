@@ -83,7 +83,6 @@ public sealed class Condition<in T> {
     open override fun equals(other: Any?): Boolean = throw NotImplementedError()
     public open operator fun invoke(on: T): Boolean = throw NotImplementedError()
 
-    @SerialName("Never")
     @Serializable
     @DisplayName("None")
     public data object Never : Condition<Any?>() {
@@ -92,7 +91,6 @@ public sealed class Condition<in T> {
         override fun toString(): String = "false"
     }
 
-    @SerialName("Always")
     @Serializable
     @DisplayName("All")
     public data object Always : Condition<Any?>() {
@@ -102,7 +100,6 @@ public sealed class Condition<in T> {
     }
 
     @Serializable(ConditionAndSerializer::class)
-    @SerialName("And")
     public data class And<T>(val conditions: List<Condition<T>>) : Condition<T>() {
         public constructor(vararg conditions: Condition<T>) : this(conditions.toList())
 
@@ -111,7 +108,6 @@ public sealed class Condition<in T> {
     }
 
     @Serializable(ConditionOrSerializer::class)
-    @SerialName("Or")
     public data class Or<T>(val conditions: List<Condition<T>>) : Condition<T>() {
         public constructor(vararg conditions: Condition<T>) : this(conditions.toList())
 
@@ -120,28 +116,24 @@ public sealed class Condition<in T> {
     }
 
     @Serializable(ConditionNotSerializer::class)
-    @SerialName("Not")
     public data class Not<T>(val condition: Condition<T>) : Condition<T>() {
         override fun invoke(on: T): Boolean = !condition(on)
         override fun toString(): String = "!($condition)"
     }
 
     @Serializable(ConditionEqualSerializer::class)
-    @SerialName("Equal")
     public data class Equal<T>(val value: T) : Condition<T>() {
         override fun invoke(on: T): Boolean = on == value
         override fun toString(): String = " == $value"
     }
 
     @Serializable(ConditionNotEqualSerializer::class)
-    @SerialName("NotEqual")
     public data class NotEqual<T>(val value: T) : Condition<T>() {
         override fun invoke(on: T): Boolean = on != value
         override fun toString(): String = " != $value"
     }
 
     @Serializable(ConditionInsideSerializer::class)
-    @SerialName("Inside")
     public data class Inside<T>(val values: Set<T>) : Condition<T>() {
         public constructor(values: Collection<T>) : this(values.toSet())
         override fun invoke(on: T): Boolean = values.contains(on)
@@ -149,7 +141,6 @@ public sealed class Condition<in T> {
     }
 
     @Serializable(ConditionNotInsideSerializer::class)
-    @SerialName("NotInside")
     public data class NotInside<T>(val values: Set<T>) : Condition<T>() {
         public constructor(values: Collection<T>) : this(values.toSet())
         override fun invoke(on: T): Boolean = !values.contains(on)
@@ -157,35 +148,30 @@ public sealed class Condition<in T> {
     }
 
     @Serializable(ConditionGreaterThanSerializer::class)
-    @SerialName("GreaterThan")
     public data class GreaterThan<T : Comparable<T>>(val value: T) : Condition<T>() {
         override fun invoke(on: T): Boolean = on > value
         override fun toString(): String = " > $value"
     }
 
     @Serializable(ConditionLessThanSerializer::class)
-    @SerialName("LessThan")
     public data class LessThan<T : Comparable<T>>(val value: T) : Condition<T>() {
         override fun invoke(on: T): Boolean = on < value
         override fun toString(): String = " < $value"
     }
 
     @Serializable(ConditionGreaterThanOrEqualSerializer::class)
-    @SerialName("GreaterThanOrEqual")
     public data class GreaterThanOrEqual<T : Comparable<T>>(val value: T) : Condition<T>() {
         override fun invoke(on: T): Boolean = on >= value
         override fun toString(): String = " >= $value"
     }
 
     @Serializable(ConditionLessThanOrEqualSerializer::class)
-    @SerialName("LessThanOrEqual")
     public data class LessThanOrEqual<T : Comparable<T>>(val value: T) : Condition<T>() {
         override fun invoke(on: T): Boolean = on <= value
         override fun toString(): String = " <= $value"
     }
 
     @Serializable
-    @SerialName("StringContains")
     public data class StringContains(@DoesNotNeedLabel val value: String, val ignoreCase: Boolean = false) :
         Condition<String>() {
         override fun invoke(on: String): Boolean = on.contains(value, ignoreCase)
@@ -193,14 +179,12 @@ public sealed class Condition<in T> {
     }
 
     @Serializable
-    @SerialName("StringContains")
     public data class RawStringContains<T : IsRawString>(val value: String, val ignoreCase: Boolean = false) : Condition<T>() {
         override fun invoke(on: T): Boolean = on.raw.contains(value, ignoreCase)
         override fun toString(): String = ".contains($value, $ignoreCase)"
     }
 
     @Serializable
-    @SerialName("GeoDistance")
     public data class GeoDistance(
         val value: GeoCoordinate,
         val greaterThanKilometers: Double = 0.0,
@@ -213,7 +197,6 @@ public sealed class Condition<in T> {
     }
 
     @Serializable
-    @SerialName("FullTextSearch")
     public data class FullTextSearch<T>(
         @DoesNotNeedLabel val value: String,
         val requireAllTermsPresent: Boolean = true,
@@ -252,7 +235,6 @@ public sealed class Condition<in T> {
     }
 
     @Serializable
-    @SerialName("RegexMatches")
     public data class RegexMatches(@DoesNotNeedLabel val pattern: String, val ignoreCase: Boolean = false) :
         Condition<String>() {
         @Transient
@@ -262,28 +244,24 @@ public sealed class Condition<in T> {
     }
 
     @Serializable(ConditionIntBitsClearSerializer::class)
-    @SerialName("IntBitsClear")
     public data class IntBitsClear(val mask: Int) : Condition<Int>() {
         override fun invoke(on: Int): Boolean = on and mask == 0
         override fun toString(): String = ".bitsClear(${mask.toString(16)})"
     }
 
     @Serializable(ConditionIntBitsSetSerializer::class)
-    @SerialName("IntBitsSet")
     public data class IntBitsSet(val mask: Int) : Condition<Int>() {
         override fun invoke(on: Int): Boolean = on and mask == mask
         override fun toString(): String = ".bitsSet(${mask.toString(16)})"
     }
 
     @Serializable(ConditionIntBitsAnyClearSerializer::class)
-    @SerialName("IntBitsAnyClear")
     public data class IntBitsAnyClear(val mask: Int) : Condition<Int>() {
         override fun invoke(on: Int): Boolean = on and mask < mask
         override fun toString(): String = ".bitsAnyClear(${mask.toString(16)})"
     }
 
     @Serializable(ConditionIntBitsAnySetSerializer::class)
-    @SerialName("IntBitsAnySet")
     public data class IntBitsAnySet(val mask: Int) : Condition<Int>() {
         override fun invoke(on: Int): Boolean = on and mask > 0
         override fun toString(): String = ".bitsAnySet(${mask.toString(16)})"
@@ -291,14 +269,12 @@ public sealed class Condition<in T> {
 
     // TODO: Merge collection operations once Khrysalis is fully deprecated
     @Serializable(ConditionListAllElementsSerializer::class)
-    @SerialName("ListAllElements")
     public data class ListAllElements<E>(val condition: Condition<E>) : Condition<List<E>>() {
         override fun invoke(on: List<E>): Boolean = on.all { condition(it) }
         override fun toString(): String = ".all { it$condition }"
     }
 
     @Serializable(ConditionListAnyElementsSerializer::class)
-    @SerialName("ListAnyElements")
     public data class ListAnyElements<E>(val condition: Condition<E>) : Condition<List<E>>() {
         override fun invoke(on: List<E>): Boolean = on.any { condition(it) }
         override fun toString(): String = ".any { it$condition }"
@@ -306,21 +282,18 @@ public sealed class Condition<in T> {
 
     // TODO: Change to empty check
     @Serializable(ConditionListSizesEqualsSerializer::class)
-    @SerialName("ListSizesEquals")
     public data class ListSizesEquals<E>(val count: Int) : Condition<List<E>>() {
         override fun invoke(on: List<E>): Boolean = on.size == count
         override fun toString(): String = ".size == $count"
     }
 
     @Serializable(ConditionSetAllElementsSerializer::class)
-    @SerialName("SetAllElements")
     public data class SetAllElements<E>(val condition: Condition<E>) : Condition<Set<E>>() {
         override fun invoke(on: Set<E>): Boolean = on.all { condition(it) }
         override fun toString(): String = ".all { it$condition }"
     }
 
     @Serializable(ConditionSetAnyElementsSerializer::class)
-    @SerialName("SetAnyElements")
     public data class SetAnyElements<E>(val condition: Condition<E>) : Condition<Set<E>>() {
         override fun invoke(on: Set<E>): Boolean = on.any { condition(it) }
         override fun toString(): String = ".any { it$condition }"
@@ -328,7 +301,6 @@ public sealed class Condition<in T> {
 
     // TODO: Change to empty check
     @Serializable(ConditionSetSizesEqualsSerializer::class)
-    @SerialName("SetSizesEquals")
     public data class SetSizesEquals<E>(val count: Int) : Condition<Set<E>>() {
         override fun invoke(on: Set<E>): Boolean = on.size == count
         override fun toString(): String = ".size == $count"
@@ -336,14 +308,12 @@ public sealed class Condition<in T> {
 
     // TODO: Allow alternate keys once Khrysalis is fully deprecated
     @Serializable(ConditionExistsSerializer::class)
-    @SerialName("Exists")
     public data class Exists<V>(val key: String) : Condition<Map<String, V>>() {
         override fun invoke(on: Map<String, V>): Boolean = on.containsKey(key)
         override fun toString(): String = ".containsKey($key)"
     }
 
     @Serializable
-    @SerialName("OnKey")
     public data class OnKey<V>(val key: String, val condition: Condition<V>) :
         Condition<Map<String, V>>() {
         @Suppress("UNCHECKED_CAST")
@@ -365,7 +335,6 @@ public sealed class Condition<in T> {
     }
 
     @Serializable(ConditionIfNotNullSerializer::class)
-    @SerialName("IfNotNull")
     public data class IfNotNull<T>(val condition: Condition<T>) : Condition<T?>() {
         override fun invoke(on: T?): Boolean = on != null && condition(on)
         override fun toString(): String = "? $condition"
