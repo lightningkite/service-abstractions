@@ -1,10 +1,12 @@
 
 package com.lightningkite.services.database.test
 
+import com.lightningkite.EmailAddress
 import com.lightningkite.GeoCoordinate
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.HasId
+import com.lightningkite.toEmailAddress
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseContextualSerialization
@@ -147,6 +149,7 @@ data class LargeTestModel(
     var listNullable: List<Int>? = null,
     var mapNullable: Map<String, Int>? = null,
     var embeddedNullable: ClassUsedForEmbedding? = null,
+    var email: EmailAddress = "test@test.com".toEmailAddress()
 ) : HasId<Uuid> {
     companion object
 }

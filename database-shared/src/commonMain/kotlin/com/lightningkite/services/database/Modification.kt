@@ -1,7 +1,6 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.IsRawString
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -198,7 +197,6 @@ public sealed class Modification<T> {
     }
 
     @Serializable()
-    @SerialName("ListPerElement")
     public data class ListPerElement<T>(val condition: Condition<T>, val modification: Modification<T>) :
         Modification<List<T>>() {
         override fun invoke(on: List<T>): List<T> = on.map { if (condition(it)) modification(it) else it }
@@ -243,8 +241,7 @@ public sealed class Modification<T> {
         override fun toString(): String = ".removeLast()"
     }
 
-    @Serializable()
-    @SerialName("SetPerElement")
+    @Serializable
     public data class SetPerElement<T>(val condition: Condition<T>, val modification: Modification<T>) :
         Modification<Set<T>>() {
         override fun invoke(on: Set<T>): Set<T> = on.map { if (condition(it)) modification(it) else it }.toSet()

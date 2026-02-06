@@ -131,6 +131,15 @@ private class MinEncoderSI(
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
         return MinEncoderSI2(this, serializersModule, resultIndex)
     }
+
+    override fun encodeValue(value: Any) {
+        output = value
+    }
+
+    override fun encodeNull() {
+        output = null
+    }
+
     override fun endStructure(descriptor: SerialDescriptor) {}
 }
 
