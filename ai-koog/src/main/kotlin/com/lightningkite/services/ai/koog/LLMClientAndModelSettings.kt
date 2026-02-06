@@ -31,7 +31,6 @@ import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
-import com.lightningkite.services.ai.koog.rag.EmbedderSettings
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -125,11 +124,11 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
     ) : Setting<LLMClientAndModel> {
 
         public companion object : UrlSettingParser<LLMClientAndModel>() {
-            public fun openai(model: LLModel, apiKey: String? = null): LLMClientAndModelSettings = LLMClientAndModelSettings("openai://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-            public fun anthropic(model: LLModel, apiKey: String? = null): LLMClientAndModelSettings = LLMClientAndModelSettings("anthropic://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-            public fun google(model: LLModel, apiKey: String? = null): LLMClientAndModelSettings = LLMClientAndModelSettings("google://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-            public fun ollama(model: LLModel, apiKey: String? = null): LLMClientAndModelSettings = LLMClientAndModelSettings("ollama://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-            public fun openrouter(model: LLModel, apiKey: String? = null): LLMClientAndModelSettings = LLMClientAndModelSettings("openrouter://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+            public fun openai(model: LLModel, apiKey: String? = null): Settings = Settings("openai://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+            public fun anthropic(model: LLModel, apiKey: String? = null): Settings = Settings("anthropic://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+            public fun google(model: LLModel, apiKey: String? = null): Settings = Settings("google://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+            public fun ollama(model: LLModel, apiKey: String? = null): Settings = Settings("ollama://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+            public fun openrouter(model: LLModel, apiKey: String? = null): Settings = Settings("openrouter://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
 
             /**
              * Creates settings for AWS Bedrock using the default credential chain.
@@ -173,8 +172,8 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
              * @param model The model to use
              * @param baseUrl Ollama server URL (default: http://localhost:11434)
              */
-            public fun ollamaAuto(model: LLModel, baseUrl: String? = null): LLMClientAndModelSettings =
-                LLMClientAndModelSettings("ollama-auto://${model.id}" + (baseUrl?.let { "?baseUrl=$it" } ?: ""))
+            public fun ollamaAuto(model: LLModel, baseUrl: String? = null): Settings =
+                Settings("ollama-auto://${model.id}" + (baseUrl?.let { "?baseUrl=$it" } ?: ""))
 
             public val knownModels: Map<Pair<LLMProvider, String>, LLModel> = listOf(
                 OpenAIModels.Moderation.Omni,

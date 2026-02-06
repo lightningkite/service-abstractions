@@ -9,4 +9,6 @@ import org.jetbrains.exposed.sql.QueryParameter
 
 internal val DataClassPathPartial<*>.colName: String get() = properties.joinToString("__") { it.name }
 internal fun <T> sqlLiteralOfSomeKind(type: IColumnType<T & Any>, value: T) = QueryParameter(value, type)
+
+@Suppress("Unchecked_cast")
 internal fun sqlLiteralOfSomeKindUntyped(type: IColumnType<*>, value: Any?) = QueryParameter(value, type as IColumnType<Any>)

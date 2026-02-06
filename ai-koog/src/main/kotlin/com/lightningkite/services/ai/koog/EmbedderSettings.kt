@@ -9,7 +9,7 @@ import ai.koog.prompt.llm.LLModel
 import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
-import com.lightningkite.services.ai.koog.LLMClientAndModelSettings
+import com.lightningkite.services.ai.koog.LLMClientAndModel
 import com.lightningkite.services.ai.koog.OllamaManager
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
@@ -78,8 +78,8 @@ public value class EmbedderSettings(
                     ?: throw IllegalArgumentException("OpenAI API key not provided in URL or OPENAI_API_KEY environment variable")
 
                 val client = OpenAILLMClient(apiKey = apiKey)
-                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
-                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
+                val model = LLMClientAndModel.Settings.knownModels[client.llmProvider() to modelName]
+                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModel.Settings.knownModels.keys}")
                 if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }
@@ -135,8 +135,8 @@ public value class EmbedderSettings(
                 }
 
                 val client = OllamaClient(baseUrl = baseUrl)
-                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
-                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
+                val model = LLMClientAndModel.Settings.knownModels[client.llmProvider() to modelName]
+                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModel.Settings.knownModels.keys}")
                 if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }
@@ -160,8 +160,8 @@ public value class EmbedderSettings(
                 }
 
                 val client = OllamaClient(baseUrl = baseUrl)
-                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
-                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
+                val model = LLMClientAndModel.Settings.knownModels[client.llmProvider() to modelName]
+                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModel.Settings.knownModels.keys}")
                 if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }

@@ -127,7 +127,7 @@ public class ElevenLabsTextToSpeechService(
             throw TextToSpeechException("TTS synthesis failed: $error")
         }
 
-        val audioBytes = response.readBytes()
+        val audioBytes = response.readRawBytes()
         val mediaType = mapFormatToMediaType(options.outputFormat)
 
         logger.debug { "[$name] Synthesized ${audioBytes.size} bytes of audio" }

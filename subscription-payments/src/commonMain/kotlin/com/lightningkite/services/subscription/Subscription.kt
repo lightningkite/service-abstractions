@@ -1,7 +1,7 @@
 package com.lightningkite.services.subscription
 
-import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
+import kotlin.time.Instant
 
 /**
  * Represents a subscription - a recurring billing relationship between a customer and a price.
