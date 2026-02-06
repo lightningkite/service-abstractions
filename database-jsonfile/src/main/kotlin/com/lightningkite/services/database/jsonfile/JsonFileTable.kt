@@ -30,7 +30,7 @@ import java.util.Collections
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
  * and writing the collection data into a file when closing.
  */
-internal class JsonFileTable<Model : Any>(
+public class JsonFileTable<Model : Any>(
     val encoding: StringFormat,
     serializer: KSerializer<Model>,
     val file: KFile,
