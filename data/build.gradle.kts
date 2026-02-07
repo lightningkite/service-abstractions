@@ -1,5 +1,6 @@
 import com.lightningkite.deployhelpers.*
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -14,7 +15,9 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
+        freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        freeCompilerArgs.set(listOf("-Xnested-type-aliases"))
     }
     applyDefaultHierarchyTemplate()
     androidTarget {

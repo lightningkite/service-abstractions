@@ -35,6 +35,15 @@ import kotlin.reflect.KClass
 annotation class CheckReturnValue
 
 /**
+ * Meta-annotation that marks an annotation as used to validate the data it is applied to.
+ * If an annotation has `@Validation` applied, it states that any data with the annotation applied will
+ * be validated. If the data is not a viable type a warning will be printed.
+ * */
+@Retention(AnnotationRetention.BINARY)
+@Target(AnnotationTarget.ANNOTATION_CLASS)
+annotation class ValidationAnnotation
+
+/**
  * Specifies the default sorting order for query results.
  *
  * Field names can be prefixed with:
@@ -140,6 +149,7 @@ annotation class JsonSchemaFormat(val format: String)
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+@ValidationAnnotation
 annotation class IntegerRange(val min: Long, val max: Long)
 
 /**
@@ -150,6 +160,7 @@ annotation class IntegerRange(val min: Long, val max: Long)
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+@ValidationAnnotation
 annotation class FloatRange(val min: Double, val max: Double)
 
 /**
@@ -160,6 +171,7 @@ annotation class FloatRange(val min: Double, val max: Double)
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+@ValidationAnnotation
 annotation class ExpectedPattern(val pattern: String)
 
 /**
@@ -184,16 +196,19 @@ annotation class Hint(val text: String)
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+@ValidationAnnotation
 annotation class MimeType(vararg val types: String, val maxSize: Long = Long.MAX_VALUE)
 
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+@ValidationAnnotation
 annotation class MaxLength(val size: Int, val average: Int = -1)
 
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+@ValidationAnnotation
 annotation class MaxSize(val size: Int, val average: Int = -1)
 
 @SerialInfo
