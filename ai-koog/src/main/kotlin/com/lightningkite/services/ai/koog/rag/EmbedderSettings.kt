@@ -2,15 +2,23 @@ package com.lightningkite.services.ai.koog.rag
 
 import ai.koog.embeddings.base.Embedder
 import ai.koog.embeddings.local.LLMEmbedder
+import ai.koog.prompt.executor.clients.bedrock.BedrockClientSettings
+import ai.koog.prompt.executor.clients.bedrock.BedrockLLMClient
+import ai.koog.prompt.executor.clients.google.GoogleLLMClient
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
 import ai.koog.prompt.executor.ollama.client.OllamaClient
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLModel
+import aws.sdk.kotlin.runtime.auth.credentials.DefaultChainCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
+import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
-import com.lightningkite.services.ai.koog.LLMClientAndModelSettings
+import com.lightningkite.services.ai.koog.LLMClientAndModel.Settings
+import com.lightningkite.services.ai.koog.LLMClientAndModel.Settings.Companion.knownModels
 import com.lightningkite.services.ai.koog.OllamaManager
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
@@ -49,10 +57,42 @@ public value class EmbedderSettings(
 
     public companion object : UrlSettingParser<Embedder>() {
         public fun openai(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("openai://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-//        public fun anthropic(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("anthropic://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-//        public fun google(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("google://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+        public fun anthropic(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("anthropic://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+        public fun google(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("google://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
         public fun ollama(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("ollama://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-//        public fun openrouter(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("openrouter://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+        public fun openrouter(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("openrouter://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+
+        /**
+         * Creates settings for AWS Bedrock using the default credential chain.
+         *
+         * Uses the AWS default credential chain (environment variables, IAM role, etc.)
+         * which is appropriate for Lambda, EC2, ECS, and other AWS environments.
+         *
+         * @param model The Bedrock model to use (from BedrockModels)
+         * @param region Optional AWS region override (defaults to AWS_REGION env var or us-east-1)
+         */
+        public fun bedrock(model: LLModel, region: String? = null): Settings =
+            Settings("bedrock://${model.id}" + (region?.let { "?region=$it" } ?: ""))
+
+        /**
+         * Creates settings for AWS Bedrock with explicit static credentials.
+         *
+         * Use this when you need to provide AWS credentials explicitly rather than
+         * relying on the default credential chain. Supports environment variable
+         * resolution using ${VAR_NAME} syntax.
+         *
+         * @param model The Bedrock model to use (from BedrockModels)
+         * @param accessKeyId AWS access key ID (or ${ENV_VAR} reference)
+         * @param secretAccessKey AWS secret access key (or ${ENV_VAR} reference)
+         * @param region Optional AWS region override (defaults to AWS_REGION env var or us-east-1)
+         */
+        public fun bedrock(
+            model: LLModel,
+            accessKeyId: String,
+            secretAccessKey: String,
+            region: String? = null
+        ): Settings =
+            Settings("bedrock://${accessKeyId}:${secretAccessKey}@${model.id}" + (region?.let { "?region=$it" } ?: ""))
 
         /**
          * Creates settings for Ollama embeddings with automatic server start and model pull.
@@ -78,41 +118,26 @@ public value class EmbedderSettings(
                     ?: throw IllegalArgumentException("OpenAI API key not provided in URL or OPENAI_API_KEY environment variable")
 
                 val client = OpenAILLMClient(apiKey = apiKey)
-                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
-                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
+                val model = knownModels[client.llmProvider() to modelName]
+                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
                 if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }
-//
-//            // Register Anthropic
-//            register("anthropic") { name, url, context ->
-//                val params = parseUrlParams(url)
-//                val modelName = url.substringAfter("://", "").substringBefore("?")
-//                val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-//                    ?: System.getenv("ANTHROPIC_API_KEY")
-//                    ?: throw IllegalArgumentException("Anthropic API key not provided in URL or ANTHROPIC_API_KEY environment variable")
-//
-//                val client = AnthropicLLMClient(apiKey = apiKey)
-//                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
-//                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
-//                if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
-//                LLMEmbedder(client, model)
-//            }
-//
-//            // Register Google (Gemini)
-//            register("google") { name, url, context ->
-//                val params = parseUrlParams(url)
-//                val modelName = url.substringAfter("://", "").substringBefore("?")
-//                val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-//                    ?: System.getenv("GOOGLE_API_KEY")
-//                    ?: throw IllegalArgumentException("Google API key not provided in URL or GOOGLE_API_KEY environment variable")
-//
-//                val client = GoogleLLMClient(apiKey = apiKey)
-//                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
-//                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
-//                if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
-//                LLMEmbedder(client, model)
-//            }
+
+            // Register Google (Gemini)
+            register("google") { name, url, context ->
+                val params = parseUrlParams(url)
+                val modelName = url.substringAfter("://", "").substringBefore("?")
+                val apiKey = params["apiKey"]?.let(::resolveEnvVars)
+                    ?: System.getenv("GOOGLE_API_KEY")
+                    ?: throw IllegalArgumentException("Google API key not provided in URL or GOOGLE_API_KEY environment variable")
+
+                val client = GoogleLLMClient(apiKey = apiKey)
+                val model = knownModels[client.llmProvider() to modelName]
+                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
+                if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
+                LLMEmbedder(client, model)
+            }
 
             // Register Ollama
             register("ollama") { name, url, context ->
@@ -125,7 +150,7 @@ public value class EmbedderSettings(
                 // Handle auto-start and auto-pull if requested
                 if (autoStart || autoPull) {
                     val manager = OllamaManager(baseUrl)
-                    kotlinx.coroutines.runBlocking {
+                    runBlocking {
                         manager.ensureReady(
                             model = modelName,
                             startServer = autoStart,
@@ -135,8 +160,8 @@ public value class EmbedderSettings(
                 }
 
                 val client = OllamaClient(baseUrl = baseUrl)
-                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
-                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
+                val model = knownModels[client.llmProvider() to modelName]
+                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
                 if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }
@@ -151,7 +176,7 @@ public value class EmbedderSettings(
 
                 // Auto-start and auto-pull by default
                 val manager = OllamaManager(baseUrl)
-                kotlinx.coroutines.runBlocking {
+                runBlocking {
                     manager.ensureReady(
                         model = modelName,
                         startServer = autoStart,
@@ -160,26 +185,46 @@ public value class EmbedderSettings(
                 }
 
                 val client = OllamaClient(baseUrl = baseUrl)
-                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
-                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
+                val model = knownModels[client.llmProvider() to modelName]
+                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
                 if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }
-//
-//            // Register OpenRouter
-//            register("openrouter") { name, url, context ->
-//                val params = parseUrlParams(url)
-//                val modelName = url.substringAfter("://", "").substringBefore("?")
-//                val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-//                    ?: System.getenv("OPENROUTER_API_KEY")
-//                    ?: throw IllegalArgumentException("OpenRouter API key not provided in URL or OPENROUTER_API_KEY environment variable")
-//
-//                val client = OpenRouterLLMClient(apiKey = apiKey)
-//                val model = LLMClientAndModelSettings.knownModels[client.llmProvider() to modelName]
-//                    ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${LLMClientAndModelSettings.knownModels.keys}")
-//                if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
-//                LLMEmbedder(client, model)
-//            }
+
+            // Register AWS Bedrock
+            // URL formats:
+            //   bedrock://{model-id}?region={region}  - Uses AWS default credential chain
+            //   bedrock://{accessKeyId}:{secretKey}@{model-id}?region={region}  - Static credentials
+            register("bedrock") { _, url, _ ->
+                val params = parseUrlParams(url)
+                val region = params["region"]?.let(::resolveEnvVars)
+                    ?: System.getenv("AWS_REGION")
+                    ?: "us-east-1"
+
+                // Parse the authority part to check for credentials
+                val authority = url.substringAfter("://", "").substringBefore("?")
+                val (credentialsProvider, modelName) = if (authority.contains("@")) {
+                    // Format: accessKeyId:secretKey@model-id
+                    val credentials = authority.substringBefore("@")
+                    val model = authority.substringAfter("@")
+                    val accessKeyId = resolveEnvVars(credentials.substringBefore(":"))
+                    val secretKey = resolveEnvVars(credentials.substringAfter(":"))
+                    StaticCredentialsProvider(Credentials(accessKeyId, secretKey)) to model
+                } else {
+                    // No credentials in URL - use default chain
+                    // This automatically picks up IAM role credentials in Lambda/EC2/ECS
+                    DefaultChainCredentialsProvider() to authority
+                }
+
+                val settings = BedrockClientSettings(region = region)
+                val client = BedrockLLMClient(
+                    identityProvider = credentialsProvider,
+                    settings = settings
+                )
+                val model = knownModels[client.llmProvider() to modelName]
+                    ?: throw IllegalStateException("Unknown Bedrock model '$modelName'. Known Bedrock models: ${knownModels.keys.filter { it.first.id == "bedrock" }}")
+                LLMEmbedder(client, model)
+            }
         }
     }
 
@@ -190,9 +235,6 @@ public value class EmbedderSettings(
         return parse(name, url, context)
     }
 }
-
-// Note by Claude: parseUrlParams and resolveEnvVars are duplicated from LLMClientAndModelSettings.kt.
-// Consider extracting to a shared utility if this pattern continues to grow.
 
 /**
  * Parses URL query parameters into a map.
