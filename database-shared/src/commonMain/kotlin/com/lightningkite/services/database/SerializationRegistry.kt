@@ -382,30 +382,44 @@ public class SerializationRegistry(public val module: SerializersModule) {
         val kind = value.descriptor.kind
         return when (kind) {
             StructureKind.CLASS -> if (value.descriptor.isInline && value.descriptor.getElementDescriptor(0).kind is PrimitiveKind) {
-                val inner = value.descriptor.getElementDescriptor(0)
-                register(
-                    VirtualAlias(
-                        serialName = value.descriptor.serialName,
-                        annotations = value.descriptor.annotations.mapNotNull {
-                            SerializableAnnotation.Companion.parseOrNull(
-                                it
-                            )
-                        } + inner.annotations.mapNotNull { SerializableAnnotation.Companion.parseOrNull(it) },
-                        wraps = VirtualTypeReference(
-                            when (val kind = inner.kind as PrimitiveKind) {
-                                PrimitiveKind.BOOLEAN -> "kotlin.Boolean"
-                                PrimitiveKind.BYTE -> "kotlin.Byte"
-                                PrimitiveKind.CHAR -> "kotlin.Char"
-                                PrimitiveKind.DOUBLE -> "kotlin.Double"
-                                PrimitiveKind.FLOAT -> "kotlin.Float"
-                                PrimitiveKind.INT -> "kotlin.Int"
-                                PrimitiveKind.LONG -> "kotlin.Long"
-                                PrimitiveKind.SHORT -> "kotlin.Short"
-                                PrimitiveKind.STRING -> "kotlin.String"
-                            }, arguments = listOf(), isNullable = inner.isNullable || value.descriptor.isNullable
+                (value as? GeneratedSerializer<*>)?.childSerializers()?.getOrNull(0)?.let { inner ->
+                    register(
+                        VirtualAlias(
+                            serialName = value.descriptor.serialName,
+                            annotations = value.descriptor.annotations.mapNotNull {
+                                SerializableAnnotation.Companion.parseOrNull(
+                                    it
+                                )
+                            } + inner.descriptor.annotations.mapNotNull { SerializableAnnotation.Companion.parseOrNull(it) },
+                            wraps = inner.virtualTypeReference(this)
                         )
                     )
-                )
+                } ?: run {
+                    val inner = value.descriptor.getElementDescriptor(0)
+                    register(
+                        VirtualAlias(
+                            serialName = value.descriptor.serialName,
+                            annotations = value.descriptor.annotations.mapNotNull {
+                                SerializableAnnotation.Companion.parseOrNull(
+                                    it
+                                )
+                            } + inner.annotations.mapNotNull { SerializableAnnotation.Companion.parseOrNull(it) },
+                            wraps = VirtualTypeReference(
+                                when (val kind = inner.kind as PrimitiveKind) {
+                                    PrimitiveKind.BOOLEAN -> "kotlin.Boolean"
+                                    PrimitiveKind.BYTE -> "kotlin.Byte"
+                                    PrimitiveKind.CHAR -> "kotlin.Char"
+                                    PrimitiveKind.DOUBLE -> "kotlin.Double"
+                                    PrimitiveKind.FLOAT -> "kotlin.Float"
+                                    PrimitiveKind.INT -> "kotlin.Int"
+                                    PrimitiveKind.LONG -> "kotlin.Long"
+                                    PrimitiveKind.SHORT -> "kotlin.Short"
+                                    PrimitiveKind.STRING -> "kotlin.String"
+                                }, arguments = listOf(), isNullable = inner.isNullable || value.descriptor.isNullable
+                            )
+                        )
+                    )
+                }
             } else register(
                 VirtualStruct(
                     serialName = value.descriptor.serialName,
@@ -519,30 +533,44 @@ public class SerializationRegistry(public val module: SerializersModule) {
         return when (kind) {
             StructureKind.CLASS -> {
                 if (value.descriptor.isInline && value.descriptor.getElementDescriptor(0).kind is PrimitiveKind) {
-                    val inner = value.descriptor.getElementDescriptor(0)
-                    register(
-                        VirtualAlias(
-                            serialName = value.descriptor.serialName,
-                            annotations = value.descriptor.annotations.mapNotNull {
-                                SerializableAnnotation.Companion.parseOrNull(
-                                    it
-                                )
-                            } + inner.annotations.mapNotNull { SerializableAnnotation.Companion.parseOrNull(it) },
-                            wraps = VirtualTypeReference(
-                                when (val kind = inner.kind as PrimitiveKind) {
-                                    PrimitiveKind.BOOLEAN -> "kotlin.Boolean"
-                                    PrimitiveKind.BYTE -> "kotlin.Byte"
-                                    PrimitiveKind.CHAR -> "kotlin.Char"
-                                    PrimitiveKind.DOUBLE -> "kotlin.Double"
-                                    PrimitiveKind.FLOAT -> "kotlin.Float"
-                                    PrimitiveKind.INT -> "kotlin.Int"
-                                    PrimitiveKind.LONG -> "kotlin.Long"
-                                    PrimitiveKind.SHORT -> "kotlin.Short"
-                                    PrimitiveKind.STRING -> "kotlin.String"
-                                }, arguments = listOf(), isNullable = inner.isNullable || value.descriptor.isNullable
+                    (value as? GeneratedSerializer<*>)?.childSerializers()?.getOrNull(0)?.let { inner ->
+                        register(
+                            VirtualAlias(
+                                serialName = value.descriptor.serialName,
+                                annotations = value.descriptor.annotations.mapNotNull {
+                                    SerializableAnnotation.Companion.parseOrNull(
+                                        it
+                                    )
+                                } + inner.descriptor.annotations.mapNotNull { SerializableAnnotation.Companion.parseOrNull(it) },
+                                wraps = inner.virtualTypeReference(this)
                             )
                         )
-                    )
+                    } ?: run {
+                        val inner = value.descriptor.getElementDescriptor(0)
+                        register(
+                            VirtualAlias(
+                                serialName = value.descriptor.serialName,
+                                annotations = value.descriptor.annotations.mapNotNull {
+                                    SerializableAnnotation.Companion.parseOrNull(
+                                        it
+                                    )
+                                } + inner.annotations.mapNotNull { SerializableAnnotation.Companion.parseOrNull(it) },
+                                wraps = VirtualTypeReference(
+                                    when (val kind = inner.kind as PrimitiveKind) {
+                                        PrimitiveKind.BOOLEAN -> "kotlin.Boolean"
+                                        PrimitiveKind.BYTE -> "kotlin.Byte"
+                                        PrimitiveKind.CHAR -> "kotlin.Char"
+                                        PrimitiveKind.DOUBLE -> "kotlin.Double"
+                                        PrimitiveKind.FLOAT -> "kotlin.Float"
+                                        PrimitiveKind.INT -> "kotlin.Int"
+                                        PrimitiveKind.LONG -> "kotlin.Long"
+                                        PrimitiveKind.SHORT -> "kotlin.Short"
+                                        PrimitiveKind.STRING -> "kotlin.String"
+                                    }, arguments = listOf(), isNullable = inner.isNullable || value.descriptor.isNullable
+                                )
+                            )
+                        )
+                    }
                 } else register(
                     VirtualStruct(
                         serialName = value.descriptor.serialName,
