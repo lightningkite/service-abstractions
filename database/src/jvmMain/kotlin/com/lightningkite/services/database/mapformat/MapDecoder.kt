@@ -321,6 +321,7 @@ internal class ConverterDecoder(
     override fun decodeDouble(): Double = read()
     override fun decodeChar(): Char = read()
     override fun decodeString(): String = read()
+    @ExperimentalSerializationApi
     override fun decodeNull(): Nothing? = null
 
     override fun decodeEnum(enumDescriptor: SerialDescriptor): Int {
@@ -329,6 +330,7 @@ internal class ConverterDecoder(
     }
 
     override fun decodeInline(descriptor: SerialDescriptor): Decoder = this
+    @ExperimentalSerializationApi
     override fun decodeNotNullMark(): Boolean = input.readField(path) != null
 
     @OptIn(ExperimentalSerializationApi::class)

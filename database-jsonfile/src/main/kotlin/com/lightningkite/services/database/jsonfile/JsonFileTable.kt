@@ -30,19 +30,18 @@ import java.util.Collections
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
  * and writing the collection data into a file when closing.
  */
-internal class JsonFileTable<Model : Any>(
-    val encoding: StringFormat,
+public class JsonFileTable<Model : Any>(
+    public val encoding: StringFormat,
     serializer: KSerializer<Model>,
-    val file: KFile,
-    val tableName: String,
+    public val file: KFile,
+    public val tableName: String,
     private val tracer: Tracer?
 ) : InMemoryTable<Model>(
     data = Collections.synchronizedList(ArrayList()),
     serializer = serializer
 ), Closeable {
-
-    companion object {
-        val logger = KotlinLogging.logger("com.lightningkite.services.database.jsonfile.JsonFileTable")
+    public companion object {
+        internal val logger = KotlinLogging.logger("com.lightningkite.services.database.jsonfile.JsonFileTable")
     }
 
     private suspend inline fun <R> traced(
@@ -82,7 +81,7 @@ internal class JsonFileTable<Model : Any>(
     private val scope = CoroutineScope(Dispatchers.IO)
 
     @OptIn(ObsoleteCoroutinesApi::class)
-    val saveScope = scope.actor<Unit>(start = CoroutineStart.LAZY) {
+    private val saveScope = scope.actor<Unit>(start = CoroutineStart.LAZY) {
         handleCollectionDump()
     }
 
@@ -105,7 +104,7 @@ internal class JsonFileTable<Model : Any>(
         }
     }
 
-    fun handleCollectionDump() {
+    public fun handleCollectionDump() {
         val temp = file.parent!!.then(file.name + ".saving")
         temp.writeString(encoding.encodeToString(ListSerializer(serializer), data.toList()))
         temp.atomicMove(file)
