@@ -160,6 +160,7 @@ public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrock(
  *
  * @see <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html">AWS Bedrock Model Access</a>
  */
+@JvmName("awsBedrockEmbedder")
 context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<EmbedderSettings>.awsBedrock(
     modelId: String,
@@ -278,6 +279,7 @@ public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrock(
  * @see <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html">AWS Bedrock Model Access</a>
  */
 context(emitter: TerraformEmitterAws)
+@JvmName("awsBedrockEmbedder")
 public fun TerraformNeed<EmbedderSettings>.awsBedrock(
     model: LLModel,
     region: String = emitter.applicationRegion,
