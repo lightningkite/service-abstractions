@@ -74,9 +74,20 @@ private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = D
         is Condition.Equal -> into.sub(key)["\$eq"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.NotEqual -> into.sub(key)["\$ne"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.SetAllElements<*> -> (condition as Condition<Any?>).dump(serializer.listElement()!! as KSerializer<Any?>, into.sub(key).sub("\$not").sub("\$elemMatch"), key = "\$not", atlasSearch = atlasSearch, bson = bson)
-        is Condition.SetAnyElements<*> -> into.sub(key)["\$elemMatch"] = (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
+        // by Claude - Atlas $vectorSearch doesn't support $elemMatch in pre-filters.
+        // When atlasSearch=true, dump the inner condition directly on the key instead;
+        // MongoDB scalar operators ($eq, $in, etc.) on array fields already match element-wise.
+        is Condition.SetAnyElements<*> -> if (atlasSearch) {
+            (condition as Condition<Any?>).dump(serializer.listElement()!! as KSerializer<Any?>, into, key, atlasSearch = atlasSearch, bson = bson)
+        } else {
+            into.sub(key)["\$elemMatch"] = (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
+        }
         is Condition.ListAllElements<*> -> (condition as Condition<Any?>).dump(serializer.listElement()!! as KSerializer<Any?>, into.sub(key).sub("\$not").sub("\$elemMatch"), key = "\$not", atlasSearch = atlasSearch, bson = bson)
-        is Condition.ListAnyElements<*> -> into.sub(key)["\$elemMatch"] = (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
+        is Condition.ListAnyElements<*> -> if (atlasSearch) {
+            (condition as Condition<Any?>).dump(serializer.listElement()!! as KSerializer<Any?>, into, key, atlasSearch = atlasSearch, bson = bson)
+        } else {
+            into.sub(key)["\$elemMatch"] = (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
+        }
         is Condition.Exists<*> -> into[if (key == null) this.key else "$key.${this.key}"] = documentOf("\$exists" to true)
         is Condition.GreaterThan -> into.sub(key)["\$gt"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.LessThan -> into.sub(key)["\$lt"] = value.let { bson.stringifyAny(serializer, it) }

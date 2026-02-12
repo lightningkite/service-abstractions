@@ -23,6 +23,10 @@ class RamSortTest: SortTest() {
 class RamMetaTest: MetaTest() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
+// by Claude
+class RamVectorSearchTests: VectorSearchTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
 class MetadataTest {
     @Test fun check() {
         println(LargeTestModel_uuid.serializer.descriptor.serialName)

@@ -91,6 +91,7 @@ context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     orgId: String,
     backupEnabled: Boolean = true,
+    atlasSearch: Boolean = true,
     zoneName: String? = null,
     minSize: String = "M10",
     maxSize: String = "M40",
@@ -103,7 +104,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
         this@mongodbAtlas.name, JsonPrimitive(
             value = $$"""
         mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings.standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent()
+    """.trimIndent()  + (if(atlasSearch) "&atlasSearch=true" else "")
         )
     )
     emptyList<com.lightningkite.services.terraform.TerraformProvider>().forEach { emitter.require(it) }
@@ -252,6 +253,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
 context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
     orgId: String,
+    atlasSearch: Boolean = true,
     zoneName: String? = null,
     existingProjectId: String? = null,
 ): Unit {
@@ -262,7 +264,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
         this@mongodbAtlasFree.name, JsonPrimitive(
             value = $$"""
         mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings.standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent()
+    """.trimIndent()  + (if(atlasSearch) "&atlasSearch=true" else "")
         )
     )
     emptyList<com.lightningkite.services.terraform.TerraformProvider>().forEach { emitter.require(it) }
@@ -352,6 +354,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
 @Untested
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
     orgId: String,
+    atlasSearch: Boolean = true,
     backupEnabled: Boolean = true,
     zoneName: String? = null,
     existingProjectId: String? = null,
@@ -363,7 +366,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         name, JsonPrimitive(
             value = $$"""
         mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings.standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent()
+    """.trimIndent()  + (if(atlasSearch) "&atlasSearch=true" else "")
         )
     )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }

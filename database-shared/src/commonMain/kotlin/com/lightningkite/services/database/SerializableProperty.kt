@@ -34,10 +34,12 @@ public interface SerializableProperty<A, B> {
         override val serializer: KSerializer<B> by lazy { parent.childSerializers()[index] as KSerializer<B> }
         override fun setCopy(receiver: A, value: B): A = parent.set(receiver, index, serializer, value)
         override fun get(receiver: A): B = (parent as KSerializer<A>).get(receiver, index, serializer)
-        // by Claude - Combine annotations from both parent (field-level) and child serializer (type-level)
+        override val annotations: List<Annotation> by lazy {
+            parent.descriptor.getElementAnnotations(index) + serializer.descriptor.annotations
+        }
         @OptIn(ExperimentalSerializationApi::class)
         override val serializableAnnotations: List<SerializableAnnotation> by lazy {
-            (parent.descriptor.getElementAnnotations(index) + serializer.descriptor.annotations)
+            annotations
                 .mapNotNull { SerializableAnnotation.parseOrNull(it) }
         }
 

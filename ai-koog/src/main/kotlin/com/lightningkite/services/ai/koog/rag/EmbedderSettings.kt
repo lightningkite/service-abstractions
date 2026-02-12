@@ -10,6 +10,7 @@ import ai.koog.prompt.executor.ollama.client.OllamaClient
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLModel
 import aws.sdk.kotlin.runtime.auth.credentials.DefaultChainCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.ProfileCredentialsProvider
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import com.lightningkite.services.Setting
@@ -94,6 +95,13 @@ public value class EmbedderSettings(
         ): Settings =
             Settings("bedrock://${accessKeyId}:${secretAccessKey}@${model.id}" + (region?.let { "?region=$it" } ?: ""))
 
+        public fun bedrock(
+            model: LLModel,
+            profile: String,
+            region: String? = null
+        ): Settings =
+            Settings("bedrock://${profile}@${model.id}" + (region?.let { "?region=$it" } ?: ""))
+
         /**
          * Creates settings for Ollama embeddings with automatic server start and model pull.
          *
@@ -120,7 +128,6 @@ public value class EmbedderSettings(
                 val client = OpenAILLMClient(apiKey = apiKey)
                 val model = knownModels[client.llmProvider() to modelName]
                     ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
-                if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }
 
@@ -135,7 +142,6 @@ public value class EmbedderSettings(
                 val client = GoogleLLMClient(apiKey = apiKey)
                 val model = knownModels[client.llmProvider() to modelName]
                     ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
-                if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }
 
@@ -162,7 +168,6 @@ public value class EmbedderSettings(
                 val client = OllamaClient(baseUrl = baseUrl)
                 val model = knownModels[client.llmProvider() to modelName]
                     ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
-                if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }
 
@@ -187,7 +192,6 @@ public value class EmbedderSettings(
                 val client = OllamaClient(baseUrl = baseUrl)
                 val model = knownModels[client.llmProvider() to modelName]
                     ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
-                if (LLMCapability.Embed !in model.capabilities) throw IllegalStateException("Model '${model.id}' does not support embedding.")
                 LLMEmbedder(client, model)
             }
 
@@ -207,9 +211,13 @@ public value class EmbedderSettings(
                     // Format: accessKeyId:secretKey@model-id
                     val credentials = authority.substringBefore("@")
                     val model = authority.substringAfter("@")
-                    val accessKeyId = resolveEnvVars(credentials.substringBefore(":"))
-                    val secretKey = resolveEnvVars(credentials.substringAfter(":"))
-                    StaticCredentialsProvider(Credentials(accessKeyId, secretKey)) to model
+                    if(credentials.contains(':')) {
+                        val accessKeyId = resolveEnvVars(credentials.substringBefore(":"))
+                        val secretKey = resolveEnvVars(credentials.substringAfter(":"))
+                        StaticCredentialsProvider(Credentials(accessKeyId, secretKey)) to model
+                    } else {
+                        ProfileCredentialsProvider(credentials) to model
+                    }
                 } else {
                     // No credentials in URL - use default chain
                     // This automatically picks up IAM role credentials in Lambda/EC2/ECS
