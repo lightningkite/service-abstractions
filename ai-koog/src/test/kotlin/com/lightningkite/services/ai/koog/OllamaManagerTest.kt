@@ -1,5 +1,6 @@
 package com.lightningkite.services.ai.koog
 
+import com.lightningkite.services.ai.koog.rag.EmbedderSettings
 import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
