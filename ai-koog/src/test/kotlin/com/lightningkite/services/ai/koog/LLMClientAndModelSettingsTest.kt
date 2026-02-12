@@ -211,7 +211,7 @@ class LLMClientAndModelSettingsTest {
     @Test
     fun testFactoryMethodBedrockWithRegion() {
         val model = BedrockModels.AnthropicClaude4Sonnet
-        val settings = LLMClientAndModel.Settings.bedrock(model, "us-west-2")
+        val settings = LLMClientAndModel.Settings.bedrock(model, region = "us-west-2")
         assertEquals("bedrock://${model.id}?region=us-west-2", settings.url)
     }
 
