@@ -1,5 +1,6 @@
 package com.lightningkite.serviceabstractions.data
 
+import com.lightningkite.services.data.AnnotationValidators
 import com.lightningkite.services.data.GenerateDataClassPaths
 import com.lightningkite.services.data.IntegerRange
 import com.lightningkite.services.data.MaxLength
@@ -7,7 +8,10 @@ import com.lightningkite.services.data.MaxSize
 import com.lightningkite.services.data.Validators
 import com.lightningkite.services.data.validateFast
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.NothingSerializer
+import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.serializer
 import kotlin.test.Test
 import kotlin.test.*
@@ -47,5 +51,10 @@ class ValidationTest {
     fun test() {
         assertPasses(Sample("ASDFA"))
         assertFails(Sample("ASDFAB"))
+    }
+
+    @Test fun temp() {
+        AnnotationValidators.standard
+
     }
 }

@@ -36,8 +36,8 @@ annotation class CheckReturnValue
 
 /**
  * Meta-annotation that marks an annotation as used to validate the data it is applied to.
- * If an annotation has `@Validation` applied, it states that any data with the annotation applied will
- * be validated. If the data is not a viable type a warning will be printed.
+ * If an annotation has `@ValidationAnnotation` applied, it states that any data with the annotation applied will
+ * be validated. If the data is not a viable type for validation a warning will be printed.
  * */
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.ANNOTATION_CLASS)
