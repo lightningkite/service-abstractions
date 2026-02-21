@@ -21,7 +21,6 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractDecoder
 import kotlinx.serialization.encoding.AbstractEncoder
@@ -238,14 +237,15 @@ internal fun <T, V> KSerializer<T>.get(instance: T, index: Int, childSerializer:
  * @param module Optional serialization module.
  * @return A new object with the updated field.
  */
-internal fun <T, V> KSerializer<T>.set(instance: T, index: Int, childSerializer: KSerializer<V>, value: V, module: SerializersModule = empty ): T {
+internal fun <T, V> KSerializer<T>.set(instance: T, index: Int, childSerializer: KSerializer<V>, value: V, module: SerializersModule = empty): T {
+    if (descriptor.isInline) return deserialize(MinDecoder(module, value))
+
     val e = MinEncoder(module)
     this.serialize(e, instance)
-    val newValue = value
     val eo = e.output as ArrayList<Any?>
 //    println("Before: $eo")
 //    println("Before Types: ${eo.joinToString(", ", "[", "]") { it?.let { it::class.simpleName } ?: "null"}}")
-    eo[index] = newValue
+    eo[index] = value
 //    println("After : $eo")
 //    println("After  Types: ${eo.joinToString(", ", "[", "]") { it?.let { it::class.simpleName } ?: "null"}}")
     @Suppress("UNCHECKED_CAST") val d = MinDecoder(module, e.output)

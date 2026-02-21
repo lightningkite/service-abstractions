@@ -160,11 +160,18 @@ data class ValueClassContainingTest(
     override val _id: Uuid = Uuid.random(),
     val direct: ValueClass = ValueClass("direct"),
     val set: Set<ValueClass> = setOf(ValueClass("set")),
+    val wrappedInt: IntWrapper = IntWrapper(42),
 ): HasId<Uuid>
 
 @Serializable
 @JvmInline
+@GenerateDataClassPaths
 value class ValueClass(val value: String)
+
+@Serializable
+@JvmInline
+@GenerateDataClassPaths
+value class IntWrapper(val int: Int)
 
 @GenerateDataClassPaths
 @Serializable

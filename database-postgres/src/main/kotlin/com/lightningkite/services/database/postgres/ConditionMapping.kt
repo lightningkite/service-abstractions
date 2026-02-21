@@ -41,12 +41,16 @@ internal data class FieldSet2<V>(val serializer: KSerializer<V>, val fields: Map
 
     fun format(value: V): Map<ExpressionWithColumnType<Any?>, Expression<Any?>> {
         return format.encode(serializer, value)
-            .also {
-                println("Formatted $value (${value?.let { it::class.qualifiedName }}) to ${it.entries.joinToString(", ") { (k, v) ->
-                    "$k: $v (${v?.let { it::class.qualifiedName }})"
-                }}")
-            }
-            .mapKeys { fields[it.key]!! }.mapValues { sqlLiteralOfSomeKind(it.key.columnType, it.value) }
+//            .also {
+//                println("Formatted $value (${value?.let { it::class.qualifiedName }}) to ${it.entries.joinToString(", ") { (k, v) ->
+//                    "$k: $v (${v?.let { it::class.qualifiedName }})"
+//                }}")
+//            }
+            .mapKeys {
+                println("Fields: $fields")
+                println("Key: ${it.key}")
+                fields[it.key]!!
+            }.mapValues { sqlLiteralOfSomeKind(it.key.columnType, it.value) }
     }
     fun formatSingle(value: V): Any? {
         return format.encode(serializer, value)[""].also { println("Formatted $value (${value?.let { it::class.qualifiedName }}) to $it (${it?.let { it::class.qualifiedName }})") }

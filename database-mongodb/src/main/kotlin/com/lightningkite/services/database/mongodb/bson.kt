@@ -145,7 +145,16 @@ private fun <T> Condition<T>.dump(serializer: KSerializer<T>, into: Document = D
         }
         is Condition.SetSizesEquals<*> -> into.sub(key)["\$size"] = count
         is Condition.ListSizesEquals<*> -> into.sub(key)["\$size"] = count
-        is Condition.OnField<*, *> -> (condition as Condition<Any?>).dump(this.key.serializer as KSerializer<Any?>, into, if (key == null) this.key.name else "$key.${this.key.name}", atlasSearch = atlasSearch, bson = bson)
+        is Condition.OnField<*, *> -> (condition as Condition<Any?>).dump(
+            this.key.serializer as KSerializer<Any?>,
+            into,
+            key =
+                if (this.key.inline) key
+                else if (key == null) this.key.name
+                else "$key.${this.key.name}",
+            atlasSearch = atlasSearch,
+            bson = bson
+        )
     }
     return into
 }
@@ -164,8 +173,15 @@ private fun <T> Modification<T>.dump(serializer: KSerializer<T>, update: UpdateW
         is Modification.AppendString -> TODO("Appending strings is not supported yet")
         is Modification.AppendRawString -> TODO("Appending raw strings is not supported yet")
         is Modification.IfNotNull<*> -> (modification as Modification<Any?>).dump(serializer.nullElement()!! as KSerializer<Any?>, update, key, bson = bson)
-        is Modification.OnField<*, *> ->
-            (modification as Modification<Any?>).dump(this.key.serializer as KSerializer<Any?>, update, if (key == null) this.key.name else "$key.${this.key.name}", bson = bson)
+        is Modification.OnField<*, *> -> (modification as Modification<Any?>).dump(
+            this.key.serializer as KSerializer<Any?>,
+            update,
+            key =
+                if (this.key.inline) key
+                else if (key == null) this.key.name
+                else "$key.${this.key.name}",
+            bson = bson
+        )
         is Modification.ListAppend<*> -> into.sub("\$push").sub(key)["\$each"] = items.let { bson.stringifyAny(serializer as KSerializer<List<Any?>>, it) }
         is Modification.ListRemove<*> -> into["\$pull", key] = (condition as Condition<Any?>).bson(serializer.listElement() as KSerializer<Any?>, bson = bson)
         is Modification.ListRemoveInstances<*> -> into["\$pullAll", key] = items.let { bson.stringifyAny(serializer as KSerializer<List<Any?>>, it) }

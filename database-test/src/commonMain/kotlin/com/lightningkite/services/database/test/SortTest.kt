@@ -37,6 +37,27 @@ abstract class SortTest {
     }
 
     @Test
+    fun testSortInlineInt()= runTest {
+        val collection = database.table<ValueClassContainingTest>("SortTest_testSortInlineInt")
+        val items = listOf(
+            ValueClassContainingTest(wrappedInt = IntWrapper(4)),
+            ValueClassContainingTest(wrappedInt = IntWrapper(5)),
+            ValueClassContainingTest(wrappedInt = IntWrapper(1)),
+            ValueClassContainingTest(wrappedInt = IntWrapper(2)),
+            ValueClassContainingTest(wrappedInt = IntWrapper(6)),
+            ValueClassContainingTest(wrappedInt = IntWrapper(3)),
+        )
+        val sortedPosts = items.sortedBy { it.wrappedInt.int }
+        val reversePosts = items.sortedByDescending { it.wrappedInt.int }
+        collection.insertMany(items)
+        // Note: results without ordering are not guaranteed to match insertion order
+        val results2 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<ValueClassContainingTest>().wrappedInt.int, true))).toList()
+        val results3 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<ValueClassContainingTest>().wrappedInt.int, false))).toList()
+        assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
+        assertEquals(reversePosts.map { it._id }, results3.map { it._id })
+    }
+
+    @Test
     fun testSortIntEmbedded()= runTest {
         val collection = database.table<LargeTestModel>("SortTest_testSortIntEmbedded")
         val items = listOf(
