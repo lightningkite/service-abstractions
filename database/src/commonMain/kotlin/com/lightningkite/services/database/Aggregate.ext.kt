@@ -1,5 +1,7 @@
 package com.lightningkite.services.database
 
+import kotlin.jvm.JvmName
+
 
 public inline fun <T> Aggregate.aggregate(
     iterator: Iterator<T>,
@@ -19,13 +21,14 @@ public inline fun <T, K> Aggregate.groupAggregate(
     return aggregators.mapValues { it.value.complete() }
 }
 
-
+@JvmName("aggregateDoubles")
 public fun Iterable<Double>.aggregate(
     aggregate: Aggregate,
     mode: Aggregator.Mode = Aggregator.Mode.Precision
 ): Double? =
     aggregate.aggregate(iterator(), mode) { it }
 
+@JvmName("aggregateNumbers")
 public fun <N : Number> Iterable<N>.aggregate(
     aggregate: Aggregate,
     mode: Aggregator.Mode = Aggregator.Mode.Precision
