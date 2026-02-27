@@ -1,7 +1,7 @@
 package com.lightningkite.services.ai.koog.rag
 
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -39,7 +39,7 @@ class DocumentEmbeddingStorageSettingsTest {
     @Test
     fun testSettingsComposition() {
         val embedderSettings = EmbedderSettings("ollama://nomic-embed-text")
-        val storageSettings = VectorStorageSettings<java.nio.file.Path>("rag-memory://")
+        val storageSettings = VectorStorageSettings<Path>("rag-memory://")
 
         val documentSettings = EmbeddingBasedDocumentStorageSettings(
             embedder = embedderSettings,

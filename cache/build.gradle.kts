@@ -83,6 +83,9 @@ kotlin {
         val jsMain by getting {
             dependsOn(nonJvmMain)
         }
+        val webMain by getting {
+            dependsOn(nonJvmMain)
+        }
         val jvmMain by getting {
             dependsOn(commonJvmMain)
         }

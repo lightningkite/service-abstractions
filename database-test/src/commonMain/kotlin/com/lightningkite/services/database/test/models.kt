@@ -256,6 +256,7 @@ data class VectorTestModel(
     override val _id: Uuid = Uuid.random(),
     val title: String = "",
     @Index val category: String = "",
+    @Index val tags: Set<String> = setOf(), // by Claude - for testing vector search with set filters
     @VectorIndex(dimensions = 3) val embedding: Embedding = Embedding(floatArrayOf()),
 ) : HasId<Uuid> {
     companion object

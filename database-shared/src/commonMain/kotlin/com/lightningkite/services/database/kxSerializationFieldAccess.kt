@@ -73,6 +73,8 @@ private class MinEncoder(
 private class MinDecoder(override val serializersModule: SerializersModule, var item: Any?) : AbstractDecoder() {
     override fun decodeNotNullMark(): Boolean = item != null
     override fun decodeValue(): Any = item!!
+
+    @Suppress("Unchecked_Cast")
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = decodeValue() as T
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int = throw IllegalStateException("Use MinDecoderB")
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = when(descriptor.kind) {
@@ -100,6 +102,7 @@ private class MinDecoderB(override val serializersModule: SerializersModule, var
     override fun decodeValue(): Any {
         return decode()!!
     }
+    @Suppress("Unchecked_Cast")
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = decode() as T
     override fun decodeSequentially(): Boolean = true
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
@@ -219,6 +222,7 @@ internal fun <T, V> KSerializer<T>.get(instance: T, index: Int, childSerializer:
     val e = MinEncoderSI(module, index)
     this.serialize(e, instance)
 //    println("Child: ${childSerializer.descriptor.serialName} (${childSerializer.descriptor.kind})")
+    @Suppress("Unchecked_Cast")
     return e.output as V
 //    val d = MinDecoder(module, e.output)
 //    return childSerializer.deserialize(d)
@@ -242,6 +246,7 @@ internal fun <T, V> KSerializer<T>.set(instance: T, index: Int, childSerializer:
 
     val e = MinEncoder(module)
     this.serialize(e, instance)
+    @Suppress("Unchecked_Cast")
     val eo = e.output as ArrayList<Any?>
 //    println("Before: $eo")
 //    println("Before Types: ${eo.joinToString(", ", "[", "]") { it?.let { it::class.simpleName } ?: "null"}}")

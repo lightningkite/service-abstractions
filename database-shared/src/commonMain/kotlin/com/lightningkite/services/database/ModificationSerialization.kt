@@ -105,7 +105,7 @@ private val stringOptions: List<MySealedClassSerializer.Option<Modification<Stri
 
 private fun <T : IsRawString> rawStringOptions(element: KSerializer<T>) =
     comparableOptions(element) + listOf(
-        MySealedClassSerializer.Option(Modification.AppendRawString.serializer(element), "AppendString", alternativeNames = setOf("AppendRawString"), priority = 45) { it is Modification.AppendRawString },
+        MySealedClassSerializer.Option(Modification.AppendRawString.serializer(element), "AppendString", alternativeNames = setOf("AppendRawString"), priority = 45) { true },
     )
 
 //private fun <T: Any> classOptions(inner: KSerializer<T>, fields: List<SerializableProperty<T, *>>): List<MySealedClassSerializer.Option<Modification<T>, *>> = commonOptions(inner) + fields.map { prop ->

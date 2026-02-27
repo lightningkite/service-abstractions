@@ -1,5 +1,7 @@
 package com.lightningkite.services.ai.koog
 
+import ai.koog.prompt.llm.LLModel
+import com.lightningkite.services.ai.koog.rag.EmbedderSettings
 import com.lightningkite.services.terraform.AwsPolicyStatement
 import com.lightningkite.services.terraform.TerraformEmitterAws
 import com.lightningkite.services.terraform.TerraformNeed
@@ -134,31 +136,53 @@ public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrock(
 }
 
 /**
- * Configures AWS Bedrock access with permissions for multiple models.
+ * Configures AWS Bedrock access for LLM inference.
  *
- * Use this when your application needs to switch between different models
- * or when you want to grant broader permissions.
+ * AWS Bedrock is a fully managed service, so this function primarily:
+ * - Generates the connection URL for the settings
+ * - Adds IAM policy statements for InvokeModel permissions
  *
- * @param modelIds List of Bedrock model IDs to grant access to
- * @param defaultModelId The model ID to use by default in the settings URL
- * @param region Optional AWS region override
+ * IMPORTANT: Model access must be manually enabled in the AWS Bedrock Console
+ * before using this configuration. This cannot be automated via Terraform.
+ *
+ * @param modelId The Bedrock model ID (e.g., "anthropic.claude-3-5-sonnet-20241022-v2:0",
+ *                "amazon.nova-pro-v1:0", "meta.llama3-70b-instruct-v1:0")
+ * @param region Optional AWS region override. Defaults to the emitter's applicationRegion.
+ *
+ * Example usage in Terraform DSL:
+ * ```kotlin
+ * context(emitter) {
+ *     need<LLMClientAndModel.Settings>("main-llm").awsBedrock(
+ *         modelId = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+ *     )
+ * }
+ * ```
+ *
+ * @see <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html">AWS Bedrock Model Access</a>
  */
+@JvmName("awsBedrockEmbedder")
 context(emitter: TerraformEmitterAws)
-public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrockMultiModel(
-    modelIds: List<String>,
-    defaultModelId: String = modelIds.first(),
+public fun TerraformNeed<EmbedderSettings>.awsBedrock(
+    modelId: String,
     region: String = emitter.applicationRegion,
 ): Unit {
-    require(modelIds.isNotEmpty()) { "modelIds cannot be empty" }
-    require(defaultModelId in modelIds) { "defaultModelId must be in modelIds list" }
+    if (!EmbedderSettings.supports("bedrock")) {
+        throw IllegalArgumentException(
+            "You need to register the 'bedrock' scheme in LLMClientAndModel.Settings to use this. " +
+                "Make sure you have the Bedrock client dependency and have registered the scheme."
+        )
+    }
+
+    // URL format: bedrock://{model-id}?region={region}
     emitter.fulfillSetting(
         name,
-        JsonPrimitive("bedrock://${defaultModelId}?region=${region}")
+        JsonPrimitive("bedrock://${modelId}?region=${region}")
     )
 
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
-    // Add IAM policy for all specified models
+    // Add IAM policy for Bedrock model invocation
+    // Using specific model ARN for least-privilege access
     // Note: Cross-region inference profiles (us., eu., ap. prefixes) require permissions on both
     // the inference profile AND the underlying foundation model (which can be in any region)
     emitter.policyStatements += AwsPolicyStatement(
@@ -166,42 +190,125 @@ public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrockMultiModel(
             "bedrock:InvokeModel",
             "bedrock:InvokeModelWithResponseStream"
         ),
-        resource = modelIds.flatMap { modelId -> bedrockModelArns(modelId, region) }
+        resource = bedrockModelArns(modelId, region)
     )
 }
 
+
 /**
- * Configures AWS Bedrock access with wildcard permissions for all models.
+ * Configures AWS Bedrock access for LLM inference.
  *
- * WARNING: This grants access to invoke ANY Bedrock model. Use with caution
- * and only when necessary. Prefer [awsBedrock] or [awsBedrockMultiModel]
- * for least-privilege access.
+ * AWS Bedrock is a fully managed service, so this function primarily:
+ * - Generates the connection URL for the settings
+ * - Adds IAM policy statements for InvokeModel permissions
  *
- * @param defaultModelId The model ID to use in the settings URL
- * @param region Optional AWS region override
+ * IMPORTANT: Model access must be manually enabled in the AWS Bedrock Console
+ * before using this configuration. This cannot be automated via Terraform.
+ *
+ * @param modelId The Bedrock model ID (e.g., "anthropic.claude-3-5-sonnet-20241022-v2:0",
+ *                "amazon.nova-pro-v1:0", "meta.llama3-70b-instruct-v1:0")
+ * @param region Optional AWS region override. Defaults to the emitter's applicationRegion.
+ *
+ * Example usage in Terraform DSL:
+ * ```kotlin
+ * context(emitter) {
+ *     need<LLMClientAndModel.Settings>("main-llm").awsBedrock(
+ *         modelId = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+ *     )
+ * }
+ * ```
+ *
+ * @see <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html">AWS Bedrock Model Access</a>
  */
 context(emitter: TerraformEmitterAws)
-public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrockAllModels(
-    defaultModelId: String,
+public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrock(
+    model: LLModel,
     region: String = emitter.applicationRegion,
 ): Unit {
+    if (!LLMClientAndModel.Settings.supports("bedrock")) {
+        throw IllegalArgumentException(
+            "You need to register the 'bedrock' scheme in LLMClientAndModel.Settings to use this. " +
+                "Make sure you have the Bedrock client dependency and have registered the scheme."
+        )
+    }
+
+    // URL format: bedrock://{model-id}?region={region}
     emitter.fulfillSetting(
         name,
-        JsonPrimitive("bedrock://${defaultModelId}?region=${region}")
+        JsonPrimitive("bedrock://${model.id}?region=${region}")
     )
 
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
-    // Wildcard access to all foundation models and inference profiles
-    // Uses wildcard region (*) because cross-region inference profiles route to different regions
+    // Add IAM policy for Bedrock model invocation
+    // Using specific model ARN for least-privilege access
+    // Note: Cross-region inference profiles (us., eu., ap. prefixes) require permissions on both
+    // the inference profile AND the underlying foundation model (which can be in any region)
     emitter.policyStatements += AwsPolicyStatement(
         action = listOf(
             "bedrock:InvokeModel",
             "bedrock:InvokeModelWithResponseStream"
         ),
-        resource = listOf(
-            "arn:aws:bedrock:*::foundation-model/*",
-            "arn:aws:bedrock:*:*:inference-profile/*"
-        )
+        resource = bedrockModelArns(model.id, region)
     )
 }
+
+/**
+ * Configures AWS Bedrock access for LLM inference.
+ *
+ * AWS Bedrock is a fully managed service, so this function primarily:
+ * - Generates the connection URL for the settings
+ * - Adds IAM policy statements for InvokeModel permissions
+ *
+ * IMPORTANT: Model access must be manually enabled in the AWS Bedrock Console
+ * before using this configuration. This cannot be automated via Terraform.
+ *
+ * @param modelId The Bedrock model ID (e.g., "anthropic.claude-3-5-sonnet-20241022-v2:0",
+ *                "amazon.nova-pro-v1:0", "meta.llama3-70b-instruct-v1:0")
+ * @param region Optional AWS region override. Defaults to the emitter's applicationRegion.
+ *
+ * Example usage in Terraform DSL:
+ * ```kotlin
+ * context(emitter) {
+ *     need<LLMClientAndModel.Settings>("main-llm").awsBedrock(
+ *         modelId = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+ *     )
+ * }
+ * ```
+ *
+ * @see <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html">AWS Bedrock Model Access</a>
+ */
+context(emitter: TerraformEmitterAws)
+@JvmName("awsBedrockEmbedder")
+public fun TerraformNeed<EmbedderSettings>.awsBedrock(
+    model: LLModel,
+    region: String = emitter.applicationRegion,
+): Unit {
+    if (!EmbedderSettings.supports("bedrock")) {
+        throw IllegalArgumentException(
+            "You need to register the 'bedrock' scheme in LLMClientAndModel.Settings to use this. " +
+                "Make sure you have the Bedrock client dependency and have registered the scheme."
+        )
+    }
+
+    // URL format: bedrock://{model-id}?region={region}
+    emitter.fulfillSetting(
+        name,
+        JsonPrimitive("bedrock://${model.id}?region=${region}")
+    )
+
+    setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    // Add IAM policy for Bedrock model invocation
+    // Using specific model ARN for least-privilege access
+    // Note: Cross-region inference profiles (us., eu., ap. prefixes) require permissions on both
+    // the inference profile AND the underlying foundation model (which can be in any region)
+    emitter.policyStatements += AwsPolicyStatement(
+        action = listOf(
+            "bedrock:InvokeModel",
+            "bedrock:InvokeModelWithResponseStream"
+        ),
+        resource = bedrockModelArns(model.id, region)
+    )
+}
+

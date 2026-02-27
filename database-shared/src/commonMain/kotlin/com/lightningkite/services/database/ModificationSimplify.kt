@@ -26,6 +26,7 @@ public fun <T> Modification<T>.simplify(): Modification<T> {
                     if (it is Modification.OnField<*, *>) it.key
                     else null
                 }.mapValues {
+                    @Suppress("Unchecked_Cast")
                     if (it.key == null) it.value.toMod()
                     else Modification.OnField(
                         it.key as SerializableProperty<T, Any?>,

@@ -61,7 +61,7 @@ internal object PrintMetricExporter : MetricExporter {
     val preferredTemporality: AggregationTemporality = AggregationTemporality.DELTA
     private val isShutdown = AtomicBoolean()
 
-    override fun getAggregationTemporality(instrumentType: InstrumentType?): AggregationTemporality? {
+    override fun getAggregationTemporality(instrumentType: InstrumentType): AggregationTemporality {
         return this.preferredTemporality
     }
 

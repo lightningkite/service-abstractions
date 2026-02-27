@@ -590,17 +590,26 @@ public class MongoTable<Model : Any>(
                                 } else throw e
                             }
                         } else {
-                            // Check if index needs updating
+                            // Check if index needs updating - by Claude
                             val existingFields = existing.getEmbedded(listOf("latestDefinition", "fields"), List::class.java) as? List<*>
                             val existingVectorField = existingFields?.firstOrNull { field ->
                                 (field as? org.bson.Document)?.getString("type") == "vector"
                             } as? org.bson.Document
 
-                            val needsUpdate = existingVectorField?.let { field ->
+                            // Check if filter fields match
+                            val existingFilterPaths = existingFields
+                                ?.filterIsInstance<org.bson.Document>()
+                                ?.filter { it.getString("type") == "filter" }
+                                ?.map { it.getString("path") }
+                                ?.toSet() ?: emptySet()
+
+                            val vectorFieldChanged = existingVectorField?.let { field ->
                                 field.getString("path") != vectorIndex.field ||
                                         field.getInteger("numDimensions") != vectorIndex.dimensions ||
                                         field.getString("similarity") != similarity
                             } ?: true
+                            val filterFieldsChanged = existingFilterPaths != filterFields.toSet()
+                            val needsUpdate = vectorFieldChanged || filterFieldsChanged
 
                             if (needsUpdate) {
                                 // Build updated fields list with vector field and filter fields
