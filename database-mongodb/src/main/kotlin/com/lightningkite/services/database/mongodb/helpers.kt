@@ -64,4 +64,4 @@ public fun <T> Codec<T>.fromDocument(doc: Document, registry: CodecRegistry): T 
     )
 }
 
-public val DataClassPathPartial<*>.mongo: String get() = properties.joinToString(".") { it.name }
+public val DataClassPathPartial<*>.mongo: String get() = properties.filter { !it.inline }.joinToString(".") { it.name }

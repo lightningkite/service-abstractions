@@ -74,21 +74,33 @@ fun vectorDb() = VectorTestDatabase.mongoClient ?: db()
 
 class MongodbAggregationsTest: AggregationsTest() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbConditionTests: ConditionTests() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbModificationTests: ModificationTests() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbOperationsTests: OperationsTests() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbSortTest: SortTest() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbMetaTest: MetaTest() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbIndexTest: IndexTests() {
     override val database: Database = db()

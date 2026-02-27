@@ -29,6 +29,7 @@ abstract class ConditionTests() {
         assertEquals(matching, collection.get(matching._id))
         assertEquals(notMatching, collection.get(notMatching._id))
         assertEquals(setOf(matching), collection.find(condition { it.direct.eq(matching.direct) }).toSet())
+        assertEquals(setOf(matching), collection.find(condition { it.direct.value.eq("1") }).toSet())
     }
     @Test open fun test_valueclassSet() = runTest {
         val collection = database.collection<ValueClassContainingTest>("test_valueclassSet")
@@ -43,6 +44,7 @@ abstract class ConditionTests() {
         assertEquals(matching, collection.get(matching._id))
         assertEquals(notMatching, collection.get(notMatching._id))
         assertEquals(setOf(matching), collection.find(condition { it.set.eq(matching.set) }).toSet())
+        assertEquals(setOf(matching), collection.find(condition { it.set.any { it.value.eq("1") } }).toSet())
     }
 
 

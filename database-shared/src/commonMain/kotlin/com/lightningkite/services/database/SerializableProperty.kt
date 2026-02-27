@@ -18,11 +18,8 @@ public interface SerializableProperty<A, B> {
     public val default: B? get() = null
     public val defaultCode: String? get() = null
     public val serializableAnnotations: List<SerializableAnnotation>
-        get() = annotations.mapNotNull {
-            SerializableAnnotation.Companion.parseOrNull(
-                it
-            )
-        }
+        get() = annotations.mapNotNull(SerializableAnnotation::parseOrNull)
+    public val inline: Boolean get() = false
 
     @Suppress("UNCHECKED_CAST")
     @OptIn(InternalSerializationApi::class)
@@ -42,6 +39,7 @@ public interface SerializableProperty<A, B> {
             annotations
                 .mapNotNull { SerializableAnnotation.parseOrNull(it) }
         }
+        override val inline: Boolean get() = parent.descriptor.isInline
 
         // by Claude - Detect dynamic defaults (Uuid.random(), Clock.System.now(), etc.) by deserializing twice
         @OptIn(ExperimentalSerializationApi::class)
