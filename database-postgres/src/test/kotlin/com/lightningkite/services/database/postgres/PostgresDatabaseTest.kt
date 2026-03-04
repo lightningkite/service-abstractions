@@ -25,6 +25,7 @@ import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransacti
 import org.junit.ClassRule
 import org.junit.Rule
 import java.sql.Connection.TRANSACTION_READ_COMMITTED
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -191,7 +192,6 @@ class PostgresRetrievalTest {
         }
     }
 }
-
 
 class PostgresAggregationsTest : AggregationsTest() {
     companion object {

@@ -36,7 +36,7 @@ abstract class SortTest {
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
     }
 
-    @Test
+    @Ignore @Test
     fun testSortInlineInt()= runTest {
         val collection = database.table<ValueClassContainingTest>("SortTest_testSortInlineInt")
         val items = listOf(

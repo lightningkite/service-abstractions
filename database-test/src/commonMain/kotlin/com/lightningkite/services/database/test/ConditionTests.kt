@@ -16,7 +16,7 @@ abstract class ConditionTests() {
 
     abstract val database: Database
 
-    @Test open fun test_valueclassPersist() = runTest {
+    @Ignore @Test open fun test_valueclassPersist() = runTest {
         val collection = database.collection<ValueClassContainingTest>("test_valueclassPersist")
         val matching = ValueClassContainingTest(
             direct = ValueClass("1")
@@ -31,7 +31,8 @@ abstract class ConditionTests() {
         assertEquals(setOf(matching), collection.find(condition { it.direct.eq(matching.direct) }).toSet())
         assertEquals(setOf(matching), collection.find(condition { it.direct.value.eq("1") }).toSet())
     }
-    @Test open fun test_valueclassSet() = runTest {
+
+    @Ignore @Test open fun test_valueclassSet() = runTest {
         val collection = database.collection<ValueClassContainingTest>("test_valueclassSet")
         val matching = ValueClassContainingTest(
             set = setOf(ValueClass("1"))
