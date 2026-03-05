@@ -358,12 +358,14 @@ public class JavaSmtpEmailService(
                         })
                     })
                 })
+                // by Claude - fixed Content-Disposition (was "form-data") and added Content-ID for inline/CID support
                 for (attachment in email.attachments) {
                     addBodyPart(MimeBodyPart().apply {
-                        addHeader(
-                            "Content-Disposition",
-                            "form-data;name=${if(attachment.inline) "inline" else "attachment"};filename=${attachment.filename}"
-                        )
+                        val disposition = if (attachment.inline) "inline" else "attachment"
+                        addHeader("Content-Disposition", "$disposition; filename=\"${attachment.filename}\"")
+                        if (attachment.inline) {
+                            addHeader("Content-ID", "<${attachment.filename}>")
+                        }
                         dataHandler = DataHandler(
                             ByteArrayDataSource(
                                 attachment.typedData.data.bytes(),
