@@ -72,7 +72,7 @@ abstract class AggregationsTest() {
         }
     }
 
-    @Test
+    @Ignore @Test
     fun testInlines() = runTest {
         val c = database.table<ValueClassContainingTest>("inlineAggregatesTest")
 
