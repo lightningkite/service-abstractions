@@ -2,17 +2,13 @@ package com.lightningkite.services.files
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.KFile
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.HMAC
 import dev.whyoleg.cryptography.algorithms.SHA256
-import kotlinx.io.IOException
-import kotlinx.io.buffered
+import kotlinx.io.*
 import kotlinx.io.files.FileNotFoundException
-import kotlinx.io.readString
-import kotlinx.io.writeString
+import kotlinx.io.files.Path
 import kotlin.time.Duration
 import kotlin.time.Instant
 
@@ -62,7 +58,7 @@ public class KotlinxIoPublicFileSystem(
         }
     }
 
-    override val root: KotlinxIoFile = KotlinxIoFile(rootKFile)
+    override val root: KotlinxIoFile = KotlinxIoFile(Path(""))
 
     override val rootUrls: List<String> = listOf(serveUrl)
 
@@ -116,7 +112,7 @@ public class KotlinxIoPublicFileSystem(
      */
     override fun parseInternalUrl(url: String): KotlinxIoFile? {
         if (!url.startsWith(serveUrl)) return null
-        return KotlinxIoFile(rootKFile.then(*url.substringAfter(serveUrl).split('/').toTypedArray()))
+        return KotlinxIoFile(Path(url.substringAfter(serveUrl)))
     }
 
     /**
@@ -139,9 +135,9 @@ public class KotlinxIoPublicFileSystem(
             if (context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
             if (!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
             if (data.upload) throw IllegalArgumentException("URL is for upload, not read")
-            KotlinxIoFile(rootKFile.then(*data.url.substringAfter(serveUrl).split('/').toTypedArray()))
+            KotlinxIoFile(Path(data.url.substringAfter(serveUrl)))
         } else
-            KotlinxIoFile(rootKFile.then(*url.substringBefore('?').substringAfter(serveUrl).split('/').toTypedArray()))
+            KotlinxIoFile(Path(url.substringBefore('?').substringAfter(serveUrl)))
     }
 
     /**
@@ -162,7 +158,7 @@ public class KotlinxIoPublicFileSystem(
         if (context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
         if (!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
         if (!data.upload) throw IllegalArgumentException("URL is for read, not upload")
-        return KotlinxIoFile(rootKFile.then(*data.url.substringAfter(serveUrl).split('/').toTypedArray()))
+        return KotlinxIoFile(Path(data.url.substringAfter(serveUrl)))
     }
 
     /**
@@ -174,24 +170,27 @@ public class KotlinxIoPublicFileSystem(
      * @param kfile The underlying KFile representing this file's location
      */
     public inner class KotlinxIoFile(
-        public val kfile: KFile,
+        public val path: Path,
     ) : FileObject {
+        internal val relativePath = path.toString().replace('\\', '/')
+
         init {
-            if (!kfile.path.toString()
-                    .startsWith(rootKFile.path.toString())
-            ) throw IllegalArgumentException("Invalid path.  '${kfile.path}' does not start with '${rootKFile.path}'")
+            if (relativePath.split("/").any { it == ".." || it == "." })
+                throw IllegalArgumentException("Invalid file path.")
         }
 
-        internal val relativePath = kfile.path.toString().removePrefix(rootKFile.path.toString()).replace('\\', '/')
+        public val kfile: KFile = KFile(rootKFile.fileSystem, Path(rootKFile.path, relativePath))
+        private val KFile.localPath get() = Path(path.toString().removePrefix(rootKFile.path.toString()))
 
         override fun toString(): String = relativePath
         override fun equals(other: Any?): Boolean = other is KotlinxIoFile && this.kfile == other.kfile
 
-        override val name: String = kfile.path.name
+        override val name: String = path.name
 
-        override fun then(path: String): FileObject = KotlinxIoFile(kfile.then(*path.split('/').toTypedArray()))
+        override fun then(path: String): FileObject = KotlinxIoFile(Path(this.path, path))
 
-        override val parent: FileObject? = if (kfile == rootKFile) null else kfile.parent?.let { KotlinxIoFile(it) }
+        override val parent: FileObject? =
+            if (kfile == rootKFile) null else kfile.parent?.let { KotlinxIoFile(it.localPath) }
 
         override val url: String = serveUrl.removeSuffix("/") + '/' + relativePath.removePrefix("/")
 
@@ -206,9 +205,6 @@ public class KotlinxIoPublicFileSystem(
             return DataToSign(url, context.clock.now().plus(timeout), true)
                 .signed()
         }
-
-        private val absolutePath: KFile
-            get() = kfile.resolved
 
         /**
          * Path to the sidecar file that stores this file's content type.
@@ -234,9 +230,9 @@ public class KotlinxIoPublicFileSystem(
             storageSystem = "file"
         ) {
             try {
-                kfile.list().filter { !it.name.endsWith(".contenttype") && it.name != ".signingKey" }.map {
-                    KotlinxIoFile(it)
-                }
+                kfile.list()
+                    .filter { !it.name.endsWith(".contenttype") && it.name != ".signingKey" }
+                    .map { KotlinxIoFile(it.localPath) }
             } catch (e: FileNotFoundException) {
                 null
             } catch (e: IOException) {
@@ -268,7 +264,7 @@ public class KotlinxIoPublicFileSystem(
                     MediaType(source.buffered().readString())
                 }
             } else {
-                MediaType.fromExtension(kfile.path.name.substringAfterLast('.', ""))
+                MediaType.fromExtension(path.name.substringAfterLast('.', ""))
             }
 
             FileInfo(
@@ -334,10 +330,13 @@ public class KotlinxIoPublicFileSystem(
                     MediaType(source.readString())
                 }
             } else {
-                MediaType.fromExtension(kfile.path.name.substringAfterLast('.', ""))
+                MediaType.fromExtension(path.name.substringAfterLast('.', ""))
             }
 
-            TypedData(Data.Source(kfile.source().buffered(), kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1), mediaType)
+            TypedData(
+                Data.Source(kfile.source().buffered(), kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1),
+                mediaType
+            )
         }
 
         /**
@@ -360,7 +359,7 @@ public class KotlinxIoPublicFileSystem(
                     kfile.delete()
                 }
             } catch (e: Exception) {
-                throw RuntimeException("Failed to delete file: ${kfile}", e)
+                throw RuntimeException("Failed to delete file: $kfile", e)
             }
         }
 
