@@ -50,6 +50,11 @@ public class S3FileObject(
     public val path: File,
 ) : FileObject {
 
+    init{
+        if(this.path.path.contains("+"))
+            throw IllegalArgumentException("Invalid File Path. File Path cannot contain '+'")
+    }
+
     /**
      * The Unix-style path for this file.
      * Converts Windows-style backslashes to forward slashes for S3 compatibility.
@@ -58,8 +63,7 @@ public class S3FileObject(
 
     override fun then(path: String): S3FileObject = S3FileObject(
         system,
-        this.path.resolve(path.decodeURLPart()
-            .also { if (it.contains("+")) throw IllegalArgumentException("File Path cannot contain '+'") })
+        this.path.resolve(path.decodeURLPart())
     )
 
     override val name: String get() = path.name
