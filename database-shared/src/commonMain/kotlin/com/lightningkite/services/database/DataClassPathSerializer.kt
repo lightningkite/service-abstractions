@@ -62,6 +62,20 @@ public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) : KSer
         for ((index, part) in valueParts.withIndex()) {
             val name = part.removeSuffix("?")
             if (name == "this") continue
+            if (name == "*") {
+                val c = current ?: throw SerializationException("'*' cannot be the root of a path")
+                when {
+                    currentSerializer.listElement() != null -> {
+                        current = DataClassPathList(c as DataClassPath<T, List<Any?>>)
+                        currentSerializer = currentSerializer.listElement()!!
+                    }
+                    else -> {
+                        throw SerializationException("'*' used on non-collection type ${currentSerializer.descriptor.serialName}")
+                    }
+                }
+                continue
+            }
+
             val prop = try {
                 SerializablePropertyParser[currentSerializer](name)
             } catch (e: IllegalStateException) {
