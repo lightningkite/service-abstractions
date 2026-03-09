@@ -37,6 +37,8 @@ public class KotlinxIoPublicFileSystem(
         rootKFile.createDirectories()
     }
 
+    private val signingKeyFile = ".signingKey"
+
     /**
      * HMAC signing key used for URL signatures.
      *
@@ -48,7 +50,7 @@ public class KotlinxIoPublicFileSystem(
         val digest = SHA256
         val format = HMAC.Key.Format.RAW
 
-        val keyFile = rootKFile.then(".signingKey")
+        val keyFile = rootKFile.then(signingKeyFile)
 
         if (keyFile.exists()) hmac.keyDecoder(digest).decodeFromByteArrayBlocking(format, keyFile.readByteArray())
         else {
@@ -175,7 +177,7 @@ public class KotlinxIoPublicFileSystem(
         internal val relativePath = path.toString().replace('\\', '/')
 
         init {
-            if (relativePath.split("/").any { it == ".." || it == "." })
+            if (relativePath.split("/").any { it == ".." || it == "." } || relativePath == signingKeyFile)
                 throw IllegalArgumentException("Invalid file path.")
         }
 
