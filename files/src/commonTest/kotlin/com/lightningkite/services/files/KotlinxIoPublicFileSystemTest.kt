@@ -45,4 +45,10 @@ class KotlinxIoPublicFileSystemTest : FileSystemTests() {
         kfileSystem.root.then(".test..txt")
         kfileSystem.root.then("subfolder/.test..txt")
     }
+
+    @Test
+    fun signingKey() {
+        assertFailsWith<IllegalArgumentException> { kfileSystem.root.then(".signingKey") }
+        kfileSystem.root.then("subfolder/.signingKey")
+    }
 }
