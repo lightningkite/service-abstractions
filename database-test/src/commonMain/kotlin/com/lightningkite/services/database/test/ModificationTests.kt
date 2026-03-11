@@ -12,33 +12,6 @@ import kotlin.time.Instant
 abstract class ModificationTests() {
     abstract val database: Database
 
-    @Ignore @Test
-    fun test_inlinePathModifications() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_inlinePathModifications")
-
-        val items = List(10) { ValueClassContainingTest(wrappedInt = IntWrapper(it), direct = ValueClass("Item $it")) }
-
-        collection.insertMany(items)
-
-        val id = items.first()._id
-        collection.updateOneById(
-            id,
-            modification {
-                it.wrappedInt.int assign 42
-                it.direct.value assign "hello world"
-            }
-        )
-        assertEquals(IntWrapper(42), collection.get(id)!!.wrappedInt)
-        assertEquals(ValueClass("hello world"), collection.get(id)!!.direct)
-
-        val before = collection.all().map { it.wrappedInt.int }.toList()
-        collection.updateMany(
-            Condition.Always,
-            modification { it.wrappedInt.int += 1 }
-        )
-        assertEquals(before.map { IntWrapper(it + 1) }, collection.all().map { it.wrappedInt }.toList())
-    }
-
     @Test
     fun test_orderedOneMods() = runTest {
         val collection = database.table<LargeTestModel>("test_orderedOneMods")

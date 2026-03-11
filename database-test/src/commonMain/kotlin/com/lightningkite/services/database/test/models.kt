@@ -171,7 +171,9 @@ value class ValueClass(val value: String)
 @Serializable
 @JvmInline
 @GenerateDataClassPaths
-value class IntWrapper(val int: Int)
+value class IntWrapper(val int: Int) : Comparable<IntWrapper> {
+    override fun compareTo(other: IntWrapper): Int = int.compareTo(other.int)
+}
 
 @GenerateDataClassPaths
 @Serializable

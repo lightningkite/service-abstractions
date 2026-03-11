@@ -6,6 +6,7 @@ import com.lightningkite.services.database.mongodb.TestDatabase.mongoClient
 import com.lightningkite.services.database.test.AggregationsTest
 import com.lightningkite.services.database.test.ConditionTests
 import com.lightningkite.services.database.test.IndexTests
+import com.lightningkite.services.database.test.InlinePropertiesTests
 import com.lightningkite.services.database.test.MetaTest
 import com.lightningkite.services.database.test.ModificationTests
 import com.lightningkite.services.database.test.OperationsTests
@@ -107,6 +108,11 @@ class MongodbIndexTest: IndexTests() {
 
     @Test
     fun start() {}
+}
+class MondodbInlineTests: InlinePropertiesTests() {
+    override val database: Database = db()
+
+    @Test fun start() {}
 }
 
 class MongodbVectorSearchTests: VectorSearchTests() {

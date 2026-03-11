@@ -16,39 +16,6 @@ abstract class ConditionTests() {
 
     abstract val database: Database
 
-    @Ignore @Test open fun test_valueclassPersist() = runTest {
-        val collection = database.collection<ValueClassContainingTest>("test_valueclassPersist")
-        val matching = ValueClassContainingTest(
-            direct = ValueClass("1")
-        )
-        val notMatching = ValueClassContainingTest(
-            direct = ValueClass("2")
-        )
-        collection.insertOne(matching)
-        collection.insertOne(notMatching)
-        assertEquals(matching, collection.get(matching._id))
-        assertEquals(notMatching, collection.get(notMatching._id))
-        assertEquals(setOf(matching), collection.find(condition { it.direct.eq(matching.direct) }).toSet())
-        assertEquals(setOf(matching), collection.find(condition { it.direct.value.eq("1") }).toSet())
-    }
-
-    @Ignore @Test open fun test_valueclassSet() = runTest {
-        val collection = database.collection<ValueClassContainingTest>("test_valueclassSet")
-        val matching = ValueClassContainingTest(
-            set = setOf(ValueClass("1"))
-        )
-        val notMatching = ValueClassContainingTest(
-            set = setOf(ValueClass("2"))
-        )
-        collection.insertOne(matching)
-        collection.insertOne(notMatching)
-        assertEquals(matching, collection.get(matching._id))
-        assertEquals(notMatching, collection.get(notMatching._id))
-        assertEquals(setOf(matching), collection.find(condition { it.set.eq(matching.set) }).toSet())
-        assertEquals(setOf(matching), collection.find(condition { it.set.any { it.value.eq("1") } }).toSet())
-    }
-
-
     @Test open fun test_geodistance_1() = runTest {
         val collection = database.collection<GeoTest>("test_geodistance_1")
         val lk = GeoCoordinate(41.727019, -111.8443002)

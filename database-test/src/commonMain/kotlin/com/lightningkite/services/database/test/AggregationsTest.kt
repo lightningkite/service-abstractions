@@ -71,23 +71,4 @@ abstract class AggregationsTest() {
             }
         }
     }
-
-    @Ignore @Test
-    fun testInlines() = runTest {
-        val c = database.table<ValueClassContainingTest>("inlineAggregatesTest")
-
-        val ints = List(10) { it }
-
-        c.insertMany(
-            ints.map { ValueClassContainingTest(wrappedInt = IntWrapper(it)) }
-        )
-
-        for (type in Aggregate.entries) {
-            val ram = ints.aggregate(type)
-            val control = c.all().toList().asSequence().aggregateOf(type) { it.wrappedInt.int.toDouble() }
-            val test = c.aggregate(type, Condition.Always, path<ValueClassContainingTest>().wrappedInt.int)
-            assertEquals(ram, control)
-            assertEquals(control, test)
-        }
-    }
 }

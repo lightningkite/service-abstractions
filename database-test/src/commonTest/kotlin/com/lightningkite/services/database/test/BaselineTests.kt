@@ -23,6 +23,11 @@ class RamSortTest: SortTest() {
 class RamMetaTest: MetaTest() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
+class RamInlinePropertiesTest: InlinePropertiesTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+
+    @Test fun start() {}
+}
 // by Claude
 class RamVectorSearchTests: VectorSearchTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())

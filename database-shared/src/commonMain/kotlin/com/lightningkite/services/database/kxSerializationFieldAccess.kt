@@ -16,16 +16,10 @@ package com.lightningkite.services.database
  * Intended for internal use where advanced reflection-like abilities are required using serialization modules.
  */
 
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.encoding.AbstractDecoder
-import kotlinx.serialization.encoding.AbstractEncoder
-import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.CompositeEncoder
+import kotlinx.serialization.encoding.*
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 
@@ -128,6 +122,7 @@ private class MinDecoderB(override val serializersModule: SerializersModule, var
 private class MinEncoderSI(
     override val serializersModule: SerializersModule,
     val resultIndex: Int,
+    val inline: Boolean = false
 ) : AbstractEncoder() {
     var output: Any? = null
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
@@ -136,6 +131,11 @@ private class MinEncoderSI(
 
     override fun encodeValue(value: Any) {
         output = value
+    }
+
+    override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
+        if (inline) output = value
+        else serializer.serialize(this, value)
     }
 
     override fun encodeNull() {
@@ -162,7 +162,7 @@ private class MinEncoderSI2(
         return (index == resultIndex).also { reallyEncode = it }
     }
     override fun encodeValue(value: Any) {
-        if(reallyEncode) {
+        if (reallyEncode) {
             stack.lastOrNull()?.add(value) ?: run {
                 parent.output = value
             }
@@ -219,11 +219,15 @@ private val empty = EmptySerializersModule()
  * @return The extracted field value of type [V].
  */
 internal fun <T, V> KSerializer<T>.get(instance: T, index: Int, childSerializer: KSerializer<V>, module: SerializersModule = empty ): V {
-    val e = MinEncoderSI(module, index)
+    val e = MinEncoderSI(module, index, inline = descriptor.isInline)
     this.serialize(e, instance)
 //    println("Child: ${childSerializer.descriptor.serialName} (${childSerializer.descriptor.kind})")
     @Suppress("Unchecked_Cast")
-    return e.output as V
+    return try {
+        e.output as V
+    } catch (c: ClassCastException) {
+        throw SerializationException("KSerializer.get failed to cast the encoded value. Something has gone terribly wrong. Could not coerce ${e.output} into type ${childSerializer.descriptor.serialName}.", cause = c)
+    }
 //    val d = MinDecoder(module, e.output)
 //    return childSerializer.deserialize(d)
 }
