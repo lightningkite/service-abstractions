@@ -934,5 +934,73 @@ abstract class InlinePropertiesTests {
 
     // endregion
 
+    // region by Claude - Inline SerializableProperty get/setCopy Tests (raw inner value accessors)
+
+    @Test
+    fun test_serializableProperty_inline_get_ValueClass_value() {
+        val instance = ValueClass("test string")
+        val value = ValueClass_value.get(instance)
+        assertEquals("test string", value)
+    }
+
+    @Test
+    fun test_serializableProperty_inline_setCopy_ValueClass_value() {
+        val instance = ValueClass("old")
+        val newInstance = ValueClass_value.setCopy(instance, "new")
+        assertEquals(ValueClass("new"), newInstance)
+        assertEquals(ValueClass("old"), instance)  // Original unchanged (value class is immutable anyway)
+    }
+
+    @Test
+    fun test_serializableProperty_inline_get_IntWrapper_int() {
+        val instance = IntWrapper(42)
+        val value = IntWrapper_int.get(instance)
+        assertEquals(42, value)
+    }
+
+    @Test
+    fun test_serializableProperty_inline_setCopy_IntWrapper_int() {
+        val instance = IntWrapper(10)
+        val newInstance = IntWrapper_int.setCopy(instance, 99)
+        assertEquals(IntWrapper(99), newInstance)
+        assertEquals(IntWrapper(10), instance)  // Original unchanged
+    }
+
+    @Test
+    fun test_serializableProperty_inline_get_UuidWrapper_uuid() {
+        val testUuid = Uuid.random()
+        val instance = UuidWrapper(testUuid)
+        val value = UuidWrapper_uuid.get(instance)
+        assertEquals(testUuid, value)
+    }
+
+    @Test
+    fun test_serializableProperty_inline_setCopy_UuidWrapper_uuid() {
+        val originalUuid = Uuid.random()
+        val newUuid = Uuid.random()
+        val instance = UuidWrapper(originalUuid)
+        val newInstance = UuidWrapper_uuid.setCopy(instance, newUuid)
+        assertEquals(UuidWrapper(newUuid), newInstance)
+        assertEquals(UuidWrapper(originalUuid), instance)  // Original unchanged
+    }
+
+    @Test
+    fun test_serializableProperty_inline_name() {
+        // Verify the property names are correct
+        assertEquals("value", ValueClass_value.name)
+        assertEquals("int", IntWrapper_int.name)
+        assertEquals("uuid", UuidWrapper_uuid.name)
+    }
+
+    @Test
+    fun test_serializableProperty_inline_isInline() {
+        // Verify the inline flag is set correctly for inline properties
+        assertTrue(ValueClass_value.inline)
+        assertTrue(IntWrapper_int.inline)
+        assertTrue(UuidWrapper_uuid.inline)
+    }
+
+    // endregion
+
     // endregion
 }
