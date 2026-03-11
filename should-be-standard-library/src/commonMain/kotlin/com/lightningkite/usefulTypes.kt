@@ -237,7 +237,7 @@ public value class Length(public val meters: Double): Comparable<Length> {
     public fun toStringImperial(): String = when(meters) {
         in 0.0..<2.feet.meters -> "$inches in"
         in 1.feet.meters..<5.yards.meters -> "$feet ft"
-        in 5.yards.meters..<600.yards.meters -> "$feet yd"
+        in 5.yards.meters..<600.yards.meters -> "$yards yd"
         in 600.yards.meters..<9.4607304725808E13 -> "$miles mi"
         else -> "$lightYears ly"
     }
