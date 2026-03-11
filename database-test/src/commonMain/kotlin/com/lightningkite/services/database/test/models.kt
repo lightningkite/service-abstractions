@@ -175,6 +175,25 @@ value class IntWrapper(val int: Int) : Comparable<IntWrapper> {
     override fun compareTo(other: IntWrapper): Int = int.compareTo(other.int)
 }
 
+// by Claude - UuidWrapper value class for testing UUID-wrapped value classes
+@Serializable
+@JvmInline
+@GenerateDataClassPaths
+value class UuidWrapper(val uuid: Uuid)
+
+// by Claude - Extended test model with nullable value classes and list fields
+@GenerateDataClassPaths
+@Serializable
+data class ExtendedValueClassTest(
+    override val _id: Uuid = Uuid.random(),
+    val directNullable: ValueClass? = null,
+    val wrappedIntNullable: IntWrapper? = null,
+    val wrappedUuid: UuidWrapper = UuidWrapper(Uuid.random()),
+    val wrappedUuidNullable: UuidWrapper? = null,
+    val list: List<ValueClass> = listOf(),
+    val listInt: List<IntWrapper> = listOf(),
+): HasId<Uuid>
+
 @GenerateDataClassPaths
 @Serializable
 data class SimpleLargeTestModel(
