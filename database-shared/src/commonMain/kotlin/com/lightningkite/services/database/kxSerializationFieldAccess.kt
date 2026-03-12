@@ -41,7 +41,8 @@ private class MinEncoder(
         }
     }
     override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
-        encodeValue(value as Any)
+        if (value == null) encodeNull()
+        else encodeValue(value as Any)
     }
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
         stack.add(ArrayList(descriptor.elementsCount))
@@ -169,7 +170,8 @@ private class MinEncoderSI2(
         }
     }
     override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
-        encodeValue(value as Any)
+        if (value == null) encodeNull()
+        else encodeValue(value as Any)
     }
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
         stack.add(ArrayList(descriptor.elementsCount))
