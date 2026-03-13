@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.postgres
 
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.database.Aggregate
 import com.lightningkite.services.database.CollectionChanges
 import com.lightningkite.services.database.Condition
@@ -76,7 +77,7 @@ public class PostgresCollection<T : Any>(
                 throw t
             } catch (t: Throwable) {
                 span.setStatus(StatusCode.ERROR)
-                span.recordException(t)
+                span.recordExceptionWithFingerprint(t)
                 throw t
             } finally {
                 span.end()

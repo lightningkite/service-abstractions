@@ -1,6 +1,7 @@
 package com.lightningkite.services.otel
 
 import com.lightningkite.services.OpenTelemetry
+import com.lightningkite.services.recordExceptionWithFingerprint
 import io.opentelemetry.api.metrics.BatchCallback
 import io.opentelemetry.api.metrics.Meter
 import io.opentelemetry.api.metrics.ObservableMeasurement
@@ -31,7 +32,7 @@ public inline fun <R> SpanBuilder.useBlocking(block: (span: Span) -> R) {
         throw t
     } catch(t: Throwable) {
         span.setStatus(StatusCode.ERROR)
-        span.recordException(t)
+        span.recordExceptionWithFingerprint(t)
         throw t
     } finally {
         span.end()
@@ -50,7 +51,7 @@ public suspend inline fun <R> SpanBuilder.use(crossinline block: suspend (span: 
         throw t
     } catch(t: Throwable) {
         span.setStatus(StatusCode.ERROR)
-        span.recordException(t)
+        span.recordExceptionWithFingerprint(t)
         throw t
     } finally {
         span.end()

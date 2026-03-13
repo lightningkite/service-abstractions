@@ -3,6 +3,7 @@ package com.lightningkite.services.sms.twilio
 import com.lightningkite.PhoneNumber
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.otel.TelemetrySanitization
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
@@ -160,7 +161,7 @@ public class TwilioSMS(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send SMS: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()

@@ -1,6 +1,7 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.OpenTelemetry
+import com.lightningkite.services.recordExceptionWithFingerprint
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.extension.kotlin.asContextElement
@@ -54,7 +55,7 @@ internal actual suspend fun <R> traced(
         throw t
     } catch (t: Throwable) {
         span.setStatus(StatusCode.ERROR)
-        span.recordException(t)
+        span.recordExceptionWithFingerprint(t)
         throw t
     } finally {
         span.end()

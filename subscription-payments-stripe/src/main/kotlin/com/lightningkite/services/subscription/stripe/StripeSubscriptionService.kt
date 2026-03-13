@@ -2,6 +2,7 @@ package com.lightningkite.services.subscription.stripe
 
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.data.HttpAdapter
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.data.WebhookSubservice
@@ -122,7 +123,7 @@ public class StripeSubscriptionService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to create customer: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -167,12 +168,12 @@ public class StripeSubscriptionService(
                 null
             } else {
                 span?.setStatus(StatusCode.ERROR, "Failed to get customer: ${e.message}")
-                span?.recordException(e)
+                span?.recordExceptionWithFingerprint(e)
                 throw e
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to get customer: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -244,7 +245,7 @@ public class StripeSubscriptionService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to create checkout session: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -282,7 +283,7 @@ public class StripeSubscriptionService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to create billing portal session: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -318,12 +319,12 @@ public class StripeSubscriptionService(
                 null
             } else {
                 span?.setStatus(StatusCode.ERROR, "Failed to get subscription: ${e.message}")
-                span?.recordException(e)
+                span?.recordExceptionWithFingerprint(e)
                 throw e
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to get subscription: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -356,7 +357,7 @@ public class StripeSubscriptionService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to list subscriptions: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -398,7 +399,7 @@ public class StripeSubscriptionService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to cancel subscription: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -464,7 +465,7 @@ public class StripeSubscriptionService(
                 }
             } catch (e: Exception) {
                 span?.setStatus(StatusCode.ERROR, "Failed to parse webhook: ${e.message}")
-                span?.recordException(e)
+                span?.recordExceptionWithFingerprint(e)
                 throw e
             } finally {
                 span?.end()

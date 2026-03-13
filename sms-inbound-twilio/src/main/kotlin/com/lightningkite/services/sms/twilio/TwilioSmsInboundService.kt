@@ -2,6 +2,7 @@ package com.lightningkite.services.sms.twilio
 
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.data.WebhookSubservice
 import com.lightningkite.services.sms.InboundSms
@@ -152,7 +153,7 @@ public class TwilioSmsInboundService(
                 }
             } catch (e: Exception) {
                 span?.setStatus(StatusCode.ERROR, "Failed to configure webhook: ${e.message}")
-                span?.recordException(e)
+                span?.recordExceptionWithFingerprint(e)
                 throw e
             } finally {
                 span?.end()
@@ -221,7 +222,7 @@ public class TwilioSmsInboundService(
                 }
             } catch (e: Exception) {
                 span?.setStatus(StatusCode.ERROR, "Failed to parse webhook: ${e.message}")
-                span?.recordException(e)
+                span?.recordExceptionWithFingerprint(e)
                 throw e
             } finally {
                 span?.end()

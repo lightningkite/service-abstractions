@@ -4,6 +4,7 @@ import com.lightningkite.EmailAddress
 import com.lightningkite.services.Untested
 import com.lightningkite.MediaType
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.data.WebhookSubservice
@@ -186,7 +187,7 @@ public class SendGridEmailInboundService(
                 }
             } catch (e: Exception) {
                 span?.setStatus(StatusCode.ERROR, "Failed to parse webhook: ${e.message}")
-                span?.recordException(e)
+                span?.recordExceptionWithFingerprint(e)
                 throw e
             } finally {
                 span?.end()
