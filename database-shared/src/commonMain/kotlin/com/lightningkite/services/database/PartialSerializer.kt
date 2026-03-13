@@ -15,12 +15,12 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
         this.source.serializableProperties?.map {
             if (it.serializer.descriptor.isNullable) {
                 val nn = it.serializer.nullElement()!!
-                if (nn.serializableProperties != null) {
+                if (nn.serializableProperties != null && !nn.descriptor.isInline) {
                     if (nn == source) this.nullable
                     else PartialSerializer(nn).nullable
                 } else it.serializer
             } else {
-                if (it.serializer.serializableProperties != null) {
+                if (it.serializer.serializableProperties != null && !it.serializer.descriptor.isInline) {
                     if (it.serializer == source) this
                     else PartialSerializer(it.serializer)
                 } else it.serializer
@@ -102,7 +102,7 @@ public fun <K> DataClassPathPartial<K>.setMap(key: K, out: Partial<K>) {
         @Suppress("UNCHECKED_CAST")
         val prop = properties.last() as SerializableProperty<Any?, *>
         val unwrapped = prop.serializer.nullElement() ?: prop.serializer
-        unwrapped.serializableProperties?.let { props ->
+        unwrapped.serializableProperties?.takeIf { !unwrapped.descriptor.isInline }?.let { props ->
 
             @Suppress("UNCHECKED_CAST")
             current.parts[properties.last() as SerializableProperty<Any?, *>] = getAny(key)?.let {
