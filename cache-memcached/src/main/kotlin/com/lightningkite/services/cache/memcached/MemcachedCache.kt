@@ -315,10 +315,6 @@ public class MemcachedCache(
 
                     // Now perform the CAS operation based on the state transition
                     when {
-                        new == null && expected == null -> {
-                            // Both null, nothing to do
-                            true
-                        }
                         new == null -> {
                             // Delete the key (expected is not null, so key exists)
                             client.delete(key)

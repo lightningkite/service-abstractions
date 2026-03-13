@@ -7,6 +7,7 @@ import kotlin.time.Instant
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * An in-memory cache implementation backed by a [MutableMap].
@@ -45,6 +46,7 @@ public open class MapCacheUnsafe(
     }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         instrumentedSet<T>(context, key, timeToLive) {
             entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
         }
@@ -66,6 +68,7 @@ public open class MapCacheUnsafe(
         serializer: KSerializer<T>,
         timeToLive: Duration?
     ): Boolean {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         return instrumentedSetIfNotExists(context, key, timeToLive) {
             val existing = entries[key]
             // Check if key doesn't exist OR if it exists but has expired
@@ -79,6 +82,7 @@ public open class MapCacheUnsafe(
     }
 
     override suspend fun add(key: String, value: Int, timeToLive: Duration?): Unit {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         instrumentedAdd(context, key, value, timeToLive) {
             val entry = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
             val current = entry?.value
@@ -109,6 +113,7 @@ public open class MapCacheUnsafe(
         modification: (T?) -> T?
     ): Boolean {
         return instrumentedModify<T>(context, key, maxTries, timeToLive) {
+            if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
             // For MapCache, we can provide a synchronized implementation
             // Note: This works for in-memory but isn't distributed-safe
             repeat(maxTries) {

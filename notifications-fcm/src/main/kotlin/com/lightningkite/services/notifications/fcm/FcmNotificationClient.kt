@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import com.google.firebase.messaging.Notification as FCMNotification
 
 /**
@@ -400,8 +401,6 @@ public class FcmNotificationClient(
             span?.end()
         }
     }
-
-    override val healthCheckFrequency: Duration = Duration.INFINITE
 
     override suspend fun healthCheck(): HealthStatus {
         return HealthStatus(

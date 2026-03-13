@@ -5,6 +5,7 @@ import com.lightningkite.services.default
 import kotlinx.serialization.KSerializer
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.*
+import kotlin.time.Duration.Companion.milliseconds
 
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 public actual class MapCache actual constructor(
@@ -28,6 +29,7 @@ public actual class MapCache actual constructor(
         serializer: KSerializer<T>,
         timeToLive: Duration?,
     ) {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         instrumentedSet<T>(context, key, timeToLive) {
             entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
         }
@@ -43,6 +45,7 @@ public actual class MapCache actual constructor(
         serializer: KSerializer<T>,
         timeToLive: Duration?,
     ): Boolean {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         return instrumentedSetIfNotExists(context, key, timeToLive) {
             // We can't prove success using the response from the compute function, so we must manually handle it.
             var success = false
@@ -58,6 +61,7 @@ public actual class MapCache actual constructor(
     }
 
     actual override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         instrumentedAdd(context, key, value, timeToLive) {
             val clock = Clock.default()
             entries.compute(key) { _, existing ->
@@ -91,6 +95,7 @@ public actual class MapCache actual constructor(
         timeToLive: Duration?,
         modification: (T?) -> T?,
     ): Boolean {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         return instrumentedModify<T>(context, key, maxTries, timeToLive) {
             entries.compute(key) { _, existing ->
                 val current = existing?.value as? T 

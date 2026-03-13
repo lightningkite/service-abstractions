@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.KSerializer
 import kotlin.time.Clock
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Instant
 
 //TODO: Using a top level Mutex for write locking is not the most efficient method but it will work.
@@ -32,6 +33,7 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
         serializer: KSerializer<T>,
         timeToLive: Duration?,
     ) {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         instrumentedSet<T>(context, key, timeToLive) {
             mutex.withLock {
                 entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
@@ -49,6 +51,7 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
         serializer: KSerializer<T>,
         timeToLive: Duration?,
     ): Boolean {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         return instrumentedSetIfNotExists(context, key, timeToLive) {
             mutex.withLock {
                 val existing = entries[key]
@@ -64,6 +67,7 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
     }
 
     actual override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         instrumentedAdd(context, key, value, timeToLive) {
             mutex.withLock {
                 val entry = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
@@ -98,6 +102,7 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
         timeToLive: Duration?,
         modification: (T?) -> T?,
     ): Boolean {
+        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
         return instrumentedModify<T>(context, key, maxTries, timeToLive) {
             mutex.withLock {
                 val existing = entries[key] as? T
