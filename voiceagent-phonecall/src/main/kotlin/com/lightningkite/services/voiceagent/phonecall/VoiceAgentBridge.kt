@@ -2,6 +2,7 @@ package com.lightningkite.services.voiceagent.phonecall
 
 import com.lightningkite.services.phonecall.AudioStreamCommand
 import com.lightningkite.services.phonecall.AudioStreamEvent
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.voiceagent.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.opentelemetry.api.trace.SpanKind
@@ -184,7 +185,7 @@ public suspend fun handlePhoneVoiceSession(
     } catch (e: Exception) {
         logger.error(e) { "Phone voice session error" }
         span?.setStatus(StatusCode.ERROR, e.message ?: "Unknown error")
-        span?.recordException(e)
+        span?.recordExceptionWithFingerprint(e)
         throw e
     } finally {
         span?.end()
@@ -288,7 +289,7 @@ public suspend fun handleDirectVoiceSession(
     } catch (e: Exception) {
         logger.error(e) { "Direct voice session error" }
         span?.setStatus(StatusCode.ERROR, e.message ?: "Unknown error")
-        span?.recordException(e)
+        span?.recordExceptionWithFingerprint(e)
         throw e
     } finally {
         span?.end()

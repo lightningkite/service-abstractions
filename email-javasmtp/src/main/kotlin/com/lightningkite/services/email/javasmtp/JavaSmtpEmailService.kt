@@ -2,6 +2,7 @@ package com.lightningkite.services.email.javasmtp
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.email.Email
 import com.lightningkite.services.email.EmailAddressWithName
 import com.lightningkite.services.email.EmailPersonalization
@@ -223,7 +224,7 @@ public class JavaSmtpEmailService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send email: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -275,7 +276,7 @@ public class JavaSmtpEmailService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -324,7 +325,7 @@ public class JavaSmtpEmailService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()

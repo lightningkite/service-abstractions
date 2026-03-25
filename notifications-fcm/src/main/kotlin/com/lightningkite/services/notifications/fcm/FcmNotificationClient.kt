@@ -6,6 +6,7 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.*
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.notifications.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.opentelemetry.api.trace.*
@@ -212,7 +213,7 @@ public class FcmNotificationClient(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send notifications: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -365,7 +366,7 @@ public class FcmNotificationClient(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to connect: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -395,7 +396,7 @@ public class FcmNotificationClient(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to disconnect: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()

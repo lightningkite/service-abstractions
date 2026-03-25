@@ -6,6 +6,7 @@ import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
 import com.lightningkite.services.http.client
 import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.recordExceptionWithFingerprint
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.encode
@@ -120,7 +121,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to list directory: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -171,7 +172,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to get file metadata: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -214,7 +215,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to upload file: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -265,7 +266,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to download file: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -314,7 +315,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to copy file: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -350,7 +351,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to delete file: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()

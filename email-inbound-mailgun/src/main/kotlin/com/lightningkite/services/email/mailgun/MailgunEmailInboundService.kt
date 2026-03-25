@@ -4,6 +4,7 @@ import com.lightningkite.EmailAddress
 import com.lightningkite.services.Untested
 import com.lightningkite.MediaType
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.data.WebhookSubservice
@@ -177,11 +178,11 @@ public class MailgunEmailInboundService(
                 }
             } catch (e: SecurityException) {
                 span?.setStatus(StatusCode.ERROR, "Webhook signature verification failed: ${e.message}")
-                span?.recordException(e)
+                span?.recordExceptionWithFingerprint(e)
                 throw e
             } catch (e: Exception) {
                 span?.setStatus(StatusCode.ERROR, "Failed to parse Mailgun webhook: ${e.message}")
-                span?.recordException(e)
+                span?.recordExceptionWithFingerprint(e)
                 throw e
             } finally {
                 span?.end()
