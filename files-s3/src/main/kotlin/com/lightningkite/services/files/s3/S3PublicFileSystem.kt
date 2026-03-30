@@ -174,14 +174,13 @@ public class S3PublicFileSystem(
 
     override fun parseInternalUrl(url: String): S3FileObject? {
         val matchingPrefix = rootUrls.firstOrNull { prefix -> url.startsWith(prefix) } ?: return null
-        val path = url.substringAfter(matchingPrefix).substringBefore('?')
-        return S3FileObject(this, File(path.decodeURLPart()))
+        val path = url.substringAfter(matchingPrefix)
+        return S3FileObject(this, File(path))
     }
 
     override fun parseExternalUrl(url: String): S3FileObject? {
-        return parseInternalUrl(url)?.also {
-            it.assertSignatureValid(url.substringAfter('?'))
-        }
+        return parseInternalUrl(url.substringBefore('?').decodeURLPart())
+            ?.also { it.assertSignatureValid(url.substringAfter('?')) }
     }
 
     /**
