@@ -1,11 +1,9 @@
-
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -14,16 +12,16 @@ dependencies {
     api(project(path = ":basis"))
     api(project(path = ":pubsub"))
     api(libs.dynamodb)
-    implementation(libs.coroutinesCore)
-    implementation(libs.coroutinesReactive)
-    implementation(libs.kotlinXJson)
-    implementation(libs.ktorClientCore)
-    implementation(libs.ktorClientCio)
-    implementation(libs.ktorClientWebsockets)
+    implementation(libs.coroutines.core)
+    implementation(libs.coroutines.reactive)
+    implementation(libs.kotlinx.json)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.websockets)
     implementation(libs.crac)
     implementation(project(":aws-client"))
-    testImplementation(libs.kotlinTest)
-    testImplementation(libs.coroutinesTesting)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
     testImplementation(project(":test"))
     testImplementation(project(":pubsub-test"))
     testImplementation(project(":cache-dynamodb"))  // For embeddedDynamo()

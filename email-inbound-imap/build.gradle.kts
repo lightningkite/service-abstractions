@@ -1,15 +1,10 @@
-
-import com.lightningkite.deployhelpers.github
-import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -19,26 +14,26 @@ dependencies {
     api(project(path = ":email-inbound"))
     api(project(path = ":http-client"))
     implementation(libs.angusMail)
-    implementation(libs.kotlinLogging)
-    testImplementation(libs.kotlinTest)
-    testImplementation(libs.coroutinesTesting)
+    implementation(libs.kotlin.logging)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
     testImplementation(project(":test"))
 
     // GreenMail for IMAP/SMTP mock server testing
     testImplementation(libs.greenmail)
 
     // Lightning Server for webhook testing demo
-    testImplementation(libs.lightningserver.core) {
+    testImplementation(libs.lightningServer.core) {
         exclude(group = "com.lightningkite.services")
     }
     testImplementation(project(path = ":cache"))
     testImplementation(project(path = ":database"))
     testImplementation(project(path = ":otel-jvm"))
     testImplementation(project(path = ":pubsub"))
-    testImplementation(libs.lightningserver.typed) {
+    testImplementation(libs.lightningServer.typed) {
         exclude(group = "com.lightningkite.services")
     }
-    testImplementation(libs.lightningserver.engine.netty) {
+    testImplementation(libs.lightningServer.engine.netty) {
         exclude(group = "com.lightningkite.services")
     }
     testImplementation(libs.logBackClassic)

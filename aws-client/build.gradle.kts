@@ -1,15 +1,10 @@
-
-import com.lightningkite.deployhelpers.github
-import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -21,10 +16,10 @@ dependencies {
         exclude("software.amazon.awssdk:apache-client")
     }
 
-    api(libs.awsCloudWatch) { excludeNetty() }
-    api(libs.awsCrtClient) { excludeNetty() }
-    api(libs.awsOtel) { excludeNetty() }
-    testImplementation(libs.coroutinesTesting)
+    api(libs.aws.cloudWatch) { excludeNetty() }
+    api(libs.aws.crt.client) { excludeNetty() }
+    api(libs.aws.otel) { excludeNetty() }
+    testImplementation(libs.coroutines.testing)
     testImplementation(project(":cache-test"))
 }
 

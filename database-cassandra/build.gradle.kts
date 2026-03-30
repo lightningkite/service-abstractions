@@ -4,10 +4,10 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -16,9 +16,9 @@ dependencies {
     api(project(path = ":basis"))
     api(project(path = ":database"))
     testImplementation(project(path = ":database-test"))
-    implementation(libs.kotlinReflect)
-    testImplementation(libs.kotlinTest)
-    testImplementation(libs.coroutinesTesting)
+    implementation(libs.kotlin.reflect)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
 
     // DataStax Java Driver for Cassandra
     implementation("com.datastax.oss:java-driver-core:4.17.0")

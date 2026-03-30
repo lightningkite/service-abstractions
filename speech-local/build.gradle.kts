@@ -1,12 +1,10 @@
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -16,15 +14,15 @@ dependencies {
     api(project(path = ":speech"))
 
     // FreeTTS for text-to-speech
-    implementation("net.sf.sociaal:freetts:1.2.2")
+    implementation(libs.freetts)
 
     // Vosk for speech-to-text
     // Note: 0.3.38 is the last stable version before API changes that broke JNA bindings
     // See: https://github.com/alphacep/vosk-api/issues/1235
-    implementation("com.alphacephei:vosk:0.3.38")
+    implementation(libs.vosk)
 
-    testImplementation(libs.kotlinTest)
-    testImplementation(libs.coroutinesTesting)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
     testImplementation(project(path = ":test"))
     testImplementation(project(path = ":speech-test"))
     testImplementation(libs.logBackClassic)

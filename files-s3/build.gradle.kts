@@ -1,15 +1,10 @@
-
-import com.lightningkite.deployhelpers.github
-import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -27,12 +22,12 @@ dependencies {
         exclude("software.amazon.awssdk:netty-nio-client")
         exclude("software.amazon.awssdk:apache-client")
     }
-    api(libs.awsS3) { excludeNetty() }
-    api(libs.awsCrtClient) { excludeNetty() }
-    implementation(libs.coroutinesReactive)
+    api(libs.aws.s3) { excludeNetty() }
+    api(libs.aws.crt.client) { excludeNetty() }
+    implementation(libs.coroutines.reactive)
 
-    testImplementation(libs.kotlinTest)
-    testImplementation(libs.coroutinesTesting)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
 }
 
 kotlin {

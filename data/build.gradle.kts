@@ -1,10 +1,10 @@
-import com.lightningkite.deployhelpers.*
+import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
     id("signing")
@@ -40,7 +40,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(libs.kotlinXIO)
+                api(libs.kotlinx.io)
                 api(project(":should-be-standard-library"))
             }
             kotlin {
@@ -53,8 +53,8 @@ kotlin {
         }
         val commonTest by getting {
             dependencies {
-                api(libs.kotlinTest)
-                api(libs.coroutinesTesting)
+                api(libs.kotlin.test)
+                api(libs.coroutines.testing)
             }
             kotlin {
                 compilerOptions {
@@ -66,17 +66,17 @@ kotlin {
         }
         val androidMain by getting {
             dependencies {
-//                api(libs.kotlinTestJunit)
+//                api(libs.kotlin.test.junit)
             }
         }
         val jsMain by getting {
             dependencies {
-//                api(libs.kotlinTestJs)
+//                api(libs.kotlin.test.js)
             }
         }
         val jvmMain by getting {
             dependencies {
-//                api(libs.kotlinTestJunit)
+//                api(libs.kotlin.test.junit)
             }
         }
         val jvmTest by getting {

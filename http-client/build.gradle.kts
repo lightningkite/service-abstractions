@@ -1,11 +1,10 @@
-import com.lightningkite.deployhelpers.*
-import org.gradle.kotlin.dsl.api
+import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
     id("signing")
@@ -32,6 +31,7 @@ kotlin {
     js(IR) {
         browser()
     }
+
     iosX64()
     iosArm64()
     iosSimulatorArm64()
@@ -41,15 +41,15 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(libs.kotlinXJson)
-                api(libs.kotlinXDatetime)
+                api(libs.kotlinx.json)
+                api(libs.kotlinx.datetime)
                 api(project(":basis"))
-                api(libs.coroutinesCore)
-                api(libs.ktorClientCio)
-                api(libs.ktorClientWebsockets)
-                api(libs.ktorContentNegotiation)
-                api(libs.ktorJson)
-                api(libs.ktorClientAuth)
+                api(libs.coroutines.core)
+                api(libs.ktor.client.cio)
+                api(libs.ktor.client.websockets)
+                api(libs.ktor.contentNegotiation)
+                api(libs.ktor.json)
+                api(libs.ktor.client.auth)
             }
             kotlin {
                 compilerOptions {
@@ -61,8 +61,8 @@ kotlin {
         }
         val commonTest by getting {
             dependencies {
-                api(libs.kotlinTest)
-                api(libs.coroutinesTesting)
+                api(libs.kotlin.test)
+                api(libs.coroutines.testing)
             }
             kotlin {
                 compilerOptions {
@@ -74,19 +74,19 @@ kotlin {
         }
         val androidMain by getting {
             dependencies {
-//                api(libs.kotlinTestJunit)
+//                api(libs.kotlin.test.junit)
             }
         }
         val jsMain by getting {
             dependencies {
-//                api(libs.kotlinTestJs)
+//                api(libs.kotlin.test.js)
             }
         }
         val jvmMain by getting {
             dependencies {
                 compileOnly(project(":otel-jvm"))
                 compileOnly(libs.openTelemetry.api)
-                compileOnly(libs.openTelemetryInstrumentation.ktor)
+                compileOnly(libs.openTelemetry.instrumentation.ktor)
                 implementation(libs.crac)
             }
         }

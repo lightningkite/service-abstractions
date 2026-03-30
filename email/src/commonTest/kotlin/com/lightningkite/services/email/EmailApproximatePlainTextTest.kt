@@ -4,6 +4,7 @@ package com.lightningkite.services.email
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class EmailApproximatePlainTextTest {
 
@@ -134,11 +135,11 @@ class EmailApproximatePlainTextTest {
         assertFalse(result.contains("\n\n"), "Result should not contain consecutive newlines")
         assertFalse(result.contains("  "), "Result should not contain consecutive spaces")
         // Content should still be present
-        assert(result.contains("Welcome!"))
-        assert(result.contains("Hello there,"))
-        assert(result.contains("- First point"))
-        assert(result.contains("- Second point"))
-        assert(result.contains("Thanks!"))
+        assertTrue(result.contains("Welcome!"))
+        assertTrue(result.contains("Hello there,"))
+        assertTrue(result.contains("- First point"))
+        assertTrue(result.contains("- Second point"))
+        assertTrue(result.contains("Thanks!"))
     }
 
     @Test
@@ -161,14 +162,14 @@ class EmailApproximatePlainTextTest {
     fun preservesTextContentCorrectly() {
         val html = "<p>The quick brown fox jumps over the lazy dog.</p>"
         val result = html.emailApproximatePlainText()
-        assert(result.contains("The quick brown fox jumps over the lazy dog."))
+        assertTrue(result.contains("The quick brown fox jumps over the lazy dog."))
     }
 
     @Test
     fun spaceNewlineMix() {
         val html = "Some\n \n \n Stuff"
         val result = html.emailApproximatePlainText()
-        assert(result.contains("Some\nStuff"))
+        assertTrue(result.contains("Some\nStuff"))
     }
 
     @Test
@@ -215,9 +216,9 @@ class EmailApproximatePlainTextTest {
         assertFalse(result.contains("  "), "Should not have consecutive spaces: '$result'")
 
         // Key content preserved
-        assert(result.contains("Dear Customer"))
-        assert(result.contains("Thank you for your order #12345"))
-        assert(result.contains("Total:"))
-        assert(result.contains("support@example.com"))
+        assertTrue(result.contains("Dear Customer"))
+        assertTrue(result.contains("Thank you for your order #12345"))
+        assertTrue(result.contains("Total:"))
+        assertTrue(result.contains("support@example.com"))
     }
 }
