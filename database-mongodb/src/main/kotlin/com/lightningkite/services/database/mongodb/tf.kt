@@ -172,7 +172,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
         "resource.mongodbatlas_database_user.$name" {
             "username" - userName
             "password" - expression("random_password.$name.result")
-            "project_id" - expression("mongodbatlas_project.$name.id")
+            "project_id" - projectId
             "auth_database_name" - "admin"
 
             "roles" - listOf(
@@ -320,7 +320,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
         "resource.mongodbatlas_database_user.$name" {
             "username" - userName
             "password" - expression("random_password.$name.result")
-            "project_id" - expression("mongodbatlas_project.$name.id")
+            "project_id" - projectId
             "auth_database_name" - "admin"
 
             "roles" - listOf(
