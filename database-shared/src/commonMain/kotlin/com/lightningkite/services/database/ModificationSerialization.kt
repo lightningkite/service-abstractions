@@ -165,12 +165,18 @@ public class ModificationOnFieldSerializer<K : Any, V>(
     override fun outer(it: Modification<V>): Modification.OnField<K, V> = Modification.OnField(field, it)
     override fun validate(
         value: Modification.OnField<K, V>,
-        existingAnnotations: List<Annotation>,
-        defer: (Any?, List<Annotation>) -> Unit
+        annotations: List<Annotation>,
+        defer: (value: ShouldValidateSub.SerializerAndValue<*>, annotations: List<Annotation>) -> Unit
     ) {
         fun Modification<V>.check() {
             when (this) {
-                is Modification.Assign<V> -> defer(this.value, existingAnnotations)
+                is Modification.Assign<V> -> defer(
+                    ShouldValidateSub.SerializerAndValue(
+                        serializer = field.serializer,
+                        value = this.value
+                    ),
+                    annotations
+                )
                 is Modification.Chain<V> -> modifications.forEach { it.check() }
                 else -> {}
             }
