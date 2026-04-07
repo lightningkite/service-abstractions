@@ -240,8 +240,7 @@ class AnnotationValidators private constructor(
 
         @OptIn(ExperimentalSerializationApi::class)
         private val <T : Any> KClass<T>.parameterlessSerialName
-            get() =
-                serializersModule.serializer(this, List(10) { NothingSerializer() }, isNullable = false).descriptor.serialName
+            get() = serializersModule.serializer(this, List(10) { NothingSerializer() }, isNullable = false).descriptor.serialName
 
         private fun <K1, K2, V> HashMap<K1, HashMap<K2, V>>.register(k1: K1, k2: K2, v: V) {
             val map = getOrPut(k1, ::HashMap)

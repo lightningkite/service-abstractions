@@ -208,10 +208,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
         register(com.lightningkite.Temperature.serializer())
         register(com.lightningkite.RelativeTemperature.serializer())
         register(com.lightningkite.DataSize.serializer())
-
-        register(com.lightningkite.services.data.ValidationIssue.serializer())
-        register(com.lightningkite.services.data.ValidationIssuePart.serializer())
-
+        
         register(com.lightningkite.services.database.Aggregate.serializer())
         register(com.lightningkite.services.database.CollectionChanges.serializer(NothingSerializer()).descriptor.serialName) { com.lightningkite.services.database.CollectionChanges.serializer(it[0]) }
         register(com.lightningkite.services.database.CollectionUpdates.serializer(NothingSerializer(), NothingSerializer()).descriptor.serialName) { com.lightningkite.services.database.CollectionUpdates.serializer(it[0], it[1]) }
