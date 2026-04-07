@@ -1,7 +1,14 @@
+@file:Suppress("PropertyName")
+
 package com.lightningkite.services.database
 
 public interface HasId<ID : Comparable<ID>> {
     public val _id: ID
+}
+
+public interface TypedId<ID : Comparable<ID>, TYPE : TypedId<ID, TYPE>> : Comparable<TYPE> {
+    public val raw: ID
+    override fun compareTo(other: TYPE): Int = raw.compareTo(other.raw)
 }
 
 public interface HasEmail {

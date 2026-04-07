@@ -33,7 +33,7 @@ public interface Cache : Service {
      * Configuration for instantiating a Cache instance.
      *
      * The URL scheme determines the cache implementation:
-     * - `ram` or `ram://` - Thread-safe in-memory cache (JVM uses ConcurrentHashMap)
+     * - `ram` or `ram://` - Thread-safe in-memory cache (JVM uses ConcurrentHashMap, others use Mutex locks on writes)
      * - `ram-unsafe` - Non-thread-safe in-memory cache (faster, single-threaded use only)
      * - Other schemes registered by implementation modules (e.g., `redis://`, `memcached://`)
      *
@@ -47,8 +47,8 @@ public interface Cache : Service {
 
         public companion object : UrlSettingParser<Cache>() {
             init {
-                register("ram-unsafe") { name, url, context -> MapCache(name, mutableMapOf(), context) }
-                platformSpecificCacheSettings()
+                register("ram") { name, _, context -> MapCache(name, context) }
+                register("ram-unsafe") { name, _, context -> MapCacheUnsafe(name, context) }
             }
         }
 

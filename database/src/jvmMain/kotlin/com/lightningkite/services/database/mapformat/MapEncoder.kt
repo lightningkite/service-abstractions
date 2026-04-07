@@ -301,6 +301,7 @@ internal class ConverterEncoder(
     override fun encodeDouble(value: Double): Unit = write(value)
     override fun encodeChar(value: Char): Unit = write(value)
     override fun encodeString(value: String): Unit = write(value)
+    @ExperimentalSerializationApi
     override fun encodeNull(): Unit = output.writeField(path, null)
 
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int): Unit =

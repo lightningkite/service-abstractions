@@ -1,11 +1,10 @@
-import com.lightningkite.deployhelpers.*
+import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
     id("signing")
@@ -33,6 +32,7 @@ kotlin {
     js(IR) {
         browser()
     }
+
     iosX64()
     iosArm64()
     iosSimulatorArm64()
@@ -46,8 +46,8 @@ kotlin {
                 api(project(path = ":files-client"))
                 api(project(path = ":data"))
                 // Add cryptography-kotlin for SHA-256 hashing and Base64 encoding
-                implementation("dev.whyoleg.cryptography:cryptography-core:0.5.0")
-                implementation("dev.whyoleg.cryptography:cryptography-provider-optimal:0.5.0")
+                implementation(libs.cryptography.core)
+                implementation(libs.cryptography.provider.optimal)
             }
             kotlin {
                 compilerOptions {
@@ -59,8 +59,8 @@ kotlin {
         }
         val commonTest by getting {
             dependencies {
-                implementation(libs.kotlinTest)
-                implementation(libs.coroutinesTesting)
+                implementation(libs.kotlin.test)
+                implementation(libs.coroutines.testing)
                 implementation(project(":files-test"))
             }
             kotlin {

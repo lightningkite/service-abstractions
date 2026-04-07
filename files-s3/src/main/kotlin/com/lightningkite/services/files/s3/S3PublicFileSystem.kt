@@ -1,15 +1,15 @@
 package com.lightningkite.services.files.s3
 
 import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
-import com.lightningkite.services.SettingContext
+import com.lightningkite.services.*
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.PublicFileSystem
-import com.lightningkite.services.get
+import com.lightningkite.services.http.client
+import io.ktor.client.request.*
+import io.ktor.http.*
 import io.opentelemetry.api.trace.Tracer
-import io.ktor.http.decodeURLPart
 import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3AsyncClient
@@ -21,7 +21,6 @@ import kotlin.jvm.optionals.getOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.toJavaDuration
 import kotlin.uuid.Uuid
 
 /**
@@ -46,7 +45,7 @@ public class S3PublicFileSystem(
     public val credentialProvider: AwsCredentialsProvider,
     public val bucket: String,
     public val signedUrlDuration: Duration? = null,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : PublicFileSystem {
 
     internal val tracer: Tracer? = context.openTelemetry?.getTracer("files-s3")
@@ -71,7 +70,7 @@ public class S3PublicFileSystem(
     public data class DirectAwsCredentials(
         val access: String,
         val secret: String,
-        val token: String? = null
+        val token: String? = null,
     ) {
         public val tokenPreEncoded: String? = token?.let { java.net.URLEncoder.encode(it, Charsets.UTF_8) }
     }
@@ -174,14 +173,13 @@ public class S3PublicFileSystem(
 
     override fun parseInternalUrl(url: String): S3FileObject? {
         val matchingPrefix = rootUrls.firstOrNull { prefix -> url.startsWith(prefix) } ?: return null
-        val path = url.substringAfter(matchingPrefix).substringBefore('?')
-        return S3FileObject(this, File(path.decodeURLPart()))
+        val path = url.substringAfter(matchingPrefix)
+        return S3FileObject(this, File(path))
     }
 
     override fun parseExternalUrl(url: String): S3FileObject? {
-        return parseInternalUrl(url)?.also {
-            it.assertSignatureValid(url.substringAfter('?'))
-        }
+        return parseInternalUrl(url.substringBefore('?').decodeURLPart())
+            ?.also { it.assertSignatureValid(url.substringAfter('?')) }
     }
 
     /**
@@ -196,7 +194,8 @@ public class S3PublicFileSystem(
      * @return [HealthStatus] with OK level if all operations succeed, ERROR otherwise
      */
     override suspend fun healthCheck(): HealthStatus {
-        return try {
+        val results = mutableListOf<Pair<HealthStatus.Level, String?>>()
+        try {
             val testFile = root.then("health-check/test-file-${Uuid.random()}.txt")
             val testContent = "Test Content ${System.currentTimeMillis()}"
 
@@ -220,14 +219,32 @@ public class S3PublicFileSystem(
                 )
             }
 
+            val result = client.get(testFile.url)
+            if (result.status.isSuccess() && signedUrlDuration != null) {
+                results.add(
+                    HealthStatus.Level.WARNING to
+                            "File Signing is configured, but the test file was retrieved with an unsigned URL. Is the S3 Bucket permissions configured correctly?"
+                )
+            } else if(!result.status.isSuccess() && signedUrlDuration == null){
+                return HealthStatus(
+                    level = HealthStatus.Level.ERROR,
+                    additionalMessage = "File Signing is null, but the test failed to be retrieved with an unsigned URL. Is the S3 Bucket permissions configured correctly?"
+                )
+            }
+
             // Test delete
             testFile.delete()
 
-            HealthStatus(level = HealthStatus.Level.OK)
         } catch (e: Exception) {
+            results.add(HealthStatus.Level.ERROR to "Health check failed: ${e.message}")
+        }
+
+        return results.fold(HealthStatus(HealthStatus.Level.OK)) { acc, item ->
             HealthStatus(
-                level = HealthStatus.Level.ERROR,
-                additionalMessage = "Health check failed: ${e.message}"
+                maxOf(acc.level, item.first),
+                additionalMessage = if (acc.additionalMessage != null || item.second != null)
+                    (acc.additionalMessage?.let { "$it:" } ?: "") + (item.second ?: "")
+                else null
             )
         }
     }
@@ -291,8 +308,8 @@ public class S3PublicFileSystem(
                     Regex("""s3:\/\/(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com\/?(?:\?(?<params>.*))?""")
                 val match = regex.matchEntire(url) ?: throw IllegalArgumentException(
                     "Invalid S3 URL. The URL should match one of the patterns:" +
-                            "   s3://[user]:[password]@[bucket].[region].amazonaws.com/?[params],"+
-                            "   s3://[profile]@[bucket].[region].amazonaws.com/?[params],"+
+                            "   s3://[user]:[password]@[bucket].[region].amazonaws.com/?[params]," +
+                            "   s3://[profile]@[bucket].[region].amazonaws.com/?[params]," +
                             "       Available params are: signedUrlDuration"
                 )
 
@@ -315,7 +332,7 @@ public class S3PublicFileSystem(
 
                 val signedUrlDuration = params["signedUrlDuration"].let {
                     val value = it?.firstOrNull()
-                    when{
+                    when {
                         value == null -> 1.hours
                         value == "forever" || value == "null" -> null
                         value.all { it.isDigit() } -> value.toLong().seconds

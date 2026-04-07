@@ -16,17 +16,10 @@ package com.lightningkite.services.database
  * Intended for internal use where advanced reflection-like abilities are required using serialization modules.
  */
 
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.encoding.AbstractDecoder
-import kotlinx.serialization.encoding.AbstractEncoder
-import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.CompositeEncoder
+import kotlinx.serialization.encoding.*
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 
@@ -48,7 +41,8 @@ private class MinEncoder(
         }
     }
     override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
-        encodeValue(value as Any)
+        if (value == null) encodeNull()
+        else encodeValue(value as Any)
     }
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
         stack.add(ArrayList(descriptor.elementsCount))
@@ -74,6 +68,8 @@ private class MinEncoder(
 private class MinDecoder(override val serializersModule: SerializersModule, var item: Any?) : AbstractDecoder() {
     override fun decodeNotNullMark(): Boolean = item != null
     override fun decodeValue(): Any = item!!
+
+    @Suppress("Unchecked_Cast")
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = decodeValue() as T
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int = throw IllegalStateException("Use MinDecoderB")
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = when(descriptor.kind) {
@@ -101,6 +97,7 @@ private class MinDecoderB(override val serializersModule: SerializersModule, var
     override fun decodeValue(): Any {
         return decode()!!
     }
+    @Suppress("Unchecked_Cast")
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T = decode() as T
     override fun decodeSequentially(): Boolean = true
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
@@ -126,6 +123,7 @@ private class MinDecoderB(override val serializersModule: SerializersModule, var
 private class MinEncoderSI(
     override val serializersModule: SerializersModule,
     val resultIndex: Int,
+    val inline: Boolean = false
 ) : AbstractEncoder() {
     var output: Any? = null
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
@@ -134,6 +132,11 @@ private class MinEncoderSI(
 
     override fun encodeValue(value: Any) {
         output = value
+    }
+
+    override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
+        if (inline) output = value
+        else serializer.serialize(this, value)
     }
 
     override fun encodeNull() {
@@ -160,14 +163,15 @@ private class MinEncoderSI2(
         return (index == resultIndex).also { reallyEncode = it }
     }
     override fun encodeValue(value: Any) {
-        if(reallyEncode) {
+        if (reallyEncode) {
             stack.lastOrNull()?.add(value) ?: run {
                 parent.output = value
             }
         }
     }
     override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
-        encodeValue(value as Any)
+        if (value == null) encodeNull()
+        else encodeValue(value as Any)
     }
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
         stack.add(ArrayList(descriptor.elementsCount))
@@ -217,10 +221,15 @@ private val empty = EmptySerializersModule()
  * @return The extracted field value of type [V].
  */
 internal fun <T, V> KSerializer<T>.get(instance: T, index: Int, childSerializer: KSerializer<V>, module: SerializersModule = empty ): V {
-    val e = MinEncoderSI(module, index)
+    val e = MinEncoderSI(module, index, inline = descriptor.isInline)
     this.serialize(e, instance)
 //    println("Child: ${childSerializer.descriptor.serialName} (${childSerializer.descriptor.kind})")
-    return e.output as V
+    @Suppress("Unchecked_Cast")
+    return try {
+        e.output as V
+    } catch (c: ClassCastException) {
+        throw SerializationException("KSerializer.get failed to cast the encoded value. Something has gone terribly wrong. Could not coerce ${e.output} into type ${childSerializer.descriptor.serialName}.", cause = c)
+    }
 //    val d = MinDecoder(module, e.output)
 //    return childSerializer.deserialize(d)
 }
@@ -238,14 +247,16 @@ internal fun <T, V> KSerializer<T>.get(instance: T, index: Int, childSerializer:
  * @param module Optional serialization module.
  * @return A new object with the updated field.
  */
-internal fun <T, V> KSerializer<T>.set(instance: T, index: Int, childSerializer: KSerializer<V>, value: V, module: SerializersModule = empty ): T {
+internal fun <T, V> KSerializer<T>.set(instance: T, index: Int, childSerializer: KSerializer<V>, value: V, module: SerializersModule = empty): T {
+    if (descriptor.isInline) return deserialize(MinDecoder(module, value))
+
     val e = MinEncoder(module)
     this.serialize(e, instance)
-    val newValue = value
+    @Suppress("Unchecked_Cast")
     val eo = e.output as ArrayList<Any?>
 //    println("Before: $eo")
 //    println("Before Types: ${eo.joinToString(", ", "[", "]") { it?.let { it::class.simpleName } ?: "null"}}")
-    eo[index] = newValue
+    eo[index] = value
 //    println("After : $eo")
 //    println("After  Types: ${eo.joinToString(", ", "[", "]") { it?.let { it::class.simpleName } ?: "null"}}")
     @Suppress("UNCHECKED_CAST") val d = MinDecoder(module, e.output)

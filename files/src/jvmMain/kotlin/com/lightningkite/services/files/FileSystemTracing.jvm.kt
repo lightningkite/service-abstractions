@@ -1,6 +1,7 @@
 package com.lightningkite.services.files
 
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.otel.TelemetrySanitization
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
@@ -47,7 +48,7 @@ internal actual suspend fun <T> traceFileOperation(
         }
     } catch (e: Exception) {
         span?.setStatus(StatusCode.ERROR, "Failed to $operation file: ${e.message}")
-        span?.recordException(e)
+        span?.recordExceptionWithFingerprint(e)
         throw e
     } finally {
         span?.end()

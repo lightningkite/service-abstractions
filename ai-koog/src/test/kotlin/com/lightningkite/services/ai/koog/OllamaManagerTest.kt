@@ -1,5 +1,6 @@
 package com.lightningkite.services.ai.koog
 
+import com.lightningkite.services.ai.koog.rag.EmbedderSettings
 import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
@@ -421,7 +422,7 @@ class OllamaSettingsIntegrationTest {
         // Most Ollama models listed in knownModels don't support embedding
         // This just tests the URL construction
         val url = "ollama-auto://nomic-embed-text"
-        val settings = com.lightningkite.services.ai.koog.rag.EmbedderSettings(url)
+        val settings = EmbedderSettings(url)
         assertEquals(url, settings.url)
     }
 }

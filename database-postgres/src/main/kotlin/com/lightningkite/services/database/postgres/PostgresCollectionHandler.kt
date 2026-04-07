@@ -264,6 +264,7 @@ private class PostgresListElementConverterEncoder(
     override fun encodeDouble(value: Double) = write(value)
     override fun encodeChar(value: Char) = write(value)
     override fun encodeString(value: String) = write(value)
+    @ExperimentalSerializationApi
     override fun encodeNull() { arrays[""]?.add(null) }
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) =
         write(enumDescriptor.getElementName(index))
@@ -446,12 +447,14 @@ private class PostgresListElementConverterDecoder(
     override fun decodeDouble(): Double = read()
     override fun decodeChar(): Char = read()
     override fun decodeString(): String = read()
+    @ExperimentalSerializationApi
     override fun decodeNull(): Nothing? = null
     override fun decodeEnum(enumDescriptor: SerialDescriptor): Int {
         val name: String = read()
         return enumDescriptor.getElementIndex(name)
     }
     override fun decodeInline(descriptor: SerialDescriptor): Decoder = this
+    @ExperimentalSerializationApi
     override fun decodeNotNullMark(): Boolean = element != null
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -679,6 +682,7 @@ private class PostgresMapElementConverterEncoder(
     override fun encodeDouble(value: Double) = write(value)
     override fun encodeChar(value: Char) = write(value)
     override fun encodeString(value: String) = write(value)
+    @ExperimentalSerializationApi
     override fun encodeNull() { arrays[""]?.add(null) }
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) =
         write(enumDescriptor.getElementName(index))

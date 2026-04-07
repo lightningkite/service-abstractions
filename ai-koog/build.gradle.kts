@@ -1,11 +1,10 @@
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -13,17 +12,17 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":database-shared"))
-    testImplementation(libs.kotlinTest)
-    testImplementation(libs.coroutinesTesting)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
 
     // Koog agents framework - includes all LLM clients
     api(libs.koog.agents)
     api(libs.koog.vector.storage)
 
     // Ktor client for Ollama management REST API
-    implementation(libs.ktorClientCio)
-    implementation(libs.ktorContentNegotiation)
-    implementation(libs.ktorJson)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.contentNegotiation)
+    implementation(libs.ktor.json)
 }
 
 kotlin {

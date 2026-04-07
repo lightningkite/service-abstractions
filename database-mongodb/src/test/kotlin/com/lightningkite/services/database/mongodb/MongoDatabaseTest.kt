@@ -6,6 +6,7 @@ import com.lightningkite.services.database.mongodb.TestDatabase.mongoClient
 import com.lightningkite.services.database.test.AggregationsTest
 import com.lightningkite.services.database.test.ConditionTests
 import com.lightningkite.services.database.test.IndexTests
+import com.lightningkite.services.database.test.InlinePropertiesTests
 import com.lightningkite.services.database.test.MetaTest
 import com.lightningkite.services.database.test.ModificationTests
 import com.lightningkite.services.database.test.OperationsTests
@@ -74,27 +75,44 @@ fun vectorDb() = VectorTestDatabase.mongoClient ?: db()
 
 class MongodbAggregationsTest: AggregationsTest() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbConditionTests: ConditionTests() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbModificationTests: ModificationTests() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbOperationsTests: OperationsTests() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbSortTest: SortTest() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbMetaTest: MetaTest() {
     override val database: Database = db()
+
+    @Test fun start() {}
 }
 class MongodbIndexTest: IndexTests() {
     override val database: Database = db()
 
     @Test
     fun start() {}
+}
+class MondodbInlineTests: InlinePropertiesTests() {
+    override val database: Database = db()
+
+    @Test fun start() {}
 }
 
 class MongodbVectorSearchTests: VectorSearchTests() {

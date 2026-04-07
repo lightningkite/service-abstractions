@@ -17,3 +17,4 @@ pubsub-mqtt-paho/terraform
 .wiggum
 .fork
 database-mongodb/src/test/kotlin/com/lightningkite/services/database/mongodb/exportTest
+/.claude/settings.local.json

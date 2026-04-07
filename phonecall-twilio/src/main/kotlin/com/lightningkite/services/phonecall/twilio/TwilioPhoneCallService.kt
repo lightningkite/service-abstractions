@@ -4,6 +4,7 @@ import com.lightningkite.MediaType
 import com.lightningkite.PhoneNumber
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.data.HttpAdapter
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.data.WebhookSubservice
@@ -463,7 +464,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to start call: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -510,7 +511,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to speak: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -546,7 +547,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to play audio: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -585,7 +586,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send DTMF: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -617,7 +618,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to hold call: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -650,7 +651,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to resume call: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -693,7 +694,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to hangup call: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -740,7 +741,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to get call status: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -768,7 +769,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to update call: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -817,7 +818,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to update call: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -1261,7 +1262,7 @@ public class TwilioPhoneCallService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to lookup phone number: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()

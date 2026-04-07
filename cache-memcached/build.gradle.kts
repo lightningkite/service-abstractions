@@ -1,15 +1,10 @@
-
-import com.lightningkite.deployhelpers.github
-import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -17,9 +12,9 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":cache"))
-    testImplementation(libs.kotlinTest)
+    testImplementation(libs.kotlin.test)
     implementation(libs.memcached)
-    testImplementation(libs.coroutinesTesting)
+    testImplementation(libs.coroutines.testing)
     testImplementation(project(":cache-test"))
 }
 

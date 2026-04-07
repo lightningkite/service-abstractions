@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.data.KFile
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.database.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.opentelemetry.api.trace.Span
@@ -68,7 +69,7 @@ public class JsonFileTable<Model : Any>(
                 throw t
             } catch (t: Throwable) {
                 span.setStatus(StatusCode.ERROR)
-                span.recordException(t)
+                span.recordExceptionWithFingerprint(t)
                 throw t
             } finally {
                 span.end()

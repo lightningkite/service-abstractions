@@ -40,6 +40,7 @@ internal class SerialDescriptorTable(
                         current = current.getElementDescriptor(index)
                     }
                 }
+                @Suppress("Unchecked_cast")
                 val col = registerColumn<Any?>(it.key.joinToString("__"), it.type as ColumnType<Any>)
                 for (partialSize in 1..path.size)
                     columnsByDotPath.getOrPut(path.subList(0, partialSize)) { ArrayList() }.add(col)

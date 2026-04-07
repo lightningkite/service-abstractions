@@ -1,11 +1,10 @@
-import com.lightningkite.deployhelpers.*
+import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
     id("signing")
@@ -32,6 +31,7 @@ kotlin {
     js(IR) {
         browser()
     }
+
     iosX64()
     iosArm64()
     iosSimulatorArm64()
@@ -45,23 +45,23 @@ kotlin {
                 api(project(path = ":email"))
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+                }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
         val commonTest by getting {
             dependencies {
-                implementation(libs.kotlinTest)
-                implementation(libs.coroutinesTesting)
+                implementation(libs.kotlin.test)
+                implementation(libs.coroutines.testing)
             }
             kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-    }
+                compilerOptions {
+                    optIn.add("kotlin.time.ExperimentalTime")
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+                }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }

@@ -1,15 +1,10 @@
-
-import com.lightningkite.deployhelpers.github
-import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -18,16 +13,16 @@ dependencies {
     api(project(path = ":basis"))
     api(project(path = ":database"))
     testImplementation(project(path = ":database-test"))
-    testImplementation(libs.kotlinTest)
-    api(libs.exposedCore)
-    api(libs.exposedJavaTime)
-    api(libs.exposedJdbc)
+    testImplementation(libs.kotlin.test)
+    api(libs.exposed.core)
+    api(libs.exposed.javaTime)
+    api(libs.exposed.jdbc)
     api(libs.postgresql)
-    testImplementation(libs.embeddedPostgres)
-    testImplementation(libs.testcontainers)
-    testImplementation(libs.testcontainersPostgresql)
-    testImplementation(libs.testcontainersJunit)
-    testImplementation(libs.coroutinesTesting)
+    testImplementation(libs.embedded.postgres)
+    testImplementation(libs.testContainers)
+    testImplementation(libs.testContainers.postgresql)
+    testImplementation(libs.testContainers.junit)
+    testImplementation(libs.coroutines.testing)
 }
 
 kotlin {

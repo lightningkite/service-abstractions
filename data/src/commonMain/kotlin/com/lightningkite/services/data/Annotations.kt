@@ -231,7 +231,7 @@ annotation class GenerateDataClassPaths
 
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
-@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD, AnnotationTarget.CLASS)
 annotation class References(
     val references: KClass<*>,
     val reverseName: String = ""

@@ -2,6 +2,7 @@ package com.lightningkite.services.email.javasmtp
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.email.Email
 import com.lightningkite.services.email.EmailAddressWithName
 import com.lightningkite.services.email.EmailPersonalization
@@ -223,7 +224,7 @@ public class JavaSmtpEmailService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send email: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -275,7 +276,7 @@ public class JavaSmtpEmailService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -324,7 +325,7 @@ public class JavaSmtpEmailService(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -358,12 +359,14 @@ public class JavaSmtpEmailService(
                         })
                     })
                 })
+                // by Claude - fixed Content-Disposition (was "form-data") and added Content-ID for inline/CID support
                 for (attachment in email.attachments) {
                     addBodyPart(MimeBodyPart().apply {
-                        addHeader(
-                            "Content-Disposition",
-                            "form-data;name=${if(attachment.inline) "inline" else "attachment"};filename=${attachment.filename}"
-                        )
+                        val disposition = if (attachment.inline) "inline" else "attachment"
+                        addHeader("Content-Disposition", "$disposition; filename=\"${attachment.filename}\"")
+                        if (attachment.inline) {
+                            addHeader("Content-ID", "<${attachment.filename}>")
+                        }
                         dataHandler = DataHandler(
                             ByteArrayDataSource(
                                 attachment.typedData.data.bytes(),

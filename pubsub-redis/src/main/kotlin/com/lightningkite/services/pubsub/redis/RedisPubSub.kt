@@ -1,6 +1,7 @@
 package com.lightningkite.services.pubsub.redis
 
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.lettuce.core.RedisClient
@@ -214,7 +215,7 @@ public class RedisPubSub(
                                 decoded
                             } catch (e: Exception) {
                                 receiveSpan?.setStatus(StatusCode.ERROR, "Failed to deserialize message: ${e.message}")
-                                receiveSpan?.recordException(e)
+                                receiveSpan?.recordExceptionWithFingerprint(e)
                                 throw e
                             } finally {
                                 receiveSpan?.end()
@@ -226,7 +227,7 @@ public class RedisPubSub(
                     }
                 } catch (e: Exception) {
                     span?.setStatus(StatusCode.ERROR, "Failed to subscribe: ${e.message}")
-                    span?.recordException(e)
+                    span?.recordExceptionWithFingerprint(e)
                     throw e
                 } finally {
                     span?.end()
@@ -256,7 +257,7 @@ public class RedisPubSub(
                     }
                 } catch (e: Exception) {
                     span?.setStatus(StatusCode.ERROR, "Failed to publish: ${e.message}")
-                    span?.recordException(e)
+                    span?.recordExceptionWithFingerprint(e)
                     throw e
                 } finally {
                     connection.close()
@@ -302,7 +303,7 @@ public class RedisPubSub(
                     }
                 } catch (e: Exception) {
                     span?.setStatus(StatusCode.ERROR, "Failed to subscribe: ${e.message}")
-                    span?.recordException(e)
+                    span?.recordExceptionWithFingerprint(e)
                     throw e
                 } finally {
                     span?.end()
@@ -331,7 +332,7 @@ public class RedisPubSub(
                     }
                 } catch (e: Exception) {
                     span?.setStatus(StatusCode.ERROR, "Failed to publish: ${e.message}")
-                    span?.recordException(e)
+                    span?.recordExceptionWithFingerprint(e)
                     throw e
                 } finally {
                     connection.close()

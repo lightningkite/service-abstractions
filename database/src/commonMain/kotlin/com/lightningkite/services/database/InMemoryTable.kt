@@ -149,7 +149,9 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName,
         attributes = mapOf("db.aggregate" to aggregate.toString())
     ) {
-        data.asSequence().filter { condition(it) }.mapNotNull { property.get(it)?.toDouble() }.aggregate(aggregate)
+        data.asSequence()
+            .filter { condition(it) }
+            .aggregateOfNotNull(aggregate) { property.get(it)?.toDouble() }
     }
 
     override suspend fun <N : Number?, Key> groupAggregate(
@@ -163,10 +165,15 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName,
         attributes = mapOf("db.aggregate" to aggregate.toString())
     ) {
-        data.asSequence().filter { condition(it) }
-            .mapNotNull {
-                (groupBy.get(it) ?: return@mapNotNull null) to (property.get(it)?.toDouble() ?: return@mapNotNull null)
-            }.aggregate(aggregate)
+        data.asSequence()
+            .filter { condition(it) }
+            .groupAggregateNotNull(aggregate) {
+                @Suppress("UNCHECKED_CAST")
+                Pair(
+                    groupBy.get(it) as Key,
+                    property.get(it)?.toDouble() ?: return@groupAggregateNotNull null
+                )
+            }
     }
 
     override suspend fun insert(models: Iterable<Model>): List<Model> = traced(

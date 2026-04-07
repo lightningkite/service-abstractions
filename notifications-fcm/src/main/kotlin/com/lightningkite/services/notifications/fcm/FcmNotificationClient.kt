@@ -6,17 +6,16 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.*
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.notifications.NotificationService
+import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.notifications.*
+import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import com.google.firebase.messaging.Notification as FCMNotification
-import com.lightningkite.services.notifications.*
-import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import com.google.firebase.messaging.Notification as FCMNotification
 
 /**
  * Firebase Cloud Messaging (FCM) implementation for sending push notifications.
@@ -134,7 +133,8 @@ import kotlin.time.Duration
  */
 public class FcmNotificationClient(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
+    private val options: FirebaseOptions,
 ) : NotificationService {
 
     private val log = KotlinLogging.logger("com.lightningkite.services.notifications.fcm.FcmNotificationClient")
@@ -143,8 +143,10 @@ public class FcmNotificationClient(
     public companion object {
         public fun NotificationService.Settings.Companion.fcm(jsonString: String): NotificationService.Settings =
             NotificationService.Settings("fcm://$jsonString")
+
         public fun NotificationService.Settings.Companion.fcm(file: File): NotificationService.Settings =
             NotificationService.Settings("fcm://$file")
+
         init {
             NotificationService.Settings.register("fcm") { name, url, context ->
                 var creds = url.substringAfter("://", "")
@@ -155,20 +157,24 @@ public class FcmNotificationClient(
                     creds = file.readText()
                 }
 
-                // Check if a FirebaseApp with this name already exists
-                val existingApp = FirebaseApp.getApps().firstOrNull { it.name == name }
-                if (existingApp == null) {
-                    FirebaseApp.initializeApp(
-                        FirebaseOptions.builder()
-                            .setCredentials(GoogleCredentials.fromStream(creds.byteInputStream()))
-                            .build(),
-                        name
-                    )
-                }
+                val options = FirebaseOptions.builder()
+                    .setCredentials(GoogleCredentials.fromStream(creds.byteInputStream()))
+                    .build()
 
-                FcmNotificationClient(name, context)
+                FcmNotificationClient(name, context, options)
             }
         }
+    }
+
+    private fun initializeFirebaseApp(name: String, options: FirebaseOptions) {
+        // Prevent duplicate initialization by checking if a FirebaseApp with this name already exists
+        val existingApp = FirebaseApp.getApps().firstOrNull { it.name == name }
+        if (existingApp == null)
+            FirebaseApp.initializeApp(options, name)
+    }
+
+    init{
+        initializeFirebaseApp(name, options)
     }
 
     /**
@@ -177,7 +183,7 @@ public class FcmNotificationClient(
      */
     override suspend fun send(
         targets: List<String>,
-        data: NotificationData
+        data: NotificationData,
     ): Map<String, NotificationSendResult> {
         val span = tracer?.spanBuilder("notification.send")
             ?.setSpanKind(SpanKind.CLIENT)
@@ -207,7 +213,7 @@ public class FcmNotificationClient(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to send notifications: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -216,7 +222,7 @@ public class FcmNotificationClient(
 
     private suspend fun sendInternal(
         targets: List<String>,
-        data: NotificationData
+        data: NotificationData,
     ): Map<String, NotificationSendResult> {
         val notification = data.notification
         val android = data.android
@@ -321,7 +327,8 @@ public class FcmNotificationClient(
             .map { chunk -> chunk to builder().addAllTokens(chunk).build() }
             .forEach { (chunk, message) ->
                 withContext(Dispatchers.IO) {
-                    val result = FirebaseMessaging.getInstance().sendEachForMulticast(message)
+                    val result = FirebaseMessaging.getInstance(FirebaseApp.getInstance(name))
+                            .sendEachForMulticast(message)
                     result.responses.forEachIndexed { index, sendResponse ->
                         val targetToken = chunk[index]
                         log.debug { "Send: ${sendResponse.messageId} / ${sendResponse.exception?.message} ${sendResponse.exception?.messagingErrorCode}" }
@@ -352,14 +359,14 @@ public class FcmNotificationClient(
         try {
             val scope = span?.makeCurrent()
             try {
-                // Firebase client initializes lazily, no explicit connection needed
+                initializeFirebaseApp(name, options)
                 span?.setStatus(StatusCode.OK)
             } finally {
                 scope?.close()
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to connect: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -389,17 +396,18 @@ public class FcmNotificationClient(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to disconnect: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
         }
     }
 
-    override val healthCheckFrequency: Duration = Duration.INFINITE
-
     override suspend fun healthCheck(): HealthStatus {
-        return HealthStatus(HealthStatus.Level.OK, additionalMessage = "Firebase Notification Service - No direct health checks available.")
+        return HealthStatus(
+            HealthStatus.Level.OK,
+            additionalMessage = "Firebase Notification Service - No direct health checks available."
+        )
     }
 }
 

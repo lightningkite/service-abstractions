@@ -1,15 +1,10 @@
-
-import com.lightningkite.deployhelpers.github
-import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -17,9 +12,9 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":email-inbound"))
-    implementation(libs.kotlinXJson)
-    testImplementation(libs.kotlinTest)
-    testImplementation(libs.coroutinesTesting)
+    implementation(libs.kotlinx.json)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
     testImplementation(project(":test"))
 }
 

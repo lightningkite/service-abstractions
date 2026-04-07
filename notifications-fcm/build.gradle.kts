@@ -1,15 +1,11 @@
 
-import com.lightningkite.deployhelpers.github
-import com.lightningkite.deployhelpers.mit
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -17,9 +13,9 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":notifications"))
-    testImplementation(libs.kotlinTest)
-    implementation(libs.firebaseAdmin)
-    testImplementation(libs.coroutinesTesting)
+    testImplementation(libs.kotlin.test)
+    implementation(libs.firebase.admin)
+    testImplementation(libs.coroutines.testing)
     testImplementation(project(path = ":test"))
 }
 

@@ -9,6 +9,8 @@ import org.jetbrains.exposed.sql.statements.jdbc.JdbcConnectionImpl
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 
 internal fun <T> Table.array(name: String, columnType: ColumnType<T>): Column<List<T>> = registerColumn(name, ArrayColumnType(columnType))
+
+@Suppress("Unchecked_cast")
 internal fun Table.arrayTypeless(name: String, columnType: ColumnType<*>): Column<List<*>> =
     registerColumn(name, ArrayColumnType(columnType)) as Column<List<*>>
 
@@ -23,6 +25,8 @@ internal class ArrayColumnType<T>(val type: ColumnType<T>) : ColumnType<List<T>>
         val jdbcConnection = (TransactionManager.current().connection as JdbcConnectionImpl).connection
         return jdbcConnection.createArrayOf(columnType, value.map { type.valueToDB(it) }.toTypedArray())
     }
+
+    @Suppress("Unchecked_cast")
     override fun valueFromDB(value: Any): List<T> {
         return when (value) {
             is java.sql.Array -> (value.array as Array<*>).toList()

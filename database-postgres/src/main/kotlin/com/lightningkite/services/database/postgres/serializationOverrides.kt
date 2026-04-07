@@ -113,12 +113,15 @@ private val serializationOverrides = mapOf<SerialDescriptor, JdbcConversion<*, *
     },
 )
 
+@Suppress("Unchecked_cast")
 internal fun <T> serializationOverride(strategy: SerializationStrategy<T>): JdbcConversion<T, *>? =
     serializationOverrides[strategy.descriptor] as? JdbcConversion<T, *>
 
+@Suppress("Unchecked_cast")
 internal fun <T> serializationOverride(strategy: DeserializationStrategy<T>): JdbcConversion<T, *>? =
     serializationOverrides[strategy.descriptor] as? JdbcConversion<T, *>
 
+@Suppress("Unchecked_cast")
 internal fun <T> serializationOverride(strategy: KSerializer<T>): JdbcConversion<T, *>? =
     serializationOverrides[strategy.descriptor] as? JdbcConversion<T, *>
 

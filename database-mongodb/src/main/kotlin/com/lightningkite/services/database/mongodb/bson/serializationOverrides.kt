@@ -97,7 +97,9 @@ private val serializationOverrides = mapOf<SerialDescriptor, BsonConversion<*>>(
         }
     },
 )
+@Suppress("Unchecked_cast")
 internal fun <T> serializationOverride(strategy: SerializationStrategy<T>): BsonConversion<T>? = serializationOverrides[strategy.descriptor] as? BsonConversion<T>
+@Suppress("Unchecked_cast")
 internal fun <T> serializationOverride(strategy: DeserializationStrategy<T>): BsonConversion<T>? = serializationOverrides[strategy.descriptor] as? BsonConversion<T>
 
 internal interface BsonConversion<KOTLIN> {

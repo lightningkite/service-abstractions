@@ -7,9 +7,7 @@ import io.lettuce.core.SetArgs
 import io.lettuce.core.api.reactive.RedisReactiveCommands
 import io.lettuce.core.resource.ClientResources
 import io.opentelemetry.instrumentation.lettuce.v5_1.LettuceTelemetry
-import kotlinx.coroutines.reactive.awaitFirst
-import kotlinx.coroutines.reactive.awaitFirstOrNull
-import kotlinx.coroutines.reactive.collect
+import kotlinx.coroutines.reactive.*
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration
@@ -64,12 +62,13 @@ import kotlin.time.toJavaDuration
 public class RedisCache(
     override val name: String,
     public val lettuceClient: RedisClient,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : Cache {
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
 
     public companion object {
         public fun Cache.Settings.Companion.redis(url: String): Cache.Settings = Cache.Settings("redis://$url")
+
         init {
             Cache.Settings.register("redis") { name, url, context ->
                 val telemetry = context.openTelemetry?.let { LettuceTelemetry.create(it) }
@@ -102,7 +101,7 @@ public class RedisCache(
         key: String,
         value: T,
         serializer: KSerializer<T>,
-        timeToLive: Duration?
+        timeToLive: Duration?,
     ): Boolean {
         val result = lettuceConnection.setnx(key, json.encodeToString(serializer, value)).awaitFirst()
         if (result) timeToLive?.let { lettuceConnection.pexpire(key, it.toJavaDuration()).collect { } }
@@ -125,7 +124,7 @@ public class RedisCache(
         serializer: KSerializer<T>,
         expected: T?,
         new: T?,
-        timeToLive: Duration?
+        timeToLive: Duration?,
     ): Boolean {
         // Early return if expected equals new
         if (expected == new) return true
@@ -136,11 +135,8 @@ public class RedisCache(
         val newJson = new?.let { json.encodeToString(serializer, it) }
 
         val script = when {
-            expected == null && new == null -> {
-                // Both null - nothing to do
-                return true
-            }
-            expected == null && new != null -> {
+
+            expected == null -> {
                 // Insert if not exists
                 """
                 if redis.call('EXISTS', KEYS[1]) == 0 then
@@ -155,7 +151,8 @@ public class RedisCache(
                 end
                 """.trimIndent()
             }
-            expected != null && new == null -> {
+
+            new == null -> {
                 // Delete if matches
                 """
                 local current = redis.call('GET', KEYS[1])
@@ -167,6 +164,7 @@ public class RedisCache(
                 end
                 """.trimIndent()
             }
+
             else -> {
                 // Update if matches
                 """
@@ -186,25 +184,19 @@ public class RedisCache(
         }
 
         val args = when {
-            expected == null && new != null -> {
+            expected == null -> {
                 // Insert: ARGV[1] = newJson, ARGV[2] = ttl (optional)
-                if (timeToLive != null) {
-                    arrayOf(newJson!!, timeToLive.inWholeMilliseconds.toString())
-                } else {
-                    arrayOf(newJson!!)
-                }
+                listOfNotNull(newJson!!, timeToLive?.inWholeMilliseconds?.toString()).toTypedArray()
             }
-            expected != null && new == null -> {
+
+            new == null -> {
                 // Delete: ARGV[1] = expectedJson
                 arrayOf(expectedJson!!)
             }
+
             else -> {
                 // Update: ARGV[1] = expectedJson, ARGV[2] = newJson, ARGV[3] = ttl (optional)
-                if (timeToLive != null) {
-                    arrayOf(expectedJson!!, newJson!!, timeToLive.inWholeMilliseconds.toString())
-                } else {
-                    arrayOf(expectedJson!!, newJson!!)
-                }
+                listOfNotNull(expectedJson!!, newJson!!, timeToLive?.inWholeMilliseconds?.toString()).toTypedArray()
             }
         }
 

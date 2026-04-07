@@ -1,6 +1,7 @@
 package com.lightningkite.services.cache.memcached
 
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.cache.Cache
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
@@ -138,7 +139,7 @@ public class MemcachedCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to get from cache: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -171,7 +172,7 @@ public class MemcachedCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to set cache value: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -210,7 +211,7 @@ public class MemcachedCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to setIfNotExists: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -243,7 +244,7 @@ public class MemcachedCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to add to cache: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -271,7 +272,7 @@ public class MemcachedCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to remove from cache: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -315,10 +316,6 @@ public class MemcachedCache(
 
                     // Now perform the CAS operation based on the state transition
                     when {
-                        new == null && expected == null -> {
-                            // Both null, nothing to do
-                            true
-                        }
                         new == null -> {
                             // Delete the key (expected is not null, so key exists)
                             client.delete(key)
@@ -351,7 +348,7 @@ public class MemcachedCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to compareAndSet: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()

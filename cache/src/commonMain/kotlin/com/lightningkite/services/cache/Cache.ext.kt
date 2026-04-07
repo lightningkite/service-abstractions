@@ -87,9 +87,3 @@ public suspend inline fun <reified T : Any> Cache.modify(
  */
 public inline operator fun <reified T> (() -> Cache).get(key: String): CacheHandle<T> =
     CacheHandle<T>(this, key) { this().context.internalSerializersModule.serializer<T>() }
-
-/**
- * Platform-specific cache settings registration.
- * JVM registers "ram" with ConcurrentHashMap, non-JVM platforms have no additional registrations.
- */
-internal expect fun platformSpecificCacheSettings()

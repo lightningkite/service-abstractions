@@ -1,10 +1,10 @@
-import com.lightningkite.deployhelpers.*
+import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
     id("signing")
@@ -31,6 +31,7 @@ kotlin {
     js(IR) {
         browser()
     }
+
     iosX64()
     iosArm64()
     iosSimulatorArm64()
@@ -40,12 +41,12 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(libs.kotlinXJson)
-                api(libs.kotlinXDatetime)
+                api(libs.kotlinx.json)
+                api(libs.kotlinx.datetime)
                 api(project(":basis"))
-                api(libs.coroutinesCore)
-                api(libs.kotlinTest)
-                api(libs.coroutinesTesting)
+                api(libs.coroutines.core)
+                api(libs.kotlin.test)
+                api(libs.coroutines.testing)
                 api(libs.logBackClassic)
             }
             kotlin {
@@ -69,17 +70,17 @@ kotlin {
         }
         val androidMain by getting {
             dependencies {
-                api(libs.kotlinTestJunit)
+                api(libs.kotlin.test.junit)
             }
         }
         val jsMain by getting {
             dependencies {
-                api(libs.kotlinTestJs)
+                api(libs.kotlin.test.js)
             }
         }
         val jvmMain by getting {
             dependencies {
-                api(libs.kotlinTestJunit)
+                api(libs.kotlin.test.junit)
             }
         }
         val jvmTest by getting {

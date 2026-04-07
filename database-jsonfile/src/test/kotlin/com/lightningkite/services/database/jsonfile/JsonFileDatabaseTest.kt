@@ -5,10 +5,12 @@ import com.lightningkite.services.data.KFile
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.test.AggregationsTest
 import com.lightningkite.services.database.test.ConditionTests
+import com.lightningkite.services.database.test.InlinePropertiesTests
 import com.lightningkite.services.database.test.MetaTest
 import com.lightningkite.services.database.test.ModificationTests
 import com.lightningkite.services.database.test.OperationsTests
 import com.lightningkite.services.database.test.SortTest
+import kotlin.test.Test
 
 private fun db() = JsonFileDatabase("test", KFile("build/testrun").also {
     it.deleteRecursively()
@@ -31,4 +33,9 @@ class JsonFileSortTest: SortTest() {
 }
 class JsonFileMetaTest: MetaTest() {
     override val database: Database = db()
+}
+class JsonFileInlinesTest: InlinePropertiesTests() {
+    override val database: Database = db()
+
+    @Test fun start() {}
 }

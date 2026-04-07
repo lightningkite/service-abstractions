@@ -6,6 +6,7 @@ import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
 import com.lightningkite.services.http.client
 import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.recordExceptionWithFingerprint
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.encode
@@ -27,7 +28,6 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import java.io.File
 import java.net.URLDecoder
-import java.net.URLEncoder
 import java.time.ZoneOffset
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
@@ -50,6 +50,11 @@ public class S3FileObject(
     public val path: File,
 ) : FileObject {
 
+    init{
+        if(this.path.path.contains("+"))
+            throw IllegalArgumentException("Invalid File Path. File Path cannot contain '+'")
+    }
+
     /**
      * The Unix-style path for this file.
      * Converts Windows-style backslashes to forward slashes for S3 compatibility.
@@ -58,8 +63,7 @@ public class S3FileObject(
 
     override fun then(path: String): S3FileObject = S3FileObject(
         system,
-        this.path.resolve(path.decodeURLPart()
-            .also { if (it.contains("+")) throw IllegalArgumentException("File Path cannot contain '+'") })
+        this.path.resolve(path.decodeURLPart())
     )
 
     override val name: String get() = path.name
@@ -116,7 +120,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to list directory: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -167,7 +171,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to get file metadata: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -210,7 +214,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to upload file: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -261,7 +265,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to download file: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -298,7 +302,7 @@ public class S3FileObject(
                             it.sourceBucket(system.bucket)
                             it.destinationBucket(system.bucket)
                             it.sourceKey(unixPath)
-                            it.destinationKey((other as S3FileObject).unixPath)
+                            it.destinationKey(other.unixPath)
                         }.await()
                     }
                 } else {
@@ -310,7 +314,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to copy file: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -346,7 +350,7 @@ public class S3FileObject(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to delete file: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -568,18 +572,6 @@ public class S3FileObject(
             }.url().toString()
         } ?: url
 
-    /**
-     * Alternative upload URL using AWS SDK's official presigner.
-     * Used for performance comparison testing.
-     */
-    internal fun uploadUrlOfficial(timeout: Duration): String =
-        system.signer.presignPutObject {
-            it.signatureDuration(timeout.toJavaDuration())
-            it.putObjectRequest {
-                it.bucket(system.bucket)
-                it.key(unixPath)
-            }
-        }.url().toString()
 
     override fun toString(): String = url
 
@@ -603,13 +595,11 @@ public class S3FileObject(
             try {
                 val headers = queryParams.split('&').associate {
                     URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(
-                        it.substringAfter(
-                            '=', ""
-                        ), Charsets.UTF_8
+                        it.substringAfter('=', ""), Charsets.UTF_8
                     )
                 }
                 val secretKey = system.credentialProvider.resolveCredentials().secretAccessKey()
-                val objectPath = path.path.replace("\\", "/")
+                val objectPath = path.path.replace("\\", "/").aggressiveEncodeURLPath()
                 val date =
                     headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
                 val algorithm = headers["X-Amz-Algorithm"]

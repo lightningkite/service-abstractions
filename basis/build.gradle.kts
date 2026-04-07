@@ -1,13 +1,10 @@
-import com.lightningkite.deployhelpers.*
+import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-import org.gradle.kotlin.dsl.implementation
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
     id("signing")
@@ -35,6 +32,7 @@ kotlin {
     js(IR) {
         browser()
     }
+
     iosX64()
     iosArm64()
     iosSimulatorArm64()
@@ -44,10 +42,10 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(libs.kotlinXJson)
-                api(libs.kotlinXDatetime)
-                api(libs.coroutinesCore)
-                api(libs.kotlinLogging)
+                api(libs.kotlinx.json)
+                api(libs.kotlinx.datetime)
+                api(libs.coroutines.core)
+                api(libs.kotlin.logging)
                 api(project(":should-be-standard-library"))
             }
             kotlin {
@@ -60,8 +58,8 @@ kotlin {
         }
         val commonTest by getting {
             dependencies {
-                implementation(libs.kotlinTest)
-                implementation(libs.coroutinesTesting)
+                implementation(libs.kotlin.test)
+                implementation(libs.coroutines.testing)
             }
             kotlin {
                 compilerOptions {

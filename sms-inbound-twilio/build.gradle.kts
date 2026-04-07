@@ -1,13 +1,10 @@
-
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -21,12 +18,12 @@ dependencies {
     // Ktor dependencies for HTTP client
     implementation(project(":http-client"))
 
-    testImplementation(libs.kotlinTest)
-    testImplementation(libs.coroutinesTesting)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
     testImplementation(project(path = ":test"))
 
     // Lightning Server for live webhook testing
-    testImplementation(libs.lightningserver.core) {
+    testImplementation(libs.lightningServer.core) {
         exclude(group = "com.lightningkite.services")
     }
     testImplementation(project(path = ":cache"))
@@ -34,10 +31,10 @@ dependencies {
     testImplementation(project(path = ":http-client"))
     testImplementation(project(path = ":otel-jvm"))
     testImplementation(project(path = ":pubsub"))
-    testImplementation(libs.lightningserver.typed) {
+    testImplementation(libs.lightningServer.typed) {
         exclude(group = "com.lightningkite.services")
     }
-    testImplementation(libs.lightningserver.engine.netty) {
+    testImplementation(libs.lightningServer.engine.netty) {
         exclude(group = "com.lightningkite.services")
     }
     testImplementation(libs.logBackClassic)

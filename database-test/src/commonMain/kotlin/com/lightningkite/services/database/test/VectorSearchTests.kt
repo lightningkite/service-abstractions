@@ -344,6 +344,70 @@ abstract class VectorSearchTests {
         assertTrue(results[0].score > results[1].score)
     }
 
+    // by Claude - Test vector search with a set filter condition.
+    // MongoDB Atlas pre-filters do not support $elemMatch, so set conditions
+    // must be converted to Atlas-compatible operators ($eq/$in).
+    @Test
+    open fun testFindSimilarWithSetCondition() = runTest {
+        if (!supportsVectorSearch) {
+            println("Vector search not supported, skipping test")
+            return@runTest
+        }
+
+        val collection = database.table<VectorTestModel>("testFindSimilarWithSetCondition")
+
+        // Clean up any existing documents from previous test runs
+        collection.deleteMany(Condition.Always)
+        waitForVectorSearchSync()
+
+        val doc1 = VectorTestModel(
+            title = "Kotlin Coroutines",
+            category = "tech",
+            tags = setOf("kotlin", "async"),
+            embedding = Embedding.of(1f, 0f, 0f)
+        )
+        val doc2 = VectorTestModel(
+            title = "Java Streams",
+            category = "tech",
+            tags = setOf("java", "streams"),
+            embedding = Embedding.of(0.9f, 0.1f, 0f) // Similar to doc1
+        )
+        val doc3 = VectorTestModel(
+            title = "Kotlin Serialization",
+            category = "tech",
+            tags = setOf("kotlin", "serialization"),
+            embedding = Embedding.of(0.5f, 0.5f, 0f) // Less similar
+        )
+        val doc4 = VectorTestModel(
+            title = "Python Basics",
+            category = "other",
+            tags = setOf("python"),
+            embedding = Embedding.of(0f, 1f, 0f) // Orthogonal
+        )
+
+        collection.insertMany(listOf(doc1, doc2, doc3, doc4))
+        waitForVectorSearchSync()
+
+        // Search for vectors similar to [1, 0, 0] but only where tags contain "kotlin"
+        val queryVector = Embedding.of(1f, 0f, 0f)
+        val results = collection.findSimilar(
+            vectorField = VectorTestModel.path.embedding,
+            params = VectorSearchParams(
+                queryVector = queryVector,
+                metric = SimilarityMetric.Cosine,
+                limit = 10
+            ),
+            condition = VectorTestModel.path.tags.any { it eq "kotlin" }
+        ).toList()
+
+        // Should only return the two kotlin-tagged docs
+        assertEquals(2, results.size)
+        assertTrue(results.all { "kotlin" in it.model.tags })
+        // doc1 should be first (most similar to query)
+        assertEquals("Kotlin Coroutines", results[0].model.title)
+        assertEquals("Kotlin Serialization", results[1].model.title)
+    }
+
     // Sparse vector tests
 
     @Test

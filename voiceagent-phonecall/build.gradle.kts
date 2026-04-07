@@ -1,11 +1,10 @@
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.serialization)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -16,30 +15,30 @@ dependencies {
     api(project(path = ":pubsub"))
 
     // Logging
-    implementation(libs.kotlinLogging)
+    implementation(libs.kotlin.logging)
 
     // Coroutines
-    implementation(libs.coroutinesCore)
+    implementation(libs.coroutines.core)
 
     // Testing
-    testImplementation(libs.kotlinTest)
-    testImplementation(libs.coroutinesTesting)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
     testImplementation(project(path = ":test"))
     testImplementation(project(path = ":voiceagent-openai"))
     testImplementation(project(path = ":phonecall-twilio"))
 
     // Lightning Server for live webhook/websocket testing
-    testImplementation(libs.lightningserver.core) {
+    testImplementation(libs.lightningServer.core) {
         exclude(group = "com.lightningkite.services")
     }
     testImplementation(project(path = ":cache"))
     testImplementation(project(path = ":database"))
     testImplementation(project(path = ":http-client"))
     testImplementation(project(path = ":otel-jvm"))
-    testImplementation(libs.lightningserver.typed) {
+    testImplementation(libs.lightningServer.typed) {
         exclude(group = "com.lightningkite.services")
     }
-    testImplementation(libs.lightningserver.engine.netty) {
+    testImplementation(libs.lightningServer.engine.netty) {
         exclude(group = "com.lightningkite.services")
     }
     testImplementation(libs.logBackClassic)

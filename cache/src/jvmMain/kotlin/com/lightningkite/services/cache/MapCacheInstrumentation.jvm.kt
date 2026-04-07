@@ -1,6 +1,7 @@
 package com.lightningkite.services.cache
 
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.otel.TelemetrySanitization
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
@@ -36,7 +37,7 @@ internal actual suspend fun <T> instrumentedGet(
         }
     } catch (e: Exception) {
         span?.setStatus(StatusCode.ERROR, "Failed to get from cache: ${e.message}")
-        span?.recordException(e)
+        span?.recordExceptionWithFingerprint(e)
         throw e
     } finally {
         span?.end()
@@ -71,7 +72,7 @@ internal actual suspend fun <T> instrumentedSet(
         }
     } catch (e: Exception) {
         span?.setStatus(StatusCode.ERROR, "Failed to set cache value: ${e.message}")
-        span?.recordException(e)
+        span?.recordExceptionWithFingerprint(e)
         throw e
     } finally {
         span?.end()
@@ -108,7 +109,7 @@ internal actual suspend fun instrumentedSetIfNotExists(
         }
     } catch (e: Exception) {
         span?.setStatus(StatusCode.ERROR, "Failed to setIfNotExists: ${e.message}")
-        span?.recordException(e)
+        span?.recordExceptionWithFingerprint(e)
         throw e
     } finally {
         span?.end()
@@ -145,7 +146,7 @@ internal actual suspend fun instrumentedAdd(
         }
     } catch (e: Exception) {
         span?.setStatus(StatusCode.ERROR, "Failed to add to cache: ${e.message}")
-        span?.recordException(e)
+        span?.recordExceptionWithFingerprint(e)
         throw e
     } finally {
         span?.end()
@@ -178,7 +179,7 @@ internal actual suspend fun instrumentedRemove(
         }
     } catch (e: Exception) {
         span?.setStatus(StatusCode.ERROR, "Failed to remove from cache: ${e.message}")
-        span?.recordException(e)
+        span?.recordExceptionWithFingerprint(e)
         throw e
     } finally {
         span?.end()
@@ -216,7 +217,7 @@ internal actual suspend fun <T> instrumentedModify(
         }
     } catch (e: Exception) {
         span?.setStatus(StatusCode.ERROR, "Failed to modify cache value: ${e.message}")
-        span?.recordException(e)
+        span?.recordExceptionWithFingerprint(e)
         throw e
     } finally {
         span?.end()

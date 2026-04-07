@@ -71,6 +71,7 @@ package com.lightningkite.services.cache.dynamodb
 
 import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.get
@@ -235,7 +236,7 @@ public class DynamoDbCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to get from cache: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -272,7 +273,7 @@ public class DynamoDbCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to set cache value: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -326,7 +327,7 @@ public class DynamoDbCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to setIfNotExists: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -376,7 +377,7 @@ public class DynamoDbCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to add to cache: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()
@@ -407,7 +408,7 @@ public class DynamoDbCache(
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to remove from cache: ${e.message}")
-            span?.recordException(e)
+            span?.recordExceptionWithFingerprint(e)
             throw e
         } finally {
             span?.end()

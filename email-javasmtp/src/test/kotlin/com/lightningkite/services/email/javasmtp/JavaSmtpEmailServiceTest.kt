@@ -10,7 +10,12 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.junit.Test
+import java.awt.Color
+import java.awt.Font
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
 import java.io.File
+import javax.imageio.ImageIO
 
 class JavaSmtpEmailServiceTest {
 
@@ -69,6 +74,47 @@ class JavaSmtpEmailServiceTest {
                         filename = "test.txt",
                         typedData = TypedData.text("Test", MediaType.Text.Plain)
                     ))
+                )
+            )
+        }
+    }
+
+    // by Claude - verifies that inline CID attachments render in email clients (especially Gmail)
+    @Test
+    fun testSmtpInlineImage() {
+        val client = client ?: return
+        // Generate a simple test PNG
+        val image = BufferedImage(200, 200, BufferedImage.TYPE_INT_RGB).apply {
+            createGraphics().apply {
+                color = Color(0x00, 0x7A, 0xCC)
+                fillRect(0, 0, 200, 200)
+                color = Color.WHITE
+                font = Font("SansSerif", Font.BOLD, 24)
+                drawString("CID Test", 30, 110)
+                dispose()
+            }
+        }
+        val pngBytes = ByteArrayOutputStream().also { ImageIO.write(image, "PNG", it) }.toByteArray()
+        val filename = "test-image.png"
+
+        runBlocking {
+            client.send(
+                Email(
+                    subject = "Inline CID image test",
+                    to = listOf(EmailAddressWithName("joseph@lightningkite.com", "Joseph Ivie")),
+                    html = """
+                        <h2>Inline Image Test</h2>
+                        <p>The image below should appear inline, not as a separate attachment:</p>
+                        <img src="cid:$filename" alt="Test image" style="width:200px;height:200px;" />
+                        <p>If you see a blue square with white text above, CID inline images are working.</p>
+                    """.trimIndent(),
+                    attachments = listOf(
+                        Email.Attachment(
+                            inline = true,
+                            filename = filename,
+                            typedData = TypedData.bytes(pngBytes, MediaType.Image.PNG)
+                        )
+                    )
                 )
             )
         }
