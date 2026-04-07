@@ -16,6 +16,31 @@ import kotlinx.serialization.modules.plus
 import kotlinx.serialization.serializer
 import kotlin.reflect.KClass
 
+/**
+ * A registry of annotation-based validators for data model validation.
+ *
+ * This class maps annotations (like [MaxLength], [IntegerRange], etc.) to validation functions
+ * that check field values during serialization. Validators can be synchronous or suspending.
+ *
+ * Use [AnnotationValidators.Standard] for the default set of validators, or build custom
+ * validators using the `AnnotationValidators { ... }` builder function.
+ *
+ * Validators can be combined using `+` or the `overwriteWith` infix fun. Combining using
+ * `+` will throw an exception if there are any duplicates.
+ *
+ * ## Example
+ * ```kotlin
+ * @Serializable
+ * data class User(
+ *     @MaxLength(50) val name: String,
+ *     @IntegerRange(0, 120) val age: Int
+ * )
+ *
+ * val validators = AnnotationValidators()
+ * val issues = validators.validate(serializer<User>(), User("John", 150))
+ * // issues will contain: mapOf("age" to "Out of range; expected to be between 0 and 120")
+ * ```
+ */
 class AnnotationValidators private constructor(
     val serializersModule: SerializersModule,
     private val validators: Map<String, Map<String, (Annotation, Any?) -> String?>>,
@@ -68,6 +93,9 @@ class AnnotationValidators private constructor(
         return out
     }
 
+    override fun toString(): String =
+        if (this === Standard) "AnnotationValidators.Standard"
+        else "AnnotationValidators(${(validators.entries + suspendingValidators.entries).joinToString { "${it.key.substringAfterLast('.')}:${it.value.keys}" }})"
 
     private fun <V> Map<String, V>.get(type: SerialDescriptor): V? =
         get(type.serialName) ?: if (type.kind is PrimitiveKind) get("PrimitiveKind.${type.kind}") else null
@@ -282,6 +310,16 @@ class AnnotationValidators private constructor(
 
         var printInvalidTypeWarnings = true
 
+        /**
+         * The standard set of validators for common validation annotations.
+         *
+         * Includes validators for:
+         * - [MaxSize] - validates collection and map size limits
+         * - [MaxLength] - validates string length limits
+         * - [ExpectedPattern] - validates strings against regex patterns
+         * - [IntegerRange] - validates integer types (Byte, Short, Int, Long) against min/max ranges
+         * - [FloatRange] - validates floating-point types (Float, Double) against min/max ranges
+         */
         val Standard = AnnotationValidators {
             // MaxSize validators
             MaxSize::class.validatesCollections {
@@ -352,7 +390,7 @@ interface ShouldValidateSub<A> : KSerializer<A> {
 /**
  * Constructs a new set of [AnnotationValidators] with the provided [serializersModule]
  * */
-fun AnnotationValidators(
+inline fun AnnotationValidators(
     serializersModule: SerializersModule = EmptySerializersModule(),
     setup: AnnotationValidators.Builder.() -> Unit
 ): AnnotationValidators = AnnotationValidators.Builder(serializersModule).apply(setup).build()

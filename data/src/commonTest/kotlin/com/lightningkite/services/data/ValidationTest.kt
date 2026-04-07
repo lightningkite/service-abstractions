@@ -2,6 +2,7 @@ package com.lightningkite.services.data
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.serializer
 import kotlin.reflect.KClass
 import kotlin.test.Test
@@ -57,5 +58,12 @@ class ValidationTest {
         assertFails(Sample(y = -1))
         assertFails(Sample(y = 101))
         assertFails(Sample(x = "123456", y = 101, z = List(10) { "a" }), failures = 3)
+    }
+
+    @Test
+    fun testStrings() {
+        println(AnnotationValidators.Standard)
+        println(AnnotationValidators())
+        println(AnnotationValidators(SerializersModule {  }))
     }
 }
