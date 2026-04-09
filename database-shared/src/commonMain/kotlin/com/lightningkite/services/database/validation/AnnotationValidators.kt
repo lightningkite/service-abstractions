@@ -673,7 +673,8 @@ public class AnnotationValidators private constructor(
 
 // I'm not sure if this works on anything other than JVM
 internal fun KClass<*>.normalizedTypeName(): String? = toString().let { str ->
-    if (str.startsWith("interface")) str.removePrefix("interface").trim().split(' ').getOrNull(0)?.trim()
+    if (!str.contains("Kotlin reflection is not available")) str.removePrefix("class ")
+    else if (str.startsWith("interface")) str.removePrefix("interface").trim().split(' ').getOrNull(0)?.trim()
     else str.split('$').dropLast(1).lastOrNull()?.replace('_', '.')?.trim()
 }
 
