@@ -3,7 +3,7 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.IsRawString
-import com.lightningkite.services.data.ShouldValidateSub
+import com.lightningkite.services.database.validation.ShouldValidateSub
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.*

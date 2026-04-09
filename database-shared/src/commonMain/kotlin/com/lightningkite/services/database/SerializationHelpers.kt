@@ -3,6 +3,9 @@
 package com.lightningkite.services.database
 
 import kotlinx.serialization.*
+import kotlinx.serialization.builtins.NothingSerializer
+import kotlinx.serialization.builtins.PairSerializer
+import kotlinx.serialization.builtins.TripleSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -114,6 +117,41 @@ private object FakerDecoder : AbstractDecoder() {
     override fun decodeNotNullMark(): Boolean = true
 }
 
+private class FakerClassDecoder : AbstractDecoder() {
+    override val serializersModule: SerializersModule = EmptySerializersModule()
+    override fun decodeBoolean() = false
+    override fun decodeByte() = 0.toByte()
+    override fun decodeChar() = ' '
+    override fun decodeDouble() = 0.0
+    override fun decodeFloat() = 0f
+    override fun decodeInt() = 0
+    override fun decodeLong() = 0L
+    override fun decodeShort() = 0.toShort()
+    override fun decodeString() = ""
+    override fun decodeEnum(enumDescriptor: SerialDescriptor): Int = 0
+    override fun decodeCollectionSize(descriptor: SerialDescriptor): Int = 0
+    val stack = ArrayList<Int>()
+    var counter = 0
+    override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
+        return counter++.let {
+            if (it >= descriptor.elementsCount) CompositeDecoder.DECODE_DONE else it
+        }
+    }
+    override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder =
+        if (descriptor.kind == StructureKind.CLASS) {
+            stack.add(counter)
+            counter = 0
+            this
+        }
+        else FakerDecoder
+
+    override fun endStructure(descriptor: SerialDescriptor) {
+        counter = stack.removeLast()
+    }
+
+    override fun decodeNotNullMark(): Boolean = true
+}
+
 private class CheatingBastardDecoder(
     var count: Int = 0,
     override val serializersModule: SerializersModule = EmptySerializersModule()
@@ -128,7 +166,8 @@ private class CheatingBastardDecoder(
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
         if (count == 0) throw FoundSerializerSignal(deserializer as KSerializer<*>)
         count--
-        return FakerDecoder.decodeSerializableValue(deserializer)
+        return if (deserializer.descriptor.kind == StructureKind.CLASS) FakerClassDecoder().decodeSerializableValue(deserializer)
+        else FakerDecoder.decodeSerializableValue(deserializer)
     }
 
     override fun decodeBoolean(): Boolean {
@@ -190,6 +229,15 @@ public fun KSerializer<*>.innerElement2(): KSerializer<*> = try {
     e.serializer
 }
 
+public fun KSerializer<*>.innerElement3(): KSerializer<*> = try {
+    if (this is WrappingSerializer<*, *>) this.to.innerElement3() else {
+        this.deserialize(CheatingBastardDecoder(2))
+        throw Exception("${this.descriptor.serialName} ($this) did not have a third inner element")
+    }
+} catch (e: FoundSerializerSignal) {
+    e.serializer
+}
+
 public fun KSerializer<*>.listElement(): KSerializer<*>? =
     if (descriptor.kind == StructureKind.LIST) this.innerElement() else null
 
@@ -224,6 +272,9 @@ internal fun KSerializer<*>.typeParametersSerializersOrNull2(): Array<KSerialize
     else -> null
 }
 
+private val pairSerialName = PairSerializer(NothingSerializer(), NothingSerializer()).descriptor.serialName
+private val tripleSerialName = TripleSerializer(NothingSerializer(), NothingSerializer(), NothingSerializer()).descriptor.serialName
+
 @OptIn(InternalSerializationApi::class)
 public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*>>? = when (descriptor.kind) {
     is StructureKind.LIST -> arrayOf(innerElement())
@@ -235,6 +286,11 @@ public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*
             ?: (this as? ModificationSerializer<*>)?.inner?.let { arrayOf(it) }
             ?: (this as? PartialSerializer<*>)?.source?.let { arrayOf(it) }
             ?: (this as? VirtualStruct.Concrete)?.arguments as? Array<KSerializer<*>>
+            ?: when (descriptor.serialName) {
+                pairSerialName -> arrayOf(innerElement(), innerElement2())
+                tripleSerialName -> arrayOf(innerElement(), innerElement2(), innerElement3())
+                else -> null
+            }
     }
 
     is PrimitiveKind.STRING -> {
