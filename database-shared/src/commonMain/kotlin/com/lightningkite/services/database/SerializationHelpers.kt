@@ -305,6 +305,11 @@ public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*
 public fun KSerializer<*>.childSerializersOrNull(): Array<KSerializer<*>>? =
     (this as? GeneratedSerializer<*>)?.childSerializers()
         ?: (this as? VirtualStruct.Concrete)?.serializableProperties?.map { it.serializer }?.toTypedArray()
+        ?: when (descriptor.serialName) {
+            pairSerialName -> arrayOf(innerElement(), innerElement2())
+            tripleSerialName -> arrayOf(innerElement(), innerElement2(), innerElement3())
+            else -> null
+        }
 
 @Suppress("UNCHECKED_CAST")
 internal val <T> KSerializer<T>.nullable2: KSerializer<T?> get() = if (this.descriptor.isNullable) this as KSerializer<T?> else (this as KSerializer<Any>).nullable as KSerializer<T?>

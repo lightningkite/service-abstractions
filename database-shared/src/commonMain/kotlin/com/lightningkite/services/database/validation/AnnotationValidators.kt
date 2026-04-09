@@ -28,6 +28,8 @@ import kotlin.reflect.KClass
 /**
  * A registry of annotation-based validators for data model validation.
  *
+ * This class is designed with ergonomics similar to [SerializersModule].
+ *
  * This class maps annotations (like [MaxLength], [IntegerRange], etc.) to validation functions
  * that check field values during serialization. Validators can be synchronous or suspending.
  *
@@ -55,6 +57,11 @@ public class AnnotationValidators private constructor(
     private val validators: ValidationMap<(Annotation, Any?) -> String?>,
     private val suspendingValidators: ValidationMap<suspend (Annotation, Any?) -> String?>,
 ) {
+    /**
+     * Combines this set of [AnnotationValidators] with [other], throwing an exception if there are any overlapping definitions.
+     *
+     * To overwrite validators without throwing see [overwriteWith].
+     * */
     public operator fun plus(other: AnnotationValidators): AnnotationValidators =
         if (this === other) this else AnnotationValidators(
             serializersModule + other.serializersModule,
@@ -62,6 +69,7 @@ public class AnnotationValidators private constructor(
             suspendingValidators.combineWith(other.suspendingValidators, overwrite = false)
         )
 
+    /** Combines this set of [AnnotationValidators] with [other], any overlapping definitions will be taken from [other] */
     public infix fun overwriteWith(other: AnnotationValidators): AnnotationValidators =
         if (this === other) this else AnnotationValidators(
             serializersModule overwriteWith other.serializersModule,
@@ -69,6 +77,12 @@ public class AnnotationValidators private constructor(
             suspendingValidators.combineWith(other.suspendingValidators, overwrite = true)
         )
 
+    /**
+     * Validates the provided [value] recursively using applied property annotations.
+     *
+     * @return A map of any found validation issues where the keys are `.` separated paths to the value which failed
+     *         validation and the values are found issues. Ex. `{photo.file.size="Too large; maximum size of 5 bytes but got 10"}`
+     * */
     public suspend fun <T> validate(serializer: KSerializer<T>, value: T): Map<String, String> {
         val e = ValidationEncoder(doSuspendingChecks = true)
         e.encodeSerializableValue(serializer, value)
@@ -76,6 +90,15 @@ public class AnnotationValidators private constructor(
         return e.issues
     }
 
+    /**
+     * Validates the provided [value] recursively using applied property annotations, skipping any `suspending`
+     * validation checks.
+     *
+     * For full validation, including suspending checks, use [validate].
+     *
+     * @return A map of any found validation issues where the keys are `.` separated paths to the value which failed
+     *         validation and the values are found issues. Ex. `{photo.file.size="Too large; maximum size of 5 bytes but got 10"}`
+     * */
     public fun <T> validateSkipSuspending(serializer: KSerializer<T>, value: T): Map<String, String> {
         val e = ValidationEncoder(doSuspendingChecks = false)
         e.encodeSerializableValue(serializer, value)
