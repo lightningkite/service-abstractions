@@ -146,7 +146,7 @@ private class FakerClassDecoder : AbstractDecoder() {
         else FakerDecoder
 
     override fun endStructure(descriptor: SerialDescriptor) {
-        counter = stack.removeLast()
+        stack.removeLastOrNull()?.let { counter = it }
     }
 
     override fun decodeNotNullMark(): Boolean = true
