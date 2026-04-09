@@ -260,14 +260,29 @@ public class AnnotationValidators private constructor(
             for (list in map.values) list.sortBy { it.first.generality() }  // we want to search most_specific->least_specific
         }
 
+        private fun SerialKType.listOrMapElements(): List<SerialKType>? {
+            val kind = when (this) {
+                is SerialKType.Specified -> when (type) {
+                    is SerialKType.Specified.Type.Exact -> return null
+                    is SerialKType.Specified.Type.Kind -> type.kind
+                }
+                SerialKType.Wildcard -> return null
+            }
+            return if (kind == StructureKind.LIST || kind == StructureKind.MAP) arguments else null
+        }
+
         fun get(annotation: KClass<out Annotation>, type: SerialKType): T? {
             val forAnnotation = map[annotation.normalizedTypeName()] ?: return null
             val found = forAnnotation.firstOrNull { it.first.matches(type) }?.second
-            if (found == null) {
-                if (printInvalidTypeWarnings) println(
+            if (found == null && printInvalidTypeWarnings &&
+                type.listOrMapElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map elements, if not the list itself.
+                    forAnnotation.any { it.first.matches(e) }
+                } != false
+            ) {
+                println(
                     "${annotation.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [${
                         forAnnotation.joinToString { it.first.toString() }
-                    }]. Ignoring validation."
+                    }]. Ignoring validation.   (Set AnnotationValidators.printInvalidTypeWarnings = false to suppress this warning)"
                 )
             }
             return found
@@ -283,11 +298,15 @@ public class AnnotationValidators private constructor(
             val firstFound = first?.firstOrNull { it.first.matches(type) }?.second
             val secondFound = second?.firstOrNull { it.first.matches(type) }?.second
 
-            if (firstFound == null && secondFound == null && printInvalidTypeWarnings) println(buildString {
+            if (firstFound == null && secondFound == null && printInvalidTypeWarnings &&
+                type.listOrMapElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map elements, if not the list itself.
+                    first?.any { it.first.matches(e) } == true || second?.any { it.first.matches(e) } == true
+                } != false
+            ) println(buildString {
                 append("${annotation.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [")
                 first?.joinTo(this) { it.first.toString() }
                 second?.joinTo(this) { "${it.first}(S)" }
-                append("]. Ignoring validation.")
+                append("]. Ignoring validation.   (Set AnnotationValidators.printInvalidTypeWarnings = false to suppress this warning)")
             })
 
             return Pair(firstFound, secondFound)
@@ -337,14 +356,31 @@ public class AnnotationValidators private constructor(
     }
 
 
+    // I had Claude write docs for this internal stuff because it was fucking hard to figure out.
+
     private var enumDecoder: StringArrayFormat? = null
 
+    /**
+     * Custom encoder that validates values as they're encoded.
+     *
+     * This walks through the serialization tree, tracking the current path and annotations
+     * for each field, then runs validators against each value.
+     *
+     * ## How it works:
+     * 1. As the serializer encodes each field, [encodeElement] captures the field name and annotations
+     * 2. When primitive values are encoded (via encodeInt, encodeString, etc.), we validate them
+     * 3. For complex types, [encodeSerializableValue] handles validation
+     * 4. Path is built up as we go (e.g., "user.address.city") for error messages
+     * 5. Annotations are stacked and flattened so nested types can inherit validations
+     */
     @OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
     private inner class ValidationEncoder(val doSuspendingChecks: Boolean) : AbstractEncoder() {
         override val serializersModule: SerializersModule get() = this@AnnotationValidators.serializersModule
 
+        /** Map of field paths to validation error messages. */
         val issues = HashMap<String, String>()
 
+        /** Suspending validators are queued and run after encoding completes. */
         private val queuedSuspendingChecks = ArrayList<suspend () -> Unit>()
 
         suspend fun runQueuedSuspendingChecks() {
@@ -352,34 +388,64 @@ public class AnnotationValidators private constructor(
             queuedSuspendingChecks.clear()
         }
 
+        /** Current path through the object tree (e.g., ["user", "address", "city"]). */
         private val path = ArrayList<String>()
+
+        /**
+         * Stack of annotation lists for the current encoding path.
+         * Each element corresponds to a field's annotations.
+         * Flattened so that annotations on lists or maps cascade to their inner elements.
+         */
         private var annotationStack = ArrayList<List<Annotation>>()
+
+        /** Returns all annotations applicable to the current value (flattened from stack). */
         private fun queuedAnnotations() = annotationStack.flatten()
 
+        /**
+         * Called when a primitive value is encoded.
+         * Validates the value, then pops path/annotation state since we're done with this field.
+         */
         private fun <T> encodeValue(serializer: KSerializer<T>, value: T) {
             validate(serializer, value)
 
-            // element encoded, pop last element in path
+            // Element encoded, pop the field name and annotations we pushed in encodeElement
             path.removeLastOrNull()
             annotationStack.removeLastOrNull()
         }
 
+        /**
+         * Entry point for complex/serializable values.
+         * Validates the value, then continues serialization (which will recursively encode its fields).
+         *
+         * Structures are also validated through here.
+         */
         override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
-            // I've never seen a raw SerializationStrategy, and all of our helpers require KSerializer, if this breaks, and you are debugging this at some point in the future - I apologize.
+            // Save the parent serializer for enum handling (see encodeEnum)
+            // This cast should always work - SerializationStrategy is almost always KSerializer in practice
             lastParentSerializer = serializer as KSerializer<T>
             validate(serializer, value)
 
+            // Continue serialization - this will recursively encode all fields of this value
             serializer.serialize(this, value)
         }
 
+        /**
+         * Called before encoding each field in a structure.
+         * Pushes the field name onto the path and captures its annotations.
+         *
+         * For example, encoding `user.address.city` will call this 3 times:
+         * - encodeElement(..., "user")
+         * - encodeElement(..., "address")
+         * - encodeElement(..., "city")
+         */
         override fun encodeElement(descriptor: SerialDescriptor, index: Int): Boolean {
             path.add(descriptor.getElementName(index))
             annotationStack.add(descriptor.getElementAnnotations(index))
             return true
         }
 
+        // All primitive encode methods validate the value and pop path/annotations
         override fun encodeNull() = encodeValue(NothingSerializer().nullable, null)
-
         override fun encodeBoolean(value: Boolean): Unit = encodeValue(Boolean.serializer(), value)
         override fun encodeByte(value: Byte): Unit = encodeValue(Byte.serializer(), value)
         override fun encodeShort(value: Short): Unit = encodeValue(Short.serializer(), value)
@@ -390,17 +456,36 @@ public class AnnotationValidators private constructor(
         override fun encodeChar(value: Char): Unit = encodeValue(Char.serializer(), value)
         override fun encodeString(value: String): Unit = encodeValue(String.serializer(), value)
 
+        /**
+         * Tracks the parent serializer to help reconstruct enum serializers.
+         * Enums are encoded as ordinals, but we need the actual enum value for validation.
+         */
         private var lastParentSerializer: KSerializer<*>? = null
+
+        /**
+         * Handles enum encoding with special logic.
+         *
+         * Problem: Enums are encoded as Int ordinals (0, 1, 2, ...) but validators need the actual enum value.
+         * Solution: We reconstruct the enum serializer from the parent, then decode the ordinal to get the value.
+         *
+         * This is complex because:
+         * - We only receive the ordinal index, not the enum value
+         * - We need the serializer to decode "MyEnum.VALUE_A" from the ordinal
+         * - We have to search child serializers of the parent to find the right enum serializer
+         */
         override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) {
-            // enums are dumb. Luckily this should be a very rare case.
+            // enums are dumb. but at least this should be a very rare case.
+
             val annotations = queuedAnnotations()
 
-            if (annotations.isEmpty()) {    // if there's nothing to validate then don't even try to find a serializer
+            // If there are no validators for this enum, skip all the complex reconstruction logic
+            if (annotations.isEmpty()) {
                 path.removeLastOrNull()
                 annotationStack.removeLastOrNull()
                 return
             }
 
+            // Find the enum serializer by searching the parent's child serializers
             val serializer = lastParentSerializer
                 ?.childSerializersOrNull()
                 ?.find { it.descriptor.serialName == enumDescriptor.serialName }
@@ -410,8 +495,11 @@ public class AnnotationValidators private constructor(
                 return
             }
 
+            // Use StringArrayFormat to decode the enum name into an actual enum value
+            // (e.g., "ACTIVE" -> Status.ACTIVE)
             val decoder = enumDecoder ?: StringArrayFormat(serializersModule).also { enumDecoder = it }
 
+            // Validate using the reconstructed enum value
             validate(
                 type = SerialKType.Specified(
                     type = SerialKType.Specified.Type.Exact(serialName = enumDescriptor.serialName),
@@ -426,23 +514,48 @@ public class AnnotationValidators private constructor(
             annotationStack.removeLastOrNull()
         }
 
+        /**
+         * Stack to save/restore annotation states when entering nested structures.
+         * Maps and Lists don't save state because their elements should inherit parent annotations.
+         */
         private val savedAnnotationStates = ArrayList<ArrayList<List<Annotation>>>()
+
+        /**
+         * Called when entering a nested structure (class, list, map).
+         *
+         * For classes: We save and reset the annotation stack so nested classes start fresh.
+         * For lists/maps: We keep the annotation stack so elements inherit parent annotations.
+         *
+         * Example:
+         * ```
+         * data class Wrapper(@MaxLength(5) val items: List<String>)
+         * ```
+         * When encoding `items`, the @MaxLength annotation should apply to each String element,
+         * so we don't clear the annotation stack for lists.
+         */
         override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
             when (descriptor.kind) {
-                StructureKind.MAP -> {}
-                StructureKind.LIST -> {}
+                StructureKind.MAP -> {} // Maps: keep annotation stack (applies to entries)
+                StructureKind.LIST -> {} // Lists: keep annotation stack (applies to elements)
                 else -> {
+                    // Classes/Objects: save current state and start fresh
                     savedAnnotationStates.add(annotationStack)
                     annotationStack = ArrayList()
                 }
             }
             return this
         }
+
+        /**
+         * Called when exiting a nested structure.
+         * Restores the saved annotation state for classes (lists/maps don't save state).
+         */
         override fun endStructure(descriptor: SerialDescriptor) {
             when (descriptor.kind) {
-                StructureKind.MAP -> {}
-                StructureKind.LIST -> {}
+                StructureKind.MAP -> {} // No state to restore
+                StructureKind.LIST -> {} // No state to restore
                 else -> {
+                    // Restore the annotation state from before we entered this structure
                     savedAnnotationStates.removeLastOrNull()?.let {
                         annotationStack = it
                     }
@@ -450,19 +563,55 @@ public class AnnotationValidators private constructor(
             }
         }
 
+        /**
+         * Main validation entry point - validates a value against its queued annotations.
+         *
+         * Handles special case of [ShouldValidateSub] which allows serializers to customize
+         * how their sub-elements are validated (used by collection serializers that validate elements).
+         */
         private fun <T> validate(serializer: KSerializer<T>, value: T) {
             val annotations = queuedAnnotations()
             if (annotations.isEmpty()) return
 
+            // Special handling for serializers that want custom sub-validation
+            // (e.g., a collection that wants to validate each element individually)
             if (serializer is ShouldValidateSub<T>) serializer.validate(
                 value,
                 annotations
             ) { sub: ShouldValidateSub.SerializerAndValue<*>, intercepted: List<Annotation> ->
                 validate(SerialKType(sub.serializer), sub.value, intercepted)
             }
+            else if (printInvalidTypeWarnings) {    // cascaded annotations spam warnings, this fixes that.
+                val onElement = annotationStack.last()
+                val cascaded = annotationStack.dropLast(1).flatten()
+                val type = SerialKType(serializer)
+
+                validate(type, value, onElement)
+
+                if (cascaded.isNotEmpty()) {
+                    try {
+                        printInvalidTypeWarnings = false
+                        validate(type, value, cascaded)
+                    } finally {
+                        printInvalidTypeWarnings = true
+                    }
+                }
+            }
             else validate(SerialKType(serializer), value, annotations)
         }
 
+        /**
+         * Core validation logic - runs validators for each annotation on the value.
+         *
+         * Algorithm:
+         * 1. For each annotation on the field
+         * 2. Look up validators registered for that annotation + type combination
+         * 3. Run synchronous validators immediately, capturing any error messages
+         * 4. Queue suspending validators to run later (after encoding completes)
+         *
+         * Type matching is done via SerialKType, which allows validators to be registered
+         * for specific types (e.g., @MaxLength only for String, not Int).
+         */
         private fun validate(
             type: SerialKType,
             value: Any?,
@@ -470,12 +619,19 @@ public class AnnotationValidators private constructor(
         ) {
             annotations.forEach { annotation ->
                 if (doSuspendingChecks) {
+                    // Get both fast and suspending validators for this annotation+type
                     val (fast, slow) = validators.getJoint(suspendingValidators, annotation::class, type) ?: return@forEach
-                    val path = path.joinToString(".") // need to pre-calculate for lazy suspending check
 
+                    // Pre-calculate path since suspending validators run later (path will change)
+                    val path = path.joinToString(".")
+
+                    // Run synchronous validator immediately
                     fast?.invoke(annotation, value)?.let { issues[path] = it }
+
+                    // Queue suspending validator to run after encoding completes
                     if (slow != null) queuedSuspendingChecks.add { slow(annotation, value)?.let { issues[path] = it } }
                 } else {
+                    // Only run synchronous validators (skip suspending)
                     validators.get(annotation::class, type)
                         ?.invoke(annotation, value)
                         ?.let { issues[path.joinToString(".")] = it }

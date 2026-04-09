@@ -198,4 +198,9 @@ class ValidationTest {
         match<List<Triple<Int, Pair<Int, Int>, Int>>>(descriptions)
         match<List<ArgSample<Int>?>>(descriptions)
     }
+
+    @Test
+    fun testMatching() {
+        assertTrue { serialKTypeOf<String>().matches(serialKTypeOf<String>()) }
+    }
 }
