@@ -55,7 +55,6 @@ public class AnnotationValidators private constructor(
     private val validators: ValidationMap<(Annotation, Any?) -> String?>,
     private val suspendingValidators: ValidationMap<suspend (Annotation, Any?) -> String?>,
 ) {
-
     public operator fun plus(other: AnnotationValidators): AnnotationValidators =
         if (this === other) this else AnnotationValidators(
             serializersModule + other.serializersModule,
@@ -116,7 +115,7 @@ public class AnnotationValidators private constructor(
 
                 val fast = fast[annotation]
                 fast?.joinTo(this) {
-                    val s = if (qualified) it.qualifiedString()
+                    val s = if (qualified) it.toString(qualified = true)
                     else it.toString()
                     "\n\t\t$s"
                 }
@@ -124,7 +123,7 @@ public class AnnotationValidators private constructor(
                     this,
                     prefix = if (fast != null) ", " else ""
                 ) {
-                    val s = if (qualified) it.qualifiedString()
+                    val s = if (qualified) it.toString(qualified = true)
                     else it.toString()
                     "\n\t\t$s(S)"
                 }
@@ -199,6 +198,10 @@ public class AnnotationValidators private constructor(
                 if (it.size > size) "Too long; got ${it.size} items but the maximum allowed is $size"
                 else null
             }
+            validate<MaxSize, HashMap<*, *>> {
+                if (it.size > size) "Too long; got ${it.size} items but the maximum allowed is $size"
+                else null
+            }
 
             // MaxLength validators
             validateStrings<MaxLength> {
@@ -250,6 +253,9 @@ public class AnnotationValidators private constructor(
         // map of qualified annotation name to possible type/validation pairs
         private val map = HashMap<String, ArrayList<Pair<SerialKType, T>>>()
 
+        var suppressWarnings = false
+        private val printWarnings get() = printInvalidTypeWarnings && !suppressWarnings
+
         fun entries(): Map<String, List<SerialKType>> = map.mapValues { entry -> entry.value.map { it.first } }
 
         fun put(annotation: KClass<out Annotation>, type: SerialKType, value: T) {
@@ -262,10 +268,7 @@ public class AnnotationValidators private constructor(
 
         private fun SerialKType.listOrMapElements(): List<SerialKType>? {
             val kind = when (this) {
-                is SerialKType.Specified -> when (type) {
-                    is SerialKType.Specified.Type.Exact -> return null
-                    is SerialKType.Specified.Type.Kind -> type.kind
-                }
+                is SerialKType.Specified -> descriptor.kind
                 SerialKType.Wildcard -> return null
             }
             return if (kind == StructureKind.LIST || kind == StructureKind.MAP) arguments else null
@@ -274,7 +277,7 @@ public class AnnotationValidators private constructor(
         fun get(annotation: KClass<out Annotation>, type: SerialKType): T? {
             val forAnnotation = map[annotation.normalizedTypeName()] ?: return null
             val found = forAnnotation.firstOrNull { it.first.matches(type) }?.second
-            if (found == null && printInvalidTypeWarnings &&
+            if (found == null && printWarnings &&
                 type.listOrMapElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map elements, if not the list itself.
                     forAnnotation.any { it.first.matches(e) }
                 } != false
@@ -298,7 +301,7 @@ public class AnnotationValidators private constructor(
             val firstFound = first?.firstOrNull { it.first.matches(type) }?.second
             val secondFound = second?.firstOrNull { it.first.matches(type) }?.second
 
-            if (firstFound == null && secondFound == null && printInvalidTypeWarnings &&
+            if (firstFound == null && secondFound == null && printWarnings &&
                 type.listOrMapElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map elements, if not the list itself.
                     first?.any { it.first.matches(e) } == true || second?.any { it.first.matches(e) } == true
                 } != false
@@ -502,7 +505,7 @@ public class AnnotationValidators private constructor(
             // Validate using the reconstructed enum value
             validate(
                 type = SerialKType.Specified(
-                    type = SerialKType.Specified.Type.Exact(serialName = enumDescriptor.serialName),
+                    descriptor = enumDescriptor,
                     arguments = emptyList(),
                     nullable = false
                 ),
@@ -590,10 +593,12 @@ public class AnnotationValidators private constructor(
 
                 if (cascaded.isNotEmpty()) {
                     try {
-                        printInvalidTypeWarnings = false
+                        validators.suppressWarnings = true
+                        suspendingValidators.suppressWarnings = true
                         validate(type, value, cascaded)
                     } finally {
-                        printInvalidTypeWarnings = true
+                        validators.suppressWarnings = false
+                        suspendingValidators.suppressWarnings = false
                     }
                 }
             }

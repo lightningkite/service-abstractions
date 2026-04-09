@@ -7,8 +7,8 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.NothingSerializer
-import kotlinx.serialization.builtins.SetSerializer
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
@@ -88,8 +88,8 @@ public sealed interface SerialKType {
     /** Returns true if the given SerialKType matches this type specification. */
     public fun matches(type: SerialKType): Boolean
 
-    /** Returns a fully qualified string representation (includes package names). */
-    public fun qualifiedString(): String
+    /**Returns a string representation of the type, optionally using [qualified] names.*/
+    public fun toString(qualified: Boolean): String
 
     /**
      * Wildcard type that matches any type (like `*` in Kotlin generics).
@@ -100,7 +100,7 @@ public sealed interface SerialKType {
         override fun matches(serializer: KSerializer<*>): Boolean = true
         override fun matches(type: SerialKType): Boolean = true
         override fun toString(): String = "*"
-        override fun qualifiedString(): String = "*"
+        override fun toString(qualified: Boolean): String = "*"
     }
 
     /**
@@ -111,35 +111,18 @@ public sealed interface SerialKType {
      * @property nullable Whether this type is nullable
      */
     public data class Specified(
-        val type: Type,
+        val descriptor: SerialDescriptor,
         val arguments: List<SerialKType>,
         val nullable: Boolean
     ) : SerialKType {
-        /**
-         * How to identify the base type.
-         *
-         * - [Kind]: Match by SerialKind (e.g., all lists, all maps) - more general
-         * - [Exact]: Match by exact serial name (e.g., "kotlin.collections.ArrayList") - more specific
-         */
-        public sealed interface Type {
-            /** Match by SerialKind (e.g., StructureKind.LIST matches any list type). */
-            public data class Kind(val kind: SerialKind) : Type
-
-            /** Match by exact serial name (e.g., "kotlin.String"). */
-            public data class Exact(val serialName: String) : Type
-        }
+        public val serialName: String get() = descriptor.serialName
 
         override fun matches(serializer: KSerializer<*>): Boolean {
             if (serializer.descriptor.isNullable && !nullable) return false
 
             val serializer = serializer.nullElement() ?: serializer
 
-            val typeMatches = when (type) {
-                is Type.Kind -> serializer.descriptor.kind == type.kind
-                is Type.Exact -> serializer.descriptor.serialName == type.serialName
-            }
-
-            if (!typeMatches) return false
+            if (serializer.descriptor.serialName != serialName) return false
             if (arguments.isEmpty() || arguments.all { it == Wildcard }) return true
 
             val args = serializer.typeParametersSerializersOrNull()
@@ -154,7 +137,7 @@ public sealed interface SerialKType {
             return when (type) {
                 Wildcard -> false
                 is Specified -> {
-                    if (this.type != type.type) return false
+                    if (this.serialName != type.serialName) return false
                     if (arguments.size != type.arguments.size) return false
                     if (arguments.isEmpty()) return true
 
@@ -163,35 +146,23 @@ public sealed interface SerialKType {
             }
         }
 
-        override fun toString(): String {
-            val t = when (type) {
-                is Type.Kind -> type.kind.toString()
-                is Type.Exact -> type.serialName.substringAfterLast('.')
-            }
-            return if (arguments.isEmpty()) t
-            else "$t<${arguments.joinToString()}>" + if (nullable) '?' else ""
-        }
+        override fun toString(qualified: Boolean): String {
+            val type = if (qualified) serialName
+            else serialName
+                .substringAfterLast('.')
+                .replace("ArrayList", "List")  // builtin-serializers.
+                .replace("LinkedHashSet", "Set")
+                .replace("LinkedHashMap", "Map")
 
-        override fun qualifiedString(): String {
-            val t = when (type) {
-                is Type.Kind -> type.kind.toString()
-                is Type.Exact -> type.serialName
-            }
-            return if (arguments.isEmpty()) t
-            else "$t<${arguments.joinToString { it.qualifiedString() }}>" + if (nullable) '?' else ""
+            return if (arguments.isEmpty()) type
+            else "$type<${arguments.joinToString { it.toString(qualified) }}>" + if (nullable) '?' else ""
         }
+        override fun toString(): String = toString(qualified = false)
     }
 }
 
 private fun KType.noStarProjections(): Boolean =
     arguments.isEmpty() || arguments.all { it.type?.noStarProjections() == true }
-
-private val kindIsSameAsType = buildMap {
-    fun add(serializer: KSerializer<*>) = put(serializer.descriptor.serialName, SerialKType.Specified.Type.Kind(serializer.descriptor.kind))
-
-    add(MapSerializer(Int.serializer(), Int.serializer()))
-    add(ListSerializer(Int.serializer()))
-}
 
 @OptIn(ExperimentalSerializationApi::class)
 public fun SerialKType(kType: KType, module: SerializersModule = EmptySerializersModule()): SerialKType {
@@ -205,10 +176,8 @@ public fun SerialKType(kType: KType, module: SerializersModule = EmptySerializer
             isNullable = false
         )
 
-    val serialName = (serializer.nullElement() ?: serializer).descriptor.serialName
-
     val d = SerialKType.Specified(
-        type = kindIsSameAsType[serialName] ?: SerialKType.Specified.Type.Exact(serialName),
+        descriptor = (serializer.nullElement() ?: serializer).descriptor,
         arguments = kType.arguments.map { arg ->
             arg.type?.let { SerialKType(it, module) } ?: SerialKType.Wildcard
         },
@@ -224,48 +193,44 @@ public inline fun <reified T> serialKTypeOf(module: SerializersModule = EmptySer
 public fun SerialKType(serializer: KSerializer<*>): SerialKType.Specified {
     val inner = serializer.nullElement() ?: serializer
     return SerialKType.Specified(
-        type = kindIsSameAsType[inner.descriptor.serialName] ?: SerialKType.Specified.Type.Exact(inner.descriptor.serialName),
+        descriptor = inner.descriptor,
         arguments = inner.typeParametersSerializersOrNull()?.map(::SerialKType) ?: emptyList(),
         nullable = serializer.descriptor.isNullable
     )
 }
 
 /**
- * Returns a generality score from 0.0 (most specific) to 1.0 (most general).
+ * The 'generality' `g(T)` score of a [SerialKType] is a measure of how many wildcards are
+ * used in the definition of the type, or phrased another way, how "general" the type is,
+ * on a scale from 0 to 1.
  *
- * Used to sort validators from most specific to most general, ensuring that
- * exact type matches are tried before wildcard matches.
+ * For example, `List<String>` is fully defined and has a generality `g(List<String>) = 0.0`.
+ * However `List<*>` is only "half-defined", specified as a list but is a list of any
+ * element, and thus its generality is `0.5`.
  *
- * Scoring:
- * - Wildcard (`*`): 1.0 (most general)
- * - Type.Kind (e.g., any LIST): 0.25 base + type arg generality
- * - Type.Exact (e.g., kotlin.collections.ArrayList): 0.0 base + type arg generality
- * - Type arguments contribute up to 0.5 to the score
+ * The score is defined as: `g(T<x0, x1, ..., xn>) = if (T == '*') 1.0 else SUM(1/2n * g(xi))`
  *
- * Examples:
- * - `String`: 0.0 (exact type, no args)
- * - `List<String>`: 0.0 (exact type, exact arg)
- * - `List<*>`: 0.5 (exact type, wildcard arg)
- * - `StructureKind.LIST`: 0.25 (kind match, no args)
+ * Examples
+ * ```
+ * g(String) == 0.0
+ * g(List<String>) == 0.0
+ * g(List<*>) == 0.5
+ * g(List<List<*>>) == 0.75
+ * ```
  */
 @OptIn(ExperimentalSerializationApi::class)
 public fun SerialKType.generality(): Double =
     when (this) {
         is SerialKType.Specified -> {
             val n = arguments.size
-            val argG = if (n == 0) 0.0
+            if (n == 0) 0.0
             else {
                 // Type arguments contribute up to 0.5 total to the generality score
-                val r = 0.5 / n.toDouble()
-                arguments.sumOf { it.generality() * r }
-            }
-            argG + when (type) {
-                is SerialKType.Specified.Type.Exact -> 0.0  // Most specific
-                is SerialKType.Specified.Type.Kind -> 0.25  // Less specific
+                (0.5 / n.toDouble()) * arguments.sumOf { it.generality() }
             }
         }
         SerialKType.Wildcard -> 1.0  // Most general
     }
 
-/** Returns specificity score (inverse of generality). Higher = more specific. */
+/** The inverse of the [generality] score, `s(T) = 1.0 - g(T)`. */
 public fun SerialKType.specificity(): Double = 1.0 - generality()
