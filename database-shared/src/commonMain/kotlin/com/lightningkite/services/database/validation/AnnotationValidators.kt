@@ -646,15 +646,10 @@ public class AnnotationValidators private constructor(
     }
 }
 
-internal fun KClass<*>.normalizedTypeName(): String = qualifiedName ?: toString().let { str ->
+// I'm not sure if this works on anything other than JVM
+internal fun KClass<*>.normalizedTypeName(): String = toString().let { str ->
     if (str.startsWith("interface")) str.removePrefix("interface").trim().split(' ')[0].trim()
     else str.split('$').dropLast(1).last().replace('_', '.').trim()
-}
-
-public interface ShouldValidateSub<A> : KSerializer<A> {
-    public data class SerializerAndValue<T>(val serializer: KSerializer<T>, val value: T)
-
-    public fun validate(value: A, annotations: List<Annotation>, defer: (value: SerializerAndValue<*>, annotations: List<Annotation>) -> Unit)
 }
 
 
