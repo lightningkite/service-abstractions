@@ -166,7 +166,7 @@ public class AnnotationValidators private constructor(
         internal inline fun <reified T> Any?.cast(): T = this as T
 
         private fun <T : Any> ValidationMap<T>.register(annotation: KClass<out Annotation>, type: SerialKType, value: T) {
-            val key = annotation.normalizedTypeName()
+            val key = annotation.normalizedTypeName() ?: throw IllegalArgumentException("Cannot determine type name for $annotation.")
             if (!used.add(key to type)) throw IllegalArgumentException("Multiple validator declarations encountered for ${annotation.simpleName ?: key}/$type")
             put(annotation, type, value)
         }
@@ -282,12 +282,14 @@ public class AnnotationValidators private constructor(
         fun entries(): Map<String, List<SerialKType>> = map.mapValues { entry -> entry.value.map { it.first } }
 
         fun put(annotation: KClass<out Annotation>, type: SerialKType, value: T) {
-            map.getOrPut(annotation.normalizedTypeName(), ::ArrayList).add(type to value)
+            map.getOrPut(annotation.normalizedTypeName() ?: return, ::ArrayList).add(type to value)
         }
 
         fun finalize() {
             for (list in map.values) list.sortBy { it.first.generality() }  // we want to search most_specific->least_specific
         }
+
+
 
         private fun SerialKType.listOrMapElements(): List<SerialKType>? {
             val kind = when (this) {
@@ -670,9 +672,9 @@ public class AnnotationValidators private constructor(
 }
 
 // I'm not sure if this works on anything other than JVM
-internal fun KClass<*>.normalizedTypeName(): String = toString().let { str ->
-    if (str.startsWith("interface")) str.removePrefix("interface").trim().split(' ')[0].trim()
-    else str.split('$').dropLast(1).last().replace('_', '.').trim()
+internal fun KClass<*>.normalizedTypeName(): String? = toString().let { str ->
+    if (str.startsWith("interface")) str.removePrefix("interface").trim().split(' ').getOrNull(0)?.trim()
+    else str.split('$').dropLast(1).lastOrNull()?.replace('_', '.')?.trim()
 }
 
 
