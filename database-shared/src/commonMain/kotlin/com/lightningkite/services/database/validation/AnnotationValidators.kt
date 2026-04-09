@@ -69,14 +69,14 @@ public class AnnotationValidators private constructor(
             suspendingValidators.combineWith(other.suspendingValidators, overwrite = true)
         )
 
-    public suspend fun <T> validate(serializer: SerializationStrategy<T>, value: T): Map<String, String> {
+    public suspend fun <T> validate(serializer: KSerializer<T>, value: T): Map<String, String> {
         val e = ValidationEncoder(doSuspendingChecks = true)
         e.encodeSerializableValue(serializer, value)
         e.runQueuedSuspendingChecks()
         return e.issues
     }
 
-    public fun <T> validateSkipSuspending(serializer: SerializationStrategy<T>, value: T): Map<String, String> {
+    public fun <T> validateSkipSuspending(serializer: KSerializer<T>, value: T): Map<String, String> {
         val e = ValidationEncoder(doSuspendingChecks = false)
         e.encodeSerializableValue(serializer, value)
         return e.issues
