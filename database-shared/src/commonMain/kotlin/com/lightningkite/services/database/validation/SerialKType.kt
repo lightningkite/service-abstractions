@@ -123,10 +123,18 @@ public sealed interface SerialKType {
             val serializer = serializer.nullElement() ?: serializer
 
             if (serializer.descriptor.serialName != serialName) return false
+
+            // If no type arguments or all wildcards, we match
             if (arguments.isEmpty() || arguments.all { it == Wildcard }) return true
 
+            // Get type parameters from serializer
             val args = serializer.typeParametersSerializersOrNull()
-                ?: throw IllegalArgumentException("Cannot determine type parameters for type with serialName `${serializer.descriptor.serialName}`")
+            if (args == null) {
+                // Cannot determine type parameters - this is an error case
+                if (AnnotationValidators.printInvalidTypeWarnings)
+                    IllegalArgumentException("Cannot determine type parameters for type with serialName `${serializer.descriptor.serialName}`").printStackTrace()
+                return false
+            }
 
             if (args.size != arguments.size) return false
 

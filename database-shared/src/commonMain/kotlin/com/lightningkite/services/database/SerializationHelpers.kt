@@ -8,12 +8,14 @@ import kotlinx.serialization.builtins.PairSerializer
 import kotlinx.serialization.builtins.TripleSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractDecoder
 import kotlinx.serialization.encoding.CompositeDecoder
+import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.internal.GeneratedSerializer
@@ -137,13 +139,13 @@ private class FakerClassDecoder : AbstractDecoder() {
             if (it >= descriptor.elementsCount) CompositeDecoder.DECODE_DONE else it
         }
     }
+
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder =
         if (descriptor.kind == StructureKind.CLASS) {
             stack.add(counter)
             counter = 0
             this
-        }
-        else FakerDecoder
+        } else FakerDecoder
 
     override fun endStructure(descriptor: SerialDescriptor) {
         stack.removeLastOrNull()?.let { counter = it }
@@ -152,6 +154,9 @@ private class FakerClassDecoder : AbstractDecoder() {
     override fun decodeNotNullMark(): Boolean = true
 }
 
+private val ANY = Any()
+
+@Suppress("UNCHECKED_CAST")
 private class CheatingBastardDecoder(
     var count: Int = 0,
     override val serializersModule: SerializersModule = EmptySerializersModule()
@@ -166,8 +171,10 @@ private class CheatingBastardDecoder(
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
         if (count == 0) throw FoundSerializerSignal(deserializer as KSerializer<*>)
         count--
-        return if (deserializer.descriptor.kind == StructureKind.CLASS) FakerClassDecoder().decodeSerializableValue(deserializer)
-        else FakerDecoder.decodeSerializableValue(deserializer)
+        // we don't need a viable value
+        return ANY as T
+        /*if (deserializer.descriptor.kind == StructureKind.CLASS) FakerClassDecoder().decodeSerializableValue(deserializer)
+        else FakerDecoder.decodeSerializableValue(deserializer)*/
     }
 
     override fun decodeBoolean(): Boolean {
@@ -276,10 +283,10 @@ private val pairSerialName = PairSerializer(NothingSerializer(), NothingSerializ
 private val tripleSerialName = TripleSerializer(NothingSerializer(), NothingSerializer(), NothingSerializer()).descriptor.serialName
 
 @OptIn(InternalSerializationApi::class)
-public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*>>? = when (descriptor.kind) {
-    is StructureKind.LIST -> arrayOf(innerElement())
-    is StructureKind.MAP -> arrayOf(innerElement(), innerElement2())
-    is StructureKind.CLASS -> {
+private fun KSerializer<*>.typeParameterSerializersOrNullImpl(): Array<KSerializer<*>>? = when (descriptor.kind) {
+    StructureKind.LIST -> arrayOf(innerElement())
+    StructureKind.MAP -> arrayOf(innerElement(), innerElement2())
+    StructureKind.CLASS -> {
         @Suppress("UNCHECKED_CAST")
         (this as? GeneratedSerializer<*>)?.typeParametersSerializers()
             ?: (this as? ConditionSerializer<*>)?.inner?.let { arrayOf(it) }
@@ -293,21 +300,47 @@ public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*
             }
     }
 
-    is PrimitiveKind.STRING -> {
-        (this as? SortPartSerializer<*>)?.inner?.let { arrayOf(it) }
+    PrimitiveKind.STRING -> {
+        if (descriptor.serialName == "kotlin.String") emptyArray()
+        else (this as? SortPartSerializer<*>)?.inner?.let { arrayOf(it) }
             ?: (this as? DataClassPathSerializer<*>)?.inner?.let { arrayOf(it) }
     }
 
+    PrimitiveKind.BOOLEAN -> if (descriptor.serialName == "kotlin.Boolean") emptyArray() else null
+    PrimitiveKind.BYTE -> if (descriptor.serialName == "kotlin.Byte") emptyArray() else null
+    PrimitiveKind.CHAR -> if (descriptor.serialName == "kotlin.Char") emptyArray() else null
+    PrimitiveKind.DOUBLE -> if (descriptor.serialName == "kotlin.Double") emptyArray() else null
+    PrimitiveKind.FLOAT -> if (descriptor.serialName == "kotlin.Float") emptyArray() else null
+    PrimitiveKind.INT -> if (descriptor.serialName == "kotlin.Int") emptyArray() else null
+    PrimitiveKind.LONG -> if (descriptor.serialName == "kotlin.Long") emptyArray() else null
+    PrimitiveKind.SHORT -> if (descriptor.serialName == "kotlin.Short") emptyArray() else null
+
     else -> null
 }
+
+public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*>>? =
+    if (descriptor.isNullable) typeParameterSerializersOrNullImpl() ?: nullElement()?.typeParameterSerializersOrNullImpl()
+    else typeParameterSerializersOrNullImpl()
 
 @OptIn(InternalSerializationApi::class)
 public fun KSerializer<*>.childSerializersOrNull(): Array<KSerializer<*>>? =
     (this as? GeneratedSerializer<*>)?.childSerializers()
         ?: (this as? VirtualStruct.Concrete)?.serializableProperties?.map { it.serializer }?.toTypedArray()
         ?: when (descriptor.serialName) {
+            "kotlin.String",
+            "kotlin.Boolean",
+            "kotlin.Byte",
+            "kotlin.Char",
+            "kotlin.Double",
+            "kotlin.Float",
+            "kotlin.Int",
+            "kotlin.Long",
+            "kotlin.Short",
+                -> emptyArray()
+
             pairSerialName -> arrayOf(innerElement(), innerElement2())
             tripleSerialName -> arrayOf(innerElement(), innerElement2(), innerElement3())
+
             else -> null
         }
 
