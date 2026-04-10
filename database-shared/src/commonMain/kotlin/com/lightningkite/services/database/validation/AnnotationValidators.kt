@@ -299,7 +299,9 @@ public class AnnotationValidators private constructor(
             return if (kind == StructureKind.LIST || kind == StructureKind.MAP) arguments else null
         }
 
-        fun get(annotation: KClass<out Annotation>, type: SerialKType): T? {
+        private fun Annotation.normalizedTypeName(): String = toString().removePrefix("@").substringBefore('(')
+
+        fun get(annotation: Annotation, type: SerialKType): T? {
             val forAnnotation = map[annotation.normalizedTypeName()] ?: return null
             val found = forAnnotation.firstOrNull { it.first.matches(type) }?.second
             if (found == null && printWarnings &&
@@ -308,7 +310,7 @@ public class AnnotationValidators private constructor(
                 } != false
             ) {
                 println(
-                    "${annotation.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [${
+                    "${annotation::class.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [${
                         forAnnotation.joinToString { it.first.toString() }
                     }]. Ignoring validation.   (Set AnnotationValidators.printInvalidTypeWarnings = false to suppress this warning)"
                 )
@@ -316,7 +318,7 @@ public class AnnotationValidators private constructor(
             return found
         }
 
-        fun <V : Any> getJoint(other: ValidationMap<V>, annotation: KClass<out Annotation>, type: SerialKType): Pair<T?, V?>? {
+        fun <V : Any> getJoint(other: ValidationMap<V>, annotation: Annotation, type: SerialKType): Pair<T?, V?>? {
             val key = annotation.normalizedTypeName()
             val first = map[key]
             val second = other.map[key]
@@ -331,7 +333,7 @@ public class AnnotationValidators private constructor(
                     first?.any { it.first.matches(e) } == true || second?.any { it.first.matches(e) } == true
                 } != false
             ) println(buildString {
-                append("${annotation.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [")
+                append("${annotation::class.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [")
                 first?.joinTo(this) { it.first.toString() }
                 second?.joinTo(this) { "${it.first}(S)" }
                 append("]. Ignoring validation.   (Set AnnotationValidators.printInvalidTypeWarnings = false to suppress this warning)")
@@ -650,7 +652,7 @@ public class AnnotationValidators private constructor(
             annotations.forEach { annotation ->
                 if (doSuspendingChecks) {
                     // Get both fast and suspending validators for this annotation+type
-                    val (fast, slow) = validators.getJoint(suspendingValidators, annotation::class, type) ?: return@forEach
+                    val (fast, slow) = validators.getJoint(suspendingValidators, annotation, type) ?: return@forEach
 
                     // Pre-calculate path since suspending validators run later (path will change)
                     val path = path.joinToString(".")
@@ -662,7 +664,7 @@ public class AnnotationValidators private constructor(
                     if (slow != null) queuedSuspendingChecks.add { slow(annotation, value)?.let { issues[path] = it } }
                 } else {
                     // Only run synchronous validators (skip suspending)
-                    validators.get(annotation::class, type)
+                    validators.get(annotation, type)
                         ?.invoke(annotation, value)
                         ?.let { issues[path.joinToString(".")] = it }
                 }
