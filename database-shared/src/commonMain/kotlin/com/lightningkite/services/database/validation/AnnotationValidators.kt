@@ -6,7 +6,7 @@ import com.lightningkite.services.data.IntegerRange
 import com.lightningkite.services.data.MaxLength
 import com.lightningkite.services.data.MaxSize
 import com.lightningkite.services.data.StringArrayFormat
-import com.lightningkite.services.database.childSerializersOrNull
+import com.lightningkite.services.database.childAndTypeParameterSerializersOrNull
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
@@ -291,13 +291,15 @@ public class AnnotationValidators private constructor(
 
 
 
-        private fun SerialKType.listOrMapElements(): List<SerialKType>? {
-            val kind = when (this) {
-                is SerialKType.Specified -> descriptor.kind
-                SerialKType.Wildcard -> return null
+        private fun SerialKType.listMapOrNullElements(): List<SerialKType>? =
+            when (this) {
+                is SerialKType.Specified -> {
+                    if (nullable) listOf(copy(nullable = false))
+                    else if (descriptor.kind == StructureKind.LIST || descriptor.kind == StructureKind.MAP) arguments
+                    else null
+                }
+                SerialKType.Wildcard -> null
             }
-            return if (kind == StructureKind.LIST || kind == StructureKind.MAP) arguments else null
-        }
 
         private fun Annotation.normalizedTypeName(): String = toString().removePrefix("@").substringBefore('(')
 
@@ -305,7 +307,7 @@ public class AnnotationValidators private constructor(
             val forAnnotation = map[annotation.normalizedTypeName()] ?: return null
             val found = forAnnotation.firstOrNull { it.first.matches(type) }?.second
             if (found == null && printWarnings &&
-                type.listOrMapElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map elements, if not the list itself.
+                type.listMapOrNullElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
                     forAnnotation.any { it.first.matches(e) }
                 } != false
             ) {
@@ -329,7 +331,7 @@ public class AnnotationValidators private constructor(
             val secondFound = second?.firstOrNull { it.first.matches(type) }?.second
 
             if (firstFound == null && secondFound == null && printWarnings &&
-                type.listOrMapElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map elements, if not the list itself.
+                type.listMapOrNullElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
                     first?.any { it.first.matches(e) } == true || second?.any { it.first.matches(e) } == true
                 } != false
             ) println(buildString {
@@ -437,10 +439,7 @@ public class AnnotationValidators private constructor(
          */
         private fun <T> encodeValue(serializer: KSerializer<T>, value: T) {
             validate(serializer, value)
-
-            // Element encoded, pop the field name and annotations we pushed in encodeElement
-            path.removeLastOrNull()
-            annotationStack.removeLastOrNull()
+            elementEncoded()
         }
 
         /**
@@ -450,13 +449,33 @@ public class AnnotationValidators private constructor(
          * Structures are also validated through here.
          */
         override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
-            // Save the parent serializer for enum handling (see encodeEnum)
+            // Save the serializer for enum handling (see encodeEnum)
             // This cast should always work - SerializationStrategy is almost always KSerializer in practice
-            lastParentSerializer = serializer as KSerializer<T>
+            lastSerializer = serializer as KSerializer<T>
             validate(serializer, value)
 
             // Continue serialization - this will recursively encode all fields of this value
             serializer.serialize(this, value)
+        }
+
+        override fun <T : Any> encodeNullableSerializableValue(serializer: SerializationStrategy<T>, value: T?) {
+            serializer as KSerializer<T>
+
+            val isNullabilitySupported = serializer.descriptor.isNullable
+            if (isNullabilitySupported) {
+                // Instead of `serializer.serialize` to be able to intercept this
+                @Suppress("Unchecked_Cast")
+                return encodeSerializableValue(serializer as KSerializer<T?>, value)
+            }
+
+            // Else default path used to avoid allocation of NullableSerializer
+            if (value == null) {
+                validate(serializer.nullable, null)   // don't need to call serializer.serialize(this, value) because it's null, there's nothing after this.
+                path.removeLastOrNull()
+                annotationStack.removeLastOrNull()
+            } else {
+                encodeSerializableValue(serializer, value)
+            }
         }
 
         /**
@@ -472,6 +491,11 @@ public class AnnotationValidators private constructor(
             path.add(descriptor.getElementName(index))
             annotationStack.add(descriptor.getElementAnnotations(index))
             return true
+        }
+        private fun elementEncoded() {
+            // Element encoded, pop the field name and annotations we pushed in encodeElement
+            path.removeLastOrNull()
+            annotationStack.removeLastOrNull()
         }
 
         // All primitive encode methods validate the value and pop path/annotations
@@ -490,7 +514,7 @@ public class AnnotationValidators private constructor(
          * Tracks the parent serializer to help reconstruct enum serializers.
          * Enums are encoded as ordinals, but we need the actual enum value for validation.
          */
-        private var lastParentSerializer: KSerializer<*>? = null
+        private var lastSerializer: KSerializer<*>? = null
 
         /**
          * Handles enum encoding with special logic.
@@ -510,18 +534,21 @@ public class AnnotationValidators private constructor(
 
             // If there are no validators for this enum, skip all the complex reconstruction logic
             if (annotations.isEmpty()) {
-                path.removeLastOrNull()
-                annotationStack.removeLastOrNull()
+                elementEncoded()
                 return
             }
 
             // Find the enum serializer by searching the parent's child serializers
-            val serializer = lastParentSerializer
-                ?.childSerializersOrNull()
-                ?.find { it.descriptor.serialName == enumDescriptor.serialName }
+            val serializer = lastSerializer?.let { lastSerializer ->
+                if (lastSerializer.descriptor.serialName == enumDescriptor.serialName) lastSerializer
+                else lastSerializer
+                    .childAndTypeParameterSerializersOrNull()
+                    ?.find { it.descriptor.serialName == enumDescriptor.serialName }
+            }
 
             if (serializer == null) {
                 if (printInvalidTypeWarnings) println("WARN!! Could not determine a serializer for enum ${enumDescriptor.serialName}, skipping validation.")
+                elementEncoded()
                 return
             }
 
@@ -540,8 +567,7 @@ public class AnnotationValidators private constructor(
                 annotations = annotations
             )
 
-            path.removeLastOrNull()
-            annotationStack.removeLastOrNull()
+            elementEncoded()
         }
 
         /**
@@ -591,6 +617,7 @@ public class AnnotationValidators private constructor(
                     }
                 }
             }
+            elementEncoded()
         }
 
         /**

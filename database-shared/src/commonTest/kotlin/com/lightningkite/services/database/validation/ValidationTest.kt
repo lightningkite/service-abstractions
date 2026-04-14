@@ -23,6 +23,7 @@ import kotlin.test.*
 data class Sample(
     @MaxLength(5) val x: String = "asdf",
     @IntegerRange(0, 100) val y: Int = 4,
+    @IntegerRange(0, 100) val yNullable: Int? = 5,
     @MaxLength(5) @MaxSize(5) val z: List<String> = listOf(),
 )
 
@@ -52,6 +53,7 @@ data class CustomSample(
     @StringListContainsAll("unapplied") val intList: List<Int> = listOf(1, 2, 3),
     @EnumNotEqualTo(TestEnum.First) val enum: TestEnum = TestEnum.Second,
     @EnumNotEqualTo(TestEnum.First) val enumList: List<TestEnum> = emptyList(),
+    @IntegerRange(0, 100) val nullableInt: Int? = 3
 )
 
 @SerialInfo
@@ -101,6 +103,10 @@ class ValidationTest {
         assertFails(Sample(z = listOf("123456")))
 
         assertFails(Sample(x = "123456", y = 101, z = List(10) { "a" }), failures = 3)
+
+        // annotations cascade through nullability
+        assertPasses(Sample(yNullable = null))
+        assertFails(Sample(yNullable = 101))
     }
 
     @Test
@@ -123,6 +129,13 @@ class ValidationTest {
                 if (it == value) "Cannot be $value"
                 else null
             }
+            validate<IntegerRange, Int?> {  // specific null-override
+                when (it) {
+                    null -> "Cannot be null"        // this is incredibly stupid, never do this in reality
+                    !in min..max -> "Out of range"
+                    else -> null
+                }
+            }
         }
 
         println(validators)
@@ -133,6 +146,10 @@ class ValidationTest {
         assertFails(CustomSample(enum = TestEnum.First))
         assertPasses(CustomSample(enumList = listOf(TestEnum.Second)))
         assertFails(CustomSample(enumList = listOf(TestEnum.First)))
+
+        assertPasses(CustomSample(nullableInt = 50))
+        assertFails(CustomSample(nullableInt = null))
+        assertFails(CustomSample(nullableInt = 101))
     }
 
     inline fun <reified T> match(descriptions: List<SerialKType>) {

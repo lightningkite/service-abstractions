@@ -146,6 +146,7 @@ public sealed interface SerialKType {
                 Wildcard -> false
                 is Specified -> {
                     if (this.serialName != type.serialName) return false
+                    if (type.nullable && !nullable) return false
                     if (arguments.size != type.arguments.size) return false
                     if (arguments.isEmpty()) return true
 
@@ -162,7 +163,7 @@ public sealed interface SerialKType {
                 .replace("LinkedHashSet", "Set")
                 .replace("LinkedHashMap", "Map")
 
-            return if (arguments.isEmpty()) type
+            return if (arguments.isEmpty()) type + if (nullable) '?' else ""
             else "$type<${arguments.joinToString { it.toString(qualified) }}>" + if (nullable) '?' else ""
         }
         override fun toString(): String = toString(qualified = false)

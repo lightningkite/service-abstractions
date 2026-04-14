@@ -344,6 +344,17 @@ public fun KSerializer<*>.childSerializersOrNull(): Array<KSerializer<*>>? =
             else -> null
         }
 
+public fun KSerializer<*>.childAndTypeParameterSerializersOrNull(): Array<KSerializer<*>>? {
+    val children = childSerializersOrNull()
+    val params = typeParametersSerializersOrNull()
+    return when {
+        children == null && params == null -> null
+        children == null -> params
+        params == null -> children
+        else -> children.plus(params)
+    }
+}
+
 @Suppress("UNCHECKED_CAST")
 internal val <T> KSerializer<T>.nullable2: KSerializer<T?> get() = if (this.descriptor.isNullable) this as KSerializer<T?> else (this as KSerializer<Any>).nullable as KSerializer<T?>
 

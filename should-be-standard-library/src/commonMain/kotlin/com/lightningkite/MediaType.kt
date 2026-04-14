@@ -3,16 +3,22 @@ package com.lightningkite
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 
 
 /**
  * Represents a Media (formerly known as MIME) content type.
+ *
+ * ## Serialization
+ *
+ * This is encoded as its string representation, i.e. `MediaType.Application.Json -> "application/json"`.
  */
 @Serializable(MediaType.Serializer::class)
 public data class MediaType(val type: String, val subtype: String, val parameters: Map<String, String> = mapOf()) {
 
-    public object Serializer: KSerializer<MediaType> {
-        override val descriptor = String.serializer().descriptor
+    public object Serializer : KSerializer<MediaType> {
+        override val descriptor = PrimitiveSerialDescriptor("com.lightningkite.MediaType", PrimitiveKind.STRING)
         override fun serialize(encoder: kotlinx.serialization.encoding.Encoder, value: MediaType) = encoder.encodeString(value.toString())
         override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): MediaType = MediaType(decoder.decodeString())
     }
@@ -23,10 +29,9 @@ public data class MediaType(val type: String, val subtype: String, val parameter
         fullType.substringAfter(';', "").split(';').filter { it.isNotBlank() }.associate { it.substringBefore('=').trim() to it.substringAfter('=', "").trim() }
     )
 
-    public fun accepts(other: MediaType): Boolean
-        = (type == "*" || type == other.type) && (subtype == "*" || subtype == other.subtype)
+    public fun accepts(other: MediaType): Boolean = (type == "*" || type == other.type) && (subtype == "*" || subtype == other.subtype)
 
-    override fun toString(): String = "$type/$subtype" + (if(parameters.isNotEmpty()) parameters.entries.joinToString("; ", "; ") { "${it.key}=${it.value}" } else "")
+    override fun toString(): String = "$type/$subtype" + (if (parameters.isNotEmpty()) parameters.entries.joinToString("; ", "; ") { "${it.key}=${it.value}" } else "")
 
     public companion object {
         public val Any: MediaType = MediaType("*/*")
@@ -80,6 +85,7 @@ public data class MediaType(val type: String, val subtype: String, val parameter
         private val typeToExtension = mapping.associate { it.second to it.first }
         public fun fromExtension(extension: String): MediaType = extensionToType[extension.lowercase()] ?: Application.OctetStream
     }
+
     public val withoutParameters: MediaType get() = MediaType(type, subtype)
     public val extension: String get() = typeToExtension[this.withoutParameters] ?: "unknown"
 
