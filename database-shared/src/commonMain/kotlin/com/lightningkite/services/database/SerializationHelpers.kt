@@ -326,6 +326,7 @@ public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*
 public fun KSerializer<*>.childSerializersOrNull(): Array<KSerializer<*>>? =
     (this as? GeneratedSerializer<*>)?.childSerializers()
         ?: (this as? VirtualStruct.Concrete)?.serializableProperties?.map { it.serializer }?.toTypedArray()
+        ?: (this as? MySealedClassSerializerInterface<*>)?.options?.map { it.serializer }?.toTypedArray()
         ?: when (descriptor.serialName) {
             "kotlin.String",
             "kotlin.Boolean",
@@ -354,6 +355,7 @@ public fun KSerializer<*>.childAndTypeParameterSerializersOrNull(): Array<KSeria
         else -> children.plus(params)
     }
 }
+
 
 @Suppress("UNCHECKED_CAST")
 internal val <T> KSerializer<T>.nullable2: KSerializer<T?> get() = if (this.descriptor.isNullable) this as KSerializer<T?> else (this as KSerializer<Any>).nullable as KSerializer<T?>

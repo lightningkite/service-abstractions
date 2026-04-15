@@ -8,6 +8,8 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.encoding.decodeStructure
+import kotlinx.serialization.encoding.encodeStructure
 import kotlin.reflect.KClass
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
@@ -234,6 +236,99 @@ public data class VirtualStruct(
                 }
             }
             s.endStructure(descriptor)
+        }
+    }
+}
+
+@Serializable
+public data class VirtualSealedOption(
+    val serialName: String,
+    val type: VirtualTypeReference,
+    val alternativeNames: List<String> = listOf(),
+    val annotations: List<SerializableAnnotation> = listOf(),
+    val index: Int,
+)
+
+@Serializable
+public data class VirtualSealed(
+    override val serialName: String,
+    override val annotations: List<SerializableAnnotation>,
+    val options: List<VirtualSealedOption>,
+    val parameters: List<VirtualTypeParameter> = listOf(),
+) : VirtualType {
+
+    public operator fun invoke(registry: SerializationRegistry, vararg arguments: KSerializer<*>): Concrete =
+        Concrete(registry, arguments)
+
+    override fun serializer(registry: SerializationRegistry, arguments: Array<KSerializer<*>>): KSerializer<*> =
+        Concrete(registry, arguments)
+
+    override fun toString(): String = "virtual sealed class $serialName${
+        parameters.takeUnless { it.isEmpty() }?.joinToString(", ", "<", ">") { it.name } ?: ""
+    } { ${options.joinToString { it.serialName }} }"
+
+    public inner class Concrete(
+        private val registry: SerializationRegistry,
+        public val arguments: Array<out KSerializer<*>>
+    ) : KSerializer<Any?>, VirtualType by this@VirtualSealed {
+        internal val sealed: VirtualSealed = this@VirtualSealed
+
+        private val typeArguments = parameters.indices.associate { parameters[it].name to arguments[it] }
+
+        private val optionSerializers: List<KSerializer<Any?>> by lazy {
+            options.map { it.type.serializer(registry, typeArguments) }
+        }
+
+        private val nameToIndex: Map<String, Int> by lazy {
+            options.flatMapIndexed { index, opt ->
+                (listOf(opt.serialName) + opt.alternativeNames).map { it to index }
+            }.toMap()
+        }
+
+        @Transient
+        override val descriptor: SerialDescriptor by lazy {
+            buildClassSerialDescriptor(this@VirtualSealed.serialName) {
+                for ((index, opt) in options.withIndex()) {
+                    element(
+                        elementName = opt.serialName,
+                        descriptor = optionSerializers[index].descriptor,
+                        isOptional = true,
+                        annotations = listOf()
+                    )
+                }
+            }
+        }
+
+        override fun deserialize(decoder: Decoder): Any? {
+            if (decoder is DefaultDecoder) return optionSerializers.first().default()
+            return decoder.decodeStructure(descriptor) {
+                val index = decodeElementIndex(descriptor)
+                if (index == CompositeDecoder.DECODE_DONE) {
+                    throw SerializationException("Single key expected for sealed class $serialName, but received none.")
+                }
+                if (index == CompositeDecoder.UNKNOWN_NAME) throw SerializationException("Unknown key received for sealed class $serialName.")
+                val result = decodeSerializableElement(descriptor, index, optionSerializers[index])
+                if (decodeElementIndex(descriptor) != CompositeDecoder.DECODE_DONE) {
+                    throw SerializationException("Single key expected for sealed class $serialName, but received multiple.")
+                }
+                result
+            }
+        }
+
+        override fun serialize(encoder: Encoder, value: Any?) {
+            val index = when (value) {
+                is VirtualInstance -> {
+                    options.indexOfFirst { it.serialName == value.type.struct.serialName || it.type.serialName == value.type.struct.serialName }
+                }
+                else -> -1
+            }
+            if (index == -1) throw SerializationException(
+                "No option in sealed class $serialName matches value $value"
+            )
+            encoder.encodeStructure(descriptor) {
+                @Suppress("UNCHECKED_CAST")
+                encodeSerializableElement(descriptor, index, optionSerializers[index], value)
+            }
         }
     }
 }
