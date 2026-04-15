@@ -242,8 +242,7 @@ public data class VirtualStruct(
 
 @Serializable
 public data class VirtualSealedOption(
-    val serialName: String,
-    val type: VirtualTypeReference,
+    val name: String,
     val fields: List<VirtualField> = listOf(),
     val alternativeNames: List<String> = listOf(),
     val annotations: List<SerializableAnnotation> = listOf(),
@@ -267,7 +266,7 @@ public data class VirtualSealed(
 
     override fun toString(): String = "virtual sealed class $serialName${
         parameters.takeUnless { it.isEmpty() }?.joinToString(", ", "<", ">") { it.name } ?: ""
-    } { ${options.joinToString { it.serialName }} }"
+    } { ${options.joinToString { it.name }} }"
 
     public inner class Concrete(
         private val registry: SerializationRegistry,
@@ -277,13 +276,25 @@ public data class VirtualSealed(
 
         private val typeArguments = parameters.indices.associate { parameters[it].name to arguments[it] }
 
+        private val optionStructs: List<VirtualStruct> by lazy {
+            options.map { opt ->
+                VirtualStruct(
+                    serialName = opt.name,
+                    annotations = opt.annotations,
+                    fields = opt.fields,
+                    parameters = listOf()
+                )
+            }
+        }
+
         private val optionSerializers: List<KSerializer<Any?>> by lazy {
-            options.map { it.type.serializer(registry, typeArguments) }
+            @Suppress("UNCHECKED_CAST")
+            optionStructs.map { it.Concrete(registry, arrayOf()) as KSerializer<Any?> }
         }
 
         private val nameToIndex: Map<String, Int> by lazy {
             options.flatMapIndexed { index, opt ->
-                (listOf(opt.serialName) + opt.alternativeNames).map { it to index }
+                (listOf(opt.name) + opt.alternativeNames).map { it to index }
             }.toMap()
         }
 
@@ -292,7 +303,7 @@ public data class VirtualSealed(
             buildClassSerialDescriptor(this@VirtualSealed.serialName) {
                 for ((index, opt) in options.withIndex()) {
                     element(
-                        elementName = opt.serialName,
+                        elementName = opt.name,
                         descriptor = optionSerializers[index].descriptor,
                         isOptional = true,
                         annotations = listOf()
@@ -320,7 +331,7 @@ public data class VirtualSealed(
         override fun serialize(encoder: Encoder, value: Any?) {
             val index = when (value) {
                 is VirtualInstance -> {
-                    options.indexOfFirst { it.serialName == value.type.struct.serialName || it.type.serialName == value.type.struct.serialName }
+                    options.indexOfFirst { it.name == value.type.struct.serialName }
                 }
                 else -> -1
             }

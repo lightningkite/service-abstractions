@@ -404,8 +404,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
             val optionsWithFields = value.options.mapIndexed { index, opt ->
                 val optDesc = opt.serializer.descriptor
                 VirtualSealedOption(
-                    serialName = optDesc.serialName,
-                    type = opt.serializer.virtualTypeReference(this),
+                    name = optDesc.serialName,
                     fields = (0 until optDesc.elementsCount).map { fi ->
                         VirtualField(
                             index = fi,
@@ -453,12 +452,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 val optionsWithFields = (0 until subclassDescriptor.elementsCount).map { index ->
                     val optDesc = subclassDescriptor.getElementDescriptor(index)
                     VirtualSealedOption(
-                        serialName = subclassDescriptor.getElementName(index),
-                        type = VirtualTypeReference(
-                            serialName = optDesc.serialName,
-                            arguments = listOf(),
-                            isNullable = false
-                        ),
+                        name = subclassDescriptor.getElementName(index),
                         fields = (0 until optDesc.elementsCount).map { fi ->
                             VirtualField(
                                 index = fi,
@@ -655,8 +649,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
             val optionsWithFields = value.options.mapIndexed { index, opt ->
                 val optDesc = opt.serializer.descriptor
                 VirtualSealedOption(
-                    serialName = optDesc.serialName,
-                    type = opt.serializer.virtualTypeReference(this),
+                    name = optDesc.serialName,
                     fields = (0 until optDesc.elementsCount).map { fi ->
                         VirtualField(
                             index = fi,
@@ -706,12 +699,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 val optionsWithFields = (0 until subclassDescriptor.elementsCount).map { index ->
                     val optDesc = subclassDescriptor.getElementDescriptor(index)
                     VirtualSealedOption(
-                        serialName = subclassDescriptor.getElementName(index),
-                        type = VirtualTypeReference(
-                            serialName = optDesc.serialName,
-                            arguments = listOf(),
-                            isNullable = false
-                        ),
+                        name = subclassDescriptor.getElementName(index),
                         fields = (0 until optDesc.elementsCount).map { fi ->
                             VirtualField(
                                 index = fi,
