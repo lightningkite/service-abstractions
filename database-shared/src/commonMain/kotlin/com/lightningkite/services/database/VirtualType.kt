@@ -244,6 +244,7 @@ public data class VirtualStruct(
 public data class VirtualSealedOption(
     val serialName: String,
     val type: VirtualTypeReference,
+    val fields: List<VirtualField> = listOf(),
     val alternativeNames: List<String> = listOf(),
     val annotations: List<SerializableAnnotation> = listOf(),
     val index: Int,
@@ -253,6 +254,7 @@ public data class VirtualSealedOption(
 public data class VirtualSealed(
     override val serialName: String,
     override val annotations: List<SerializableAnnotation>,
+    val fields: List<VirtualField> = listOf(),
     val options: List<VirtualSealedOption>,
     val parameters: List<VirtualTypeParameter> = listOf(),
 ) : VirtualType {
