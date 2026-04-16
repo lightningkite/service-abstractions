@@ -431,13 +431,13 @@ class AnthropicWireTest {
         // prior-generation pricing.
         val dated = AnthropicLlmAccess.findKnownModel("claude-sonnet-4-5-20250929")
         assertNotNull(dated, "dated snapshot must match a curated entry")
-        assertEquals("claude-sonnet-4-5", dated.id.asString)
+        assertEquals("claude-sonnet-4-5", dated.id.id)
         assertEquals(3.0, dated.usdPerMillionInputTokens)
 
         // Exact id matches unchanged.
         val exact = AnthropicLlmAccess.findKnownModel("claude-opus-4-5")
         assertNotNull(exact)
-        assertEquals("claude-opus-4-5", exact.id.asString)
+        assertEquals("claude-opus-4-5", exact.id.id)
 
         // Unrelated id returns null so the inference fallback can run.
         assertNull(AnthropicLlmAccess.findKnownModel("gpt-4o"))

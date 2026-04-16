@@ -45,7 +45,7 @@ internal object AnthropicTestConfig {
         AnthropicLlmSettings.ensureRegistered()
         val key = apiKey
             ?: error("AnthropicTestConfig.service accessed without a key; gate on servicePresent first")
-        LlmAccess.Settings("anthropic://${cheapModel.asString}?apiKey=$key")(
+        LlmAccess.Settings("anthropic://${cheapModel.id}?apiKey=$key")(
             "anthropic-integration",
             context,
         )
@@ -58,7 +58,7 @@ internal object AnthropicTestConfig {
      */
     val invalidCredentialsService: LlmAccess by lazy {
         AnthropicLlmSettings.ensureRegistered()
-        LlmAccess.Settings("anthropic://${cheapModel.asString}?apiKey=sk-ant-invalid-deadbeef")(
+        LlmAccess.Settings("anthropic://${cheapModel.id}?apiKey=sk-ant-invalid-deadbeef")(
             "anthropic-integration-badkey",
             context,
         )

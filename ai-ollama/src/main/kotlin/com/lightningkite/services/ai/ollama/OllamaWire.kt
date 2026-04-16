@@ -57,6 +57,12 @@ internal object OllamaWire {
         put("stream", stream)
 
         putJsonArray("messages") {
+            prompt.collectSharedContext()?.let { ctx ->
+                add(buildJsonObject {
+                    put("role", "system")
+                    put("content", ctx)
+                })
+            }
             val hintedMessages = applyToolChoiceHint(prompt.messages, prompt.toolChoice)
             hintedMessages.forEach { msg ->
                 add(messageToJson(msg))
@@ -201,7 +207,7 @@ internal object OllamaWire {
         }
     }
 
-    private fun toolToJson(tool: LlmToolDescriptor, module: SerializersModule): JsonObject =
+    private fun toolToJson(tool: LlmToolDescriptor<*>, module: SerializersModule): JsonObject =
         buildJsonObject {
             put("type", "function")
             putJsonObject("function") {

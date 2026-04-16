@@ -73,7 +73,7 @@ internal object OllamaTestConfig {
     val toolModelAvailable: Boolean
         get() {
             val tm = toolModel ?: return false
-            return installedModelNames.any { it.equals(tm.asString, ignoreCase = true) }
+            return installedModelNames.any { it.equals(tm.id, ignoreCase = true) }
         }
 
     /**
@@ -123,7 +123,7 @@ internal object OllamaTestConfig {
      */
     val service: LlmAccess by lazy {
         OllamaSchemeRegistrar.ensureRegistered()
-        LlmAccess.Settings("ollama://${cheapModel.asString}?baseUrl=$baseUrl")(
+        LlmAccess.Settings("ollama://${cheapModel.id}?baseUrl=$baseUrl")(
             "ollama-integration",
             context,
         )

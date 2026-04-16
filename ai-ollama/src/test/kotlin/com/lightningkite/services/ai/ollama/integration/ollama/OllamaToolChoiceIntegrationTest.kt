@@ -21,7 +21,7 @@ class OllamaToolChoiceIntegrationTest : ToolChoiceTests() {
     override val service: LlmAccess by lazy {
         OllamaSchemeRegistrar.ensureRegistered()
         LlmAccess.Settings(
-            "ollama://${(OllamaTestConfig.toolModel ?: OllamaTestConfig.cheapModel).asString}?baseUrl=${OllamaTestConfig.baseUrl}",
+            "ollama://${(OllamaTestConfig.toolModel ?: OllamaTestConfig.cheapModel).id}?baseUrl=${OllamaTestConfig.baseUrl}",
         )("ollama-integration-toolchoice", TestSettingContext())
     }
 

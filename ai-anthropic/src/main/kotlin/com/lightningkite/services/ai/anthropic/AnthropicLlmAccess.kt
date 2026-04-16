@@ -72,7 +72,9 @@ public class AnthropicLlmAccess(
     override suspend fun getModels(): List<LlmModelInfo> {
         // Use Anthropic's /v1/models endpoint when we can, but augment with our locally
         // curated pricing/ranking. If the call fails, fall back to [KNOWN_MODELS].
-        return runCatching { fetchModelsFromApi() }.getOrElse { KNOWN_MODELS }
+        return runCatching { fetchModelsFromApi() }.getOrElse {
+            KNOWN_MODELS.map { it.copy(id = it.id.copy(access = name)) }
+        }
     }
 
     private suspend fun fetchModelsFromApi(): List<LlmModelInfo> {
@@ -96,13 +98,13 @@ public class AnthropicLlmAccess(
             // Prefer longest-prefix match so dated snapshots like `claude-sonnet-4-5-20250929`
             // still pick up the curated entry for `claude-sonnet-4-5`.
             val baseline = findKnownModel(id) ?: inferPricingFromId(id, displayName)
-            baseline.copy(id = LlmModelId(id), name = displayName)
+            baseline.copy(id = LlmModelId(id, access = name), name = displayName)
         }
     }
 
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         val body = AnthropicWire.buildRequestBody(
-            modelId = model.asString,
+            modelId = model.id,
             prompt = prompt,
             module = module,
             stream = true,
@@ -193,6 +195,11 @@ public class AnthropicLlmAccess(
                 usdPerMillionInputTokens = 5.0,
                 usdPerMillionOutputTokens = 25.0,
                 roughIntelligenceRanking = 0.98,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 65536,
             ),
             LlmModelInfo(
                 id = LlmModelId("claude-sonnet-4-6"),
@@ -201,6 +208,11 @@ public class AnthropicLlmAccess(
                 usdPerMillionInputTokens = 3.0,
                 usdPerMillionOutputTokens = 15.0,
                 roughIntelligenceRanking = 0.90,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 65536,
             ),
             LlmModelInfo(
                 id = LlmModelId("claude-haiku-4-5"),
@@ -209,6 +221,11 @@ public class AnthropicLlmAccess(
                 usdPerMillionInputTokens = 1.0,
                 usdPerMillionOutputTokens = 5.0,
                 roughIntelligenceRanking = 0.75,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 8192,
             ),
             LlmModelInfo(
                 id = LlmModelId("claude-opus-4-5"),
@@ -217,6 +234,11 @@ public class AnthropicLlmAccess(
                 usdPerMillionInputTokens = 5.0,
                 usdPerMillionOutputTokens = 25.0,
                 roughIntelligenceRanking = 0.95,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 65536,
             ),
             LlmModelInfo(
                 id = LlmModelId("claude-sonnet-4-5"),
@@ -225,6 +247,11 @@ public class AnthropicLlmAccess(
                 usdPerMillionInputTokens = 3.0,
                 usdPerMillionOutputTokens = 15.0,
                 roughIntelligenceRanking = 0.88,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 65536,
             ),
             LlmModelInfo(
                 id = LlmModelId("claude-opus-4-1"),
@@ -233,6 +260,11 @@ public class AnthropicLlmAccess(
                 usdPerMillionInputTokens = 15.0,
                 usdPerMillionOutputTokens = 75.0,
                 roughIntelligenceRanking = 0.93,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 16384,
             ),
             LlmModelInfo(
                 id = LlmModelId("claude-sonnet-4"),
@@ -241,6 +273,11 @@ public class AnthropicLlmAccess(
                 usdPerMillionInputTokens = 3.0,
                 usdPerMillionOutputTokens = 15.0,
                 roughIntelligenceRanking = 0.85,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 16384,
             ),
             LlmModelInfo(
                 id = LlmModelId("claude-3-5-haiku-latest"),
@@ -249,6 +286,11 @@ public class AnthropicLlmAccess(
                 usdPerMillionInputTokens = 0.80,
                 usdPerMillionOutputTokens = 4.0,
                 roughIntelligenceRanking = 0.55,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 8192,
             ),
         )
 
@@ -259,8 +301,8 @@ public class AnthropicLlmAccess(
          */
         internal fun findKnownModel(id: String): LlmModelInfo? =
             KNOWN_MODELS
-                .filter { id.startsWith(it.id.asString) }
-                .maxByOrNull { it.id.asString.length }
+                .filter { id.startsWith(it.id.id) }
+                .maxByOrNull { it.id.id.length }
 
         /** Fallback for unknown ids returned by /v1/models — pick defaults by family name. */
         internal fun inferPricingFromId(id: String, displayName: String): LlmModelInfo {
@@ -277,6 +319,10 @@ public class AnthropicLlmAccess(
                 usdPerMillionInputTokens = inPrice,
                 usdPerMillionOutputTokens = outPrice,
                 roughIntelligenceRanking = ranking,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
             )
         }
     }

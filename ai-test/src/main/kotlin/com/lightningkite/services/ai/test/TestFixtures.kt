@@ -43,19 +43,19 @@ public data class NestedWeatherRequest(
  * The "weather" tool the suite uses throughout. Stable name so provider-specific
  * subclasses can log / filter against it.
  */
-public val weatherTool: LlmToolDescriptor = LlmToolDescriptor(
+public val weatherTool: LlmToolDescriptor<WeatherArgs> = LlmToolDescriptor(
     name = "get_weather",
     description = "Fetch the current weather for a city.",
     type = serializer<WeatherArgs>(),
 )
 
-public val currentTimeTool: LlmToolDescriptor = LlmToolDescriptor(
+public val currentTimeTool: LlmToolDescriptor<CurrentTimeArgs> = LlmToolDescriptor(
     name = "get_current_time",
     description = "Fetch the current time in the given IANA time zone.",
     type = serializer<CurrentTimeArgs>(),
 )
 
-public val nestedWeatherTool: LlmToolDescriptor = LlmToolDescriptor(
+public val nestedWeatherTool: LlmToolDescriptor<NestedWeatherRequest> = LlmToolDescriptor(
     name = "get_weather_nested",
     description = "Fetch weather with additional metadata.",
     type = serializer<NestedWeatherRequest>(),

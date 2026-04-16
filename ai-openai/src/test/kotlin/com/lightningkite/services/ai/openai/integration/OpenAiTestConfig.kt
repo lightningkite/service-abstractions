@@ -56,7 +56,7 @@ internal object OpenAiTestConfig {
      */
     val service: LlmAccess by lazy {
         val key = apiKey ?: error("OPENAI_API_KEY not set; tests should check apiKeyPresent first")
-        LlmAccess.Settings("openai://${cheapModel.asString}?apiKey=$key")(
+        LlmAccess.Settings("openai://${cheapModel.id}?apiKey=$key")(
             "openai-integration-test",
             context,
         )
@@ -67,7 +67,7 @@ internal object OpenAiTestConfig {
      * to verify auth failures surface as exceptions rather than silent empty responses.
      */
     val invalidCredentialsService: LlmAccess by lazy {
-        LlmAccess.Settings("openai://${cheapModel.asString}?apiKey=sk-deliberately-invalid-key-for-tests")(
+        LlmAccess.Settings("openai://${cheapModel.id}?apiKey=sk-deliberately-invalid-key-for-tests")(
             "openai-integration-test-bad-key",
             context,
         )

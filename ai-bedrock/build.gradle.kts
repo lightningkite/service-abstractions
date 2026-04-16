@@ -95,6 +95,7 @@ kotlin {
         val jvmTest by getting {
             dependencies {
                 implementation(project(":ai-test"))
+                implementation(project(":test"))
             }
         }
     }

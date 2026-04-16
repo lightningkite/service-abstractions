@@ -70,9 +70,9 @@ internal object BedrockTestConfig {
             error("BedrockTestConfig.service accessed without AWS credentials; gate on servicePresent first")
         }
         val url = if (profileAvailable(AWS_PROFILE)) {
-            "bedrock://$AWS_PROFILE@${cheapModel.asString}?region=$region"
+            "bedrock://$AWS_PROFILE@${cheapModel.id}?region=$region"
         } else {
-            "bedrock://${cheapModel.asString}?region=$region"
+            "bedrock://${cheapModel.id}?region=$region"
         }
         LlmAccess.Settings(url)("bedrock-integration", context)
     }

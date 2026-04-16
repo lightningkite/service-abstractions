@@ -60,7 +60,11 @@ internal object BedrockWire {
         // tool calls this turn. See interfaces.kt doc for LlmToolChoice.None.
         val suppressToolsPrompt = prompt.tools.isNotEmpty() && prompt.toolChoice == LlmToolChoice.None
         val systemMessages = prompt.messages.filter { it.source == LlmMessageSource.System }
+        val sharedContext = prompt.collectSharedContext()
         val systemBlocks = buildJsonArray {
+            if (sharedContext != null) {
+                addJsonObject { put("text", sharedContext) }
+            }
             systemMessages.forEach { msg ->
                 msg.content.forEach { block ->
                     when (block) {

@@ -102,20 +102,24 @@ public class OllamaLlmAccess(
         }
         val tags: OllamaTagsResponse = response.body()
         tags.models.map { entry ->
+            val modelName = entry.name
+            val isVision = VISION_MODEL_PATTERNS.any { it in modelName.lowercase() }
             LlmModelInfo(
-                id = LlmModelId(entry.name),
-                name = entry.name,
+                id = LlmModelId(id = modelName, access = this.name),
+                name = modelName,
                 description = entry.details?.parameter_size?.let { "Ollama $it model" },
                 usdPerMillionInputTokens = 0.0,
                 usdPerMillionOutputTokens = 0.0,
-                roughIntelligenceRanking = estimateOllamaRanking(entry.name, entry.details?.parameter_size),
+                roughIntelligenceRanking = estimateOllamaRanking(modelName, entry.details?.parameter_size),
+                supportsToolCalling = true,
+                supportsImageInput = isVision,
             )
         }
     }
 
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         val requestBody = OllamaWireBuilder.buildChatRequest(
-            model.asString,
+            model.id,
             prompt,
             context.internalSerializersModule,
             stream = true,
@@ -293,6 +297,8 @@ internal object OllamaWireBuilder {
         stream: Boolean,
     ) = OllamaWire.buildChatRequest(model, prompt, module, stream)
 }
+
+private val VISION_MODEL_PATTERNS = listOf("llava", "bakllava", "moondream", "cogvlm", "llama-vision", "minicpm-v")
 
 /**
  * Rough intelligence ranking heuristic from an Ollama model identifier plus its reported

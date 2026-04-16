@@ -46,7 +46,7 @@ import kotlin.reflect.KClass
  * @param maxDepth Maximum recursion depth for nested classes / sealed hierarchies.
  *   When exceeded, the schema collapses to an untyped object to keep token count bounded.
  */
-public fun LlmToolDescriptor.toJsonSchema(
+public fun LlmToolDescriptor<*>.toJsonSchema(
     module: SerializersModule = EmptySerializersModule(),
     maxDepth: Int = 4,
 ): JsonObject = type.toJsonSchema(module, maxDepth)

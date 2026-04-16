@@ -23,6 +23,7 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
     testImplementation(project(":ai-test"))
+    testImplementation(project(":test"))
 }
 
 kotlin {

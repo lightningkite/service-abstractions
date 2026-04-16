@@ -86,9 +86,12 @@ public suspend fun LlmAccess.inference(model: LlmModelId, prompt: LlmPrompt): Ll
     )
 }
 
-@JvmInline
 @Serializable
-public value class LlmModelId(public val asString: String)
+public data class LlmModelId(
+    val id: String,
+    /** Name of the [LlmAccess] that serves this model. Used for routing when multiple accesses are loaded. */
+    val access: String? = null,
+)
 
 
 @Serializable
@@ -105,6 +108,17 @@ public data class LlmModelInfo(
      * should refresh them whenever their model list is updated.
      */
     val roughIntelligenceRanking: Double = 0.5,
+    val supportsToolCalling: Boolean = false,
+    val supportsImageInput: Boolean = false,
+    val supportsVideoInput: Boolean = false,
+    val supportsAudioInput: Boolean = false,
+    val supportsImageOutput: Boolean = false,
+    val supportsAudioOutput: Boolean = false,
+    val supportsReasoning: Boolean = false,
+    /** Maximum input context window in tokens. Null means unknown. */
+    val maxContextTokens: Int? = null,
+    /** Maximum output tokens the model can produce. Null means unknown. */
+    val maxOutputTokens: Int? = null,
 )
 
 
@@ -120,7 +134,7 @@ public data class LlmModelInfo(
  */
 public data class LlmPrompt(
     val messages: List<LlmMessage>,
-    val tools: List<LlmToolDescriptor> = emptyList(),
+    val tools: List<LlmToolDescriptor<*>> = emptyList(),
     val toolChoice: LlmToolChoice = LlmToolChoice.Auto,
     /**
      * Cap on output tokens. If null, the adapter picks a provider-appropriate default
@@ -129,7 +143,17 @@ public data class LlmPrompt(
     val maxTokens: Int? = null,
     val temperature: Double? = null,
     val stopSequences: List<String> = emptyList(),
-)
+) {
+    /**
+     * Collects all [LlmSharedContext] from [tools], deduplicates, and joins their content.
+     * Returns null when no shared context exists.
+     */
+    public fun collectSharedContext(): String? {
+        val unique = tools.flatMapTo(LinkedHashSet()) { it.sharedContext }
+        if (unique.isEmpty()) return null
+        return unique.joinToString("\n\n") { it.content }
+    }
+}
 
 /**
  * Controls whether and how the model calls tools.
@@ -159,16 +183,43 @@ public sealed class LlmToolChoice {
 }
 
 /**
+ * Shared background information that one or more tools may reference. When a provider
+ * assembles the request, it collects all [LlmSharedContext] instances from the active tools,
+ * deduplicates them (via pre-computed [hashCode]/[equals]), and renders them once in the
+ * system prompt so the model understands the backing data without per-tool repetition.
+ *
+ * Construct once and share the same instance across tools that need it — reference equality
+ * short-circuits dedup, falling back to content comparison only for independently-created
+ * instances with identical text.
+ */
+public class LlmSharedContext(public val content: String) {
+    private val cachedHash: Int = content.hashCode()
+    override fun hashCode(): Int = cachedHash
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is LlmSharedContext) return false
+        return cachedHash == other.cachedHash && content == other.content
+    }
+    override fun toString(): String = "LlmSharedContext(${content.take(40)}...)"
+}
+
+/**
  * A callable tool exposed to the model. [type] must be a [KSerializer] for a
  * class whose shape can be mapped to a JSON Schema object; the adapter walks
  * its descriptor to produce the provider-specific schema.
  *
  * Not @Serializable: [KSerializer] itself is not cross-network-transferable.
  */
-public data class LlmToolDescriptor(
+public data class LlmToolDescriptor<T>(
     val name: String,
     val description: String,
-    val type: KSerializer<*>,
+    val type: KSerializer<T>,
+    /**
+     * Background context shared across tools. Providers collect all [LlmSharedContext] from
+     * the active tool set, deduplicate, and render once in the system prompt. Use this for
+     * schema descriptions, API docs, or other reference material that multiple tools share.
+     */
+    val sharedContext: List<LlmSharedContext> = emptyList(),
     /**
      * Hint to providers that support prompt caching: if true, cache the tool definitions
      * up to and including this tool. Anthropic sends tools before messages, so a tool

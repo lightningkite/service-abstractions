@@ -25,7 +25,7 @@ class OllamaStreamingIntegrationTest : StreamingTests() {
         OllamaSchemeRegistrar.ensureRegistered()
         val model = OllamaTestConfig.toolModel ?: OllamaTestConfig.cheapModel
         LlmAccess.Settings(
-            "ollama://${model.asString}?baseUrl=${OllamaTestConfig.baseUrl}",
+            "ollama://${model.id}?baseUrl=${OllamaTestConfig.baseUrl}",
         )("ollama-integration-streaming", TestSettingContext())
     }
 

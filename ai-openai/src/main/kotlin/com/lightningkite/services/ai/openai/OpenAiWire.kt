@@ -146,6 +146,12 @@ internal fun buildRequestBody(
 ): JsonObject = buildJsonObject {
     put("model", model)
     putJsonArray("messages") {
+        prompt.collectSharedContext()?.let { ctx ->
+            add(buildJsonObject {
+                put("role", "system")
+                put("content", ctx)
+            })
+        }
         prompt.messages.forEach { message ->
             buildOpenAiMessages(message).forEach { add(it) }
         }

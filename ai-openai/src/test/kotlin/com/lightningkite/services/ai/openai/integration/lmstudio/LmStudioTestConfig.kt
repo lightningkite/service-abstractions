@@ -111,7 +111,7 @@ internal object LmStudioTestConfig {
      */
     val service: LlmAccess by lazy {
         LlmAccess.Settings(
-            "openai://${cheapModel.asString}?apiKey=$apiKey&baseUrl=$baseUrl",
+            "openai://${cheapModel.id}?apiKey=$apiKey&baseUrl=$baseUrl",
         )("lmstudio-integration", context)
     }
 

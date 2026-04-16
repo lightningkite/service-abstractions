@@ -60,12 +60,12 @@ public class BedrockLlmAccess(
 
     private val host: String = "bedrock-runtime.$region.amazonaws.com"
 
-    override suspend fun getModels(): List<LlmModelInfo> = KNOWN_MODELS
+    override suspend fun getModels(): List<LlmModelInfo> = KNOWN_MODELS.map { it.copy(id = it.id.copy(access = name)) }
 
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         try {
             val body = BedrockWire.buildRequestBody(prompt, module).toString().encodeToByteArray()
-            val path = "/model/${encodePathSegment(model.asString)}/converse-stream"
+            val path = "/model/${encodePathSegment(model.id)}/converse-stream"
             val amzDate = clock.nowAmzDate()
 
             val signed = SigV4.signHeaders(
@@ -190,6 +190,11 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 5.0,
                 usdPerMillionOutputTokens = 25.0,
                 roughIntelligenceRanking = 0.98,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 65536,
             ),
             LlmModelInfo(
                 id = LlmModelId("anthropic.claude-sonnet-4-6-20260217-v1:0"),
@@ -198,6 +203,11 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 3.0,
                 usdPerMillionOutputTokens = 15.0,
                 roughIntelligenceRanking = 0.90,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 65536,
             ),
             LlmModelInfo(
                 id = LlmModelId("anthropic.claude-haiku-4-5-20251001-v1:0"),
@@ -206,6 +216,11 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 1.0,
                 usdPerMillionOutputTokens = 5.0,
                 roughIntelligenceRanking = 0.75,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 65536,
             ),
             LlmModelInfo(
                 id = LlmModelId("anthropic.claude-sonnet-4-5-20250929-v1:0"),
@@ -214,6 +229,11 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 3.0,
                 usdPerMillionOutputTokens = 15.0,
                 roughIntelligenceRanking = 0.88,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 65536,
             ),
             LlmModelInfo(
                 id = LlmModelId("anthropic.claude-sonnet-4-20250514-v1:0"),
@@ -222,6 +242,11 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 3.0,
                 usdPerMillionOutputTokens = 15.0,
                 roughIntelligenceRanking = 0.85,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 16384,
             ),
             LlmModelInfo(
                 id = LlmModelId("anthropic.claude-opus-4-1-20250805-v1:0"),
@@ -230,6 +255,11 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 15.0,
                 usdPerMillionOutputTokens = 75.0,
                 roughIntelligenceRanking = 0.93,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 16384,
             ),
             LlmModelInfo(
                 id = LlmModelId("anthropic.claude-3-5-haiku-20241022-v1:0"),
@@ -238,6 +268,11 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 0.80,
                 usdPerMillionOutputTokens = 4.0,
                 roughIntelligenceRanking = 0.55,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 8192,
             ),
             LlmModelInfo(
                 id = LlmModelId("amazon.nova-pro-v1:0"),
@@ -246,6 +281,11 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 0.80,
                 usdPerMillionOutputTokens = 3.20,
                 roughIntelligenceRanking = 0.80,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsVideoInput = true,
+                maxContextTokens = 300_000,
+                maxOutputTokens = 5120,
             ),
             LlmModelInfo(
                 id = LlmModelId("amazon.nova-lite-v1:0"),
@@ -254,6 +294,11 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 0.06,
                 usdPerMillionOutputTokens = 0.24,
                 roughIntelligenceRanking = 0.65,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                supportsVideoInput = true,
+                maxContextTokens = 300_000,
+                maxOutputTokens = 5120,
             ),
             LlmModelInfo(
                 id = LlmModelId("amazon.nova-micro-v1:0"),
@@ -262,6 +307,9 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 0.035,
                 usdPerMillionOutputTokens = 0.14,
                 roughIntelligenceRanking = 0.50,
+                supportsToolCalling = true,
+                maxContextTokens = 128_000,
+                maxOutputTokens = 5120,
             ),
             LlmModelInfo(
                 id = LlmModelId("meta.llama4-maverick-v1:0"),
@@ -270,6 +318,10 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 0.50,
                 usdPerMillionOutputTokens = 0.77,
                 roughIntelligenceRanking = 0.90,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 32_768,
             ),
             LlmModelInfo(
                 id = LlmModelId("meta.llama4-scout-v1:0"),
@@ -278,6 +330,10 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 0.27,
                 usdPerMillionOutputTokens = 0.36,
                 roughIntelligenceRanking = 0.75,
+                supportsToolCalling = true,
+                supportsImageInput = true,
+                maxContextTokens = 10_000_000,
+                maxOutputTokens = 32_768,
             ),
             LlmModelInfo(
                 id = LlmModelId("meta.llama3-3-70b-instruct-v1:0"),
@@ -286,6 +342,9 @@ public class BedrockLlmAccess(
                 usdPerMillionInputTokens = 0.72,
                 usdPerMillionOutputTokens = 0.72,
                 roughIntelligenceRanking = 0.70,
+                supportsToolCalling = true,
+                maxContextTokens = 128_000,
+                maxOutputTokens = 4_096,
             ),
         )
     }

@@ -45,11 +45,11 @@ public abstract class GetModelsTests : LlmAccessTests() {
             return@runTest
         }
         val models = service.getModels()
-        val cheapId = cheapModel.asString
-        val present = models.any { it.id.asString == cheapId || it.id.asString.contains(cheapId, ignoreCase = true) }
+        val cheapId = cheapModel.id
+        val present = models.any { it.id.id == cheapId || it.id.id.contains(cheapId, ignoreCase = true) }
         assertTrue(
             present,
-            "Expected '$cheapId' in getModels()=${models.map { it.id.asString }}",
+            "Expected '$cheapId' in getModels()=${models.map { it.id.id }}",
         )
     }
 }

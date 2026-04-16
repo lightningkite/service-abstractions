@@ -67,19 +67,28 @@ public class OpenAiLlmAccess(
         return body.data.map { entry ->
             val catalogEntry = OpenAiModelCatalog.lookup(entry.id)
             LlmModelInfo(
-                id = LlmModelId(entry.id),
+                id = LlmModelId(id = entry.id, access = name),
                 name = catalogEntry?.displayName ?: entry.id,
                 description = catalogEntry?.description,
                 usdPerMillionInputTokens = catalogEntry?.inputPrice ?: 0.0,
                 usdPerMillionOutputTokens = catalogEntry?.outputPrice ?: 0.0,
                 roughIntelligenceRanking = catalogEntry?.ranking ?: 0.5,
+                supportsToolCalling = catalogEntry?.supportsToolCalling ?: true,
+                supportsImageInput = catalogEntry?.supportsImageInput ?: false,
+                supportsVideoInput = catalogEntry?.supportsVideoInput ?: false,
+                supportsAudioInput = catalogEntry?.supportsAudioInput ?: false,
+                supportsImageOutput = catalogEntry?.supportsImageOutput ?: false,
+                supportsAudioOutput = catalogEntry?.supportsAudioOutput ?: false,
+                supportsReasoning = catalogEntry?.supportsReasoning ?: false,
+                maxContextTokens = catalogEntry?.maxContextTokens,
+                maxOutputTokens = catalogEntry?.maxOutputTokens,
             )
         }
     }
 
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         val body = buildRequestBody(
-            model = model.asString,
+            model = model.id,
             prompt = prompt,
             stream = true,
             module = context.internalSerializersModule,

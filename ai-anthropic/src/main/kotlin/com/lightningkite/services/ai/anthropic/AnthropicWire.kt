@@ -57,10 +57,15 @@ internal object AnthropicWire {
         // When any system message has cacheBoundary=true we must use the array-of-blocks
         // form so we can attach cache_control; otherwise the plain string form suffices.
         val systemMessages = prompt.messages.filter { it.source == LlmMessageSource.System }
-        val systemText = systemMessages
-            .flatMap { it.content }
-            .filterIsInstance<LlmContent.Text>()
-            .joinToString("\n\n") { it.text }
+        val sharedContext = prompt.collectSharedContext()
+        val systemText = listOfNotNull(
+            sharedContext,
+            systemMessages
+                .flatMap { it.content }
+                .filterIsInstance<LlmContent.Text>()
+                .joinToString("\n\n") { it.text }
+                .ifEmpty { null }
+        ).joinToString("\n\n")
         if (systemText.isNotEmpty()) {
             if (systemMessages.any { it.cacheBoundary }) {
                 put("system", buildJsonArray {
