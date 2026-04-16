@@ -1,7 +1,6 @@
 package com.lightningkite.services.email.ses
 
 import com.lightningkite.services.email.EmailInboundService
-import com.lightningkite.services.email.javasmtp.AwsSesDomainConfiguration
 import com.lightningkite.services.terraform.AwsPolicyStatement
 import com.lightningkite.services.terraform.TerraformEmitterAwsDomain
 import com.lightningkite.services.terraform.TerraformNeed
@@ -62,9 +61,10 @@ import kotlinx.serialization.json.JsonPrimitive
  * @param tlsPolicy TLS policy for receiving email. "Require" enforces TLS, "Optional" allows unencrypted.
  * @param scanEnabled Whether to enable spam and virus scanning. Default is true.
  */
+@Deprecated("Use the version with the sesDomainConfiguration parameter instead")
 context(emitter: TerraformEmitterAwsDomain)
 public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
-    sesDomainConfiguration: AwsSesDomainConfiguration,
+    sesDomainName: String,
     webhookUrl: String? = null,
     storeInS3: Boolean = false,
     s3BucketPrefix: String = "ses-inbound",
@@ -226,8 +226,8 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
         // Ensure inbound setup depends on shared domain being ready
         "resource.null_resource.${name}_depends_on_domain" {
             "depends_on" - listOf(
-                "aws_ses_domain_identity.${sesDomainConfiguration.name}",
-                "aws_ses_domain_dkim.${sesDomainConfiguration.name}_dkim"
+                "aws_ses_domain_identity.$sesDomainName",
+                "aws_ses_domain_dkim.${sesDomainName}_dkim"
             )
         }
 
