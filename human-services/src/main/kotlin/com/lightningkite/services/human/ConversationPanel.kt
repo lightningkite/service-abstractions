@@ -32,15 +32,21 @@ internal class EmailConversationPanel(
     private val messages = CopyOnWriteArrayList<Entry>()
     private val inboundHandlers = CopyOnWriteArrayList<suspend (ReceivedEmail) -> Unit>()
 
-    private data class Entry(
+    internal data class Entry(
         val direction: Direction,
         val timestamp: Instant,
+        val messageId: String,
+        val inReplyTo: String?,
+        val references: List<String>,
         val from: String,
         val to: String,
         val subject: String,
         val html: String?,
         val plainText: String?,
     )
+
+    /** Snapshot of the current conversation entries (for test assertions). */
+    internal fun entries(): List<Entry> = messages.toList()
 
     fun addInboundHandler(h: suspend (ReceivedEmail) -> Unit) { inboundHandlers.add(h) }
     fun removeInboundHandler(h: suspend (ReceivedEmail) -> Unit) { inboundHandlers.remove(h) }
@@ -52,9 +58,15 @@ internal class EmailConversationPanel(
     }
 
     fun acceptOutbound(email: Email) {
+        val msgId = email.customHeaders["Message-ID"]?.firstOrNull()
+            ?: "<${Uuid.random()}@human-services>"
         messages.add(Entry(
             direction = Direction.Outbound,
             timestamp = clock.now(),
+            messageId = msgId,
+            inReplyTo = email.customHeaders["In-Reply-To"]?.firstOrNull(),
+            references = email.customHeaders["References"]?.firstOrNull()
+                ?.split(Regex("\\s+"))?.filter { it.isNotBlank() } ?: emptyList(),
             from = email.from?.display() ?: "(default)",
             to = email.to.joinToString(", ") { it.display() },
             subject = email.subject,
@@ -67,10 +79,12 @@ internal class EmailConversationPanel(
     override fun formHtml(): String = """
         <div class="form-section">
         <form id="form-$id" onsubmit="return submitForm('$id')">
+            <input type="hidden" name="inReplyTo" id="email-inReplyTo" value="">
+            <input type="hidden" name="references" id="email-references" value="">
             <label>From <input name="from" type="email" placeholder="sender@example.com" required></label>
             <label>To <input name="to" type="email" placeholder="recipient@example.com" required value="$defaultEmailAddress"></label>
             <label>Subject <input name="subject" type="text" placeholder="Email subject" required></label>
-            <label>Body (HTML or plain text) <textarea name="body" placeholder="Type your email body here..." required></textarea></label>
+            <label>Body (HTML or plain text) <textarea name="body" id="email-body" placeholder="Type your email body here..." required></textarea></label>
             <button type="submit">Simulate inbound email</button>
             <div id="status-$id" class="status"></div>
         </form>
@@ -82,15 +96,21 @@ internal class EmailConversationPanel(
         val to = formData["to"] ?: return "Missing 'to' field"
         val subject = formData["subject"] ?: return "Missing 'subject' field"
         val body = formData["body"] ?: return "Missing 'body' field"
+        val inReplyTo = formData["inReplyTo"]?.takeIf { it.isNotBlank() }
+        val references = formData["references"]?.takeIf { it.isNotBlank() }
+            ?.split(Regex("\\s+"))?.filter { it.isNotBlank() } ?: emptyList()
         val isHtml = body.contains("<") && body.contains(">")
+        val messageId = "<${Uuid.random()}@human-services>"
         val email = ReceivedEmail(
-            messageId = Uuid.random().toString(),
+            messageId = messageId,
             from = EmailAddressWithName(from.toEmailAddress()),
             to = listOf(EmailAddressWithName(to.toEmailAddress())),
             subject = subject,
             html = if (isHtml) body else null,
             plainText = if (!isHtml) body else null,
             receivedAt = clock.now(),
+            inReplyTo = inReplyTo,
+            references = references,
         )
         acceptInbound(email)
         return "Inbound email received from $from"
@@ -103,6 +123,16 @@ internal class EmailConversationPanel(
             append('{')
             append(""""direction":${jsonString(e.direction.name.lowercase())}""")
             append(""","timestamp":${jsonString(e.timestamp.toString())}""")
+            append(""","messageId":${jsonString(e.messageId)}""")
+            e.inReplyTo?.let { append(""","inReplyTo":${jsonString(it)}""") }
+            if (e.references.isNotEmpty()) {
+                append(""","references":[""")
+                e.references.forEachIndexed { ri, r ->
+                    if (ri > 0) append(',')
+                    append(jsonString(r))
+                }
+                append(']')
+            }
             append(""","subject":${jsonString(e.subject)}""")
             append(""","from":${jsonString(e.from)}""")
             append(""","to":${jsonString(e.to)}""")
@@ -121,6 +151,9 @@ internal class EmailConversationPanel(
     private fun ReceivedEmail.toEntry(direction: Direction): Entry = Entry(
         direction = direction,
         timestamp = receivedAt,
+        messageId = messageId,
+        inReplyTo = inReplyTo,
+        references = references,
         from = from.display(),
         to = to.joinToString(", ") { it.display() },
         subject = subject,

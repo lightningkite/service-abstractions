@@ -220,7 +220,10 @@ h3{font-size:14px;margin:10px 0 6px}
 .msg-badge.outbound{background:#2563eb;color:#fff}
 .msg-header{font-weight:bold;margin-bottom:4px}
 .msg-meta{color:#666;font-size:12px;margin-bottom:4px}
+.msg-threading{color:#888;font-size:11px;font-family:monospace;margin-bottom:4px}
 .msg-body{white-space:pre-wrap;font-family:monospace;font-size:13px}
+.msg-reply-btn{display:inline-block;margin-top:4px;padding:2px 8px;font-size:11px;cursor:pointer;background:#e5e7eb;border:1px solid #ccc;border-radius:3px;color:#374151}
+.msg-reply-btn:hover{background:#d1d5db}
 iframe.email-preview{width:100%;height:200px;border:1px solid #ddd;margin-top:4px;background:#fff}
 </style>
 </head><body>
@@ -285,6 +288,39 @@ function directionBadge(msg) {
   return '<span class="msg-badge ' + d + '">' + label + '</span>';
 }
 
+function replyToEmail(msg) {
+  // Build References chain: previous references + this message's id
+  const refs = (msg.references || []).concat([msg.messageId]).join(' ');
+  document.getElementById('email-inReplyTo').value = msg.messageId || '';
+  document.getElementById('email-references').value = refs;
+
+  // Subject: prepend Re: if not already
+  const subjectField = document.querySelector('#form-email input[name="subject"]');
+  const subj = msg.subject || '';
+  subjectField.value = subj.startsWith('Re:') ? subj : 'Re: ' + subj;
+
+  // From/To: swap sender and recipient
+  const fromField = document.querySelector('#form-email input[name="from"]');
+  const toField = document.querySelector('#form-email input[name="to"]');
+  // Extract raw email from display like "Name <email>" or just "email"
+  function extractEmail(s) {
+    const m = s.match(/<([^>]+)>/);
+    return m ? m[1] : s;
+  }
+  fromField.value = extractEmail(msg.to || '');
+  toField.value = extractEmail(msg.from || '');
+
+  // Body: Gmail-style quoted content
+  const body = document.getElementById('email-body');
+  const originalText = msg.plainText || (msg.htmlBody || '').replace(/<[^>]*>/g, '');
+  const quotedLines = originalText.split('\n').map(l => '> ' + l).join('\n');
+  const ts = msg.timestamp || '';
+  const quotedBlock = '\n\nOn ' + ts + ', ' + (msg.from || '') + ' wrote:\n' + quotedLines;
+  body.value = quotedBlock;
+  body.focus();
+  body.setSelectionRange(0, 0);
+}
+
 function renderEmail(msg) {
   const d = msg.direction || 'inbound';
   let html = '<div class="msg ' + d + '">';
@@ -294,11 +330,20 @@ function renderEmail(msg) {
   html += '<b>From:</b> ' + escapeHtml(msg.from || '') + ' &nbsp; ';
   html += '<b>To:</b> ' + escapeHtml(msg.to || '');
   html += '</div>';
+  // Threading headers
+  let threading = '';
+  if (msg.messageId) threading += 'Message-ID: ' + escapeHtml(msg.messageId);
+  if (msg.inReplyTo) threading += (threading ? ' &nbsp; ' : '') + 'In-Reply-To: ' + escapeHtml(msg.inReplyTo);
+  if (threading) html += '<div class="msg-threading">' + threading + '</div>';
+  // Body
   if (msg.htmlBody) {
     html += '<iframe class="email-preview" sandbox srcdoc="' + escapeHtml(msg.htmlBody) + '"></iframe>';
   } else {
     html += '<div class="msg-body">' + escapeHtml(msg.plainText || '') + '</div>';
   }
+  // Reply button — use data attribute to find msg in JS
+  const encoded = escapeHtml(JSON.stringify(msg));
+  html += '<button class="msg-reply-btn" onclick=\'replyToEmail(' + JSON.stringify(msg).replace(/'/g, "\\x27") + ')\'>Reply</button>';
   html += '</div>';
   return html;
 }

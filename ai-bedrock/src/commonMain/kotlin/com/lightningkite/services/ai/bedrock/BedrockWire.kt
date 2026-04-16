@@ -59,21 +59,22 @@ internal object BedrockWire {
         // toolChoice back to "auto", and inject a system-message instruction forbidding new
         // tool calls this turn. See interfaces.kt doc for LlmToolChoice.None.
         val suppressToolsPrompt = prompt.tools.isNotEmpty() && prompt.toolChoice == LlmToolChoice.None
+        val systemMessages = prompt.messages.filter { it.source == LlmMessageSource.System }
         val systemBlocks = buildJsonArray {
-            prompt.messages
-                .filter { it.source == LlmMessageSource.System }
-                .forEach { msg ->
-                    msg.content.forEach { block ->
-                        when (block) {
-                            is LlmContent.Text -> addJsonObject { put("text", block.text) }
-                            // Bedrock accepts a few other system block types (guardrail,
-                            // cachePoint) that the abstraction doesn't expose. Silently drop.
-                            else -> {}
-                        }
+            systemMessages.forEach { msg ->
+                msg.content.forEach { block ->
+                    when (block) {
+                        is LlmContent.Text -> addJsonObject { put("text", block.text) }
+                        else -> {}
                     }
                 }
+            }
             if (suppressToolsPrompt) {
                 addJsonObject { put("text", TOOL_SUPPRESSION_INSTRUCTION) }
+            }
+            // Append a cachePoint after system blocks when any system message requests caching.
+            if (systemMessages.any { it.cacheBoundary }) {
+                add(CACHE_POINT_BLOCK)
             }
         }
         if (systemBlocks.isNotEmpty()) put("system", systemBlocks)
@@ -90,6 +91,8 @@ internal object BedrockWire {
                                 // rather than emit an empty content object Bedrock would reject.
                                 if (block !is LlmContent.Reasoning) add(encodeContentBlock(block))
                             }
+                            // Append a cachePoint after this message's content when marked.
+                            if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
                         }
                     }
                 }
@@ -118,6 +121,8 @@ internal object BedrockWire {
                                 }
                             }
                         }
+                        // Append a cachePoint entry after this tool when marked.
+                        if (tool.cacheBoundary) add(CACHE_POINT_BLOCK)
                     }
                 }
                 put("toolChoice", toolChoiceObject(prompt.toolChoice))
@@ -130,6 +135,11 @@ internal object BedrockWire {
      * declared (to keep prior toolUse/toolResult blocks valid). Bedrock has no toolChoice=none,
      * so we steer the model via prompt instead.
      */
+    /** Reusable cachePoint block inserted into content/tool arrays for prompt caching. */
+    private val CACHE_POINT_BLOCK: JsonObject = buildJsonObject {
+        putJsonObject("cachePoint") { put("type", "default") }
+    }
+
     internal const val TOOL_SUPPRESSION_INSTRUCTION: String =
         "Do not call any tools on this turn. Respond with text only."
 

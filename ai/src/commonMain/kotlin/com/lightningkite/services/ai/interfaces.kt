@@ -169,6 +169,15 @@ public data class LlmToolDescriptor(
     val name: String,
     val description: String,
     val type: KSerializer<*>,
+    /**
+     * Hint to providers that support prompt caching: if true, cache the tool definitions
+     * up to and including this tool. Anthropic sends tools before messages, so a tool
+     * boundary caches only the tool list (and system prompt); use [LlmMessage.cacheBoundary]
+     * to cache conversation history.
+     *
+     * Same provider support and limits as [LlmMessage.cacheBoundary].
+     */
+    val cacheBoundary: Boolean = false,
 )
 
 
@@ -176,6 +185,23 @@ public data class LlmToolDescriptor(
 public data class LlmMessage(
     val source: LlmMessageSource,
     val content: List<LlmContent>,
+    /**
+     * Hint to providers that support prompt caching: if true, cache everything in
+     * the prompt UP TO AND INCLUDING this message. Subsequent calls reusing the
+     * same prefix will read from the provider's cache instead of re-processing.
+     *
+     * Honored by: Anthropic, Bedrock (model-dependent).
+     * Ignored by: OpenAI (auto-caches at >1024 tokens), Ollama, LM Studio.
+     *
+     * Limits: Anthropic/Bedrock allow up to 4 cache boundaries per request across
+     * messages and tools combined. Exceeding the limit raises [LlmException.InvalidRequest].
+     * Cache hits require ≥~1024 tokens of cached content (provider-dependent); smaller
+     * prefixes are silently not cached.
+     *
+     * Tradeoff: cache writes cost ~25% more than normal input tokens; cache reads cost
+     * ~90% less. Net win when the same prefix is reused across multiple calls.
+     */
+    val cacheBoundary: Boolean = false,
 )
 
 @Serializable

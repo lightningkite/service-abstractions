@@ -54,12 +54,26 @@ internal object AnthropicWire {
         }
 
         // Anthropic carries system as a top-level field, not a message role.
-        val systemText = prompt.messages
-            .filter { it.source == LlmMessageSource.System }
+        // When any system message has cacheBoundary=true we must use the array-of-blocks
+        // form so we can attach cache_control; otherwise the plain string form suffices.
+        val systemMessages = prompt.messages.filter { it.source == LlmMessageSource.System }
+        val systemText = systemMessages
             .flatMap { it.content }
             .filterIsInstance<LlmContent.Text>()
             .joinToString("\n\n") { it.text }
-        if (systemText.isNotEmpty()) put("system", systemText)
+        if (systemText.isNotEmpty()) {
+            if (systemMessages.any { it.cacheBoundary }) {
+                put("system", buildJsonArray {
+                    addJsonObject {
+                        put("type", "text")
+                        put("text", systemText)
+                        putJsonObject("cache_control") { put("type", "ephemeral") }
+                    }
+                })
+            } else {
+                put("system", systemText)
+            }
+        }
 
         put("messages", buildMessages(prompt.messages))
 
@@ -75,6 +89,9 @@ internal object AnthropicWire {
                         put("name", tool.name)
                         put("description", tool.description)
                         put("input_schema", tool.toJsonSchema(module))
+                        if (tool.cacheBoundary) {
+                            putJsonObject("cache_control") { put("type", "ephemeral") }
+                        }
                     }
                 }
             }
@@ -93,9 +110,17 @@ internal object AnthropicWire {
                         // Reasoning blocks are receive-only in v1; round-tripping them back to
                         // Anthropic would require the provider-opaque signature data that the
                         // SSE parser intentionally drops. Filter here instead of failing.
-                        msg.content
-                            .filter { it !is LlmContent.Reasoning }
-                            .forEach { add(contentBlock(it)) }
+                        val blocks = msg.content.filter { it !is LlmContent.Reasoning }
+                        blocks.forEachIndexed { index, block ->
+                            val json = contentBlock(block)
+                            // Attach cache_control to the LAST content block when the message
+                            // is marked as a cache boundary.
+                            if (msg.cacheBoundary && index == blocks.lastIndex) {
+                                add(withCacheControl(json))
+                            } else {
+                                add(json)
+                            }
+                        }
                     }
                 }
             }
@@ -166,6 +191,12 @@ internal object AnthropicWire {
             .getOrElse { throw IllegalArgumentException("ToolCall.inputJson is not valid JSON: $inputJson", it) }
         return parsed as? JsonObject
             ?: throw IllegalArgumentException("ToolCall.inputJson must encode a JSON object, got ${parsed::class.simpleName}")
+    }
+
+    /** Clone a content-block JSON object with `cache_control: {type: "ephemeral"}` appended. */
+    private fun withCacheControl(block: JsonObject): JsonObject = buildJsonObject {
+        block.forEach { (k, v) -> put(k, v) }
+        putJsonObject("cache_control") { put("type", "ephemeral") }
     }
 
     fun toolChoice(choice: LlmToolChoice): JsonObject = when (choice) {

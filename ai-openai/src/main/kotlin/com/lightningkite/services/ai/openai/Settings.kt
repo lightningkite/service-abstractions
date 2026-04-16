@@ -138,9 +138,13 @@ internal object OpenAiModelCatalog {
     )
 
     private val entries: List<Entry> = listOf(
-        Entry("gpt-5-nano", "GPT-5 Nano", "Smallest GPT-5; ultra-cheap.", 0.05, 0.40, 0.6),
-        Entry("gpt-5-mini", "GPT-5 Mini", "Mid-tier GPT-5.", 0.25, 2.00, 0.8),
-        Entry("gpt-5", "GPT-5", "Flagship GPT-5.", 1.25, 10.00, 0.95),
+        Entry("gpt-5.4-pro", "GPT-5.4 Pro", "Premium GPT-5.4; high-context reasoning.", 30.00, 180.00, 0.98),
+        Entry("gpt-5.4", "GPT-5.4", "Flagship GPT-5.4.", 2.50, 15.00, 0.95),
+        Entry("gpt-5.4-mini", "GPT-5.4 Mini", "Mid-tier GPT-5.4.", 0.75, 4.50, 0.8),
+        Entry("gpt-5.4-nano", "GPT-5.4 Nano", "Smallest GPT-5.4; ultra-cheap.", 0.20, 1.25, 0.6),
+        Entry("gpt-5-nano", "GPT-5 Nano", "Legacy GPT-5 small.", 0.05, 0.40, 0.6),
+        Entry("gpt-5-mini", "GPT-5 Mini", "Legacy GPT-5 mid.", 0.25, 2.00, 0.8),
+        Entry("gpt-5", "GPT-5", "Legacy flagship GPT-5 (2025).", 1.25, 10.00, 0.95),
         Entry("gpt-4.1-nano", "GPT-4.1 Nano", "Smallest GPT-4.1.", 0.10, 0.40, 0.55),
         Entry("gpt-4.1-mini", "GPT-4.1 Mini", "Mid-tier GPT-4.1.", 0.40, 1.60, 0.75),
         Entry("gpt-4.1", "GPT-4.1", "Full GPT-4.1 capabilities.", 2.00, 8.00, 0.85),
@@ -151,7 +155,9 @@ internal object OpenAiModelCatalog {
         // TODO: verify pricing against https://openai.com/api/pricing/
         Entry("gpt-4o-audio-preview", "GPT-4o Audio", "Multimodal GPT-4o with audio I/O.", 2.50, 10.00, 0.85),
         Entry("gpt-4o", "GPT-4o", "Full multimodal GPT-4o.", 2.50, 10.00, 0.85),
+        Entry("o4-mini-deep-research", "o4-mini Deep Research", "Reasoning with research capability.", 1.00, 4.00, 0.88),
         Entry("o4-mini", "o4-mini", "Reasoning, mid-tier.", 1.10, 4.40, 0.85),
+        Entry("o3-deep-research", "o3 Deep Research", "Flagship reasoning research.", 5.00, 20.00, 0.95),
         Entry("o3-mini", "o3-mini", "Reasoning, cheaper.", 1.10, 4.40, 0.80),
         Entry("o3", "o3", "Full reasoning model.", 2.00, 8.00, 0.90),
         Entry("o1-mini", "o1-mini", "Legacy reasoning.", 3.00, 12.00, 0.75),
