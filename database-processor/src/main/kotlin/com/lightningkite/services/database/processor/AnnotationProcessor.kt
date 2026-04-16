@@ -139,12 +139,10 @@ class TableGenerator(
                                 val typeReference: String =
                                     declaration.safeLocalReference() + (declaration.typeParameters.takeUnless { it.isEmpty() }
                                         ?.joinToString(", ", "<", ">") { it.name.asString() } ?: "")
-                                val simpleName: String = declaration.simpleName.getShortName()
+                                val simpleName: String = classReference.replace('.', '_')
 
-                                fun appendInlineDeprecation() {
-                                    if (declaration.modifiers.contains(Modifier.VALUE)) appendLine(
-                                        "@Deprecated(\"This is an accessor to an inline value of a value class. In general, prefer using direct comparisons to the value class itself, and not the underlying type if possible.\")"
-                                    )
+                                fun appendInlinePropertyAnnotation() {
+                                    if (declaration.modifiers.contains(Modifier.VALUE)) appendLine("@InlineProperty")
                                 }
 
                                 if (declaration.typeParameters.isNotEmpty()) {
@@ -194,7 +192,7 @@ class TableGenerator(
 
                                         val prefix = declaration.safeLocalReference().camelCase()
 
-                                        appendInlineDeprecation()
+                                        appendInlinePropertyAnnotation()
                                         appendLine(
                                             "@get:JvmName(\"${prefix}_field_$propName\") public val <${
                                                 declaration.typeParameters.joinToString(", ") {
@@ -203,7 +201,7 @@ class TableGenerator(
                                                 }
                                             }> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(this as GeneratedSerializer<$typeReference>, $index)"
                                         )
-                                        appendInlineDeprecation()
+                                        appendInlinePropertyAnnotation()
                                         appendLine(
                                             "@get:JvmName(\"${prefix}_path_$propName\") public val <ROOT, ${
                                                 declaration.typeParameters.joinToString(", ") {
@@ -218,9 +216,9 @@ class TableGenerator(
                                     appendLine("private val ${simpleName}__properties = $classReference.serializer().serializableProperties!!")
                                     for ((index, field) in fields.withIndex()) {
                                         val serPropName = "${simpleName}_${field.name}"
-                                        appendInlineDeprecation()
+                                        appendInlinePropertyAnnotation()
                                         appendLine("public val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = ${simpleName}__properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
-                                        appendInlineDeprecation()
+                                        appendInlinePropertyAnnotation()
                                         appendLine("@get:JvmName(\"path$serPropName\") public val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[$serPropName]")
                                     }
                                 }
