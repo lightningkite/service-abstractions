@@ -41,7 +41,13 @@ pluginManagement {
 //include(":pubsub-mqtt-aws")  // EXPERIMENTAL
 //include(":pubsub-mqtt-paho")  // EXPERIMENTAL
 
+include(":ai")
+include(":ai-anthropic")
+include(":ai-bedrock")
 include(":ai-koog")
+include(":ai-ollama")
+include(":ai-openai")
+include(":ai-test")
 include(":aws-client")
 include(":basis")
 include(":cache")
@@ -74,6 +80,7 @@ include(":files-client")
 include(":files-s3")
 include(":files-test")
 include(":http-client")
+include(":human-services")
 include(":metrics-cloudwatch")
 include(":notifications")
 include(":notifications-fcm")

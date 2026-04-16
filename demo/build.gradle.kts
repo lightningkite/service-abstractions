@@ -30,6 +30,7 @@ dependencies {
     api(project(":files"))
     api(project(":files-clamav"))
     api(project(":files-s3"))
+    api(project(":human-services"))
 
     testImplementation(libs.coroutines.testing)
 }
@@ -51,5 +52,11 @@ tasks.withType<JavaCompile>().configureEach {
     this.targetCompatibility = "17"
 }
 
+
+tasks.register<JavaExec>("runHumanDemo") {
+    description = "Runs the Human Services Dashboard demo on http://localhost:8800"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.lightningkite.services.demo.HumanServicesDemoKt")
+}
 
 lkLibrary("lightningkite", "service-abstractions") {}
