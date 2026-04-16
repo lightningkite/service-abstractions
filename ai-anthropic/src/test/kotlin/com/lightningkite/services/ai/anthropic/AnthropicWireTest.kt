@@ -2,14 +2,14 @@ package com.lightningkite.services.ai.anthropic
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.ai.LlmAttachment
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
 import com.lightningkite.services.ai.LlmModelId
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
+import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
 import io.ktor.http.HttpStatusCode
@@ -52,7 +52,7 @@ class AnthropicWireTest {
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("Hi"))),
+                    LlmMessage.User(listOf(LlmPart.Text("Hi"))),
                 ),
             ),
             module = EmptySerializersModule(),
@@ -62,7 +62,7 @@ class AnthropicWireTest {
         assertEquals("claude-haiku-4-5", body["model"]!!.jsonPrimitive.content)
         assertEquals(4096, body["max_tokens"]!!.jsonPrimitive.content.toInt())
         assertEquals("true", body["stream"]!!.jsonPrimitive.content)
-        assertNull(body["system"], "no system message => no system field")
+        assertNull(body["system"], "no system prompt => no system field")
 
         val messages = body["messages"]!!.jsonArray
         assertEquals(1, messages.size)
@@ -73,14 +73,13 @@ class AnthropicWireTest {
     }
 
     @Test
-    fun systemMessageLiftedToTopLevel() {
+    fun systemPromptLiftedToTopLevel() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
+                systemPrompt = listOf(LlmPart.Text("You are helpful."), LlmPart.Text("Be concise.")),
                 messages = listOf(
-                    LlmMessage(LlmMessageSource.System, listOf(LlmContent.Text("You are helpful."))),
-                    LlmMessage(LlmMessageSource.System, listOf(LlmContent.Text("Be concise."))),
-                    LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("Hello"))),
+                    LlmMessage.User(listOf(LlmPart.Text("Hello"))),
                 ),
             ),
             module = EmptySerializersModule(),
@@ -88,7 +87,7 @@ class AnthropicWireTest {
             defaultMaxTokens = 1024,
         )
         assertEquals("You are helpful.\n\nBe concise.", body["system"]!!.jsonPrimitive.content)
-        // system messages are not duplicated into the messages array
+        // system prompt is not duplicated into the messages array
         val messages = body["messages"]!!.jsonArray
         assertEquals(1, messages.size)
         assertEquals("user", messages[0].jsonObject["role"]!!.jsonPrimitive.content)
@@ -99,7 +98,7 @@ class AnthropicWireTest {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
-                messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("hi")))),
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
                 maxTokens = 256,
                 temperature = 0.5,
                 stopSequences = listOf("STOP"),
@@ -120,7 +119,7 @@ class AnthropicWireTest {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
-                messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("weather?")))),
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("weather?")))),
                 tools = listOf(descriptor),
                 toolChoice = LlmToolChoice.Auto,
             ),
@@ -146,7 +145,7 @@ class AnthropicWireTest {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
-                messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("go")))),
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
                 toolChoice = LlmToolChoice.Required,
             ),
@@ -162,7 +161,7 @@ class AnthropicWireTest {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
-                messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("go")))),
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 tools = listOf(LlmToolDescriptor("pick_me", "d", serializer<WeatherArgs>())),
                 toolChoice = LlmToolChoice.Specific("pick_me"),
             ),
@@ -183,7 +182,7 @@ class AnthropicWireTest {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
-                messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("go")))),
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
                 toolChoice = LlmToolChoice.None,
             ),
@@ -206,7 +205,7 @@ class AnthropicWireTest {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
-                messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("go")))),
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 toolChoice = LlmToolChoice.None,
             ),
             module = EmptySerializersModule(),
@@ -223,13 +222,12 @@ class AnthropicWireTest {
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.User,
+                    LlmMessage.User(
                         listOf(
-                            LlmContent.Attachment(
+                            LlmPart.Attachment(
                                 LlmAttachment.Base64(MediaType.Image.PNG, "aGVsbG8="),
                             ),
-                            LlmContent.Text("describe"),
+                            LlmPart.Text("describe"),
                         ),
                     ),
                 ),
@@ -253,10 +251,9 @@ class AnthropicWireTest {
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.User,
+                    LlmMessage.User(
                         listOf(
-                            LlmContent.Attachment(
+                            LlmPart.Attachment(
                                 LlmAttachment.Url(MediaType.Image.JPEG, "https://example.com/cat.jpg"),
                             ),
                         ),
@@ -279,26 +276,22 @@ class AnthropicWireTest {
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("Weather in SF?"))),
-                    LlmMessage(
-                        LlmMessageSource.Agent,
+                    LlmMessage.User(listOf(LlmPart.Text("Weather in SF?"))),
+                    LlmMessage.Agent(
                         listOf(
-                            LlmContent.Text("Let me look that up."),
-                            LlmContent.ToolCall(
-                                id = "toolu_abc",
-                                name = "get_weather",
-                                inputJson = """{"city":"SF","celsius":true}""",
+                            LlmPart.Text("Let me look that up."),
+                            LlmPart.ToolCall(
+                                LlmToolCall(
+                                    id = "toolu_abc",
+                                    name = "get_weather",
+                                    inputJson = """{"city":"SF","celsius":true}""",
+                                ),
                             ),
                         ),
                     ),
-                    LlmMessage(
-                        LlmMessageSource.Tool,
-                        listOf(
-                            LlmContent.ToolResult(
-                                toolCallId = "toolu_abc",
-                                content = "72F and sunny",
-                            ),
-                        ),
+                    LlmMessage.ToolResult(
+                        toolCallId = "toolu_abc",
+                        parts = listOf(LlmPart.Text("72F and sunny")),
                     ),
                 ),
             ),
@@ -336,15 +329,10 @@ class AnthropicWireTest {
             modelId = "claude-haiku-4-5",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.Tool,
-                        listOf(
-                            LlmContent.ToolResult(
-                                toolCallId = "toolu_abc",
-                                content = "API down",
-                                isError = true,
-                            ),
-                        ),
+                    LlmMessage.ToolResult(
+                        toolCallId = "toolu_abc",
+                        parts = listOf(LlmPart.Text("API down")),
+                        isError = true,
                     ),
                 ),
             ),

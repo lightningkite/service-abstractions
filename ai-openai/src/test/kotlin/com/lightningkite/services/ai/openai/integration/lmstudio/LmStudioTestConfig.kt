@@ -87,7 +87,7 @@ internal object LmStudioTestConfig {
     /**
      * Gemma reasoning variants (and other reasoning-capable models in LM Studio) emit
      * `reasoning_content` on the Chat Completions response, which the `:ai-openai` adapter
-     * surfaces as [com.lightningkite.services.ai.LlmContent.Reasoning] / [com.lightningkite.services.ai.LlmStreamEvent.ReasoningDelta].
+     * surfaces as [com.lightningkite.services.ai.LlmPart.Reasoning] / [com.lightningkite.services.ai.LlmStreamEvent.ReasoningDelta].
      */
     const val supportsReasoningContent: Boolean = true
 

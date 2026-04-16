@@ -1,9 +1,10 @@
 package com.lightningkite.services.ai.test
 
-import com.lightningkite.services.ai.LlmContent
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.plainText
 import kotlinx.coroutines.test.runTest
 import org.junit.Assume
 import kotlin.test.Test
@@ -55,8 +56,8 @@ public abstract class TextGenerationTests : LlmAccessTests() {
         val result = service.inference(
             model = cheapModel,
             prompt = LlmPrompt(
+                systemPrompt = systemPrompt("Always respond in French. Never use any other language."),
                 messages = listOf(
-                    systemText("Always respond in French. Never use any other language."),
                     userText("What is the capital of France? Answer in one short sentence."),
                 ),
                 maxTokens = testMaxTokens,
@@ -149,8 +150,8 @@ public abstract class TextGenerationTests : LlmAccessTests() {
 
     /**
      * Reasoning-capable providers (Claude extended thinking, OpenAI o-series, Gemma reasoning
-     * variants, etc.) emit chain-of-thought as a separate [LlmContent.Reasoning] block that
-     * precedes the final [LlmContent.Text] answer. This test asks the model to solve a small
+     * variants, etc.) emit chain-of-thought as a separate [LlmPart.Reasoning] block that
+     * precedes the final [LlmPart.Text] answer. This test asks the model to solve a small
      * algebra problem and verifies both blocks are present and non-empty.
      *
      * Skipped on providers that don't expose reasoning content.
@@ -172,15 +173,15 @@ public abstract class TextGenerationTests : LlmAccessTests() {
                 temperature = 0.0,
             ),
         )
-        val reasoningBlocks = result.message.content.filterIsInstance<LlmContent.Reasoning>()
-        val textBlocks = result.message.content.filterIsInstance<LlmContent.Text>()
+        val reasoningBlocks = result.message.parts.filterIsInstance<LlmPart.Reasoning>()
+        val textBlocks = result.message.parts.filterIsInstance<LlmPart.Text>()
         assertTrue(
             reasoningBlocks.isNotEmpty(),
-            "Expected at least one Reasoning block; got content=${result.message.content.map { it::class.simpleName }}",
+            "Expected at least one Reasoning block; got parts=${result.message.parts.map { it::class.simpleName }}",
         )
         assertTrue(
             textBlocks.isNotEmpty(),
-            "Expected at least one Text block; got content=${result.message.content.map { it::class.simpleName }}",
+            "Expected at least one Text block; got parts=${result.message.parts.map { it::class.simpleName }}",
         )
         assertTrue(
             reasoningBlocks.first().text.isNotBlank(),

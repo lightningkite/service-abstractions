@@ -1,11 +1,11 @@
 package com.lightningkite.services.ai.ollama
 
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
 import com.lightningkite.services.ai.LlmModelId
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
+import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
 import io.ktor.http.HttpStatusCode
@@ -35,7 +35,7 @@ class OllamaWireTest {
     fun basicRequestShape() {
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("Hello"))),
+                LlmMessage.User(listOf(LlmPart.Text("Hello"))),
             ),
         )
         val body = OllamaWireBuilder.buildChatRequest(
@@ -58,7 +58,7 @@ class OllamaWireTest {
     fun optionsAndStopSequences() {
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("hi"))),
+                LlmMessage.User(listOf(LlmPart.Text("hi"))),
             ),
             temperature = 0.42,
             maxTokens = 512,
@@ -80,7 +80,7 @@ class OllamaWireTest {
             type = serializer<WeatherArgs>(),
         )
         val prompt = LlmPrompt(
-            messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("q")))),
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
             tools = listOf(tool),
         )
         val body = OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = true)
@@ -102,7 +102,7 @@ class OllamaWireTest {
     fun toolChoiceNoneSuppressesToolsArray() {
         val tool = LlmToolDescriptor("t", "d", serializer<WeatherArgs>())
         val prompt = LlmPrompt(
-            messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("q")))),
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
             tools = listOf(tool),
             toolChoice = LlmToolChoice.None,
         )
@@ -116,7 +116,7 @@ class OllamaWireTest {
     fun toolChoiceSpecificAddsSystemHint() {
         val tool = LlmToolDescriptor("tool_x", "d", serializer<WeatherArgs>())
         val prompt = LlmPrompt(
-            messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("q")))),
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
             tools = listOf(tool),
             toolChoice = LlmToolChoice.Specific("tool_x"),
         )
@@ -132,15 +132,17 @@ class OllamaWireTest {
     fun toolCallRoundtrip_argumentsAreParsedObject() {
         // Assistant turn with a prior tool call in history: verify arguments are emitted as
         // a PARSED JSON object, not a string (Ollama's convention).
-        val call = LlmContent.ToolCall(
-            id = "call_1",
-            name = "get_weather",
-            inputJson = """{"city":"Tokyo","unit":"celsius"}""",
+        val call = LlmPart.ToolCall(
+            LlmToolCall(
+                id = "call_1",
+                name = "get_weather",
+                inputJson = """{"city":"Tokyo","unit":"celsius"}""",
+            )
         )
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("weather"))),
-                LlmMessage(LlmMessageSource.Agent, listOf(call)),
+                LlmMessage.User(listOf(LlmPart.Text("weather"))),
+                LlmMessage.Agent(listOf(call)),
             ),
         )
         val body = OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = true)
@@ -162,10 +164,11 @@ class OllamaWireTest {
     fun toolResultMessageShape() {
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("weather"))),
-                LlmMessage(
-                    LlmMessageSource.Tool,
-                    listOf(LlmContent.ToolResult("call_1", "15 degrees", isError = false)),
+                LlmMessage.User(listOf(LlmPart.Text("weather"))),
+                LlmMessage.ToolResult(
+                    toolCallId = "call_1",
+                    parts = listOf(LlmPart.Text("15 degrees")),
+                    isError = false,
                 ),
             ),
         )
@@ -180,17 +183,12 @@ class OllamaWireTest {
     }
 
     @Test
-    fun multipleToolResultsSplitIntoSeparateMessages() {
+    fun multipleToolResultsAsSeparateMessages() {
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("run both"))),
-                LlmMessage(
-                    LlmMessageSource.Tool,
-                    listOf(
-                        LlmContent.ToolResult("call_1", "result-a"),
-                        LlmContent.ToolResult("call_2", "result-b"),
-                    ),
-                ),
+                LlmMessage.User(listOf(LlmPart.Text("run both"))),
+                LlmMessage.ToolResult(toolCallId = "call_1", parts = listOf(LlmPart.Text("result-a"))),
+                LlmMessage.ToolResult(toolCallId = "call_2", parts = listOf(LlmPart.Text("result-b"))),
             ),
         )
         val body = OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = true)
@@ -215,11 +213,10 @@ class OllamaWireTest {
         )
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(
-                    LlmMessageSource.User,
+                LlmMessage.User(
                     listOf(
-                        LlmContent.Text("What's in this image?"),
-                        LlmContent.Attachment(attachment),
+                        LlmPart.Text("What's in this image?"),
+                        LlmPart.Attachment(attachment),
                     ),
                 ),
             ),
@@ -238,9 +235,8 @@ class OllamaWireTest {
         )
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(
-                    LlmMessageSource.User,
-                    listOf(LlmContent.Attachment(attachment)),
+                LlmMessage.User(
+                    listOf(LlmPart.Attachment(attachment)),
                 ),
             ),
         )

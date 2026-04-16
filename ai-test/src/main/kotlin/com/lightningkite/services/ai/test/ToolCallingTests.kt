@@ -1,11 +1,13 @@
 package com.lightningkite.services.ai.test
 
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
+import com.lightningkite.services.ai.firstToolCall
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.plainText
+import com.lightningkite.services.ai.toolCalls
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -31,7 +33,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
     /**
      * Ask "What's the weather in Tokyo?" with the weather tool available. The model should:
      *   - stop with [LlmStopReason.ToolUse]
-     *   - emit a [LlmContent.ToolCall] with name="get_weather" and inputJson.city ≈ "Tokyo".
+     *   - emit a [LlmPart.ToolCall] with name="get_weather" and inputJson.city ≈ "Tokyo".
      */
     @Test
     public fun toolCallEmitted(): Unit = runTest(timeout = 60.seconds) {
@@ -51,7 +53,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
             "Expected stopReason=ToolUse when the model calls a tool; got ${result.stopReason}",
         )
         val call = result.message.firstToolCall()
-        assertNotNull(call, "Expected at least one ToolCall in message; got: ${result.message.content}")
+        assertNotNull(call, "Expected at least one ToolCall in message; got: ${result.message.parts}")
         assertEquals("get_weather", call.name, "Tool call should use the registered name")
         val input = json.parseToJsonElement(call.inputJson) as? JsonObject
         assertNotNull(input, "inputJson must parse to a JSON object; got '${call.inputJson}'")
@@ -65,7 +67,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
 
     /**
      * Verifies the tool_use id surfaces non-blank. Callers echo this back as
-     * [LlmContent.ToolResult.toolCallId] on the next turn; a blank id would break that
+     * [LlmMessage.ToolResult.toolCallId] on the next turn; a blank id would break that
      * linkage.
      */
     @Test
@@ -81,7 +83,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
             ),
         )
         val call = result.message.firstToolCall()
-        assertNotNull(call, "Expected a ToolCall; got: ${result.message.content}")
+        assertNotNull(call, "Expected a ToolCall; got: ${result.message.parts}")
         assertTrue(call.id.isNotBlank(), "Tool call id must not be blank")
         // Every call in the turn must carry its own id for parallel-call providers.
         val ids = result.message.toolCalls().map { it.id }
@@ -89,8 +91,8 @@ public abstract class ToolCallingTests : LlmAccessTests() {
     }
 
     /**
-     * Builds a two-turn conversation: User ask → Agent [LlmContent.ToolCall] →
-     * Tool [LlmContent.ToolResult] → Agent [LlmContent.Text]. Verifies the provider accepts
+     * Builds a two-turn conversation: User ask → Agent [LlmPart.ToolCall] →
+     * Tool [LlmMessage.ToolResult] → Agent [LlmPart.Text]. Verifies the provider accepts
      * a tool_result referencing the id from the previous turn and produces a final
      * natural-language response that mentions the tool output.
      */
@@ -108,7 +110,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
             ),
         )
         val call = firstResult.message.firstToolCall()
-        assertNotNull(call, "Expected a tool call on turn 1; got: ${firstResult.message.content}")
+        assertNotNull(call, "Expected a tool call on turn 1; got: ${firstResult.message.parts}")
         // Turn 2: feed the result back using the same id.
         val toolResultText = "The current weather in Paris is 17C and cloudy."
         val secondResult = service.inference(
@@ -117,9 +119,9 @@ public abstract class ToolCallingTests : LlmAccessTests() {
                 messages = listOf(
                     userText("What's the current weather in Paris?"),
                     firstResult.message, // Agent message containing ToolCall
-                    LlmMessage(
-                        LlmMessageSource.Tool,
-                        listOf(LlmContent.ToolResult(toolCallId = call.id, content = toolResultText)),
+                    LlmMessage.ToolResult(
+                        toolCallId = call.id,
+                        parts = listOf(LlmPart.Text(toolResultText)),
                     ),
                 ),
                 tools = listOf(weatherTool),
@@ -165,7 +167,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
             ),
         )
         val calls = result.message.toolCalls()
-        assertTrue(calls.isNotEmpty(), "Expected at least one tool call; got: ${result.message.content}")
+        assertTrue(calls.isNotEmpty(), "Expected at least one tool call; got: ${result.message.parts}")
         assertEquals(
             LlmStopReason.ToolUse,
             result.stopReason,
@@ -214,7 +216,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
             "Expected stopReason=ToolUse; got ${result.stopReason}",
         )
         val call = result.message.firstToolCall()
-        assertNotNull(call, "Expected a ToolCall; got ${result.message.content}")
+        assertNotNull(call, "Expected a ToolCall; got ${result.message.parts}")
         assertEquals("get_weather_nested", call.name)
         // The inputJson should parse cleanly; we don't assert exact content because models
         // legitimately reinterpret "Berlin" / "priority=high" in different ways.

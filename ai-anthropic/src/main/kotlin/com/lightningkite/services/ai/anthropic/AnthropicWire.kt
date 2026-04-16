@@ -1,11 +1,11 @@
 package com.lightningkite.services.ai.anthropic
 
 import com.lightningkite.services.ai.LlmAttachment
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
+import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.toJsonSchema
 import kotlinx.serialization.json.JsonArray
@@ -54,20 +54,18 @@ internal object AnthropicWire {
         }
 
         // Anthropic carries system as a top-level field, not a message role.
-        // When any system message has cacheBoundary=true we must use the array-of-blocks
+        // When systemPromptCacheBoundary=true we must use the array-of-blocks
         // form so we can attach cache_control; otherwise the plain string form suffices.
-        val systemMessages = prompt.messages.filter { it.source == LlmMessageSource.System }
         val sharedContext = prompt.collectSharedContext()
         val systemText = listOfNotNull(
             sharedContext,
-            systemMessages
-                .flatMap { it.content }
-                .filterIsInstance<LlmContent.Text>()
+            prompt.systemPrompt
+                .filterIsInstance<LlmPart.Text>()
                 .joinToString("\n\n") { it.text }
                 .ifEmpty { null }
         ).joinToString("\n\n")
         if (systemText.isNotEmpty()) {
-            if (systemMessages.any { it.cacheBoundary }) {
+            if (prompt.systemPromptCacheBoundary) {
                 put("system", buildJsonArray {
                     addJsonObject {
                         put("type", "text")
@@ -104,20 +102,34 @@ internal object AnthropicWire {
         }
     }
 
-    /** Map non-system messages to Anthropic's `{role, content:[...]}` array form. */
+    /** Map messages to Anthropic's `{role, content:[...]}` array form. */
     fun buildMessages(messages: List<LlmMessage>): JsonArray = buildJsonArray {
-        messages
-            .filter { it.source != LlmMessageSource.System }
-            .forEach { msg ->
-                addJsonObject {
-                    put("role", roleFor(msg.source))
+        messages.forEach { msg ->
+            when (msg) {
+                is LlmMessage.User -> addJsonObject {
+                    put("role", "user")
+                    putJsonArray("content") {
+                        val blocks = msg.parts
+                        blocks.forEachIndexed { index, part ->
+                            val json = contentOnlyBlock(part)
+                            if (msg.cacheBoundary && index == blocks.lastIndex) {
+                                add(withCacheControl(json))
+                            } else {
+                                add(json)
+                            }
+                        }
+                    }
+                }
+
+                is LlmMessage.Agent -> addJsonObject {
+                    put("role", "assistant")
                     putJsonArray("content") {
                         // Reasoning blocks are receive-only in v1; round-tripping them back to
                         // Anthropic would require the provider-opaque signature data that the
                         // SSE parser intentionally drops. Filter here instead of failing.
-                        val blocks = msg.content.filter { it !is LlmContent.Reasoning }
-                        blocks.forEachIndexed { index, block ->
-                            val json = contentBlock(block)
+                        val blocks = msg.parts.filter { it !is LlmPart.Reasoning }
+                        blocks.forEachIndexed { index, part ->
+                            val json = agentPartBlock(part)
                             // Attach cache_control to the LAST content block when the message
                             // is marked as a cache boundary.
                             if (msg.cacheBoundary && index == blocks.lastIndex) {
@@ -128,50 +140,72 @@ internal object AnthropicWire {
                         }
                     }
                 }
+
+                is LlmMessage.ToolResult -> addJsonObject {
+                    put("role", "user")
+                    putJsonArray("content") {
+                        val resultBlock = buildJsonObject {
+                            put("type", "tool_result")
+                            put("tool_use_id", msg.toolCallId)
+                            val textContent = msg.parts
+                                .filterIsInstance<LlmPart.Text>()
+                                .joinToString("") { it.text }
+                            put("content", textContent)
+                            if (msg.isError) put("is_error", true)
+                        }
+                        if (msg.cacheBoundary && msg.parts.none { it is LlmPart.Attachment }) {
+                            add(withCacheControl(resultBlock))
+                        } else {
+                            add(resultBlock)
+                        }
+                        // Include attachment parts if present
+                        val attachments = msg.parts.filterIsInstance<LlmPart.Attachment>()
+                        attachments.forEachIndexed { index, part ->
+                            val json = attachmentBlock(part.attachment)
+                            if (msg.cacheBoundary && index == attachments.lastIndex) {
+                                add(withCacheControl(json))
+                            } else {
+                                add(json)
+                            }
+                        }
+                    }
+                }
             }
+        }
     }
 
-    /**
-     * Anthropic only has "user" and "assistant" message roles. Tool results are carried
-     * in a user-role message containing `tool_result` blocks, per the API contract.
-     */
-    private fun roleFor(source: LlmMessageSource): String = when (source) {
-        LlmMessageSource.User -> "user"
-        LlmMessageSource.Agent -> "assistant"
-        LlmMessageSource.Tool -> "user"
-        LlmMessageSource.System ->
-            error("System messages must be lifted to the top-level `system` field, not a role")
-    }
-
-    /** Serialize a single [LlmContent] block to Anthropic's content-block JSON shape. */
-    fun contentBlock(content: LlmContent): JsonObject = when (content) {
-        is LlmContent.Text -> buildJsonObject {
+    /** Serialize a single [LlmPart] from an Agent message to Anthropic's content-block JSON shape. */
+    fun agentPartBlock(part: LlmPart): JsonObject = when (part) {
+        is LlmPart.Text -> buildJsonObject {
             put("type", "text")
-            put("text", content.text)
+            put("text", part.text)
         }
 
-        is LlmContent.Attachment -> attachmentBlock(content.attachment)
+        is LlmPart.Attachment -> attachmentBlock(part.attachment)
 
-        is LlmContent.ToolCall -> buildJsonObject {
+        is LlmPart.ToolCall -> buildJsonObject {
             put("type", "tool_use")
-            put("id", content.id)
-            put("name", content.name)
+            put("id", part.call.id)
+            put("name", part.call.name)
             // Anthropic expects a parsed JSON object here, not a string.
-            put("input", parseInputJson(content.inputJson))
-        }
-
-        is LlmContent.ToolResult -> buildJsonObject {
-            put("type", "tool_result")
-            put("tool_use_id", content.toolCallId)
-            put("content", content.content)
-            if (content.isError) put("is_error", true)
+            put("input", parseInputJson(part.call.inputJson))
         }
 
         // Reasoning blocks must be filtered out by [buildMessages] before reaching here
         // because v1 can't round-trip them (missing signature data). Reaching this branch
         // is a bug in the caller path.
-        is LlmContent.Reasoning ->
-            error("LlmContent.Reasoning must be filtered by buildMessages; it is receive-only in v1")
+        is LlmPart.Reasoning ->
+            error("LlmPart.Reasoning must be filtered by buildMessages; it is receive-only in v1")
+    }
+
+    /** Serialize a [LlmPart.ContentOnly] (text or attachment) to Anthropic's content-block JSON shape. */
+    fun contentOnlyBlock(part: LlmPart.ContentOnly): JsonObject = when (part) {
+        is LlmPart.Text -> buildJsonObject {
+            put("type", "text")
+            put("text", part.text)
+        }
+
+        is LlmPart.Attachment -> attachmentBlock(part.attachment)
     }
 
     private fun attachmentBlock(attachment: LlmAttachment): JsonObject = buildJsonObject {

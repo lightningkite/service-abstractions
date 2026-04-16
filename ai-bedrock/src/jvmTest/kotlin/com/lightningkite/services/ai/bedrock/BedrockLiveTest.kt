@@ -1,13 +1,13 @@
 package com.lightningkite.services.ai.bedrock
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
 import com.lightningkite.services.ai.LlmModelId
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStreamEvent
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.plainText
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.flow.toList
 import kotlin.test.Test
@@ -47,7 +47,7 @@ class BedrockLiveTest {
         )
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("Say the single word 'pong' and nothing else."))),
+                LlmMessage.User(listOf(LlmPart.Text("Say the single word 'pong' and nothing else."))),
             ),
             maxTokens = 20,
         )
@@ -79,12 +79,12 @@ class BedrockLiveTest {
             LlmModelId("anthropic.claude-3-5-haiku-20241022-v1:0"),
             LlmPrompt(
                 messages = listOf(
-                    LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("Respond with the word pong."))),
+                    LlmMessage.User(listOf(LlmPart.Text("Respond with the word pong."))),
                 ),
                 maxTokens = 20,
             ),
         )
-        val text = result.message.content.filterIsInstance<LlmContent.Text>().joinToString("") { it.text }
+        val text = result.message.plainText()
         assertTrue(text.isNotBlank(), "Bedrock should return some text")
     }
 }

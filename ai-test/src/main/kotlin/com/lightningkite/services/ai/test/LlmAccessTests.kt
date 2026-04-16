@@ -1,7 +1,6 @@
 package com.lightningkite.services.ai.test
 
 import com.lightningkite.services.ai.LlmAccess
-import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmModelId
 import com.lightningkite.services.ai.LlmToolDescriptor
 import com.lightningkite.services.ai.LlmUsage
@@ -79,13 +78,13 @@ public abstract class LlmAccessTests {
 
     /**
      * True if the model returns chain-of-thought / reasoning content as a separate
-     * LlmContent.Reasoning block alongside the final answer. Most models don't.
+     * LlmPart.Reasoning block alongside the final answer. Most models don't.
      * Reasoning-capable: Claude extended thinking, OpenAI o-series, DeepSeek R1, Gemma reasoning variants.
      */
     public open val supportsReasoningContent: Boolean = false
 
     /**
-     * True when the provider honors [LlmMessage.cacheBoundary] / [LlmToolDescriptor.cacheBoundary]
+     * True when the provider honors [com.lightningkite.services.ai.LlmMessage.cacheBoundary] / [LlmToolDescriptor.cacheBoundary]
      * and reports cache hits via [LlmUsage.cacheReadTokens]. When false, prompt-caching tests
      * are skipped. Anthropic and Bedrock (model-dependent) support this; OpenAI auto-caches
      * and Ollama has no cache, so both leave this false.

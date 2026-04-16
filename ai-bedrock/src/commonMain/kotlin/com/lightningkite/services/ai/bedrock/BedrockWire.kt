@@ -2,13 +2,13 @@ package com.lightningkite.services.ai.bedrock
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.ai.LlmAttachment
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
 import com.lightningkite.services.ai.LlmModelId
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
+import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.toJsonSchema
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -59,47 +59,72 @@ internal object BedrockWire {
         // toolChoice back to "auto", and inject a system-message instruction forbidding new
         // tool calls this turn. See interfaces.kt doc for LlmToolChoice.None.
         val suppressToolsPrompt = prompt.tools.isNotEmpty() && prompt.toolChoice == LlmToolChoice.None
-        val systemMessages = prompt.messages.filter { it.source == LlmMessageSource.System }
         val sharedContext = prompt.collectSharedContext()
         val systemBlocks = buildJsonArray {
             if (sharedContext != null) {
                 addJsonObject { put("text", sharedContext) }
             }
-            systemMessages.forEach { msg ->
-                msg.content.forEach { block ->
-                    when (block) {
-                        is LlmContent.Text -> addJsonObject { put("text", block.text) }
-                        else -> {}
-                    }
+            prompt.systemPrompt.forEach { part ->
+                when (part) {
+                    is LlmPart.Text -> addJsonObject { put("text", part.text) }
+                    is LlmPart.Attachment -> {} // Attachment in system prompt not yet supported
                 }
             }
             if (suppressToolsPrompt) {
                 addJsonObject { put("text", TOOL_SUPPRESSION_INSTRUCTION) }
             }
-            // Append a cachePoint after system blocks when any system message requests caching.
-            if (systemMessages.any { it.cacheBoundary }) {
+            // Append a cachePoint after system blocks when the prompt requests caching.
+            if (prompt.systemPromptCacheBoundary) {
                 add(CACHE_POINT_BLOCK)
             }
         }
         if (systemBlocks.isNotEmpty()) put("system", systemBlocks)
 
         putJsonArray("messages") {
-            prompt.messages
-                .filter { it.source != LlmMessageSource.System }
-                .forEach { msg ->
-                    addJsonObject {
-                        put("role", roleFor(msg.source))
-                        putJsonArray("content") {
-                            msg.content.forEach { block ->
-                                // Reasoning is receive-only in v1 (see encodeContentBlock); skip
-                                // rather than emit an empty content object Bedrock would reject.
-                                if (block !is LlmContent.Reasoning) add(encodeContentBlock(block))
+            prompt.messages.forEach { msg ->
+                addJsonObject {
+                    when (msg) {
+                        is LlmMessage.User -> {
+                            put("role", "user")
+                            putJsonArray("content") {
+                                msg.parts.forEach { part -> add(encodeContentOnlyBlock(part)) }
+                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
                             }
-                            // Append a cachePoint after this message's content when marked.
-                            if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
+                        }
+                        is LlmMessage.Agent -> {
+                            put("role", "assistant")
+                            putJsonArray("content") {
+                                msg.parts.forEach { part ->
+                                    // Reasoning is receive-only in v1; skip rather than emit
+                                    // an empty content object Bedrock would reject.
+                                    if (part !is LlmPart.Reasoning) add(encodeAgentPart(part))
+                                }
+                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
+                            }
+                        }
+                        is LlmMessage.ToolResult -> {
+                            put("role", "user")
+                            putJsonArray("content") {
+                                add(buildJsonObject {
+                                    putJsonObject("toolResult") {
+                                        put("toolUseId", msg.toolCallId)
+                                        putJsonArray("content") {
+                                            msg.parts.forEach { part ->
+                                                when (part) {
+                                                    is LlmPart.Text -> addJsonObject { put("text", part.text) }
+                                                    is LlmPart.Attachment -> {} // not supported in tool results
+                                                }
+                                            }
+                                        }
+                                        if (msg.isError) put("status", "error")
+                                    }
+                                })
+                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
+                            }
                         }
                     }
                 }
+            }
         }
 
         if (prompt.maxTokens != null || prompt.temperature != null || prompt.stopSequences.isNotEmpty()) {
@@ -147,20 +172,34 @@ internal object BedrockWire {
     internal const val TOOL_SUPPRESSION_INSTRUCTION: String =
         "Do not call any tools on this turn. Respond with text only."
 
-    private fun roleFor(source: LlmMessageSource): String = when (source) {
-        LlmMessageSource.User -> "user"
-        LlmMessageSource.Agent -> "assistant"
-        // Tool-result messages are carried back to Bedrock as 'user' messages containing
-        // toolResult blocks — same pattern as Anthropic.
-        LlmMessageSource.Tool -> "user"
-        LlmMessageSource.System -> error("System messages must be routed to the 'system' array")
+    /** Encode a content-only part (valid in User messages, system prompt, and tool results). */
+    private fun encodeContentOnlyBlock(part: LlmPart.ContentOnly): JsonObject = when (part) {
+        is LlmPart.Text -> buildJsonObject { put("text", part.text) }
+
+        is LlmPart.Attachment -> buildJsonObject {
+            val att = part.attachment
+            val format = imageFormatFor(att.mediaType)
+            putJsonObject("image") {
+                put("format", format)
+                putJsonObject("source") {
+                    when (att) {
+                        is LlmAttachment.Base64 -> put("bytes", att.base64)
+                        is LlmAttachment.Url -> throw IllegalArgumentException(
+                            "Bedrock Converse does not support URL image attachments; " +
+                                    "fetch the bytes client-side and pass LlmAttachment.Base64 instead.",
+                        )
+                    }
+                }
+            }
+        }
     }
 
-    private fun encodeContentBlock(block: LlmContent): JsonObject = when (block) {
-        is LlmContent.Text -> buildJsonObject { put("text", block.text) }
+    /** Encode an agent part (text, attachment, or tool call — reasoning is filtered before this). */
+    private fun encodeAgentPart(part: LlmPart): JsonObject = when (part) {
+        is LlmPart.Text -> buildJsonObject { put("text", part.text) }
 
-        is LlmContent.Attachment -> buildJsonObject {
-            val att = block.attachment
+        is LlmPart.Attachment -> buildJsonObject {
+            val att = part.attachment
             val format = imageFormatFor(att.mediaType)
             putJsonObject("image") {
                 put("format", format)
@@ -176,31 +215,19 @@ internal object BedrockWire {
             }
         }
 
-        is LlmContent.ToolCall -> buildJsonObject {
+        is LlmPart.ToolCall -> buildJsonObject {
             putJsonObject("toolUse") {
-                put("toolUseId", block.id)
-                put("name", block.name)
+                put("toolUseId", part.call.id)
+                put("name", part.call.name)
                 // Bedrock expects the tool arguments as an embedded JSON object (not a
                 // string), so we parse the caller-provided JSON before inlining it.
-                put("input", jsonCodec.parseToJsonElement(block.inputJson.ifEmpty { "{}" }))
+                put("input", jsonCodec.parseToJsonElement(part.call.inputJson.ifEmpty { "{}" }))
             }
         }
 
-        is LlmContent.ToolResult -> buildJsonObject {
-            putJsonObject("toolResult") {
-                put("toolUseId", block.toolCallId)
-                putJsonArray("content") {
-                    addJsonObject { put("text", block.content) }
-                }
-                if (block.isError) put("status", "error")
-            }
-        }
-
-        // Reasoning is receive-only in v1: round-tripping extended-thinking blocks to Bedrock
-        // requires preserving the provider-opaque signature payload, which the abstraction
-        // does not yet carry. Filtered out in buildRequestBody before reaching this when, so
-        // reaching this branch indicates a caller bypassed the filter.
-        is LlmContent.Reasoning -> error("LlmContent.Reasoning must be filtered before encoding")
+        // Reasoning is receive-only in v1: filtered out in buildRequestBody before reaching
+        // this function, so reaching this branch indicates a caller bypassed the filter.
+        is LlmPart.Reasoning -> error("LlmPart.Reasoning must be filtered before encoding")
     }
 
     /** Map an abstract media type to the Bedrock-accepted image format enum value. */

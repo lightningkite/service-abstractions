@@ -1,6 +1,8 @@
 package com.lightningkite.services.voiceagent
 
+import com.lightningkite.services.ai.LlmToolDescriptor
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * Configuration for a voice agent session.
@@ -30,7 +32,7 @@ import kotlinx.serialization.Serializable
  * @property outputAudioFormat Format for audio output from the agent.
  * @property turnDetection How to detect when the user has finished speaking.
  * @property inputTranscription Configuration for transcribing user speech. Null to disable.
- * @property tools List of tool descriptors the agent can invoke. Uses Koog's ToolDescriptor format.
+ * @property tools List of tool descriptors the agent can invoke. Uses [LlmToolDescriptor] from the ai module.
  * @property temperature Sampling temperature for response generation (0.0-2.0). Higher = more creative.
  * @property maxResponseTokens Maximum tokens in a single response. Null for no limit.
  */
@@ -42,7 +44,7 @@ public data class VoiceAgentSessionConfig(
     val outputAudioFormat: AudioFormat = AudioFormat.PCM16_24K,
     val turnDetection: TurnDetection = TurnDetection.ServerVAD(),
     val inputTranscription: TranscriptionConfig? = null,
-    val tools: List<SerializableToolDescriptor> = emptyList(),
+    @Transient val tools: List<LlmToolDescriptor<*>> = emptyList(),
     val temperature: Double = 0.8,
     val maxResponseTokens: Int? = null,
 )

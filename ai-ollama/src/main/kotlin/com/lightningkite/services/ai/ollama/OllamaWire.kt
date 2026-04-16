@@ -1,9 +1,8 @@
 package com.lightningkite.services.ai.ollama
 
 import com.lightningkite.services.ai.LlmAttachment
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
@@ -12,6 +11,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -44,8 +44,8 @@ internal object OllamaWire {
     /**
      * Build the JSON body for POST /api/chat.
      *
-     * [toolChoice] is advisory: Ollama's native API has no field for tool choice, so we
-     * emit a hint via the system prompt when the caller requires or forbids tool use.
+     * [LlmPrompt.toolChoice] is advisory: Ollama's native API has no field for tool choice,
+     * so we emit a hint via the system prompt when the caller requires or forbids tool use.
      */
     internal fun buildChatRequest(
         model: String,
@@ -57,14 +57,22 @@ internal object OllamaWire {
         put("stream", stream)
 
         putJsonArray("messages") {
-            prompt.collectSharedContext()?.let { ctx ->
+            // Collect all system-level content: systemPrompt, shared context, tool choice hint.
+            val systemParts = buildList {
+                // System prompt parts (text only)
+                prompt.systemPrompt.filterIsInstance<LlmPart.Text>().forEach { add(it.text) }
+                // Shared context from tools
+                prompt.collectSharedContext()?.let { add(it) }
+                // Tool choice hint
+                toolChoiceHint(prompt.toolChoice)?.let { add(it) }
+            }
+            if (systemParts.isNotEmpty()) {
                 add(buildJsonObject {
                     put("role", "system")
-                    put("content", ctx)
+                    put("content", systemParts.joinToString("\n\n"))
                 })
             }
-            val hintedMessages = applyToolChoiceHint(prompt.messages, prompt.toolChoice)
-            hintedMessages.forEach { msg ->
+            prompt.messages.forEach { msg ->
                 add(messageToJson(msg))
             }
         }
@@ -94,117 +102,94 @@ internal object OllamaWire {
     /**
      * Encode a single [LlmMessage] in Ollama's wire format.
      *
-     * Invariant (from upstream [splitToolResultMessages]): a Tool-sourced message contains
-     * exactly one [LlmContent.ToolResult]. Multiple results in a single message are split
-     * before reaching this function.
+     * Each message variant maps to its Ollama role:
+     * - [LlmMessage.User] -> "user"
+     * - [LlmMessage.Agent] -> "assistant"
+     * - [LlmMessage.ToolResult] -> "tool"
      *
      * We omit Ollama's `tool_name` field (which expects the function name, not the call id);
-     * our [LlmContent.ToolResult] only carries [LlmContent.ToolResult.toolCallId], and Ollama
-     * is lenient about missing tool_name. We still surface `tool_call_id` for wire-level
+     * Ollama is lenient about missing tool_name. We still surface `tool_call_id` for wire-level
      * parity with OpenAI-style callers that mix this adapter in; Ollama ignores unknown fields.
      */
     private fun messageToJson(msg: LlmMessage): JsonObject = buildJsonObject {
-        put("role", roleString(msg.source))
-
-        val textParts = msg.content.filterIsInstance<LlmContent.Text>()
-        val attachments = msg.content.filterIsInstance<LlmContent.Attachment>().map { it.attachment }
-        val toolCalls = msg.content.filterIsInstance<LlmContent.ToolCall>()
-        val toolResults = msg.content.filterIsInstance<LlmContent.ToolResult>()
-
-        val content = when {
-            msg.source == LlmMessageSource.Tool && toolResults.isNotEmpty() ->
-                toolResults.single().content
-            else -> textParts.joinToString("") { it.text }
-        }
-        put("content", content)
-
-        if (msg.source == LlmMessageSource.Tool && toolResults.isNotEmpty()) {
-            put("tool_call_id", toolResults.single().toolCallId)
-        }
-
-        if (attachments.isNotEmpty()) {
-            val base64s = attachments.mapNotNull {
-                when (it) {
-                    is LlmAttachment.Base64 -> it.base64
-                    is LlmAttachment.Url -> null
-                }
+        when (msg) {
+            is LlmMessage.User -> {
+                put("role", "user")
+                val textParts = msg.parts.filterIsInstance<LlmPart.Text>()
+                val attachments = msg.parts.filterIsInstance<LlmPart.Attachment>().map { it.attachment }
+                put("content", textParts.joinToString("") { it.text })
+                emitAttachments(attachments)
             }
-            val urls = attachments.filterIsInstance<LlmAttachment.Url>()
-            if (urls.isNotEmpty()) {
-                throw IllegalArgumentException(
-                    "Ollama native API does not accept image URLs; convert to LlmAttachment.Base64 before calling."
-                )
-            }
-            if (base64s.isNotEmpty()) {
-                putJsonArray("images") { base64s.forEach { add(it) } }
-            }
-        }
-
-        if (toolCalls.isNotEmpty()) {
-            putJsonArray("tool_calls") {
-                toolCalls.forEach { call ->
-                    addJsonObject {
-                        putJsonObject("function") {
-                            put("name", call.name)
-                            // Ollama expects `arguments` as a parsed JSON object, not a string.
-                            val parsed: JsonElement = try {
-                                json.parseToJsonElement(call.inputJson)
-                            } catch (e: Exception) {
-                                throw IllegalArgumentException(
-                                    "LlmContent.ToolCall.inputJson must be valid JSON for Ollama; got: ${call.inputJson}",
-                                    e,
-                                )
+            is LlmMessage.Agent -> {
+                put("role", "assistant")
+                val textParts = msg.parts.filterIsInstance<LlmPart.Text>()
+                val attachments = msg.parts.filterIsInstance<LlmPart.Attachment>().map { it.attachment }
+                val toolCalls = msg.parts.filterIsInstance<LlmPart.ToolCall>()
+                put("content", textParts.joinToString("") { it.text })
+                emitAttachments(attachments)
+                if (toolCalls.isNotEmpty()) {
+                    putJsonArray("tool_calls") {
+                        toolCalls.forEach { tc ->
+                            addJsonObject {
+                                putJsonObject("function") {
+                                    put("name", tc.call.name)
+                                    // Ollama expects `arguments` as a parsed JSON object, not a string.
+                                    val parsed: JsonElement = try {
+                                        json.parseToJsonElement(tc.call.inputJson)
+                                    } catch (e: Exception) {
+                                        throw IllegalArgumentException(
+                                            "LlmPart.ToolCall.inputJson must be valid JSON for Ollama; got: ${tc.call.inputJson}",
+                                            e,
+                                        )
+                                    }
+                                    put("arguments", parsed)
+                                }
                             }
-                            put("arguments", parsed)
                         }
                     }
                 }
+            }
+            is LlmMessage.ToolResult -> {
+                put("role", "tool")
+                val textParts = msg.parts.filterIsInstance<LlmPart.Text>()
+                put("content", textParts.joinToString("") { it.text })
+                put("tool_call_id", msg.toolCallId)
             }
         }
     }
 
     /**
-     * Expand Tool-sourced messages containing multiple [LlmContent.ToolResult] blocks
-     * into one message per result, matching Ollama's "one tool message per result" shape.
+     * Emit base64 image attachments into the `images` array. Throws if any URL attachments
+     * are present, since Ollama's native API does not support image URLs.
      */
-    private fun splitToolResultMessages(messages: List<LlmMessage>): List<LlmMessage> =
-        messages.flatMap { msg ->
-            if (msg.source != LlmMessageSource.Tool) listOf(msg)
-            else {
-                val results = msg.content.filterIsInstance<LlmContent.ToolResult>()
-                if (results.size <= 1) listOf(msg)
-                else results.map { LlmMessage(LlmMessageSource.Tool, listOf(it)) }
+    private fun JsonObjectBuilder.emitAttachments(attachments: List<LlmAttachment>) {
+        if (attachments.isEmpty()) return
+        val base64s = attachments.mapNotNull {
+            when (it) {
+                is LlmAttachment.Base64 -> it.base64
+                is LlmAttachment.Url -> null
             }
         }
+        val urls = attachments.filterIsInstance<LlmAttachment.Url>()
+        if (urls.isNotEmpty()) {
+            throw IllegalArgumentException(
+                "Ollama native API does not accept image URLs; convert to LlmAttachment.Base64 before calling."
+            )
+        }
+        if (base64s.isNotEmpty()) {
+            putJsonArray("images") { base64s.forEach { add(it) } }
+        }
+    }
 
     /**
-     * Apply [LlmToolChoice] as a soft system-level hint. Ollama has no first-class tool
-     * choice field, so we prepend or append an instruction.
+     * Return a tool choice hint string for Ollama's system prompt. Ollama has no first-class
+     * tool choice field, so we surface the intent as a system-level instruction.
      */
-    private fun applyToolChoiceHint(
-        messages: List<LlmMessage>,
-        choice: LlmToolChoice,
-    ): List<LlmMessage> {
-        val split = splitToolResultMessages(messages)
-        val hint = when (choice) {
-            LlmToolChoice.Auto -> null
-            LlmToolChoice.None -> "Do not call any tools in this turn. Respond with natural-language text only."
-            LlmToolChoice.Required -> "You MUST call at least one tool in this turn."
-            is LlmToolChoice.Specific -> "You MUST call the tool named '${choice.name}' in this turn."
-        } ?: return split
-
-        // Merge with an existing system message if present, otherwise prepend one.
-        val firstIsSystem = split.firstOrNull()?.source == LlmMessageSource.System
-        return if (firstIsSystem) {
-            val existing = split.first()
-            val combined = LlmMessage(
-                LlmMessageSource.System,
-                existing.content + LlmContent.Text("\n\n$hint"),
-            )
-            listOf(combined) + split.drop(1)
-        } else {
-            listOf(LlmMessage(LlmMessageSource.System, listOf(LlmContent.Text(hint)))) + split
-        }
+    private fun toolChoiceHint(choice: LlmToolChoice): String? = when (choice) {
+        LlmToolChoice.Auto -> null
+        LlmToolChoice.None -> "Do not call any tools in this turn. Respond with natural-language text only."
+        LlmToolChoice.Required -> "You MUST call at least one tool in this turn."
+        is LlmToolChoice.Specific -> "You MUST call the tool named '${choice.name}' in this turn."
     }
 
     private fun toolToJson(tool: LlmToolDescriptor<*>, module: SerializersModule): JsonObject =
@@ -217,12 +202,6 @@ internal object OllamaWire {
             }
         }
 
-    private fun roleString(source: LlmMessageSource): String = when (source) {
-        LlmMessageSource.System -> "system"
-        LlmMessageSource.User -> "user"
-        LlmMessageSource.Agent -> "assistant"
-        LlmMessageSource.Tool -> "tool"
-    }
 }
 
 // ----------------------------------------------------------------------------------------
@@ -266,7 +245,7 @@ internal data class OllamaToolCallFunction(
     val name: String,
     /**
      * Parsed JSON object in Ollama's wire format — but we receive it as a raw JsonElement
-     * and re-serialize to string for [com.lightningkite.services.ai.LlmContent.ToolCall.inputJson].
+     * and re-serialize to string for [com.lightningkite.services.ai.LlmToolCall.inputJson].
      */
     val arguments: JsonElement,
 )

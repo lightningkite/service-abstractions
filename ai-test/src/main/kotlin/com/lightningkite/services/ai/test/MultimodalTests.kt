@@ -3,6 +3,7 @@ package com.lightningkite.services.ai.test
 import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.plainText
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue

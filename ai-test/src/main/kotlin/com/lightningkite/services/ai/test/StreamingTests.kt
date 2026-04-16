@@ -3,6 +3,7 @@ package com.lightningkite.services.ai.test
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStreamEvent
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.plainText
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest

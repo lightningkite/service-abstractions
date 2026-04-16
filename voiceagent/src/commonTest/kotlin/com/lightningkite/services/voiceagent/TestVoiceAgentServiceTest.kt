@@ -1,10 +1,13 @@
 package com.lightningkite.services.voiceagent
 
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.ai.LlmToolDescriptor
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -94,9 +97,10 @@ class TestVoiceAgentServiceTest {
         val session = service.createSession(
             VoiceAgentSessionConfig(
                 tools = listOf(
-                    SerializableToolDescriptor(
+                    LlmToolDescriptor(
                         name = "test_function",
                         description = "A test function",
+                        type = String.serializer(),
                     )
                 )
             )

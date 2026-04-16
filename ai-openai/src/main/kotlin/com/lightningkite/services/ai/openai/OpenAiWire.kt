@@ -4,12 +4,12 @@ package com.lightningkite.services.ai.openai
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.ai.LlmAttachment
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
 import com.lightningkite.services.ai.LlmModelId
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
+import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
 import com.lightningkite.services.ai.LlmToolChoice
@@ -146,12 +146,8 @@ internal fun buildRequestBody(
 ): JsonObject = buildJsonObject {
     put("model", model)
     putJsonArray("messages") {
-        prompt.collectSharedContext()?.let { ctx ->
-            add(buildJsonObject {
-                put("role", "system")
-                put("content", ctx)
-            })
-        }
+        // System prompt: render systemPrompt parts + shared context as system-role messages.
+        buildSystemMessages(prompt).forEach { add(it) }
         prompt.messages.forEach { message ->
             buildOpenAiMessages(message).forEach { add(it) }
         }
@@ -203,23 +199,21 @@ private fun encodeToolChoice(choice: LlmToolChoice): JsonElement = when (choice)
 /**
  * Map an [LlmMessage] to one or more OpenAI messages.
  *
- * - System/User/Agent → exactly one message.
- * - Tool → one message per [LlmContent.ToolResult] (OpenAI has no multi-result tool message).
+ * - User/Agent → exactly one message.
+ * - ToolResult → one tool message with role=tool.
  */
 internal fun buildOpenAiMessages(message: LlmMessage): List<JsonObject> {
-    return when (message.source) {
-        LlmMessageSource.System -> listOf(buildSystemOrUser("system", message.content))
-        LlmMessageSource.User -> listOf(buildSystemOrUser("user", message.content))
-        LlmMessageSource.Agent -> listOf(buildAssistantMessage(message.content))
-        LlmMessageSource.Tool -> message.content.mapNotNull { part ->
-            (part as? LlmContent.ToolResult)?.let { tr ->
-                buildJsonObject {
-                    put("role", "tool")
-                    put("tool_call_id", tr.toolCallId)
-                    // OpenAI doesn't have a dedicated is_error; prefix on error to signal it to the model.
-                    put("content", if (tr.isError) "ERROR: ${tr.content}" else tr.content)
-                }
-            }
+    return when (message) {
+        is LlmMessage.User -> listOf(buildSystemOrUser("user", message.parts))
+        is LlmMessage.Agent -> listOf(buildAssistantMessage(message.parts))
+        is LlmMessage.ToolResult -> {
+            val text = message.parts.filterIsInstance<LlmPart.Text>().joinToString("") { it.text }
+            listOf(buildJsonObject {
+                put("role", "tool")
+                put("tool_call_id", message.toolCallId)
+                // OpenAI doesn't have a dedicated is_error; prefix on error to signal it to the model.
+                put("content", if (message.isError) "ERROR: $text" else text)
+            })
         }
     }
 }
@@ -228,38 +222,33 @@ internal fun buildOpenAiMessages(message: LlmMessage): List<JsonObject> {
  * Build a system/user message. Uses a plain string for text-only content and a content-array
  * (with `{type:"text",...}` / `{type:"image_url",...}` parts) when attachments are present.
  */
-private fun buildSystemOrUser(role: String, content: List<LlmContent>): JsonObject {
-    val hasAttachment = content.any { it is LlmContent.Attachment }
+private fun buildSystemOrUser(role: String, content: List<LlmPart.ContentOnly>): JsonObject {
+    val hasAttachment = content.any { it is LlmPart.Attachment }
     return buildJsonObject {
         put("role", role)
         if (hasAttachment) {
             putJsonArray("content") {
                 content.forEach { part ->
                     when (part) {
-                        is LlmContent.Text -> addJsonObject {
+                        is LlmPart.Text -> addJsonObject {
                             put("type", "text")
                             put("text", part.text)
                         }
-                        is LlmContent.Attachment -> add(encodeAttachment(part.attachment))
-                        is LlmContent.ToolCall,
-                        is LlmContent.ToolResult,
-                        // Reasoning is receive-only in v1. Providers MUST NOT fail when sent
-                        // a Reasoning block, so we silently drop it from outgoing requests.
-                        is LlmContent.Reasoning -> Unit
+                        is LlmPart.Attachment -> add(encodeAttachment(part.attachment))
                     }
                 }
             }
         } else {
-            val text = content.filterIsInstance<LlmContent.Text>().joinToString("") { it.text }
+            val text = content.filterIsInstance<LlmPart.Text>().joinToString("") { it.text }
             put("content", text)
         }
     }
 }
 
-private fun buildAssistantMessage(content: List<LlmContent>): JsonObject = buildJsonObject {
+private fun buildAssistantMessage(content: List<LlmPart>): JsonObject = buildJsonObject {
     put("role", "assistant")
-    val text = content.filterIsInstance<LlmContent.Text>().joinToString("") { it.text }
-    val toolCalls = content.filterIsInstance<LlmContent.ToolCall>()
+    val text = content.filterIsInstance<LlmPart.Text>().joinToString("") { it.text }
+    val toolCalls = content.filterIsInstance<LlmPart.ToolCall>()
     // OpenAI requires `content` on assistant messages. null is accepted when tool_calls is
     // present, but with neither text nor tool_calls (e.g. attachment-only or fully-stripped
     // assistant messages) the API rejects null/absent content — use empty string instead.
@@ -273,18 +262,31 @@ private fun buildAssistantMessage(content: List<LlmContent>): JsonObject = build
     )
     if (toolCalls.isNotEmpty()) {
         putJsonArray("tool_calls") {
-            toolCalls.forEach { call ->
+            toolCalls.forEach { tc ->
                 addJsonObject {
-                    put("id", call.id)
+                    put("id", tc.call.id)
                     put("type", "function")
                     putJsonObject("function") {
-                        put("name", call.name)
-                        put("arguments", call.inputJson)
+                        put("name", tc.call.name)
+                        put("arguments", tc.call.inputJson)
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * Build system-role messages from [LlmPrompt.systemPrompt] and shared tool context.
+ * Returns an empty list when neither is present.
+ */
+internal fun buildSystemMessages(prompt: LlmPrompt): List<JsonObject> {
+    val parts = buildList {
+        prompt.collectSharedContext()?.let { add(LlmPart.Text(it)) }
+        addAll(prompt.systemPrompt)
+    }
+    if (parts.isEmpty()) return emptyList()
+    return listOf(buildSystemOrUser("system", parts))
 }
 
 private fun encodeAttachment(attachment: LlmAttachment): JsonObject {

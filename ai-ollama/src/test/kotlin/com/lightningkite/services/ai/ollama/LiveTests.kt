@@ -2,11 +2,11 @@ package com.lightningkite.services.ai.ollama
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.ai.LlmAccess
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.plainText
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.http.isSuccess
@@ -60,10 +60,7 @@ class LiveTests {
                     model = candidate.id,
                     prompt = LlmPrompt(
                         messages = listOf(
-                            LlmMessage(
-                                LlmMessageSource.User,
-                                listOf(LlmContent.Text("Say 'ok' once.")),
-                            ),
+                            LlmMessage.User(listOf(LlmPart.Text("Say 'ok' once."))),
                         ),
                         maxTokens = 16,
                     ),
@@ -72,10 +69,9 @@ class LiveTests {
                 println("[LiveTests] Ollama inference failed: ${e.message} — skipping assertion.")
                 return@runBlocking
             }
-            val text = result.message.content.filterIsInstance<LlmContent.Text>()
-                .joinToString("") { it.text }
+            val text = result.message.plainText()
             println("[LiveTests] Ollama response: $text")
-            assertTrue(text.isNotEmpty() || result.message.content.isNotEmpty(),
+            assertTrue(text.isNotEmpty() || result.message.parts.isNotEmpty(),
                 "Expected some response content from Ollama")
         } finally {
             access.disconnect()

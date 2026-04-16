@@ -1,11 +1,13 @@
 package com.lightningkite.services.voiceagent.test
 
+import com.lightningkite.services.ai.LlmToolDescriptor
 import com.lightningkite.services.test.runTestWithClock
 import com.lightningkite.services.voiceagent.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.builtins.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -181,9 +183,10 @@ public abstract class VoiceAgentServiceTests {
         val session = service.createSession(
             VoiceAgentSessionConfig(
                 tools = listOf(
-                    SerializableToolDescriptor(
+                    LlmToolDescriptor(
                         name = "test_tool",
                         description = "A test tool",
+                        type = String.serializer(),
                     )
                 )
             )

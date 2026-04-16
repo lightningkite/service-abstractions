@@ -4,6 +4,7 @@ import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.toolCalls
 import kotlinx.coroutines.test.runTest
 import org.junit.Assume
 import kotlin.test.Test
@@ -83,7 +84,7 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
         )
         assertTrue(
             result.message.toolCalls().isNotEmpty(),
-            "Expected at least one tool call when Required; got ${result.message.content}",
+            "Expected at least one tool call when Required; got ${result.message.parts}",
         )
     }
 
@@ -127,8 +128,7 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
 
     /**
      * [LlmToolChoice.None] forbids new tool calls on this turn. The model must finish with
-     * [LlmStopReason.EndTurn] and produce no [com.lightningkite.services.ai.LlmContent.ToolCall]
-     * blocks.
+     * [LlmStopReason.EndTurn] and produce no tool call parts.
      *
      * Providers that cannot reliably enforce None (notably Ollama and some local runtimes)
      * should set [supportsToolChoiceNone]=false to skip.

@@ -1,8 +1,6 @@
 package com.lightningkite.services.ai.test
 
-import com.lightningkite.services.ai.LlmContent
-import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.inference
 import kotlinx.coroutines.test.runTest
@@ -48,14 +46,10 @@ public abstract class CachingTests : LlmAccessTests() {
                     "Remember this fact for later reference when answering questions about pangrams.")
             }
         }
-        val systemMessage = LlmMessage(
-            source = LlmMessageSource.System,
-            content = listOf(LlmContent.Text(longSystemContent)),
-            cacheBoundary = true,
-        )
         val prompt = LlmPrompt(
+            systemPrompt = listOf(LlmPart.Text(longSystemContent)),
+            systemPromptCacheBoundary = true,
             messages = listOf(
-                systemMessage,
                 userText("Respond with only the word PONG."),
             ),
             maxTokens = testMaxTokens ?: 64,

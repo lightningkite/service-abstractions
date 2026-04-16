@@ -1,9 +1,8 @@
 package com.lightningkite.services.voiceagent.openai
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.voiceagent.SerializableToolDescriptor
-import com.lightningkite.services.voiceagent.SerializableToolParameterDescriptor
-import com.lightningkite.services.voiceagent.SerializableToolParameterType
+import com.lightningkite.services.ai.LlmToolDescriptor
+import com.lightningkite.services.data.Description
 import com.lightningkite.services.voiceagent.TurnDetection
 import com.lightningkite.services.voiceagent.VoiceAgentEvent
 import com.lightningkite.services.voiceagent.VoiceAgentService
@@ -11,9 +10,11 @@ import com.lightningkite.services.voiceagent.VoiceAgentSession
 import com.lightningkite.services.voiceagent.VoiceAgentSessionConfig
 import com.lightningkite.services.voiceagent.VoiceConfig
 import com.lightningkite.services.voiceagent.AudioFormat as VoiceAudioFormat
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.serializer
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.*
@@ -24,53 +25,55 @@ import java.util.Base64
 import javax.sound.sampled.*
 import kotlin.random.Random
 
+// Tool argument types
+
+@Serializable
+private object GetCurrentTimeArgs
+
+@Serializable
+private data class GetWeatherArgs(
+    @Description("The city or location to get weather for (e.g., 'New York', 'London')")
+    val location: String,
+)
+
+@Serializable
+private data class CalculateArgs(
+    @Description("The mathematical expression to evaluate (e.g., '2 + 2', '15 * 3')")
+    val expression: String,
+)
+
+@Serializable
+private data class SetReminderArgs(
+    @Description("What to remind the user about")
+    val message: String,
+    @Description("Number of minutes from now to trigger the reminder")
+    val minutes: Int,
+)
+
 /**
- * Demo tool definitions for the voice agent.
- * These tools demonstrate how to integrate function calling with voice interactions.
+ * Demo tool definitions for the voice agent using LlmToolDescriptor.
  */
 private val demoTools = listOf(
-    SerializableToolDescriptor(
+    LlmToolDescriptor(
         name = "get_current_time",
         description = "Get the current date and time. Use this when the user asks what time it is or the current date.",
+        type = serializer<GetCurrentTimeArgs>(),
     ),
-    SerializableToolDescriptor(
+    LlmToolDescriptor(
         name = "get_weather",
         description = "Get the current weather for a location. Use this when the user asks about the weather.",
-        requiredParameters = listOf(
-            SerializableToolParameterDescriptor(
-                name = "location",
-                description = "The city or location to get weather for (e.g., 'New York', 'London')",
-                type = SerializableToolParameterType.String
-            )
-        )
+        type = serializer<GetWeatherArgs>(),
     ),
-    SerializableToolDescriptor(
+    LlmToolDescriptor(
         name = "calculate",
         description = "Perform a mathematical calculation. Use this for math questions.",
-        requiredParameters = listOf(
-            SerializableToolParameterDescriptor(
-                name = "expression",
-                description = "The mathematical expression to evaluate (e.g., '2 + 2', '15 * 3')",
-                type = SerializableToolParameterType.String
-            )
-        )
+        type = serializer<CalculateArgs>(),
     ),
-    SerializableToolDescriptor(
+    LlmToolDescriptor(
         name = "set_reminder",
         description = "Set a reminder for the user. Use this when the user wants to be reminded of something.",
-        requiredParameters = listOf(
-            SerializableToolParameterDescriptor(
-                name = "message",
-                description = "What to remind the user about",
-                type = SerializableToolParameterType.String
-            ),
-            SerializableToolParameterDescriptor(
-                name = "minutes",
-                description = "Number of minutes from now to trigger the reminder",
-                type = SerializableToolParameterType.Integer
-            )
-        )
-    )
+        type = serializer<SetReminderArgs>(),
+    ),
 )
 
 /**

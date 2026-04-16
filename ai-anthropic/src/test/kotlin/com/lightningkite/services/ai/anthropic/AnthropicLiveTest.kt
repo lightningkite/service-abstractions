@@ -2,11 +2,11 @@ package com.lightningkite.services.ai.anthropic
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.ai.LlmAccess
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.plainText
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.util.Properties
@@ -40,19 +40,14 @@ class AnthropicLiveTest {
 
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(
-                    LlmMessageSource.User,
-                    listOf(LlmContent.Text("Say the word hello and nothing else.")),
-                ),
+                LlmMessage.User(listOf(LlmPart.Text("Say the word hello and nothing else."))),
             ),
             maxTokens = 50,
         )
 
         val result = llm.inference(com.lightningkite.services.ai.LlmModelId("claude-haiku-4-5"), prompt)
-        val text = result.message.content
-            .filterIsInstance<LlmContent.Text>()
-            .joinToString("") { it.text }
-        assertTrue(text.isNotBlank(), "Expected non-empty response, got: ${result.message.content}")
+        val text = result.message.plainText()
+        assertTrue(text.isNotBlank(), "Expected non-empty response, got: ${result.message.parts}")
         assertTrue(result.usage.inputTokens > 0, "Expected non-zero input tokens")
         assertTrue(result.usage.outputTokens > 0, "Expected non-zero output tokens")
         println("Live response: $text (usage=${result.usage}, stopReason=${result.stopReason})")

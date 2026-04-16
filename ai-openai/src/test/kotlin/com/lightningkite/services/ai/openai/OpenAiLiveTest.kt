@@ -3,13 +3,13 @@ package com.lightningkite.services.ai.openai
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.SharedResources
 import com.lightningkite.services.ai.LlmAccess
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
 import com.lightningkite.services.ai.LlmModelId
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStreamEvent
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.plainText
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.modules.EmptySerializersModule
@@ -44,16 +44,15 @@ class OpenAiLiveTest {
             model = LlmModelId("gpt-4o-mini"),
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.User,
-                        listOf(LlmContent.Text("Reply with just the word 'pong'.")),
+                    LlmMessage.User(
+                        listOf(LlmPart.Text("Reply with just the word 'pong'.")),
                     ),
                 ),
                 maxTokens = 20,
                 temperature = 0.0,
             ),
         )
-        val text = result.message.content.filterIsInstance<LlmContent.Text>().joinToString("") { it.text }
+        val text = result.message.plainText()
         println("Live response: $text (usage=${result.usage})")
         assertTrue(text.isNotBlank(), "Expected non-empty response, got: '$text'")
         assertTrue(result.usage.inputTokens > 0, "Expected non-zero input token count")
@@ -72,9 +71,8 @@ class OpenAiLiveTest {
             model = LlmModelId("gpt-4o-mini"),
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.User,
-                        listOf(LlmContent.Text("Count from 1 to 3, one number per line.")),
+                    LlmMessage.User(
+                        listOf(LlmPart.Text("Count from 1 to 3, one number per line.")),
                     ),
                 ),
                 maxTokens = 30,

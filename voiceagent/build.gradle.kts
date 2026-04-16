@@ -42,8 +42,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(project(path = ":basis"))
-                api(project(path = ":data"))
+                api(project(path = ":ai"))
             }
             kotlin {
                 compilerOptions {

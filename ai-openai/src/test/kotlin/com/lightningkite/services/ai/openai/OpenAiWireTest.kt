@@ -2,14 +2,14 @@ package com.lightningkite.services.ai.openai
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.ai.LlmAttachment
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
 import com.lightningkite.services.ai.LlmModelId
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
+import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
 import io.ktor.http.HttpStatusCode
@@ -42,9 +42,9 @@ class OpenAiWireTest {
         val body = buildRequestBody(
             model = "gpt-4o-mini",
             prompt = LlmPrompt(
+                systemPrompt = listOf(LlmPart.Text("You are helpful.")),
                 messages = listOf(
-                    LlmMessage(LlmMessageSource.System, listOf(LlmContent.Text("You are helpful."))),
-                    LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("Hi"))),
+                    LlmMessage.User(listOf(LlmPart.Text("Hi"))),
                 ),
             ),
             stream = true,
@@ -72,7 +72,7 @@ class OpenAiWireTest {
         val body = buildRequestBody(
             model = "gpt-4o",
             prompt = LlmPrompt(
-                messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("weather?")))),
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("weather?")))),
                 tools = listOf(tool),
                 toolChoice = LlmToolChoice.Required,
                 maxTokens = 256,
@@ -116,7 +116,7 @@ class OpenAiWireTest {
         val body = buildRequestBody(
             model = "gpt-4o",
             prompt = LlmPrompt(
-                messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("hi")))),
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
                 tools = listOf(tool),
                 toolChoice = LlmToolChoice.Specific("get_weather"),
             ),
@@ -134,17 +134,16 @@ class OpenAiWireTest {
             model = "gpt-4o",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("weather?"))),
-                    LlmMessage(
-                        LlmMessageSource.Agent,
+                    LlmMessage.User(listOf(LlmPart.Text("weather?"))),
+                    LlmMessage.Agent(
                         listOf(
-                            LlmContent.Text("Checking..."),
-                            LlmContent.ToolCall("call_abc", "get_weather", """{"city":"Paris"}"""),
+                            LlmPart.Text("Checking..."),
+                            LlmPart.ToolCall(LlmToolCall("call_abc", "get_weather", """{"city":"Paris"}""")),
                         ),
                     ),
-                    LlmMessage(
-                        LlmMessageSource.Tool,
-                        listOf(LlmContent.ToolResult("call_abc", "22C sunny")),
+                    LlmMessage.ToolResult(
+                        toolCallId = "call_abc",
+                        parts = listOf(LlmPart.Text("22C sunny")),
                     ),
                 ),
             ),
@@ -178,9 +177,8 @@ class OpenAiWireTest {
             model = "gpt-4o",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.Agent,
-                        listOf(LlmContent.ToolCall("call_1", "f", "{}")),
+                    LlmMessage.Agent(
+                        listOf(LlmPart.ToolCall(LlmToolCall("call_1", "f", "{}"))),
                     ),
                 ),
             ),
@@ -200,12 +198,14 @@ class OpenAiWireTest {
             model = "gpt-4o",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.Tool,
-                        listOf(
-                            LlmContent.ToolResult("call_1", "r1"),
-                            LlmContent.ToolResult("call_2", "r2", isError = true),
-                        ),
+                    LlmMessage.ToolResult(
+                        toolCallId = "call_1",
+                        parts = listOf(LlmPart.Text("r1")),
+                    ),
+                    LlmMessage.ToolResult(
+                        toolCallId = "call_2",
+                        parts = listOf(LlmPart.Text("r2")),
+                        isError = true,
                     ),
                 ),
             ),
@@ -227,11 +227,10 @@ class OpenAiWireTest {
             model = "gpt-4o",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.User,
+                    LlmMessage.User(
                         listOf(
-                            LlmContent.Text("What is in this image?"),
-                            LlmContent.Attachment(
+                            LlmPart.Text("What is in this image?"),
+                            LlmPart.Attachment(
                                 LlmAttachment.Url(MediaType("image/png"), "https://example.com/pic.png")
                             ),
                         ),
@@ -257,10 +256,9 @@ class OpenAiWireTest {
             model = "gpt-4o",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.User,
+                    LlmMessage.User(
                         listOf(
-                            LlmContent.Attachment(
+                            LlmPart.Attachment(
                                 LlmAttachment.Base64(MediaType("image/jpeg"), "abc123==")
                             ),
                         ),
@@ -394,10 +392,9 @@ class OpenAiWireTest {
             model = "gpt-4o",
             prompt = LlmPrompt(
                 messages = listOf(
-                    LlmMessage(
-                        LlmMessageSource.Agent,
+                    LlmMessage.Agent(
                         listOf(
-                            LlmContent.Attachment(
+                            LlmPart.Attachment(
                                 LlmAttachment.Url(MediaType("image/png"), "https://e.com/x.png")
                             ),
                         ),
@@ -427,10 +424,9 @@ class OpenAiWireTest {
                 model = "gpt-4o",
                 prompt = LlmPrompt(
                     messages = listOf(
-                        LlmMessage(
-                            LlmMessageSource.User,
+                        LlmMessage.User(
                             listOf(
-                                LlmContent.Attachment(
+                                LlmPart.Attachment(
                                     LlmAttachment.Url(MediaType("audio/wav"), "https://e.com/a.wav")
                                 ),
                             ),

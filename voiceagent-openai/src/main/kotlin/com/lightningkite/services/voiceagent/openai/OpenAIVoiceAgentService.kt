@@ -106,6 +106,7 @@ public class OpenAIVoiceAgentService(
             initialConfig = config,
             httpClient = getHttpClient(),
             json = json,
+            serializersModule = context.internalSerializersModule,
         )
     }
 
@@ -146,6 +147,7 @@ internal class OpenAIVoiceAgentSession(
     private val initialConfig: VoiceAgentSessionConfig,
     private val httpClient: HttpClient,
     private val json: Json,
+    private val serializersModule: kotlinx.serialization.modules.SerializersModule,
 ) : VoiceAgentSession {
 
     override val sessionId: String = Uuid.random().toString()
@@ -460,7 +462,7 @@ internal class OpenAIVoiceAgentSession(
     }
 
     private suspend fun sendSessionUpdate(config: VoiceAgentSessionConfig) {
-        val tools = config.tools.map { it.toOpenAIToolDefinition() }.takeIf { it.isNotEmpty() }
+        val tools = config.tools.map { it.toOpenAIToolDefinition(serializersModule) }.takeIf { it.isNotEmpty() }
 
         // Log session config sizes for token analysis
         val instructionsChars = config.instructions?.length ?: 0

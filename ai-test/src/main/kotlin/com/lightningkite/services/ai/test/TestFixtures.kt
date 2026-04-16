@@ -2,9 +2,9 @@ package com.lightningkite.services.ai.test
 
 import com.lightningkite.MediaType
 import com.lightningkite.services.ai.LlmAttachment
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
+import com.lightningkite.services.ai.LlmPart
+import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmToolDescriptor
 import com.lightningkite.services.data.Description
 import kotlinx.serialization.Serializable
@@ -83,42 +83,20 @@ public const val STABLE_BLUE_IMAGE_URL: String =
 /**
  * Convenience constructor for a single user-text message.
  */
-public fun userText(text: String): LlmMessage =
-    LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text(text)))
+public fun userText(text: String): LlmMessage.User =
+    LlmMessage.User(listOf(LlmPart.Text(text)))
 
 /**
- * Convenience constructor for a system-instruction message.
+ * Convenience: build a [LlmPrompt] with a system instruction as the first argument.
  */
-public fun systemText(text: String): LlmMessage =
-    LlmMessage(LlmMessageSource.System, listOf(LlmContent.Text(text)))
+public fun systemPrompt(text: String): List<LlmPart.ContentOnly> =
+    listOf(LlmPart.Text(text))
 
 /**
  * Convenience constructor for a user message carrying one attachment and a caption.
  */
-public fun userWithAttachment(caption: String, attachment: LlmAttachment): LlmMessage =
-    LlmMessage(
-        LlmMessageSource.User,
-        listOf(LlmContent.Text(caption), LlmContent.Attachment(attachment)),
-    )
-
-/**
- * Concatenate every [LlmContent.Text] block in the message into one string. Useful for
- * tests that want the raw assistant text without caring how the provider chunks it.
- */
-public fun LlmMessage.plainText(): String =
-    content.filterIsInstance<LlmContent.Text>().joinToString("") { it.text }
-
-/**
- * Return the first [LlmContent.ToolCall] in the message, or null.
- */
-public fun LlmMessage.firstToolCall(): LlmContent.ToolCall? =
-    content.filterIsInstance<LlmContent.ToolCall>().firstOrNull()
-
-/**
- * Return all [LlmContent.ToolCall] blocks in the message.
- */
-public fun LlmMessage.toolCalls(): List<LlmContent.ToolCall> =
-    content.filterIsInstance<LlmContent.ToolCall>()
+public fun userWithAttachment(caption: String, attachment: LlmAttachment): LlmMessage.User =
+    LlmMessage.User(listOf(LlmPart.Text(caption), LlmPart.Attachment(attachment)))
 
 /** Shorthand for the PNG [MediaType], used by the multimodal tests. */
 public val pngMediaType: MediaType get() = MediaType.Image.PNG

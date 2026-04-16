@@ -56,7 +56,7 @@ public suspend fun LlmAccess.inference(model: LlmModelId, prompt: LlmPrompt): Ll
     val reasoning = StringBuilder()
     val text = StringBuilder()
     val attachments = mutableListOf<LlmAttachment>()
-    val toolCalls = mutableListOf<LlmContent.ToolCall>()
+    val toolCalls = mutableListOf<LlmToolCall>()
     var stopReason: LlmStopReason = LlmStopReason.EndTurn
     var usage = LlmUsage(0, 0)
     stream(model, prompt).collect { event ->
@@ -65,7 +65,7 @@ public suspend fun LlmAccess.inference(model: LlmModelId, prompt: LlmPrompt): Ll
             is LlmStreamEvent.TextDelta -> text.append(event.text)
             is LlmStreamEvent.AttachmentEmitted -> attachments.add(event.attachment)
             is LlmStreamEvent.ToolCallEmitted -> toolCalls.add(
-                LlmContent.ToolCall(event.id, event.name, event.inputJson)
+                LlmToolCall(event.id, event.name, event.inputJson)
             )
             is LlmStreamEvent.Finished -> {
                 stopReason = event.stopReason
@@ -73,14 +73,14 @@ public suspend fun LlmAccess.inference(model: LlmModelId, prompt: LlmPrompt): Ll
             }
         }
     }
-    val content = buildList<LlmContent> {
-        if (reasoning.isNotEmpty()) add(LlmContent.Reasoning(reasoning.toString()))
-        if (text.isNotEmpty()) add(LlmContent.Text(text.toString()))
-        attachments.forEach { add(LlmContent.Attachment(it)) }
-        addAll(toolCalls)
+    val parts = buildList<LlmPart> {
+        if (reasoning.isNotEmpty()) add(LlmPart.Reasoning(reasoning.toString()))
+        if (text.isNotEmpty()) add(LlmPart.Text(text.toString()))
+        attachments.forEach { add(LlmPart.Attachment(it)) }
+        toolCalls.forEach { add(LlmPart.ToolCall(it)) }
     }
     return LlmResult(
-        message = LlmMessage(LlmMessageSource.Agent, content),
+        message = LlmMessage.Agent(parts),
         stopReason = stopReason,
         usage = usage,
     )
@@ -125,14 +125,18 @@ public data class LlmModelInfo(
 /**
  * Input to a single inference turn.
  *
- * System instructions go in the first [LlmMessage] with source [LlmMessageSource.System].
- * Tool results from a prior turn go as [LlmContent.ToolResult] blocks inside an
- * [LlmMessageSource.Tool] message.
+ * System instructions live in [systemPrompt], separate from conversation [messages].
+ * Conversation messages are [LlmMessage.User], [LlmMessage.Agent], or [LlmMessage.ToolResult].
  *
  * Not @Serializable because [tools] carries [KSerializer] references, which are not
  * cross-network-transferable. Messages and other parts are individually serializable.
  */
 public data class LlmPrompt(
+    /**
+     * System instructions. Rendered by providers as a top-level system field (Anthropic,
+     * Bedrock) or as the first system-role message (OpenAI, Ollama).
+     */
+    val systemPrompt: List<LlmPart.ContentOnly> = emptyList(),
     val messages: List<LlmMessage>,
     val tools: List<LlmToolDescriptor<*>> = emptyList(),
     val toolChoice: LlmToolChoice = LlmToolChoice.Auto,
@@ -143,6 +147,15 @@ public data class LlmPrompt(
     val maxTokens: Int? = null,
     val temperature: Double? = null,
     val stopSequences: List<String> = emptyList(),
+    /**
+     * Hint to providers that support prompt caching: if true, cache the system prompt.
+     *
+     * Honored by: Anthropic, Bedrock (model-dependent).
+     * Ignored by: OpenAI (auto-caches at >1024 tokens), Ollama, LM Studio.
+     *
+     * Cache hits require ≥~1024 tokens of cached content (provider-dependent).
+     */
+    val systemPromptCacheBoundary: Boolean = false,
 ) {
     /**
      * Collects all [LlmSharedContext] from [tools], deduplicates, and joins their content.
@@ -232,10 +245,14 @@ public data class LlmToolDescriptor<T>(
 )
 
 
+/**
+ * A message in an LLM conversation. Each variant carries only the content types
+ * that are valid for its role, enforced at the type level.
+ *
+ * System instructions are not a message — they live on [LlmPrompt.systemPrompt].
+ */
 @Serializable
-public data class LlmMessage(
-    val source: LlmMessageSource,
-    val content: List<LlmContent>,
+public sealed interface LlmMessage {
     /**
      * Hint to providers that support prompt caching: if true, cache everything in
      * the prompt UP TO AND INCLUDING this message. Subsequent calls reusing the
@@ -252,45 +269,43 @@ public data class LlmMessage(
      * Tradeoff: cache writes cost ~25% more than normal input tokens; cache reads cost
      * ~90% less. Net win when the same prefix is reused across multiple calls.
      */
-    val cacheBoundary: Boolean = false,
-)
+    public val cacheBoundary: Boolean
 
-@Serializable
-public enum class LlmMessageSource { System, User, Agent, Tool }
+    @Serializable
+    public data class User(
+        val parts: List<LlmPart.ContentOnly>,
+        override val cacheBoundary: Boolean = false,
+    ) : LlmMessage
+
+    @Serializable
+    public data class Agent(
+        val parts: List<LlmPart>,
+        override val cacheBoundary: Boolean = false,
+    ) : LlmMessage
+
+    @Serializable
+    public data class ToolResult(
+        val toolCallId: String,
+        val parts: List<LlmPart.ContentOnly>,
+        val isError: Boolean = false,
+        override val cacheBoundary: Boolean = false,
+    ) : LlmMessage
+}
 
 /**
- * An ordered content block inside an [LlmMessage]. Providers interleave text with
- * tool uses and attachments, so content is a list rather than a single string.
+ * An ordered content block inside an [LlmMessage]. [ContentOnly] is the subset of parts
+ * valid in [LlmMessage.User] and [LlmMessage.ToolResult] messages (text + attachments).
+ * [LlmMessage.Agent] messages accept the full [LlmPart] hierarchy, which adds
+ * [Reasoning] and [ToolCall].
  */
 @Serializable
-public sealed class LlmContent {
-    @Serializable public data class Text(val text: String) : LlmContent()
-    @Serializable public data class Attachment(val attachment: LlmAttachment) : LlmContent()
+public sealed interface LlmPart {
+    /** Content types valid in User, ToolResult, and Agent messages. */
+    @Serializable
+    public sealed interface ContentOnly : LlmPart
 
-    /**
-     * An assistant-produced call to a tool. [id] uniquely identifies this call within
-     * the turn and must be echoed back in the matching [ToolResult.toolCallId] on the
-     * next turn. [inputJson] is the tool's arguments as a JSON string.
-     *
-     * An assistant turn may contain zero or more `ToolCall` blocks; providers that
-     * support parallel tool calling can emit several in one turn. Callers must handle
-     * both single and multi-call turns.
-     */
-    @Serializable public data class ToolCall(
-        val id: String,
-        val name: String,
-        val inputJson: String,
-    ) : LlmContent()
-
-    /**
-     * The result of executing a tool call. Carried in a message with source
-     * [LlmMessageSource.Tool] on the next turn.
-     */
-    @Serializable public data class ToolResult(
-        val toolCallId: String,
-        val content: String,
-        val isError: Boolean = false,
-    ) : LlmContent()
+    @Serializable public data class Text(val text: String) : ContentOnly
+    @Serializable public data class Attachment(val attachment: LlmAttachment) : ContentOnly
 
     /**
      * Model-emitted chain-of-thought / "thinking" output, distinct from the final answer.
@@ -298,18 +313,42 @@ public sealed class LlmContent {
      * Producers: only models with reasoning capability (Claude extended thinking, OpenAI
      * o-series, DeepSeek R1, Gemma reasoning variants, etc.). Most models never emit this.
      *
-     * Display: typically shown collapsed/secondary to [Text] blocks, or hidden entirely.
-     *
      * Round-trip: receive-only in this release. If a [Reasoning] block is included in an
      * outgoing prompt, providers MAY drop it. Providers MUST NOT fail the request because
-     * of it. Multi-turn extended thinking with tool use on Anthropic is not yet supported
-     * (would require preserving provider-opaque signature data).
+     * of it.
      *
      * Ordering: when present, reasoning blocks always precede the final [Text] / [ToolCall]
-     * blocks within an assistant message — matching the order the model produced them.
+     * blocks within an agent message — matching the order the model produced them.
      */
-    @Serializable public data class Reasoning(val text: String) : LlmContent()
+    @Serializable public data class Reasoning(val text: String) : LlmPart
+
+    /** An assistant-produced call to a tool. */
+    @Serializable public data class ToolCall(val call: LlmToolCall) : LlmPart
 }
+
+/**
+ * A tool call emitted by the model. [id] uniquely identifies this call within
+ * the turn and must be echoed back in the matching [LlmMessage.ToolResult.toolCallId]
+ * on the next turn. [inputJson] is the tool's arguments as a JSON string.
+ */
+@Serializable
+public data class LlmToolCall(
+    val id: String,
+    val name: String,
+    val inputJson: String,
+)
+
+/** Concatenate every [LlmPart.Text] block in an agent message into one string. */
+public fun LlmMessage.Agent.plainText(): String =
+    parts.filterIsInstance<LlmPart.Text>().joinToString("") { it.text }
+
+/** Return all [LlmToolCall]s in an agent message. */
+public fun LlmMessage.Agent.toolCalls(): List<LlmToolCall> =
+    parts.filterIsInstance<LlmPart.ToolCall>().map { it.call }
+
+/** Return the first [LlmToolCall] in an agent message, or null. */
+public fun LlmMessage.Agent.firstToolCall(): LlmToolCall? =
+    parts.filterIsInstance<LlmPart.ToolCall>().firstOrNull()?.call
 
 /**
  * Image/file content. Exactly one of [Url] or [Base64] is supplied — which one works
@@ -336,10 +375,10 @@ public sealed class LlmAttachment {
 @Serializable
 public data class LlmResult(
     /**
-     * The assistant's reply. Source is always [LlmMessageSource.Agent], even when the
-     * message contains only [LlmContent.ToolCall] blocks and no text.
+     * The assistant's reply, possibly containing text, reasoning, attachments,
+     * and/or tool calls.
      */
-    val message: LlmMessage,
+    val message: LlmMessage.Agent,
     val stopReason: LlmStopReason,
     val usage: LlmUsage,
 )

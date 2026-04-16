@@ -1,13 +1,13 @@
 package com.lightningkite.services.ai.bedrock
 
-import com.lightningkite.services.ai.LlmContent
 import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
-import com.lightningkite.services.ai.LlmMessageSource
 import com.lightningkite.services.ai.LlmModelId
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
+import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
 import kotlinx.coroutines.test.runTest
@@ -28,11 +28,11 @@ class BedrockWireTest {
     @Serializable
     data class WeatherArgs(val city: String, val hours: Int? = null)
 
-    @Test fun systemMessagesGoInSystemArray() {
+    @Test fun systemPromptGoesInSystemArray() {
         val prompt = LlmPrompt(
+            systemPrompt = listOf(LlmPart.Text("You are helpful.")),
             messages = listOf(
-                LlmMessage(LlmMessageSource.System, listOf(LlmContent.Text("You are helpful."))),
-                LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("Hello"))),
+                LlmMessage.User(listOf(LlmPart.Text("Hello"))),
             ),
         )
         val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
@@ -50,7 +50,7 @@ class BedrockWireTest {
     @Test fun agentMessageMapsToAssistant() {
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(LlmMessageSource.Agent, listOf(LlmContent.Text("done"))),
+                LlmMessage.Agent(listOf(LlmPart.Text("done"))),
             ),
         )
         val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
@@ -59,14 +59,12 @@ class BedrockWireTest {
         assertEquals("assistant", role.content)
     }
 
-    @Test fun toolMessageBecomesUserWithToolResult() {
+    @Test fun toolResultBecomesUserWithToolResult() {
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(
-                    source = LlmMessageSource.Tool,
-                    content = listOf(
-                        LlmContent.ToolResult(toolCallId = "call-1", content = "42", isError = false),
-                    ),
+                LlmMessage.ToolResult(
+                    toolCallId = "call-1",
+                    parts = listOf(LlmPart.Text("42")),
                 ),
             ),
         )
@@ -85,13 +83,14 @@ class BedrockWireTest {
     @Test fun toolCallEncodesInputAsJsonObject() {
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(
-                    source = LlmMessageSource.Agent,
-                    content = listOf(
-                        LlmContent.ToolCall(
-                            id = "tool-1",
-                            name = "get_weather",
-                            inputJson = "{\"city\":\"Denver\"}",
+                LlmMessage.Agent(
+                    listOf(
+                        LlmPart.ToolCall(
+                            LlmToolCall(
+                                id = "tool-1",
+                                name = "get_weather",
+                                inputJson = "{\"city\":\"Denver\"}",
+                            ),
                         ),
                     ),
                 ),
@@ -108,7 +107,7 @@ class BedrockWireTest {
 
     @Test fun toolConfigIncludesInputSchemaAndChoice() {
         val prompt = LlmPrompt(
-            messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("q")))),
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
             tools = listOf(
                 LlmToolDescriptor(
                     name = "get_weather",
@@ -141,7 +140,7 @@ class BedrockWireTest {
      */
     @Test fun toolChoiceNoneKeepsToolsAndAddsSystemInstruction() {
         val prompt = LlmPrompt(
-            messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("q")))),
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
             tools = listOf(
                 LlmToolDescriptor(
                     name = "noop",
@@ -173,7 +172,7 @@ class BedrockWireTest {
 
     @Test fun inferenceConfigCarriesOverrides() {
         val prompt = LlmPrompt(
-            messages = listOf(LlmMessage(LlmMessageSource.User, listOf(LlmContent.Text("q")))),
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
             maxTokens = 200,
             temperature = 0.3,
             stopSequences = listOf("STOP"),
@@ -189,10 +188,9 @@ class BedrockWireTest {
     @Test fun urlImageRejected() {
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(
-                    source = LlmMessageSource.User,
-                    content = listOf(
-                        LlmContent.Attachment(
+                LlmMessage.User(
+                    listOf(
+                        LlmPart.Attachment(
                             com.lightningkite.services.ai.LlmAttachment.Url(
                                 mediaType = com.lightningkite.MediaType("image/png"),
                                 url = "https://example.com/x.png",
@@ -352,17 +350,16 @@ class BedrockWireTest {
     }
 
     /**
-     * [LlmContent.Reasoning] is receive-only in v1 — outgoing messages carrying reasoning
+     * [LlmPart.Reasoning] is receive-only in v1 — outgoing messages carrying reasoning
      * blocks must not leak empty content objects to Bedrock (which would reject them).
      */
     @Test fun reasoningContentDroppedFromOutgoingMessages() {
         val prompt = LlmPrompt(
             messages = listOf(
-                LlmMessage(
-                    source = LlmMessageSource.Agent,
-                    content = listOf(
-                        LlmContent.Reasoning("internal thoughts"),
-                        LlmContent.Text("final answer"),
+                LlmMessage.Agent(
+                    listOf(
+                        LlmPart.Reasoning("internal thoughts"),
+                        LlmPart.Text("final answer"),
                     ),
                 ),
             ),
