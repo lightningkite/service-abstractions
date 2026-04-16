@@ -272,25 +272,29 @@ public data class VirtualSealed(
         private val registry: SerializationRegistry,
         public val arguments: Array<out KSerializer<*>>
     ) : KSerializer<Any?>, VirtualType by this@VirtualSealed {
-        internal val sealed: VirtualSealed = this@VirtualSealed
+        public val sealed: VirtualSealed = this@VirtualSealed
 
         private val typeArguments = parameters.indices.associate { parameters[it].name to arguments[it] }
 
-        private val optionStructs: List<VirtualStruct> by lazy {
-            options.map { opt ->
+        // Manual backing field for optionStructs
+        private var _optionStructs: List<VirtualStruct>? = null
+        public val optionStructs: List<VirtualStruct>
+            get() = _optionStructs ?: options.map { opt ->
                 VirtualStruct(
                     serialName = opt.name,
                     annotations = opt.annotations,
                     fields = opt.fields,
                     parameters = listOf()
                 )
-            }
-        }
+            }.also { _optionStructs = it }
 
-        private val optionSerializers: List<KSerializer<Any?>> by lazy {
-            @Suppress("UNCHECKED_CAST")
-            optionStructs.map { it.Concrete(registry, arrayOf()) as KSerializer<Any?> }
-        }
+        // Manual backing field for optionSerializers
+        private var _optionSerializers: List<KSerializer<Any?>>? = null
+        public val optionSerializers: List<KSerializer<Any?>>
+            get() = _optionSerializers ?: optionStructs.map {
+                @Suppress("UNCHECKED_CAST")
+                it.Concrete(registry, emptyArray()) as KSerializer<Any?>
+            }.also { _optionSerializers = it }
 
         private val nameToIndex: Map<String, Int> by lazy {
             options.flatMapIndexed { index, opt ->
