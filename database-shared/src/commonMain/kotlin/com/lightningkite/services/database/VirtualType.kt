@@ -10,6 +10,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.encoding.decodeStructure
 import kotlinx.serialization.encoding.encodeStructure
+import kotlinx.serialization.json.*
 import kotlin.reflect.KClass
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
@@ -302,49 +303,94 @@ public data class VirtualSealed(
             }.toMap()
         }
 
+        // Build a PolymorphicKind.SEALED descriptor matching standard kotlinx sealed class format.
+        // Element 0: "type" discriminator (String)
+        // Element 1: polymorphic value descriptor containing all subtypes as elements
+        @OptIn(InternalSerializationApi::class)
         @Transient
         override val descriptor: SerialDescriptor by lazy {
-            buildClassSerialDescriptor(this@VirtualSealed.serialName) {
-                for ((index, opt) in options.withIndex()) {
-                    element(
-                        elementName = opt.name,
-                        descriptor = optionSerializers[index].descriptor,
-                        isOptional = true,
-                        annotations = listOf()
-                    )
+            buildSerialDescriptor(this@VirtualSealed.serialName, PolymorphicKind.SEALED) {
+                element("type", buildSerialDescriptor("type", PrimitiveKind.STRING))
+                val valueDescriptor = buildClassSerialDescriptor("value") {
+                    for ((index, opt) in options.withIndex()) {
+                        element(
+                            elementName = opt.name,
+                            descriptor = optionSerializers[index].descriptor,
+                        )
+                    }
                 }
+                element("value", valueDescriptor)
             }
         }
 
         override fun deserialize(decoder: Decoder): Any? {
             if (decoder is DefaultDecoder) return optionSerializers.first().default()
+            // kotlinx.serialization JSON only intercepts AbstractPolymorphicSerializer for
+            // discriminator-based deserialization. Since VirtualSealed.Concrete is a plain
+            // KSerializer, we must handle JSON's object-with-discriminator format manually.
+            val jsonDecoder = decoder as? JsonDecoder
+            if (jsonDecoder != null) {
+                val jsonElement = jsonDecoder.decodeJsonElement()
+                val jsonObject = jsonElement as? JsonObject
+                    ?: throw SerializationException("Expected JSON object for sealed class $serialName, got ${jsonElement::class.simpleName}")
+                val typeName = (jsonObject["type"] as? JsonPrimitive)?.content
+                    ?: throw SerializationException("Missing 'type' discriminator for sealed class $serialName")
+                val subtypeIndex = nameToIndex[typeName]
+                    ?: throw SerializationException("Unknown sealed subtype '$typeName' for $serialName. Known types: ${nameToIndex.keys}")
+                return jsonDecoder.json.decodeFromJsonElement(optionSerializers[subtypeIndex], jsonObject)
+            }
+            // Fallback for non-JSON decoders (e.g. array-based formats)
             return decoder.decodeStructure(descriptor) {
-                val index = decodeElementIndex(descriptor)
-                if (index == CompositeDecoder.DECODE_DONE) {
-                    throw SerializationException("Single key expected for sealed class $serialName, but received none.")
+                var typeName: String? = null
+                var result: Any? = null
+                loop@ while (true) {
+                    when (val idx = decodeElementIndex(descriptor)) {
+                        CompositeDecoder.DECODE_DONE -> break@loop
+                        0 -> typeName = decodeStringElement(descriptor, 0)
+                        1 -> {
+                            val subtypeIndex = nameToIndex[typeName]
+                                ?: throw SerializationException("Unknown sealed subtype '$typeName' for $serialName. Known types: ${nameToIndex.keys}")
+                            result = decodeSerializableElement(
+                                descriptor,
+                                1,
+                                optionSerializers[subtypeIndex]
+                            )
+                        }
+                        else -> throw SerializationException("Unexpected index $idx while deserializing $serialName")
+                    }
                 }
-                if (index == CompositeDecoder.UNKNOWN_NAME) throw SerializationException("Unknown key received for sealed class $serialName.")
-                val result = decodeSerializableElement(descriptor, index, optionSerializers[index])
-                if (decodeElementIndex(descriptor) != CompositeDecoder.DECODE_DONE) {
-                    throw SerializationException("Single key expected for sealed class $serialName, but received multiple.")
-                }
-                result
+                result ?: throw SerializationException("Missing sealed class content for $serialName")
             }
         }
 
         override fun serialize(encoder: Encoder, value: Any?) {
             val index = when (value) {
                 is VirtualInstance -> {
-                    options.indexOfFirst { it.name == value.type.struct.serialName }
+                    options.indexOfFirst { it.name == value.type.serialName }
                 }
                 else -> -1
             }
             if (index == -1) throw SerializationException(
                 "No option in sealed class $serialName matches value $value"
             )
+            // Handle JSON discriminator-based format to match standard sealed class encoding
+            val jsonEncoder = encoder as? JsonEncoder
+            if (jsonEncoder != null) {
+                val subtypeJson = jsonEncoder.json.encodeToJsonElement(optionSerializers[index], value)
+                val subtypeObject = subtypeJson as? JsonObject
+                    ?: throw SerializationException("Expected JSON object for sealed subtype")
+                val fullObject = buildJsonObject {
+                    put("type", JsonPrimitive(options[index].name))
+                    subtypeObject.forEach { (key, v) -> put(key, v) }
+                }
+                jsonEncoder.encodeJsonElement(fullObject)
+                return
+            }
+            // Fallback for non-JSON encoders
             encoder.encodeStructure(descriptor) {
+                encodeStringElement(descriptor, 0, options[index].name)
                 @Suppress("UNCHECKED_CAST")
-                encodeSerializableElement(descriptor, index, optionSerializers[index], value)
+                encodeSerializableElement(descriptor, 1, optionSerializers[index], value)
             }
         }
     }
