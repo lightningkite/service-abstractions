@@ -13,8 +13,11 @@ import kotlinx.serialization.builtins.*
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.json.JsonNames
+import kotlinx.serialization.encoding.AbstractDecoder
+import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.internal.AbstractPolymorphicSerializer
 import kotlinx.serialization.internal.GeneratedSerializer
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
@@ -26,6 +29,60 @@ import kotlin.uuid.Uuid
 
 // by Claude - Exception thrown when attempting to use a placeholder serializer for generic type parameters
 public class GenericPlaceholderException(message: String) : Exception(message)
+
+@OptIn(ExperimentalSerializationApi::class)
+private object StubPolymorphicDecoder : AbstractDecoder() {
+    override val serializersModule: SerializersModule = EmptySerializersModule()
+    override fun decodeElementIndex(descriptor: SerialDescriptor): Int = CompositeDecoder.DECODE_DONE
+}
+
+@OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
+private fun SerializationRegistry.sealedOptionFields(
+    optSerializer: KSerializer<*>?,
+    optDesc: SerialDescriptor,
+): List<VirtualField> {
+    val props = optSerializer?.serializableProperties
+    if (props != null) {
+        return props.mapIndexed { index, it ->
+            VirtualField(
+                index = index,
+                name = it.name,
+                type = it.serializer.virtualTypeReference(this),
+                optional = it.defaultCode != null,
+                annotations = it.serializableAnnotations,
+                defaultJson = it.default?.let { default ->
+                    @Suppress("UNCHECKED_CAST")
+                    DefaultDecoder.json.encodeToString(it.serializer as KSerializer<Any?>, default)
+                },
+                defaultCode = it.defaultCode,
+            )
+        }
+    }
+    val gen = (optSerializer as? GeneratedSerializer<*>)?.childSerializers()
+    return (0 until optDesc.elementsCount).map { fi ->
+        val childSerializer = gen?.getOrNull(fi)
+        val type = childSerializer?.virtualTypeReference(this) ?: VirtualTypeReference(
+            serialName = optDesc.getElementDescriptor(fi).nonNullOriginal.serialName,
+            arguments = listOf(),
+            isNullable = optDesc.getElementDescriptor(fi).isNullable
+        )
+        VirtualField(
+            index = fi,
+            name = optDesc.getElementName(fi),
+            type = type,
+            optional = optDesc.isElementOptional(fi),
+            annotations = optDesc.getElementAnnotations(fi)
+                .mapNotNull { SerializableAnnotation.parseOrNull(it) }
+        )
+    }
+}
+
+@OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
+private fun sealedSubSerializer(value: KSerializer<*>, subName: String): KSerializer<*>? {
+    val poly = value as? AbstractPolymorphicSerializer<*> ?: return null
+    @Suppress("UNCHECKED_CAST")
+    return poly.findPolymorphicSerializerOrNull(StubPolymorphicDecoder, subName) as? KSerializer<*>
+}
 
 @OptIn(ExperimentalSerializationApi::class)
 public class SerializationRegistry(public val module: SerializersModule) {
@@ -405,22 +462,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 val optDesc = opt.serializer.descriptor
                 VirtualSealedOption(
                     name = optDesc.serialName,
-                    fields = (0 until optDesc.elementsCount).map { fi ->
-                        VirtualField(
-                            index = fi,
-                            name = optDesc.getElementName(fi),
-                            type = optDesc.getElementDescriptor(fi).let { fieldDesc ->
-                                VirtualTypeReference(
-                                    serialName = fieldDesc.nonNullOriginal.serialName,
-                                    arguments = listOf(),
-                                    isNullable = fieldDesc.isNullable
-                                )
-                            },
-                            optional = optDesc.isElementOptional(fi),
-                            annotations = optDesc.getElementAnnotations(fi)
-                                .mapNotNull { SerializableAnnotation.parseOrNull(it) }
-                        )
-                    },
+                    fields = sealedOptionFields(opt.serializer, optDesc),
                     alternativeNames = opt.alternativeNames.toList(),
                     annotations = opt.annotations.mapNotNull { SerializableAnnotation.parseOrNull(it) },
                     index = index
@@ -451,22 +493,11 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 val subclassDescriptor = value.descriptor.getElementDescriptor(1)
                 val optionsWithFields = (0 until subclassDescriptor.elementsCount).map { index ->
                     val optDesc = subclassDescriptor.getElementDescriptor(index)
+                    val subName = subclassDescriptor.getElementName(index)
+                    val optSerializer = sealedSubSerializer(value, subName)
                     VirtualSealedOption(
-                        name = subclassDescriptor.getElementName(index),
-                        fields = (0 until optDesc.elementsCount).map { fi ->
-                            VirtualField(
-                                index = fi,
-                                name = optDesc.getElementName(fi),
-                                type = VirtualTypeReference(
-                                    serialName = optDesc.getElementDescriptor(fi).nonNullOriginal.serialName,
-                                    arguments = listOf(),
-                                    isNullable = optDesc.getElementDescriptor(fi).isNullable
-                                ),
-                                optional = optDesc.isElementOptional(fi),
-                                annotations = optDesc.getElementAnnotations(fi)
-                                    .mapNotNull { SerializableAnnotation.parseOrNull(it) }
-                            )
-                        },
+                        name = subName,
+                        fields = sealedOptionFields(optSerializer, optDesc),
                         alternativeNames = subclassDescriptor.getElementAnnotations(index)
                             .filterIsInstance<JsonNames>()
                             .flatMap { it.names.toList() },
@@ -650,22 +681,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 val optDesc = opt.serializer.descriptor
                 VirtualSealedOption(
                     name = optDesc.serialName,
-                    fields = (0 until optDesc.elementsCount).map { fi ->
-                        VirtualField(
-                            index = fi,
-                            name = optDesc.getElementName(fi),
-                            type = optDesc.getElementDescriptor(fi).let { fieldDesc ->
-                                VirtualTypeReference(
-                                    serialName = fieldDesc.nonNullOriginal.serialName,
-                                    arguments = listOf(),
-                                    isNullable = fieldDesc.isNullable
-                                )
-                            },
-                            optional = optDesc.isElementOptional(fi),
-                            annotations = optDesc.getElementAnnotations(fi)
-                                .mapNotNull { SerializableAnnotation.parseOrNull(it) }
-                        )
-                    },
+                    fields = sealedOptionFields(opt.serializer, optDesc),
                     alternativeNames = opt.alternativeNames.toList(),
                     annotations = opt.annotations.mapNotNull { SerializableAnnotation.parseOrNull(it) },
                     index = index
@@ -698,22 +714,11 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 val subclassDescriptor = value.descriptor.getElementDescriptor(1)
                 val optionsWithFields = (0 until subclassDescriptor.elementsCount).map { index ->
                     val optDesc = subclassDescriptor.getElementDescriptor(index)
+                    val subName = subclassDescriptor.getElementName(index)
+                    val optSerializer = sealedSubSerializer(value, subName)
                     VirtualSealedOption(
-                        name = subclassDescriptor.getElementName(index),
-                        fields = (0 until optDesc.elementsCount).map { fi ->
-                            VirtualField(
-                                index = fi,
-                                name = optDesc.getElementName(fi),
-                                type = VirtualTypeReference(
-                                    serialName = optDesc.getElementDescriptor(fi).nonNullOriginal.serialName,
-                                    arguments = listOf(),
-                                    isNullable = optDesc.getElementDescriptor(fi).isNullable
-                                ),
-                                optional = optDesc.isElementOptional(fi),
-                                annotations = optDesc.getElementAnnotations(fi)
-                                    .mapNotNull { SerializableAnnotation.parseOrNull(it) }
-                            )
-                        },
+                        name = subName,
+                        fields = sealedOptionFields(optSerializer, optDesc),
                         alternativeNames = subclassDescriptor.getElementAnnotations(index)
                             .filterIsInstance<JsonNames>()
                             .flatMap { it.names.toList() },
