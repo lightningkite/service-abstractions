@@ -30,7 +30,7 @@ import kotlin.uuid.Uuid
 // by Claude - Exception thrown when attempting to use a placeholder serializer for generic type parameters
 public class GenericPlaceholderException(message: String) : Exception(message)
 
-@OptIn(ExperimentalSerializationApi::class)
+@OptIn(ExperimentalSerializationApi::class) // Fake decoder to get the the KSerializer for subclass
 private object StubPolymorphicDecoder : AbstractDecoder() {
     override val serializersModule: SerializersModule = EmptySerializersModule()
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int = CompositeDecoder.DECODE_DONE

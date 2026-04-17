@@ -245,7 +245,7 @@ public data class VirtualStruct(
 public data class VirtualSealedOption(
     val name: String,
     val fields: List<VirtualField> = listOf(),
-    val alternativeNames: List<String> = listOf(),
+    val alternativeNames: List<String> = listOf(), // for migrations such as changing the class name from Dog to Canine
     val annotations: List<SerializableAnnotation> = listOf(),
     val index: Int,
 )
