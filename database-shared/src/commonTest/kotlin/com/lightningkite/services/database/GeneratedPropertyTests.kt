@@ -20,11 +20,7 @@ data class DualTypeParamTestModel<T, Y>(
     val body: String,
     val url: String?,
     val otherValue: String,
-) {
-    @GenerateDataClassPaths
-    @Serializable
-    data class Nested(val value: Int)
-}
+)
 
 @Serializable
 @GenerateDataClassPaths
@@ -35,11 +31,7 @@ data class DualTypeParamTestModelPart2<T, Y>(
     val body: String,
     val url: String?,
     val otherValue: String,
-) {
-    @GenerateDataClassPaths
-    @Serializable
-    data class Nested(val value: Int)
-}
+)
 
 @Serializable
 @JvmInline

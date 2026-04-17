@@ -67,13 +67,24 @@ class TableGenerator(
             .toSet()
     }
 
+    private fun Sequence<KSClassDeclaration>.flattenNestedDeclarations(): Sequence<KSClassDeclaration> = sequence {
+        suspend fun SequenceScope<KSClassDeclaration>.yieldDFS(classes: Sequence<KSClassDeclaration>) {
+            for (declaration in classes) {
+                yield(declaration)
+                yieldDFS(declaration.declarations.filterIsInstance<KSClassDeclaration>())
+            }
+        }
+        yieldDFS(this@flattenNestedDeclarations)
+    }
+
     @OptIn(KspExperimental::class)
     override fun process2(resolver: Resolver, files: Set<KSFile>) {
         if (files.isEmpty()) return
         files
+            .asSequence()
             .flatMap { it.declarations }
             .filterIsInstance<KSClassDeclaration>()
-            .flatMap { sequenceOf(it) + it.declarations.filterIsInstance<KSClassDeclaration>() }
+            .flattenNestedDeclarations()
             .filter { it.needsDcp() }
             .groupBy { it.packageName.asString() }
             .forEach { (packageName, classes) ->
