@@ -196,6 +196,22 @@ private fun Modification<*>.affects(list: List<SerializableProperty<*, *>>): Boo
     }
 }
 
+
+private fun Modification<*>.collectProperties(out: MutableSet<SerializableProperty<*, *>>) {
+    when (this) {
+        is Modification.OnField<*, *> -> {
+            out.add(key)
+            modification.collectProperties(out)
+        }
+
+        is Modification.SetPerElement<*> -> this.modification.affects(list)
+        is Modification.ListPerElement<*> -> this.modification.affects(list)
+        is Modification.Chain -> this.modifications.any { it.affects(list) }
+        is Modification.IfNotNull -> this.modification.affects(list)
+        else -> true
+    }
+}
+
 public fun Condition<*>.reads(path: DataClassPathPartial<*>): Boolean = reads(path.properties)
 private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean {
     return when (this) {

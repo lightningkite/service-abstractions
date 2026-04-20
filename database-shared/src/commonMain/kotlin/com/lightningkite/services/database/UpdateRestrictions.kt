@@ -172,10 +172,7 @@ public data class UpdateRestrictions<T>(
             }
         }
         return when (appliedConditions.size) {
-            0 -> when (mode) {
-                Mode.Whitelist -> Condition.Never
-                Mode.Blacklist -> Condition.Always
-            }
+            0 -> Condition.Always
             1 -> appliedConditions[0]
             else -> Condition.And(appliedConditions)
         }
