@@ -218,9 +218,12 @@ public data class UpdateRestrictions<T>(
      * @param fields Accumulates the field restrictions as they're defined
      */
     public class Builder<T>(
-        public var mode: Mode,
+        mode: Mode,
         public val fields: ArrayList<Part<T>> = ArrayList()
     ) {
+        public var mode: Mode = mode
+            private set
+
         /**
          * Completely blocks modifications to this field.
          *
@@ -291,8 +294,60 @@ public data class UpdateRestrictions<T>(
         }
 
         /**
-         * Makes a field only modifiable if the item matches the [condition].
-         * In addition, the value it is being changed to must match [valueMust].
+         * Restricts what values this field can be changed to, without restricting who can change it.
+         *
+         * The [valueMust] lambda receives a path to the field's value and returns a condition
+         * that the new value must satisfy.
+         *
+         * ## Example
+         * ```kotlin
+         * updateRestrictions<User> { user ->
+         *     // Email must be valid format (simplified example)
+         *     user.email.mustBe { it contains "@" }
+         *
+         *     // Age must be reasonable
+         *     user.age.mustBe { (it gte 0) and (it lt 150) }
+         *
+         *     // Status can only progress forward
+         *     user.status.mustBe { it ne Status.Deleted }
+         *
+         *     // Credits can only increase (never decrease)
+         *     user.credits.mustBe { it gte user.credits }
+         * }
+         * ```
+         *
+         * @param valueMust Lambda that returns a condition the new value must satisfy
+         */
+        public inline fun <reified V> DataClassPath<T, V>.mustBe(valueMust: (DataClassPath<V, V>) -> Condition<V>) {
+            fields.add(Part(property = this, requires = Condition.Always, limitedTo = this.condition(valueMust)))
+        }
+
+        /**
+         * Makes this field only modifiable when [requires] is met, and restricts what values it can be changed to.
+         *
+         * Combines two types of restrictions:
+         * 1. The existing record must match [requires] (checked before update)
+         * 2. The new value must satisfy the condition from [valueMust] after the modification is applied
+         *
+         * ## Example
+         * ```kotlin
+         * updateRestrictions<User> { user ->
+         *     // Admins can change credits, but only to positive values
+         *     user.credits.requires(
+         *         requires = user.role eq Role.Admin,
+         *         valueMust = { it gt 0 }
+         *     )
+         *
+         *     // Moderators can change status, but not to Admin
+         *     user.role.requires(
+         *         requires = user.role eq Role.Moderator,
+         *         valueMust = { it ne Role.Admin }
+         *     )
+         * }
+         * ```
+         *
+         * @param requires Condition on the existing record
+         * @param valueMust Lambda that returns a condition the new value must satisfy
          */
         public inline fun <reified V> DataClassPath<T, V>.requires(
             requires: Condition<T>,
@@ -302,25 +357,13 @@ public data class UpdateRestrictions<T>(
         }
 
         /**
-         * The value is only allowed to change to a value that matches [valueMust].
-         */
-        public inline fun <reified V> DataClassPath<T, V>.mustBe(valueMust: (DataClassPath<V, V>) -> Condition<V>) {
-            fields.add(Part(property = this, requires = Condition.Always, limitedTo = this.condition(valueMust)))
-        }
-
-        /**
-         * Builds the final [UpdateRestrictions] instance with all configured rules.
-         */
-        public fun build(): UpdateRestrictions<T> = UpdateRestrictions(mode, fields)
-
-        /**
          * Includes all restrictions from another [UpdateRestrictions] instance into this builder.
          *
          * This is useful for composing restrictions from multiple sources or layering
          * base restrictions with additional rules.
          *
-         * **Important**: The included restrictions must have the same [mode] as this builder,
-         * otherwise an [IllegalArgumentException] is thrown.
+         * **Important**: If the included [mask] is in a different [Mode], this builder will
+         * be put into the most restrictive mode specified (i.e. [Mode.Whitelist])
          *
          * ## Example
          * ```kotlin
@@ -345,6 +388,8 @@ public data class UpdateRestrictions<T>(
             mode = maxOf(mode, mask.mode)
             fields.addAll(mask.fields)
         }
+
+        public fun build(): UpdateRestrictions<T> = UpdateRestrictions(mode, fields)
     }
 }
 
@@ -422,16 +467,92 @@ public inline fun <reified T> updateRestrictions(
     return UpdateRestrictions.Builder<T>(mode).apply { builder(path<T>()) }.build()
 }
 
+/**
+ * Convenience function for creating blacklist-mode [UpdateRestrictions].
+ *
+ * This is equivalent to calling `updateRestrictions(mode = UpdateRestrictions.Mode.Blacklist)`.
+ * In blacklist mode, all fields are allowed by default unless explicitly restricted.
+ *
+ * ## Example
+ * ```kotlin
+ * val restrictions = blacklistRestrictions<User> { user ->
+ *     user._id.cannotBeModified()
+ *     user.role requires (user.role eq Role.Admin)
+ * }
+ * ```
+ *
+ * @param T The data class type being restricted
+ * @param builder Lambda to configure field restrictions
+ * @return [UpdateRestrictions] in blacklist mode
+ * @see updateRestrictions
+ */
 public inline fun <reified T> blacklistRestrictions(
     builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
 ): UpdateRestrictions<T> =
     updateRestrictions(UpdateRestrictions.Mode.Blacklist, builder)
 
+/**
+ * Convenience function for creating whitelist-mode [UpdateRestrictions].
+ *
+ * This is equivalent to calling `updateRestrictions(mode = UpdateRestrictions.Mode.Whitelist)`.
+ * In whitelist mode, all fields are blocked by default unless explicitly allowed.
+ *
+ * ## Example
+ * ```kotlin
+ * val restrictions = whitelistRestrictions<User> { user ->
+ *     user.email.canBeModified()
+ *     user.username.canBeModified()
+ *     // All other fields are blocked
+ * }
+ * ```
+ *
+ * @param T The data class type being restricted
+ * @param builder Lambda to configure field restrictions
+ * @return [UpdateRestrictions] in whitelist mode
+ * @see updateRestrictions
+ */
 public inline fun <reified T> whitelistRestrictions(
     builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
 ): UpdateRestrictions<T> =
     updateRestrictions(UpdateRestrictions.Mode.Whitelist, builder)
 
+/**
+ * Creates a copy of these [ModelPermissions] with additional update restrictions layered on top.
+ *
+ * This extension function allows you to build upon existing restrictions without replacing them.
+ * The new restrictions are added using the same [UpdateRestrictions.Mode] as the original.
+ *
+ * ## Usage
+ *
+ * This is particularly useful for:
+ * - Adding context-specific restrictions to base permissions
+ * - Layering user-specific constraints on top of role-based permissions
+ * - Temporarily tightening permissions for specific operations
+ *
+ * ## Example
+ * ```kotlin
+ * val basePermissions = ModelPermissions<User>(
+ *     read = Condition.Always,
+ *     update = User.path.role eq Role.Admin,
+ *     updateRestrictions = updateRestrictions {
+ *         it._id.cannotBeModified()
+ *     }
+ * )
+ *
+ * // Add additional restrictions for a specific context
+ * val restrictedPermissions = basePermissions.withAdditionalUpdateRestrictions { user ->
+ *     // Now also prevent modifying creation date
+ *     user.createdAt.cannotBeModified()
+ *     // And require approval for role changes
+ *     user.role requires (user.approvedBy ne null)
+ * }
+ * // Result has both original restrictions (_id) AND new ones (createdAt, role)
+ * ```
+ *
+ * @param T The model type
+ * @param builder Lambda to configure additional field restrictions
+ * @return New [ModelPermissions] with combined restrictions
+ */
 public inline fun <reified T> ModelPermissions<T>.withAdditionalUpdateRestrictions(
     builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
 ): ModelPermissions<T> =
