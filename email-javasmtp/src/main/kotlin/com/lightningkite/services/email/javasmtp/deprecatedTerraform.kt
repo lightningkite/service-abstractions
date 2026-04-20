@@ -173,7 +173,7 @@ public object SesSharedResources {
  *
  * @param sesDomainName The name used when calling [awsSesDomain]. Resources will reference this.
  */
-@Deprecated
+@Deprecated("Use the version with the sesDomainConfiguration parameter instead")
 context(emitter: TerraformEmitterAwsDomain)
 public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
     sesDomainName: String,

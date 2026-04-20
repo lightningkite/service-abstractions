@@ -201,7 +201,7 @@ class TableGenerator(
                                         }
                                         val serPropName = "field$propName"
 
-                                        val prefix = declaration.safeLocalReference().camelCase()
+                                        val prefix = declaration.safeLocalReference().camelCase().replace('.', '_')
 
                                         appendInlinePropertyAnnotation()
                                         appendLine(
