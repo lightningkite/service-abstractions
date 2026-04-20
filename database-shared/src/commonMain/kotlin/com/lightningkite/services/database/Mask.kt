@@ -196,6 +196,22 @@ private fun Modification<*>.affects(list: List<SerializableProperty<*, *>>): Boo
     }
 }
 
+public fun Modification<*>.affectsPaths(): List<List<SerializableProperty<*, *>>> =
+    when (this) {
+        is Modification.OnField<*, *> -> {
+            val path = listOf(key)
+            val downstream = modification.affectsPaths()
+
+            if (downstream.isEmpty()) listOf(path)
+            else downstream.map { path + it }
+        }
+        is Modification.SetPerElement<*> -> this.modification.affectsPaths()
+        is Modification.ListPerElement<*> -> this.modification.affectsPaths()
+        is Modification.Chain -> this.modifications.flatMap { it.affectsPaths() }
+        is Modification.IfNotNull -> this.modification.affectsPaths()
+        else -> emptyList()
+    }
+
 public fun Condition<*>.reads(path: DataClassPathPartial<*>): Boolean = reads(path.properties)
 private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean {
     return when (this) {

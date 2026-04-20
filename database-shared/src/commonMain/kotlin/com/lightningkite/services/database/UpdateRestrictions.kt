@@ -81,10 +81,10 @@ public data class UpdateRestrictions<T>(
      */
     @Serializable
     public enum class Mode {
+        /** All fields can be modified except explicitly restricted ones */
+        Blacklist,
         /** Only explicitly allowed fields can be modified */
         Whitelist,
-        /** All fields can be modified except explicitly restricted ones */
-        Blacklist
     }
 
     /**
@@ -162,22 +162,45 @@ public data class UpdateRestrictions<T>(
      * @return The condition that must be met for this modification to be allowed
      */
     public operator fun invoke(on: Modification<T>): Condition<T> {
-        val appliedConditions = ArrayList<Condition<T>>()
-        for (field in fields) {
-            if (on.affects(field.property)) {
-                appliedConditions.add(field.requires)
-                if (field.limitedTo != Condition.Always) {
-                    if (!field.limitedTo.guaranteedAfter(on)) return Condition.Never
+        val appliedConditions = LinkedHashSet<Condition<T>>()
+
+        when (mode) {
+            Mode.Blacklist -> {
+                for (field in fields) {
+                    if (on.affects(field.property)) {
+                        if (field.limitedTo != Condition.Always) {
+                            if (!field.limitedTo.guaranteedAfter(on)) return Condition.Never
+                        }
+                        appliedConditions.add(field.requires)
+                    }
+                }
+            }
+            Mode.Whitelist -> {
+                for (path in on.affectsPaths()) {
+                    val affected = fields.filter { field ->
+                        field.property.properties.zip(path).all { it.first == it.second }
+                    }
+                    // whitelist mode - the modification is affecting a path that is unspecified: block it
+                    if (affected.isEmpty()) return Condition.Never
+                    for (field in affected) {
+                        if (field.limitedTo != Condition.Always) {
+                            if (!field.limitedTo.guaranteedAfter(on)) return Condition.Never
+                        }
+                        appliedConditions.add(field.requires)
+                    }
                 }
             }
         }
-        return when (appliedConditions.size) {
+
+        val distinct = appliedConditions.toList()
+
+        return when (distinct.size) {
             0 -> when (mode) {
                 Mode.Whitelist -> Condition.Never
                 Mode.Blacklist -> Condition.Always
             }
-            1 -> appliedConditions[0]
-            else -> Condition.And(appliedConditions)
+            1 -> distinct[0]
+            else -> Condition.And(distinct)
         }
     }
 
@@ -319,7 +342,7 @@ public data class UpdateRestrictions<T>(
          * @throws IllegalArgumentException if [mask] has a different mode than this builder
          */
         public fun include(mask: UpdateRestrictions<T>) {
-            mode = minOf(mode, mask.mode)
+            mode = maxOf(mode, mask.mode)
             fields.addAll(mask.fields)
         }
     }
@@ -398,6 +421,26 @@ public inline fun <reified T> updateRestrictions(
 ): UpdateRestrictions<T> {
     return UpdateRestrictions.Builder<T>(mode).apply { builder(path<T>()) }.build()
 }
+
+public inline fun <reified T> blacklistRestrictions(
+    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
+): UpdateRestrictions<T> =
+    updateRestrictions(UpdateRestrictions.Mode.Blacklist, builder)
+
+public inline fun <reified T> whitelistRestrictions(
+    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
+): UpdateRestrictions<T> =
+    updateRestrictions(UpdateRestrictions.Mode.Whitelist, builder)
+
+public inline fun <reified T> ModelPermissions<T>.withAdditionalUpdateRestrictions(
+    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
+): ModelPermissions<T> =
+    copy(
+        updateRestrictions = updateRestrictions(this.updateRestrictions.mode) {
+            include(updateRestrictions)
+            builder(it)
+        }
+    )
 
 @Deprecated("Renamed", ReplaceWith("UpdateRestrictions.Part"))
 public typealias UpdateRestrictionsPart<T> = UpdateRestrictions.Part<T>
