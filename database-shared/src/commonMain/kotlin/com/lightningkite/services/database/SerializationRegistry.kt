@@ -12,8 +12,12 @@ import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.json.JsonNames
+import kotlinx.serialization.encoding.AbstractDecoder
+import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.internal.AbstractPolymorphicSerializer
 import kotlinx.serialization.internal.GeneratedSerializer
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
@@ -25,6 +29,22 @@ import kotlin.uuid.Uuid
 
 // by Claude - Exception thrown when attempting to use a placeholder serializer for generic type parameters
 public class GenericPlaceholderException(message: String) : Exception(message)
+
+// Fake decoder used to extract subclass serializers from AbstractPolymorphicSerializer.
+// For sealed classes, findPolymorphicSerializerOrNull does a plain map lookup by name
+// and does not actually use the decoder, so any stub works.
+@OptIn(ExperimentalSerializationApi::class)
+internal object StubPolymorphicDecoder : AbstractDecoder() {
+    override val serializersModule: SerializersModule = EmptySerializersModule()
+    override fun decodeElementIndex(descriptor: SerialDescriptor): Int = CompositeDecoder.DECODE_DONE
+}
+
+@OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
+private fun sealedSubSerializer(value: KSerializer<*>, subName: String): KSerializer<*>? {
+    val poly = value as? AbstractPolymorphicSerializer<*> ?: return null
+    @Suppress("UNCHECKED_CAST")
+    return poly.findPolymorphicSerializerOrNull(StubPolymorphicDecoder, subName) as? KSerializer<*>
+}
 
 @OptIn(ExperimentalSerializationApi::class)
 public class SerializationRegistry(public val module: SerializersModule) {
@@ -100,8 +120,10 @@ public class SerializationRegistry(public val module: SerializersModule) {
         internalVirtualTypes[type.serialName] = type
         when (type) {
             is VirtualEnum -> direct[type.serialName] = type
-            is VirtualStruct -> if (type.parameters.isEmpty()) direct[type.serialName] = type.Concrete(this, arrayOf())
-            else factory[type.serialName] = { type.serializer(this, it) }
+            is VirtualStruct -> if (type.parameters.isEmpty()) direct[type.serialName] = type.Concrete(this, arrayOf()) else factory[type.serialName] = { type.serializer(this, it) }
+            is VirtualSealed -> if (type.parameters.isEmpty()) direct[type.serialName] = type.Concrete(this, arrayOf()) else factory[type.serialName] = { type.serializer(this, it) }
+
+
 
             else -> factory[type.serialName] = { type.serializer(this, it) }
         }
@@ -288,6 +310,8 @@ public class SerializationRegistry(public val module: SerializersModule) {
         register(com.lightningkite.services.database.VirtualAlias.serializer())
         register(com.lightningkite.services.database.VirtualTypeParameter.serializer())
         register(com.lightningkite.services.database.VirtualStruct.serializer())
+        register(VirtualSealed.serializer())
+        register(VirtualSealedOption.serializer())
         register(com.lightningkite.services.database.VirtualEnum.serializer())
         register(com.lightningkite.services.database.VirtualEnumOption.serializer())
         register(com.lightningkite.services.database.VirtualField.serializer())
@@ -334,7 +358,15 @@ public class SerializationRegistry(public val module: SerializersModule) {
         try {
             type.nullElement()?.let { return registerVirtualDeep(it) }
             if (registerVirtual(type) != null) {
-                type.childSerializersOrNull()?.forEach { registerVirtualDeep(it) }
+                if (type.descriptor.kind == PolymorphicKind.SEALED) {
+                    // Subclasses are registered as independent VirtualStructs, so recurse into each.
+                    val subDesc = type.descriptor.getElementDescriptor(1)
+                    (0 until subDesc.elementsCount).forEach { i ->
+                        sealedSubSerializer(type, subDesc.getElementName(i))?.let { registerVirtualDeep(it) }
+                    }
+                } else {
+                    type.childSerializersOrNull()?.forEach { registerVirtualDeep(it) }
+                }
             }
             type.typeParametersSerializersOrNull()?.forEach { registerVirtualDeep(it) }
             if (type.descriptor.kind == SerialKind.CONTEXTUAL && permitCustomContextual) {
@@ -384,12 +416,38 @@ public class SerializationRegistry(public val module: SerializersModule) {
         return new
     }
 
-    @OptIn(InternalSerializationApi::class)
+    @OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
     private fun registerVirtualWithoutTypeParameters(
         value: KSerializer<*>
     ): VirtualType? {
         val kind = value.descriptor.kind
+
         return when (kind) {
+            PolymorphicKind.SEALED -> {
+                // Descriptor layout: [0]="type" discriminator, [1]=composite of subclasses
+                val subDesc = value.descriptor.getElementDescriptor(1)
+                val options = (0 until subDesc.elementsCount).map { index ->
+                    val subName = subDesc.getElementName(index)
+                    val optSerializer = sealedSubSerializer(value, subName)
+                        ?: throw SerializationException("Cannot find serializer for sealed subclass '$subName'")
+                    VirtualSealedOption(
+                        name = subName,
+                        secondaryNames = subDesc.getElementAnnotations(index)
+                            .filterIsInstance<JsonNames>()
+                            .flatMap { it.names.toList() }
+                            .toSet(),
+                        type = optSerializer.virtualTypeReference(this),
+                        index = index
+                    )
+                }
+                register(VirtualSealed(
+                    serialName = value.descriptor.serialName,
+                    annotations = value.descriptor.annotations.mapNotNull { SerializableAnnotation.parseOrNull(it) },
+                    options = options,
+                    parameters = listOf()
+                ))
+            }
+
             StructureKind.CLASS -> if (value.descriptor.isInline && value.descriptor.getElementDescriptor(0).kind is PrimitiveKind) {
                 (value as? GeneratedSerializer<*>)?.childSerializers()?.getOrNull(0)?.let { inner ->
                     register(
@@ -429,7 +487,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                         )
                     )
                 }
-            } else register(
+            }else register(
                 VirtualStruct(
                     serialName = value.descriptor.serialName,
                     annotations = value.descriptor.annotations.mapNotNull {
@@ -531,7 +589,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
         }
     }
 
-    @OptIn(InternalSerializationApi::class)
+    @OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
     private fun registerVirtualWithTypeParameters(
         key: String,
         generator: (Array<KSerializer<*>>) -> KSerializer<*>
@@ -539,7 +597,34 @@ public class SerializationRegistry(public val module: SerializersModule) {
         val generics = Array(10) { GenericPlaceholderSerializer(key, it) }
         val value = generator(generics.map { it }.toTypedArray())
         val kind = value.descriptor.kind
+
         return when (kind) {
+            PolymorphicKind.SEALED -> {
+                val subDesc = value.descriptor.getElementDescriptor(1)
+                val options = (0 until subDesc.elementsCount).map { index ->
+                    val subName = subDesc.getElementName(index)
+                    val optSerializer = sealedSubSerializer(value, subName)
+                        ?: throw SerializationException("Cannot find serializer for sealed subclass '$subName'")
+                    VirtualSealedOption(
+                        name = subName,
+                        secondaryNames = subDesc.getElementAnnotations(index)
+                            .filterIsInstance<JsonNames>()
+                            .flatMap { it.names.toList() }
+                            .toSet(),
+                        type = optSerializer.virtualTypeReference(this),
+                        index = index
+                    )
+                }
+                register(VirtualSealed(
+                    serialName = value.descriptor.serialName,
+                    annotations = value.descriptor.annotations.mapNotNull { SerializableAnnotation.parseOrNull(it) },
+                    options = options,
+                    parameters = generics.toList().dropLastWhile { !it.used }.map {
+                        VirtualTypeParameter(name = it.descriptor.serialName)
+                    }.toList()
+                ))
+            }
+
             StructureKind.CLASS -> {
                 if (value.descriptor.isInline && value.descriptor.getElementDescriptor(0).kind is PrimitiveKind) {
                     (value as? GeneratedSerializer<*>)?.childSerializers()?.getOrNull(0)?.let { inner ->
