@@ -1,91 +1,10 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.Untested
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-@Deprecated("Deprecated by Atlas")
-@Untested
-context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasServerless(
-    orgId: String,
-    continuousBackupEnabled: Boolean,
-    existingProjectId: String? = null,
-): Unit {
-    if (!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
-    val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
-    val userName = "$projectName-main"
-    emitter.fulfillSetting(
-        name, JsonPrimitive(
-            value = $$"""
-        mongodb+srv://$$userName:${random_password.$$name.result}@${replace(resource.mongodbatlas_serverless_instance.$$name.connection_strings_standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent()
-        )
-    )
-    emptyList<TerraformProvider>().forEach { emitter.require(it) }
-    setOf(TerraformProviderImport.mongodbAtlas).forEach { emitter.require(it) }
-    emitter.emit(name) {
-        val region1 = emitter.applicationRegion.uppercase().replace("-", "_")
-        val projectId1 = if (existingProjectId == null) {
-            "resource.mongodbatlas_project.${name}" {
-                "name" - "$projectName"
-                "org_id" - orgId
-                "is_collect_database_specifics_statistics_enabled" - true
-                "is_data_explorer_enabled" - true
-                "is_performance_advisor_enabled" - true
-                "is_realtime_performance_panel_enabled" - true
-                "is_schema_advisor_enabled" - true
-            }
-            expression("mongodbatlas_project.${name}.id")
-        } else existingProjectId
-        "resource.random_password.${name}" {
-            "length" - 32
-            "special" - true
-            "override_special" - "-_"
-        }
-        "resource.mongodbatlas_serverless_instance.${name}" {
-            "project_id" - projectId1
-            "name" - "$projectName"
-
-            "provider_settings_backing_provider_name" - "AWS"
-            "provider_settings_provider_name" - "SERVERLESS"
-            "provider_settings_region_name" - region1
-
-            "continuous_backup_enabled" - continuousBackupEnabled
-        }
-        "resource.mongodbatlas_database_user.${name}" {
-            "username" - userName
-            "password" - expression("random_password.${name}.result")
-            "project_id" - expression("mongodbatlas_project.${name}.id")
-            "auth_database_name" - "admin"
-
-            "roles" - listOf<JsonObject>(
-                terraformJsonObject {
-                    "role_name" - "readWrite"
-                    "database_name" - "default"
-                },
-                terraformJsonObject {
-                    "role_name" - "readAnyDatabase"
-                    "database_name" - "admin"
-                }
-            )
-        }
-        (emitter as? TerraformEmitterKnownIpAddresses)?.let<TerraformEmitterKnownIpAddresses, Unit> { emitter ->
-            "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id" - projectId1
-                "cidr_block" - $$"${element($${emitter.applicationIpAddresses},0)}/32"
-                "comment" - "Main Compute"
-            }
-        } ?: run {
-            "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id" - projectId1
-                "cidr_block" - "0.0.0.0/0"
-                "comment" - "Anywhere"
-            }
-        }
-    }
-}
 
 context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.mongodbAtlas(
@@ -189,23 +108,16 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
         (emitter as? TerraformEmitterAwsVpc)?.let { emitter ->
             val atlasCidr = "192.168.248.0/21"
             val cidr = emitter.applicationVpc.cidr
-            // MongoDB ATLAS Network Container - View Highlighted section below.
-            "resource.mongodbatlas_network_container.atlas_network_container" {
-                "project_id" - projectId
-                "atlas_cidr_block" - atlasCidr
-                "provider_name" - "AWS"
-                "region_name" - region
-            }
             // MongoDB ATLAS VPC Peer Conf
-            "data.aws_caller_identity.current" {}
+            "data.aws_caller_identity.${this@mongodbAtlas.name}_current" {}
             "resource.mongodbatlas_network_peering.atlas_network_peering" {
                 "accepter_region_name" - region.lowercase().replace("_", "-")
                 "project_id" - projectId
-                "container_id" - expression("mongodbatlas_network_container.atlas_network_container.container_id")
+                "container_id" - expression("one(values(mongodbatlas_advanced_cluster.${name}.replication_specs[0].container_id))")
                 "provider_name" - "AWS"
                 "route_table_cidr_block" - cidr
                 "vpc_id" - expression(emitter.applicationVpc.id)
-                "aws_account_id" - expression("data.aws_caller_identity.current.account_id")
+                "aws_account_id" - expression("data.aws_caller_identity.${this@mongodbAtlas.name}_current.account_id")
             }
             // IP Whitelist on ATLAS side
             // # UPDATE - MongoDB ATLAS provider 1.0.0 made mongodbatlas_project_ip_whitelist resource and replaced with mongodbatlas_project_ip_access_list
@@ -233,6 +145,15 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                 "route_table_id" - expression("data.aws_route_table.application_subnets_route_table.id")
                 "destination_cidr_block" - atlasCidr
                 "vpc_peering_connection_id" - expression("data.aws_vpc_peering_connection.vpc_peering_conn_ds.id")
+            }
+            "resource.aws_vpc_security_group_egress_rule" {
+                "atlas" {
+                    "cidr_ipv4" - "192.168.248.0/21"
+                    "security_group_id" - expression(emitter.applicationVpc.securityGroup)
+                    "ip_protocol" - "tcp"
+                    "from_port" - 27015
+                    "to_port" - 27017
+                }
             }
         } ?: (emitter as? TerraformEmitterKnownIpAddresses)?.let { emitter ->
             "resource.mongodbatlas_project_ip_access_list.database" {
@@ -350,8 +271,6 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
     }
 }
 
-
-@Untested
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
     orgId: String,
     atlasSearch: Boolean = true,
