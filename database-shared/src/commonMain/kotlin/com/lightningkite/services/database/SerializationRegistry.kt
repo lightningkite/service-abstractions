@@ -30,51 +30,13 @@ import kotlin.uuid.Uuid
 // by Claude - Exception thrown when attempting to use a placeholder serializer for generic type parameters
 public class GenericPlaceholderException(message: String) : Exception(message)
 
-@OptIn(ExperimentalSerializationApi::class) // Fake decoder to get the the KSerializer for subclass
-private object StubPolymorphicDecoder : AbstractDecoder() {
+// Fake decoder used to extract subclass serializers from AbstractPolymorphicSerializer.
+// For sealed classes, findPolymorphicSerializerOrNull does a plain map lookup by name
+// and does not actually use the decoder, so any stub works.
+@OptIn(ExperimentalSerializationApi::class)
+internal object StubPolymorphicDecoder : AbstractDecoder() {
     override val serializersModule: SerializersModule = EmptySerializersModule()
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int = CompositeDecoder.DECODE_DONE
-}
-
-@OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
-private fun SerializationRegistry.sealedOptionFields(
-    optSerializer: KSerializer<*>?,
-    optDesc: SerialDescriptor,
-): List<VirtualField> {
-    val props = optSerializer?.serializableProperties
-    if (props != null) {
-        return props.mapIndexed { index, it ->
-            VirtualField(
-                index = index,
-                name = it.name,
-                type = it.serializer.virtualTypeReference(this),
-                optional = it.defaultCode != null,
-                annotations = it.serializableAnnotations,
-                defaultJson = it.default?.let { default ->
-                    @Suppress("UNCHECKED_CAST")
-                    DefaultDecoder.json.encodeToString(it.serializer as KSerializer<Any?>, default)
-                },
-                defaultCode = it.defaultCode,
-            )
-        }
-    }
-    val gen = (optSerializer as? GeneratedSerializer<*>)?.childSerializers()
-    return (0 until optDesc.elementsCount).map { fi ->
-        val childSerializer = gen?.getOrNull(fi)
-        val type = childSerializer?.virtualTypeReference(this) ?: VirtualTypeReference(
-            serialName = optDesc.getElementDescriptor(fi).nonNullOriginal.serialName,
-            arguments = listOf(),
-            isNullable = optDesc.getElementDescriptor(fi).isNullable
-        )
-        VirtualField(
-            index = fi,
-            name = optDesc.getElementName(fi),
-            type = type,
-            optional = optDesc.isElementOptional(fi),
-            annotations = optDesc.getElementAnnotations(fi)
-                .mapNotNull { SerializableAnnotation.parseOrNull(it) }
-        )
-    }
 }
 
 @OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
@@ -396,9 +358,13 @@ public class SerializationRegistry(public val module: SerializersModule) {
         try {
             type.nullElement()?.let { return registerVirtualDeep(it) }
             if (registerVirtual(type) != null) {
-                // For sealed classes, don't recurse via childSerializersOrNull — subclasses are
-                // embedded in the VirtualSealed options, not registered as separate VirtualStructs.
-                if (type !is MySealedClassSerializerInterface<*>) {
+                if (type.descriptor.kind == PolymorphicKind.SEALED) {
+                    // Subclasses are registered as independent VirtualStructs, so recurse into each.
+                    val subDesc = type.descriptor.getElementDescriptor(1)
+                    (0 until subDesc.elementsCount).forEach { i ->
+                        sealedSubSerializer(type, subDesc.getElementName(i))?.let { registerVirtualDeep(it) }
+                    }
+                } else {
                     type.childSerializersOrNull()?.forEach { registerVirtualDeep(it) }
                 }
             }
@@ -456,73 +422,30 @@ public class SerializationRegistry(public val module: SerializersModule) {
     ): VirtualType? {
         val kind = value.descriptor.kind
 
-        // Handle sealed classes serialized via MySealedClassSerializer
-        if (value is MySealedClassSerializerInterface<*>) {
-            val optionsWithFields = value.options.mapIndexed { index, opt ->
-                val optDesc = opt.serializer.descriptor
-                VirtualSealedOption(
-                    name = optDesc.serialName,
-                    fields = sealedOptionFields(opt.serializer, optDesc),
-                    alternativeNames = opt.alternativeNames.toList(),
-                    annotations = opt.annotations.mapNotNull { SerializableAnnotation.parseOrNull(it) },
-                    index = index
-                )
-            }
-            val sharedFields = if (optionsWithFields.isNotEmpty()) {
-                optionsWithFields.first().fields.filter { field ->
-                    optionsWithFields.all { opt -> opt.fields.any { it.name == field.name && it.type == field.type } }
-                }
-            } else listOf()
-            return register(
-                VirtualSealed(
-                    serialName = value.descriptor.serialName,
-                    annotations = value.descriptor.annotations.mapNotNull {
-                        SerializableAnnotation.parseOrNull(it)
-                    },
-                    fields = sharedFields,
-                    options = optionsWithFields,
-                    parameters = listOf()
-                )
-            )
-        }
-
         return when (kind) {
             PolymorphicKind.SEALED -> {
-                // Built-in SealedClassSerializer descriptor has 2 elements:
-                // [0] "type" (discriminator string), [1] "value" (polymorphic descriptor containing subclass entries)
-                val subclassDescriptor = value.descriptor.getElementDescriptor(1)
-                val optionsWithFields = (0 until subclassDescriptor.elementsCount).map { index ->
-                    val optDesc = subclassDescriptor.getElementDescriptor(index)
-                    val subName = subclassDescriptor.getElementName(index)
+                // Descriptor layout: [0]="type" discriminator, [1]=composite of subclasses
+                val subDesc = value.descriptor.getElementDescriptor(1)
+                val options = (0 until subDesc.elementsCount).map { index ->
+                    val subName = subDesc.getElementName(index)
                     val optSerializer = sealedSubSerializer(value, subName)
+                        ?: throw SerializationException("Cannot find serializer for sealed subclass '$subName'")
                     VirtualSealedOption(
                         name = subName,
-                        fields = sealedOptionFields(optSerializer, optDesc),
-                        alternativeNames = subclassDescriptor.getElementAnnotations(index)
+                        secondaryNames = subDesc.getElementAnnotations(index)
                             .filterIsInstance<JsonNames>()
-                            .flatMap { it.names.toList() },
-                        annotations = subclassDescriptor.getElementAnnotations(index)
-                            .mapNotNull { SerializableAnnotation.parseOrNull(it) },
+                            .flatMap { it.names.toList() }
+                            .toSet(),
+                        type = optSerializer.virtualTypeReference(this),
                         index = index
                     )
                 }
-                // Abstract fields: fields present in ALL options with the same name and type
-                val sharedFields = if (optionsWithFields.isNotEmpty()) {
-                    optionsWithFields.first().fields.filter { field ->
-                        optionsWithFields.all { opt -> opt.fields.any { it.name == field.name && it.type == field.type } }
-                    }
-                } else listOf()
-                register(
-                    VirtualSealed(
-                        serialName = value.descriptor.serialName,
-                        annotations = value.descriptor.annotations.mapNotNull {
-                            SerializableAnnotation.parseOrNull(it)
-                        },
-                        fields = sharedFields,
-                        options = optionsWithFields,
-                        parameters = listOf()
-                    )
-                )
+                register(VirtualSealed(
+                    serialName = value.descriptor.serialName,
+                    annotations = value.descriptor.annotations.mapNotNull { SerializableAnnotation.parseOrNull(it) },
+                    options = options,
+                    parameters = listOf()
+                ))
             }
 
             StructureKind.CLASS -> if (value.descriptor.isInline && value.descriptor.getElementDescriptor(0).kind is PrimitiveKind) {
@@ -675,76 +598,31 @@ public class SerializationRegistry(public val module: SerializersModule) {
         val value = generator(generics.map { it }.toTypedArray())
         val kind = value.descriptor.kind
 
-        // Handle sealed classes serialized via MySealedClassSerializer
-        if (value is MySealedClassSerializerInterface<*>) {
-            val optionsWithFields = value.options.mapIndexed { index, opt ->
-                val optDesc = opt.serializer.descriptor
-                VirtualSealedOption(
-                    name = optDesc.serialName,
-                    fields = sealedOptionFields(opt.serializer, optDesc),
-                    alternativeNames = opt.alternativeNames.toList(),
-                    annotations = opt.annotations.mapNotNull { SerializableAnnotation.parseOrNull(it) },
-                    index = index
-                )
-            }
-            val sharedFields = if (optionsWithFields.isNotEmpty()) {
-                optionsWithFields.first().fields.filter { field ->
-                    optionsWithFields.all { opt -> opt.fields.any { it.name == field.name && it.type == field.type } }
-                }
-            } else listOf()
-            return register(
-                VirtualSealed(
-                    serialName = value.descriptor.serialName,
-                    annotations = value.descriptor.annotations.mapNotNull {
-                        SerializableAnnotation.parseOrNull(it)
-                    },
-                    fields = sharedFields,
-                    options = optionsWithFields,
-                    parameters = generics.toList().dropLastWhile { !it.used }.map {
-                        VirtualTypeParameter(name = it.descriptor.serialName)
-                    }.toList()
-                )
-            )
-        }
-
         return when (kind) {
             PolymorphicKind.SEALED -> {
-                // Built-in SealedClassSerializer descriptor has 2 elements:
-                // [0] "type" (discriminator string), [1] "value" (polymorphic descriptor containing subclass entries)
-                val subclassDescriptor = value.descriptor.getElementDescriptor(1)
-                val optionsWithFields = (0 until subclassDescriptor.elementsCount).map { index ->
-                    val optDesc = subclassDescriptor.getElementDescriptor(index)
-                    val subName = subclassDescriptor.getElementName(index)
+                val subDesc = value.descriptor.getElementDescriptor(1)
+                val options = (0 until subDesc.elementsCount).map { index ->
+                    val subName = subDesc.getElementName(index)
                     val optSerializer = sealedSubSerializer(value, subName)
+                        ?: throw SerializationException("Cannot find serializer for sealed subclass '$subName'")
                     VirtualSealedOption(
                         name = subName,
-                        fields = sealedOptionFields(optSerializer, optDesc),
-                        alternativeNames = subclassDescriptor.getElementAnnotations(index)
+                        secondaryNames = subDesc.getElementAnnotations(index)
                             .filterIsInstance<JsonNames>()
-                            .flatMap { it.names.toList() },
-                        annotations = subclassDescriptor.getElementAnnotations(index)
-                            .mapNotNull { SerializableAnnotation.parseOrNull(it) },
+                            .flatMap { it.names.toList() }
+                            .toSet(),
+                        type = optSerializer.virtualTypeReference(this),
                         index = index
                     )
                 }
-                val sharedFields = if (optionsWithFields.isNotEmpty()) {
-                    optionsWithFields.first().fields.filter { field ->
-                        optionsWithFields.all { opt -> opt.fields.any { it.name == field.name && it.type == field.type } }
-                    }
-                } else listOf()
-                register(
-                    VirtualSealed(
-                        serialName = value.descriptor.serialName,
-                        annotations = value.descriptor.annotations.mapNotNull {
-                            SerializableAnnotation.parseOrNull(it)
-                        },
-                        fields = sharedFields,
-                        options = optionsWithFields,
-                        parameters = generics.toList().dropLastWhile { !it.used }.map {
-                            VirtualTypeParameter(name = it.descriptor.serialName)
-                        }.toList()
-                    )
-                )
+                register(VirtualSealed(
+                    serialName = value.descriptor.serialName,
+                    annotations = value.descriptor.annotations.mapNotNull { SerializableAnnotation.parseOrNull(it) },
+                    options = options,
+                    parameters = generics.toList().dropLastWhile { !it.used }.map {
+                        VirtualTypeParameter(name = it.descriptor.serialName)
+                    }.toList()
+                ))
             }
 
             StructureKind.CLASS -> {
