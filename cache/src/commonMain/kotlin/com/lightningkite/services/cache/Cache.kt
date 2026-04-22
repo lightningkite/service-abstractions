@@ -188,9 +188,7 @@ public interface Cache : Service {
     public suspend fun add(key: String, value: Long, timeToLive: Duration? = null): Long
 
     /**
-     * Convenience wrapper that converts [value] into a `Long` before incrementing.
-     *
-     * Atomically increments a numeric value in the cache.
+     * Atomically increments a numeric value in the cache (using `Int` instead of `Long`).
      *
      * - If the key doesn't exist, it's created with the given value.
      * - If the key exists and is a numeric type, it will succeed, but the resultant stored value is implementation specific.
@@ -204,7 +202,7 @@ public interface Cache : Service {
      *
      * @return The updated value *after* incrementing, and truncated if the stored value is a float-type
      */
-    public suspend fun add(key: String, value: Int, timeToLive: Duration? = null): Long = add(key, value.toLong(), timeToLive)
+    public suspend fun add(key: String, value: Int, timeToLive: Duration? = null): Int = add(key, value.toLong(), timeToLive).toInt()
 
     /**
      * Removes a key from the cache.

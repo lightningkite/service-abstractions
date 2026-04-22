@@ -66,7 +66,8 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
         }
     }
 
-    actual override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
+
+    private suspend fun add(key: String, value: Long, default: Number, timeToLive: Duration?): Number {
         assertValidTtl(timeToLive)
         return instrumentedAdd(context, key, value, timeToLive) {
             mutex.withLock {
@@ -78,13 +79,19 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
                     is Long -> (current + value)
                     is Float -> (current + value)
                     is Double -> (current + value)
-                    else -> value
+                    else -> default
                 }
                 entries[key] = Entry(new, timeToLive?.let { Clock.default().now() + it })
-                new.toLong()
+                new
             }
         }
     }
+
+    actual override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
+        add(key, value, default = value, timeToLive).toLong()
+
+    actual override suspend fun add(key: String, value: Int, timeToLive: Duration?): Int =
+        add(key, value = value.toLong(), default = value, timeToLive).toInt()
 
     actual override suspend fun remove(key: String) {
         instrumentedRemove(context, key) {

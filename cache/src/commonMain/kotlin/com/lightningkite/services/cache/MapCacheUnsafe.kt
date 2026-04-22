@@ -45,7 +45,7 @@ public open class MapCacheUnsafe(
     }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+        assertValidTtl(timeToLive)
         instrumentedSet<T>(context, key, timeToLive) {
             entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
         }
@@ -67,7 +67,7 @@ public open class MapCacheUnsafe(
         serializer: KSerializer<T>,
         timeToLive: Duration?
     ): Boolean {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+        assertValidTtl(timeToLive)
         return instrumentedSetIfNotExists(context, key, timeToLive) {
             val existing = entries[key]
             // Check if key doesn't exist OR if it exists but has expired
@@ -80,8 +80,9 @@ public open class MapCacheUnsafe(
         }
     }
 
-    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+
+    private suspend fun add(key: String, value: Long, default: Number, timeToLive: Duration?): Number {
+        assertValidTtl(timeToLive)
         return instrumentedAdd(context, key, value, timeToLive) {
             val entry = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
             val new = when (val current = entry?.value) {
@@ -91,12 +92,18 @@ public open class MapCacheUnsafe(
                 is Long -> (current + value)
                 is Float -> (current + value)
                 is Double -> (current + value)
-                else -> value
+                else -> default
             }
             entries[key] = Entry(new, timeToLive?.let { Clock.default().now() + it })
-            new.toLong()
+            new
         }
     }
+
+    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
+        add(key, value, default = value, timeToLive).toLong()
+
+    override suspend fun add(key: String, value: Int, timeToLive: Duration?): Int =
+        add(key, value = value.toLong(), default = value, timeToLive).toInt()
 
     override suspend fun remove(key: String): Unit {
         instrumentedRemove(context, key) {
@@ -111,8 +118,8 @@ public open class MapCacheUnsafe(
         timeToLive: Duration?,
         modification: (T?) -> T?
     ): Boolean {
+        assertValidTtl(timeToLive)
         return instrumentedModify<T>(context, key, maxTries, timeToLive) {
-            if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
             // For MapCache, we can provide a synchronized implementation
             // Note: This works for in-memory but isn't distributed-safe
             repeat(maxTries) {

@@ -5,7 +5,6 @@ import com.lightningkite.services.default
 import kotlinx.serialization.KSerializer
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.*
-import kotlin.time.Duration.Companion.milliseconds
 
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 public actual class MapCache actual constructor(
@@ -60,7 +59,7 @@ public actual class MapCache actual constructor(
         }
     }
 
-    actual override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
+    private suspend fun add(key: String, value: Long, default: Number, timeToLive: Duration?): Number {
         assertValidTtl(timeToLive)
         return instrumentedAdd(context, key, value, timeToLive) {
             val clock = Clock.default()
@@ -73,13 +72,19 @@ public actual class MapCache actual constructor(
                     is Long -> (current + value)
                     is Float -> (current + value)
                     is Double -> (current + value)
-                    else -> value
+                    else -> default   // explicitly use the type provided
                 }
                 Entry(new, timeToLive?.let { clock.now() + it })
             } ?: throw IllegalStateException("Could not modify entry correctly")
-            (r.value as Number).toLong()
+            r.value as Number
         }
     }
+
+    actual override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
+        add(key, value, default = value, timeToLive).toLong()
+
+    actual override suspend fun add(key: String, value: Int, timeToLive: Duration?): Int =
+        add(key, value = value.toLong(), default = value, timeToLive).toInt()
 
     actual override suspend fun remove(key: String) {
         instrumentedRemove(context, key) {

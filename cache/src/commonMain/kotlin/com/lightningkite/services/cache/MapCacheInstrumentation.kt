@@ -39,13 +39,13 @@ internal expect suspend fun instrumentedSetIfNotExists(
 /**
  * Executes a cache add operation with optional OpenTelemetry instrumentation.
  */
-internal expect suspend fun instrumentedAdd(
+internal expect suspend fun <N : Number> instrumentedAdd(
     context: SettingContext,
     key: String,
     value: Long,
     timeToLive: Duration?,
-    operation: suspend () -> Long
-): Long
+    operation: suspend () -> N
+): N
 
 /**
  * Executes a cache remove operation with optional OpenTelemetry instrumentation.

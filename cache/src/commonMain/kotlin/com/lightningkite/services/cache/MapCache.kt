@@ -58,6 +58,8 @@ public expect class MapCache(
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long
 
+    override suspend fun add(key: String, value: Int, timeToLive: Duration?): Int
+
     override suspend fun remove(key: String): Unit
 
     override suspend fun <T> modify(

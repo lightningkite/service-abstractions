@@ -36,12 +36,12 @@ internal actual suspend fun instrumentedSetIfNotExists(
 /**
  * Non-JVM implementation - no-op, directly executes the operation without instrumentation.
  */
-internal actual suspend fun instrumentedAdd(
+internal actual suspend fun <N : Number> instrumentedAdd(
     context: SettingContext,
     key: String,
     value: Long,
     timeToLive: Duration?,
-    operation: suspend () -> Long
+    operation: suspend () -> N
 ) = operation()
 
 /**

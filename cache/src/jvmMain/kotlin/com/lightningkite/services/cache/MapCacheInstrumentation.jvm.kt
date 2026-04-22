@@ -119,13 +119,13 @@ internal actual suspend fun instrumentedSetIfNotExists(
 /**
  * JVM implementation - creates OpenTelemetry spans for cache operations.
  */
-internal actual suspend fun instrumentedAdd(
+internal actual suspend fun <N : Number> instrumentedAdd(
     context: SettingContext,
     key: String,
     value: Long,
     timeToLive: Duration?,
-    operation: suspend () -> Long
-): Long {
+    operation: suspend () -> N
+): N {
     val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
     val span = tracer?.spanBuilder("cache.add")
         ?.setSpanKind(SpanKind.CLIENT)

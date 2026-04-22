@@ -30,7 +30,7 @@ abstract class CacheTest {
             assertEquals(1, cache.get<Int>(key))
             assertTrue(cache.modify<Int>(key) { it?.plus(1) })
             assertEquals(2, cache.get<Int>(key))
-            assertEquals(4L, cache.add(key, 2))
+            assertEquals(4, cache.add(key, 2))
             assertEquals(4, cache.get<Int>(key))
             cache.remove(key)
             assertEquals(null, cache.get<Int>(key))
@@ -43,10 +43,10 @@ abstract class CacheTest {
             assertEquals(0, cache.get<Int>(key))
 
             cache.remove(key)
-            assertEquals(1L, cache.add(key, 1))
-            assertEquals(1L, cache.get<Long>(key))
-            assertEquals(2L, cache.add(key, 1))
-            assertEquals(2L, cache.get<Long>(key))
+            assertEquals(1, cache.add(key, 1))
+            assertEquals(1, cache.get<Int>(key))
+            assertEquals(2, cache.add(key, 1))
+            assertEquals(2, cache.get<Int>(key))
         }
     }
 
@@ -72,21 +72,21 @@ abstract class CacheTest {
             val key = "add-return-${Uuid.random()}"
 
             // Adding to non-existent key should return the value
-            assertEquals(5L, cache.add(key, 5))
-            assertEquals(5L, cache.get<Long>(key))
+            assertEquals(5, cache.add(key, 5))
+            assertEquals(5, cache.get<Int>(key))
 
             // Adding again should return the sum
-            assertEquals(8L, cache.add(key, 3))
-            assertEquals(8L, cache.get<Long>(key))
+            assertEquals(8, cache.add(key, 3))
+            assertEquals(8, cache.get<Int>(key))
 
             // Negative values (decrement)
-            assertEquals(5L, cache.add(key, -3))
-            assertEquals(5L, cache.get<Long>(key))
+            assertEquals(5, cache.add(key, -3))
+            assertEquals(5, cache.get<Int>(key))
 
             // Multiple additions in sequence
-            assertEquals(15L, cache.add(key, 10))
-            assertEquals(35L, cache.add(key, 20))
-            assertEquals(35L, cache.get<Long>(key))
+            assertEquals(15, cache.add(key, 10))
+            assertEquals(35, cache.add(key, 20))
+            assertEquals(35, cache.get<Int>(key))
 
             cache.remove(key)
 
@@ -99,7 +99,7 @@ abstract class CacheTest {
 
             // Zero addition
             cache.set(key, 42)
-            assertEquals(42L, cache.add(key, 0))
+            assertEquals(42, cache.add(key, 0))
             assertEquals(42, cache.get<Int>(key))
         }
     }
@@ -119,22 +119,22 @@ abstract class CacheTest {
             delay(waitScale * 1.5)
             assertEquals(null, cache.get<Int>(key))
             cache.set<Int>(key, 1, waitScale)
-            assertEquals(2L, cache.add(key, 1, waitScale))
+            assertEquals(2, cache.add(key, 1, waitScale))
             assertEquals(2, cache.get<Int>(key))
             delay(waitScale * 1.5)
-            assertEquals(null, cache.get<Long>(key))
-            assertEquals(1L, cache.add(key, 1, waitScale))
-            assertEquals(1L, cache.get<Long>(key))
+            assertEquals(null, cache.get<Int>(key))
+            assertEquals(1, cache.add(key, 1, waitScale))
+            assertEquals(1, cache.get<Int>(key))
             delay(waitScale * 1.5)
-            assertEquals(null, cache.get<Long>(key))
+            assertEquals(null, cache.get<Int>(key))
         }
         runSuspendingTest {
             val key = "y"
             assertEquals(null, cache.get<Int>(key))
-            assertEquals(1L, cache.add(key, 1, waitScale))
-            assertEquals(1L, cache.get<Long>(key))
+            assertEquals(1, cache.add(key, 1, waitScale))
+            assertEquals(1, cache.get<Int>(key))
             delay(waitScale * 1.5)
-            assertEquals(null, cache.get<Long>(key))
+            assertEquals(null, cache.get<Int>(key))
         }
     }
 }
