@@ -122,27 +122,26 @@ internal actual suspend fun instrumentedSetIfNotExists(
 internal actual suspend fun instrumentedAdd(
     context: SettingContext,
     key: String,
-    value: Int,
+    value: Long,
     timeToLive: Duration?,
-    operation: suspend () -> Unit
-) {
+    operation: suspend () -> Long
+): Long {
     val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
     val span = tracer?.spanBuilder("cache.add")
         ?.setSpanKind(SpanKind.CLIENT)
         ?.setAttribute("cache.operation", "add")
         ?.setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
         ?.setAttribute("cache.system", "memory")
-        ?.setAttribute("cache.value", value.toLong())
+        ?.setAttribute("cache.value", value)
         ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
         ?.startSpan()
 
-    try {
+    return try {
         val scope = span?.makeCurrent()
-        try {
-            operation()
+        scope.use { _ ->
+            val r = operation()
             span?.setStatus(StatusCode.OK)
-        } finally {
-            scope?.close()
+            r
         }
     } catch (e: Exception) {
         span?.setStatus(StatusCode.ERROR, "Failed to add to cache: ${e.message}")

@@ -1,8 +1,8 @@
 package com.lightningkite.services.cache
 
 import com.lightningkite.services.SettingContext
-import kotlinx.serialization.KSerializer
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Executes a cache get operation with optional OpenTelemetry instrumentation.
@@ -42,10 +42,10 @@ internal expect suspend fun instrumentedSetIfNotExists(
 internal expect suspend fun instrumentedAdd(
     context: SettingContext,
     key: String,
-    value: Int,
+    value: Long,
     timeToLive: Duration?,
-    operation: suspend () -> Unit
-)
+    operation: suspend () -> Long
+): Long
 
 /**
  * Executes a cache remove operation with optional OpenTelemetry instrumentation.
@@ -66,3 +66,8 @@ internal expect suspend fun <T> instrumentedModify(
     timeToLive: Duration?,
     operation: suspend () -> Boolean
 ): Boolean
+
+internal fun assertValidTtl(timeToLive: Duration?) {
+    if (timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE)
+        throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+}

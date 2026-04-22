@@ -69,21 +69,3 @@ public suspend inline fun <reified T : Any> Cache.modify(
     noinline modification: (T?) -> T?
 ): Boolean =
     modify(key, context.internalSerializersModule.serializer<T>(), maxTries, timeToLive, modification)
-
-
-/**
- * Creates a type-safe handle for a specific cache key using subscript syntax.
- *
- * ```kotlin
- * val cache: () -> Cache = { myCache }
- * val userHandle: CacheHandle<User> = cache["user:123"]
- * userHandle.set(user)
- * val cachedUser = userHandle.get()
- * ```
- *
- * @param T The value type for this cache key.
- * @param key The cache key to bind to this handle.
- * @return A CacheHandle that operates on the specified key with type T.
- */
-public inline operator fun <reified T> (() -> Cache).get(key: String): CacheHandle<T> =
-    CacheHandle<T>(this, key) { this().context.internalSerializersModule.serializer<T>() }

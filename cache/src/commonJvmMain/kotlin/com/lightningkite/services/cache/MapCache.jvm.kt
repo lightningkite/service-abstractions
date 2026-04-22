@@ -29,7 +29,7 @@ public actual class MapCache actual constructor(
         serializer: KSerializer<T>,
         timeToLive: Duration?,
     ) {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+        assertValidTtl(timeToLive)
         instrumentedSet<T>(context, key, timeToLive) {
             entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
         }
@@ -45,7 +45,7 @@ public actual class MapCache actual constructor(
         serializer: KSerializer<T>,
         timeToLive: Duration?,
     ): Boolean {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+        assertValidTtl(timeToLive)
         return instrumentedSetIfNotExists(context, key, timeToLive) {
             // We can't prove success using the response from the compute function, so we must manually handle it.
             var success = false
@@ -60,24 +60,24 @@ public actual class MapCache actual constructor(
         }
     }
 
-    actual override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
-        instrumentedAdd(context, key, value, timeToLive) {
+    actual override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
+        assertValidTtl(timeToLive)
+        return instrumentedAdd(context, key, value, timeToLive) {
             val clock = Clock.default()
-            entries.compute(key) { _, existing ->
+            val r = entries.compute(key) { _, existing ->
                 val entry = existing?.takeIf { it.expires == null || it.expires > clock.now() }
-                val current = entry?.value
-                val new = when (current) {
+                val new = when (val current = entry?.value) {
                     is Byte -> (current + value).toByte()
                     is Short -> (current + value).toShort()
-                    is Int -> (current + value)
+                    is Int -> (current + value).toInt()
                     is Long -> (current + value)
                     is Float -> (current + value)
                     is Double -> (current + value)
                     else -> value
                 }
                 Entry(new, timeToLive?.let { clock.now() + it })
-            }
+            } ?: throw IllegalStateException("Could not modify entry correctly")
+            (r.value as Number).toLong()
         }
     }
 
@@ -95,7 +95,7 @@ public actual class MapCache actual constructor(
         timeToLive: Duration?,
         modification: (T?) -> T?,
     ): Boolean {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+        assertValidTtl(timeToLive)
         return instrumentedModify<T>(context, key, maxTries, timeToLive) {
             entries.compute(key) { _, existing ->
                 val current = existing?.value as? T 

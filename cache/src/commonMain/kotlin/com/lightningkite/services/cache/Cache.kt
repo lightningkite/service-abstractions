@@ -173,15 +173,38 @@ public interface Cache : Service {
     /**
      * Atomically increments a numeric value in the cache.
      *
-     * If the key doesn't exist, it's created with the given value.
-     * If the key exists with a non-numeric value, behavior is implementation-specific
-     * (MapCache treats it as 0 and starts from [value]).
+     * - If the key doesn't exist, it's created with the given value.
+     * - If the key exists and is a numeric type, it will succeed, but the resultant stored value is implementation specific.
+     *   Most implementations will maintain the original stored type, but some will truncate the stored type to a `Long`.
+     * - If the key exists with a non-numeric value, behavior is implementation-specific, but most with throw an exception
+     *   (MapCache treats it as 0 and starts from [value]).
      *
      * @param key The cache key.
      * @param value The amount to add (can be negative for decrement).
      * @param timeToLive Optional TTL for the updated value. Null means no expiration.
+     *
+     * @return The updated value *after* incrementing, and truncated if the stored value is a float-type
      */
-    public suspend fun add(key: String, value: Int, timeToLive: Duration? = null)
+    public suspend fun add(key: String, value: Long, timeToLive: Duration? = null): Long
+
+    /**
+     * Convenience wrapper that converts [value] into a `Long` before incrementing.
+     *
+     * Atomically increments a numeric value in the cache.
+     *
+     * - If the key doesn't exist, it's created with the given value.
+     * - If the key exists and is a numeric type, it will succeed, but the resultant stored value is implementation specific.
+     *   Most implementations will maintain the original stored type, but some will truncate the stored type to a `Long`.
+     * - If the key exists with a non-numeric value, behavior is implementation-specific, but most with throw an exception
+     *   (MapCache treats it as 0 and starts from [value]).
+     *
+     * @param key The cache key.
+     * @param value The amount to add (can be negative for decrement).
+     * @param timeToLive Optional TTL for the updated value. Null means no expiration.
+     *
+     * @return The updated value *after* incrementing, and truncated if the stored value is a float-type
+     */
+    public suspend fun add(key: String, value: Int, timeToLive: Duration? = null): Long = add(key, value.toLong(), timeToLive)
 
     /**
      * Removes a key from the cache.

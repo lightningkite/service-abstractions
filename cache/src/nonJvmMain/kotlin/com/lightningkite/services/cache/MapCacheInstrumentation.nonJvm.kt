@@ -39,9 +39,9 @@ internal actual suspend fun instrumentedSetIfNotExists(
 internal actual suspend fun instrumentedAdd(
     context: SettingContext,
     key: String,
-    value: Int,
+    value: Long,
     timeToLive: Duration?,
-    operation: suspend () -> Unit
+    operation: suspend () -> Long
 ) = operation()
 
 /**

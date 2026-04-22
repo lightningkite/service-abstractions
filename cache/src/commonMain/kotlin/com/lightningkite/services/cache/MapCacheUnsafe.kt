@@ -5,7 +5,6 @@ import com.lightningkite.services.default
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.modules.SerializersModule
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -81,21 +80,21 @@ public open class MapCacheUnsafe(
         }
     }
 
-    override suspend fun add(key: String, value: Int, timeToLive: Duration?): Unit {
+    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
         if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
-        instrumentedAdd(context, key, value, timeToLive) {
+        return instrumentedAdd(context, key, value, timeToLive) {
             val entry = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
-            val current = entry?.value
-            val new = when (current) {
+            val new = when (val current = entry?.value) {
                 is Byte -> (current + value).toByte()
                 is Short -> (current + value).toShort()
-                is Int -> (current + value)
+                is Int -> (current + value).toInt()
                 is Long -> (current + value)
                 is Float -> (current + value)
                 is Double -> (current + value)
                 else -> value
             }
             entries[key] = Entry(new, timeToLive?.let { Clock.default().now() + it })
+            new.toLong()
         }
     }
 
