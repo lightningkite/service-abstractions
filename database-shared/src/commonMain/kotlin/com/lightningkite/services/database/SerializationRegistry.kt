@@ -14,6 +14,7 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.encoding.AbstractDecoder
+import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
@@ -37,6 +38,10 @@ public class GenericPlaceholderException(message: String) : Exception(message)
 internal object StubPolymorphicDecoder : AbstractDecoder() {
     override val serializersModule: SerializersModule = EmptySerializersModule()
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int = CompositeDecoder.DECODE_DONE
+}
+@OptIn(ExperimentalSerializationApi::class)
+internal object StubPolymorphicEncoder : AbstractEncoder() {
+    override val serializersModule: SerializersModule = EmptySerializersModule()
 }
 
 @OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
