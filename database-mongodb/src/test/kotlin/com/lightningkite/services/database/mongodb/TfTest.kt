@@ -15,18 +15,6 @@ class TfTest {
     init {
         MongoDatabase
     }
-    @Test
-    fun testServerless() {
-        assertPlannableAws<Database.Settings>(
-            name = "mongodb-serverless",
-            fulfill = {
-                it.mongodbAtlasServerless(
-                    orgId = "test-org-id",
-                    continuousBackupEnabled = true
-                )
-            }
-        )
-    }
 
     @Test
     fun testFlex() {

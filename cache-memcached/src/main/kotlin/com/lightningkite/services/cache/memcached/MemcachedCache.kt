@@ -218,29 +218,28 @@ public class MemcachedCache(
         }
     }
 
-    override suspend fun add(key: String, value: Int, timeToLive: Duration?): Unit {
+    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
         val span = tracer?.spanBuilder("cache.add")
             ?.setSpanKind(SpanKind.CLIENT)
             ?.setAttribute("cache.operation", "add")
             ?.setAttribute("cache.key", key)
             ?.setAttribute("cache.system", "memcached")
-            ?.setAttribute("cache.value", value.toLong())
+            ?.setAttribute("cache.value", value)
             ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
             ?.startSpan()
 
-        try {
+        return try {
             val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    client.incr(key, value.toLong(), value.toLong())
+            scope.use { _ ->
+                val r = withContext(Dispatchers.IO) {
+                    val result = client.incr(key, value, value)
                     timeToLive?.let {
                         client.touch(key, it.inWholeSeconds.toInt())
                     }
-                    Unit
+                    result
                 }
                 span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+                r
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to add to cache: ${e.message}")

@@ -33,7 +33,7 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
         serializer: KSerializer<T>,
         timeToLive: Duration?,
     ) {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+        assertValidTtl(timeToLive)
         instrumentedSet<T>(context, key, timeToLive) {
             mutex.withLock {
                 entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
@@ -51,7 +51,7 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
         serializer: KSerializer<T>,
         timeToLive: Duration?,
     ): Boolean {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+        assertValidTtl(timeToLive)
         return instrumentedSetIfNotExists(context, key, timeToLive) {
             mutex.withLock {
                 val existing = entries[key]
@@ -66,25 +66,32 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
         }
     }
 
-    actual override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
-        instrumentedAdd(context, key, value, timeToLive) {
+
+    private suspend fun add(key: String, value: Long, default: Number, timeToLive: Duration?): Number {
+        assertValidTtl(timeToLive)
+        return instrumentedAdd(context, key, value, timeToLive) {
             mutex.withLock {
                 val entry = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
-                val current = entry?.value
-                val new = when (current) {
+                val new = when (val current = entry?.value) {
                     is Byte -> (current + value).toByte()
                     is Short -> (current + value).toShort()
                     is Int -> (current + value)
                     is Long -> (current + value)
                     is Float -> (current + value)
                     is Double -> (current + value)
-                    else -> value
+                    else -> default
                 }
                 entries[key] = Entry(new, timeToLive?.let { Clock.default().now() + it })
+                new
             }
         }
     }
+
+    actual override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
+        add(key, value, default = value, timeToLive).toLong()
+
+    actual override suspend fun add(key: String, value: Int, timeToLive: Duration?): Int =
+        add(key, value = value.toLong(), default = value, timeToLive).toInt()
 
     actual override suspend fun remove(key: String) {
         instrumentedRemove(context, key) {
@@ -102,7 +109,7 @@ public actual class MapCache actual constructor(name: String, context: SettingCo
         timeToLive: Duration?,
         modification: (T?) -> T?,
     ): Boolean {
-        if(timeToLive != null && timeToLive <= 0L.milliseconds || timeToLive == Duration.INFINITE) throw IllegalArgumentException("Invalid timeToLive. It must be at least 1 millisecond and not INFINITE")
+        assertValidTtl(timeToLive)
         return instrumentedModify<T>(context, key, maxTries, timeToLive) {
             mutex.withLock {
                 val existing = entries[key] as? T

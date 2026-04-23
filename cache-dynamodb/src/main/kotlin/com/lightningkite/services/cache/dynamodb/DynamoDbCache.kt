@@ -334,7 +334,7 @@ public class DynamoDbCache(
         }
     }
 
-    override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
+    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
         val span = tracer?.spanBuilder("cache.add")
             ?.setSpanKind(SpanKind.CLIENT)
             ?.setAttribute("cache.operation", "add")
@@ -342,16 +342,16 @@ public class DynamoDbCache(
             ?.setAttribute("cache.system", "dynamodb")
             ?.setAttribute("db.system", "dynamodb")
             ?.setAttribute("db.name", tableName)
-            ?.setAttribute("cache.value", value.toLong())
+            ?.setAttribute("cache.value", value)
             ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
             ?.startSpan()
 
-        try {
+        return try {
             val scope = span?.makeCurrent()
-            try {
+            scope.use { _ ->
                 ready.await()
-                try {
-                    client.updateItem {
+                val result = try {
+                    val response = client.updateItem {
                         it.tableName(tableName)
                         it.key(mapOf("key" to AttributeValue.fromS(key)))
                         it.conditionExpression("attribute_not_exists(#exp) OR #exp = :null OR #exp > :now")
@@ -367,13 +367,16 @@ public class DynamoDbCache(
                                     ?: AttributeValue.fromNul(true))
                             )
                         )
+                        it.returnValues(ReturnValue.ALL_NEW)
                     }.await()
-                } catch(e: ConditionalCheckFailedException) {
-                    set(key, value, Int.serializer(), timeToLive)
+
+                    response.attributes().getValue("value").n().toLong()
+                } catch(_: ConditionalCheckFailedException) {
+                    set(key, value, Long.serializer(), timeToLive)
+                    value
                 }
                 span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+                result
             }
         } catch (e: Exception) {
             span?.setStatus(StatusCode.ERROR, "Failed to add to cache: ${e.message}")

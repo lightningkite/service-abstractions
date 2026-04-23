@@ -108,11 +108,12 @@ public class RedisCache(
         return result
     }
 
-    override suspend fun add(key: String, value: Int, timeToLive: Duration?) {
-        lettuceConnection.incrby(key, value.toLong()).collect { }
+    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
+        val result = lettuceConnection.incrby(key, value).awaitFirst()
         timeToLive?.let {
             lettuceConnection.pexpire(key, it.toJavaDuration()).collect { }
         }
+        return result
     }
 
     override suspend fun remove(key: String) {

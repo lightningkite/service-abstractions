@@ -21,6 +21,7 @@ data class DualTypeParamTestModel<T, Y>(
     val url: String?,
     val otherValue: String,
 )
+
 @Serializable
 @GenerateDataClassPaths
 data class DualTypeParamTestModelPart2<T, Y>(

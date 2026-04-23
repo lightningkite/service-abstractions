@@ -242,8 +242,7 @@ public sealed class Modification<T> {
     }
 
     @Serializable
-    public data class SetPerElement<T>(val condition: Condition<T>, val modification: Modification<T>) :
-        Modification<Set<T>>() {
+    public data class SetPerElement<T>(val condition: Condition<T>, val modification: Modification<T>) : Modification<Set<T>>() {
         override fun invoke(on: Set<T>): Set<T> = on.map { if (condition(it)) modification(it) else it }.toSet()
         override fun toString(): String = ".onEach { if ($condition) $modification }"
     }
@@ -257,7 +256,7 @@ public sealed class Modification<T> {
     @Serializable(ModificationModifyByKeySerializer::class)
     public data class ModifyByKey<T>(val map: Map<String, Modification<T>>) : Modification<Map<String, T>>() {
         override fun invoke(on: Map<String, T>): Map<String, T> =
-            on + map.mapValues { (on[it.key]?.let { e -> it.value(e) } ?: throw Exception()) }
+            on + map.mapValues { (on.getValue(it.key).let { e -> it.value(e) }) }
     }
 
     @Serializable(ModificationRemoveKeysSerializer::class)
@@ -266,8 +265,7 @@ public sealed class Modification<T> {
         override fun toString(): String = " -= $fields"
     }
 
-    public data class OnField<K, V>(val key: SerializableProperty<K, V>, val modification: Modification<V>) :
-        Modification<K>() {
+    public data class OnField<K, V>(val key: SerializableProperty<K, V>, val modification: Modification<V>) : Modification<K>() {
         override fun invoke(on: K): K = key.setCopy(on, modification(key.get(on)))
         override fun toString(): String {
             return if (modification is OnField<*, *>)

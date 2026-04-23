@@ -196,6 +196,22 @@ private fun Modification<*>.affects(list: List<SerializableProperty<*, *>>): Boo
     }
 }
 
+public fun Modification<*>.affectsPaths(): List<List<SerializableProperty<*, *>>> =
+    when (this) {
+        is Modification.OnField<*, *> -> {
+            val path = listOf(key)
+            val downstream = modification.affectsPaths()
+
+            if (downstream.isEmpty()) listOf(path)
+            else downstream.map { path + it }
+        }
+        is Modification.SetPerElement<*> -> this.modification.affectsPaths()
+        is Modification.ListPerElement<*> -> this.modification.affectsPaths()
+        is Modification.Chain -> this.modifications.flatMap { it.affectsPaths() }
+        is Modification.IfNotNull -> this.modification.affectsPaths()
+        else -> emptyList()
+    }
+
 public fun Condition<*>.reads(path: DataClassPathPartial<*>): Boolean = reads(path.properties)
 private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean {
     return when (this) {
@@ -325,34 +341,33 @@ public fun <T> Condition<T>.readsResultOf(
     }
 }
 
-@Suppress("UNCHECKED_CAST")
-public fun <T> Condition<T>.guaranteedAfter(modification: Modification<T>): Boolean {
+public fun <T> Condition<T>.guaranteedAfter(modification: Modification<T>): Boolean = guaranteedAfterUntyped(modification)
+private fun Condition<*>.guaranteedAfterUntyped(modification: Modification<*>): Boolean {
     return when (modification) {
-        is Modification.Assign -> this(modification.value)
+        is Modification.Assign ->
+            @Suppress("UNCHECKED_CAST")
+            (this as Condition<Any?>)(modification.value)
+
         is Modification.OnField<*, *> -> {
             val field = this as? Condition.OnField<*, *> ?: return true
-            @Suppress("UNCHECKED_CAST")
-            field.key != modification.key || (field.condition as Condition<Any?>).guaranteedAfter<Any?>(modification.modification as Modification<Any?>)
+            field.key != modification.key || field.condition.guaranteedAfterUntyped(modification.modification)
         }
 
         is Modification.SetPerElement<*> -> {
-            @Suppress("UNCHECKED_CAST")
-            ((this as? Condition.SetAllElements<Any?>)?.condition
-                ?: (this as? Condition.SetAnyElements<Any?>)?.condition)?.guaranteedAfter<Any?>(modification.modification as Modification<Any?>)
+            ((this as? Condition.SetAllElements<*>)?.condition
+                ?: (this as? Condition.SetAnyElements<*>)?.condition)?.guaranteedAfterUntyped(modification.modification)
                 ?: false
         }
 
         is Modification.ListPerElement<*> -> {
-            @Suppress("UNCHECKED_CAST")
-            ((this as? Condition.ListAllElements<Any?>)?.condition
-                ?: (this as? Condition.ListAnyElements<Any?>)?.condition)?.guaranteedAfter<Any?>(modification.modification as Modification<Any?>)
+            ((this as? Condition.ListAllElements<*>)?.condition
+                ?: (this as? Condition.ListAnyElements<*>)?.condition)?.guaranteedAfterUntyped(modification.modification)
                 ?: false
         }
 
-        is Modification.Chain -> modification.modifications.all { guaranteedAfter(it) }
+        is Modification.Chain -> modification.modifications.all { guaranteedAfterUntyped(it) }
         is Modification.IfNotNull<*> -> {
-            @Suppress("UNCHECKED_CAST")
-            (this as Condition<Any?>).guaranteedAfter<Any?>(modification.modification as Modification<Any?>)
+            this.guaranteedAfterUntyped(modification.modification)
         }
 
         else -> false

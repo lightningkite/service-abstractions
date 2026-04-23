@@ -21,7 +21,7 @@ public data class ModelPermissions<Model>(
     /**
      * The user may only read models masked as defined here.
      */
-    val readMask: Mask<Model> = Mask(listOf()),
+    val readMask: Mask<Model> = Mask(emptyList()),
     /**
      * The user may only update models that match this condition.
      */
@@ -29,7 +29,7 @@ public data class ModelPermissions<Model>(
     /**
      * Restrictions on what the user is allowed to update.
      */
-    val updateRestrictions: UpdateRestrictions<Model> = UpdateRestrictions(listOf()),
+    val updateRestrictions: UpdateRestrictions<Model> = UpdateRestrictions(fields = emptyList()),
     /**
      * The user may only delete models that match this condition.
      */
@@ -52,7 +52,7 @@ public data class ModelPermissions<Model>(
         read: Condition<Model>,
         readMask: Mask<Model> = Mask(),
         manage: Condition<Model>,
-        updateRestriction: UpdateRestrictions<Model> = UpdateRestrictions(),
+        updateRestriction: UpdateRestrictions<Model> = UpdateRestrictions(fields = emptyList()),
     ) : this(
         create = manage,
         update = manage,
@@ -65,7 +65,7 @@ public data class ModelPermissions<Model>(
     public constructor(
         all: Condition<Model>,
         readMask: Mask<Model> = Mask(),
-        updateRestriction: UpdateRestrictions<Model> = UpdateRestrictions(),
+        updateRestriction: UpdateRestrictions<Model> = UpdateRestrictions(fields = emptyList()),
     ) : this(
         create = all,
         update = all,

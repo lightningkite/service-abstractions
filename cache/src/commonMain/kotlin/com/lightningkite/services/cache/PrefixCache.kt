@@ -24,7 +24,7 @@ public class PrefixCache(public val cache: Cache, public val prefix: String): Ca
         timeToLive: Duration?,
         modification: (T?) -> T?
     ): Boolean = cache.modify(prefix + key, serializer, maxTries, timeToLive, modification)
-    override suspend fun add(key: String, value: Int, timeToLive: Duration?): Unit = cache.add(prefix + key, value, timeToLive)
+    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long = cache.add(prefix + key, value, timeToLive)
     override suspend fun remove(key: String): Unit = cache.remove(prefix + key)
     override suspend fun healthCheck(): HealthStatus = cache.healthCheck()
 }

@@ -6,7 +6,10 @@ import kotlin.time.Instant
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.descriptors.PolymorphicKind
+import kotlinx.serialization.internal.AbstractPolymorphicSerializer
 import kotlinx.serialization.internal.GeneratedSerializer
+import kotlinx.serialization.json.JsonNames
 import kotlin.uuid.Uuid
 
 public interface SerializableProperty<A, B> {
@@ -151,4 +154,26 @@ public val <T> KSerializer<T>.serializableProperties: Array<SerializableProperty
                 index
             )
         }.toTypedArray()
+    }
+
+public data class SealedSerializableOption<out T>(val index: Int, val name: String, val secondaryNames: Set<String> = setOf(), val serializer: KSerializer<@UnsafeVariance T>)
+
+@OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
+@Suppress("UNCHECKED_CAST")
+public val <T> KSerializer<T>.serializableOptions: Array<SealedSerializableOption<T>>?
+    get() {
+        if (this is VirtualSealed.Concrete) return this.serializableOptions as Array<SealedSerializableOption<T>>
+        val poly = this as? AbstractPolymorphicSerializer<*> ?: return null
+        if (descriptor.kind != PolymorphicKind.SEALED) return null
+        val subDesc = descriptor.getElementDescriptor(1)
+        return Array(subDesc.elementsCount) { i ->
+            val name = subDesc.getElementName(i)
+            val secondaryNames = subDesc.getElementAnnotations(i)
+                .filterIsInstance<JsonNames>()
+                .flatMap { it.names.toList() }
+                .toSet()
+            val ser = poly.findPolymorphicSerializerOrNull(StubPolymorphicDecoder, name) as? KSerializer<T>
+                ?: return null
+            SealedSerializableOption(i, name, secondaryNames, ser)
+        } as Array<SealedSerializableOption<T>>
     }
