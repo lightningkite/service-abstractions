@@ -251,7 +251,7 @@ public data class VirtualSealedOption(
 
 public data class VirtualSealedInstance(
     val option: VirtualSealedOption,
-    val value: Any?,
+    val value: Any,
 )
 
 @Serializable
@@ -287,7 +287,7 @@ public data class VirtualSealed(
         private val optionLookup by lazy {
             options.flatMap { (it.secondaryNames + it.name).map { k -> k to it } }.associate { it }
         }
-        override val default: VirtualSealedInstance get() = VirtualSealedInstance(options.first(), optionSerializers.first().default())
+        override val default: VirtualSealedInstance get() = VirtualSealedInstance(options.first(), optionSerializers.first().default()!!)
 
         public val serializableOptions: Array<SealedSerializableOption<*>> by lazy {
             options.map { SealedSerializableOption(it.index, it.name, it.secondaryNames, optionSerializers[it.index]) }.toTypedArray()
@@ -323,7 +323,7 @@ public data class VirtualSealed(
                 val actual = optionSerializers[option.index]
                 val stripped = JsonObject(element.filterKeys { it != classDiscriminator })
                 val value = decoder.json.decodeFromJsonElement(actual as KSerializer<Any?>, stripped)
-                return VirtualSealedInstance(option, value)
+                return VirtualSealedInstance(option, value!!)
             }
             // Non-JSON: internal array format [typeName, value]
             return decoder.decodeStructure(descriptor) {
@@ -332,7 +332,7 @@ public data class VirtualSealed(
                     ?: throw SerializationException("No option '$optionName' found. Available: ${optionLookup.keys}")
                 val actual = optionSerializers[option.index]
                 val value = decodeSerializableElement(descriptor, 1, actual)
-                VirtualSealedInstance(option, value)
+                VirtualSealedInstance(option, value!!)
             }
         }
 

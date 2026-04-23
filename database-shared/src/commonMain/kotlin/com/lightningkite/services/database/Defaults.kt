@@ -7,6 +7,7 @@ import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
@@ -67,7 +68,13 @@ internal object DefaultDecoder : Decoder {
         override fun decodeIntElement(descriptor: SerialDescriptor, index: Int) = 0
         override fun decodeLongElement(descriptor: SerialDescriptor, index: Int) = 0L
         override fun decodeShortElement(descriptor: SerialDescriptor, index: Int) = 0.toShort()
-        override fun decodeStringElement(descriptor: SerialDescriptor, index: Int) = ""
+        override fun decodeStringElement(descriptor: SerialDescriptor, index: Int): String {
+            if(descriptor.kind is PolymorphicKind) {
+                val subDesc = descriptor.getElementDescriptor(1)
+                return subDesc.getElementName(0)
+            }
+            return ""
+        }
 
         var index = -1
         override fun decodeElementIndex(descriptor: SerialDescriptor): Int {

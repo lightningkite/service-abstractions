@@ -162,7 +162,6 @@ public data class SealedSerializableOption<out T>(val index: Int, val name: Stri
 @Suppress("UNCHECKED_CAST")
 public val <T> KSerializer<T>.serializableOptions: Array<SealedSerializableOption<T>>?
     get() {
-        if (this is VirtualSealed.Concrete) return this.serializableOptions as Array<SealedSerializableOption<T>>
         val poly = this as? AbstractPolymorphicSerializer<*> ?: return null
         if (descriptor.kind != PolymorphicKind.SEALED) return null
         val subDesc = descriptor.getElementDescriptor(1)
@@ -177,3 +176,12 @@ public val <T> KSerializer<T>.serializableOptions: Array<SealedSerializableOptio
             SealedSerializableOption(i, name, secondaryNames, ser)
         } as Array<SealedSerializableOption<T>>
     }
+
+@OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
+@Suppress("UNCHECKED_CAST")
+public fun <T> KSerializer<T>.serializableOptionsIdentify(item: T): SealedSerializableOption<T>? {
+    val poly = this as? AbstractPolymorphicSerializer<Any> ?: return null
+    if (descriptor.kind != PolymorphicKind.SEALED) return null
+    val ser = poly.findPolymorphicSerializerOrNull(StubPolymorphicEncoder, item as Any) ?: return null
+    return serializableOptions?.firstOrNull { it.serializer.descriptor.serialName == ser.descriptor.serialName }?.let { it as SealedSerializableOption<T>? }
+}
