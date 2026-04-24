@@ -1,6 +1,7 @@
 package com.lightningkite.services
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlin.coroutines.AbstractCoroutineContextElement
@@ -42,7 +43,7 @@ import kotlin.coroutines.coroutineContext
  * @see ClockContextElement for the context element implementation
  */
 public suspend fun Clock.Companion.default(): Clock {
-    return coroutineContext[ClockContextElement]?.clock ?: Clock.System
+    return currentCoroutineContext()[ClockContextElement]?.clock ?: Clock.System
 }
 
 /**

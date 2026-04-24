@@ -1,0 +1,46 @@
+import com.lightningkite.deployhelpers.*
+
+plugins {
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.dokka)
+    alias(libs.plugins.kotlin.serialization)
+    id("signing")
+    alias(libs.plugins.vanniktechMavenPublish)
+}
+
+dependencies {
+    api(project(path = ":basis"))
+    api(project(path = ":cache"))
+    api(project(path = ":database"))
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.coroutines.testing)
+    testImplementation(project(":cache-test"))
+}
+
+kotlin {
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+    }
+    explicitApi()
+    sourceSets.main {
+        kotlin.srcDir("build/generated/ksp/main/kotlin")
+    }
+    sourceSets.test {
+        kotlin.srcDir("build/generated/ksp/test/kotlin")
+    }
+}
+
+dependencies {
+    configurations.filter { it.name.startsWith("ksp") }.forEach {
+        add(it.name, project(":database-processor"))
+    }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    this.targetCompatibility = "17"
+}
+
+
+lkLibrary("lightningkite", "service-abstractions") {}
