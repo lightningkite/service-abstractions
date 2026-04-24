@@ -1,7 +1,7 @@
 package com.lightningkite.services.voiceagent.openai
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.voiceagent.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
@@ -10,15 +10,11 @@ import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import org.crac.Context
-import org.crac.Core
-import org.crac.Resource
+import kotlinx.serialization.json.*
+import org.crac.*
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
@@ -197,11 +193,14 @@ internal class OpenAIVoiceAgentSession(
                                 val text = frame.readText()
                                 handleServerMessage(text)
                             }
+
                             is Frame.Close -> {
                                 logger.info { "[$serviceName] WebSocket closed: ${frame.readReason()}" }
                                 break
                             }
-                            else -> { /* ignore */ }
+
+                            else -> { /* ignore */
+                            }
                         }
                     }
                 } catch (e: CancellationException) {
@@ -231,11 +230,13 @@ internal class OpenAIVoiceAgentSession(
             when (event) {
                 is ServerEvent.Error -> {
                     logger.error { "[$serviceName] OpenAI error: code=${event.error.code ?: event.error.type}, message=${event.error.message}, param=${event.error.param}" }
-                    eventChannel.send(VoiceAgentEvent.Error(
-                        code = event.error.code ?: event.error.type,
-                        message = event.error.message,
-                        details = event.error.param,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.Error(
+                            code = event.error.code ?: event.error.type,
+                            message = event.error.message,
+                            details = event.error.param,
+                        )
+                    )
                 }
 
                 is ServerEvent.SessionCreated -> {
@@ -267,18 +268,22 @@ internal class OpenAIVoiceAgentSession(
                 }
 
                 is ServerEvent.InputAudioTranscriptionCompleted -> {
-                    eventChannel.send(VoiceAgentEvent.InputTranscription(
-                        itemId = event.itemId,
-                        text = event.transcript,
-                        isFinal = true,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.InputTranscription(
+                            itemId = event.itemId,
+                            text = event.transcript,
+                            isFinal = true,
+                        )
+                    )
                 }
 
                 is ServerEvent.InputAudioTranscriptionFailed -> {
-                    eventChannel.send(VoiceAgentEvent.InputTranscriptionFailed(
-                        itemId = event.itemId,
-                        error = event.error.message,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.InputTranscriptionFailed(
+                            itemId = event.itemId,
+                            error = event.error.message,
+                        )
+                    )
                 }
 
                 is ServerEvent.ResponseCreated -> {
@@ -316,56 +321,68 @@ internal class OpenAIVoiceAgentSession(
                 }
 
                 is ServerEvent.ResponseAudioDelta -> {
-                    eventChannel.send(VoiceAgentEvent.AudioDelta(
-                        responseId = event.responseId,
-                        itemId = event.itemId,
-                        contentIndex = event.contentIndex,
-                        delta = event.delta,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.AudioDelta(
+                            responseId = event.responseId,
+                            itemId = event.itemId,
+                            contentIndex = event.contentIndex,
+                            delta = event.delta,
+                        )
+                    )
                 }
 
                 is ServerEvent.ResponseAudioDone -> {
-                    eventChannel.send(VoiceAgentEvent.AudioDone(
-                        responseId = event.responseId,
-                        itemId = event.itemId,
-                        contentIndex = event.contentIndex,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.AudioDone(
+                            responseId = event.responseId,
+                            itemId = event.itemId,
+                            contentIndex = event.contentIndex,
+                        )
+                    )
                 }
 
                 is ServerEvent.ResponseAudioTranscriptDelta -> {
-                    eventChannel.send(VoiceAgentEvent.TextDelta(
-                        responseId = event.responseId,
-                        itemId = event.itemId,
-                        contentIndex = event.contentIndex,
-                        delta = event.delta,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.TextDelta(
+                            responseId = event.responseId,
+                            itemId = event.itemId,
+                            contentIndex = event.contentIndex,
+                            delta = event.delta,
+                        )
+                    )
                 }
 
                 is ServerEvent.ResponseAudioTranscriptDone -> {
-                    eventChannel.send(VoiceAgentEvent.TextDone(
-                        responseId = event.responseId,
-                        itemId = event.itemId,
-                        contentIndex = event.contentIndex,
-                        text = event.transcript,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.TextDone(
+                            responseId = event.responseId,
+                            itemId = event.itemId,
+                            contentIndex = event.contentIndex,
+                            text = event.transcript,
+                        )
+                    )
                 }
 
                 is ServerEvent.ResponseTextDelta -> {
-                    eventChannel.send(VoiceAgentEvent.TextDelta(
-                        responseId = event.responseId,
-                        itemId = event.itemId,
-                        contentIndex = event.contentIndex,
-                        delta = event.delta,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.TextDelta(
+                            responseId = event.responseId,
+                            itemId = event.itemId,
+                            contentIndex = event.contentIndex,
+                            delta = event.delta,
+                        )
+                    )
                 }
 
                 is ServerEvent.ResponseTextDone -> {
-                    eventChannel.send(VoiceAgentEvent.TextDone(
-                        responseId = event.responseId,
-                        itemId = event.itemId,
-                        contentIndex = event.contentIndex,
-                        text = event.text,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.TextDone(
+                            responseId = event.responseId,
+                            itemId = event.itemId,
+                            contentIndex = event.contentIndex,
+                            text = event.text,
+                        )
+                    )
                 }
 
                 is ServerEvent.ResponseOutputItemAdded -> {
@@ -376,38 +393,45 @@ internal class OpenAIVoiceAgentSession(
                         logger.info { "[$serviceName] Tool call started: $name (callId=$callId)" }
                         functionCallNames[callId] = name
                         functionCallArguments[callId] = StringBuilder()
-                        eventChannel.send(VoiceAgentEvent.ToolCallStarted(
-                            responseId = event.responseId,
-                            itemId = event.item.id ?: "",
-                            callId = callId,
-                            toolName = name,
-                        ))
+                        eventChannel.send(
+                            VoiceAgentEvent.ToolCallStarted(
+                                responseId = event.responseId,
+                                itemId = event.item.id ?: "",
+                                callId = callId,
+                                toolName = name,
+                            )
+                        )
                     }
                 }
 
                 is ServerEvent.ResponseFunctionCallArgumentsDelta -> {
                     functionCallArguments[event.callId]?.append(event.delta)
-                    eventChannel.send(VoiceAgentEvent.ToolCallArgumentsDelta(
-                        callId = event.callId,
-                        delta = event.delta,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.ToolCallArgumentsDelta(
+                            callId = event.callId,
+                            delta = event.delta,
+                        )
+                    )
                 }
 
                 is ServerEvent.ResponseFunctionCallArgumentsDone -> {
                     val name = functionCallNames[event.callId] ?: event.name
                     logger.info { "[$serviceName] Tool call ready: $name (callId=${event.callId}), args=${event.arguments}" }
-                    eventChannel.send(VoiceAgentEvent.ToolCallDone(
-                        callId = event.callId,
-                        toolName = name,
-                        arguments = event.arguments,
-                    ))
+                    eventChannel.send(
+                        VoiceAgentEvent.ToolCallDone(
+                            callId = event.callId,
+                            toolName = name,
+                            arguments = event.arguments,
+                        )
+                    )
                     // Clean up tracking
                     functionCallArguments.remove(event.callId)
                     functionCallNames.remove(event.callId)
                 }
 
                 is ServerEvent.RateLimitsUpdated -> {
-                    eventChannel.send(VoiceAgentEvent.RateLimitsUpdated(
+                    eventChannel.send(
+                        VoiceAgentEvent.RateLimitsUpdated(
                         limits = event.rateLimits.map {
                             RateLimitInfo(
                                 name = it.name,
@@ -423,7 +447,8 @@ internal class OpenAIVoiceAgentSession(
                 is ServerEvent.ConversationItemCreated,
                 is ServerEvent.ResponseOutputItemDone,
                 is ServerEvent.ResponseContentPartAdded,
-                is ServerEvent.ResponseContentPartDone -> {
+                is ServerEvent.ResponseContentPartDone,
+                    -> {
                     // These are informational; we track state via other events
                 }
             }
@@ -431,7 +456,9 @@ internal class OpenAIVoiceAgentSession(
             // Try to extract the event type from the raw message for better logging
             val eventType = try {
                 json.parseToJsonElement(text).jsonObject["type"]?.jsonPrimitive?.contentOrNull
-            } catch (_: Exception) { null }
+            } catch (_: Exception) {
+                null
+            }
 
             // Check if this is an unregistered event type (intentional, not an error)
             if (e is SerializationException && eventType != null) {
@@ -465,7 +492,12 @@ internal class OpenAIVoiceAgentSession(
         // Log session config sizes for token analysis
         val instructionsChars = config.instructions?.length ?: 0
         val instructionsEstTokens = instructionsChars / 4  // rough estimate
-        val toolsJson = tools?.let { json.encodeToString(kotlinx.serialization.builtins.ListSerializer(ToolDefinition.serializer()), it) }
+        val toolsJson = tools?.let {
+            json.encodeToString(
+                kotlinx.serialization.builtins.ListSerializer(ToolDefinition.serializer()),
+                it
+            )
+        }
         val toolsChars = toolsJson?.length ?: 0
         val toolsEstTokens = toolsChars / 4
 
@@ -555,7 +587,7 @@ internal class OpenAIVoiceAgentSession(
     override suspend fun addMessage(role: VoiceAgentSession.MessageRole, text: String) {
         val item = ConversationItem(
             type = "message",
-            role = when(role) {
+            role = when (role) {
                 VoiceAgentSession.MessageRole.User -> "user"
                 VoiceAgentSession.MessageRole.Assistant -> "assistant"
             },
@@ -607,6 +639,7 @@ private fun TurnDetection.toOpenAIConfig(): TurnDetectionConfigOpenAI? = when (t
         createResponse = createResponse,
         interruptResponse = interruptResponse,
     )
+
     is TurnDetection.SemanticVAD -> TurnDetectionConfigOpenAI(
         type = "semantic_vad",
         eagerness = when (eagerness) {

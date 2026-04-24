@@ -1,12 +1,12 @@
 package com.lightningkite.services.database.processor
 
 import com.google.devtools.ksp.symbol.*
-import java.util.Locale
+import java.util.*
 import kotlin.math.min
 
 data class ResolvedAnnotation(
     val type: KSClassDeclaration,
-    val arguments: Map<String, Any?>
+    val arguments: Map<String, Any?>,
 )
 
 fun KSTypeReference.tryResolve(): KSType? = try {
@@ -21,7 +21,8 @@ val KSDeclaration.importSafeName: String
         else -> this.qualifiedName!!.asString()
     }
 
-fun KSDeclaration.safeLocalReference(): String = qualifiedName!!.asString().split('.').dropWhile { it.firstOrNull()?.isLowerCase() == true }.joinToString(".")
+fun KSDeclaration.safeLocalReference(): String =
+    qualifiedName!!.asString().split('.').dropWhile { it.firstOrNull()?.isLowerCase() == true }.joinToString(".")
 
 fun KSTypeReference.toKotlin(annotations: Sequence<KSAnnotation>? = null): String =
     this.resolve().toKotlin(annotations ?: sequenceOf())
@@ -67,10 +68,14 @@ fun KSType.toKotlinSerializer(contextualTypes: List<KSDeclaration>): String {
     } + if (isMarkedNullable) ".nullable2" else ""
 }
 
-fun KSType.toKotlinLeast(annotations: Sequence<KSAnnotation> = this.annotations, alreadyProcessed: Set<KSName> = setOf()): String {
+fun KSType.toKotlinLeast(
+    annotations: Sequence<KSAnnotation> = this.annotations,
+    alreadyProcessed: Set<KSName> = setOf(),
+): String {
     (this.declaration as? KSTypeParameter)?.let { tp ->
-        if(alreadyProcessed.contains(tp.name)) return "Any?"
-        return tp.bounds.firstOrNull()?.resolve()?.toKotlinLeast(alreadyProcessed = alreadyProcessed + tp.name) ?: "Any?"
+        if (alreadyProcessed.contains(tp.name)) return "Any?"
+        return tp.bounds.firstOrNull()?.resolve()?.toKotlinLeast(alreadyProcessed = alreadyProcessed + tp.name)
+            ?: "Any?"
     }
 
     val annotationString = annotations.joinToString(" ") {
@@ -78,13 +83,15 @@ fun KSType.toKotlinLeast(annotations: Sequence<KSAnnotation> = this.annotations,
     }.let { if (it.isBlank()) "" else "$it " }
 
     return annotationString + (declaration.safeLocalReference() + if (arguments.isNotEmpty() && this.declaration !is KSTypeAlias) {
-        arguments.joinToString(", ", "<", ">") { it.type?.resolve()?.toKotlinLeast(alreadyProcessed = alreadyProcessed) ?: "*" }
+        arguments.joinToString(", ", "<", ">") {
+            it.type?.resolve()?.toKotlinLeast(alreadyProcessed = alreadyProcessed) ?: "*"
+        }
     } else "") + if (isMarkedNullable) "?" else ""
 }
 
 fun List<ResolvedAnnotation>.byName(
     name: String,
-    packageName: String = "com.lightningkite.services.data"
+    packageName: String = "com.lightningkite.services.data",
 ): ResolvedAnnotation? = this.find {
     it.type.qualifiedName?.asString() == "$packageName.$name"
 }

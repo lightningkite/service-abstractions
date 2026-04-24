@@ -3,12 +3,10 @@ package com.lightningkite.services.database
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.EmptySerializersModule
-import kotlin.test.Ignore
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
+import kotlin.test.*
 import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalUnsignedTypes::class)
 class VirtualStructRecursionTest {
 
     private val registry = SerializationRegistry(EmptySerializersModule())

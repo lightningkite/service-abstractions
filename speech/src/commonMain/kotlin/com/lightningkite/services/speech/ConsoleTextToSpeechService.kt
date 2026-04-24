@@ -1,10 +1,7 @@
 package com.lightningkite.services.speech
 
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -26,7 +23,7 @@ private val logger = KotlinLogging.logger("ConsoleTextToSpeechService")
  */
 public class ConsoleTextToSpeechService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : TextToSpeechService {
 
     override suspend fun listVoices(language: String?): List<VoiceInfo> {
@@ -45,7 +42,7 @@ public class ConsoleTextToSpeechService(
     override suspend fun synthesize(
         text: String,
         voice: TtsVoiceConfig,
-        options: TtsSynthesisOptions
+        options: TtsSynthesisOptions,
     ): TypedData {
         val truncatedText = if (text.length > 100) "${text.take(100)}..." else text
         logger.info {
@@ -62,14 +59,17 @@ public class ConsoleTextToSpeechService(
                 data = byteArrayOf(0xFF.toByte(), 0xFB.toByte(), 0x90.toByte(), 0x00)
                 mediaType = MediaType.Audio.MPEG
             }
+
             AudioFormat.WAV_44100 -> {
                 data = "RIFF\u0000\u0000\u0000\u0000WAVEfmt ".encodeToByteArray()
                 mediaType = MediaType.Audio.WAV
             }
+
             AudioFormat.OGG_OPUS -> {
                 data = "OggS".encodeToByteArray()
                 mediaType = MediaType.Audio.OGG
             }
+
             else -> {
                 data = byteArrayOf(0x00, 0x00, 0x00, 0x00)
                 mediaType = MediaType.Application.OctetStream
@@ -82,7 +82,7 @@ public class ConsoleTextToSpeechService(
     override fun synthesizeStream(
         text: String,
         voice: TtsVoiceConfig,
-        options: TtsSynthesisOptions
+        options: TtsSynthesisOptions,
     ): Flow<TypedData> {
         val truncatedText = if (text.length > 100) "${text.take(100)}..." else text
         logger.info {

@@ -1,9 +1,9 @@
 // Tests by Claude
 package com.lightningkite.services.ai.koog
 
+import kotlin.test.*
 import ai.koog.embeddings.base.Vector as KoogVector
 import com.lightningkite.services.database.Embedding as DbEmbedding
-import kotlin.test.*
 
 /**
  * Tests for EmbeddingAdapter which converts between Koog's Vector (List<Double>)

@@ -5,14 +5,14 @@ import kotlinx.serialization.Serializable
 @Serializable
 public data class GroupCountQuery<Model>(
     val condition: Condition<Model> = Condition.Always,
-    val groupBy: DataClassPathPartial<Model>
+    val groupBy: DataClassPathPartial<Model>,
 )
 
 @Serializable
 public data class AggregateQuery<Model>(
     val aggregate: Aggregate,
     val condition: Condition<Model> = Condition.Always,
-    val property: DataClassPathPartial<Model>
+    val property: DataClassPathPartial<Model>,
 )
 
 @Serializable
@@ -20,5 +20,5 @@ public data class GroupAggregateQuery<Model>(
     val aggregate: Aggregate,
     val condition: Condition<Model> = Condition.Always,
     val groupBy: DataClassPathPartial<Model>,
-    val property: DataClassPathPartial<Model>
+    val property: DataClassPathPartial<Model>,
 )

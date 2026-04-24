@@ -3,7 +3,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
@@ -14,7 +13,15 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
+        freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+    }
+    targets.configureEach {
+        compilations.configureEach {
+            compileTaskProvider.get().compilerOptions {
+                freeCompilerArgs.add("-Xexpect-actual-classes")
+            }
+        }
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
@@ -36,37 +43,23 @@ kotlin {
     iosX64()
     iosArm64()
     iosSimulatorArm64()
-    macosX64()
     macosArm64()
 
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(libs.kotlinx.json)
+                api(libs.kotlinx.serialization.json)
                 api(libs.kotlinx.datetime)
                 api(libs.coroutines.core)
                 api(libs.kotlin.logging)
-                api(project(":should-be-standard-library"))
-            }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
+                api(project(path = ":data"))
+                api(project(path = ":kfile"))
             }
         }
         val commonTest by getting {
             dependencies {
                 implementation(libs.kotlin.test)
                 implementation(libs.coroutines.testing)
-            }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
         val notJvmMain by creating {
@@ -82,12 +75,9 @@ kotlin {
                 api(libs.openTelemetry.kotlin)
             }
         }
-        val jvmTest by getting {
-        }
+        val jvmTest by getting {}
     }
 }
-
-lkLibrary("lightningkite", "service-abstractions") {}
 
 android {
     namespace = "com.lightningkite.services"
@@ -104,4 +94,12 @@ android {
     dependencies {
         coreLibraryDesugaring(libs.androidDesugaring)
     }
+}
+
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {
+    description.set("The foundation module for all other Service Abstractions")
 }

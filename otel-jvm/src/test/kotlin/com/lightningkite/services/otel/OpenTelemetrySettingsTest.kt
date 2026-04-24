@@ -2,7 +2,8 @@ package com.lightningkite.services.otel
 
 import com.lightningkite.services.TestSettingContext
 import io.github.oshai.kotlinlogging.KotlinLogging
-import org.junit.Assert.*
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds

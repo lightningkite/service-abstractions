@@ -3,12 +3,8 @@
 
 package com.lightningkite.services.database.mapformat
 
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.descriptors.PolymorphicKind
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.StructureKind
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.json.Json
@@ -28,7 +24,6 @@ import kotlinx.serialization.modules.SerializersModule
 public class MapDecoder(
     private val config: MapFormatConfig,
     private val input: ReadSource,
-    private val descriptor: SerialDescriptor,
     // by Claude - track types currently being deserialized to detect self-referential types
     private val seenStack: MutableList<String> = mutableListOf(),
 ) : Decoder, CompositeDecoder {
@@ -162,7 +157,7 @@ public class MapDecoder(
         return when (descriptor.kind) {
             StructureKind.CLASS, StructureKind.OBJECT -> {
                 // Create a new decoder for nested structures, copying the tag stack
-                MapDecoder(config, input, descriptor).also { it.copyTagsFrom(this) }
+                MapDecoder(config, input).also { it.copyTagsFrom(this) }
             }
 
             StructureKind.LIST -> {
@@ -262,7 +257,7 @@ public class MapDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T>,
-        previousValue: T?
+        previousValue: T?,
     ): T {
         val elemDesc = descriptor.getElementDescriptor(index)
         pushTag(nested(descriptor.getElementName(index)))
@@ -270,7 +265,8 @@ public class MapDecoder(
         // For CLASS/OBJECT types, the tag was used by the child decoder but not popped from parent
         // For primitives/converters, the tag was already popped
         if (elemDesc.kind == StructureKind.CLASS || elemDesc.kind == StructureKind.OBJECT ||
-            elemDesc.kind == StructureKind.LIST || elemDesc.kind == StructureKind.MAP) {
+            elemDesc.kind == StructureKind.LIST || elemDesc.kind == StructureKind.MAP
+        ) {
             tagStack.removeLastOrNull()
         }
         return result
@@ -280,14 +276,15 @@ public class MapDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T?>,
-        previousValue: T?
+        previousValue: T?,
     ): T? {
         val elemDesc = descriptor.getElementDescriptor(index)
         pushTag(nested(descriptor.getElementName(index)))
         val result = if (decodeNotNullMark()) decodeSerializableValue(deserializer) else decodeNull()
         // For CLASS/OBJECT types and collections, pop the unused tag
         if (elemDesc.kind == StructureKind.CLASS || elemDesc.kind == StructureKind.OBJECT ||
-            elemDesc.kind == StructureKind.LIST || elemDesc.kind == StructureKind.MAP) {
+            elemDesc.kind == StructureKind.LIST || elemDesc.kind == StructureKind.MAP
+        ) {
             tagStack.removeLastOrNull()
         }
         return result
@@ -306,7 +303,7 @@ internal class ConverterDecoder(
     override val serializersModule: SerializersModule = EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> read(): T {
+    private fun <T : Any> read(): T {
         val dbValue = input.readField(path)
         val conv = converter as ValueConverter<T, Any>
         return conv.fromDatabase(dbValue as Any)
@@ -321,6 +318,7 @@ internal class ConverterDecoder(
     override fun decodeDouble(): Double = read()
     override fun decodeChar(): Char = read()
     override fun decodeString(): String = read()
+
     @ExperimentalSerializationApi
     override fun decodeNull(): Nothing? = null
 
@@ -330,6 +328,7 @@ internal class ConverterDecoder(
     }
 
     override fun decodeInline(descriptor: SerialDescriptor): Decoder = this
+
     @ExperimentalSerializationApi
     override fun decodeNotNullMark(): Boolean = input.readField(path) != null
 

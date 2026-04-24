@@ -3,6 +3,7 @@ package com.lightningkite.services.ai.koog
 import com.lightningkite.services.ai.koog.rag.EmbedderSettings
 import kotlinx.coroutines.runBlocking
 import kotlin.test.*
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Tests for [OllamaManager].
@@ -139,11 +140,11 @@ class OllamaManagerTest {
         assertEquals(4_500_000_000, info.size)
         assertEquals("sha256:def456", info.digest)
         assertNotNull(info.details)
-        assertEquals("gguf", info.details?.format)
-        assertEquals("llama", info.details?.family)
-        assertEquals(listOf("llama", "llama3"), info.details?.families)
-        assertEquals("8B", info.details?.parameter_size)
-        assertEquals("Q4_0", info.details?.quantization_level)
+        assertEquals("gguf", info.details.format)
+        assertEquals("llama", info.details.family)
+        assertEquals(listOf("llama", "llama3"), info.details.families)
+        assertEquals("8B", info.details.parameter_size)
+        assertEquals("Q4_0", info.details.quantization_level)
     }
 
     @Test
@@ -343,7 +344,7 @@ class OllamaManagerTest {
             manager.stopServer()
 
             // Give it a moment to shut down
-            kotlinx.coroutines.delay(1000)
+            kotlinx.coroutines.delay(1000.milliseconds)
 
             // Verify it's stopped
             assertFalse(manager.isServerRunning(), "Server should not be running after stop")

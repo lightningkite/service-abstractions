@@ -46,6 +46,6 @@ public data class CheckoutSessionRequest(
     val trialPeriodDays: Int? = null,
     val metadata: Map<String, String> = emptyMap(),
     val allowPromotionCodes: Boolean = false,
-    val customData: Map<String, String> = emptyMap()
+    val customData: Map<String, String> = emptyMap(),
 )
 

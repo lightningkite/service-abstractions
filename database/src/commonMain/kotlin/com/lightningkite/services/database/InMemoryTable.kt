@@ -2,11 +2,9 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.OpenTelemetry
 import com.lightningkite.services.data.IndexUniqueness
-import kotlinx.atomicfu.AtomicRef
-import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.*
 import kotlinx.atomicfu.locks.ReentrantLock
 import kotlinx.atomicfu.locks.withLock
-import kotlinx.atomicfu.update
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.KSerializer

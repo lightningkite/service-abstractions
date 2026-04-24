@@ -5,7 +5,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
 //    alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
@@ -16,7 +15,8 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
+        freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
@@ -47,25 +47,11 @@ kotlin {
                 api(project(path = ":http-client"))
                 compileOnly(project(path = ":otel-jvm"))
             }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
-            }
         }
         val commonTest by getting {
             dependencies {
                 implementation(libs.kotlin.test)
                 implementation(libs.coroutines.testing)
-            }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
         val jvmMain by getting {
@@ -82,7 +68,11 @@ kotlin {
     }
 }
 
-lkLibrary("lightningkite", "service-abstractions") {}
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {}
 
 //android {
 //    namespace = "com.lightningkite.services"

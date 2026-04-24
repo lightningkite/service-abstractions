@@ -2,12 +2,8 @@
 package com.lightningkite.services.database.mapformat
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class MapFormatTest {
 
@@ -112,13 +108,34 @@ class MapFormatTest {
                     collectionHandler = ArrayListCollectionHandler(
                         MapFormatConfig(
                             collectionHandler = object : CollectionHandler {
-                                override fun createListEncoder(fieldPath: String, elementDescriptor: SerialDescriptor, output: WriteTarget) =
+                                override fun createListEncoder(
+                                    fieldPath: String,
+                                    elementDescriptor: SerialDescriptor,
+                                    output: WriteTarget,
+                                ) =
                                     throw UnsupportedOperationException("Triple-nested collections not supported")
-                                override fun createListDecoder(fieldPath: String, elementDescriptor: SerialDescriptor, input: ReadSource) =
+
+                                override fun createListDecoder(
+                                    fieldPath: String,
+                                    elementDescriptor: SerialDescriptor,
+                                    input: ReadSource,
+                                ) =
                                     throw UnsupportedOperationException("Triple-nested collections not supported")
-                                override fun createMapEncoder(fieldPath: String, keyDescriptor: SerialDescriptor, valueDescriptor: SerialDescriptor, output: WriteTarget) =
+
+                                override fun createMapEncoder(
+                                    fieldPath: String,
+                                    keyDescriptor: SerialDescriptor,
+                                    valueDescriptor: SerialDescriptor,
+                                    output: WriteTarget,
+                                ) =
                                     throw UnsupportedOperationException("Triple-nested collections not supported")
-                                override fun createMapDecoder(fieldPath: String, keyDescriptor: SerialDescriptor, valueDescriptor: SerialDescriptor, input: ReadSource) =
+
+                                override fun createMapDecoder(
+                                    fieldPath: String,
+                                    keyDescriptor: SerialDescriptor,
+                                    valueDescriptor: SerialDescriptor,
+                                    input: ReadSource,
+                                ) =
                                     throw UnsupportedOperationException("Triple-nested collections not supported")
                             }
                         )
@@ -357,8 +374,14 @@ class MapFormatTest {
         val withNulls = NullableFields(required = "a", optional = null, optionalInt = null)
         val withValues = NullableFields(required = "b", optional = "opt", optionalInt = 99)
 
-        assertEquals(withNulls, format.decode(NullableFields.serializer(), format.encode(NullableFields.serializer(), withNulls)))
-        assertEquals(withValues, format.decode(NullableFields.serializer(), format.encode(NullableFields.serializer(), withValues)))
+        assertEquals(
+            withNulls,
+            format.decode(NullableFields.serializer(), format.encode(NullableFields.serializer(), withNulls))
+        )
+        assertEquals(
+            withValues,
+            format.decode(NullableFields.serializer(), format.encode(NullableFields.serializer(), withValues))
+        )
     }
 
     // ========== Tests: Nullable Embedded Classes ==========
@@ -432,8 +455,14 @@ class MapFormatTest {
         val withNull = NullableEmbedded("A", null)
         val withValue = NullableEmbedded("B", Address("St", "City", "Zip"))
 
-        assertEquals(withNull, format.decode(NullableEmbedded.serializer(), format.encode(NullableEmbedded.serializer(), withNull)))
-        assertEquals(withValue, format.decode(NullableEmbedded.serializer(), format.encode(NullableEmbedded.serializer(), withValue)))
+        assertEquals(
+            withNull,
+            format.decode(NullableEmbedded.serializer(), format.encode(NullableEmbedded.serializer(), withNull))
+        )
+        assertEquals(
+            withValue,
+            format.decode(NullableEmbedded.serializer(), format.encode(NullableEmbedded.serializer(), withValue))
+        )
     }
 
     // ========== Tests: Lists ==========
@@ -667,13 +696,34 @@ class MapFormatTest {
             collectionHandler = ArrayListCollectionHandler(
                 MapFormatConfig(
                     collectionHandler = object : CollectionHandler {
-                        override fun createListEncoder(fieldPath: String, elementDescriptor: SerialDescriptor, output: WriteTarget) =
+                        override fun createListEncoder(
+                            fieldPath: String,
+                            elementDescriptor: SerialDescriptor,
+                            output: WriteTarget,
+                        ) =
                             throw UnsupportedOperationException()
-                        override fun createListDecoder(fieldPath: String, elementDescriptor: SerialDescriptor, input: ReadSource) =
+
+                        override fun createListDecoder(
+                            fieldPath: String,
+                            elementDescriptor: SerialDescriptor,
+                            input: ReadSource,
+                        ) =
                             throw UnsupportedOperationException()
-                        override fun createMapEncoder(fieldPath: String, keyDescriptor: SerialDescriptor, valueDescriptor: SerialDescriptor, output: WriteTarget) =
+
+                        override fun createMapEncoder(
+                            fieldPath: String,
+                            keyDescriptor: SerialDescriptor,
+                            valueDescriptor: SerialDescriptor,
+                            output: WriteTarget,
+                        ) =
                             throw UnsupportedOperationException()
-                        override fun createMapDecoder(fieldPath: String, keyDescriptor: SerialDescriptor, valueDescriptor: SerialDescriptor, input: ReadSource) =
+
+                        override fun createMapDecoder(
+                            fieldPath: String,
+                            keyDescriptor: SerialDescriptor,
+                            valueDescriptor: SerialDescriptor,
+                            input: ReadSource,
+                        ) =
                             throw UnsupportedOperationException()
                     }
                 )
@@ -701,13 +751,34 @@ class MapFormatTest {
             collectionHandler = ArrayListCollectionHandler(
                 MapFormatConfig(
                     collectionHandler = object : CollectionHandler {
-                        override fun createListEncoder(fieldPath: String, elementDescriptor: SerialDescriptor, output: WriteTarget) =
+                        override fun createListEncoder(
+                            fieldPath: String,
+                            elementDescriptor: SerialDescriptor,
+                            output: WriteTarget,
+                        ) =
                             throw UnsupportedOperationException()
-                        override fun createListDecoder(fieldPath: String, elementDescriptor: SerialDescriptor, input: ReadSource) =
+
+                        override fun createListDecoder(
+                            fieldPath: String,
+                            elementDescriptor: SerialDescriptor,
+                            input: ReadSource,
+                        ) =
                             throw UnsupportedOperationException()
-                        override fun createMapEncoder(fieldPath: String, keyDescriptor: SerialDescriptor, valueDescriptor: SerialDescriptor, output: WriteTarget) =
+
+                        override fun createMapEncoder(
+                            fieldPath: String,
+                            keyDescriptor: SerialDescriptor,
+                            valueDescriptor: SerialDescriptor,
+                            output: WriteTarget,
+                        ) =
                             throw UnsupportedOperationException()
-                        override fun createMapDecoder(fieldPath: String, keyDescriptor: SerialDescriptor, valueDescriptor: SerialDescriptor, input: ReadSource) =
+
+                        override fun createMapDecoder(
+                            fieldPath: String,
+                            keyDescriptor: SerialDescriptor,
+                            valueDescriptor: SerialDescriptor,
+                            input: ReadSource,
+                        ) =
                             throw UnsupportedOperationException()
                     }
                 )

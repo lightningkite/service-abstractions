@@ -12,5 +12,5 @@ internal expect suspend fun <R> traced(
     operation: String,
     tableName: String,
     attributes: Map<String, Any> = emptyMap(),
-    block: suspend () -> R
+    block: suspend () -> R,
 ): R

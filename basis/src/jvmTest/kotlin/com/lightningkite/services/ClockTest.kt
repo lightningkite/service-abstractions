@@ -3,15 +3,14 @@ package com.lightningkite.services
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Tests for clock context functionality.
  */
 class ClockTest {
 
-    // TODO: Deprecated API - Replace kotlinx.datetime.Instant with kotlin.time.Instant
-    //  kotlinx.datetime.Instant is deprecated in favor of kotlin.time.Instant
-    private class TestClock(private val instant: kotlinx.datetime.Instant) : Clock {
+    private class TestClock(private val instant: Instant) : Clock {
         override fun now() = instant
     }
 
@@ -24,7 +23,7 @@ class ClockTest {
 
     @Test
     fun testWithClockSetsCustomClock() = runTest {
-        val fixedInstant = kotlinx.datetime.Instant.parse("2025-01-01T00:00:00Z")
+        val fixedInstant = Instant.parse("2025-01-01T00:00:00Z")
         val customClock = TestClock(fixedInstant)
 
         withClock(customClock) {
@@ -35,10 +34,8 @@ class ClockTest {
 
     @Test
     fun testClockContextRestoresAfterBlock() = runTest {
-        val fixedInstant = kotlinx.datetime.Instant.parse("2025-01-01T00:00:00Z")
+        val fixedInstant = Instant.parse("2025-01-01T00:00:00Z")
         val customClock = TestClock(fixedInstant)
-
-        val beforeClock = Clock.default()
 
         withClock(customClock) {
             assertEquals(fixedInstant, Clock.default().now())
@@ -51,8 +48,8 @@ class ClockTest {
 
     @Test
     fun testNestedClockContexts() = runTest {
-        val instant1 = kotlinx.datetime.Instant.parse("2025-01-01T00:00:00Z")
-        val instant2 = kotlinx.datetime.Instant.parse("2025-06-01T00:00:00Z")
+        val instant1 = Instant.parse("2025-01-01T00:00:00Z")
+        val instant2 = Instant.parse("2025-06-01T00:00:00Z")
         val clock1 = TestClock(instant1)
         val clock2 = TestClock(instant2)
 

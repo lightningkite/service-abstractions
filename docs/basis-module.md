@@ -1,6 +1,7 @@
 # Basis Module
 
-The `basis` module provides core abstractions and infrastructure for the service-abstractions library. This module defines the fundamental interfaces and patterns used across all service implementations.
+The `basis` module provides core abstractions and infrastructure for the service-abstractions library. This module
+defines the fundamental interfaces and patterns used across all service implementations.
 
 ## Core Concepts
 
@@ -20,11 +21,13 @@ interface Service {
 ```
 
 **Key Features:**
+
 - **Lifecycle Management**: `connect()` and `disconnect()` methods support serverless environments
 - **Health Monitoring**: Built-in health check support for monitoring systems
 - **Context Access**: Access to shared configuration and resources
 
 **Example Implementation:**
+
 ```kotlin
 class MyDatabaseService(
     override val name: String,
@@ -57,6 +60,7 @@ interface Setting<T> {
 ```
 
 **Usage:**
+
 ```kotlin
 @Serializable
 data class ServerSettings(
@@ -86,6 +90,7 @@ interface SettingContext {
 ```
 
 **Creating a Context:**
+
 ```kotlin
 val context = object : SettingContext {
     override val projectName = "my-application"
@@ -122,12 +127,14 @@ class MyService(override val context: SettingContext) : Service {
 ```
 
 **Common Use Cases:**
+
 - HTTP client instances (connection pooling)
 - Thread pools for blocking I/O
 - SSL/TLS contexts
 - Rate limiters and circuit breakers
 
-**⚠️ Thread Safety:** The implementation uses `ConcurrentMutableMap` which is thread-safe on JVM/Android but may allow `setup()` to be called multiple times concurrently during the getOrPut operation.
+**⚠️ Thread Safety:** The implementation uses `ConcurrentMutableMap` which is thread-safe on JVM/Android but may allow
+`setup()` to be called multiple times concurrently during the getOrPut operation.
 
 ### ConcurrentMutableMap
 
@@ -142,16 +149,19 @@ val service = serviceRegistry["user-service"]
 ```
 
 **Platform Behavior:**
+
 - **JVM/Android**: Returns `java.util.concurrent.ConcurrentHashMap` (lock-free, fully thread-safe)
 - **JavaScript**: Returns regular `HashMap` (single-threaded, no concurrency needed)
 - **Native**: Returns synchronized wrapper around `HashMap` (thread-safe via locking)
 
 **Use Cases:**
+
 - Service registries with concurrent access
 - Shared caches accessed from multiple threads
 - Any map that needs thread-safe operations
 
-**⚠️ Native Platform:** The Kotlin/Native implementation uses coarse-grained locking (single lock for all operations). Iterator operations require external synchronization. Performance is acceptable for moderate contention.
+**⚠️ Native Platform:** The Kotlin/Native implementation uses coarse-grained locking (single lock for all operations).
+Iterator operations require external synchronization. Performance is acceptable for moderate contention.
 
 ### URL-Based Configuration
 
@@ -174,6 +184,7 @@ val cache = CacheParser.parse("session-cache", "redis://localhost:6379/0", conte
 ```
 
 **URL Schemes:**
+
 - `ram://` or `ram` - In-memory implementation
 - `mongodb://host:port/database` - MongoDB
 - `redis://host:port/db` - Redis
@@ -197,6 +208,7 @@ fun testMyService() = runTest {
 ```
 
 **With Custom Clock:**
+
 ```kotlin
 @Test
 fun testTimeDependent() = runTest {

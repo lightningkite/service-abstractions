@@ -1,10 +1,7 @@
 package com.lightningkite.services.speech.local
 
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +13,6 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.URL
 import javax.sound.sampled.AudioFormat
-import javax.sound.sampled.AudioInputStream
 import javax.sound.sampled.AudioSystem
 import kotlin.time.Duration.Companion.seconds
 
@@ -83,7 +79,7 @@ public class VoskSpeechToTextService(
     override val context: SettingContext,
     private val modelPath: File?,
     private val modelName: String,
-    private val modelsDirectory: File
+    private val modelsDirectory: File,
 ) : SpeechToTextService {
 
     private val modelManager = VoskModelManager(modelsDirectory, modelName)
@@ -106,7 +102,7 @@ public class VoskSpeechToTextService(
 
     override suspend fun transcribe(
         audio: TypedData,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult = withContext(Dispatchers.IO) {
         ensureModelLoaded()
 
@@ -121,7 +117,7 @@ public class VoskSpeechToTextService(
 
     override suspend fun transcribeUrl(
         audioUrl: String,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult = withContext(Dispatchers.IO) {
         logger.debug { "[$name] Downloading audio from: $audioUrl" }
 
@@ -141,9 +137,15 @@ public class VoskSpeechToTextService(
         return try {
             val modelDir = modelPath ?: modelManager.getModelPath()
             if (modelManager.isModelDownloaded(modelName) || (modelPath?.exists() == true)) {
-                HealthStatus(HealthStatus.Level.OK, additionalMessage = "Vosk model available at: ${modelDir.absolutePath}")
+                HealthStatus(
+                    HealthStatus.Level.OK,
+                    additionalMessage = "Vosk model available at: ${modelDir.absolutePath}"
+                )
             } else {
-                HealthStatus(HealthStatus.Level.WARNING, additionalMessage = "Vosk model not downloaded yet (will download on first use)")
+                HealthStatus(
+                    HealthStatus.Level.WARNING,
+                    additionalMessage = "Vosk model not downloaded yet (will download on first use)"
+                )
             }
         } catch (e: Exception) {
             HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Vosk error: ${e.message}")

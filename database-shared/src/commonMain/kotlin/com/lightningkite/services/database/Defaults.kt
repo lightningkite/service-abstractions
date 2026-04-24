@@ -1,11 +1,9 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.*
+import com.lightningkite.services.data.*
 import kotlinx.datetime.*
 import kotlinx.datetime.serializers.TimeZoneSerializer
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
+import kotlinx.serialization.*
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -33,11 +31,14 @@ internal object DefaultDecoder : Decoder {
         defaults[Instant.serializer().descriptor.serialName] = Instant.fromEpochMilliseconds(0)
         defaults[LocalTime.serializer().descriptor.serialName] = LocalTime(0, 0, 0)
         defaults[LocalDate.serializer().descriptor.serialName] = LocalDate(1970, 1, 1)
-        defaults[LocalDateTime.serializer().descriptor.serialName] = LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
+        defaults[LocalDateTime.serializer().descriptor.serialName] =
+            LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
         defaults[Duration.serializer().descriptor.serialName] = 0.seconds
         defaults[DurationMsSerializer.descriptor.serialName] = 0.seconds
-        defaults[ZonedDateTimeIso8601Serializer.descriptor.serialName] = ZonedDateTime(LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0)), TimeZone.UTC)
-        defaults[OffsetDateTimeIso8601Serializer.descriptor.serialName] = OffsetDateTime(LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0)), UtcOffset.ZERO)
+        defaults[ZonedDateTimeIso8601Serializer.descriptor.serialName] =
+            ZonedDateTime(LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0)), TimeZone.UTC)
+        defaults[OffsetDateTimeIso8601Serializer.descriptor.serialName] =
+            OffsetDateTime(LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0)), UtcOffset.ZERO)
         defaults[TimeZoneSerializer.descriptor.serialName] = TimeZone.currentSystemDefault()
         defaults[GeoCoordinateGeoJsonSerializer.descriptor.serialName] = GeoCoordinate(0.0, 0.0)
         defaults[GeoCoordinateArraySerializer.descriptor.serialName] = GeoCoordinate(0.0, 0.0)
@@ -69,7 +70,7 @@ internal object DefaultDecoder : Decoder {
         override fun decodeLongElement(descriptor: SerialDescriptor, index: Int) = 0L
         override fun decodeShortElement(descriptor: SerialDescriptor, index: Int) = 0.toShort()
         override fun decodeStringElement(descriptor: SerialDescriptor, index: Int): String {
-            if(descriptor.kind is PolymorphicKind) {
+            if (descriptor.kind is PolymorphicKind) {
                 val subDesc = descriptor.getElementDescriptor(1)
                 return subDesc.getElementName(0)
             }

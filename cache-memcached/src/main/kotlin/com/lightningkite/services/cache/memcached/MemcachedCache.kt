@@ -1,11 +1,9 @@
 package com.lightningkite.services.cache.memcached
 
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.cache.Cache
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import com.lightningkite.services.recordExceptionWithFingerprint
+import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
@@ -72,17 +70,21 @@ import kotlin.time.Duration
 public class MemcachedCache(
     override val name: String,
     public val client: MemcachedClient,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : Cache {
 
     private val tracer: Tracer? = context.openTelemetry?.getTracer("memcached-cache")
 
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
-    
+
     public companion object {
-        public fun Cache.Settings.Companion.memcached(vararg hosts: InetSocketAddress): Cache.Settings = Cache.Settings("memcached://${hosts.joinToString(","){ it.hostString + ":" + it.port }}")
+        public fun Cache.Settings.Companion.memcached(vararg hosts: InetSocketAddress): Cache.Settings =
+            Cache.Settings("memcached://${hosts.joinToString(",") { it.hostString + ":" + it.port }}")
+
         public fun Cache.Settings.Companion.memcachedTest(): Cache.Settings = Cache.Settings("memcached-test")
-        public fun Cache.Settings.Companion.memcachedAws(host: String, port: Int): Cache.Settings = Cache.Settings("memcached-aws://$host:$port")
+        public fun Cache.Settings.Companion.memcachedAws(host: String, port: Int): Cache.Settings =
+            Cache.Settings("memcached-aws://$host:$port")
+
         init {
             Cache.Settings.register("memcached-test") { name, url, context ->
                 val process = EmbeddedMemcached.start()
@@ -91,7 +93,7 @@ public class MemcachedCache(
                 })
                 MemcachedCache(name, XMemcachedClient("127.0.0.1", 11211), context)
             }
-            
+
             Cache.Settings.register("memcached") { name, url, context ->
                 val hosts = url.substringAfter("://").split(' ', ',').filter { it.isNotBlank() }
                     .map {
@@ -102,7 +104,7 @@ public class MemcachedCache(
                     }
                 MemcachedCache(name, XMemcachedClient(hosts), context)
             }
-            
+
             Cache.Settings.register("memcached-aws") { name, url, context ->
                 val configFullHost = url.substringAfter("://")
                 val configPort = configFullHost.substringAfter(':', "").toIntOrNull() ?: 11211
@@ -159,11 +161,12 @@ public class MemcachedCache(
             val scope = span?.makeCurrent()
             try {
                 withContext(Dispatchers.IO) {
-                    if(!client.set(
-                        key,
-                        timeToLive?.inWholeSeconds?.toInt() ?: 0,
-                        json.encodeToString(serializer, value)
-                    )) throw IllegalStateException("Failed to set value in Memcached")
+                    if (!client.set(
+                            key,
+                            timeToLive?.inWholeSeconds?.toInt() ?: 0,
+                            json.encodeToString(serializer, value)
+                        )
+                    ) throw IllegalStateException("Failed to set value in Memcached")
                     Unit
                 }
                 span?.setStatus(StatusCode.OK)
@@ -283,7 +286,7 @@ public class MemcachedCache(
         serializer: KSerializer<T>,
         expected: T?,
         new: T?,
-        timeToLive: Duration?
+        timeToLive: Duration?,
     ): Boolean {
         val span = tracer?.spanBuilder("cache.compareAndSet")
             ?.setSpanKind(SpanKind.CLIENT)
@@ -320,6 +323,7 @@ public class MemcachedCache(
                             client.delete(key)
                             true
                         }
+
                         expected == null -> {
                             // Key doesn't exist, use add (atomic set-if-not-exists)
                             client.add(
@@ -328,6 +332,7 @@ public class MemcachedCache(
                                 json.encodeToString(serializer, new)
                             )
                         }
+
                         else -> {
                             // Key exists and we have a CAS token, use it for atomic update
                             client.cas(
@@ -359,7 +364,7 @@ public class MemcachedCache(
         serializer: KSerializer<T>,
         maxTries: Int,
         timeToLive: Duration?,
-        modification: (T?) -> T?
+        modification: (T?) -> T?,
     ): Boolean {
         repeat(maxTries) {
             val current = get(key, serializer)

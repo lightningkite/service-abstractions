@@ -42,15 +42,17 @@ public class CassandraTable<Model : Any>(
     private val keyspace: String,
     private val tableName: String,
     private val context: SettingContext,
-    private val useAwsKeyspaces: Boolean = false
+    private val useAwsKeyspaces: Boolean = false,
 ) : Table<Model> {
 
     private val schema: CassandraSchema<Model> = CassandraSchema.fromSerializer(serializer, tableName)
+
     // by Claude - using CassandraMapFormat for proper flattening and inline class handling
     private val mapFormat = CassandraMapFormat(context.internalSerializersModule)
     private val quotedKeyspace = keyspace.quoteCql()
     private val quotedTableName = tableName.quoteCql()
     private val fullyQualifiedTable = "$quotedKeyspace.$quotedTableName"
+
     // by Claude - pass SerializersModule for embedded type expansion in conditions
     private val cqlGenerator = CqlGenerator(schema, fullyQualifiedTable, context.internalSerializersModule)
     private val analyzer = ConditionAnalyzer(schema)
@@ -203,7 +205,8 @@ public class CassandraTable<Model : Any>(
             } catch (e: InvalidQueryException) {
                 // Column already exists - this is expected in concurrent startup scenarios
                 if (e.message?.contains("already exists", ignoreCase = true) == true ||
-                    e.message?.contains("duplicate column", ignoreCase = true) == true) {
+                    e.message?.contains("duplicate column", ignoreCase = true) == true
+                ) {
                     logger.debug { "Column '$columnName' already exists in $fullyQualifiedTable (concurrent migration)" }
                 } else {
                     // Other InvalidQueryException - likely a schema constraint issue
@@ -253,11 +256,13 @@ public class CassandraTable<Model : Any>(
                         e.message?.contains("already exists", ignoreCase = true) == true -> {
                             logger.debug { "SASI index on $fullyQualifiedTable.$column already exists" }
                         }
+
                         e.message?.contains("SASI", ignoreCase = true) == true ||
-                        e.message?.contains("custom index", ignoreCase = true) == true -> {
+                                e.message?.contains("custom index", ignoreCase = true) == true -> {
                             // SASI not available (e.g., AWS Keyspaces doesn't support SASI)
                             logger.warn { "SASI indexes not supported on this Cassandra instance. Column '$column' will not be indexed. Consider using @SaiIndex instead." }
                         }
+
                         else -> {
                             logger.warn(e) { "Failed to create SASI index on $fullyQualifiedTable.$column: ${e.message}" }
                         }
@@ -300,12 +305,14 @@ public class CassandraTable<Model : Any>(
                         schema.actualSaiIndexes.add(column) // Index already exists, so it's usable
                         logger.debug { "${if (useAwsKeyspaces) "Secondary" else "SAI"} index on $fullyQualifiedTable.$column already exists" }
                     }
+
                     e.message?.contains("SAI", ignoreCase = true) == true ||
-                    e.message?.contains("sai", ignoreCase = true) == true -> {
+                            e.message?.contains("sai", ignoreCase = true) == true -> {
                         // SAI not available (requires Cassandra 5.0+ or DataStax Astra)
                         // Don't add to actualSaiIndexes - this column is not indexed
                         logger.warn { "SAI indexes not supported on this Cassandra instance. Column '$column' will not be indexed. Upgrade to Cassandra 5.0+ for SAI support." }
                     }
+
                     else -> {
                         logger.warn(e) { "Failed to create index on $fullyQualifiedTable.$column: ${e.message}" }
                     }
@@ -332,7 +339,7 @@ public class CassandraTable<Model : Any>(
         orderBy: List<SortPart<Model>>,
         skip: Int,
         limit: Int,
-        @Suppress("UNUSED_PARAMETER") maxQueryMs: Long
+        @Suppress("UNUSED_PARAMETER") maxQueryMs: Long,
     ): Flow<Model> {
         ensureSchema()
 
@@ -535,7 +542,7 @@ public class CassandraTable<Model : Any>(
         branches: List<Condition<Model>>,
         orderBy: List<SortPart<Model>>,
         skip: Int,
-        limit: Int
+        limit: Int,
     ): Flow<Model> = flow {
         val canPushSort = cqlGenerator.canPushSort(orderBy)
 
@@ -665,7 +672,7 @@ public class CassandraTable<Model : Any>(
 
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>
+        groupBy: DataClassPath<Model, Key>,
     ): Map<Key, Int> {
         // Cassandra doesn't natively support GROUP BY with COUNT for arbitrary columns
         // We have to materialize and count client-side
@@ -682,7 +689,7 @@ public class CassandraTable<Model : Any>(
     override suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: DataClassPath<Model, N>
+        property: DataClassPath<Model, N>,
     ): Double? {
         // Cassandra doesn't support arbitrary aggregations well
         // We compute client-side
@@ -709,6 +716,7 @@ public class CassandraTable<Model : Any>(
                 val variance = (sumSquares / count) - (mean * mean)
                 kotlin.math.sqrt(variance)
             }
+
             Aggregate.StandardDeviationSample -> {
                 if (count < 2) return null
                 val mean = sum / count
@@ -722,7 +730,7 @@ public class CassandraTable<Model : Any>(
         aggregate: Aggregate,
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>
+        property: DataClassPath<Model, N>,
     ): Map<Key, Double?> {
         // Group-aggregate client-side
         data class Accumulator(var sum: Double = 0.0, var count: Int = 0, var sumSquares: Double = 0.0)
@@ -748,6 +756,7 @@ public class CassandraTable<Model : Any>(
                     val variance = (acc.sumSquares / acc.count) - (mean * mean)
                     kotlin.math.sqrt(variance)
                 }
+
                 Aggregate.StandardDeviationSample -> {
                     if (acc.count < 2) null
                     else {
@@ -794,7 +803,7 @@ public class CassandraTable<Model : Any>(
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> {
         ensureSchema()
         val existing = find(condition, orderBy, 0, 1).firstOrNull()
@@ -809,7 +818,7 @@ public class CassandraTable<Model : Any>(
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean {
         ensureSchema()
         val existing = find(condition, orderBy, 0, 1).firstOrNull()
@@ -832,7 +841,7 @@ public class CassandraTable<Model : Any>(
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> {
         ensureSchema()
 
@@ -891,7 +900,7 @@ public class CassandraTable<Model : Any>(
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean {
         ensureSchema()
 
@@ -935,7 +944,7 @@ public class CassandraTable<Model : Any>(
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> {
         ensureSchema()
         val existing = find(condition, orderBy, 0, 1).firstOrNull()
@@ -951,7 +960,7 @@ public class CassandraTable<Model : Any>(
     override suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean {
         ensureSchema()
         val existing = find(condition, orderBy, 0, 1).firstOrNull()
@@ -966,7 +975,7 @@ public class CassandraTable<Model : Any>(
 
     override suspend fun updateMany(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): CollectionChanges<Model> {
         ensureSchema()
         val changes = mutableListOf<EntryChange<Model>>()
@@ -980,7 +989,7 @@ public class CassandraTable<Model : Any>(
 
     override suspend fun updateManyIgnoringResult(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): Int {
         ensureSchema()
         var count = 0
@@ -1002,7 +1011,7 @@ public class CassandraTable<Model : Any>(
 
     override suspend fun deleteOneIgnoringOld(
         condition: Condition<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean {
         val existing = find(condition, orderBy, 0, 1).firstOrNull()
         return if (existing != null) {
@@ -1054,7 +1063,8 @@ public class CassandraTable<Model : Any>(
 
         val whereClauses = allKeyNames.joinToString(" AND ") { "$it = ?" }
         val cql = "DELETE FROM $fullyQualifiedTable WHERE $whereClauses"
-        session.executeAsync(SimpleStatement.newInstance(cql, *allKeyValues.toTypedArray())).toCompletableFuture().await()
+        session.executeAsync(SimpleStatement.newInstance(cql, *allKeyValues.toTypedArray())).toCompletableFuture()
+            .await()
     }
 
     /**
@@ -1109,7 +1119,7 @@ public class CassandraTable<Model : Any>(
                 // by Claude - get key values from encoded old model (which has flattened keys)
                 val oldValues = mapFormat.encode(serializer, old)
                 val updateParams = nonKeyColumns.map { computedValues[it] } +
-                    allKeyColumnNames.map { oldValues[it] }
+                        allKeyColumnNames.map { oldValues[it] }
 
                 session.executeAsync(
                     SimpleStatement.newInstance(updateCql, *updateParams.toTypedArray())
@@ -1169,12 +1179,12 @@ public class CassandraTable<Model : Any>(
         vectorField: DataClassPath<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> {
         throw UnsupportedOperationException(
             "Vector search is not natively supported by Apache Cassandra. " +
-            "Consider using DataStax Astra DB which provides vector search capabilities, " +
-            "or implement client-side similarity search."
+                    "Consider using DataStax Astra DB which provides vector search capabilities, " +
+                    "or implement client-side similarity search."
         )
     }
 
@@ -1182,7 +1192,7 @@ public class CassandraTable<Model : Any>(
         vectorField: DataClassPath<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> {
         throw UnsupportedOperationException(
             "Sparse vector search is not supported by Apache Cassandra."

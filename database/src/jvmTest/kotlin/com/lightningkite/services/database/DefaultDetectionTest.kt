@@ -1,13 +1,11 @@
 // by Claude - Tests for dynamic default detection in SerializableProperty.Generated
 package com.lightningkite.services.database
 
-import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
+import kotlin.test.*
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 /**

@@ -1,7 +1,7 @@
 package com.lightningkite.services.speech
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -26,7 +26,7 @@ import kotlin.time.Duration.Companion.seconds
  */
 public class TestSpeechToTextService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : SpeechToTextService {
 
     /**
@@ -68,7 +68,7 @@ public class TestSpeechToTextService(
 
     override suspend fun transcribe(
         audio: TypedData,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult {
         transcriptionHistory.add(TranscriptionRequest(audio.data.size?.toInt(), null, options))
         return buildMockResult(options)
@@ -76,7 +76,7 @@ public class TestSpeechToTextService(
 
     override suspend fun transcribeUrl(
         audioUrl: String,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult {
         transcriptionHistory.add(TranscriptionRequest(null, audioUrl, options))
         return buildMockResult(options)
@@ -125,6 +125,6 @@ public class TestSpeechToTextService(
     public data class TranscriptionRequest(
         val audioSize: Int?,
         val audioUrl: String?,
-        val options: TranscriptionOptions
+        val options: TranscriptionOptions,
     )
 }

@@ -2,10 +2,7 @@ package com.lightningkite.services.cache.redis
 
 import com.lightningkite.services.Untested
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.terraform.TerraformEmitterAwsVpc
-import com.lightningkite.services.terraform.TerraformNeed
-import com.lightningkite.services.terraform.TerraformProvider
-import com.lightningkite.services.terraform.TerraformProviderImport
+import com.lightningkite.services.terraform.*
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -26,9 +23,9 @@ import kotlinx.serialization.json.JsonPrimitive
 context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedis(
     type: String = "cache.t2.micro",
     parameterGroupName: String = "default.redis7",
-    count: Int = 1
+    count: Int = 1,
 ): Unit {
-    if(!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
+    if (!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
     emitter.fulfillSetting(
         name,
         JsonPrimitive(value = $$"redis://${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).address}:${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).port}/0")
@@ -54,7 +51,6 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
 }
 
 
-
 /**
  * Creates an AWS ElastiCache Serverless Redis cache.
  *
@@ -78,7 +74,7 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
     maxStorageGb: Int = 10,
     snapshotRetentionLimit: Int = 1,
 ): Unit {
-    if(!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
+    if (!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
     emitter.fulfillSetting(
         name,
         JsonPrimitive(value = $$"redis://${aws_elasticache_serverless_cache.$${name}.endpoint[0].address}:${aws_elasticache_serverless_cache.$${name}.endpoint[0].port}/0")

@@ -1,18 +1,11 @@
 package com.lightningkite.services.phonecall.twilio
 
-import com.lightningkite.MediaType
-import com.lightningkite.PhoneNumber
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
-import com.lightningkite.services.data.HttpAdapter
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
-import com.lightningkite.services.data.WebhookSubserviceWithResponse
+import com.lightningkite.services.data.*
 import com.lightningkite.services.phonecall.*
-import com.lightningkite.toPhoneNumber
+import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.webhooksubservice.*
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.*
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -21,13 +14,10 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import java.net.URLDecoder
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
@@ -104,7 +94,7 @@ public class TwilioPhoneCallService(
     private val account: String,
     private val authUser: String,
     private val authSecret: String,
-    private val defaultFrom: String
+    private val defaultFrom: String,
 ) : PhoneCallService {
 
     /**
@@ -115,7 +105,7 @@ public class TwilioPhoneCallService(
         context: SettingContext,
         account: String,
         authToken: String,
-        defaultFrom: String
+        defaultFrom: String,
     ) : this(name, context, account, account, authToken, defaultFrom)
 
     private val baseUrl = "https://api.twilio.com/2010-04-01/Accounts/$account"
@@ -190,14 +180,14 @@ public class TwilioPhoneCallService(
     private fun validateWebhookSignature(
         headers: Map<String, List<String>>,
         params: Map<String, String>,
-        webhookUrl: String?
+        webhookUrl: String?,
     ) {
         // Webhook URL MUST be configured before processing webhooks
         if (webhookUrl == null) {
             throw SecurityException(
                 "Webhook URL not configured. You must call configureWebhook() before processing webhooks. " +
-                "This is required to validate that webhook requests actually come from Twilio. " +
-                "For unit tests, call configureWebhook() with a test URL and use computeSignature() to generate valid signatures."
+                        "This is required to validate that webhook requests actually come from Twilio. " +
+                        "For unit tests, call configureWebhook() with a test URL and use computeSignature() to generate valid signatures."
             )
         }
 
@@ -285,7 +275,7 @@ public class TwilioPhoneCallService(
         incomingCallUrl: String? = null,
         statusCallbackUrl: String? = null,
         transcriptionCallbackUrl: String? = null,
-        dtmfCallbackUrl: String? = null
+        dtmfCallbackUrl: String? = null,
     ) {
         incomingCallUrl?.let { this.incomingCallWebhookUrl = it }
         statusCallbackUrl?.let { this.statusCallbackUrl = it }
@@ -353,10 +343,13 @@ public class TwilioPhoneCallService(
                                 MachineDetectionMode.ENABLED -> {
                                     append("MachineDetection", "Enable")
                                 }
+
                                 MachineDetectionMode.DETECT_MESSAGE_END -> {
                                     append("MachineDetection", "DetectMessageEnd")
                                 }
-                                MachineDetectionMode.DISABLED -> { /* Don't add parameter */ }
+
+                                MachineDetectionMode.DISABLED -> { /* Don't add parameter */
+                                }
                             }
                         }
                     )
@@ -408,8 +401,10 @@ public class TwilioPhoneCallService(
                                         span?.setStatus(StatusCode.OK)
                                         return callId
                                     }
+
                                     AnsweredBy.MACHINE_START, AnsweredBy.MACHINE_END_BEEP,
-                                    AnsweredBy.MACHINE_END_SILENCE, AnsweredBy.MACHINE_END_OTHER -> {
+                                    AnsweredBy.MACHINE_END_SILENCE, AnsweredBy.MACHINE_END_OTHER,
+                                        -> {
                                         // Still return the call ID, let caller decide what to do
                                         logger.info { "[$name] Call $callId answered by machine (answeredBy: ${status.answeredBy})" }
                                         status.answeredBy?.let { span?.setAttribute("phonecall.answered_by", it.name) }
@@ -420,12 +415,14 @@ public class TwilioPhoneCallService(
                                         span?.setStatus(StatusCode.OK)
                                         return callId
                                     }
+
                                     AnsweredBy.FAX -> {
                                         logger.warn { "[$name] Call $callId answered by fax machine" }
                                         span?.setAttribute("phonecall.answered_by", "FAX")
                                         span?.setStatus(StatusCode.ERROR, "Fax machine detected")
                                         throw PhoneCallException("Fax machine detected")
                                     }
+
                                     null -> {
                                         // Still waiting for AMD to complete
                                         logger.trace { "[$name] Call $callId IN_PROGRESS but AMD not yet complete" }
@@ -442,13 +439,16 @@ public class TwilioPhoneCallService(
                                 return callId
                             }
                         }
+
                         CallStatus.COMPLETED, CallStatus.BUSY, CallStatus.NO_ANSWER,
-                        CallStatus.REJECTED, CallStatus.CANCELED, CallStatus.FAILED -> {
+                        CallStatus.REJECTED, CallStatus.CANCELED, CallStatus.FAILED,
+                            -> {
                             logger.warn { "[$name] Call $callId ended before connecting: ${status.status}" }
                             span?.setAttribute("phonecall.status", status.status.name)
                             span?.setStatus(StatusCode.ERROR, "Call ended before connecting: ${status.status}")
                             throw PhoneCallException("Call ended before connecting: ${status.status}")
                         }
+
                         else -> {
                             // Keep waiting (QUEUED, RINGING)
                             logger.trace { "[$name] Call $callId still waiting: ${status?.status}" }
@@ -859,13 +859,15 @@ public class TwilioPhoneCallService(
 
     // ==================== Webhooks ====================
 
-    override val onIncomingCall: WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> = TwilioIncomingCallWebhook()
+    override val onIncomingCall: WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> =
+        TwilioIncomingCallWebhook()
 
     override val onCallStatus: WebhookSubservice<CallStatusEvent> = TwilioCallStatusWebhook()
 
     override val onTranscription: WebhookSubservice<TranscriptionEvent> = TwilioTranscriptionWebhook()
 
-    private inner class TwilioIncomingCallWebhook : WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> {
+    private inner class TwilioIncomingCallWebhook :
+        WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> {
         override suspend fun configureWebhook(httpUrl: String) {
             incomingCallWebhookUrl = httpUrl
 
@@ -891,7 +893,7 @@ public class TwilioPhoneCallService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): IncomingCallEvent {
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, incomingCallWebhookUrl)
@@ -954,7 +956,7 @@ public class TwilioPhoneCallService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): CallStatusEvent {
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, statusCallbackUrl)
@@ -967,7 +969,16 @@ public class TwilioPhoneCallService(
                 to = (params["To"] ?: "+0").toPhoneNumber(),
                 duration = params["CallDuration"]?.toLongOrNull()?.seconds,
                 endReason = null,
-                metadata = params.filterKeys { it !in setOf("CallSid", "CallStatus", "Direction", "From", "To", "CallDuration") }
+                metadata = params.filterKeys {
+                    it !in setOf(
+                        "CallSid",
+                        "CallStatus",
+                        "Direction",
+                        "From",
+                        "To",
+                        "CallDuration"
+                    )
+                }
             )
         }
 
@@ -987,7 +998,7 @@ public class TwilioPhoneCallService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): TranscriptionEvent {
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, transcriptionCallbackUrl)
@@ -1023,7 +1034,7 @@ public class TwilioPhoneCallService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): DtmfEvent {
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, dtmfCallbackUrl)
@@ -1079,24 +1090,30 @@ public class TwilioPhoneCallService(
                     appendLine("""  <Pause length="3600"/>""")
                 }
             }
+
             is CallInstructions.Reject -> {
                 appendLine("""  <Reject/>""")
             }
+
             is CallInstructions.Hangup -> {
                 appendLine("""  <Hangup/>""")
             }
+
             is CallInstructions.Say -> {
                 say(inst.text, inst.voice, inst.loop)
                 inst.then?.let { renderInstruction(it) }
             }
+
             is CallInstructions.Play -> {
                 appendLine("""  <Play loop="${inst.loop}">${escapeXml(inst.url)}</Play>""")
                 inst.then?.let { renderInstruction(it) }
             }
+
             is CallInstructions.Pause -> {
                 appendLine("""  <Pause length="${inst.duration.inWholeSeconds}"/>""")
                 inst.then?.let { renderInstruction(it) }
             }
+
             is CallInstructions.Gather -> {
                 append("  <Gather")
                 inst.numDigits?.let { append(""" numDigits="$it"""") }
@@ -1113,6 +1130,7 @@ public class TwilioPhoneCallService(
                 appendLine("  </Gather>")
                 inst.then?.let { renderInstruction(it) }
             }
+
             is CallInstructions.Forward -> {
                 append("  <Dial")
                 append(""" timeout="${inst.timeout.inWholeSeconds}"""")
@@ -1122,6 +1140,7 @@ public class TwilioPhoneCallService(
                 appendLine("  </Dial>")
                 inst.then?.let { renderInstruction(it) }
             }
+
             is CallInstructions.Conference -> {
                 append("  <Dial")
                 inst.statusCallbackUrl?.let { append(""" action="${escapeXml(it)}"""") }
@@ -1143,6 +1162,7 @@ public class TwilioPhoneCallService(
                 appendLine("  </Dial>")
                 inst.then?.let { renderInstruction(it) }
             }
+
             is CallInstructions.Record -> {
                 append("  <Record")
                 append(""" maxLength="${inst.maxDuration.inWholeSeconds}"""")
@@ -1156,19 +1176,23 @@ public class TwilioPhoneCallService(
                 appendLine("/>")
                 inst.then?.let { renderInstruction(it) }
             }
+
             is CallInstructions.Redirect -> {
                 appendLine("""  <Redirect>${escapeXml(inst.url)}</Redirect>""")
             }
+
             is CallInstructions.Enqueue -> {
                 append("  <Enqueue")
                 inst.waitUrl?.let { append(""" waitUrl="${escapeXml(it)}"""") }
                 appendLine(""">${inst.name}</Enqueue>""")
                 inst.then?.let { renderInstruction(it) }
             }
+
             is CallInstructions.ImplementationSpecific -> {
                 // Raw TwiML content - insert directly without wrapping
                 appendLine(inst.raw)
             }
+
             is CallInstructions.StreamAudio -> {
                 appendLine("  <Connect>")
                 append("    <Stream")
@@ -1378,7 +1402,7 @@ public class TwilioPhoneCallService(
         public fun PhoneCallService.Settings.Companion.twilio(
             account: String,
             authToken: String,
-            from: String
+            from: String,
         ): PhoneCallService.Settings = PhoneCallService.Settings("twilio://$account:$authToken@$from")
 
         /**
@@ -1393,13 +1417,14 @@ public class TwilioPhoneCallService(
             account: String,
             keySid: String,
             keySecret: String,
-            from: String
+            from: String,
         ): PhoneCallService.Settings = PhoneCallService.Settings("twilio://$account-$keySid:$keySecret@$from")
 
         init {
             PhoneCallService.Settings.register("twilio") { name, url, context ->
                 // Try API Key format first: twilio://account/keySid:keySecret@phoneNumber
-                val apiKeyRegex = Regex("""twilio://(?<account>[^/:]+)-(?<keySid>[^:]+):(?<keySecret>[^@]+)@(?<phoneNumber>.+)""")
+                val apiKeyRegex =
+                    Regex("""twilio://(?<account>[^/:]+)-(?<keySid>[^:]+):(?<keySecret>[^@]+)@(?<phoneNumber>.+)""")
                 val apiKeyMatch = apiKeyRegex.matchEntire(url)
 
                 if (apiKeyMatch != null) {

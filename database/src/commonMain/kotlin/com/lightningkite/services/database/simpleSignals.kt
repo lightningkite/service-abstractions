@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.FlowCollector
  * Runs after an item is created.
  */
 public fun <Model : Any> Table<Model>.postCreate(
-    onCreate: suspend (Model) -> Unit
+    onCreate: suspend (Model) -> Unit,
 ): Table<Model> = object : Table<Model> by this@postCreate {
     override val wraps = this@postCreate
     override suspend fun insert(models: Iterable<Model>): List<Model> {
@@ -18,7 +18,7 @@ public fun <Model : Any> Table<Model>.postCreate(
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> = wraps.upsertOne(condition, modification, model).also {
         if (it.old == null) onCreate(it.new!!)
     }
@@ -28,7 +28,7 @@ public fun <Model : Any> Table<Model>.postCreate(
  * Runs after an item is deleted.
  */
 public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postDelete(
-    onDelete: suspend (Model) -> Unit
+    onDelete: suspend (Model) -> Unit,
 ): Table<Model> = object : Table<Model> by this@postDelete {
     override val wraps = this@postDelete
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int {
@@ -52,14 +52,14 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postDelete(
  * Runs after an existing item is changed.
  */
 public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
-    changed: suspend (Model, Model) -> Unit
+    changed: suspend (Model, Model) -> Unit,
 ): Table<Model> = object : Table<Model> by this@postChange {
     override val wraps = this@postChange
 
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> =
         wraps.replaceOne(condition, model, orderBy)
             .also { if (it.old != null && it.new != null) changed(it.old!!, it.new!!) }
@@ -67,7 +67,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> =
         wraps.upsertOne(condition, modification, model)
             .also { if (it.old != null && it.new != null) changed(it.old!!, it.new!!) }
@@ -75,14 +75,14 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> =
         wraps.updateOne(condition, modification, orderBy)
             .also { if (it.old != null && it.new != null) changed(it.old!!, it.new!!) }
 
     override suspend fun updateMany(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): CollectionChanges<Model> = wraps.updateMany(condition, modification).also { changes ->
         changes.changes.forEach {
             if (it.old != null && it.new != null)
@@ -93,7 +93,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = replaceOne(
         condition,
         model
@@ -102,13 +102,13 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean = upsertOne(condition, modification, model).old != null
 
     override suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = updateOne(condition, modification).new != null
 
     override suspend fun updateManyIgnoringResult(condition: Condition<Model>, modification: Modification<Model>): Int =
@@ -119,7 +119,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
  * Runs after any value is added or modified in the database.
  */
 public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
-    changed: suspend (Model) -> Unit
+    changed: suspend (Model) -> Unit,
 ): Table<Model> = object : Table<Model> by this@postNewValue {
     override val wraps = this@postNewValue
 
@@ -130,28 +130,28 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> =
         wraps.replaceOne(condition, model, orderBy).also { if (it.old != null && it.new != null) changed(it.new!!) }
 
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> =
         wraps.upsertOne(condition, modification, model).also { it.new?.let { changed(it) } }
 
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> =
         wraps.updateOne(condition, modification, orderBy)
             .also { if (it.old != null && it.new != null) changed(it.new!!) }
 
     override suspend fun updateMany(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): CollectionChanges<Model> = wraps.updateMany(condition, modification).also { changes ->
         changes.changes.forEach {
             if (it.old != null && it.new != null)
@@ -162,7 +162,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = replaceOne(
         condition,
         model
@@ -171,13 +171,13 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean = upsertOne(condition, modification, model).old != null
 
     override suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = updateOne(condition, modification).new != null
 
     override suspend fun updateManyIgnoringResult(condition: Condition<Model>, modification: Modification<Model>): Int =
@@ -185,7 +185,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
 }
 
 public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postRawChanges(
-    changed: suspend (List<EntryChange<Model>>) -> Unit
+    changed: suspend (List<EntryChange<Model>>) -> Unit,
 ): Table<Model> = object : Table<Model> by this@postRawChanges {
     override val wraps = this@postRawChanges
 
@@ -202,27 +202,27 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postRawChanges(
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> = wraps.replaceOne(condition, model, orderBy)
         .also { changed(listOf(it)) }
 
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> = wraps.updateOne(condition, modification, orderBy)
         .also { changed(listOf(it)) }
 
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> = wraps.upsertOne(condition, modification, model)
         .also { changed(listOf(it)) }
 
     override suspend fun updateMany(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): CollectionChanges<Model> = wraps.updateMany(condition, modification)
         .also { changed(it.changes) }
 
@@ -230,29 +230,29 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postRawChanges(
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = replaceOne(condition, model, orderBy).new != null
 
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean = upsertOne(condition, modification, model).old != null
 
     override suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = updateOne(condition, modification, orderBy).new != null
 
     override suspend fun updateManyIgnoringResult(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): Int = updateMany(condition, modification).changes.size
 
     override suspend fun deleteOneIgnoringOld(
         condition: Condition<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = deleteOne(condition, orderBy) != null
 
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int = deleteMany(condition).size
@@ -260,7 +260,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postRawChanges(
 }
 
 public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListeners(
-    changeListeners: List<suspend (CollectionChanges<Model>) -> Unit>
+    changeListeners: List<suspend (CollectionChanges<Model>) -> Unit>,
 ): Table<Model> = object : Table<Model> by this@withChangeListeners {
     override val wraps = this@withChangeListeners
 
@@ -282,27 +282,27 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> = wraps.replaceOne(condition, model, orderBy)
         .also { changed(listOf(it)) }
 
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> = wraps.updateOne(condition, modification, orderBy)
         .also { changed(listOf(it)) }
 
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> = wraps.upsertOne(condition, modification, model)
         .also { changed(listOf(it)) }
 
     override suspend fun updateMany(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): CollectionChanges<Model> = wraps.updateMany(condition, modification)
         .also { changed(it.changes) }
 
@@ -310,7 +310,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean =
         if (changeListeners.isEmpty()) wraps.replaceOneIgnoringResult(condition, model, orderBy) else replaceOne(
             condition,
@@ -321,7 +321,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean =
         if (changeListeners.isEmpty()) wraps.upsertOneIgnoringResult(condition, modification, model) else upsertOne(
             condition,
@@ -332,7 +332,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean =
         if (changeListeners.isEmpty()) wraps.updateOneIgnoringResult(condition, modification, orderBy) else updateOne(
             condition,
@@ -342,7 +342,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
 
     override suspend fun updateManyIgnoringResult(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): Int = if (changeListeners.isEmpty()) wraps.updateManyIgnoringResult(
         condition,
         modification
@@ -350,7 +350,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
 
     override suspend fun deleteOneIgnoringOld(
         condition: Condition<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = if (changeListeners.isEmpty()) wraps.deleteOneIgnoringOld(condition, orderBy) else deleteOne(
         condition,
         orderBy
@@ -362,7 +362,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
 }
 
 public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListener(
-    changeListener: suspend (CollectionChanges<Model>) -> Unit
+    changeListener: suspend (CollectionChanges<Model>) -> Unit,
 ): Table<Model> = object : Table<Model> by this@withChangeListener {
     override val wraps = this@withChangeListener
 
@@ -385,7 +385,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> = wraps.replaceOne(condition, model, orderBy)
         .also {
             changeListener(CollectionChanges<Model>(listOf<EntryChange<Model>>(it)))
@@ -394,7 +394,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> = wraps.updateOne(condition, modification, orderBy)
         .also {
             changeListener(CollectionChanges<Model>(listOf<EntryChange<Model>>(it)))
@@ -403,7 +403,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> = wraps.upsertOne(condition, modification, model)
         .also {
             changeListener(CollectionChanges<Model>(listOf<EntryChange<Model>>(it)))
@@ -411,7 +411,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
 
     override suspend fun updateMany(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): CollectionChanges<Model> = wraps.updateMany(condition, modification)
         .also {
             changeListener(CollectionChanges<Model>(it.changes))
@@ -421,7 +421,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean =
         replaceOne(
             condition,
@@ -432,7 +432,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean =
         upsertOne(
             condition,
@@ -443,7 +443,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
     override suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean =
         updateOne(
             condition,
@@ -453,17 +453,17 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
 
     override suspend fun updateManyIgnoringResult(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): Int = updateMany(condition, modification).changes.size
 
     override suspend fun deleteOneIgnoringOld(
         condition: Condition<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean =
-    deleteOne(
-        condition,
-        orderBy
-    ) != null
+        deleteOne(
+            condition,
+            orderBy
+        ) != null
 
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int = deleteMany(condition).size
 
@@ -482,13 +482,13 @@ public inline fun <Model : Any> Table<Model>.interceptCreate(crossinline interce
         override suspend fun upsertOne(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): EntryChange<Model> = wraps.upsertOne(condition, modification, interceptor(model))
 
         override suspend fun upsertOneIgnoringResult(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): Boolean = wraps.upsertOneIgnoringResult(condition, modification, interceptor(model))
     }
 
@@ -505,13 +505,13 @@ public inline fun <Model : Any> Table<Model>.interceptCreates(crossinline interc
         override suspend fun upsertOne(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): EntryChange<Model> = wraps.upsertOne(condition, modification, interceptor(listOf(model)).first())
 
         override suspend fun upsertOneIgnoringResult(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): Boolean = wraps.upsertOneIgnoringResult(condition, modification, interceptor(listOf(model)).first())
     }
 
@@ -525,7 +525,7 @@ public inline fun <Model : Any> Table<Model>.interceptReplace(crossinline interc
         override suspend fun upsertOne(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): EntryChange<Model> = if (modification is Modification.Assign)
             wraps.upsertOne(condition, Modification.Assign(interceptor(modification.value)), model)
         else
@@ -534,7 +534,7 @@ public inline fun <Model : Any> Table<Model>.interceptReplace(crossinline interc
         override suspend fun upsertOneIgnoringResult(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): Boolean = if (modification is Modification.Assign)
             wraps.upsertOneIgnoringResult(condition, Modification.Assign(interceptor(modification.value)), model)
         else
@@ -543,7 +543,7 @@ public inline fun <Model : Any> Table<Model>.interceptReplace(crossinline interc
         override suspend fun replaceOne(
             condition: Condition<Model>,
             model: Model,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): EntryChange<Model> =
             wraps.replaceOne(
                 condition,
@@ -554,7 +554,7 @@ public inline fun <Model : Any> Table<Model>.interceptReplace(crossinline interc
         override suspend fun replaceOneIgnoringResult(
             condition: Condition<Model>,
             model: Model,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): Boolean =
             wraps.replaceOneIgnoringResult(
                 condition,
@@ -572,35 +572,35 @@ public inline fun <Model : Any> Table<Model>.interceptModification(crossinline i
         override suspend fun upsertOne(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): EntryChange<Model> = wraps.upsertOne(condition, interceptor(modification), model)
 
         override suspend fun upsertOneIgnoringResult(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): Boolean = wraps.upsertOneIgnoringResult(condition, interceptor(modification), model)
 
         override suspend fun updateOne(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): EntryChange<Model> = wraps.updateOne(condition, interceptor(modification), orderBy)
 
         override suspend fun updateOneIgnoringResult(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): Boolean = wraps.updateOneIgnoringResult(condition, interceptor(modification), orderBy)
 
         override suspend fun updateMany(
             condition: Condition<Model>,
-            modification: Modification<Model>
+            modification: Modification<Model>,
         ): CollectionChanges<Model> = wraps.updateMany(condition, interceptor(modification))
 
         override suspend fun updateManyIgnoringResult(
             condition: Condition<Model>,
-            modification: Modification<Model>
+            modification: Modification<Model>,
         ): Int = wraps.updateManyIgnoringResult(condition, interceptor(modification))
     }
 
@@ -616,7 +616,7 @@ public inline fun <Model : Any> Table<Model>.interceptChange(crossinline interce
         override suspend fun replaceOne(
             condition: Condition<Model>,
             model: Model,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): EntryChange<Model> =
             wraps.replaceOne(
                 condition,
@@ -627,7 +627,7 @@ public inline fun <Model : Any> Table<Model>.interceptChange(crossinline interce
         override suspend fun replaceOneIgnoringResult(
             condition: Condition<Model>,
             model: Model,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): Boolean =
             wraps.replaceOneIgnoringResult(
                 condition,
@@ -638,14 +638,14 @@ public inline fun <Model : Any> Table<Model>.interceptChange(crossinline interce
         override suspend fun upsertOne(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): EntryChange<Model> =
             wraps.upsertOne(condition, interceptor(modification), interceptor(Modification.Assign(model))(model))
 
         override suspend fun upsertOneIgnoringResult(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): Boolean = wraps.upsertOneIgnoringResult(
             condition,
             interceptor(modification),
@@ -655,23 +655,23 @@ public inline fun <Model : Any> Table<Model>.interceptChange(crossinline interce
         override suspend fun updateOne(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): EntryChange<Model> = wraps.updateOne(condition, interceptor(modification), orderBy)
 
         override suspend fun updateOneIgnoringResult(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): Boolean = wraps.updateOneIgnoringResult(condition, interceptor(modification), orderBy)
 
         override suspend fun updateMany(
             condition: Condition<Model>,
-            modification: Modification<Model>
+            modification: Modification<Model>,
         ): CollectionChanges<Model> = wraps.updateMany(condition, interceptor(modification))
 
         override suspend fun updateManyIgnoringResult(
             condition: Condition<Model>,
-            modification: Modification<Model>
+            modification: Modification<Model>,
         ): Int = wraps.updateManyIgnoringResult(condition, interceptor(modification))
     }
 
@@ -682,7 +682,7 @@ public inline fun <Model : Any> Table<Model>.interceptChange(crossinline interce
  */
 public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptChangePerInstance(
     includeMassUpdates: Boolean = true,
-    crossinline interceptor: suspend (Model, Modification<Model>) -> Modification<Model>
+    crossinline interceptor: suspend (Model, Modification<Model>) -> Modification<Model>,
 ): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptChangePerInstance
@@ -692,7 +692,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
         override suspend fun replaceOne(
             condition: Condition<Model>,
             model: Model,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): EntryChange<Model> {
             val current = wraps.findOne(condition) ?: return EntryChange(null, null)
             return wraps.replaceOne(
@@ -705,7 +705,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
         override suspend fun replaceOneIgnoringResult(
             condition: Condition<Model>,
             model: Model,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): Boolean {
             val current = wraps.findOne(condition) ?: return false
             return wraps.replaceOneIgnoringResult(
@@ -718,7 +718,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
         override suspend fun upsertOne(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): EntryChange<Model> {
             val current = wraps.findOne(condition) ?: return wraps.upsertOne(condition, modification, model)
             val changed = interceptor(current, modification)
@@ -732,7 +732,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
         override suspend fun upsertOneIgnoringResult(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            model: Model
+            model: Model,
         ): Boolean {
             val current =
                 wraps.findOne(condition) ?: return wraps.upsertOneIgnoringResult(condition, modification, model)
@@ -748,7 +748,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
         override suspend fun updateOne(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): EntryChange<Model> {
             val current = wraps.findOne(condition) ?: return EntryChange(null, null)
             return wraps.updateOne(
@@ -761,7 +761,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
         override suspend fun updateOneIgnoringResult(
             condition: Condition<Model>,
             modification: Modification<Model>,
-            orderBy: List<SortPart<Model>>
+            orderBy: List<SortPart<Model>>,
         ): Boolean {
             val current = wraps.findOne(condition) ?: return false
             return wraps.updateOneIgnoringResult(
@@ -773,7 +773,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
 
         override suspend fun updateMany(
             condition: Condition<Model>,
-            modification: Modification<Model>
+            modification: Modification<Model>,
         ): CollectionChanges<Model> {
             if (!includeMassUpdates) return wraps.updateMany(condition, modification)
             val all = ArrayList<EntryChange<Model>>()
@@ -788,7 +788,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
 
         override suspend fun updateManyIgnoringResult(
             condition: Condition<Model>,
-            modification: Modification<Model>
+            modification: Modification<Model>,
         ): Int {
             if (!includeMassUpdates) return wraps.updateManyIgnoringResult(condition, modification)
             var count = 0
@@ -807,7 +807,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
  * Runs before an item is deleted.
  */
 public fun <Model : Any> Table<Model>.interceptDelete(
-    onDelete: suspend (Model) -> Unit
+    onDelete: suspend (Model) -> Unit,
 ): Table<Model> = object : Table<Model> by this@interceptDelete {
     override val wraps = this@interceptDelete
     override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? {

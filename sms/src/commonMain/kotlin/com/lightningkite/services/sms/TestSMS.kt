@@ -1,8 +1,8 @@
 package com.lightningkite.services.sms
 
-import com.lightningkite.PhoneNumber
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.data.PhoneNumber
 
 /**
  * A test implementation of SMS that stores messages for verification in tests.
@@ -10,7 +10,7 @@ import com.lightningkite.services.SettingContext
  */
 public class TestSMS(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : SMS {
 
     /**
@@ -18,7 +18,7 @@ public class TestSMS(
      */
     public data class Message(
         public val to: PhoneNumber,
-        public val message: String
+        public val message: String,
     )
 
     /**

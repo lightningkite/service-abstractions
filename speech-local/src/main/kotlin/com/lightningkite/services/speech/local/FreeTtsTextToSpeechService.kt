@@ -1,12 +1,8 @@
 package com.lightningkite.services.speech.local
 
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import com.lightningkite.services.speech.*
-import com.sun.speech.freetts.Voice
 import com.sun.speech.freetts.VoiceManager
 import com.sun.speech.freetts.audio.SingleFileAudioPlayer
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -56,7 +52,7 @@ private val logger = KotlinLogging.logger("FreeTtsTextToSpeechService")
  */
 public class FreeTtsTextToSpeechService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : TextToSpeechService {
 
     private val availableVoices = listOf(
@@ -96,7 +92,7 @@ public class FreeTtsTextToSpeechService(
     override suspend fun synthesize(
         text: String,
         voice: TtsVoiceConfig,
-        options: TtsSynthesisOptions
+        options: TtsSynthesisOptions,
     ): TypedData = withContext(Dispatchers.IO) {
         val voiceId = voice.voiceId ?: "kevin16"
 
@@ -114,7 +110,7 @@ public class FreeTtsTextToSpeechService(
     override fun synthesizeStream(
         text: String,
         voice: TtsVoiceConfig,
-        options: TtsSynthesisOptions
+        options: TtsSynthesisOptions,
     ): Flow<TypedData> = flow {
         // FreeTTS doesn't support streaming, so emit full audio as single chunk
         val result = synthesize(text, voice, options)
@@ -175,7 +171,7 @@ public class FreeTtsTextToSpeechService(
 
     private fun convertAudioFormat(
         wavBytes: ByteArray,
-        targetFormat: com.lightningkite.services.speech.AudioFormat
+        targetFormat: com.lightningkite.services.speech.AudioFormat,
     ): Pair<ByteArray, MediaType> {
         // For now, we return WAV for all formats since FreeTTS produces WAV
         // A more complete implementation would convert to other formats
@@ -184,9 +180,11 @@ public class FreeTtsTextToSpeechService(
             com.lightningkite.services.speech.AudioFormat.PCM_16000,
             com.lightningkite.services.speech.AudioFormat.PCM_22050,
             com.lightningkite.services.speech.AudioFormat.PCM_24000,
-            com.lightningkite.services.speech.AudioFormat.PCM_44100 -> {
+            com.lightningkite.services.speech.AudioFormat.PCM_44100,
+                -> {
                 wavBytes to MediaType.Audio.WAV
             }
+
             else -> {
                 // Return WAV for unsupported formats with a warning
                 logger.warn { "[$name] Format $targetFormat not supported, returning WAV" }

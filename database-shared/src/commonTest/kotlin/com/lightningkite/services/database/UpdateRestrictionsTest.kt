@@ -4,7 +4,6 @@ import com.lightningkite.services.data.GenerateDataClassPaths
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -17,7 +16,7 @@ data class TestUser(
     val credits: Int = 0,
     val age: Int = 25,
     val isActive: Boolean = true,
-    val score: Double = 0.0
+    val score: Double = 0.0,
 )
 
 @Serializable
@@ -140,8 +139,14 @@ class UpdateRestrictionsTest {
         }
 
         assertEquals(Condition.Never, restrictions(modification<TestUser> { it._id assign Uuid.random() }))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(modification<TestUser> { it.role assign Role.Moderator }))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(modification<TestUser> { it.credits assign 100 }))
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            restrictions(modification<TestUser> { it.role assign Role.Moderator })
+        )
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            restrictions(modification<TestUser> { it.credits assign 100 })
+        )
         assertEquals(Condition.Always, restrictions(modification<TestUser> { it.username assign "newname" }))
     }
 
@@ -258,9 +263,15 @@ class UpdateRestrictionsTest {
 
         assertEquals(Condition.Always, restrictions(modification<TestUser> { it.email assign "new@example.com" }))
         assertEquals(Condition.Always, restrictions(modification<TestUser> { it.username assign "newuser" }))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(modification<TestUser> { it.credits assign 100 }))
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            restrictions(modification<TestUser> { it.credits assign 100 })
+        )
         assertEquals(Condition.Always, restrictions(modification<TestUser> { it.isActive assign true }))
-        assertEquals(Condition.Never, restrictions(modification<TestUser> { it.role assign Role.Admin })) // Not whitelisted
+        assertEquals(
+            Condition.Never,
+            restrictions(modification<TestUser> { it.role assign Role.Admin })
+        ) // Not whitelisted
     }
 
     @Test
@@ -292,8 +303,14 @@ class UpdateRestrictionsTest {
         }
 
         assertEquals(Condition.Never, extendedRestrictions(modification<TestUser> { it._id assign Uuid.random() }))
-        assertEquals(Condition.Never, extendedRestrictions(modification<TestUser> { it.email assign "new@example.com" }))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, extendedRestrictions(modification<TestUser> { it.role assign Role.Moderator }))
+        assertEquals(
+            Condition.Never,
+            extendedRestrictions(modification<TestUser> { it.email assign "new@example.com" })
+        )
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            extendedRestrictions(modification<TestUser> { it.role assign Role.Moderator })
+        )
         assertEquals(Condition.Always, extendedRestrictions(modification<TestUser> { it.username assign "newuser" }))
     }
 
@@ -309,7 +326,10 @@ class UpdateRestrictionsTest {
             user.age.canBeModified()
         }
 
-        assertEquals(Condition.Always, extendedRestrictions(modification<TestUser> { it.email assign "new@example.com" }))
+        assertEquals(
+            Condition.Always,
+            extendedRestrictions(modification<TestUser> { it.email assign "new@example.com" })
+        )
         assertEquals(Condition.Always, extendedRestrictions(modification<TestUser> { it.username assign "newuser" }))
         assertEquals(Condition.Always, extendedRestrictions(modification<TestUser> { it.age assign 30 }))
         assertEquals(Condition.Never, extendedRestrictions(modification<TestUser> { it.role assign Role.Admin }))
@@ -333,7 +353,10 @@ class UpdateRestrictionsTest {
 
         assertEquals(Condition.Never, combined(modification<TestUser> { it._id assign Uuid.random() }))
         assertEquals(Condition.Never, combined(modification<TestUser> { it.email assign "new@example.com" }))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, combined(modification<TestUser> { it.role assign Role.Moderator }))
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            combined(modification<TestUser> { it.role assign Role.Moderator })
+        )
     }
 
     // ==================== CHAIN MODIFICATION TESTS ====================
@@ -475,8 +498,14 @@ class UpdateRestrictionsTest {
         assertEquals(Condition.Never, restrictions(modification<TestUser> { it._id assign Uuid.random() }))
         assertEquals(Condition.Never, restrictions(modification<TestUser> { it.role assign Role.Admin }))
         assertEquals(Condition.Never, restrictions(modification<TestUser> { it.credits assign 1000 }))
-        assertEquals(condition<TestUser> { it._id eq userId }, restrictions(modification<TestUser> { it.email assign "new@example.com" }))
-        assertEquals(condition<TestUser> { it._id eq userId }, restrictions(modification<TestUser> { it.username assign "newuser" }))
+        assertEquals(
+            condition<TestUser> { it._id eq userId },
+            restrictions(modification<TestUser> { it.email assign "new@example.com" })
+        )
+        assertEquals(
+            condition<TestUser> { it._id eq userId },
+            restrictions(modification<TestUser> { it.username assign "newuser" })
+        )
     }
 
     @Test
@@ -492,9 +521,18 @@ class UpdateRestrictionsTest {
         }
 
         assertEquals(Condition.Never, restrictions(modification<TestUser> { it._id assign Uuid.random() }))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(modification<TestUser> { it.role assign Role.Moderator }))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(modification<TestUser> { it.credits assign 1000 }))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(modification<TestUser> { it.isActive assign false }))
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            restrictions(modification<TestUser> { it.role assign Role.Moderator })
+        )
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            restrictions(modification<TestUser> { it.credits assign 1000 })
+        )
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            restrictions(modification<TestUser> { it.isActive assign false })
+        )
     }
 
     @Test

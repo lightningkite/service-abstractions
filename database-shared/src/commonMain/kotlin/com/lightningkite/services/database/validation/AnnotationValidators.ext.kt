@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.validation
 
-import com.lightningkite.*
+import com.lightningkite.services.data.*
 import com.lightningkite.services.database.validation.AnnotationValidators.Builder
 
 public inline fun <reified A : Annotation> Builder.validateStrings(noinline condition: A.(String) -> String?) {

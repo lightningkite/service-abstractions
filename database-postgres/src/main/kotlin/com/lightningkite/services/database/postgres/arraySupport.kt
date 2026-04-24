@@ -4,11 +4,11 @@ import com.lightningkite.services.database.listElement
 import kotlinx.serialization.KSerializer
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.statements.api.PreparedStatementApi
 import org.jetbrains.exposed.sql.statements.jdbc.JdbcConnectionImpl
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 
-internal fun <T> Table.array(name: String, columnType: ColumnType<T>): Column<List<T>> = registerColumn(name, ArrayColumnType(columnType))
+internal fun <T> Table.array(name: String, columnType: ColumnType<T>): Column<List<T>> =
+    registerColumn(name, ArrayColumnType(columnType))
 
 @Suppress("Unchecked_cast")
 internal fun Table.arrayTypeless(name: String, columnType: ColumnType<*>): Column<List<*>> =
@@ -19,8 +19,9 @@ internal class ArrayColumnType<T>(val type: ColumnType<T>) : ColumnType<List<T>>
         append(type.sqlType())
         append(" ARRAY")
     }
+
     override fun valueToDB(value: List<T>?): Any? {
-        if(value == null) return null
+        if (value == null) return null
         val columnType = type.sqlType().split("(")[0]
         val jdbcConnection = (TransactionManager.current().connection as JdbcConnectionImpl).connection
         return jdbcConnection.createArrayOf(columnType, value.map { type.valueToDB(it) }.toTypedArray())
@@ -33,11 +34,11 @@ internal class ArrayColumnType<T>(val type: ColumnType<T>) : ColumnType<List<T>>
             is Array<*> -> value.toList()
             is List<*> -> value
             else -> error("Not sure how to parse ${value} (${value::class.qualifiedName}) from the database!")
-        }.map { (if(it == null) null else type.valueFromDB(it)) as T }
+        }.map { (if (it == null) null else type.valueFromDB(it)) as T }
     }
 
     override fun valueToString(value: List<T>?): String {
-        if(value == null) return "NULL"
+        if (value == null) return "NULL"
         return value.joinToString(",", "ARRAY[", "]::${type.sqlType()}[]") { type.valueToString(it) }
     }
 
@@ -47,7 +48,8 @@ internal class ArrayColumnType<T>(val type: ColumnType<T>) : ColumnType<List<T>>
 
         val columnType = type.sqlType().split("(")[0]
         val jdbcConnection = (TransactionManager.current().connection as JdbcConnectionImpl).connection
-        return jdbcConnection.createArrayOf(columnType, value.map { type.valueToDB(it) }.toTypedArray()) ?: error("Can't create non null array for $value")
+        return jdbcConnection.createArrayOf(columnType, value.map { type.valueToDB(it) }.toTypedArray())
+            ?: error("Can't create non null array for $value")
     }
 }
 
@@ -68,9 +70,13 @@ internal class ArrayColumnType<T>(val type: ColumnType<T>) : ColumnType<List<T>>
 //    }
 //}
 
-internal fun <T> ArrayLengthOp(array: Expression<List<T>>) = CustomFunction<Int>("array_length", IntegerColumnType(), array, intLiteral(1))
-internal fun <T> ArrayIndexOfOp(array: Expression<List<T>>, value: Expression<T>) = CustomFunction<Int>("array_position", IntegerColumnType(), array, value)
-internal fun AsciiValue(value: Expression<String>) = object: ExpressionWithColumnType<ByteArray>() {
+internal fun <T> ArrayLengthOp(array: Expression<List<T>>) =
+    CustomFunction<Int>("array_length", IntegerColumnType(), array, intLiteral(1))
+
+internal fun <T> ArrayIndexOfOp(array: Expression<List<T>>, value: Expression<T>) =
+    CustomFunction<Int>("array_position", IntegerColumnType(), array, value)
+
+internal fun AsciiValue(value: Expression<String>) = object : ExpressionWithColumnType<ByteArray>() {
     override val columnType: IColumnType<ByteArray> = BinaryColumnType(100)
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         queryBuilder.append(value)
@@ -82,7 +88,7 @@ internal class SliceOp<T>(
     val source: Expression<List<T>>,
     val from: Expression<Int> = LiteralOp(IntegerColumnType(), 1),
     val to: Expression<Int> = ArrayLengthOp(source),
-): Op<List<T>>() {
+) : Op<List<T>>() {
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         queryBuilder.append(source)
         queryBuilder.append('[')
@@ -93,18 +99,18 @@ internal class SliceOp<T>(
     }
 }
 
-internal class ConcatOp<T>(vararg val sources: Expression<T>): Op<T>() {
+internal class ConcatOp<T>(vararg val sources: Expression<T>) : Op<T>() {
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         var first = true
-        for(entry in sources) {
-            if(first) first = false
+        for (entry in sources) {
+            if (first) first = false
             else queryBuilder.append(" || ")
             queryBuilder.append(entry)
         }
     }
 }
 
-internal class GetOp<T>(val source: Expression<List<T>>, val index: Expression<Int>): Op<T>() {
+internal class GetOp<T>(val source: Expression<List<T>>, val index: Expression<Int>) : Op<T>() {
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         queryBuilder.append(source)
         queryBuilder.append("[")
@@ -113,7 +119,7 @@ internal class GetOp<T>(val source: Expression<List<T>>, val index: Expression<I
     }
 }
 
-internal class AllIsTrueOp(val source: Expression<List<Boolean>>): Op<Boolean>() {
+internal class AllIsTrueOp(val source: Expression<List<Boolean>>) : Op<Boolean>() {
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         queryBuilder.append("TRUE = ALL (")
         queryBuilder.append(source)
@@ -121,7 +127,7 @@ internal class AllIsTrueOp(val source: Expression<List<Boolean>>): Op<Boolean>()
     }
 }
 
-internal class AnyIsTrueOp(val source: Expression<List<Boolean>>): Op<Boolean>() {
+internal class AnyIsTrueOp(val source: Expression<List<Boolean>>) : Op<Boolean>() {
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         queryBuilder.append("TRUE = ANY (")
         queryBuilder.append(source)
@@ -133,15 +139,16 @@ internal class MapOp<A, B>(
     val sources: FieldSet2<List<A>>,
     val mapper: (FieldSet2<A>) -> Expression<B>,
     val filter: (FieldSet2<A>) -> Expression<Boolean> = { Op.TRUE },
-): Op<List<B>>() {
+) : Op<List<B>>() {
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         @Suppress("UNCHECKED_CAST")
         val fs = FieldSet2<A>(
             sources.serializer.listElement()!! as KSerializer<A>,
             fields = sources.fields.mapValues {
-                object: ExpressionWithColumnType<Any?>() {
+                object : ExpressionWithColumnType<Any?>() {
                     override val columnType: IColumnType<Any>
                         get() = (it.value.columnType as ArrayColumnType<Any>).type
+
                     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
                         queryBuilder.append(it.key.takeUnless { it.isEmpty() } ?: "it")
                     }
@@ -153,15 +160,15 @@ internal class MapOp<A, B>(
         queryBuilder.append(mapper(fs))
         queryBuilder.append(" FROM unnest(")
         var first = true
-        for(f in sources.fields) {
-            if(first) first = false
+        for (f in sources.fields) {
+            if (first) first = false
             else queryBuilder.append(", ")
             queryBuilder.append(f.value)
         }
         queryBuilder.append(") x(")
         first = true
-        for(s in sources.fields) {
-            if(first) first = false
+        for (s in sources.fields) {
+            if (first) first = false
             else queryBuilder.append(", ")
             queryBuilder.append(s.key.takeUnless { it.isEmpty() } ?: "it")
         }
@@ -173,14 +180,23 @@ internal class MapOp<A, B>(
 
 internal class ContainsOp(expr1: Expression<*>, expr2: Expression<*>) : ComparisonOp(expr1, expr2, "@>")
 
-internal infix fun<T> ExpressionWithColumnType<T>.contains(arry: List<T>) : Op<Boolean> = ContainsOp(this, QueryParameter(arry,
-    ArrayColumnType(columnType)))
+internal infix fun <T> ExpressionWithColumnType<T>.contains(arry: List<T>): Op<Boolean> = ContainsOp(
+    this, QueryParameter(
+        arry,
+        ArrayColumnType(columnType)
+    )
+)
 
-internal class InsensitiveLikeEscapeOp(expr1: Expression<*>, expr2: Expression<*>, like: Boolean, val escapeChar: Char?) : ComparisonOp(expr1, expr2, if (like) "ILIKE" else "NOT ILIKE") {
+internal class InsensitiveLikeEscapeOp(
+    expr1: Expression<*>,
+    expr2: Expression<*>,
+    like: Boolean,
+    val escapeChar: Char?,
+) : ComparisonOp(expr1, expr2, if (like) "ILIKE" else "NOT ILIKE") {
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         super.toQueryBuilder(queryBuilder)
-        if (escapeChar != null){
-            with(queryBuilder){
+        if (escapeChar != null) {
+            with(queryBuilder) {
                 +" ESCAPE "
                 +stringParam(escapeChar.toString())
             }

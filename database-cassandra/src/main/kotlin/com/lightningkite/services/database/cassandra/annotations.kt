@@ -35,7 +35,7 @@ public annotation class PartitionKey(val order: Int = 0)
 @Retention(AnnotationRetention.RUNTIME)
 public annotation class ClusteringColumn(
     val order: Int = 0,
-    val descending: Boolean = false
+    val descending: Boolean = false,
 )
 
 /**
@@ -50,7 +50,7 @@ public annotation class ClusteringColumn(
 public annotation class SasiIndex(
     val mode: SasiMode = SasiMode.PREFIX,
     val caseSensitive: Boolean = true,
-    val analyzer: SasiAnalyzer = SasiAnalyzer.NONE
+    val analyzer: SasiAnalyzer = SasiAnalyzer.NONE,
 )
 
 /**
@@ -59,8 +59,10 @@ public annotation class SasiIndex(
 public enum class SasiMode {
     /** Supports prefix matching (LIKE 'value%') */
     PREFIX,
+
     /** Supports contains matching (LIKE '%value%') - higher storage overhead */
     CONTAINS,
+
     /** Optimized for numeric range queries */
     SPARSE
 }
@@ -71,8 +73,10 @@ public enum class SasiMode {
 public enum class SasiAnalyzer {
     /** No text analysis */
     NONE,
+
     /** Standard tokenizing analyzer with stemming */
     STANDARD,
+
     /** Non-tokenizing analyzer (treats entire value as single token) */
     NON_TOKENIZING
 }
@@ -101,7 +105,7 @@ public annotation class SaiIndex
 @Retention(AnnotationRetention.RUNTIME)
 public annotation class ComputedColumn(
     val transform: ComputedTransform,
-    val sourceProperties: Array<String> = []
+    val sourceProperties: Array<String> = [],
 )
 
 /**
@@ -110,12 +114,16 @@ public annotation class ComputedColumn(
 public enum class ComputedTransform {
     /** Convert source string to lowercase */
     LOWERCASE,
+
     /** Reverse the source string */
     REVERSED,
+
     /** Compute geohash from [latitude, longitude] source properties */
     GEOHASH,
+
     /** Lower precision geohash (precision 4) */
     GEOHASH_PRECISION_4,
+
     /** Higher precision geohash (precision 6) */
     GEOHASH_PRECISION_6
 }
@@ -134,5 +142,5 @@ public annotation class MaterializedView(
     val name: String,
     val partitionKey: Array<String>,
     val clusteringColumns: Array<String> = [],
-    val clusteringOrder: Array<String> = [] // e.g., ["score DESC", "_id ASC"]
+    val clusteringOrder: Array<String> = [], // e.g., ["score DESC", "_id ASC"]
 )

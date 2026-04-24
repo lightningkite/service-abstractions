@@ -1,11 +1,9 @@
 package com.lightningkite.services.email.ses
 
+import com.lightningkite.services.data.toEmailAddress
 import com.lightningkite.services.email.EmailInboundService
-import com.lightningkite.services.email.javasmtp.awsSesDomain
 import com.lightningkite.services.email.javasmtp.awsSesDomainConfiguration
-import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.test.assertPlannableAwsDomain
-import com.lightningkite.toEmailAddress
 import kotlin.test.Test
 
 class TfTest {

@@ -1,14 +1,11 @@
 // by Claude
 package com.lightningkite.services.aws
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.get
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertSame
+import kotlin.test.*
 
 /**
  * Tests for [AwsConnections] shared resource.

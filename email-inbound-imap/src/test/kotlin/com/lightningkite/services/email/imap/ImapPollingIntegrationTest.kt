@@ -1,31 +1,18 @@
 package com.lightningkite.services.email.imap
 
-import com.icegreen.greenmail.util.GreenMail
-import com.icegreen.greenmail.util.GreenMailUtil
-import com.icegreen.greenmail.util.ServerSetup
+import com.icegreen.greenmail.util.*
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.toEmailAddress
 import com.lightningkite.services.email.ReceivedEmail
-import com.lightningkite.toEmailAddress
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import jakarta.activation.DataHandler
-import jakarta.mail.Flags
-import jakarta.mail.Folder
-import jakarta.mail.Message
-import jakarta.mail.Session
-import jakarta.mail.internet.InternetAddress
-import jakarta.mail.internet.MimeBodyPart
-import jakarta.mail.internet.MimeMessage
-import jakarta.mail.internet.MimeMultipart
+import jakarta.mail.*
+import jakarta.mail.internet.*
 import jakarta.mail.util.ByteArrayDataSource
 import kotlinx.coroutines.test.runTest
-import java.util.Properties
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import java.util.*
+import kotlin.test.*
 
 /**
  * Integration tests for IMAP email service with GreenMail.
@@ -224,7 +211,7 @@ class ImapPollingIntegrationTest {
     fun testServiceHealthCheck() = runTest {
         val service = createService()
         val health = service.healthCheck()
-        assertEquals(com.lightningkite.services.HealthStatus.Level.OK, health.level)
+        assertEquals(com.lightningkite.services.data.HealthStatus.Level.OK, health.level)
     }
 
     // ==================== Helpers ====================
@@ -332,7 +319,9 @@ class ImapPollingIntegrationTest {
             subject = msg.subject ?: "",
             html = contentResult.html,
             plainText = contentResult.plainText,
-            receivedAt = kotlin.time.Instant.fromEpochMilliseconds((msg.sentDate ?: msg.receivedDate ?: java.util.Date()).time),
+            receivedAt = kotlin.time.Instant.fromEpochMilliseconds(
+                (msg.sentDate ?: msg.receivedDate ?: java.util.Date()).time
+            ),
             headers = headers,
             attachments = contentResult.attachments,
             envelope = null,
@@ -345,7 +334,7 @@ class ImapPollingIntegrationTest {
     private data class ContentResult(
         val plainText: String?,
         val html: String?,
-        val attachments: List<com.lightningkite.services.email.ReceivedAttachment>
+        val attachments: List<com.lightningkite.services.email.ReceivedAttachment>,
     )
 
     private fun parseContent(part: jakarta.mail.Part): ContentResult {
@@ -355,8 +344,8 @@ class ImapPollingIntegrationTest {
 
         // Check for attachments FIRST (before text/plain check), since attachments may have text/plain content type
         val isAttachment = jakarta.mail.Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) ||
-            jakarta.mail.Part.INLINE.equals(part.disposition, ignoreCase = true) ||
-            (part.fileName != null && !part.isMimeType("multipart/*"))
+                jakarta.mail.Part.INLINE.equals(part.disposition, ignoreCase = true) ||
+                (part.fileName != null && !part.isMimeType("multipart/*"))
 
         when {
             isAttachment -> {
@@ -365,7 +354,7 @@ class ImapPollingIntegrationTest {
                 attachments.add(
                     com.lightningkite.services.email.ReceivedAttachment(
                         filename = filename,
-                        contentType = com.lightningkite.MediaType.Application.OctetStream,
+                        contentType = com.lightningkite.services.data.MediaType.Application.OctetStream,
                         size = bytes.size.toLong(),
                         contentId = null,
                         content = com.lightningkite.services.data.Data.Bytes(bytes),
@@ -373,6 +362,7 @@ class ImapPollingIntegrationTest {
                     )
                 )
             }
+
             part.isMimeType("multipart/*") -> {
                 val multipart = part.content as jakarta.mail.Multipart
                 for (i in 0 until multipart.count) {
@@ -383,9 +373,11 @@ class ImapPollingIntegrationTest {
                     attachments.addAll(result.attachments)
                 }
             }
+
             part.isMimeType("text/plain") -> {
                 plainText = part.content as? String
             }
+
             part.isMimeType("text/html") -> {
                 html = part.content as? String
             }
@@ -409,7 +401,7 @@ class ImapPollingIntegrationTest {
         to: String,
         subject: String,
         plainText: String,
-        html: String
+        html: String,
     ) {
         val session = greenMail.smtp.createSession()
         val message = MimeMessage(session)
@@ -440,7 +432,7 @@ class ImapPollingIntegrationTest {
         body: String,
         attachmentName: String,
         attachmentContent: ByteArray,
-        attachmentContentType: String
+        attachmentContentType: String,
     ) {
         val session = greenMail.smtp.createSession()
         val message = MimeMessage(session)
@@ -472,7 +464,7 @@ class ImapPollingIntegrationTest {
         to: String,
         subject: String,
         body: String,
-        headers: Map<String, String>
+        headers: Map<String, String>,
     ) {
         val session = greenMail.smtp.createSession()
         val message = MimeMessage(session)

@@ -4,8 +4,6 @@ import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import java.util.Locale.getDefault
-import kotlin.collections.HashSet
-import kotlin.text.substringAfterLast
 
 /**
  * KSP (Kotlin Symbol Processor) that generates type-safe DataClassPath field accessors.

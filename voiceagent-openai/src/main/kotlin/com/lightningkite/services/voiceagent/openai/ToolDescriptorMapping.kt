@@ -1,7 +1,6 @@
 package com.lightningkite.services.voiceagent.openai
 
 import com.lightningkite.services.voiceagent.SerializableToolDescriptor
-import com.lightningkite.services.voiceagent.SerializableToolParameterDescriptor
 import com.lightningkite.services.voiceagent.SerializableToolParameterType
 import kotlinx.serialization.json.*
 
@@ -37,26 +36,33 @@ private fun SerializableToolParameterType.toJsonSchema(description: String? = nu
             is SerializableToolParameterType.String -> {
                 put("type", "string")
             }
+
             is SerializableToolParameterType.Integer -> {
                 put("type", "integer")
             }
+
             is SerializableToolParameterType.Float -> {
                 put("type", "number")
             }
+
             is SerializableToolParameterType.Boolean -> {
                 put("type", "boolean")
             }
+
             is SerializableToolParameterType.Null -> {
                 put("type", "null")
             }
+
             is SerializableToolParameterType.Enum -> {
                 put("type", "string")
                 put("enum", JsonArray(type.entries.map { JsonPrimitive(it) }))
             }
+
             is SerializableToolParameterType.ListType -> {
                 put("type", "array")
                 put("items", type.itemsType.toJsonSchema())
             }
+
             is SerializableToolParameterType.Object -> {
                 put("type", "object")
                 if (type.properties.isNotEmpty()) {
@@ -73,6 +79,7 @@ private fun SerializableToolParameterType.toJsonSchema(description: String? = nu
                     put("additionalProperties", JsonPrimitive(true))
                 }
             }
+
             is SerializableToolParameterType.AnyOf -> {
                 put("anyOf", JsonArray(type.types.map { it.type.toJsonSchema(it.description) }))
             }

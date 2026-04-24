@@ -1,14 +1,8 @@
 package com.lightningkite.services.phonecall
 
-import com.lightningkite.MediaType
-import com.lightningkite.PhoneNumber
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.HttpAdapter
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
-import com.lightningkite.services.data.WebhookSubserviceWithResponse
-import com.lightningkite.toPhoneNumber
+import com.lightningkite.services.data.*
+import com.lightningkite.services.webhooksubservice.*
 import kotlin.time.Clock
 
 /**
@@ -32,7 +26,7 @@ import kotlin.time.Clock
  */
 public class TestPhoneCallService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : PhoneCallService {
 
     private var callCounter = 0
@@ -205,7 +199,8 @@ public class TestPhoneCallService(
 
     // ==================== Webhook Subservices ====================
 
-    override val onIncomingCall: WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> = TestIncomingCallWebhook()
+    override val onIncomingCall: WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> =
+        TestIncomingCallWebhook()
 
     private inner class TestIncomingCallWebhook : WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> {
         override suspend fun configureWebhook(httpUrl: String) {
@@ -218,7 +213,7 @@ public class TestPhoneCallService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): IncomingCallEvent {
             return IncomingCallEvent(
                 callId = "test-incoming-${++callCounter}",
@@ -272,7 +267,7 @@ public class TestPhoneCallService(
 
     private inner class TestWebhookSubservice<T>(
         private val name: String,
-        private val defaultEvent: (TypedData) -> T
+        private val defaultEvent: (TypedData) -> T,
     ) : WebhookSubservice<T> {
         var parseHandler: ((List<Pair<String, String>>, Map<String, List<String>>, TypedData) -> T)? = null
 
@@ -286,7 +281,7 @@ public class TestPhoneCallService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): T {
             return parseHandler?.invoke(queryParameters, headers, body) ?: defaultEvent(body)
         }
@@ -333,38 +328,47 @@ public class TestPhoneCallService(
                 appendLine("$indent<Say>${inst.text}</Say>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
+
             is CallInstructions.Play -> {
                 appendLine("$indent<Play>${inst.url}</Play>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
+
             is CallInstructions.Pause -> {
                 appendLine("$indent<Pause length=\"${inst.duration.inWholeSeconds}\"/>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
+
             is CallInstructions.Gather -> {
                 appendLine("$indent<Gather action=\"${inst.actionUrl}\"/>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
+
             is CallInstructions.Forward -> {
                 appendLine("$indent<Dial>${inst.to}</Dial>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
+
             is CallInstructions.Conference -> {
                 appendLine("$indent<Conference name=\"${inst.name}\"/>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
+
             is CallInstructions.Record -> {
                 appendLine("$indent<Record action=\"${inst.actionUrl}\"/>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
+
             is CallInstructions.Redirect -> appendLine("$indent<Redirect>${inst.url}</Redirect>")
             is CallInstructions.Enqueue -> {
                 appendLine("$indent<Enqueue>${inst.name}</Enqueue>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
+
             is CallInstructions.ImplementationSpecific -> {
                 appendLine(inst.raw)
             }
+
             is CallInstructions.StreamAudio -> {
                 appendLine("$indent<StreamAudio url=\"${inst.websocketUrl}\" track=\"${inst.track}\"/>")
                 inst.then?.let { appendInstruction(it, indent) }
@@ -388,7 +392,7 @@ public class TestPhoneCallService(
         val from: PhoneNumber,
         val to: PhoneNumber,
         val options: OutboundCallOptions,
-        val startTime: kotlin.time.Instant
+        val startTime: kotlin.time.Instant,
     ) {
         public fun toCallInfo(): CallInfo = CallInfo(
             callId = callId,
@@ -403,32 +407,32 @@ public class TestPhoneCallService(
     public data class SpokenMessage(
         val callId: String,
         val text: String,
-        val voice: TtsVoice
+        val voice: TtsVoice,
     )
 
     public data class PlayedAudioUrl(
         val callId: String,
         val url: String,
-        val loop: Int
+        val loop: Int,
     )
 
     public data class PlayedAudio(
         val callId: String,
-        val audio: TypedData
+        val audio: TypedData,
     )
 
     public data class SentDtmf(
         val callId: String,
-        val digits: String
+        val digits: String,
     )
 
     public data class UpdatedInstructions(
         val callId: String,
-        val instructions: CallInstructions
+        val instructions: CallInstructions,
     )
 
     public data class UpdatedRawInstructions(
         val callId: String,
-        val instructions: String
+        val instructions: String,
     )
 }

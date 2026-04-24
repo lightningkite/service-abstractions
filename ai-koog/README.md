@@ -1,10 +1,12 @@
 # Koog Integration for Service Abstractions
 
-This module provides Settings-based configuration for [Koog](https://github.com/JetBrains/koog), JetBrains' official Kotlin framework for building AI agents.
+This module provides Settings-based configuration for [Koog](https://github.com/JetBrains/koog), JetBrains' official
+Kotlin framework for building AI agents.
 
 ## Overview
 
-Koog is designed specifically for Kotlin and includes built-in clients for all major LLM providers in a single artifact. This makes it ideal for:
+Koog is designed specifically for Kotlin and includes built-in clients for all major LLM providers in a single artifact.
+This makes it ideal for:
 
 - **Kotlin Multiplatform** projects (JVM, JS, iOS, etc.)
 - **Smaller binaries** - all providers in one dependency
@@ -158,22 +160,24 @@ suspend fun main() {
 
 ## Koog vs LangChain4J
 
-| Feature | Koog | LangChain4J |
-|---------|------|-------------|
-| Language | Pure Kotlin | Java (Kotlin-friendly) |
-| Multiplatform | ✅ JVM, JS, iOS, Wasm | ❌ JVM only |
-| Binary Size | Small (single artifact) | Large (per-provider artifacts) |
-| Providers | 5 providers in `koog-agents` | 30+ providers in separate modules |
-| Framework Focus | Agent orchestration | LLM abstraction layer |
-| Kotlin DSL | Native | Java builders |
+| Feature         | Koog                         | LangChain4J                       |
+|-----------------|------------------------------|-----------------------------------|
+| Language        | Pure Kotlin                  | Java (Kotlin-friendly)            |
+| Multiplatform   | ✅ JVM, JS, iOS, Wasm         | ❌ JVM only                        |
+| Binary Size     | Small (single artifact)      | Large (per-provider artifacts)    |
+| Providers       | 5 providers in `koog-agents` | 30+ providers in separate modules |
+| Framework Focus | Agent orchestration          | LLM abstraction layer             |
+| Kotlin DSL      | Native                       | Java builders                     |
 
 Choose **Koog** if you want:
+
 - Kotlin Multiplatform support
 - Smaller dependency footprint
 - Native Kotlin DSL and coroutines
 - Agent-first design with fault tolerance
 
 Choose **LangChain4J** if you want:
+
 - More mature ecosystem
 - More LLM providers (30+ vs 6)
 - Java compatibility

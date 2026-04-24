@@ -1,10 +1,13 @@
 # Why Lightning Server Instead of Ktor
 
-This document explains the architectural reasoning behind Lightning Server's design and why it provides value beyond what could be achieved as a set of Ktor plugins.
+This document explains the architectural reasoning behind Lightning Server's design and why it provides value beyond
+what could be achieved as a set of Ktor plugins.
 
 ## Executive Summary
 
-Lightning Server's core value comes from treating **endpoints as values** rather than imperative route registrations. This architectural choice enables automatic SDK generation, self-documentation, Terraform infrastructure generation, and reflective server analysis—features that would require substantial reimplementation to achieve with Ktor.
+Lightning Server's core value comes from treating **endpoints as values** rather than imperative route registrations.
+This architectural choice enables automatic SDK generation, self-documentation, Terraform infrastructure generation, and
+reflective server analysis—features that would require substantial reimplementation to achieve with Ktor.
 
 ## The Fundamental Architectural Difference
 
@@ -26,7 +29,8 @@ object Server : ServerBuilder() {
 }
 ```
 
-Endpoints are **properties on an object**. The framework can reflect over `Server::class` to discover all endpoints as inspectable data structures.
+Endpoints are **properties on an object**. The framework can reflect over `Server::class` to discover all endpoints as
+inspectable data structures.
 
 ### Ktor: Routes as Statements
 
@@ -45,7 +49,8 @@ fun Application.module() {
 }
 ```
 
-Routes are **imperative statements** that execute once during startup. After execution, routes exist only in Ktor's internal routing tree—they're not accessible as data you can introspect.
+Routes are **imperative statements** that execute once during startup. After execution, routes exist only in Ktor's
+internal routing tree—they're not accessible as data you can introspect.
 
 ## Features Enabled by "Endpoints as Values"
 
@@ -63,6 +68,7 @@ val meta = path.path("meta") module MetaEndpoints("v1", database, cache)
 ```
 
 **Why Ktor can't do this easily:**
+
 - Route handlers are lambdas with erased type information at runtime
 - No standard way to attach metadata (summary, error cases) to routes
 - Would require mandatory annotations on every route plus a KSP processor
@@ -83,9 +89,11 @@ val endpoint = path.path("orders").post bind ApiHttpHandler(
 )
 ```
 
-The framework generates accurate OpenAPI documentation by walking the endpoint definitions. Documentation is **always in sync** with code because it's derived from the same source.
+The framework generates accurate OpenAPI documentation by walking the endpoint definitions. Documentation is **always in
+sync** with code because it's derived from the same source.
 
 **Ktor alternative:** Use `ktor-swagger` or similar, but this requires:
+
 - Separate annotation layer (`@Operation`, `@ApiResponse`, etc.)
 - Manual synchronization between annotations and implementation
 - Risk of documentation drift
@@ -114,6 +122,7 @@ object Server : ServerBuilder() {
 ```
 
 **Why Ktor can't do this:**
+
 - No way to introspect registered routes programmatically
 - No standard metadata about what infrastructure each route needs
 - Scheduled tasks aren't part of HTTP routing
@@ -141,6 +150,7 @@ GET /meta → {
 ```
 
 This enables:
+
 - Runtime API discovery
 - Client SDK bootstrapping
 - API versioning and compatibility checking
@@ -165,7 +175,8 @@ fun testGetUser() = runBlocking {
 }
 ```
 
-**Ktor alternative:** Use `testApplication` with HTTP client calls, losing type safety and requiring JSON serialization/deserialization in tests.
+**Ktor alternative:** Use `testApplication` with HTTP client calls, losing type safety and requiring JSON
+serialization/deserialization in tests.
 
 ## What About Building This on Top of Ktor?
 
@@ -183,6 +194,7 @@ suspend fun getUser(id: String): User { ... }
 Then use KSP to generate Ktor routes, OpenAPI, and SDKs.
 
 **Problems:**
+
 - Duplicates what Lightning Server already does
 - Annotations are less expressive than the DSL
 - Still need to maintain the code generator
@@ -206,6 +218,7 @@ endpoints.generateSdk()
 ```
 
 **Problems:**
+
 - This is literally reimplementing Lightning Server's architecture
 - You'd maintain both the registry abstraction AND Ktor integration
 - No net reduction in maintenance burden
@@ -218,6 +231,7 @@ endpoints.generateSdk()
 - Write Terraform manually
 
 **Problems:**
+
 - Loses "single source of truth" benefit
 - Documentation drift becomes a real risk
 - No infrastructure generation
@@ -225,11 +239,14 @@ endpoints.generateSdk()
 
 ## When Ktor Add-ons Would Make Sense
 
-The service abstractions in this repository (database, cache, files, email, SMS, etc.) are **already orthogonal to the HTTP layer**. They work equally well with Lightning Server, Ktor, or any other framework.
+The service abstractions in this repository (database, cache, files, email, SMS, etc.) are **already orthogonal to the
+HTTP layer**. They work equally well with Lightning Server, Ktor, or any other framework.
 
-If the question is "should service-abstractions become Ktor plugins?", the answer is: **they already can be used with Ktor**. Just instantiate them in your Ktor application.
+If the question is "should service-abstractions become Ktor plugins?", the answer is: **they already can be used with
+Ktor**. Just instantiate them in your Ktor application.
 
-The question of Lightning Server specifically is about whether the **HTTP endpoint abstraction layer** provides enough value. Based on the features above, the answer is yes—for applications that need:
+The question of Lightning Server specifically is about whether the **HTTP endpoint abstraction layer** provides enough
+value. Based on the features above, the answer is yes—for applications that need:
 
 - Multi-platform SDK generation
 - Infrastructure-as-code generation
@@ -238,17 +255,22 @@ The question of Lightning Server specifically is about whether the **HTTP endpoi
 
 ## Historical Context
 
-Lightning Server was originally designed to abstract server declaration from runner, enabling the same code to run on bare metal or AWS Lambda.
+Lightning Server was originally designed to abstract server declaration from runner, enabling the same code to run on
+bare metal or AWS Lambda.
 
 AWS Lambda/API Gateway specifically has become a pain point:
+
 - Cold starts affecting latency
 - Payload size limits
 - WebSocket complexity through API Gateway
 - API Gateway quirks and limitations
 
-Container platforms (App Runner, Cloud Run, ECS) are simpler—they just run your server as-is with no special adaptation needed. The runner abstraction still provides value for these platforms (Ktor vs Netty vs JDK Server), but Lambda's unique execution model requires disproportionate maintenance effort.
+Container platforms (App Runner, Cloud Run, ECS) are simpler—they just run your server as-is with no special adaptation
+needed. The runner abstraction still provides value for these platforms (Ktor vs Netty vs JDK Server), but Lambda's
+unique execution model requires disproportionate maintenance effort.
 
-**The endpoint introspection architecture remains valuable** independent of the Lambda question. The features it enables (SDK generation, documentation, Terraform) provide ongoing value regardless of deployment target.
+**The endpoint introspection architecture remains valuable** independent of the Lambda question. The features it
+enables (SDK generation, documentation, Terraform) provide ongoing value regardless of deployment target.
 
 ## Recommendation
 
@@ -259,21 +281,22 @@ If Lambda/API Gateway is causing disproportionate maintenance burden:
 3. **Keep service-abstractions separate** (they already are)
 
 This removes the Lambda-specific pain while preserving:
+
 - Runner flexibility for container platforms
 - The unique value of typed endpoints, SDK generation, and Terraform generation
 
 ## Comparison Summary
 
-| Feature | Lightning Server | Ktor + Plugins | Effort to Replicate |
-|---------|-----------------|----------------|---------------------|
-| Type-safe endpoints | Built-in | Annotations required | Medium |
-| OpenAPI generation | Automatic from code | Requires annotations | Medium |
-| SDK generation | Built-in (TS, Kotlin) | External tools | High |
-| Terraform generation | Built-in | Manual or custom | Very High |
-| Reflective analysis | Built-in (`MetaEndpoints`) | Not possible | Very High |
-| Type-safe testing | `endpoint.test()` | HTTP client tests | Low |
-| Settings/DI | `setting()` pattern | Bring your own DI | Low |
-| WebSocket typed handlers | Built-in | Ktor WebSockets | Low |
+| Feature                  | Lightning Server           | Ktor + Plugins       | Effort to Replicate |
+|--------------------------|----------------------------|----------------------|---------------------|
+| Type-safe endpoints      | Built-in                   | Annotations required | Medium              |
+| OpenAPI generation       | Automatic from code        | Requires annotations | Medium              |
+| SDK generation           | Built-in (TS, Kotlin)      | External tools       | High                |
+| Terraform generation     | Built-in                   | Manual or custom     | Very High           |
+| Reflective analysis      | Built-in (`MetaEndpoints`) | Not possible         | Very High           |
+| Type-safe testing        | `endpoint.test()`          | HTTP client tests    | Low                 |
+| Settings/DI              | `setting()` pattern        | Bring your own DI    | Low                 |
+| WebSocket typed handlers | Built-in                   | Ktor WebSockets      | Low                 |
 
 ## See Also
 

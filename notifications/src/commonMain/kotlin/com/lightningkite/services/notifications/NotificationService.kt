@@ -1,9 +1,6 @@
 package com.lightningkite.services.notifications
 
-import com.lightningkite.services.Service
-import com.lightningkite.services.Setting
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.UrlSettingParser
+import com.lightningkite.services.*
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
@@ -138,20 +135,20 @@ public interface NotificationService : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String
+        public val url: String,
     ) : Setting<NotificationService> {
         override fun invoke(name: String, context: SettingContext): NotificationService {
             return parse(name, url, context)
         }
-        
-        public companion object: UrlSettingParser<NotificationService>() {
+
+        public companion object : UrlSettingParser<NotificationService>() {
             init {
                 register("console") { name, url, context -> ConsoleNotificationService(name, context) }
                 register("test") { name, url, context -> TestNotificationService(name, context) }
             }
         }
     }
-    
+
     /**
      * Sends a notification to the specified targets.
      * 

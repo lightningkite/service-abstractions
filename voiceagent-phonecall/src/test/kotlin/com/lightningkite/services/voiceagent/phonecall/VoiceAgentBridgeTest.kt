@@ -1,10 +1,7 @@
 package com.lightningkite.services.voiceagent.phonecall
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.phonecall.AudioStreamCommand
-import com.lightningkite.services.phonecall.AudioStreamEvent
-import com.lightningkite.services.phonecall.AudioTrack
-import com.lightningkite.services.phonecall.CallInstructions
+import com.lightningkite.services.phonecall.*
 import com.lightningkite.services.voiceagent.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -136,8 +133,8 @@ class VoiceAgentBridgeTest {
         }
 
         assertNotNull(session)
-        assertEquals(1, session!!.audioReceived.size)
-        assertEquals(100, session!!.audioReceived[0].size)
+        assertEquals(1, session.audioReceived.size)
+        assertEquals(100, session.audioReceived[0].size)
     }
 
     @Test
@@ -324,10 +321,10 @@ class VoiceAgentBridgeTest {
         }
 
         assertNotNull(session)
-        assertTrue(session!!.audioReceived.isNotEmpty())
+        assertTrue(session.audioReceived.isNotEmpty())
 
         // µ-law to PCM16 24kHz: 100 samples → 300 samples → 600 bytes
-        assertEquals(600, session!!.audioReceived[0].size)
+        assertEquals(600, session.audioReceived[0].size)
     }
 
     @Test
@@ -364,12 +361,14 @@ class VoiceAgentBridgeTest {
         delay(100.milliseconds)
 
         // Emit audio event from agent
-        session?.emitEvent(VoiceAgentEvent.AudioDelta(
-            responseId = "resp-1",
-            itemId = "item-1",
-            contentIndex = 0,
-            delta = Base64.encode(ByteArray(600) { 0 }), // 300 PCM16 samples
-        ))
+        session?.emitEvent(
+            VoiceAgentEvent.AudioDelta(
+                responseId = "resp-1",
+                itemId = "item-1",
+                contentIndex = 0,
+                delta = Base64.encode(ByteArray(600) { 0 }), // 300 PCM16 samples
+            )
+        )
 
         delay(100.milliseconds)
         job.cancel()

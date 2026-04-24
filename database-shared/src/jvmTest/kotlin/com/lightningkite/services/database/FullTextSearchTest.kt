@@ -3,9 +3,7 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.data.TextIndex
 import kotlinx.serialization.Serializable
-import kotlin.test.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Tests for Condition.FullTextSearch local execution to verify it correctly
@@ -21,7 +19,7 @@ class FullTextSearchTest {
         val title: String = "",
         val description: String = "",
         val authorName: String = "",  // NOT in TextIndex, should not be searched
-        val internalNotes: String = ""  // NOT in TextIndex, should not be searched
+        val internalNotes: String = "",  // NOT in TextIndex, should not be searched
     )
 
     // Model WITHOUT TextIndex annotation - should fall back to toString()
@@ -30,7 +28,7 @@ class FullTextSearchTest {
         val id: Int = 0,
         val title: String = "",
         val description: String = "",
-        val authorName: String = ""
+        val authorName: String = "",
     )
 
     // Model with nested field in TextIndex
@@ -40,14 +38,14 @@ class FullTextSearchTest {
         val id: Int = 0,
         val name: String = "",
         val price: Double = 0.0,
-        val metadata: ProductMetadata = ProductMetadata()
+        val metadata: ProductMetadata = ProductMetadata(),
     )
 
     @Serializable
     data class ProductMetadata(
         val category: String = "",
         val tags: List<String> = emptyList(),
-        val internalCode: String = ""  // NOT in TextIndex
+        val internalCode: String = "",  // NOT in TextIndex
     )
 
     // Model with multiple nested levels
@@ -56,18 +54,18 @@ class FullTextSearchTest {
     data class DeepNestedModel(
         val id: Int = 0,
         val name: String = "",
-        val details: DeepDetails = DeepDetails()
+        val details: DeepDetails = DeepDetails(),
     )
 
     @Serializable
     data class DeepDetails(
-        val info: DeepInfo = DeepInfo()
+        val info: DeepInfo = DeepInfo(),
     )
 
     @Serializable
     data class DeepInfo(
         val summary: String = "",
-        val secret: String = ""  // NOT in TextIndex
+        val secret: String = "",  // NOT in TextIndex
     )
 
     // ========== Tests for TextIndex annotation being used ==========
@@ -175,7 +173,10 @@ class FullTextSearchTest {
         // "Document" should still work because it appears as a space-separated word
         val nonIndexedCondition = Condition.FullTextSearch<ArticleWithoutIndex>("Document")
         // This may or may not work depending on toString() format
-        assertTrue(nonIndexedCondition(articleWithoutIndex), "Without @TextIndex, matching depends on toString() format")
+        assertTrue(
+            nonIndexedCondition(articleWithoutIndex),
+            "Without @TextIndex, matching depends on toString() format"
+        )
     }
 
     // ========== Tests for nested field paths in TextIndex ==========
@@ -203,7 +204,10 @@ class FullTextSearchTest {
                 internalCode = "SECRET123"  // NOT in @TextIndex
             )
         )
-        assertFalse(condition(product), "Should NOT match 'SECRET123' because metadata.internalCode is not in @TextIndex")
+        assertFalse(
+            condition(product),
+            "Should NOT match 'SECRET123' because metadata.internalCode is not in @TextIndex"
+        )
     }
 
     @Test
@@ -262,7 +266,8 @@ class FullTextSearchTest {
 
     @Test
     fun `FullTextSearch should respect Levenshtein distance limit`() {
-        val condition = Condition.FullTextSearch<ArticleWithIndex>("kotxxxn", levenshteinDistance = 1)  // too many differences
+        val condition =
+            Condition.FullTextSearch<ArticleWithIndex>("kotxxxn", levenshteinDistance = 1)  // too many differences
         val article = ArticleWithIndex(
             title = "Learning Kotlin",
             description = "A guide"
@@ -291,7 +296,10 @@ class FullTextSearchTest {
             title = "Learning Kotlin",
             description = "A guide to programming"
         )
-        assertTrue(condition(article), "Should match when both 'kotlin' and 'programming' are present across indexed fields")
+        assertTrue(
+            condition(article),
+            "Should match when both 'kotlin' and 'programming' are present across indexed fields"
+        )
     }
 
     @Test

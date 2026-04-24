@@ -15,24 +15,13 @@
  */
 package com.lightningkite.services.database.mongodb.bson
 
-import java.math.BigDecimal
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerializationStrategy
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonEncoder
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.double
-import kotlinx.serialization.json.int
-import kotlinx.serialization.json.long
+import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.toJsonNamingStrategy
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
 import kotlinx.serialization.modules.SerializersModule
 import org.bson.BsonWriter
-import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.toJsonNamingStrategy
-import kotlinx.serialization.SealedSerializationApi
 import org.bson.types.Decimal128
+import java.math.BigDecimal
 
 @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
 internal class JsonBsonEncoder(
@@ -72,14 +61,17 @@ internal class JsonBsonEncoder(
                             encodeName(it)
                             encodeNull()
                         }
+
                     is JsonPrimitive -> {
                         encodeName(it)
                         encodeJsonPrimitive(element)
                     }
+
                     is JsonObject -> {
                         encodeName(it)
                         encodeJsonObject(element)
                     }
+
                     is JsonArray -> {
                         encodeName(it)
                         encodeJsonArray(element)
@@ -110,6 +102,7 @@ internal class JsonBsonEncoder(
                         } else {
                             writer.writeDecimal128(Decimal128(decimal))
                         }
+
                     INT_MIN_VALUE <= decimal && decimal <= INT_MAX_VALUE -> encodeInt(primitive.int)
                     LONG_MIN_VALUE <= decimal && decimal <= LONG_MAX_VALUE -> encodeLong(primitive.long)
                     else -> writer.writeDecimal128(Decimal128(decimal))

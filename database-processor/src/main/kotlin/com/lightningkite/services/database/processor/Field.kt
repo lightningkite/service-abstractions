@@ -29,8 +29,9 @@ private fun toField(owner: KSClassDeclaration, param: KSValueParameter, property
 
 fun KSClassDeclaration.fields(): List<Field> {
     val allProps = getAllProperties().associateBy { it.simpleName.getShortName() }
-    return (primaryConstructor ?: throw IllegalArgumentException("No primary constructor found for ${this.qualifiedName?.asString()}"))
+    return (primaryConstructor
+        ?: throw IllegalArgumentException("No primary constructor found for ${this.qualifiedName?.asString()}"))
         .parameters
         .filter { it.isVal || it.isVar }
-        .mapNotNull { toField(this, it, allProps[it.name?.getShortName()] ?: return@mapNotNull  null) }
+        .mapNotNull { toField(this, it, allProps[it.name?.getShortName()] ?: return@mapNotNull null) }
 }

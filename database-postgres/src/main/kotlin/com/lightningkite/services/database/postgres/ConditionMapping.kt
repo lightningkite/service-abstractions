@@ -1,16 +1,16 @@
 package com.lightningkite.services.database.postgres
 
-import com.lightningkite.services.database.Condition
-import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.SerializableProperty
-import com.lightningkite.services.database.mapKeyElement
-import com.lightningkite.services.database.mapValueElement
+import com.lightningkite.services.database.*
 import kotlinx.serialization.KSerializer
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.ops.SingleValueInListOp
 import org.jetbrains.exposed.sql.statements.UpdateBuilder
 
-internal data class FieldSet2<V>(val serializer: KSerializer<V>, val fields: Map<String, ExpressionWithColumnType<Any?>>, val format: DbMapLikeFormat) {
+internal data class FieldSet2<V>(
+    val serializer: KSerializer<V>,
+    val fields: Map<String, ExpressionWithColumnType<Any?>>,
+    val format: DbMapLikeFormat,
+) {
     constructor(serializer: KSerializer<V>, table: SerialDescriptorTable, format: DbMapLikeFormat) : this(
         serializer = serializer,
         fields = table.col.mapValues {
@@ -19,8 +19,13 @@ internal data class FieldSet2<V>(val serializer: KSerializer<V>, val fields: Map
         },
         format = format
     )
-    val single: ExpressionWithColumnType<Any?> get() = fields[""] ?: throw IllegalStateException("No column found for ${serializer.descriptor.serialName}")
-    fun single(value: V): Pair<ExpressionWithColumnType<Any?>, Expression<Any?>> = single to sqlLiteralOfSomeKind(single.columnType, formatSingle(value))
+
+    val single: ExpressionWithColumnType<Any?>
+        get() = fields[""] ?: throw IllegalStateException("No column found for ${serializer.descriptor.serialName}")
+
+    fun single(value: V): Pair<ExpressionWithColumnType<Any?>, Expression<Any?>> =
+        single to sqlLiteralOfSomeKind(single.columnType, formatSingle(value))
+
     @Suppress("UNCHECKED_CAST")
     fun sub(property: SerializableProperty<V, *>) = FieldSet2<Any?>(
         serializer = property.serializer as KSerializer<Any?>,
@@ -28,11 +33,13 @@ internal data class FieldSet2<V>(val serializer: KSerializer<V>, val fields: Map
             .mapKeys { it.key.substringAfter(property.name).removePrefix("__") },
         format = format,
     )
+
     @Suppress("UNCHECKED_CAST")
     val exists: Expression<Boolean>
         get() = fields["exists"]?.let {
             it as Expression<Boolean>
         } ?: IsNotNullOp(fields.values.first())
+
     @Suppress("UNCHECKED_CAST")
     val notExists: Expression<Boolean>
         get() = fields["exists"]?.let {
@@ -52,11 +59,21 @@ internal data class FieldSet2<V>(val serializer: KSerializer<V>, val fields: Map
                 fields[it.key]!!
             }.mapValues { sqlLiteralOfSomeKind(it.key.columnType, it.value) }
     }
+
     fun formatSingle(value: V): Any? {
-        return format.encode(serializer, value)[""].also { println("Formatted $value (${value?.let { it::class.qualifiedName }}) to $it (${it?.let { it::class.qualifiedName }})") }
+        return format.encode(
+            serializer,
+            value
+        )[""].also { println("Formatted $value (${value?.let { it::class.qualifiedName }}) to $it (${it?.let { it::class.qualifiedName }})") }
     }
+
     fun formatSingleExpression(value: V): Expression<Any?> {
-        return sqlLiteralOfSomeKind(fields[""]!!.columnType, format.encode(serializer, value)[""].also { println("Formatted $value (${value?.let { it::class.qualifiedName }}) to $it (${it?.let { it::class.qualifiedName }})") })
+        return sqlLiteralOfSomeKind(
+            fields[""]!!.columnType,
+            format.encode(
+                serializer,
+                value
+            )[""].also { println("Formatted $value (${value?.let { it::class.qualifiedName }}) to $it (${it?.let { it::class.qualifiedName }})") })
     }
 }
 
@@ -66,10 +83,11 @@ internal fun <T> ISqlExpressionBuilder.condition(
     table: SerialDescriptorTable,
     format: DbMapLikeFormat,
 ): Expression<Boolean> = condition(condition, FieldSet2(serializer, table, format))
+
 @Suppress("UNCHECKED_CAST")
 private fun <T> ISqlExpressionBuilder.condition(
     condition: Condition<T>,
-    fieldSet: FieldSet2<T>
+    fieldSet: FieldSet2<T>,
 ): Expression<Boolean> {
     fun op(value: T, make: (Expression<*>, Expression<*>) -> Op<Boolean>): Op<Boolean> {
         val (col, v) = fieldSet.single(value)
@@ -84,42 +102,51 @@ private fun <T> ISqlExpressionBuilder.condition(
             if (condition.value == null) {
                 fieldSet.notExists
             } else {
-                AndOp(fieldSet.format(condition.value).entries.map {EqOp(it.key, it.value) })
+                AndOp(fieldSet.format(condition.value).entries.map { EqOp(it.key, it.value) })
             }
         }
+
         is Condition.NotEqual -> {
             if (condition.value == null) {
                 fieldSet.exists
             } else {
-                OrOp(fieldSet.format(condition.value).entries.map {NeqOp(it.key, it.value) })
+                OrOp(fieldSet.format(condition.value).entries.map { NeqOp(it.key, it.value) })
             }
         }
+
         is Condition.SetAllElements<*> -> {
             AllIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
                 condition(condition.condition as Condition<Any?>, it)
             }))
         }
+
         is Condition.ListAllElements<*> -> {
             AllIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
                 condition(condition.condition as Condition<Any?>, it)
             }))
         }
+
         is Condition.SetAnyElements<*> -> {
             AnyIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
                 condition(condition.condition as Condition<Any?>, it)
             }))
         }
+
         is Condition.ListAnyElements<*> -> {
             AnyIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
                 condition(condition.condition as Condition<Any?>, it)
             }))
         }
+
         is Condition.Exists<*> -> {
-            val keyValue = fieldSet.format.encode(fieldSet.serializer.mapKeyElement()!! as KSerializer<Any?>, condition.key)[""]
+            val keyValue =
+                fieldSet.format.encode(fieldSet.serializer.mapKeyElement()!! as KSerializer<Any?>, condition.key)[""]
             ContainsOp(fieldSet.single, sqlLiteralOfSomeKind(fieldSet.single.columnType, listOf(keyValue)))
         }
+
         is Condition.OnKey<*> -> {
-            val keyValue = fieldSet.format.encode(fieldSet.serializer.mapKeyElement()!! as KSerializer<Any?>, condition.key)[""]
+            val keyValue =
+                fieldSet.format.encode(fieldSet.serializer.mapKeyElement()!! as KSerializer<Any?>, condition.key)[""]
             condition(
                 condition = condition.condition as Condition<Any?>,
                 fieldSet = FieldSet2<Any?>(
@@ -127,14 +154,23 @@ private fun <T> ISqlExpressionBuilder.condition(
                     fields = fieldSet.fields.entries.asSequence()
                         .filter { it.key.startsWith("value") }
                         .associate {
-                            it.key.removePrefix("value").removePrefix("__") to object: ExpressionWithColumnType<Any?>() {
+                            it.key.removePrefix("value").removePrefix("__") to object :
+                                ExpressionWithColumnType<Any?>() {
                                 override val columnType: IColumnType<Any>
                                     get() = (it.value.columnType as ArrayColumnType<Any>).type
 
                                 override fun toQueryBuilder(queryBuilder: QueryBuilder) {
                                     GetOp(
                                         it.value as Expression<List<Any?>>,
-                                        CustomFunction<Int>("array_position", IntegerColumnType(), fieldSet.single, sqlLiteralOfSomeKind((fieldSet.fields[""]!!.columnType as ArrayColumnType<Any>).type, keyValue))
+                                        CustomFunction<Int>(
+                                            "array_position",
+                                            IntegerColumnType(),
+                                            fieldSet.single,
+                                            sqlLiteralOfSomeKind(
+                                                (fieldSet.fields[""]!!.columnType as ArrayColumnType<Any>).type,
+                                                keyValue
+                                            )
+                                        )
                                     ).toQueryBuilder(queryBuilder)
                                 }
                             }
@@ -150,29 +186,32 @@ private fun <T> ISqlExpressionBuilder.condition(
         is Condition.GreaterThanOrEqual -> op(condition.value, ::GreaterEqOp)
         is Condition.LessThanOrEqual -> op(condition.value, ::LessEqOp)
         is Condition.IfNotNull<*> -> {
-            AndOp(listOf(
-                fieldSet.exists,
-                condition<Any?>(
-                    condition.condition as Condition<Any?>,
-                    fieldSet as FieldSet2<Any?>
+            AndOp(
+                listOf(
+                    fieldSet.exists,
+                    condition<Any?>(
+                        condition.condition as Condition<Any?>,
+                        fieldSet as FieldSet2<Any?>
+                    )
                 )
-            ))
+            )
         }
 
         is Condition.Inside -> {
-            if(fieldSet.fields.size == 1)
+            if (fieldSet.fields.size == 1)
                 SingleValueInListOp(fieldSet.single, condition.values.map { fieldSet.formatSingle(it) })
             else
                 OrOp(condition.values.map { value ->
-                    AndOp(fieldSet.format(value).entries.map {EqOp(it.key, it.value) })
+                    AndOp(fieldSet.format(value).entries.map { EqOp(it.key, it.value) })
                 })
         }
+
         is Condition.NotInside -> {
-            if(fieldSet.fields.size == 1)
+            if (fieldSet.fields.size == 1)
                 NotOp(SingleValueInListOp(fieldSet.single, condition.values.map { fieldSet.formatSingle(it) }))
             else
                 AndOp(condition.values.map { value ->
-                    OrOp(fieldSet.format(value).entries.map {NeqOp(it.key, it.value) })
+                    OrOp(fieldSet.format(value).entries.map { NeqOp(it.key, it.value) })
                 })
         }
 
@@ -261,20 +300,30 @@ private fun <T> ISqlExpressionBuilder.condition(
 }
 
 internal interface FieldModifier {
-    fun modify(key: String, modify: (Expression<Any?>)->Expression<Any?>)
+    fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>)
 }
+
 internal fun FieldModifier.sub(subKey: String): FieldModifier {
-    return object: FieldModifier {
+    return object : FieldModifier {
         override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
-            if(key.isEmpty()) this@sub.modify(subKey, modify)
+            if (key.isEmpty()) this@sub.modify(subKey, modify)
             else this@sub.modify(subKey + "__" + key, modify)
         }
     }
 }
-internal inline fun <T> FieldModifier.modifySingle(set: FieldSet2<T>, crossinline action: (type: IColumnType<Any>, old: Expression<Any?>) -> Expression<Any?>) {
+
+internal inline fun <T> FieldModifier.modifySingle(
+    set: FieldSet2<T>,
+    crossinline action: (type: IColumnType<Any>, old: Expression<Any?>) -> Expression<Any?>,
+) {
     modify("") { action(set.single.columnType, it) }
 }
-internal inline fun <T> FieldModifier.modifyEach(set: FieldSet2<T>, value: T, crossinline action: (type: IColumnType<Any>, value: Expression<Any?>, old: Expression<Any?>) -> Expression<Any?>) {
+
+internal inline fun <T> FieldModifier.modifyEach(
+    set: FieldSet2<T>,
+    value: T,
+    crossinline action: (type: IColumnType<Any>, value: Expression<Any?>, old: Expression<Any?>) -> Expression<Any?>,
+) {
     set.format.encode(set.serializer, value).forEach {
         modify(it.key) { old ->
             val t = set.fields[it.key]!!.columnType
@@ -288,16 +337,16 @@ internal fun <T> UpdateBuilder<*>.modification(
     modification: Modification<T>,
     serializer: KSerializer<T>,
     table: SerialDescriptorTable,
-    format: DbMapLikeFormat
+    format: DbMapLikeFormat,
 ) {
     val map = HashMap<String, Expression<Any?>>()
-    object: FieldModifier {
+    object : FieldModifier {
         fun default(key: String) = table.col[key]!! as Expression<Any?>
         override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
             map[key] = modify(map[key] ?: default(key))
         }
     }.modification(modification, serializer, table, format)
-    for(entry in map) {
+    for (entry in map) {
         this.update(table.col[entry.key]!! as Column<Any?>, entry.value)
     }
 }
@@ -307,16 +356,16 @@ internal fun <T> UpdateReturningOldStatement.modification(
     modification: Modification<T>,
     serializer: KSerializer<T>,
     table: SerialDescriptorTable,
-    format: DbMapLikeFormat
+    format: DbMapLikeFormat,
 ) {
     val map = HashMap<String, Expression<Any?>>()
-    object: FieldModifier {
+    object : FieldModifier {
         fun default(key: String) = table.col[key]!! as Expression<Any?>
         override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
             map[key] = modify(map[key] ?: default(key))
         }
     }.modification(modification, serializer, table, format)
-    for(entry in map) {
+    for (entry in map) {
         this.update(table.col[entry.key]!! as Column<Any?>, entry.value)
     }
 }
@@ -327,62 +376,171 @@ internal fun <T> FieldModifier.modification(
     table: SerialDescriptorTable,
     format: DbMapLikeFormat,
 ): Unit = modification(modification, FieldSet2(serializer, table, format))
+
 @Suppress("UNCHECKED_CAST")
 private fun <T> FieldModifier.modification(
     modification: Modification<T>,
-    fieldSet: FieldSet2<T>
+    fieldSet: FieldSet2<T>,
 ): Unit {
-    when(modification) {
+    when (modification) {
         is Modification.Nothing -> Modification.Nothing
         is Modification.Chain -> modification.modifications.forEach { modification(it, fieldSet) }
         is Modification.Assign -> modifyEach(fieldSet, modification.value) { type, it, old -> it }
-        is Modification.IfNotNull<*> -> modification<Any?>(modification.modification as Modification<Any?>, fieldSet as FieldSet2<Any?>)
-        is Modification.CoerceAtMost -> modifySingle(fieldSet) { type, old -> CustomFunction("LEAST", type, fieldSet.formatSingleExpression(modification.value), old) }
-        is Modification.CoerceAtLeast -> modifySingle(fieldSet) { type, old -> CustomFunction("GREATEST", type, fieldSet.formatSingleExpression(modification.value), old) }
-        is Modification.Increment -> modifySingle(fieldSet) { type, old -> PlusOp(fieldSet.formatSingleExpression(modification.by), old, type) }
-        is Modification.Multiply -> modifySingle(fieldSet) { type, old -> TimesOp(fieldSet.formatSingleExpression(modification.by), old, type) }
-        is Modification.AppendString -> modifySingle(fieldSet) { type, old -> Concat("", old, fieldSet.formatSingleExpression(modification.value as T)) as Expression<Any?> }
-        is Modification.AppendRawString -> modifySingle(fieldSet) { type, old -> Concat("", old, fieldSet.formatSingleExpression(modification.value as T)) as Expression<Any?> }
-        is Modification.ListAppend<*> -> modifyEach(fieldSet, modification.items as T) { type, it, old -> ConcatOp(old, it) }
+        is Modification.IfNotNull<*> -> modification<Any?>(
+            modification.modification as Modification<Any?>,
+            fieldSet as FieldSet2<Any?>
+        )
+
+        is Modification.CoerceAtMost -> modifySingle(fieldSet) { type, old ->
+            CustomFunction(
+                "LEAST",
+                type,
+                fieldSet.formatSingleExpression(modification.value),
+                old
+            )
+        }
+
+        is Modification.CoerceAtLeast -> modifySingle(fieldSet) { type, old ->
+            CustomFunction(
+                "GREATEST",
+                type,
+                fieldSet.formatSingleExpression(modification.value),
+                old
+            )
+        }
+
+        is Modification.Increment -> modifySingle(fieldSet) { type, old ->
+            PlusOp(
+                fieldSet.formatSingleExpression(
+                    modification.by
+                ), old, type
+            )
+        }
+
+        is Modification.Multiply -> modifySingle(fieldSet) { type, old ->
+            TimesOp(
+                fieldSet.formatSingleExpression(
+                    modification.by
+                ), old, type
+            )
+        }
+
+        is Modification.AppendString -> modifySingle(fieldSet) { type, old ->
+            Concat(
+                "",
+                old,
+                fieldSet.formatSingleExpression(modification.value as T)
+            ) as Expression<Any?>
+        }
+
+        is Modification.AppendRawString -> modifySingle(fieldSet) { type, old ->
+            Concat(
+                "",
+                old,
+                fieldSet.formatSingleExpression(modification.value as T)
+            ) as Expression<Any?>
+        }
+
+        is Modification.ListAppend<*> -> modifyEach(fieldSet, modification.items as T) { type, it, old ->
+            ConcatOp(
+                old,
+                it
+            )
+        }
+
         is Modification.ListRemove<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old -> MapOp(fieldSet as FieldSet2<List<Any?>>, { f -> f.fields[it.key]!! }, { SqlExpressionBuilder.run { NotOp(condition(modification.condition as Condition<Any?>, it)) } }) as Expression<Any?> }
-        }
-        is Modification.ListRemoveInstances<*> -> modification(Modification.ListRemove(Condition.Inside(modification.items)) as Modification<T>, fieldSet)
-        is Modification.ListPerElement<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old -> MapOp(
-                sources = fieldSet as FieldSet2<List<Any?>>,
-                mapper = { f ->
-                    lateinit var result: Expression<Any?>
-                    object: FieldModifier {
-                        override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
-                            result = modify(f.fields[it.key]!!)
+            modify(it.key) { old ->
+                MapOp(
+                    fieldSet as FieldSet2<List<Any?>>,
+                    { f -> f.fields[it.key]!! },
+                    {
+                        SqlExpressionBuilder.run {
+                            NotOp(
+                                condition(
+                                    modification.condition as Condition<Any?>,
+                                    it
+                                )
+                            )
                         }
-                    }.modification(modification.modification as Modification<Any?>, f)
-                    if(modification.condition is Condition.Always) result
-                    else with(SqlExpressionBuilder) {
-                        case()
-                            .When(condition(modification.condition as Condition<Any?>, f), result)
-                            .Else(f.fields[it.key]!!)
+                    }) as Expression<Any?>
+            }
+        }
+
+        is Modification.ListRemoveInstances<*> -> modification(
+            Modification.ListRemove(Condition.Inside(modification.items)) as Modification<T>,
+            fieldSet
+        )
+
+        is Modification.ListPerElement<*> -> fieldSet.fields.forEach {
+            modify(it.key) { old ->
+                MapOp(
+                    sources = fieldSet as FieldSet2<List<Any?>>,
+                    mapper = { f ->
+                        lateinit var result: Expression<Any?>
+                        object : FieldModifier {
+                            override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
+                                result = modify(f.fields[it.key]!!)
+                            }
+                        }.modification(modification.modification as Modification<Any?>, f)
+                        if (modification.condition is Condition.Always) result
+                        else with(SqlExpressionBuilder) {
+                            case()
+                                .When(condition(modification.condition as Condition<Any?>, f), result)
+                                .Else(f.fields[it.key]!!)
+                        }
                     }
-                }
-            ) as Expression<Any?> }
+                ) as Expression<Any?>
+            }
         }
+
         is Modification.ListDropFirst<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old -> SliceOp(old as Expression<List<Any?>>, from = sqlLiteralOfSomeKind(IntegerColumnType(), 2)) as Expression<Any?> }
+            modify(it.key) { old ->
+                SliceOp(
+                    old as Expression<List<Any?>>,
+                    from = sqlLiteralOfSomeKind(IntegerColumnType(), 2)
+                ) as Expression<Any?>
+            }
         }
+
         is Modification.ListDropLast<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old -> SliceOp(old as Expression<List<Any?>>, to = MinusOp(ArrayLengthOp(old as Expression<List<Any?>>), sqlLiteralOfSomeKind(IntegerColumnType(), 1), IntegerColumnType())) as Expression<Any?> }
+            modify(it.key) { old ->
+                SliceOp(
+                    old as Expression<List<Any?>>,
+                    to = MinusOp(
+                        ArrayLengthOp(old as Expression<List<Any?>>),
+                        sqlLiteralOfSomeKind(IntegerColumnType(), 1),
+                        IntegerColumnType()
+                    )
+                ) as Expression<Any?>
+            }
         }
+
         is Modification.SetDropFirst<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old -> SliceOp(old as Expression<List<Any?>>, from = sqlLiteralOfSomeKind(IntegerColumnType(), 2)) as Expression<Any?> }
+            modify(it.key) { old ->
+                SliceOp(
+                    old as Expression<List<Any?>>,
+                    from = sqlLiteralOfSomeKind(IntegerColumnType(), 2)
+                ) as Expression<Any?>
+            }
         }
+
         is Modification.SetDropLast<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old -> SliceOp(old as Expression<List<Any?>>, to = MinusOp(ArrayLengthOp(old as Expression<List<Any?>>), sqlLiteralOfSomeKind(IntegerColumnType(), 1), IntegerColumnType())) as Expression<Any?> }
+            modify(it.key) { old ->
+                SliceOp(
+                    old as Expression<List<Any?>>,
+                    to = MinusOp(
+                        ArrayLengthOp(old as Expression<List<Any?>>),
+                        sqlLiteralOfSomeKind(IntegerColumnType(), 1),
+                        IntegerColumnType()
+                    )
+                ) as Expression<Any?>
+            }
         }
+
         is Modification.SetAppend<*> -> {
-            if(fieldSet.fields.size == 1) {
+            if (fieldSet.fields.size == 1) {
                 modifySingle(fieldSet) { type, old ->
-                    object: Op<Any?>() {
+                    object : Op<Any?>() {
                         override fun toQueryBuilder(queryBuilder: QueryBuilder) {
                             queryBuilder.append("ARRAY(SELECT DISTINCT UNNEST(")
                             queryBuilder.append(old)
@@ -394,32 +552,58 @@ private fun <T> FieldModifier.modification(
                 }
             } else TODO()
         }
+
         is Modification.SetRemove<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old -> MapOp(fieldSet as FieldSet2<List<Any?>>, { f -> f.fields[it.key]!! }, { SqlExpressionBuilder.run { NotOp(condition(modification.condition as Condition<Any?>, it)) } }) as Expression<Any?> }
-        }
-        is Modification.SetRemoveInstances<*> -> modification(Modification.SetRemove(Condition.Inside(modification.items.toList())) as Modification<T>, fieldSet)
-        is Modification.SetPerElement<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old -> MapOp(
-                sources = fieldSet as FieldSet2<List<Any?>>,
-                mapper = { f ->
-                    lateinit var result: Expression<Any?>
-                    object: FieldModifier {
-                        override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
-                            result = modify(f.fields[it.key]!!)
+            modify(it.key) { old ->
+                MapOp(
+                    fieldSet as FieldSet2<List<Any?>>,
+                    { f -> f.fields[it.key]!! },
+                    {
+                        SqlExpressionBuilder.run {
+                            NotOp(
+                                condition(
+                                    modification.condition as Condition<Any?>,
+                                    it
+                                )
+                            )
                         }
-                    }.modification(modification.modification as Modification<Any?>, f)
-                    if(modification.condition is Condition.Always) result
-                    else with(SqlExpressionBuilder) {
-                        case()
-                            .When(condition(modification.condition as Condition<Any?>, f), result)
-                            .Else(f.fields[it.key]!!)
-                    }
-                }
-            ) as Expression<Any?> }
+                    }) as Expression<Any?>
+            }
         }
+
+        is Modification.SetRemoveInstances<*> -> modification(
+            Modification.SetRemove(Condition.Inside(modification.items.toList())) as Modification<T>,
+            fieldSet
+        )
+
+        is Modification.SetPerElement<*> -> fieldSet.fields.forEach {
+            modify(it.key) { old ->
+                MapOp(
+                    sources = fieldSet as FieldSet2<List<Any?>>,
+                    mapper = { f ->
+                        lateinit var result: Expression<Any?>
+                        object : FieldModifier {
+                            override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
+                                result = modify(f.fields[it.key]!!)
+                            }
+                        }.modification(modification.modification as Modification<Any?>, f)
+                        if (modification.condition is Condition.Always) result
+                        else with(SqlExpressionBuilder) {
+                            case()
+                                .When(condition(modification.condition as Condition<Any?>, f), result)
+                                .Else(f.fields[it.key]!!)
+                        }
+                    }
+                ) as Expression<Any?>
+            }
+        }
+
         is Modification.Combine<*> -> TODO()
         is Modification.ModifyByKey<*> -> TODO()
         is Modification.RemoveKeys<*> -> TODO()
-        is Modification.OnField<*, *> -> sub(modification.key.name).modification(modification.modification as Modification<Any?>, fieldSet.sub(modification.key as SerializableProperty<T, Any?>))
+        is Modification.OnField<*, *> -> sub(modification.key.name).modification(
+            modification.modification as Modification<Any?>,
+            fieldSet.sub(modification.key as SerializableProperty<T, Any?>)
+        )
     }
 }

@@ -9,7 +9,7 @@ import aws.sdk.kotlin.services.s3.presigners.presignPutObject
 import aws.smithy.kotlin.runtime.content.ByteStream
 import aws.smithy.kotlin.runtime.content.toByteArray
 import aws.smithy.kotlin.runtime.time.epochMilliseconds
-import com.lightningkite.MediaType
+import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.FileInfo

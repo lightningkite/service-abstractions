@@ -1,11 +1,9 @@
 package com.lightningkite.services.database
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.EmptySerializersModule
-import kotlinx.serialization.serializer
 import kotlin.test.*
 
 /**
@@ -17,24 +15,33 @@ import kotlin.test.*
  *
  * Run with: ./gradlew :database-shared:jvmTest --tests "*.VirtualSealedBugTest"
  */
+@OptIn(ExperimentalUnsignedTypes::class)
 class VirtualSealedBugTest {
 
     // ── Test models ────────────────────────────────────────────────────────────
 
     @Serializable
     sealed class Shape {
-        @Serializable @SerialName("BugTest.Circle") data class Circle(val radius: Double) : Shape()
-        @Serializable @SerialName("BugTest.Square") data class Square(val side: Double) : Shape()
+        @Serializable
+        @SerialName("BugTest.Circle")
+        data class Circle(val radius: Double) : Shape()
+        @Serializable
+        @SerialName("BugTest.Square")
+        data class Square(val side: Double) : Shape()
     }
 
     // Generic sealed class to exercise type-parameter propagation
     @Serializable
     sealed class Box<T> {
-        @Serializable @SerialName("BugTest.Box.Full") data class Full<T>(val value: T) : Box<T>()
-        @Serializable @SerialName("BugTest.Box.Empty") class Empty<T> : Box<T>()
+        @Serializable
+        @SerialName("BugTest.Box.Full")
+        data class Full<T>(val value: T) : Box<T>()
+        @Serializable
+        @SerialName("BugTest.Box.Empty")
+        class Empty<T> : Box<T>()
     }
 
-    private val json = Json { }
+    private val json = Json
 
     // ── Registration ───────────────────────────────────────────────────────────
 
@@ -69,8 +76,10 @@ class VirtualSealedBugTest {
         assertEquals(setOf("BugTest.Circle", "BugTest.Square"), names)
 
         vs.options.forEach { opt ->
-            assertEquals(opt.name, opt.type.serialName,
-                "Option type should reference the subclass by its serialName")
+            assertEquals(
+                opt.name, opt.type.serialName,
+                "Option type should reference the subclass by its serialName"
+            )
         }
     }
 
@@ -162,11 +171,15 @@ class VirtualSealedBugTest {
 
         // Sanity: VirtualStruct.Concrete does implement it
         val circleVt = registry.virtualTypes["BugTest.Circle"] as VirtualStruct
-        assertTrue(circleVt.Concrete(registry, arrayOf()) is KSerializerWithDefault<*>,
-            "VirtualStruct.Concrete should implement KSerializerWithDefault (sanity check)")
+        assertTrue(
+            circleVt.Concrete(registry, arrayOf()) is KSerializerWithDefault<*>,
+            "VirtualStruct.Concrete should implement KSerializerWithDefault (sanity check)"
+        )
 
         // VirtualSealed.Concrete should too — currently FAILS
-        assertTrue(concrete is KSerializerWithDefault<*>,
-            "VirtualSealed.Concrete should implement KSerializerWithDefault")
+        assertTrue(
+            concrete is KSerializerWithDefault<*>,
+            "VirtualSealed.Concrete should implement KSerializerWithDefault"
+        )
     }
 }

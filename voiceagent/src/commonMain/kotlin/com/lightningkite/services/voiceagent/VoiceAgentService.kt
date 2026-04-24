@@ -1,6 +1,7 @@
 package com.lightningkite.services.voiceagent
 
 import com.lightningkite.services.*
+import com.lightningkite.services.data.HealthStatus
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -126,7 +127,7 @@ public interface VoiceAgentService : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "test"
+        public val url: String = "test",
     ) : Setting<VoiceAgentService> {
         public companion object : UrlSettingParser<VoiceAgentService>() {
             /**

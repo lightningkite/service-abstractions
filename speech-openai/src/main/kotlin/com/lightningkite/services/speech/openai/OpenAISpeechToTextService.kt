@@ -1,11 +1,9 @@
 package com.lightningkite.services.speech.openai
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
@@ -65,7 +63,7 @@ public class OpenAISpeechToTextService(
     override val name: String,
     override val context: SettingContext,
     private val apiKey: String,
-    private val defaultModel: String = "whisper-1"
+    private val defaultModel: String = "whisper-1",
 ) : SpeechToTextService {
 
     private val baseUrl = "https://api.openai.com/v1"
@@ -81,7 +79,7 @@ public class OpenAISpeechToTextService(
 
     override suspend fun transcribe(
         audio: TypedData,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult {
         val model = options.model ?: defaultModel
 
@@ -128,7 +126,7 @@ public class OpenAISpeechToTextService(
 
     override suspend fun transcribeUrl(
         audioUrl: String,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult {
         // OpenAI Whisper doesn't support URL-based transcription directly
         // We would need to download the file first
@@ -219,7 +217,7 @@ public class OpenAISpeechToTextService(
         return words
     }
 
-    private fun getExtension(mediaType: com.lightningkite.MediaType): String {
+    private fun getExtension(mediaType: MediaType): String {
         return when {
             mediaType.toString().contains("mpeg") -> "mp3"
             mediaType.toString().contains("wav") -> "wav"
@@ -256,7 +254,7 @@ public class OpenAISpeechToTextService(
          */
         public fun SpeechToTextService.Settings.Companion.openai(
             apiKey: String,
-            model: String = "whisper-1"
+            model: String = "whisper-1",
         ): SpeechToTextService.Settings = SpeechToTextService.Settings("openai://$apiKey@$model")
     }
 }
@@ -284,7 +282,7 @@ private fun parseOpenAISttUrl(url: String): Pair<String, String> {
         if (apiKey.isBlank() || apiKey.startsWith("\${")) {
             throw IllegalArgumentException(
                 "OpenAI API key required. " +
-                    "Format: openai://apiKey@model or openai://\${OPENAI_API_KEY}@model"
+                        "Format: openai://apiKey@model or openai://\${OPENAI_API_KEY}@model"
             )
         }
 
@@ -297,7 +295,7 @@ private fun parseOpenAISttUrl(url: String): Pair<String, String> {
         ?: System.getenv("OPENAI_API_KEY")
         ?: throw IllegalArgumentException(
             "OpenAI API key required. " +
-                "Format: openai://apiKey@model or set OPENAI_API_KEY environment variable."
+                    "Format: openai://apiKey@model or set OPENAI_API_KEY environment variable."
         )
     val model = params["model"] ?: defaultModel
 

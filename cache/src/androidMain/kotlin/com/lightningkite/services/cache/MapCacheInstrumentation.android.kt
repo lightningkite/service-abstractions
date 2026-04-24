@@ -1,7 +1,6 @@
 package com.lightningkite.services.cache
 
 import com.lightningkite.services.SettingContext
-import kotlinx.serialization.KSerializer
 import kotlin.time.Duration
 
 /**
@@ -13,7 +12,7 @@ import kotlin.time.Duration
 internal actual suspend fun <T> instrumentedGet(
     context: SettingContext,
     key: String,
-    operation: suspend () -> T?
+    operation: suspend () -> T?,
 ): T? = operation()
 
 /**
@@ -23,7 +22,7 @@ internal actual suspend fun <T> instrumentedSet(
     context: SettingContext,
     key: String,
     timeToLive: Duration?,
-    operation: suspend () -> Unit
+    operation: suspend () -> Unit,
 ) = operation()
 
 /**
@@ -33,7 +32,7 @@ internal actual suspend fun instrumentedSetIfNotExists(
     context: SettingContext,
     key: String,
     timeToLive: Duration?,
-    operation: suspend () -> Boolean
+    operation: suspend () -> Boolean,
 ): Boolean = operation()
 
 /**
@@ -44,7 +43,7 @@ internal actual suspend fun <N : Number> instrumentedAdd(
     key: String,
     value: Long,
     timeToLive: Duration?,
-    operation: suspend () -> N
+    operation: suspend () -> N,
 ) = operation()
 
 /**
@@ -53,7 +52,7 @@ internal actual suspend fun <N : Number> instrumentedAdd(
 internal actual suspend fun instrumentedRemove(
     context: SettingContext,
     key: String,
-    operation: suspend () -> Unit
+    operation: suspend () -> Unit,
 ) = operation()
 
 /**
@@ -64,5 +63,5 @@ internal actual suspend fun <T> instrumentedModify(
     key: String,
     maxTries: Int,
     timeToLive: Duration?,
-    operation: suspend () -> Boolean
+    operation: suspend () -> Boolean,
 ): Boolean = operation()

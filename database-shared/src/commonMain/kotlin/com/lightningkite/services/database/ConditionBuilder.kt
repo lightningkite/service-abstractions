@@ -1,9 +1,7 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.GeoCoordinate
-import com.lightningkite.IsRawString
-import com.lightningkite.Length
-import com.lightningkite.Length.Companion.miles
+import com.lightningkite.services.data.*
+import com.lightningkite.services.data.Length.Companion.miles
 import com.lightningkite.services.data.StringArrayFormat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.modules.EmptySerializersModule
@@ -153,13 +151,20 @@ public fun <T> Partial<T>.toCondition(serializer: KSerializer<T>): Condition<T> 
 
 
 private val f = StringArrayFormat(EmptySerializersModule())
-private fun <T: Enum<T>> KSerializer<T>.entries(): List<T> {
+private fun <T : Enum<T>> KSerializer<T>.entries(): List<T> {
     return (0..<descriptor.elementsCount).map {
         f.decodeFromString(this, descriptor.getElementName(it))
     }
 }
 
-public infix fun <K, T: Enum<T>> DataClassPath<K, T>.gt(value: T): Condition<K> = mapCondition(Condition.Inside(serializer.entries().filter { it > value }))
-public infix fun <K, T: Enum<T>> DataClassPath<K, T>.lt(value: T): Condition<K> = mapCondition(Condition.Inside(serializer.entries().filter { it < value }))
-public infix fun <K, T: Enum<T>> DataClassPath<K, T>.gte(value: T): Condition<K> = mapCondition(Condition.Inside(serializer.entries().filter { it >= value }))
-public infix fun <K, T: Enum<T>> DataClassPath<K, T>.lte(value: T): Condition<K> = mapCondition(Condition.Inside(serializer.entries().filter { it <= value }))
+public infix fun <K, T : Enum<T>> DataClassPath<K, T>.gt(value: T): Condition<K> =
+    mapCondition(Condition.Inside(serializer.entries().filter { it > value }))
+
+public infix fun <K, T : Enum<T>> DataClassPath<K, T>.lt(value: T): Condition<K> =
+    mapCondition(Condition.Inside(serializer.entries().filter { it < value }))
+
+public infix fun <K, T : Enum<T>> DataClassPath<K, T>.gte(value: T): Condition<K> =
+    mapCondition(Condition.Inside(serializer.entries().filter { it >= value }))
+
+public infix fun <K, T : Enum<T>> DataClassPath<K, T>.lte(value: T): Condition<K> =
+    mapCondition(Condition.Inside(serializer.entries().filter { it <= value }))

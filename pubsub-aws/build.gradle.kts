@@ -1,4 +1,4 @@
-import com.lightningkite.deployhelpers.*
+import com.lightningkite.deployhelpers.lkLibrary
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -9,12 +9,11 @@ plugins {
 }
 
 dependencies {
-    api(project(path = ":basis"))
     api(project(path = ":pubsub"))
     api(libs.dynamodb)
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.reactive)
-    implementation(libs.kotlinx.json)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.websockets)
@@ -40,4 +39,11 @@ tasks.withType<JavaCompile>().configureEach {
     this.targetCompatibility = "17"
 }
 
-lkLibrary("lightningkite", "service-abstractions") {}
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {
+    description.set("A pubsub implementation using AWS DynamoDB.")
+}
+

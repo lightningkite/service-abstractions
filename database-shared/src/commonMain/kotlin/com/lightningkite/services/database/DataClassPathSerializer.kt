@@ -2,12 +2,8 @@
 
 package com.lightningkite.services.database
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
@@ -36,7 +32,8 @@ private class SerializablePropertyParser<T>(val serializer: KSerializer<T>) {
     }
 }
 
-public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) : KSerializerWithDefault<DataClassPathPartial<T>> {
+public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) :
+    KSerializerWithDefault<DataClassPathPartial<T>> {
     override val default: DataClassPathPartial<T>
         get() = DataClassPathSelf(inner)
 
@@ -66,9 +63,11 @@ public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) : KSer
                 val c = current ?: throw SerializationException("'*' cannot be the root of a path")
                 when {
                     currentSerializer.listElement() != null -> {
+                        @Suppress("UNCHECKED_CAST")
                         current = DataClassPathList(c as DataClassPath<T, List<Any?>>)
                         currentSerializer = currentSerializer.listElement()!!
                     }
+
                     else -> {
                         throw SerializationException("'*' used on non-collection type ${currentSerializer.descriptor.serialName}")
                     }

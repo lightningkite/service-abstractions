@@ -1,7 +1,8 @@
 // by Claude
 package com.lightningkite.services.database.postgres
 
-import com.lightningkite.services.database.mapformat.*
+import com.lightningkite.services.database.mapformat.MapFormat
+import com.lightningkite.services.database.mapformat.MapFormatConfig
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -72,6 +73,7 @@ internal class PostgresMapFormat(val serializersModule: SerializersModule) {
                 }
                 paths
             }
+
             else -> listOf("") // Primitive or other leaf type
         }
     }
@@ -121,6 +123,7 @@ internal class PostgresMapFormat(val serializersModule: SerializersModule) {
                     out[valueField] = null
                     return out
                 }
+
                 else -> {
                     // Fall through to normal encoding
                 }

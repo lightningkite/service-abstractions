@@ -1,16 +1,11 @@
 package com.lightningkite.services.cache
 
-import com.lightningkite.services.HealthStatus
-import com.lightningkite.services.Service
-import com.lightningkite.services.Setting
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.UrlSettingParser
-import kotlin.time.Clock
-import kotlin.time.Instant
+import com.lightningkite.services.*
+import com.lightningkite.services.data.HealthStatus
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
-import kotlin.time.Duration
+import kotlin.time.*
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -42,7 +37,7 @@ public interface Cache : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "ram"
+        public val url: String = "ram",
     ) : Setting<Cache> {
 
         public companion object : UrlSettingParser<Cache>() {
@@ -92,7 +87,7 @@ public interface Cache : Service {
         key: String,
         value: T,
         serializer: KSerializer<T>,
-        timeToLive: Duration? = null
+        timeToLive: Duration? = null,
     ): Boolean
 
     /**
@@ -142,12 +137,12 @@ public interface Cache : Service {
         serializer: KSerializer<T>,
         maxTries: Int = 1,
         timeToLive: Duration? = null,
-        modification: (T?) -> T?
+        modification: (T?) -> T?,
     ): Boolean {
         repeat(maxTries) {
             val current = get(key, serializer)
             val new = modification(current)
-            if(compareAndSet(key, serializer, current, new, timeToLive)) return true
+            if (compareAndSet(key, serializer, current, new, timeToLive)) return true
         }
         return false
     }
@@ -157,7 +152,7 @@ public interface Cache : Service {
         serializer: KSerializer<T>,
         expected: T?,
         new: T?,
-        timeToLive: Duration? = null
+        timeToLive: Duration? = null,
     ): Boolean {
         if (expected == new) return true
         if (expected != get(key, serializer)) return false
@@ -202,7 +197,8 @@ public interface Cache : Service {
      *
      * @return The updated value *after* incrementing, and truncated if the stored value is a float-type
      */
-    public suspend fun add(key: String, value: Int, timeToLive: Duration? = null): Int = add(key, value.toLong(), timeToLive).toInt()
+    public suspend fun add(key: String, value: Int, timeToLive: Duration? = null): Int =
+        add(key, value.toLong(), timeToLive).toInt()
 
     /**
      * Removes a key from the cache.

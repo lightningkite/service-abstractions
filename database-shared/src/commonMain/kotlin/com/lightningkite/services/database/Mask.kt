@@ -1,11 +1,8 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.data.GenerateDataClassPaths
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
 import kotlinx.serialization.builtins.NothingSerializer
-import kotlinx.serialization.serializer
 
 @Serializable
 @GenerateDataClassPaths
@@ -13,7 +10,7 @@ public data class Mask<T>(
     /**
      * If the condition does not pass, then the modification will be applied to mask the values.
      */
-    val pairs: List<Pair<Condition<T>, Modification<T>>> = listOf()
+    val pairs: List<Pair<Condition<T>, Modification<T>>> = listOf(),
 ) {
     public operator fun invoke(on: T): T {
         var value = on
@@ -58,7 +55,7 @@ public data class Mask<T>(
 
     public operator fun invoke(
         condition: Condition<T>,
-        tableTextPaths: List<List<SerializableProperty<*, *>>> = listOf()
+        tableTextPaths: List<List<SerializableProperty<*, *>>> = listOf(),
     ): Condition<T> {
         val totalConditions = ArrayList<Condition<T>>()
         for (pair in pairs) {
@@ -73,14 +70,16 @@ public data class Mask<T>(
 
     public class Builder<T>(
         serializer: KSerializer<T>,
-        public val pairs: ArrayList<Pair<Condition<T>, Modification<T>>> = ArrayList()
+        public val pairs: ArrayList<Pair<Condition<T>, Modification<T>>> = ArrayList(),
     ) {
         private val it = DataClassPathSelf(serializer)
         public fun <V> DataClassPath<T, V>.mask(value: V, unless: Condition<T> = Condition.Never) {
             pairs.add(unless to mapModification(Modification.Assign(value)))
         }
 
-        public infix fun <V> DataClassPath<T, V>.maskedTo(value: V): Modification<T> = mapModification(Modification.Assign(value))
+        public infix fun <V> DataClassPath<T, V>.maskedTo(value: V): Modification<T> =
+            mapModification(Modification.Assign(value))
+
         public infix fun Modification<T>.unless(condition: Condition<T>) {
             pairs.add(condition to this)
         }
@@ -205,6 +204,7 @@ public fun Modification<*>.affectsPaths(): List<List<SerializableProperty<*, *>>
             if (downstream.isEmpty()) listOf(path)
             else downstream.map { path + it }
         }
+
         is Modification.SetPerElement<*> -> this.modification.affectsPaths()
         is Modification.ListPerElement<*> -> this.modification.affectsPaths()
         is Modification.Chain -> this.modifications.flatMap { it.affectsPaths() }
@@ -274,7 +274,7 @@ private fun Condition<*>.emitReadPaths(soFar: DataClassPath<*, *>, out: (DataCla
 
 public fun <T> Condition<T>.readsResultOf(
     modification: Modification<T>,
-    tableTextPaths: List<List<SerializableProperty<*, *>>> = listOf()
+    tableTextPaths: List<List<SerializableProperty<*, *>>> = listOf(),
 ): Boolean {
     return when (this) {
         is Condition.Always -> false
@@ -341,7 +341,9 @@ public fun <T> Condition<T>.readsResultOf(
     }
 }
 
-public fun <T> Condition<T>.guaranteedAfter(modification: Modification<T>): Boolean = guaranteedAfterUntyped(modification)
+public fun <T> Condition<T>.guaranteedAfter(modification: Modification<T>): Boolean =
+    guaranteedAfterUntyped(modification)
+
 private fun Condition<*>.guaranteedAfterUntyped(modification: Modification<*>): Boolean {
     return when (modification) {
         is Modification.Assign ->

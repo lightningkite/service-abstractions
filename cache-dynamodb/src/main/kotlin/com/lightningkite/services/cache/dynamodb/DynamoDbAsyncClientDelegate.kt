@@ -1,5 +1,7 @@
 package com.lightningkite.services.cache.dynamodb
 
+import com.lightningkite.services.cache.dynamodb.DynamoDbAsyncClientDelegate.Companion.builder
+import com.lightningkite.services.cache.dynamodb.DynamoDbAsyncClientDelegate.Companion.create
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClientBuilder
 import software.amazon.awssdk.services.dynamodb.model.*

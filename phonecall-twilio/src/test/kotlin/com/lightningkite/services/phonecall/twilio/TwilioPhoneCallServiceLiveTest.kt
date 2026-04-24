@@ -1,9 +1,9 @@
 package com.lightningkite.services.phonecall.twilio
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.data.toPhoneNumber
 import com.lightningkite.services.phonecall.*
-import com.lightningkite.toPhoneNumber
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.time.Duration.Companion.seconds
@@ -27,7 +27,7 @@ object TwilioPhoneCallServiceLiveTest {
         val accountSid: String,
         val keySid: String,
         val keySecret: String,
-        val phoneNumber: String
+        val phoneNumber: String,
     )
 
     private fun loadCredentials(): TwilioCredentials? {
@@ -102,14 +102,17 @@ object TwilioPhoneCallServiceLiveTest {
                     println("   ✅ Health check passed: ${health.additionalMessage}")
                     true
                 }
+
                 HealthStatus.Level.WARNING -> {
                     println("   ⚠️  Health check warning: ${health.additionalMessage}")
                     true
                 }
+
                 HealthStatus.Level.URGENT -> {
                     println("   🚨 Health check urgent: ${health.additionalMessage}")
                     false
                 }
+
                 HealthStatus.Level.ERROR -> {
                     println("   ❌ Health check failed: ${health.additionalMessage}")
                     false
@@ -132,7 +135,8 @@ object TwilioPhoneCallServiceLiveTest {
             val context = TestSettingContext()
 
             // Test API Key format
-            val apiKeyUrl = "twilio://${credentials.accountSid}/${credentials.keySid}:${credentials.keySecret}@${credentials.phoneNumber}"
+            val apiKeyUrl =
+                "twilio://${credentials.accountSid}/${credentials.keySid}:${credentials.keySecret}@${credentials.phoneNumber}"
             println("   Testing API Key URL format...")
             val apiKeySettings = PhoneCallService.Settings(apiKeyUrl)
             val apiKeyService = apiKeySettings("test-api-key", context)
@@ -299,7 +303,11 @@ object TwilioPhoneCallServiceLiveTest {
     /**
      * Interactive conference demo - demonstrates conference call functionality!
      */
-    suspend fun interactiveConferenceDemo(service: TwilioPhoneCallService, phoneNumber1: String, phoneNumber2: String? = null) {
+    suspend fun interactiveConferenceDemo(
+        service: TwilioPhoneCallService,
+        phoneNumber1: String,
+        phoneNumber2: String? = null,
+    ) {
         println("\n" + "=".repeat(60))
         println("🎙️  Interactive Conference Demo")
         println("=".repeat(60))
@@ -335,17 +343,21 @@ object TwilioPhoneCallServiceLiveTest {
             println("   ✅ Call 1 connected! Call ID: $call1Id")
 
             println("\n   🎤 Greeting participant 1...")
-            service.speak(call1Id, "Hello! Welcome to the conference call test. " +
-                    "Please wait while we connect other participants.")
+            service.speak(
+                call1Id, "Hello! Welcome to the conference call test. " +
+                        "Please wait while we connect other participants."
+            )
 
             println("\n   🎙️  Adding participant 1 to conference room: $conferenceName...")
-            service.updateCall(call1Id, CallInstructions.Conference(
-                name = conferenceName,
-                startOnEnter = true,
-                endOnExit = phoneNumber2 == null, // End conference if only one participant
-                muted = false,
-                beep = true
-            ))
+            service.updateCall(
+                call1Id, CallInstructions.Conference(
+                    name = conferenceName,
+                    startOnEnter = true,
+                    endOnExit = phoneNumber2 == null, // End conference if only one participant
+                    muted = false,
+                    beep = true
+                )
+            )
             println("   ✅ Participant 1 is now in the conference!")
 
             if (phoneNumber2 != null) {
@@ -360,17 +372,21 @@ object TwilioPhoneCallServiceLiveTest {
                 println("   ✅ Call 2 connected! Call ID: $call2Id")
 
                 println("\n   🎤 Greeting participant 2...")
-                service.speak(call2Id, "Hello! Welcome to the conference call test. " +
-                        "Connecting you now.")
+                service.speak(
+                    call2Id, "Hello! Welcome to the conference call test. " +
+                            "Connecting you now."
+                )
 
                 println("\n   🎙️  Adding participant 2 to conference room: $conferenceName...")
-                service.updateCall(call2Id, CallInstructions.Conference(
-                    name = conferenceName,
-                    startOnEnter = true,
-                    endOnExit = true, // End conference when last person leaves
-                    muted = false,
-                    beep = true
-                ))
+                service.updateCall(
+                    call2Id, CallInstructions.Conference(
+                        name = conferenceName,
+                        startOnEnter = true,
+                        endOnExit = true, // End conference when last person leaves
+                        muted = false,
+                        beep = true
+                    )
+                )
                 println("   ✅ Participant 2 is now in the conference!")
 
                 println("\n🎉 Both participants are now in the conference!")
@@ -437,9 +453,11 @@ object TwilioPhoneCallServiceLiveTest {
             println("   📊 Call status: ${status?.status ?: "unknown"}")
 
             println("\n   🎤 Speaking message (this will wait for TTS to complete)...")
-            service.speak(callId, "Hello! This is a test call from the Twilio Phone Call Service. " +
-                    "If you can hear this message, the integration is working correctly. " +
-                    "Thank you for testing! Goodbye.")
+            service.speak(
+                callId, "Hello! This is a test call from the Twilio Phone Call Service. " +
+                        "If you can hear this message, the integration is working correctly. " +
+                        "Thank you for testing! Goodbye."
+            )
             println("   ✅ Message completed!")
 
             println("\n   📴 Hanging up...")
@@ -492,14 +510,17 @@ object TwilioPhoneCallServiceLiveTest {
             "1" -> {
                 testHealthCheck(service)
             }
+
             "2" -> {
                 testTwimlRendering(service)
             }
+
             "3" -> {
                 println("\nEnter the target phone number:")
                 val callTo = readln()
                 interactiveCallDemo(service, callTo)
             }
+
             "4" -> {
                 println("\nConference Demo - Connect two phone numbers in a conference call")
                 println("Enter participant 1 phone number:")
@@ -512,6 +533,7 @@ object TwilioPhoneCallServiceLiveTest {
                     interactiveConferenceDemo(service, phone1, phone2)
                 }
             }
+
             "5" -> {
                 testHealthCheck(service)
                 testUrlSettingsParsing(credentials)
@@ -519,6 +541,7 @@ object TwilioPhoneCallServiceLiveTest {
                 println("\n✅ All automated tests completed!")
                 println("   To test interactive features, run options 3 or 4.")
             }
+
             else -> {
                 println("❌ Invalid choice")
             }

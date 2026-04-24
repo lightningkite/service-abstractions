@@ -31,7 +31,7 @@ public data class BsonConfiguration(
     val encodeDefaults: Boolean = true,
     val explicitNulls: Boolean = false,
     val classDiscriminator: String = "_t",
-    val bsonNamingStrategy: BsonNamingStrategy? = null
+    val bsonNamingStrategy: BsonNamingStrategy? = null,
 )
 
 /**

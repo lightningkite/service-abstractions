@@ -6,38 +6,24 @@ import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.executor.clients.LLMClient
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
-import ai.koog.prompt.executor.clients.bedrock.BedrockClientSettings
-import ai.koog.prompt.executor.clients.bedrock.BedrockLLMClient
-import ai.koog.prompt.executor.clients.bedrock.BedrockModels
+import ai.koog.prompt.executor.clients.bedrock.*
 import ai.koog.prompt.executor.clients.deepseek.DeepSeekModels
 import ai.koog.prompt.executor.clients.google.GoogleLLMClient
 import ai.koog.prompt.executor.clients.google.GoogleModels
-import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
-import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
-import ai.koog.prompt.executor.clients.openai.OpenAIModels
+import ai.koog.prompt.executor.clients.openai.*
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterLLMClient
 import ai.koog.prompt.executor.clients.openrouter.OpenRouterModels
 import ai.koog.prompt.executor.ollama.client.OllamaClient
-import ai.koog.prompt.llm.LLMCapability
-import ai.koog.prompt.llm.LLMProvider
-import ai.koog.prompt.llm.LLModel
-import ai.koog.prompt.llm.OllamaModels
-import ai.koog.prompt.message.LLMChoice
-import ai.koog.prompt.message.Message
-import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.prompt.llm.*
+import ai.koog.prompt.message.*
 import ai.koog.prompt.streaming.StreamFrame
-import aws.sdk.kotlin.runtime.auth.credentials.DefaultChainCredentialsProvider
-import aws.sdk.kotlin.runtime.auth.credentials.ProfileCredentialsProvider
-import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.*
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
-import com.lightningkite.services.Setting
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.UrlSettingParser
-import io.ktor.client.HttpClient
+import com.lightningkite.services.*
+import io.ktor.client.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
-import kotlin.jvm.JvmInline
 import kotlin.time.Clock
 
 @Deprecated("Use LLMClientAndModelSettings instead", ReplaceWith("LLMClientAndModel.Settings"))
@@ -54,7 +40,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
      */
     public suspend fun execute(
         prompt: Prompt,
-        tools: List<ToolDescriptor> = emptyList()
+        tools: List<ToolDescriptor> = emptyList(),
     ): List<Message.Response> = client.execute(prompt, model, tools)
 
     /**
@@ -67,7 +53,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
      */
     public fun executeStreaming(
         prompt: Prompt,
-        tools: List<ToolDescriptor> = emptyList()
+        tools: List<ToolDescriptor> = emptyList(),
     ): Flow<StreamFrame> = client.executeStreaming(prompt, model, tools)
 
     /**
@@ -79,7 +65,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
      */
     public suspend fun executeMultipleChoices(
         prompt: Prompt,
-        tools: List<ToolDescriptor> = emptyList()
+        tools: List<ToolDescriptor> = emptyList(),
     ): List<LLMChoice> = client.executeMultipleChoices(prompt, model, tools)
 
     /**
@@ -122,7 +108,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String
+        public val url: String,
     ) : Setting<LLMClientAndModel> {
 
         public companion object : UrlSettingParser<LLMClientAndModel>() {
@@ -169,7 +155,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                 model: LLModel,
                 accessKeyId: String,
                 secretAccessKey: String,
-                region: String? = null
+                region: String? = null,
             ): Settings =
                 Settings("bedrock://${accessKeyId}:${secretAccessKey}@${model.id}" + (region?.let { "?region=$it" }
                     ?: ""))
@@ -177,7 +163,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
             public fun bedrock(
                 model: LLModel,
                 profile: String,
-                region: String? = null
+                region: String? = null,
             ): Settings =
                 Settings("bedrock://${profile}@${model.id}" + (region?.let { "?region=$it" }
                     ?: ""))
@@ -317,7 +303,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                             override suspend fun execute(
                                 prompt: Prompt,
                                 model: LLModel,
-                                tools: List<ToolDescriptor>
+                                tools: List<ToolDescriptor>,
                             ): List<Message.Response> = listOf(
                                 Message.Assistant(
                                     "Mock LLM used, no real response possible.",
@@ -333,13 +319,13 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                             override suspend fun executeMultipleChoices(
                                 prompt: Prompt,
                                 model: LLModel,
-                                tools: List<ToolDescriptor>
+                                tools: List<ToolDescriptor>,
                             ): List<LLMChoice> = listOf()
 
                             override fun executeStreaming(
                                 prompt: Prompt,
                                 model: LLModel,
-                                tools: List<ToolDescriptor>
+                                tools: List<ToolDescriptor>,
                             ): Flow<StreamFrame> = emptyFlow()
 
                             override suspend fun models(): List<LLModel> = listOf(
@@ -484,7 +470,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                         // Format: accessKeyId:secretKey@model-id
                         val credentials = authority.substringBefore("@")
                         val model = authority.substringAfter("@")
-                        if(credentials.contains(':')) {
+                        if (credentials.contains(':')) {
                             val accessKeyId = resolveEnvVars(credentials.substringBefore(":"))
                             val secretKey = resolveEnvVars(credentials.substringAfter(":"))
                             StaticCredentialsProvider(Credentials(accessKeyId, secretKey)) to model

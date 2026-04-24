@@ -1,15 +1,11 @@
-@file:OptIn(ExperimentalSerializationApi::class)
+@file:OptIn(ExperimentalSerializationApi::class, ExperimentalUnsignedTypes::class)
 
 package com.lightningkite.services.database
 
-import com.lightningkite.nowLocal
+import com.lightningkite.services.data.nowLocal
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
-import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.encoding.decodeStructure
-import kotlinx.serialization.encoding.encodeStructure
+import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 import kotlin.reflect.KClass
 import kotlin.time.Clock
@@ -25,7 +21,7 @@ public sealed interface VirtualType {
 public data class VirtualAlias(
     override val serialName: String,
     val wraps: VirtualTypeReference,
-    override val annotations: List<SerializableAnnotation>
+    override val annotations: List<SerializableAnnotation>,
 ) : VirtualType {
     override fun serializer(registry: SerializationRegistry, arguments: Array<KSerializer<*>>): KSerializer<*> {
         return wraps.serializer(registry, mapOf())  // TODO: Support generics
@@ -57,13 +53,16 @@ public data class VirtualStruct(
     }(${fields.joinToString()})"
 
     private object DefaultNotPresent
-    public inner class Concrete(private val registry: SerializationRegistry, public val arguments: Array<out KSerializer<*>>) :
+    public inner class Concrete(
+        private val registry: SerializationRegistry,
+        public val arguments: Array<out KSerializer<*>>,
+    ) :
         KSerializer<VirtualInstance>, VirtualType by this@VirtualStruct,
         KSerializerWithDefault<VirtualInstance> {
         internal val struct: VirtualStruct = this@VirtualStruct
 
         init {
-            if (arguments.size < parameters.size) throw IllegalArgumentException("VirtualStructure ${serialName} needs ${parameters.size} parameters, but we only got ${arguments.size}")
+            if (arguments.size < parameters.size) throw IllegalArgumentException("VirtualStructure $serialName needs ${parameters.size} parameters, but we only got ${arguments.size}")
         }
 
         private val typeArguments = parameters.indices.associate { parameters[it].name to arguments[it] }
@@ -125,25 +124,29 @@ public data class VirtualStruct(
                     // handling some common cases for sanity's sake
                     when (it) {
                         "Uuid.random()",
-                        "uuid()", "UUID.random()" -> {
+                        "uuid()", "UUID.random()",
+                            -> {
                             { Uuid.random() }
                         }
 
                         "now()",
                         "Clock.System.now()",
-                        "Clock.default().now()" -> {
+                        "Clock.default().now()",
+                            -> {
                             { Clock.System.now() }
                         }
 
                         "nowLocal().date",
                         "Clock.System.nowLocal().date",
-                        "Clock.default().nowLocal().date" -> {
+                        "Clock.default().nowLocal().date",
+                            -> {
                             { Clock.System.nowLocal().date }
                         }
 
                         "nowLocal().time",
                         "Clock.System.nowLocal().time",
-                        "Clock.default().nowLocal().time" -> {
+                        "Clock.default().nowLocal().time",
+                            -> {
                             { Clock.System.nowLocal().time }
                         }
                         // TODO: Check for field cloning?
@@ -152,7 +155,7 @@ public data class VirtualStruct(
                 } ?: field.defaultJson?.let {
                     try {
                         val v = DefaultDecoder.json.decodeFromString(serializer, it)
-                        ;{ v }
+                        ; { v }
                     } catch (e: Exception) {
                         e.printStackTrace()
                         null
@@ -192,7 +195,7 @@ public data class VirtualStruct(
         }
 
         override fun deserialize(decoder: Decoder): VirtualInstance {
-            val values = Array<Any?>(fields.size) {
+            val values = Array(fields.size) {
                 defaultGenerators[it]?.invoke()
             }
             val s = decoder.beginStructure(descriptor)
@@ -229,7 +232,7 @@ public data class VirtualStruct(
 
         override fun serialize(encoder: Encoder, value: VirtualInstance) {
             val s = encoder.beginStructure(descriptor)
-            for ((index, field) in fields.withIndex()) {
+            for ((index, _) in fields.withIndex()) {
                 val v = value.values[index]
                 if (v != skipSerializationIfEqual[index] || s.shouldEncodeElementDefault(descriptor, index)) {
                     val ser = serializers[index]
@@ -274,7 +277,7 @@ public data class VirtualSealed(
 
     public inner class Concrete(
         private val registry: SerializationRegistry,
-        public val arguments: Array<out KSerializer<*>>
+        public val arguments: Array<out KSerializer<*>>,
     ) : KSerializerWithDefault<VirtualSealedInstance>, VirtualType by this@VirtualSealed {
         public val sealed: VirtualSealed = this@VirtualSealed
 
@@ -287,10 +290,15 @@ public data class VirtualSealed(
         private val optionLookup by lazy {
             options.flatMap { (it.secondaryNames + it.name).map { k -> k to it } }.associate { it }
         }
-        override val default: VirtualSealedInstance get() = VirtualSealedInstance(options.first(), optionSerializers.first().default()!!)
+        override val default: VirtualSealedInstance
+            get() = VirtualSealedInstance(
+                options.first(),
+                optionSerializers.first().default()!!
+            )
 
         public val serializableOptions: Array<SealedSerializableOption<*>> by lazy {
-            options.map { SealedSerializableOption(it.index, it.name, it.secondaryNames, optionSerializers[it.index]) }.toTypedArray()
+            options.map { SealedSerializableOption(it.index, it.name, it.secondaryNames, optionSerializers[it.index]) }
+                .toTypedArray()
         }
 
         @OptIn(InternalSerializationApi::class)
@@ -322,7 +330,7 @@ public data class VirtualSealed(
                     ?: throw SerializationException("Unknown type '$typeName' for ${this@VirtualSealed.serialName}. Available: ${optionLookup.keys}")
                 val actual = optionSerializers[option.index]
                 val stripped = JsonObject(element.filterKeys { it != classDiscriminator })
-                val value = decoder.json.decodeFromJsonElement(actual as KSerializer<Any?>, stripped)
+                val value = decoder.json.decodeFromJsonElement(actual, stripped)
                 return VirtualSealedInstance(option, value!!)
             }
             // Non-JSON: internal array format [typeName, value]
@@ -340,7 +348,7 @@ public data class VirtualSealed(
         override fun serialize(encoder: Encoder, value: VirtualSealedInstance) {
             if (encoder is JsonEncoder) {
                 val classDiscriminator = encoder.json.configuration.classDiscriminator
-                val actual = value.option.type.serializer(registry, typeArguments) as KSerializer<Any?>
+                val actual = value.option.type.serializer(registry, typeArguments)
                 val subElement = encoder.json.encodeToJsonElement(actual, value.value)
                 val merged = buildJsonObject {
                     put(classDiscriminator, value.option.name)
@@ -392,7 +400,7 @@ public data class VirtualEnum(
         override fun getElementDescriptor(index: Int): SerialDescriptor = this
 
         @ExperimentalSerializationApi
-        override fun getElementIndex(name: String): Int = map.get(name)?.index ?: CompositeDecoder.UNKNOWN_NAME
+        override fun getElementIndex(name: String): Int = map[name]?.index ?: CompositeDecoder.UNKNOWN_NAME
 
         @ExperimentalSerializationApi
         override fun getElementName(index: Int): String = options[index].name
@@ -418,7 +426,7 @@ public data class VirtualEnum(
 public data class VirtualEnumOption(
     val name: String,
     val annotations: List<SerializableAnnotation>,
-    val index: Int
+    val index: Int,
 )
 
 public class VirtualEnumValue(
@@ -431,7 +439,7 @@ public class VirtualEnumValue(
 
 public data class VirtualInstance(
     public val type: VirtualStruct.Concrete,
-    public val values: List<Any?>
+    public val values: List<Any?>,
 ) : HasId<Comparable<Comparable<*>>>, Comparable<VirtualInstance> {
     @Suppress("UNCHECKED_CAST")
     override val _id: Comparable<Comparable<*>>
@@ -468,25 +476,11 @@ public data class VirtualField(
     override fun toString(): String = "$name: $type"
 }
 
-private const val ARRAY_NAME = "kotlin.Array"
-private const val ARRAY_LIST_NAME = "kotlin.collections.ArrayList"
-private const val LINKED_HASH_SET_NAME = "kotlin.collections.LinkedHashSet"
-private const val HASH_SET_NAME = "kotlin.collections.HashSet"
-private const val LINKED_HASH_MAP_NAME = "kotlin.collections.LinkedHashMap"
-private const val HASH_MAP_NAME = "kotlin.collections.HashMap"
-
-internal val skipTypes = setOf(
-    "com.lightningkite.services.database.Condition",
-    "com.lightningkite.services.database.Modification",
-    "com.lightningkite.services.database.DataClassPathPartial",
-    "com.lightningkite.services.database.SortPart",
-)
-
 @Serializable
 public data class VirtualTypeReference(
     val serialName: String,
     val arguments: List<VirtualTypeReference>,
-    val isNullable: Boolean
+    val isNullable: Boolean,
 ) {
     init {
         if (serialName.endsWith("?")) throw Exception()
@@ -508,7 +502,7 @@ public data class VirtualTypeReference(
 @Serializable
 public data class SerializableAnnotation(
     public val fqn: String,
-    public val values: Map<String, SerializableAnnotationValue>
+    public val values: Map<String, SerializableAnnotationValue>,
 ) {
     public companion object {
         private val __do_not_use_externally__parsers = HashMap<String, (Annotation) -> SerializableAnnotation>()
@@ -613,7 +607,8 @@ public fun KSerializer<*>.virtualTypeReference(registry: SerializationRegistry):
         registry.module.getContextualDescriptor(o.descriptor)?.let {
             return VirtualTypeReference(
                 serialName = it.serialName,
-                arguments = o.typeParametersSerializersOrNull()?.map { it.virtualTypeReference(registry) } ?: listOf(),
+                arguments = o.typeParametersSerializersOrNull()
+                    ?.map { paramSerializer -> paramSerializer.virtualTypeReference(registry) } ?: listOf(),
                 isNullable = this.descriptor.isNullable
             )
         }

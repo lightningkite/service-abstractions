@@ -2,16 +2,9 @@ package com.lightningkite.services.http
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.otel.TelemetrySanitization
-import io.ktor.client.*
 import io.ktor.client.plugins.api.*
 import io.ktor.util.*
-import io.opentelemetry.api.GlobalOpenTelemetry
-import io.opentelemetry.api.OpenTelemetry
-import io.opentelemetry.api.trace.Span
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
-import io.opentelemetry.context.Context
+import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.currentCoroutineContext
 import kotlin.coroutines.CoroutineContext
 
@@ -21,12 +14,12 @@ import kotlin.coroutines.CoroutineContext
  * Services should add this to their coroutine context when making HTTP calls
  * to enable automatic OpenTelemetry instrumentation.
  */
-val SettingContextKey = object : CoroutineContext.Key<SettingContextElement> {}
+private val SettingContextKey = object : CoroutineContext.Key<SettingContextElement> {}
 
 /**
  * Coroutine context element that carries a SettingContext.
  */
-data class SettingContextElement(val settingContext: SettingContext) : CoroutineContext.Element {
+public data class SettingContextElement(val settingContext: SettingContext) : CoroutineContext.Element {
     override val key: CoroutineContext.Key<*> get() = SettingContextKey
 }
 
@@ -51,7 +44,7 @@ data class SettingContextElement(val settingContext: SettingContext) : Coroutine
  * services to be modified - they just need to ensure their coroutine context
  * includes the SettingContextElement (which Service implementations can do automatically).
  */
-val OpenTelemetryPlugin = createClientPlugin("OpenTelemetryPlugin") {
+internal val OpenTelemetryPlugin = createClientPlugin("OpenTelemetryPlugin") {
     var tracer: Tracer? = null
 
     onRequest { request, content ->

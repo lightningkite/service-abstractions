@@ -1,11 +1,8 @@
 package com.lightningkite.services.email.javasmtp
 
-import com.lightningkite.EmailAddress
+import com.lightningkite.services.data.EmailAddress
 import com.lightningkite.services.email.EmailService
-import com.lightningkite.services.terraform.TerraformEmitterAwsDomain
-import com.lightningkite.services.terraform.TerraformEmitterAwsVpc
-import com.lightningkite.services.terraform.TerraformNeed
-import com.lightningkite.services.terraform.TerraformProviderImport
+import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonPrimitive
 
 public class AwsSesDomainConfiguration internal constructor(

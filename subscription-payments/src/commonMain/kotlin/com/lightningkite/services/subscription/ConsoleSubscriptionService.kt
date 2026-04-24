@@ -1,10 +1,9 @@
 package com.lightningkite.services.subscription
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
-import com.lightningkite.services.database.Database
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import kotlin.uuid.Uuid
 
 /**
@@ -30,10 +29,14 @@ import kotlin.uuid.Uuid
  */
 public class ConsoleSubscriptionService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : SubscriptionService {
 
-    override suspend fun createCustomer(email: String, name: String?, metadata: Map<String, String>): SubscriptionCustomerId {
+    override suspend fun createCustomer(
+        email: String,
+        name: String?,
+        metadata: Map<String, String>,
+    ): SubscriptionCustomerId {
         val id = SubscriptionCustomerId("cus_console_${Uuid.random()}")
         println("[$this.name] Created customer: ${id.value}")
         println("  Email: $email")
@@ -114,7 +117,7 @@ public class ConsoleSubscriptionService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): SubscriptionEvent {
             println("[$name] Webhook received:")
             println("  Headers: ${headers.keys}")

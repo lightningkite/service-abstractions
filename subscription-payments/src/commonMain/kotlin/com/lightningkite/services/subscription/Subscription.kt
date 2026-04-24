@@ -49,7 +49,7 @@ public data class Subscription(
     val trialStart: Instant? = null,
     val trialEnd: Instant? = null,
     val metadata: Map<String, String> = emptyMap(),
-    val portalUrl: String? = null
+    val portalUrl: String? = null,
 )
 
 /**

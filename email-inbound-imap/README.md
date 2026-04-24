@@ -1,10 +1,12 @@
 # Email Inbound IMAP
 
-IMAP-based implementation of `EmailInboundService` for the Service Abstractions library. This module provides pull-based email receiving via the IMAP protocol using Jakarta Mail.
+IMAP-based implementation of `EmailInboundService` for the Service Abstractions library. This module provides pull-based
+email receiving via the IMAP protocol using Jakarta Mail.
 
 ## Overview
 
-Unlike webhook-based email services, IMAP uses a **pull model** where you poll the server for new emails. This is useful for:
+Unlike webhook-based email services, IMAP uses a **pull model** where you poll the server for new emails. This is useful
+for:
 
 - Self-hosted email servers without webhook support
 - Development/testing with standard email accounts (Gmail, Outlook, etc.)
@@ -168,13 +170,13 @@ launch {
 
 ## Common Providers
 
-| Provider | Host | Port | SSL | Notes |
-|----------|------|------|-----|-------|
-| Gmail | imap.gmail.com | 993 | Yes | Requires app password + IMAP enabled in settings |
-| Outlook/Office 365 | outlook.office365.com | 993 | Yes | Requires modern authentication |
-| Yahoo Mail | imap.mail.yahoo.com | 993 | Yes | Requires app password |
-| iCloud | imap.mail.me.com | 993 | Yes | Requires app-specific password |
-| FastMail | imap.fastmail.com | 993 | Yes | Standard authentication |
+| Provider           | Host                  | Port | SSL | Notes                                            |
+|--------------------|-----------------------|------|-----|--------------------------------------------------|
+| Gmail              | imap.gmail.com        | 993  | Yes | Requires app password + IMAP enabled in settings |
+| Outlook/Office 365 | outlook.office365.com | 993  | Yes | Requires modern authentication                   |
+| Yahoo Mail         | imap.mail.yahoo.com   | 993  | Yes | Requires app password                            |
+| iCloud             | imap.mail.me.com      | 993  | Yes | Requires app-specific password                   |
+| FastMail           | imap.fastmail.com     | 993  | Yes | Standard authentication                          |
 
 ### Gmail Setup
 
@@ -188,7 +190,8 @@ launch {
 
 ### Performance
 
-- **Polling overhead**: Each poll opens a connection, fetches messages, and closes. Consider polling frequency carefully.
+- **Polling overhead**: Each poll opens a connection, fetches messages, and closes. Consider polling frequency
+  carefully.
 - **Unread messages only**: Only fetches messages that haven't been marked as read yet.
 - **Connection pooling**: Keep the service connected via `connect()` to reuse connections across polls.
 - **Attachment memory**: All attachment data is loaded into memory; be cautious with large files.

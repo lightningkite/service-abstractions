@@ -1,8 +1,8 @@
+@file:OptIn(ExperimentalSerializationApi::class)
+
 package com.lightningkite.services.database
 
-import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
 import kotlinx.serialization.builtins.NothingSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.internal.GeneratedSerializer
@@ -11,15 +11,15 @@ import kotlin.jvm.JvmInline
 import kotlin.reflect.KType
 import kotlin.reflect.typeOf
 import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlin.test.fail
 import kotlin.uuid.Uuid
 
 class SerializationHacksTest {
     @OptIn(InternalSerializationApi::class)
-    @Test fun test() {
+    @Test
+    fun test() {
         try {
+            @Suppress("UNCHECKED_CAST")
             val x = (SampleBox.serializer(NothingSerializer()) as GeneratedSerializer<*>)
                 .factory()
                 .invoke(arrayOf(Int.serializer(), Int.serializer(), Int.serializer()))
@@ -28,7 +28,7 @@ class SerializationHacksTest {
                     println("Descriptor info is ${it.descriptor.serialName}")
                 } as KSerializer<SampleBox<Int>>
             Json.encodeToString(x, SampleBox(1)).also { println(it) }
-        } catch(e: PlatformNotSupportedError) {
+        } catch (e: PlatformNotSupportedError) {
             println("Skipping test due to lack of serialization features.")
         }
     }
@@ -66,7 +66,7 @@ class SerializationHacksTest {
 
     fun assertEquals(
         myArgs: Array<KSerializer<*>>,
-        otherArgs: Array<KSerializer<*>>
+        otherArgs: Array<KSerializer<*>>,
     ) {
         if (myArgs.size != otherArgs.size) fail(
             "Serializers do not have the same number of arguments. Expected [${myArgs.joinToString { it.display() }}] but got [${otherArgs.joinToString { it.display() }}]."
@@ -103,7 +103,8 @@ class SerializationHacksTest {
     private fun testTypeParamSerializers(type: KType) {
         val params = type.arguments
             .map { arg ->
-                arg.type?.let { kotlinx.serialization.serializer(it) as KSerializer<*> } ?: throw IllegalArgumentException("No star projections")
+                arg.type?.let { kotlinx.serialization.serializer(it) as KSerializer<*> }
+                    ?: throw IllegalArgumentException("No star projections")
             }
 
         val outer = kotlinx.serialization.serializer(type)
@@ -112,6 +113,7 @@ class SerializationHacksTest {
 
         assertEquals(params.toTypedArray(), foundArgs)
     }
+
     private inline fun <reified T> testTypeParamSerializers() = testTypeParamSerializers(typeOf<T>())
 
     @Test

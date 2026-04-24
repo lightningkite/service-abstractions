@@ -1,8 +1,6 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.Index
-import com.lightningkite.services.data.IndexSet
-import com.lightningkite.services.data.IndexUniqueness
+import com.lightningkite.services.data.*
 import kotlinx.serialization.descriptors.SerialDescriptor
 
 /**
@@ -27,7 +25,14 @@ public fun SerialDescriptor.indexes(): Set<NeededIndex> {
         if (!seen.add(descriptor)) return
         descriptor.annotations.forEach {
             when (it) {
-                is IndexSet -> out.add(NeededIndex(fields = it.fields.map { it }, unique = it.unique, name = it.name.takeIf { it.isNotBlank() }, type = null))
+                is IndexSet -> out.add(
+                    NeededIndex(
+                        fields = it.fields.map { it },
+                        unique = it.unique,
+                        name = it.name.takeIf { it.isNotBlank() },
+                        type = null
+                    )
+                )
             }
         }
         (0 until descriptor.elementsCount).forEach { index ->

@@ -1,16 +1,8 @@
 package com.lightningkite.services.voiceagent.openai
 
-import com.lightningkite.services.voiceagent.SerializableToolDescriptor
-import com.lightningkite.services.voiceagent.SerializableToolParameterDescriptor
-import com.lightningkite.services.voiceagent.SerializableToolParameterType
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import com.lightningkite.services.voiceagent.*
+import kotlinx.serialization.json.*
+import kotlin.test.*
 
 class ToolDescriptorMappingTest {
 
@@ -51,7 +43,10 @@ class ToolDescriptorMappingTest {
 
         val locationProp = properties["location"]?.jsonObject
         assertEquals("string", locationProp?.get("type")?.jsonPrimitive?.content)
-        assertEquals("The city and state, e.g. San Francisco, CA", locationProp?.get("description")?.jsonPrimitive?.content)
+        assertEquals(
+            "The city and state, e.g. San Francisco, CA",
+            locationProp?.get("description")?.jsonPrimitive?.content
+        )
 
         val unitProp = properties["unit"]?.jsonObject
         assertEquals("string", unitProp?.get("type")?.jsonPrimitive?.content)
@@ -98,7 +93,7 @@ class ToolDescriptorMappingTest {
 
         val nestedProps = userProp["properties"]?.jsonObject
         assertTrue(nestedProps?.containsKey("name") == true)
-        assertTrue(nestedProps?.containsKey("age") == true)
+        assertTrue(nestedProps.containsKey("age") == true)
 
         val nestedRequired = userProp["required"]?.jsonArray?.map { it.jsonPrimitive.content }
         assertEquals(listOf("name"), nestedRequired)

@@ -1,7 +1,7 @@
 package com.lightningkite.services.notifications
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
 
 /**
  * A notification service implementation that prints notifications to the console.
@@ -9,7 +9,7 @@ import com.lightningkite.services.SettingContext
  */
 public class ConsoleNotificationService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : NotificationService {
 
     /**
@@ -21,7 +21,7 @@ public class ConsoleNotificationService(
      */
     override suspend fun send(
         targets: List<String>,
-        data: NotificationData
+        data: NotificationData,
     ): Map<String, NotificationSendResult> {
         println(buildString {
             appendLine("-----NOTIFICATION-----")
@@ -63,5 +63,8 @@ public class ConsoleNotificationService(
         return targets.associateWith { NotificationSendResult.Success }
     }
 
-    override suspend fun healthCheck(): HealthStatus = HealthStatus(HealthStatus.Level.OK, additionalMessage = "Local console notification service - no real notifications are sent.")
+    override suspend fun healthCheck(): HealthStatus = HealthStatus(
+        HealthStatus.Level.OK,
+        additionalMessage = "Local console notification service - no real notifications are sent."
+    )
 }

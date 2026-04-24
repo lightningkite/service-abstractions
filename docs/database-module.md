@@ -8,7 +8,8 @@
 
 ## Overview
 
-The Database module provides a type-safe, backend-agnostic API for working with databases. Applications can switch between MongoDB, PostgreSQL, in-memory storage, and other backends via configuration without changing code.
+The Database module provides a type-safe, backend-agnostic API for working with databases. Applications can switch
+between MongoDB, PostgreSQL, in-memory storage, and other backends via configuration without changing code.
 
 ### Key Features
 
@@ -39,6 +40,7 @@ data class User(
 ```
 
 **Key annotations:**
+
 - `@GenerateDataClassPaths` - Generates type-safe field accessors for queries
 - `@Serializable` - Required for serialization/deserialization
 - `@Index` - Creates database indexes for performance
@@ -57,6 +59,7 @@ val db: Database = settings.database("main-db", context)
 ```
 
 **Supported URL schemes:**
+
 - `ram://` - In-memory (no persistence)
 - `mongodb://host:port/dbname` - MongoDB
 - `postgresql://host:port/dbname` - PostgreSQL
@@ -101,22 +104,26 @@ userTable.deleteMany(condition = User.path.active eq false)
 
 ## Querying with Conditions
 
-The query DSL uses generated `DataClassPath` accessors for type-safe queries. See [database-query-dsl.md](./database-query-dsl.md) for complete reference.
+The query DSL uses generated `DataClassPath` accessors for type-safe queries.
+See [database-query-dsl.md](./database-query-dsl.md) for complete reference.
 
 ### Common Query Patterns
 
 **Equality:**
+
 ```kotlin
 userTable.find(condition = User.path.email eq "alice@example.com")
 ```
 
 **Comparison:**
+
 ```kotlin
 userTable.find(condition = User.path.age greaterThan 18)
 userTable.find(condition = User.path.age lessThanOrEqualTo 65)
 ```
 
 **Logical operators:**
+
 ```kotlin
 userTable.find(
     condition = (User.path.age greaterThan 18) and (User.path.active eq true)
@@ -127,6 +134,7 @@ userTable.find(
 ```
 
 **String operations:**
+
 ```kotlin
 userTable.find(condition = User.path.name.startsWith("A"))
 userTable.find(condition = User.path.email.contains("@gmail.com"))
@@ -134,12 +142,14 @@ userTable.find(condition = User.path.name.matches(Regex("[A-Z].*")))
 ```
 
 **Collection operations:**
+
 ```kotlin
 userTable.find(condition = User.path.tags.containsElement("premium"))
 userTable.find(condition = User.path.tags.all())  // Has elements
 ```
 
 **Nested fields:**
+
 ```kotlin
 userTable.find(condition = User.path.address.city eq "San Francisco")
 ```
@@ -190,6 +200,7 @@ userTable.updateOne(
 ### Replace vs Update
 
 **Replace** - Overwrites entire document:
+
 ```kotlin
 val updatedUser = user.copy(name = "New Name")
 userTable.replaceOne(
@@ -199,6 +210,7 @@ userTable.replaceOne(
 ```
 
 **Update** - Modifies specific fields:
+
 ```kotlin
 userTable.updateOne(
     condition = User.path._id eq userId,
@@ -207,6 +219,7 @@ userTable.updateOne(
 ```
 
 **When to use each:**
+
 - Use **update** when changing a few fields (more efficient)
 - Use **replace** when you have the full object already modified
 
@@ -470,6 +483,7 @@ userTable.find(condition = User.path.deletedAt eq null)
 The database module doesn't have built-in migrations. For production use:
 
 1. **Add optional fields** with default values:
+
 ```kotlin
 @Serializable
 data class User(
@@ -480,6 +494,7 @@ data class User(
 ```
 
 2. **Write migration scripts** for required changes:
+
 ```kotlin
 suspend fun migrateAddPhoneNumber(db: Database) {
     val users = db.table<User>()
@@ -491,6 +506,7 @@ suspend fun migrateAddPhoneNumber(db: Database) {
 ```
 
 3. **Use database versioning** in your settings:
+
 ```kotlin
 @Serializable
 data class ServerSettings(

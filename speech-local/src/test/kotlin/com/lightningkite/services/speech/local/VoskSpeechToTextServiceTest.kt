@@ -4,9 +4,7 @@ import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.speech.SpeechToTextService
 import kotlinx.coroutines.test.runTest
 import java.io.File
-import kotlin.test.Test
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class VoskSpeechToTextServiceTest {
 
@@ -49,8 +47,8 @@ class VoskSpeechToTextServiceTest {
 
         // Should be OK if model exists, WARNING if not downloaded yet
         assertTrue(
-            status.level == com.lightningkite.services.HealthStatus.Level.OK ||
-            status.level == com.lightningkite.services.HealthStatus.Level.WARNING,
+            status.level == com.lightningkite.services.data.HealthStatus.Level.OK ||
+                    status.level == com.lightningkite.services.data.HealthStatus.Level.WARNING,
             "Health check should return OK or WARNING"
         )
     }

@@ -1,14 +1,12 @@
 package com.lightningkite.services.database// by Claude - Test for reflection-based annotation parsing
 import com.lightningkite.services.data.*
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.serializer
 import kotlinx.serialization.modules.EmptySerializersModule
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlinx.serialization.serializer
+import kotlin.test.*
 import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalUnsignedTypes::class)
 class AnnotationReflectionTest {
 
     @Serializable
@@ -26,7 +24,7 @@ class AnnotationReflectionTest {
         val age: Int,
 
         @AdminHidden
-        val internalField: String = ""
+        val internalField: String = "",
     )
 
     @Test
@@ -122,7 +120,7 @@ class AnnotationReflectionTest {
 
         val fieldsValue = parsed.values["fields"]
         assertTrue(fieldsValue is SerializableAnnotationValue.ArrayValue, "fields should be an ArrayValue")
-        val arrayValue = fieldsValue as SerializableAnnotationValue.ArrayValue
+        val arrayValue = fieldsValue
         assertEquals(2, arrayValue.value.size)
         assertEquals(SerializableAnnotationValue.StringValue("name"), arrayValue.value[0])
         assertEquals(SerializableAnnotationValue.StringValue("-createdAt"), arrayValue.value[1])
@@ -132,14 +130,14 @@ class AnnotationReflectionTest {
     @Serializable
     data class ReferencedModel(
         override val _id: Uuid = Uuid.random(),
-        val name: String
+        val name: String,
     ) : HasId<Uuid>
 
     @Serializable
     data class ModelWithForeignKey(
         override val _id: Uuid = Uuid.random(),
         @References(ReferencedModel::class) val referencedId: Uuid,
-        val description: String
+        val description: String,
     ) : HasId<Uuid>
 
     // by Claude - Test that serializableProperties includes References annotation
@@ -170,9 +168,12 @@ class AnnotationReflectionTest {
         // Use the actual serial name as the key
         val serialName = ser.descriptor.serialName
         val virtualType = registry.virtualTypes[serialName]
-        assertNotNull(virtualType, "VirtualType should be registered with key '$serialName'. Available keys: ${registry.virtualTypes.keys}")
+        assertNotNull(
+            virtualType,
+            "VirtualType should be registered with key '$serialName'. Available keys: ${registry.virtualTypes.keys}"
+        )
         assertTrue(virtualType is VirtualStruct, "Should be registered as VirtualStruct")
-        val struct = virtualType as VirtualStruct
+        val struct = virtualType
 
         val referencedIdField = struct.fields.find { it.name == "referencedId" }
         assertNotNull(referencedIdField, "referencedId field should exist in VirtualStruct")
@@ -186,7 +187,7 @@ class AnnotationReflectionTest {
         val referencesValue = referencesAnnotation.values["references"]
         assertTrue(referencesValue is SerializableAnnotationValue.ClassValue, "references should be a ClassValue")
         assertTrue(
-            (referencesValue as SerializableAnnotationValue.ClassValue).fqn.contains("ReferencedModel"),
+            referencesValue.fqn.contains("ReferencedModel"),
             "references should point to ReferencedModel"
         )
     }

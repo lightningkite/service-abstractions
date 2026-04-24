@@ -1,39 +1,15 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.GeoCoordinateGeoJsonSerializer
-import com.lightningkite.services.data.*
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.database.Aggregate
-import com.lightningkite.services.database.CollectionChanges
-import com.lightningkite.services.database.Condition
-import com.lightningkite.services.database.DataClassPath
-import com.lightningkite.services.database.DataClassPathPartial
-import com.lightningkite.services.database.DataClassPathSerializer
-import com.lightningkite.services.database.DenseVectorSearchParams
-import com.lightningkite.services.database.Embedding
-import com.lightningkite.services.database.EntryChange
-import com.lightningkite.services.database.Table
-import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.ScoredResult
-import com.lightningkite.services.database.SimilarityMetric
-import com.lightningkite.services.database.SortPart
-import com.lightningkite.services.database.SparseEmbedding
-import com.lightningkite.services.database.SparseVectorSearchParams
-import com.lightningkite.services.database.VectorIndex
-import com.lightningkite.services.database.collectChunked
-import com.lightningkite.services.database.indexes
-import com.lightningkite.services.database.innerElement
+import com.lightningkite.services.data.*
+import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
-import com.lightningkite.services.database.simplify
-import com.lightningkite.services.database.walk
 import com.mongodb.MongoCommandException
 import com.mongodb.client.model.*
 import com.mongodb.kotlin.client.coroutine.MongoCollection
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
 import org.bson.BsonBoolean
@@ -41,12 +17,15 @@ import org.bson.BsonDocument
 import org.bson.conversions.Bson
 import java.util.concurrent.TimeUnit
 import kotlin.reflect.KClass
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 public class MongoTable<Model : Any>(
     override val serializer: KSerializer<Model>,
     public val atlasSearch: Boolean,
     private val access: MongoCollectionAccess,
-    private val context: SettingContext
+    private val context: SettingContext,
 ) : Table<Model> {
     internal val bson: KBson = KBson(context.internalSerializersModule)
 
@@ -74,13 +53,13 @@ public class MongoTable<Model : Any>(
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> = updateOne(condition, Modification.Assign(model), orderBy)
 
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean {
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
@@ -96,7 +75,7 @@ public class MongoTable<Model : Any>(
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return EntryChange(null, null)
@@ -145,7 +124,7 @@ public class MongoTable<Model : Any>(
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean {
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
@@ -155,9 +134,18 @@ public class MongoTable<Model : Any>(
         return access {
             // TODO: Ugly hack for handling weird upserts
             if (m.upsert(model, serializer, bson = bson)) {
-                updateOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch), m.document, m.options).matchedCount > 0
+                updateOne(
+                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
+                    m.document,
+                    m.options
+                ).matchedCount > 0
             } else {
-                if (updateOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch), m.document, m.options).matchedCount != 0L) {
+                if (updateOne(
+                        cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
+                        m.document,
+                        m.options
+                    ).matchedCount != 0L
+                ) {
                     true
                 } else {
                     insertOne(bson.stringify(serializer, model))
@@ -170,7 +158,7 @@ public class MongoTable<Model : Any>(
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return EntryChange(null, null)
@@ -199,19 +187,25 @@ public class MongoTable<Model : Any>(
     override suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean {
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
         val m = simplifiedModification.bson(serializer, bson = bson)
-        return access { updateOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch), m.document, m.options).matchedCount != 0L }
+        return access {
+            updateOne(
+                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
+                m.document,
+                m.options
+            ).matchedCount != 0L
+        }
     }
 
     override suspend fun updateMany(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): CollectionChanges<Model> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return CollectionChanges()
@@ -234,7 +228,7 @@ public class MongoTable<Model : Any>(
 
     override suspend fun updateManyIgnoringResult(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): Int {
         val cs = condition.simplify()
         if (cs is Condition.Never) return 0
@@ -267,7 +261,7 @@ public class MongoTable<Model : Any>(
 
     override suspend fun deleteOneIgnoringOld(
         condition: Condition<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean {
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
@@ -281,13 +275,14 @@ public class MongoTable<Model : Any>(
         val remove = ArrayList<Model>()
         access {
             // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
-            withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).collectChunked(1000) { list ->
-                deleteMany(Filters.`in`("_id", list.map { it["_id"] }))
-                list.asSequence().map { bson.parse(serializer, it) }
-                    .forEach {
-                        remove.add(it)
-                    }
-            }
+            withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
+                .collectChunked(1000) { list ->
+                    deleteMany(Filters.`in`("_id", list.map { it["_id"] }))
+                    list.asSequence().map { bson.parse(serializer, it) }
+                        .forEach {
+                            remove.add(it)
+                        }
+                }
         }
         return remove
     }
@@ -320,10 +315,10 @@ public class MongoTable<Model : Any>(
                                 "\$search" to documentOf(
                                     "index" to "default",
                                     "text" to documentOf(
-                                        "query" to anyFts!!.value,
+                                        "query" to anyFts.value,
                                         "fuzzy" to documentOf(),
                                         "path" to documentOf("wildcard" to "*"),
-                                        "matchCriteria" to if (anyFts!!.requireAllTermsPresent) "all" else "any"
+                                        "matchCriteria" to if (anyFts.requireAllTermsPresent) "all" else "any"
                                     )
                                 )
                             )
@@ -484,11 +479,11 @@ public class MongoTable<Model : Any>(
      */
     private suspend fun MongoCollection<BsonDocument>.waitForSearchIndexReady(
         indexName: String,
-        timeoutMs: Long = 60_000,
-        pollIntervalMs: Long = 500
+        timeoutMs: Duration = 60.seconds,
+        pollIntervalMs: Duration = 500.milliseconds,
     ) {
         val startTime = System.currentTimeMillis()
-        while (System.currentTimeMillis() - startTime < timeoutMs) {
+        while (System.currentTimeMillis() - startTime < timeoutMs.inWholeMilliseconds) {
             val index = listSearchIndexes().name(indexName).toList().firstOrNull()
             if (index != null) {
                 val queryable = index.getBoolean("queryable", false)
@@ -497,8 +492,10 @@ public class MongoTable<Model : Any>(
                     return
                 }
             }
-            kotlinx.coroutines.delay(pollIntervalMs)
+            delay(pollIntervalMs)
         }
+
+        @Suppress("ThrowableNotThrown")
         context.report {
             Exception(
                 "Search index '$indexName' on ${this.namespace.fullName} did not become ready within ${timeoutMs}ms"
@@ -522,6 +519,7 @@ public class MongoTable<Model : Any>(
                             SimilarityMetric.Euclidean -> "euclidean"
                             SimilarityMetric.DotProduct -> "dotProduct"
                             SimilarityMetric.Manhattan -> {
+                                @Suppress("ThrowableNotThrown")
                                 context.report {
                                     Exception(
                                         "Manhattan distance is not supported for MongoDB Atlas vector indexes on ${this@prepare.namespace.fullName}.${vectorIndex.field}"
@@ -532,6 +530,7 @@ public class MongoTable<Model : Any>(
                         }
 
                         if (vectorIndex.sparse) {
+                            @Suppress("ThrowableNotThrown")
                             context.report {
                                 Exception(
                                     "Sparse vector indexes are not yet supported by MongoDB Atlas on ${this@prepare.namespace.fullName}.${vectorIndex.field}"
@@ -591,7 +590,8 @@ public class MongoTable<Model : Any>(
                             }
                         } else {
                             // Check if index needs updating - by Claude
-                            val existingFields = existing.getEmbedded(listOf("latestDefinition", "fields"), List::class.java) as? List<*>
+                            val existingFields =
+                                existing.getEmbedded(listOf("latestDefinition", "fields"), List::class.java)
                             val existingVectorField = existingFields?.firstOrNull { field ->
                                 (field as? org.bson.Document)?.getString("type") == "vector"
                             } as? org.bson.Document
@@ -636,7 +636,7 @@ public class MongoTable<Model : Any>(
                                         indexName,
                                         documentOf("fields" to updatedFieldsDefinition)
                                     )
-                                } catch (e: NoSuchElementException) {
+                                } catch (_: NoSuchElementException) {
                                     // suppress dumb issue in library
                                 }
                             }
@@ -659,7 +659,10 @@ public class MongoTable<Model : Any>(
                                 return when {
                                     this.descriptor.isNullable -> this.innerElement()
                                     this.descriptor.kind == StructureKind.LIST -> this.innerElement()
-                                    this.descriptor.kind == SerialKind.CONTEXTUAL -> context.internalSerializersModule.getContextual<Any>(this.descriptor.capturedKClass as KClass<Any>) as KSerializer<*>
+                                    this.descriptor.kind == SerialKind.CONTEXTUAL -> context.internalSerializersModule.getContextual<Any>(
+                                        this.descriptor.capturedKClass as KClass<Any>
+                                    ) as KSerializer<*>
+
                                     else -> this
                                 }
                             }
@@ -713,7 +716,10 @@ public class MongoTable<Model : Any>(
                                 } else throw e
                             }
                         } else if (it.fields.any {
-                                existing.getEmbedded(listOf("latestDefinition", "mappings", "fields", it), Any::class.java) == null
+                                existing.getEmbedded(
+                                    listOf("latestDefinition", "mappings", "fields", it),
+                                    Any::class.java
+                                ) == null
                             }) {
                             try {
                                 updateSearchIndex(
@@ -724,7 +730,7 @@ public class MongoTable<Model : Any>(
                                         )
                                     )
                                 )
-                            } catch (e: NoSuchElementException) {
+                            } catch (_: NoSuchElementException) {
                                 // suppress dumb issue in library
                             }
                         }
@@ -745,6 +751,7 @@ public class MongoTable<Model : Any>(
                                         options
                                     )
                                 } catch (e2: MongoCommandException) {
+                                    @Suppress("ThrowableNotThrown")
                                     context.report {
                                         Exception(
                                             "Creating text index failed on ${this@prepare.namespace.fullName}",
@@ -752,6 +759,7 @@ public class MongoTable<Model : Any>(
                                         )
                                     }
                                     context.report {
+                                        @Suppress("ThrowableNotThrown")
                                         Exception(
                                             "Creating text index failed on ${this@prepare.namespace.fullName} even after attempted removal",
                                             e2
@@ -778,12 +786,14 @@ public class MongoTable<Model : Any>(
                                     dropIndex(nameOrDefault)
                                     createIndex(Indexes.geo2dsphere(it.fields), IndexOptions().name(nameOrDefault))
                                 } catch (e2: MongoCommandException) {
+                                    @Suppress("ThrowableNotThrown")
                                     context.report {
                                         Exception(
                                             "Creating geo index failed on ${this@prepare.namespace.fullName}",
                                             e
                                         )
                                     }
+                                    @Suppress("ThrowableNotThrown")
                                     context.report {
                                         Exception(
                                             "Creating geo index failed on ${this@prepare.namespace.fullName} even after attempted removal",
@@ -798,7 +808,11 @@ public class MongoTable<Model : Any>(
                     }
                 } else {
                     requireCompletion += launch {
-                        val keys = Sorts.orderBy(it.fields.map { field -> if (field.startsWith('-')) Sorts.descending(field.drop(1)) else Sorts.ascending(field) })
+                        val keys = Sorts.orderBy(it.fields.map { field ->
+                            if (field.startsWith('-')) Sorts.descending(
+                                field.drop(1)
+                            ) else Sorts.ascending(field)
+                        })
 
                         suspend fun makeIndex(options: IndexOptions) = try {
                             createIndex(keys, options)
@@ -815,12 +829,14 @@ public class MongoTable<Model : Any>(
                                         IndexUniqueness.UniqueNullSparse -> "unique null-sparse "
                                     }
                                     context.report {
+                                        @Suppress("ThrowableNotThrown")
                                         Exception(
                                             "Creating ${unique}index failed on ${this@prepare.namespace.fullName}",
                                             e
                                         )
                                     }
                                     context.report {
+                                        @Suppress("ThrowableNotThrown")
                                         Exception(
                                             "Creating ${unique}index failed on ${this@prepare.namespace.fullName} even after attempted removal",
                                             e2

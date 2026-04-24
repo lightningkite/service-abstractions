@@ -1,11 +1,8 @@
 import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
     id("signing")
@@ -13,12 +10,7 @@ plugins {
 }
 
 kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi")
-        freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-        freeCompilerArgs.set(listOf("-Xnested-type-aliases"))
-    }
+    explicitApi()
     applyDefaultHierarchyTemplate()
     androidTarget {
         compilerOptions {
@@ -37,57 +29,26 @@ kotlin {
     iosX64()
     iosArm64()
     iosSimulatorArm64()
-    macosX64()
     macosArm64()
 
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(project(path = ":data-shared"))
                 api(libs.kotlinx.io)
-                api(project(":should-be-standard-library"))
-            }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
         val commonTest by getting {
             dependencies {
-                api(libs.kotlin.test)
-                api(libs.coroutines.testing)
-            }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
+                implementation(libs.kotlin.test)
             }
         }
-        val androidMain by getting {
-            dependencies {
-//                api(libs.kotlin.test.junit)
-            }
-        }
-        val jsMain by getting {
-            dependencies {
-//                api(libs.kotlin.test.js)
-            }
-        }
-        val jvmMain by getting {
-            dependencies {
-//                api(libs.kotlin.test.junit)
-            }
-        }
-        val jvmTest by getting {
-        }
+        val androidMain by getting {}
+        val jsMain by getting {}
+        val jvmMain by getting {}
+        val jvmTest by getting {}
     }
 }
-
-lkLibrary("lightningkite", "service-abstractions") {}
 
 android {
     namespace = "com.lightningkite.services"
@@ -104,4 +65,12 @@ android {
     dependencies {
         coreLibraryDesugaring(libs.androidDesugaring)
     }
+}
+
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {
+    description.set("A set of classes to represent various types of data and what they represent.")
 }

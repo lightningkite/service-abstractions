@@ -1,22 +1,18 @@
 package com.lightningkite.services.database.test
 
-import kotlinx.coroutines.flow.*
 import com.lightningkite.services.database.*
-import com.lightningkite.services.data.*
-import com.lightningkite.*
-import com.lightningkite.Length.Companion.kilometers
-import kotlinx.coroutines.test.*
-import kotlin.test.*
-import kotlin.time.*
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
-import kotlin.uuid.*
 
 abstract class SortTest {
     abstract val database: Database
 
     @Test
-    fun testSortInt()= runTest {
+    fun testSortInt() = runTest {
         val collection = database.table<LargeTestModel>("SortTest_testSortInt")
         val items = listOf(
             LargeTestModel(int = 4),
@@ -30,14 +26,16 @@ abstract class SortTest {
         val reversePosts = items.sortedByDescending { it.int }
         collection.insertMany(items)
         // Note: results without ordering are not guaranteed to match insertion order
-        val results2 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().int, true))).toList()
-        val results3 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().int, false))).toList()
+        val results2 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().int, true))).toList()
+        val results3 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().int, false))).toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
     }
 
     @Test
-    fun testSortIntEmbedded()= runTest {
+    fun testSortIntEmbedded() = runTest {
         val collection = database.table<LargeTestModel>("SortTest_testSortIntEmbedded")
         val items = listOf(
             LargeTestModel(embedded = ClassUsedForEmbedding(value2 = 4)),
@@ -51,14 +49,18 @@ abstract class SortTest {
         val reversePosts = items.sortedByDescending { it.embedded.value2 }
         collection.insertMany(items)
         // Note: results without ordering are not guaranteed to match insertion order
-        val results2 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().embedded.value2, true))).toList()
-        val results3 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().embedded.value2, false))).toList()
+        val results2 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().embedded.value2, true)))
+                .toList()
+        val results3 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().embedded.value2, false)))
+                .toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
     }
 
     @Test
-    fun testSortIntEmbeddedNullable()= runTest {
+    fun testSortIntEmbeddedNullable() = runTest {
         val collection = database.table<LargeTestModel>("SortTest_testSortIntEmbeddedNullable")
         val items = listOf(
             LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 4)),
@@ -72,14 +74,20 @@ abstract class SortTest {
         val reversePosts = items.sortedByDescending { it.embeddedNullable?.value2 }
         collection.insertMany(items)
         // Note: results without ordering are not guaranteed to match insertion order
-        val results2 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().embeddedNullable.notNull.value2, true))).toList()
-        val results3 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().embeddedNullable.notNull.value2, false))).toList()
+        val results2 = collection.find(
+            Condition.Always,
+            orderBy = listOf(SortPart(path<LargeTestModel>().embeddedNullable.notNull.value2, true))
+        ).toList()
+        val results3 = collection.find(
+            Condition.Always,
+            orderBy = listOf(SortPart(path<LargeTestModel>().embeddedNullable.notNull.value2, false))
+        ).toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
     }
 
     @Test
-    fun testSortTime()= runTest {
+    fun testSortTime() = runTest {
         val collection = database.table<LargeTestModel>("SortTest_testSortTime")
         val items = listOf(
             LargeTestModel(instant = Clock.System.now().minus(4.minutes)),
@@ -93,14 +101,17 @@ abstract class SortTest {
         val reversePosts = items.sortedByDescending { it.instant }
         collection.insertMany(items)
         // Note: results without ordering are not guaranteed to match insertion order
-        val results2 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().instant, true))).toList()
-        val results3 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().instant, false))).toList()
+        val results2 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().instant, true))).toList()
+        val results3 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().instant, false)))
+                .toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
     }
 
     @Test
-    fun testSortCase()= runTest {
+    fun testSortCase() = runTest {
         val collection = database.table<LargeTestModel>("SortTest_testSortCase")
         val items = listOf(
             LargeTestModel(string = "aa"),
@@ -113,14 +124,16 @@ abstract class SortTest {
         val sortedPosts = items.sortedBy { it.string }
         val reversePosts = items.sortedByDescending { it.string }
         collection.insertMany(items)
-        val results2 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, true))).toList()
-        val results3 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, false))).toList()
+        val results2 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, true))).toList()
+        val results3 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, false))).toList()
         assertEquals(sortedPosts.map { it.string }, results2.map { it.string })
         assertEquals(reversePosts.map { it.string }, results3.map { it.string })
     }
 
     @Test
-    fun testSortCaseInsensitive()= runTest {
+    fun testSortCaseInsensitive() = runTest {
         val collection = database.table<LargeTestModel>("SortTest_testSortCaseInsensitive")
         val items = listOf(
             LargeTestModel(string = "aa"),
@@ -133,15 +146,19 @@ abstract class SortTest {
         val sortedPosts = items.sortedBy { it.string.lowercase() }
         val reversePosts = items.sortedByDescending { it.string.lowercase() }
         collection.insertMany(items)
-        val results2 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, true, true))).toList()
-        val results3 = collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, false, true))).toList()
+        val results2 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, true, true)))
+                .toList()
+        val results3 =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, false, true)))
+                .toList()
         assertEquals(sortedPosts.map { it.string }, results2.map { it.string })
         assertEquals(reversePosts.map { it.string }, results3.map { it.string })
     }
 
 
     @Test
-    fun testSortCaseInsensitiveCrash()= runTest {
+    fun testSortCaseInsensitiveCrash() = runTest {
         val collection = database.table<LargeTestModel>("testSortCaseInsensitiveCrash")
         val items = listOf(
             LargeTestModel(string = "aa"),

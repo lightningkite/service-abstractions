@@ -5,7 +5,7 @@ import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.CqlSessionBuilder
 import com.datastax.oss.driver.api.core.config.DefaultDriverOption
 import com.datastax.oss.driver.api.core.config.DriverConfigLoader
-import com.lightningkite.services.HealthStatus
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.Table
@@ -102,7 +102,7 @@ public class CassandraDatabase(
      */
     // by Claude - configurable schema debounce for faster tests
     public val schemaDebounceWindow: Duration = 100.milliseconds,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : Database {
 
     public companion object {
@@ -184,7 +184,10 @@ public class CassandraDatabase(
             .withDuration(DefaultDriverOption.REQUEST_TIMEOUT, JavaDuration.ofSeconds(30))
             // by Claude - Configurable schema metadata debounce (driver default is 1s, we default to 100ms)
             // The debounce batches multiple schema events into one refresh; lower = faster but more refreshes
-            .withDuration(DefaultDriverOption.METADATA_SCHEMA_WINDOW, JavaDuration.ofMillis(schemaDebounceWindow.inWholeMilliseconds))
+            .withDuration(
+                DefaultDriverOption.METADATA_SCHEMA_WINDOW,
+                JavaDuration.ofMillis(schemaDebounceWindow.inWholeMilliseconds)
+            )
 
         if (useAwsKeyspaces) {
             // AWS Keyspaces requires specific driver configuration
@@ -217,10 +220,12 @@ public class CassandraDatabase(
         if (!useAwsKeyspaces) {
             // For standard Cassandra, ensure keyspace exists
             // AWS Keyspaces keyspaces are created via Terraform/console, not dynamically
-            session.execute("""
+            session.execute(
+                """
                 CREATE KEYSPACE IF NOT EXISTS ${keyspace.quoteCql()}
                 WITH replication = {'class': 'SimpleStrategy', 'replication_factor': $replicationFactor}
-            """.trimIndent())
+            """.trimIndent()
+            )
         }
 
         return session

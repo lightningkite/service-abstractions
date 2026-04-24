@@ -33,7 +33,7 @@ internal data class DevExporterConfig(
     val output: File? = null,
     val debounceWindowMs: Long? = null,
     val debounceMinCount: Int = 1,
-    val logCorrelationDelayMs: Long = 0
+    val logCorrelationDelayMs: Long = 0,
 ) {
     private var _writer: PrintWriter? = null
 
@@ -163,7 +163,7 @@ internal class DevSpanExporter(private val config: DevExporterConfig = DevExport
         span: SpanData,
         spansByParent: Map<String, List<SpanData>>,
         prefix: String,
-        isLast: Boolean
+        isLast: Boolean,
     ) {
         val out = config.writer
         val durationNanos = span.endEpochNanos - span.startEpochNanos
@@ -281,7 +281,8 @@ internal class DevSpanExporter(private val config: DevExporterConfig = DevExport
                 out.println("${config.DIM}$timestamp${config.RESET} ${config.DIM}trace=$traceId (incomplete)${config.RESET}")
                 spans.sortedBy { it.startEpochNanos }.forEach { span ->
                     val duration = formatDuration(span.endEpochNanos - span.startEpochNanos)
-                    val marker = if (span.status.statusCode == StatusCode.ERROR) "${config.RED}✗${config.RESET}" else "${config.GREEN}✓${config.RESET}"
+                    val marker =
+                        if (span.status.statusCode == StatusCode.ERROR) "${config.RED}✗${config.RESET}" else "${config.GREEN}✓${config.RESET}"
                     out.println("  $marker ${config.BOLD}${span.name}${config.RESET} ${config.DIM}($duration)${config.RESET}")
                 }
                 out.println()
@@ -331,12 +332,25 @@ internal class DevMetricExporter(private val config: DevExporterConfig = DevExpo
         for (metric in metrics) {
             val dataPoints = when {
                 metric.longSumData.points.isNotEmpty() -> metric.longSumData.points.map { "${it.value}" }
-                metric.doubleSumData.points.isNotEmpty() -> metric.doubleSumData.points.map { String.format("%.2f", it.value) }
+                metric.doubleSumData.points.isNotEmpty() -> metric.doubleSumData.points.map {
+                    String.format(
+                        "%.2f",
+                        it.value
+                    )
+                }
+
                 metric.longGaugeData.points.isNotEmpty() -> metric.longGaugeData.points.map { "${it.value}" }
-                metric.doubleGaugeData.points.isNotEmpty() -> metric.doubleGaugeData.points.map { String.format("%.2f", it.value) }
+                metric.doubleGaugeData.points.isNotEmpty() -> metric.doubleGaugeData.points.map {
+                    String.format(
+                        "%.2f",
+                        it.value
+                    )
+                }
+
                 metric.histogramData.points.isNotEmpty() -> metric.histogramData.points.map {
                     "count=${it.count} sum=${String.format("%.2f", it.sum)}"
                 }
+
                 else -> listOf("(no data)")
             }
 
@@ -454,7 +468,7 @@ internal class DebouncedDevSpanExporter(private val config: DevExporterConfig = 
         var firstSeenMs: Long = System.currentTimeMillis(),
         var lastSeenMs: Long = System.currentTimeMillis(),
         var sampleTraceIds: MutableList<String> = mutableListOf(),
-        var firstTrace: Pair<SpanData, List<SpanData>>? = null
+        var firstTrace: Pair<SpanData, List<SpanData>>? = null,
     )
 
     // Map of root span name -> aggregate stats
@@ -591,13 +605,37 @@ internal class DebouncedDevSpanExporter(private val config: DevExporterConfig = 
         val errorRate = (stats.errorCount.toDouble() / stats.count * 100)
         val additionalCount = stats.count - 1 // Exclude first occurrence already printed
 
-        out.println("${config.DIM}$timestamp${config.RESET} ${config.DIM}trace=${stats.sampleTraceIds.lastOrNull()?.take(8) ?: "unknown"}…${config.RESET}")
+        out.println(
+            "${config.DIM}$timestamp${config.RESET} ${config.DIM}trace=${
+                stats.sampleTraceIds.lastOrNull()?.take(8) ?: "unknown"
+            }…${config.RESET}"
+        )
         out.println("  $marker ${config.BOLD}$name${config.RESET} ${config.DIM}(${additionalCount} additional)${config.RESET}")
-        out.println("    ${config.CYAN}↳ Summary:${config.RESET} ${config.BOLD}${stats.count}${config.RESET} total in ${config.DIM}${String.format("%.1fs", windowDurationSec)}${config.RESET}")
-        out.println("      ${config.DIM}•${config.RESET} avg: ${config.BOLD}${formatDuration(avgDurationNanos)}${config.RESET}, min: ${formatDuration(stats.minDurationNanos)}, max: ${formatDuration(stats.maxDurationNanos)}")
+        out.println(
+            "    ${config.CYAN}↳ Summary:${config.RESET} ${config.BOLD}${stats.count}${config.RESET} total in ${config.DIM}${
+                String.format(
+                    "%.1fs",
+                    windowDurationSec
+                )
+            }${config.RESET}"
+        )
+        out.println(
+            "      ${config.DIM}•${config.RESET} avg: ${config.BOLD}${formatDuration(avgDurationNanos)}${config.RESET}, min: ${
+                formatDuration(
+                    stats.minDurationNanos
+                )
+            }, max: ${formatDuration(stats.maxDurationNanos)}"
+        )
 
         if (stats.errorCount > 0) {
-            out.println("      ${config.DIM}•${config.RESET} errors: ${config.RED}${stats.errorCount}${config.RESET} ${config.DIM}(${String.format("%.1f%%", errorRate)})${config.RESET}")
+            out.println(
+                "      ${config.DIM}•${config.RESET} errors: ${config.RED}${stats.errorCount}${config.RESET} ${config.DIM}(${
+                    String.format(
+                        "%.1f%%",
+                        errorRate
+                    )
+                })${config.RESET}"
+            )
         }
 
         if (stats.sampleTraceIds.size > 1) {

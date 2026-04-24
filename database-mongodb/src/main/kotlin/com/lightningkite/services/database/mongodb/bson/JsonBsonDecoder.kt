@@ -15,27 +15,16 @@
  */
 package com.lightningkite.services.database.mongodb.bson
 
-import java.util.Base64
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonDecoder
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.modules.SerializersModule
-import org.bson.AbstractBsonReader
-import org.bson.BsonBinarySubType
-import org.bson.BsonType
-import org.bson.UuidRepresentation
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.toJsonNamingStrategy
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SealedSerializationApi
 import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.json.*
+import kotlinx.serialization.modules.SerializersModule
+import org.bson.*
 import org.bson.internal.UuidHelper
+import java.util.*
 import kotlin.time.Instant
 
 @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
@@ -65,7 +54,11 @@ internal interface JsonBsonDecoder : BsonDecoder, JsonDecoder {
                 BsonType.DOUBLE -> JsonPrimitive(decodeDouble())
                 BsonType.DECIMAL128 -> JsonPrimitive(reader.readDecimal128())
                 BsonType.OBJECT_ID -> JsonPrimitive(decodeObjectId().toHexString())
-                BsonType.DATE_TIME -> json.encodeToJsonElement(Instant.serializer(), Instant.fromEpochMilliseconds(reader.readDateTime()))
+                BsonType.DATE_TIME -> json.encodeToJsonElement(
+                    Instant.serializer(),
+                    Instant.fromEpochMilliseconds(reader.readDateTime())
+                )
+
                 BsonType.TIMESTAMP -> JsonPrimitive(reader.readTimestamp().value)
                 BsonType.BINARY -> {
                     val subtype = reader.peekBinarySubType()
@@ -73,13 +66,18 @@ internal interface JsonBsonDecoder : BsonDecoder, JsonDecoder {
                     when (subtype) {
                         BsonBinarySubType.UUID_LEGACY.value ->
                             JsonPrimitive(
-                                UuidHelper.decodeBinaryToUuid(data, subtype, UuidRepresentation.JAVA_LEGACY).toString())
+                                UuidHelper.decodeBinaryToUuid(data, subtype, UuidRepresentation.JAVA_LEGACY).toString()
+                            )
+
                         BsonBinarySubType.UUID_STANDARD.value ->
                             JsonPrimitive(
-                                UuidHelper.decodeBinaryToUuid(data, subtype, UuidRepresentation.STANDARD).toString())
+                                UuidHelper.decodeBinaryToUuid(data, subtype, UuidRepresentation.STANDARD).toString()
+                            )
+
                         else -> JsonPrimitive(Base64.getEncoder().encodeToString(data))
                     }
                 }
+
                 else -> error("Unsupported json type: $currentBsonType")
             }
         }
@@ -116,7 +114,7 @@ internal interface JsonBsonDecoder : BsonDecoder, JsonDecoder {
 internal class JsonBsonDecoderImpl(
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : BsonDecoderImpl(reader, serializersModule, configuration), JsonBsonDecoder {
     override val json = json()
 }
@@ -125,7 +123,7 @@ internal class JsonBsonArrayDecoder(
     descriptor: SerialDescriptor,
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : BsonArrayDecoder(descriptor, reader, serializersModule, configuration), JsonBsonDecoder {
     override val json = json()
 }
@@ -134,7 +132,7 @@ internal class JsonBsonDocumentDecoder(
     descriptor: SerialDescriptor,
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : BsonDocumentDecoder(descriptor, reader, serializersModule, configuration), JsonBsonDecoder {
     override val json = json()
 }
@@ -143,7 +141,7 @@ internal class JsonBsonPolymorphicDecoder(
     descriptor: SerialDescriptor,
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : BsonPolymorphicDecoder(descriptor, reader, serializersModule, configuration), JsonBsonDecoder {
     override val json = json()
 }
@@ -152,7 +150,7 @@ internal class JsonBsonMapDecoder(
     descriptor: SerialDescriptor,
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : BsonMapDecoder(descriptor, reader, serializersModule, configuration), JsonBsonDecoder {
     override val json = json()
 }

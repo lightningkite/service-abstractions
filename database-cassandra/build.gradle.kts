@@ -1,11 +1,8 @@
-
 import com.lightningkite.deployhelpers.*
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
     alias(libs.plugins.kotlin.serialization)
     id("signing")
@@ -38,12 +35,6 @@ kotlin {
         freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
     explicitApi()
-    sourceSets.main {
-        kotlin.srcDir("build/generated/ksp/main/kotlin")
-    }
-    sourceSets.test {
-        kotlin.srcDir("build/generated/ksp/test/kotlin")
-    }
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -51,4 +42,8 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 
-lkLibrary("lightningkite", "service-abstractions") {}
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {}

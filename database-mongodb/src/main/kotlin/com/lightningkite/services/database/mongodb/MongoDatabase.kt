@@ -1,14 +1,10 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.database.Database
-import com.lightningkite.services.database.Table
-import com.lightningkite.services.database.UniqueViolationException
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.database.*
 import com.mongodb.*
-import com.mongodb.event.ConnectionCheckedInEvent
-import com.mongodb.event.ConnectionCheckedOutEvent
-import com.mongodb.event.ConnectionPoolListener
+import com.mongodb.event.*
 import com.mongodb.kotlin.client.coroutine.MongoClient
 import com.mongodb.kotlin.client.coroutine.MongoCollection
 import io.opentelemetry.instrumentation.mongo.v3_1.MongoTelemetry
@@ -80,6 +76,7 @@ public class MongoDatabase(
         private val isServerless: Boolean by lazy {
             System.getenv("FUNCTIONS_WORKER_RUNTIME") != null || System.getenv("AWS_EXECUTION_ENV") != null
         }
+
         private fun parseParameterString(params: String): Map<String, List<String>> = params
             .takeIf { it.isNotBlank() }
             ?.split("&")
@@ -91,9 +88,17 @@ public class MongoDatabase(
             ?.mapValues { it.value.map { it.second } }
             ?: emptyMap()
 
-        public fun Database.Settings.Companion.mongoDb(connectionString: String): Database.Settings = Database.Settings(connectionString)
-        public fun Database.Settings.Companion.mongoDbTest(version: String? = null): Database.Settings = Database.Settings("mongodb-test://?version=$version")
-        public fun Database.Settings.Companion.mongoDbFile(folder: String, port: Int? = null, databaseName: String? = null): Database.Settings =
+        public fun Database.Settings.Companion.mongoDb(connectionString: String): Database.Settings =
+            Database.Settings(connectionString)
+
+        public fun Database.Settings.Companion.mongoDbTest(version: String? = null): Database.Settings =
+            Database.Settings("mongodb-test://?version=$version")
+
+        public fun Database.Settings.Companion.mongoDbFile(
+            folder: String,
+            port: Int? = null,
+            databaseName: String? = null,
+        ): Database.Settings =
             Database.Settings("mongodb-file://$folder?port=$port&databaseName=$databaseName")
 
         init {
@@ -148,7 +153,9 @@ public class MongoDatabase(
                         MongoDatabase(
                             name = name,
                             databaseName = "default",
-                            clientSettings = testMongo(version = (params?.get("version") ?: params?.get("mongoVersion"))?.firstOrNull()),
+                            clientSettings = testMongo(
+                                version = (params?.get("version") ?: params?.get("mongoVersion"))?.firstOrNull()
+                            ),
                             atlasSearch = false,
                             context = context
                         )
@@ -200,7 +207,7 @@ public class MongoDatabase(
         active.set(0)
         MongoClient.create(
             MongoClientSettings.builder(clientSettings)
-                .also { if(telemetry != null) it.addCommandListener(telemetry.newCommandListener()) }
+                .also { if (telemetry != null) it.addCommandListener(telemetry.newCommandListener()) }
                 .uuidRepresentation(UuidRepresentation.STANDARD)
                 .applyToConnectionPoolSettings {
                     it.maxSize(poolSize)

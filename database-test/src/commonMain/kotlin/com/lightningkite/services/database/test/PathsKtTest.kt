@@ -1,51 +1,43 @@
 package com.lightningkite.services.database.test
 
-import kotlinx.coroutines.flow.*
 import com.lightningkite.services.database.*
-import com.lightningkite.services.data.*
-import com.lightningkite.*
-import com.lightningkite.Length.Companion.kilometers
-import kotlinx.coroutines.test.*
 import kotlin.test.*
-import kotlin.time.*
-import kotlin.time.Duration.Companion.seconds
-import kotlin.uuid.*
 
 class PathsKtTest {
 
     @Test
     fun testModificationSerializableProperty() {
         (path<LargeTestModel>().int).let { modification ->
-            assertTrue(modification<LargeTestModel>{it.int assign 3}.affects(modification))
-            assertTrue(modification<LargeTestModel>{it.int += 3}.affects(modification))
-            assertFalse(modification<LargeTestModel>{it.short assign 3}.affects(modification))
+            assertTrue(modification<LargeTestModel> { it.int assign 3 }.affects(modification))
+            assertTrue(modification<LargeTestModel> { it.int += 3 }.affects(modification))
+            assertFalse(modification<LargeTestModel> { it.short assign 3 }.affects(modification))
         }
         (path<LargeTestModel>().intNullable).let { modification ->
-            assertTrue(modification<LargeTestModel>{it.intNullable assign 3}.affects(modification))
+            assertTrue(modification<LargeTestModel> { it.intNullable assign 3 }.affects(modification))
             assertTrue(modification<LargeTestModel>() { it.intNullable.notNull += 3 }.affects(modification))
-            assertFalse(modification<LargeTestModel>{it.short assign 3}.affects(modification))
+            assertFalse(modification<LargeTestModel> { it.short assign 3 }.affects(modification))
         }
     }
 
     @Test
     fun testConditionModification() {
-        modification<LargeTestModel>() {it.int assign 2 }.let { modification ->
+        modification<LargeTestModel>() { it.int assign 2 }.let { modification ->
             assertTrue((path<LargeTestModel>().int eq 3).readsResultOf(modification))
             assertTrue((path<LargeTestModel>().int gt 3).readsResultOf(modification))
             assertFalse((path<LargeTestModel>().short eq 3).readsResultOf(modification))
             assertFalse((path<LargeTestModel>().always).readsResultOf(modification))
         }
-        modification<LargeTestModel>() {it.intNullable assign 2 }.let { modification ->
+        modification<LargeTestModel>() { it.intNullable assign 2 }.let { modification ->
             assertTrue((path<LargeTestModel>().intNullable eq 3).readsResultOf(modification))
             assertTrue((path<LargeTestModel>().intNullable.notNull gt 3).readsResultOf(modification))
             assertFalse((path<LargeTestModel>().short eq 3).readsResultOf(modification))
             assertFalse((path<LargeTestModel>().always).readsResultOf(modification))
         }
         (path<LargeTestModel>().listEmbedded.elements.value2 gt 2).let { condition ->
-            assertFalse(condition.readsResultOf(modification {it.intNullable assign 2}))
-            assertTrue(condition.readsResultOf(modification {it.listEmbedded.forEach { it.value2 assign 2 } }))
-            assertTrue(condition.readsResultOf(modification {it.listEmbedded.forEach { it.value2 assign 3 } }))
-            assertTrue(condition.readsResultOf(modification {it.listEmbedded.forEach { it.value2.plusAssign(1) } }))
+            assertFalse(condition.readsResultOf(modification { it.intNullable assign 2 }))
+            assertTrue(condition.readsResultOf(modification { it.listEmbedded.forEach { it.value2 assign 2 } }))
+            assertTrue(condition.readsResultOf(modification { it.listEmbedded.forEach { it.value2 assign 3 } }))
+            assertTrue(condition.readsResultOf(modification { it.listEmbedded.forEach { it.value2.plusAssign(1) } }))
         }
         assertTrue(
             condition<LargeTestModel> { it.fullTextSearch("asdf") }.readsResultOf(
@@ -92,9 +84,9 @@ class PathsKtTest {
             assertFalse(condition.guaranteedAfter(modification { it.intNullable.notNull plusAssign 1 }))
         }
         (path<LargeTestModel>().listEmbedded.elements.value2 gt 2).let { condition ->
-            assertFalse(condition.guaranteedAfter(modification {it.listEmbedded.forEach { it.value2 assign 2 } }))
-            assertTrue(condition.guaranteedAfter(modification {it.listEmbedded.forEach { it.value2 assign 3 } }))
-            assertFalse(condition.guaranteedAfter(modification {it.listEmbedded.forEach { it.value2.plusAssign(1) } }))
+            assertFalse(condition.guaranteedAfter(modification { it.listEmbedded.forEach { it.value2 assign 2 } }))
+            assertTrue(condition.guaranteedAfter(modification { it.listEmbedded.forEach { it.value2 assign 3 } }))
+            assertFalse(condition.guaranteedAfter(modification { it.listEmbedded.forEach { it.value2.plusAssign(1) } }))
         }
     }
 }

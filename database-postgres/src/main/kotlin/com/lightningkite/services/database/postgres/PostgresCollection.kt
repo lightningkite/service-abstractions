@@ -1,31 +1,12 @@
 package com.lightningkite.services.database.postgres
 
-import com.lightningkite.services.recordExceptionWithFingerprint
-import com.lightningkite.services.database.Aggregate
-import com.lightningkite.services.database.CollectionChanges
-import com.lightningkite.services.database.Condition
-import com.lightningkite.services.database.DataClassPath
-import com.lightningkite.services.database.DenseVectorSearchParams
-import com.lightningkite.services.database.Embedding
-import com.lightningkite.services.database.EntryChange
-import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.ScoredResult
-import com.lightningkite.services.database.SimilarityMetric
-import com.lightningkite.services.database.SortPart
-import com.lightningkite.services.database.SparseEmbedding
-import com.lightningkite.services.database.SparseVectorSearchParams
+import com.lightningkite.services.database.*
 import com.lightningkite.services.database.Table
-import com.lightningkite.services.database.findOne
-import io.opentelemetry.api.trace.Span
-import io.opentelemetry.api.trace.SpanBuilder
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import com.lightningkite.services.recordExceptionWithFingerprint
+import io.opentelemetry.api.trace.*
 import io.opentelemetry.extension.kotlin.asContextElement
 import kotlinx.coroutines.*
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -42,22 +23,26 @@ public class PostgresCollection<T : Any>(
     public val name: String,
     override val serializer: KSerializer<T>,
     public val serializersModule: SerializersModule,
-    private val tracer: Tracer?
+    private val tracer: Tracer?,
 ) : Table<T> {
     private var format = DbMapLikeFormat(serializersModule)
 
     private val table = SerialDescriptorTable(name, serializersModule, serializer.descriptor)
 
     private suspend inline fun <T> t(noinline action: suspend Transaction.() -> T): T =
-        newSuspendedTransaction(Dispatchers.IO, db = db, transactionIsolation = TRANSACTION_READ_COMMITTED, statement = {
-            addLogger(StdOutSqlLogger)
-            action()
-        })
+        newSuspendedTransaction(
+            Dispatchers.IO,
+            db = db,
+            transactionIsolation = TRANSACTION_READ_COMMITTED,
+            statement = {
+                addLogger(StdOutSqlLogger)
+                action()
+            })
 
     private suspend inline fun <R> traced(
         operation: String,
         crossinline attributes: SpanBuilder.() -> Unit = {},
-        crossinline block: suspend (Span?) -> R
+        crossinline block: suspend (Span?) -> R,
     ): R {
         return if (tracer != null) {
             val span = tracer.spanBuilder("postgres.$operation")
@@ -118,7 +103,10 @@ public class PostgresCollection<T : Any>(
                 .orderBy(*orderBy.map {
                     @Suppress("UNCHECKED_CAST")
                     (
-                            if (it.field.serializerAny.descriptor.kind == PrimitiveKind.STRING && serializationOverride(it.field.serializerAny.descriptor) == null) {
+                            if (it.field.serializerAny.descriptor.kind == PrimitiveKind.STRING && serializationOverride(
+                                    it.field.serializerAny.descriptor
+                                ) == null
+                            ) {
                                 // TODO: Check database default collation to skip extra work
                                 if (it.ignoreCase) (table.col[it.field.colName]!! as Column<String>).lowerCase()
                                 else AsciiValue(table.col[it.field.colName]!! as Column<String>)
@@ -150,24 +138,25 @@ public class PostgresCollection<T : Any>(
         result
     }
 
-    override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> = traced(
-        operation = "groupCount",
-        attributes = {
-            setAttribute("db.groupBy", groupBy.colName)
+    override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> =
+        traced(
+            operation = "groupCount",
+            attributes = {
+                setAttribute("db.groupBy", groupBy.colName)
+            }
+        ) { span ->
+            prepare.await()
+            val result = t {
+                @Suppress("UNCHECKED_CAST")
+                val groupCol = table.col[groupBy.colName] as Column<Key>
+                val count = Count(stringLiteral("*"))
+                table.select(groupCol, count)
+                    .where { condition(condition, serializer, table, format).asOp() }
+                    .groupBy(table.col[groupBy.colName]!!).associate { it[groupCol] to it[count].toInt() }
+            }
+            span?.setAttribute("db.groups", result.size.toLong())
+            result
         }
-    ) { span ->
-        prepare.await()
-        val result = t {
-            @Suppress("UNCHECKED_CAST")
-            val groupCol = table.col[groupBy.colName] as Column<Key>
-            val count = Count(stringLiteral("*"))
-            table.select(groupCol, count)
-                .where { condition(condition, serializer, table, format).asOp() }
-                .groupBy(table.col[groupBy.colName]!!).associate { it[groupCol] to it[count].toInt() }
-        }
-        span?.setAttribute("db.groups", result.size.toLong())
-        result
-    }
 
     override suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
@@ -251,7 +240,7 @@ public class PostgresCollection<T : Any>(
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<T>,
         model: T,
-        orderBy: List<SortPart<T>>
+        orderBy: List<SortPart<T>>,
     ): Boolean {
         return updateOneIgnoringResult(condition, Modification.Assign(model), orderBy)
     }
@@ -259,7 +248,7 @@ public class PostgresCollection<T : Any>(
     override suspend fun upsertOne(
         condition: Condition<T>,
         modification: Modification<T>,
-        model: T
+        model: T,
     ): EntryChange<T> {
         return newSuspendedTransaction(db = db, transactionIsolation = TRANSACTION_SERIALIZABLE) {
             val existing = findOne(condition)
@@ -288,7 +277,7 @@ public class PostgresCollection<T : Any>(
     override suspend fun updateOne(
         condition: Condition<T>,
         modification: Modification<T>,
-        orderBy: List<SortPart<T>>
+        orderBy: List<SortPart<T>>,
     ): EntryChange<T> = traced(
         operation = "updateOne"
     ) { span ->
@@ -312,7 +301,7 @@ public class PostgresCollection<T : Any>(
     override suspend fun updateOneIgnoringResult(
         condition: Condition<T>,
         modification: Modification<T>,
-        orderBy: List<SortPart<T>>
+        orderBy: List<SortPart<T>>,
     ): Boolean = traced(
         operation = "updateOneIgnoringResult"
     ) { span ->
@@ -330,24 +319,25 @@ public class PostgresCollection<T : Any>(
         count > 0
     }
 
-    override suspend fun updateMany(condition: Condition<T>, modification: Modification<T>): CollectionChanges<T> = traced(
-        operation = "updateMany"
-    ) { span ->
-        val result = t {
-            val old = table.updateReturningOld(
-                where = { condition(condition, serializer, table, format).asOp() },
-                limit = null,
-                body = {
-                    it.modification(modification, serializer, table, format)
-                }
-            )
-            CollectionChanges(old.map { format.decode(serializer, it) }.map {
-                EntryChange(it, modification(it))
-            })
+    override suspend fun updateMany(condition: Condition<T>, modification: Modification<T>): CollectionChanges<T> =
+        traced(
+            operation = "updateMany"
+        ) { span ->
+            val result = t {
+                val old = table.updateReturningOld(
+                    where = { condition(condition, serializer, table, format).asOp() },
+                    limit = null,
+                    body = {
+                        it.modification(modification, serializer, table, format)
+                    }
+                )
+                CollectionChanges(old.map { format.decode(serializer, it) }.map {
+                    EntryChange(it, modification(it))
+                })
+            }
+            span?.setAttribute("db.updated", result.changes.size.toLong())
+            result
         }
-        span?.setAttribute("db.updated", result.changes.size.toLong())
-        result
-    }
 
     override suspend fun updateManyIgnoringResult(condition: Condition<T>, modification: Modification<T>): Int = traced(
         operation = "updateManyIgnoringResult"
@@ -476,14 +466,17 @@ public class PostgresCollection<T : Any>(
                                 // Normalize from [-1, 1] to [0, 1]
                                 (similarity + 1f) / 2f
                             }
+
                             SimilarityMetric.Euclidean -> {
                                 // Euclidean: 1 / (1 + distance)
                                 1f / (1f + distance)
                             }
+
                             SimilarityMetric.DotProduct -> {
                                 // DotProduct: pgvector uses negative inner product, so negate to get the score
                                 -distance
                             }
+
                             SimilarityMetric.Manhattan -> {
                                 // Manhattan: 1 / (1 + distance)
                                 1f / (1f + distance)
@@ -532,7 +525,7 @@ public class PostgresCollection<T : Any>(
                 SimilarityMetric.DotProduct -> SparseVectorDotProductDistanceOp(vectorCol, params.queryVector)
                 SimilarityMetric.Manhattan -> throw UnsupportedOperationException(
                     "Manhattan distance is not supported for sparse vectors in pgvector. " +
-                    "Use Cosine, Euclidean, or DotProduct instead."
+                            "Use Cosine, Euclidean, or DotProduct instead."
                 )
             }
 
@@ -554,12 +547,15 @@ public class PostgresCollection<T : Any>(
                                 val similarity = 1f - distance
                                 (similarity + 1f) / 2f
                             }
+
                             SimilarityMetric.Euclidean -> {
                                 1f / (1f + distance)
                             }
+
                             SimilarityMetric.DotProduct -> {
                                 -distance
                             }
+
                             else -> distance
                         }
 
@@ -585,7 +581,7 @@ public class PostgresCollection<T : Any>(
 private sealed class VectorDistanceOp(
     private val column: Expression<List<Float>>,
     private val queryVector: List<Float>,
-    private val operator: String
+    private val operator: String,
 ) : ExpressionWithColumnType<Float>() {
     override val columnType: IColumnType<Float> = FloatColumnType()
 
@@ -613,7 +609,7 @@ private sealed class VectorDistanceOp(
  */
 private class VectorCosineDistanceOp(
     column: Expression<List<Float>>,
-    queryVector: List<Float>
+    queryVector: List<Float>,
 ) : VectorDistanceOp(column, queryVector, "<=>")
 
 /**
@@ -622,7 +618,7 @@ private class VectorCosineDistanceOp(
  */
 private class VectorEuclideanDistanceOp(
     column: Expression<List<Float>>,
-    queryVector: List<Float>
+    queryVector: List<Float>,
 ) : VectorDistanceOp(column, queryVector, "<->")
 
 /**
@@ -631,7 +627,7 @@ private class VectorEuclideanDistanceOp(
  */
 private class VectorDotProductDistanceOp(
     column: Expression<List<Float>>,
-    queryVector: List<Float>
+    queryVector: List<Float>,
 ) : VectorDistanceOp(column, queryVector, "<#>")
 
 /**
@@ -640,7 +636,7 @@ private class VectorDotProductDistanceOp(
  */
 private class VectorManhattanDistanceOp(
     column: Expression<List<Float>>,
-    queryVector: List<Float>
+    queryVector: List<Float>,
 ) : VectorDistanceOp(column, queryVector, "<+>")
 
 
@@ -655,7 +651,7 @@ private class VectorManhattanDistanceOp(
 private sealed class SparseVectorDistanceOp(
     private val column: Expression<String>,
     private val queryVector: SparseEmbedding,
-    private val operator: String
+    private val operator: String,
 ) : ExpressionWithColumnType<Float>() {
     override val columnType: IColumnType<Float> = FloatColumnType()
 
@@ -687,7 +683,7 @@ private sealed class SparseVectorDistanceOp(
  */
 private class SparseVectorCosineDistanceOp(
     column: Expression<String>,
-    queryVector: SparseEmbedding
+    queryVector: SparseEmbedding,
 ) : SparseVectorDistanceOp(column, queryVector, "<=>")
 
 /**
@@ -695,7 +691,7 @@ private class SparseVectorCosineDistanceOp(
  */
 private class SparseVectorEuclideanDistanceOp(
     column: Expression<String>,
-    queryVector: SparseEmbedding
+    queryVector: SparseEmbedding,
 ) : SparseVectorDistanceOp(column, queryVector, "<->")
 
 /**
@@ -703,5 +699,5 @@ private class SparseVectorEuclideanDistanceOp(
  */
 private class SparseVectorDotProductDistanceOp(
     column: Expression<String>,
-    queryVector: SparseEmbedding
+    queryVector: SparseEmbedding,
 ) : SparseVectorDistanceOp(column, queryVector, "<#>")

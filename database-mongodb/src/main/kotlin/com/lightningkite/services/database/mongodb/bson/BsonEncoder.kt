@@ -15,23 +15,15 @@
  */
 package com.lightningkite.services.database.mongodb.bson
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.SerializationStrategy
-import kotlinx.serialization.descriptors.PolymorphicKind
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
-import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.encoding.AbstractEncoder
-import kotlinx.serialization.encoding.CompositeEncoder
-import kotlinx.serialization.encoding.Encoder
+import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.convertCamelCase
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 import kotlinx.serialization.modules.SerializersModule
 import org.bson.BsonValue
 import org.bson.BsonWriter
 import org.bson.codecs.BsonValueCodec
 import org.bson.codecs.EncoderContext
-import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.convertCamelCase
 import org.bson.types.ObjectId
 
 /**
@@ -67,7 +59,7 @@ public sealed interface BsonEncoder : Encoder, CompositeEncoder {
 internal open class BsonEncoderImpl(
     val writer: BsonWriter,
     override val serializersModule: SerializersModule,
-    val configuration: BsonConfiguration
+    val configuration: BsonConfiguration,
 ) : BsonEncoder, AbstractEncoder() {
 
     companion object {
@@ -93,7 +85,8 @@ internal open class BsonEncoderImpl(
 
             is StructureKind.LIST -> writer.writeStartArray()
             is StructureKind.CLASS,
-            StructureKind.OBJECT -> {
+            StructureKind.OBJECT,
+                -> {
                 if (isPolymorphic) {
                     isPolymorphic = false
                 } else {
@@ -116,7 +109,8 @@ internal open class BsonEncoderImpl(
             is StructureKind.LIST -> writer.writeEndArray()
             StructureKind.MAP,
             StructureKind.CLASS,
-            StructureKind.OBJECT -> writer.writeEndDocument()
+            StructureKind.OBJECT,
+                -> writer.writeEndDocument()
 
             else -> {}
         }
@@ -177,13 +171,13 @@ internal open class BsonEncoderImpl(
                 if (value != null || configuration.explicitNulls) {
                     encodeName(it)
                     serializationOverride(serializer)?.let {
-                        if(value == null) encodeNull() else encodeBsonValue(it.toBson(value))
+                        if (value == null) encodeNull() else encodeBsonValue(it.toBson(value))
                     } ?: super<AbstractEncoder>.encodeNullableSerializableValue(serializer, value)
                 }
             },
             {
                 serializationOverride(serializer)?.let {
-                    if(value == null) encodeNull() else encodeBsonValue(it.toBson(value))
+                    if (value == null) encodeNull() else encodeBsonValue(it.toBson(value))
                 } ?: super<AbstractEncoder>.encodeNullableSerializableValue(serializer, value)
             })
     }

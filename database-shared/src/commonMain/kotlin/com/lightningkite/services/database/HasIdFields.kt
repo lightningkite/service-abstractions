@@ -4,7 +4,7 @@ import kotlinx.serialization.KSerializer
 import kotlin.jvm.JvmName
 
 @Suppress("UNCHECKED_CAST")
-public fun <Model : HasId<ID>, ID> KSerializer<Model>._id(): SerializableProperty<Model, ID> =
+public fun <Model : HasId<ID>, ID : Comparable<ID>> KSerializer<Model>._id(): SerializableProperty<Model, ID> =
     serializableProperties!!.find { it.name == "_id" }!! as SerializableProperty<Model, ID>
 
 @Suppress("UNCHECKED_CAST")

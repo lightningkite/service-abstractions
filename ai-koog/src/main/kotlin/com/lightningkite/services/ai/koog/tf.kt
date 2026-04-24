@@ -2,10 +2,7 @@ package com.lightningkite.services.ai.koog
 
 import ai.koog.prompt.llm.LLModel
 import com.lightningkite.services.ai.koog.rag.EmbedderSettings
-import com.lightningkite.services.terraform.AwsPolicyStatement
-import com.lightningkite.services.terraform.TerraformEmitterAws
-import com.lightningkite.services.terraform.TerraformNeed
-import com.lightningkite.services.terraform.TerraformProviderImport
+import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
@@ -110,7 +107,7 @@ public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrock(
     if (!LLMClientAndModel.Settings.supports("bedrock")) {
         throw IllegalArgumentException(
             "You need to register the 'bedrock' scheme in LLMClientAndModel.Settings to use this. " +
-                "Make sure you have the Bedrock client dependency and have registered the scheme."
+                    "Make sure you have the Bedrock client dependency and have registered the scheme."
         )
     }
 
@@ -169,7 +166,7 @@ public fun TerraformNeed<EmbedderSettings>.awsBedrock(
     if (!EmbedderSettings.supports("bedrock")) {
         throw IllegalArgumentException(
             "You need to register the 'bedrock' scheme in LLMClientAndModel.Settings to use this. " +
-                "Make sure you have the Bedrock client dependency and have registered the scheme."
+                    "Make sure you have the Bedrock client dependency and have registered the scheme."
         )
     }
 
@@ -228,7 +225,7 @@ public fun TerraformNeed<LLMClientAndModel.Settings>.awsBedrock(
     if (!LLMClientAndModel.Settings.supports("bedrock")) {
         throw IllegalArgumentException(
             "You need to register the 'bedrock' scheme in LLMClientAndModel.Settings to use this. " +
-                "Make sure you have the Bedrock client dependency and have registered the scheme."
+                    "Make sure you have the Bedrock client dependency and have registered the scheme."
         )
     }
 
@@ -287,7 +284,7 @@ public fun TerraformNeed<EmbedderSettings>.awsBedrock(
     if (!EmbedderSettings.supports("bedrock")) {
         throw IllegalArgumentException(
             "You need to register the 'bedrock' scheme in LLMClientAndModel.Settings to use this. " +
-                "Make sure you have the Bedrock client dependency and have registered the scheme."
+                    "Make sure you have the Bedrock client dependency and have registered the scheme."
         )
     }
 

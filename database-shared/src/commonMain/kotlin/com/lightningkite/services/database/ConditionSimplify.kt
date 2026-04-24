@@ -72,11 +72,13 @@ private fun <T> Condition<T>.finalSimplify(): Condition<T> = when (this) {
         1 -> Condition.Equal(values.first())
         else -> this
     }
+
     is Condition.NotInside -> when (values.size) {
         0 -> Condition.Always
         1 -> Condition.NotEqual(values.first())
         else -> this
     }
+
     else -> this
 }
 
@@ -158,7 +160,8 @@ private fun <T> reduceAnd(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.And,
-            is Condition.Equal -> reduceAnd(b, a)
+            is Condition.Equal,
+                -> reduceAnd(b, a)
 
             else -> Condition.And(listOf(a, b))
         }
@@ -171,7 +174,8 @@ private fun <T> reduceAnd(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.And,
-            is Condition.Equal -> reduceAnd(b, a)
+            is Condition.Equal,
+                -> reduceAnd(b, a)
 
             else -> Condition.And(listOf(a, b))
         }
@@ -190,7 +194,8 @@ private fun <T> reduceAnd(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.And,
-            is Condition.Equal -> reduceAnd(b, a)
+            is Condition.Equal,
+                -> reduceAnd(b, a)
 
             else -> Condition.And(listOf(a, b))
         }
@@ -201,7 +206,8 @@ private fun <T> reduceAnd(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.And,
-            is Condition.Equal -> reduceAnd(b, a)
+            is Condition.Equal,
+                -> reduceAnd(b, a)
 
             else -> Condition.And(listOf(a, b))
         }
@@ -214,7 +220,8 @@ private fun <T> reduceAnd(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.And,
-            is Condition.Equal -> reduceAnd(b, a)
+            is Condition.Equal,
+                -> reduceAnd(b, a)
 
             else -> Condition.And(listOf(a, b))
         }
@@ -227,7 +234,8 @@ private fun <T> reduceAnd(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.And,
-            is Condition.Equal -> reduceAnd(b, a)
+            is Condition.Equal,
+                -> reduceAnd(b, a)
 
             else -> Condition.And(listOf(a, b))
         }
@@ -277,7 +285,8 @@ private fun <T> reduceOr(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.Or,
-            is Condition.Equal -> reduceOr(b, a)
+            is Condition.Equal,
+                -> reduceOr(b, a)
 
             else -> Condition.Or(listOf(a, b))
         }
@@ -288,7 +297,8 @@ private fun <T> reduceOr(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.Or,
-            is Condition.Equal -> reduceOr(b, a)
+            is Condition.Equal,
+                -> reduceOr(b, a)
 
             else -> Condition.Or(listOf(a, b))
         }
@@ -299,7 +309,8 @@ private fun <T> reduceOr(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.Or,
-            is Condition.Equal -> reduceOr(b, a)
+            is Condition.Equal,
+                -> reduceOr(b, a)
 
             else -> Condition.Or(listOf(a, b))
         }
@@ -310,7 +321,8 @@ private fun <T> reduceOr(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.Or,
-            is Condition.Equal -> reduceOr(b, a)
+            is Condition.Equal,
+                -> reduceOr(b, a)
 
             else -> Condition.Or(listOf(a, b))
         }
@@ -323,7 +335,8 @@ private fun <T> reduceOr(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.Or,
-            is Condition.Equal -> reduceOr(b, a)
+            is Condition.Equal,
+                -> reduceOr(b, a)
 
             else -> Condition.Or(listOf(a, b))
         }
@@ -336,7 +349,8 @@ private fun <T> reduceOr(a: Condition<T>, b: Condition<T>): Condition<T> {
             is Condition.Always,
             is Condition.Never,
             is Condition.Or,
-            is Condition.Equal -> reduceOr(b, a)
+            is Condition.Equal,
+                -> reduceOr(b, a)
 
             else -> Condition.Or(listOf(a, b))
         }

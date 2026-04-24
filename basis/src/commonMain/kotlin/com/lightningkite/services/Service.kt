@@ -1,5 +1,6 @@
 package com.lightningkite.services
 
+import com.lightningkite.services.data.HealthStatus
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 

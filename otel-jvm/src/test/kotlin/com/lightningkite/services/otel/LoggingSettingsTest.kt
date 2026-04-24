@@ -8,9 +8,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.github.oshai.kotlinlogging.Level
 import org.junit.Assert.*
 import org.slf4j.LoggerFactory
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
+import kotlin.test.*
 
 /**
  * Tests for [LoggingSettings] to verify that log level filtering works correctly.

@@ -3,16 +3,11 @@
 // Atlas-compatible operators ($eq/$in) instead of $elemMatch when atlasSearch=true.
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.database.Condition
-import com.lightningkite.services.database.SerializableProperty
+import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
-import com.lightningkite.services.database.serializableProperties
 import com.lightningkite.services.database.test.LargeTestModel
 import org.bson.Document
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
+import kotlin.test.*
 
 /**
  * Tests that the atlasSearch flag in BSON condition conversion correctly handles
@@ -33,8 +28,10 @@ class BsonConditionAtlasSearchTest {
     // Get properties by name to build conditions manually (like KnowledgeBaseTools does)
     @Suppress("UNCHECKED_CAST")
     private val setProp = props.first { it.name == "set" } as SerializableProperty<LargeTestModel, Set<Int>>
+
     @Suppress("UNCHECKED_CAST")
     private val listProp = props.first { it.name == "list" } as SerializableProperty<LargeTestModel, List<Int>>
+
     @Suppress("UNCHECKED_CAST")
     private val intProp = props.first { it.name == "int" } as SerializableProperty<LargeTestModel, Int>
 
@@ -166,6 +163,10 @@ class BsonConditionAtlasSearchTest {
         val cond: Condition<LargeTestModel> = Condition.OnField(intProp, Condition.Equal(42))
         val withAtlas = cond.bson(serializer, atlasSearch = true, bson = bson)
         val withoutAtlas = cond.bson(serializer, atlasSearch = false, bson = bson)
-        assertEquals(withAtlas.toJson(), withoutAtlas.toJson(), "Scalar conditions should be identical regardless of atlasSearch flag")
+        assertEquals(
+            withAtlas.toJson(),
+            withoutAtlas.toJson(),
+            "Scalar conditions should be identical regardless of atlasSearch flag"
+        )
     }
 }

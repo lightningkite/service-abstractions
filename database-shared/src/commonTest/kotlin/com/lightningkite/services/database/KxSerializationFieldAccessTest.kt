@@ -1,9 +1,10 @@
+@file:OptIn(ExperimentalSerializationApi::class)
+
 package com.lightningkite.services.database
 
 import com.lightningkite.services.test.performance
 import kotlinx.datetime.LocalDate
-import kotlinx.serialization.ContextualSerializer
-import kotlinx.serialization.KSerializer
+import kotlinx.serialization.*
 import kotlinx.serialization.builtins.nullable
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,7 +13,8 @@ import kotlin.uuid.Uuid
 
 class KxSerializationFieldAccessTest {
 
-    @Test fun getPerf() {
+    @Test
+    fun getPerf() {
         val getter = { it: UnreasonablyComplex -> it.nested }
         val ser = UnreasonablyComplex.serializer()
         val child = ser.nullable
@@ -27,11 +29,13 @@ class KxSerializationFieldAccessTest {
             local = altGetter(sample)
         }.also { println("encall: $it") }
     }
-    @Test fun setPerf() {
+
+    @Test
+    fun setPerf() {
         val setter = { it: UnreasonablyComplex, value: UnreasonablyComplex? -> it.copy(nested = value) }
         val ser = UnreasonablyComplex.serializer()
         val child = ser.nullable
-        val altSetter = { it: UnreasonablyComplex, value: UnreasonablyComplex?  -> ser.set(it, 4, child, value) }
+        val altSetter = { it: UnreasonablyComplex, value: UnreasonablyComplex? -> ser.set(it, 4, child, value) }
 
         var local: UnreasonablyComplex? = null
         val sample = UnreasonablyComplex(nested = UnreasonablyComplex(string = "asdf"))
@@ -43,14 +47,17 @@ class KxSerializationFieldAccessTest {
             local = altSetter(sample, newvalue)
         }.also { println("encdec: $it") }
     }
-    @Test fun contextual() {
+
+    @Test
+    fun contextual() {
         val ser = ContextualCopyCheck.serializer()
         val input = ContextualCopyCheck(LocalDate(2023, 1, 1))
         val output = ContextualCopyCheck(LocalDate(2024, 2, 2))
         assertEquals(output, ser.set(input, 0, ContextualSerializer(LocalDate::class), output.date))
     }
 
-    @Test fun allOperations() {
+    @Test
+    fun allOperations() {
         val default = LargeTestModel()
         val altValue = LargeTestModel(
             boolean = false,
@@ -90,7 +97,15 @@ class KxSerializationFieldAccessTest {
             println("---${serializer.descriptor.getElementName(index)}---")
             val alt = serializer.get(altValue, index, serializer.childSerializersOrNull()!![index])
             println("Setting field to $alt")
-            println(serializer.set(default, index, serializer.childSerializersOrNull()!![index] as KSerializer<Any?>, alt))
+            @Suppress("UNCHECKED_CAST")
+            println(
+                serializer.set(
+                    default,
+                    index,
+                    serializer.childSerializersOrNull()!![index] as KSerializer<Any?>,
+                    alt
+                )
+            )
         }
     }
 }

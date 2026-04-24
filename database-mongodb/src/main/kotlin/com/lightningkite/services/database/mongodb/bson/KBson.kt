@@ -8,31 +8,43 @@ import org.bson.*
 import org.bson.codecs.*
 
 
-
 @OptIn(ExperimentalSerializationApi::class)
-internal class KBson(override val serializersModule: SerializersModule = EmptySerializersModule(), private val configuration: BsonConfiguration = BsonConfiguration(explicitNulls = true)) : SerialFormat, BinaryFormat {
+internal class KBson(
+    override val serializersModule: SerializersModule = EmptySerializersModule(),
+    private val configuration: BsonConfiguration = BsonConfiguration(explicitNulls = true),
+) : SerialFormat, BinaryFormat {
     fun <T> stringify(serializer: SerializationStrategy<T>, obj: T): BsonDocument {
         val doc = BsonDocument()
         val writer = BsonDocumentWriter(doc)
 
-        BsonCodecUtils.createBsonEncoder(writer, serializersModule, configuration).encodeSerializableValue(serializer, obj)
+        BsonCodecUtils.createBsonEncoder(writer, serializersModule, configuration)
+            .encodeSerializableValue(serializer, obj)
         writer.flush()
 
         return doc
     }
+
     fun <T> parse(deserializer: DeserializationStrategy<T>, doc: BsonDocument): T {
-        return BsonCodecUtils.createBsonDecoder(doc.asBsonReader() as AbstractBsonReader, serializersModule, configuration).decodeSerializableValue(deserializer)
+        return BsonCodecUtils.createBsonDecoder(
+            doc.asBsonReader() as AbstractBsonReader,
+            serializersModule,
+            configuration
+        ).decodeSerializableValue(deserializer)
     }
 
     override fun <T> encodeToByteArray(
         serializer: SerializationStrategy<T>,
-        value: T
+        value: T,
     ): ByteArray = this.stringify(serializer, value).toByteArray()
 
     override fun <T> decodeFromByteArray(
         deserializer: DeserializationStrategy<T>,
-        bytes: ByteArray
-    ): T = BsonCodecUtils.createBsonDecoder(RawBsonDocument(bytes).asBsonReader() as AbstractBsonReader, serializersModule, configuration).decodeSerializableValue(deserializer)
+        bytes: ByteArray,
+    ): T = BsonCodecUtils.createBsonDecoder(
+        RawBsonDocument(bytes).asBsonReader() as AbstractBsonReader,
+        serializersModule,
+        configuration
+    ).decodeSerializableValue(deserializer)
 
     companion object {
         val default = KBson()
@@ -45,7 +57,7 @@ internal fun BsonDocument.toDocument(): Document {
 
 internal fun BsonDocument.toByteArray(): ByteArray {
     return RawBsonDocumentCodec()
-            .decode(this.asBsonReader(), DecoderContext.builder().build())
-            .byteBuffer
-            .array()
+        .decode(this.asBsonReader(), DecoderContext.builder().build())
+        .byteBuffer
+        .array()
 }

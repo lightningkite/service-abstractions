@@ -1,28 +1,15 @@
 package com.lightningkite.services.database.validation
 
-import com.lightningkite.services.data.ExpectedPattern
-import com.lightningkite.services.data.FloatRange
-import com.lightningkite.services.data.IntegerRange
-import com.lightningkite.services.data.MaxLength
-import com.lightningkite.services.data.MaxSize
-import com.lightningkite.services.data.StringArrayFormat
+import com.lightningkite.services.data.*
 import com.lightningkite.services.database.childAndTypeParameterSerializersOrNull
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationStrategy
-import kotlinx.serialization.builtins.NothingSerializer
-import kotlinx.serialization.builtins.nullable
-import kotlinx.serialization.builtins.serializer
+import com.lightningkite.services.data.StringArrayFormat
+import kotlinx.serialization.*
+import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeEncoder
-import kotlinx.serialization.modules.EmptySerializersModule
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.overwriteWith
-import kotlinx.serialization.modules.plus
-import kotlin.collections.set
+import kotlinx.serialization.modules.*
 import kotlin.reflect.KClass
 
 /**
@@ -165,17 +152,28 @@ public class AnnotationValidators private constructor(
         @PublishedApi
         internal inline fun <reified T> Any?.cast(): T = this as T
 
-        private fun <T : Any> ValidationMap<T>.register(annotation: KClass<out Annotation>, type: SerialKType, value: T) {
-            val key = annotation.normalizedTypeName() ?: throw IllegalArgumentException("Cannot determine type name for $annotation.")
+        private fun <T : Any> ValidationMap<T>.register(
+            annotation: KClass<out Annotation>,
+            type: SerialKType,
+            value: T,
+        ) {
+            val key = annotation.normalizedTypeName()
+                ?: throw IllegalArgumentException("Cannot determine type name for $annotation.")
             if (!used.add(key to type)) throw IllegalArgumentException("Multiple validator declarations encountered for ${annotation.simpleName ?: key}/$type")
             put(annotation, type, value)
         }
 
-        public fun <A : Annotation> KClass<A>.rawValidation(onType: SerialKType, condition: Annotation.(Any?) -> String?) {
+        public fun <A : Annotation> KClass<A>.rawValidation(
+            onType: SerialKType,
+            condition: Annotation.(Any?) -> String?,
+        ) {
             validators.register(this, onType, condition)
         }
 
-        public fun <A : Annotation> KClass<A>.rawValidationSuspending(onType: SerialKType, condition: suspend Annotation.(Any?) -> String?) {
+        public fun <A : Annotation> KClass<A>.rawValidationSuspending(
+            onType: SerialKType,
+            condition: suspend Annotation.(Any?) -> String?,
+        ) {
             suspendingValidators.register(this, onType, condition)
         }
 
@@ -290,7 +288,6 @@ public class AnnotationValidators private constructor(
         }
 
 
-
         private fun SerialKType.listMapOrNullElements(): List<SerialKType>? =
             when (this) {
                 is SerialKType.Specified -> {
@@ -298,6 +295,7 @@ public class AnnotationValidators private constructor(
                     else if (descriptor.kind == StructureKind.LIST || descriptor.kind == StructureKind.MAP) arguments
                     else null
                 }
+
                 SerialKType.Wildcard -> null
             }
 
@@ -307,9 +305,10 @@ public class AnnotationValidators private constructor(
             val forAnnotation = map[annotation.normalizedTypeName()] ?: return null
             val found = forAnnotation.firstOrNull { it.first.matches(type) }?.second
             if (found == null && printWarnings &&
-                type.listMapOrNullElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
-                    forAnnotation.any { it.first.matches(e) }
-                } != false
+                type.listMapOrNullElements()
+                    ?.none { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
+                        forAnnotation.any { it.first.matches(e) }
+                    } != false
             ) {
                 println(
                     "${annotation::class.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [${
@@ -331,9 +330,10 @@ public class AnnotationValidators private constructor(
             val secondFound = second?.firstOrNull { it.first.matches(type) }?.second
 
             if (firstFound == null && secondFound == null && printWarnings &&
-                type.listMapOrNullElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
-                    first?.any { it.first.matches(e) } == true || second?.any { it.first.matches(e) } == true
-                } != false
+                type.listMapOrNullElements()
+                    ?.none { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
+                        first?.any { it.first.matches(e) } == true || second?.any { it.first.matches(e) } == true
+                    } != false
             ) println(buildString {
                 append("${annotation::class.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [")
                 first?.joinTo(this) { it.first.toString() }
@@ -470,7 +470,10 @@ public class AnnotationValidators private constructor(
 
             // Else default path used to avoid allocation of NullableSerializer
             if (value == null) {
-                validate(serializer.nullable, null)   // don't need to call serializer.serialize(this, value) because it's null, there's nothing after this.
+                validate(
+                    serializer.nullable,
+                    null
+                )   // don't need to call serializer.serialize(this, value) because it's null, there's nothing after this.
                 path.removeLastOrNull()
                 annotationStack.removeLastOrNull()
             } else {
@@ -492,6 +495,7 @@ public class AnnotationValidators private constructor(
             annotationStack.add(descriptor.getElementAnnotations(index))
             return true
         }
+
         private fun elementEncoded() {
             // Element encoded, pop the field name and annotations we pushed in encodeElement
             path.removeLastOrNull()
@@ -655,8 +659,7 @@ public class AnnotationValidators private constructor(
                         suspendingValidators.suppressWarnings = false
                     }
                 }
-            }
-            else validate(SerialKType(serializer), value, annotations)
+            } else validate(SerialKType(serializer), value, annotations)
         }
 
         /**
@@ -713,7 +716,7 @@ internal fun KClass<*>.normalizedTypeName(): String? = toString().let { str ->
  * */
 public inline fun AnnotationValidators(
     serializersModule: SerializersModule = EmptySerializersModule(),
-    setup: AnnotationValidators.Builder.() -> Unit
+    setup: AnnotationValidators.Builder.() -> Unit,
 ): AnnotationValidators = AnnotationValidators.Builder(serializersModule).apply(setup).build()
 
 /**
@@ -721,14 +724,14 @@ public inline fun AnnotationValidators(
  * */
 @Suppress("FunctionName")
 public fun EmptyAnnotationValidators(
-    serializersModule: SerializersModule = EmptySerializersModule()
+    serializersModule: SerializersModule = EmptySerializersModule(),
 ): AnnotationValidators = AnnotationValidators.Builder(serializersModule).build()
 
 /**
  * Returns [AnnotationValidators.Standard] with the provided [serializersModule]
  * */
 public fun AnnotationValidators(
-    serializersModule: SerializersModule = EmptySerializersModule()
+    serializersModule: SerializersModule = EmptySerializersModule(),
 ): AnnotationValidators =
     if (serializersModule === EmptySerializersModule()) AnnotationValidators.Standard
     else AnnotationValidators.Standard overwriteWith EmptyAnnotationValidators(serializersModule)

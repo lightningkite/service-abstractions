@@ -17,7 +17,7 @@ public data class CassandraSchema<T : Any>(
     public val sasiIndexes: Map<String, SasiIndexInfo>,
     public val saiIndexes: Set<String>,
     public val computedColumns: Map<String, ComputedColumnInfo<T>>,
-    public val materializedViews: List<MaterializedViewInfo>
+    public val materializedViews: List<MaterializedViewInfo>,
 ) {
     public companion object {
         /**
@@ -26,7 +26,7 @@ public data class CassandraSchema<T : Any>(
         @OptIn(ExperimentalSerializationApi::class)
         public fun <T : Any> fromSerializer(
             serializer: KSerializer<T>,
-            tableName: String
+            tableName: String,
         ): CassandraSchema<T> {
             val properties = serializer.serializableProperties
                 ?: throw IllegalArgumentException("Serializer ${serializer.descriptor.serialName} has no serializable properties")
@@ -54,6 +54,7 @@ public data class CassandraSchema<T : Any>(
                                 )
                             )
                         }
+
                         is ClusteringColumn -> {
                             @Suppress("UNCHECKED_CAST")
                             clusteringColumns.add(
@@ -65,6 +66,7 @@ public data class CassandraSchema<T : Any>(
                                 )
                             )
                         }
+
                         is SasiIndex -> {
                             sasiIndexes[name] = SasiIndexInfo(
                                 mode = annotation.mode,
@@ -72,14 +74,17 @@ public data class CassandraSchema<T : Any>(
                                 analyzer = annotation.analyzer
                             )
                         }
+
                         is SaiIndex -> {
                             saiIndexes.add(name)
                         }
+
                         is Index -> {
                             // Standard @Index annotation is treated as SAI index
                             // This allows the same model to work across MongoDB, Postgres, and Cassandra
                             saiIndexes.add(name)
                         }
+
                         is ComputedColumn -> {
                             @Suppress("UNCHECKED_CAST")
                             computedColumns[name] = ComputedColumnInfo(
@@ -167,7 +172,10 @@ public data class CassandraSchema<T : Any>(
         return null
     }
 
-    private fun matchesClusteringOrder(orderBy: List<SortPart<T>>, clusteringCols: List<ClusteringColumnInfo<T, *>>): Boolean {
+    private fun matchesClusteringOrder(
+        orderBy: List<SortPart<T>>,
+        clusteringCols: List<ClusteringColumnInfo<T, *>>,
+    ): Boolean {
         if (orderBy.size > clusteringCols.size) return false
         return orderBy.zip(clusteringCols).all { (sort, col) ->
             sort.field.properties.lastOrNull()?.name == col.name
@@ -261,7 +269,7 @@ public data class CassandraSchema<T : Any>(
 public data class PropertyInfo<T, V>(
     public val name: String,
     public val property: SerializableProperty<T, V>,
-    public val order: Int
+    public val order: Int,
 ) {
     public fun get(obj: T): V = property.get(obj)
 }
@@ -273,7 +281,7 @@ public data class ClusteringColumnInfo<T, V>(
     public val name: String,
     public val property: SerializableProperty<T, V>,
     public val order: Int,
-    public val descending: Boolean
+    public val descending: Boolean,
 ) {
     public fun get(obj: T): V = property.get(obj)
 }
@@ -284,7 +292,7 @@ public data class ClusteringColumnInfo<T, V>(
 public data class SasiIndexInfo(
     public val mode: SasiMode,
     public val caseSensitive: Boolean,
-    public val analyzer: SasiAnalyzer
+    public val analyzer: SasiAnalyzer,
 )
 
 /**
@@ -293,7 +301,7 @@ public data class SasiIndexInfo(
 public data class ComputedColumnInfo<T>(
     public val transform: ComputedTransform,
     public val sourceProperties: List<String>,
-    public val property: SerializableProperty<T, Any?>
+    public val property: SerializableProperty<T, Any?>,
 )
 
 /**
@@ -303,5 +311,5 @@ public data class MaterializedViewInfo(
     public val name: String,
     public val partitionKey: List<String>,
     public val clusteringColumns: List<String>,
-    public val clusteringOrder: List<Pair<String, Boolean>> // name to descending
+    public val clusteringOrder: List<Pair<String, Boolean>>, // name to descending
 )

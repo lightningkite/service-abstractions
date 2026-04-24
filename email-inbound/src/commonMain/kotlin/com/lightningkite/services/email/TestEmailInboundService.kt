@@ -2,10 +2,8 @@ package com.lightningkite.services.email
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import kotlinx.coroutines.flow.*
 
 /**
  * Test implementation that collects received emails in memory.
@@ -54,7 +52,7 @@ import kotlinx.coroutines.flow.asSharedFlow
  */
 public class TestEmailInboundService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : EmailInboundService {
 
     private val _receivedEmails = mutableListOf<ReceivedEmail>()
@@ -116,7 +114,7 @@ public class TestEmailInboundService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): ReceivedEmail {
             val email = _nextWebhookResult
                 ?: throw IllegalStateException(

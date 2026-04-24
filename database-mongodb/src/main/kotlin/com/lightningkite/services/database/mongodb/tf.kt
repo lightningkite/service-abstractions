@@ -23,7 +23,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
         this@mongodbAtlas.name, JsonPrimitive(
             value = $$"""
         mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings.standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent()  + (if(atlasSearch) "&atlasSearch=true" else "")
+    """.trimIndent() + (if (atlasSearch) "&atlasSearch=true" else "")
         )
     )
     emptyList<com.lightningkite.services.terraform.TerraformProvider>().forEach { emitter.require(it) }
@@ -185,7 +185,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
         this@mongodbAtlasFree.name, JsonPrimitive(
             value = $$"""
         mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings.standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent()  + (if(atlasSearch) "&atlasSearch=true" else "")
+    """.trimIndent() + (if (atlasSearch) "&atlasSearch=true" else "")
         )
     )
     emptyList<com.lightningkite.services.terraform.TerraformProvider>().forEach { emitter.require(it) }
@@ -271,7 +271,8 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
     }
 }
 
-context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
+context(emitter: TerraformEmitterAws)
+public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
     orgId: String,
     atlasSearch: Boolean = true,
     backupEnabled: Boolean = true,
@@ -285,7 +286,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         name, JsonPrimitive(
             value = $$"""
         mongodb+srv://$$userName:${random_password.$$name.result}@${replace(mongodbatlas_advanced_cluster.$$name.connection_strings.standard_srv, "mongodb+srv://", "")}/default?retryWrites=true&w=majority
-    """.trimIndent()  + (if(atlasSearch) "&atlasSearch=true" else "")
+    """.trimIndent() + (if (atlasSearch) "&atlasSearch=true" else "")
         )
     )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }

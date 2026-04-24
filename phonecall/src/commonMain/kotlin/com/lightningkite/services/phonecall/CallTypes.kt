@@ -1,11 +1,10 @@
 package com.lightningkite.services.phonecall
 
-import com.lightningkite.PhoneNumber
-import com.lightningkite.services.data.TypedData
-import kotlin.time.Instant
+import com.lightningkite.services.data.PhoneNumber
 import kotlinx.serialization.Serializable
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 // ==================== Outbound Call Options ====================
 
@@ -36,7 +35,7 @@ public data class OutboundCallOptions(
     val postAnswerDelay: Duration = Duration.ZERO,
     val sendDigitsOnConnect: String? = null,
     val initialMessage: String? = null,
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -52,8 +51,10 @@ public data class OutboundCallOptions(
 public enum class MachineDetectionMode {
     /** No machine detection - call returns as soon as answered */
     DISABLED,
+
     /** Detect immediately whether human or machine answered */
     ENABLED,
+
     /** Wait for end of voicemail greeting before returning (for leaving messages) */
     DETECT_MESSAGE_END
 }
@@ -75,7 +76,7 @@ public data class IncomingCallEvent(
     val from: PhoneNumber,
     val to: PhoneNumber,
     val direction: CallDirection = CallDirection.INBOUND,
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -99,7 +100,7 @@ public data class CallStatusEvent(
     val to: PhoneNumber,
     val duration: Duration? = null,
     val endReason: CallEndReason? = null,
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -117,7 +118,7 @@ public data class TranscriptionEvent(
     val text: String,
     val isFinal: Boolean,
     val confidence: Float? = null,
-    val language: String? = null
+    val language: String? = null,
 )
 
 // ==================== Call Status Types ====================
@@ -129,6 +130,7 @@ public data class TranscriptionEvent(
 public enum class CallDirection {
     /** Call received from external party */
     INBOUND,
+
     /** Call initiated to external party */
     OUTBOUND
 }
@@ -140,24 +142,34 @@ public enum class CallDirection {
 public enum class CallStatus {
     /** Call initiated but not yet ringing (Vonage: started) */
     STARTED,
+
     /** Call is queued for processing (Twilio-specific, maps to STARTED for others) */
     QUEUED,
+
     /** Call is ringing at the recipient */
     RINGING,
+
     /** Call is connected and active */
     IN_PROGRESS,
+
     /** Call is on hold */
     ON_HOLD,
+
     /** Call completed normally */
     COMPLETED,
+
     /** Recipient's line was busy */
     BUSY,
+
     /** No answer within timeout */
     NO_ANSWER,
+
     /** Call was explicitly rejected/declined by recipient */
     REJECTED,
+
     /** Call was canceled before connecting */
     CANCELED,
+
     /** Call failed due to technical error */
     FAILED
 }
@@ -169,14 +181,19 @@ public enum class CallStatus {
 public enum class CallEndReason {
     /** Normal hangup by either party */
     COMPLETED,
+
     /** Recipient's line was busy */
     BUSY,
+
     /** No answer within timeout */
     NO_ANSWER,
+
     /** Call was actively rejected/declined */
     REJECTED,
+
     /** Technical failure (network, provider error) */
     FAILED,
+
     /** Caller cancelled before connection */
     CANCELLED
 }
@@ -202,7 +219,7 @@ public data class CallInfo(
     val to: PhoneNumber,
     val startTime: Instant? = null,
     val duration: Duration? = null,
-    val answeredBy: AnsweredBy? = null
+    val answeredBy: AnsweredBy? = null,
 )
 
 /**
@@ -213,16 +230,22 @@ public data class CallInfo(
 public enum class AnsweredBy {
     /** A human answered the call */
     HUMAN,
+
     /** An answering machine started its greeting */
     MACHINE_START,
+
     /** End of machine greeting detected (beep heard) */
     MACHINE_END_BEEP,
+
     /** End of machine greeting detected (silence) */
     MACHINE_END_SILENCE,
+
     /** End of machine greeting detected (other) */
     MACHINE_END_OTHER,
+
     /** A fax machine answered */
     FAX,
+
     /** Could not determine who answered */
     UNKNOWN
 }
@@ -248,7 +271,7 @@ public data class DtmfEvent(
     val digits: String = "",
     val speechResult: String? = null,
     val confidence: Float? = null,
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
 )
 
 // ==================== TTS Voice Configuration ====================
@@ -268,7 +291,7 @@ public data class TtsVoice(
     val gender: TtsGender = TtsGender.NEUTRAL,
     val name: String? = null,
     val style: Int? = null,
-    val ssml: Boolean = false
+    val ssml: Boolean = false,
 )
 
 /**
@@ -296,7 +319,7 @@ public enum class TtsGender {
  */
 public data class RenderedInstructions(
     val content: String,
-    val contentType: InstructionsContentType
+    val contentType: InstructionsContentType,
 )
 
 /**
@@ -305,6 +328,7 @@ public data class RenderedInstructions(
 public enum class InstructionsContentType(public val mediaType: String) {
     /** XML format (Twilio TwiML, Plivo XML, Bandwidth BXML) */
     XML("application/xml"),
+
     /** JSON format (Vonage NCCO) */
     JSON("application/json")
 }
@@ -324,5 +348,5 @@ public enum class InstructionsContentType(public val mediaType: String) {
  */
 public class PhoneCallException(
     override val message: String,
-    override val cause: Throwable? = null
+    override val cause: Throwable? = null,
 ) : Exception(message, cause)

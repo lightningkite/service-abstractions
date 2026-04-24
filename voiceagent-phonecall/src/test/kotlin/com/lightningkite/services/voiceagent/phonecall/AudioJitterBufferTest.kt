@@ -2,7 +2,6 @@ package com.lightningkite.services.voiceagent.phonecall
 
 import kotlinx.coroutines.*
 import kotlin.test.*
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Tests for AudioJitterBuffer.

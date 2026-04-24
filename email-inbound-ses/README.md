@@ -1,6 +1,7 @@
 # AWS SES Inbound Email Module
 
-Implementation of `EmailInboundService` for receiving inbound emails via AWS SES (Simple Email Service) delivered through SNS (Simple Notification Service) webhooks.
+Implementation of `EmailInboundService` for receiving inbound emails via AWS SES (Simple Email Service) delivered
+through SNS (Simple Notification Service) webhooks.
 
 ## Features
 
@@ -28,6 +29,7 @@ dependencies {
 ### 1. Verify Your Domain
 
 In the AWS SES console:
+
 1. Navigate to "Verified identities"
 2. Click "Create identity"
 3. Choose "Domain" and enter your domain name
@@ -73,7 +75,8 @@ aws sns subscribe \
   --notification-endpoint https://your-app.com/webhooks/ses-inbound
 ```
 
-**Important**: You'll receive a subscription confirmation at your endpoint. The service will throw an exception with the confirmation URL - visit it to confirm.
+**Important**: You'll receive a subscription confirmation at your endpoint. The service will throw an exception with the
+confirmation URL - visit it to confirm.
 
 ### 5. (Optional) Configure S3 for Large Emails
 
@@ -287,13 +290,15 @@ val service = settings.emailInbound("inbound-mail", context)
 
 ### 1. SNS Message Size Limit (150KB)
 
-SNS has a 150KB message size limit. Larger emails will have their content stored in S3 instead of being included inline in the notification. When this happens:
+SNS has a 150KB message size limit. Larger emails will have their content stored in S3 instead of being included inline
+in the notification. When this happens:
 
 - The `content` field in the SES notification will be `null`
 - The `action` will include S3 bucket and object key
 - **Current limitation**: This implementation does not yet support fetching from S3
 
-**Workaround**: Configure S3 action in your receipt rule and fetch content manually, or use the inline content for emails under 150KB.
+**Workaround**: Configure S3 action in your receipt rule and fetch content manually, or use the inline content for
+emails under 150KB.
 
 ### 2. Webhook Security
 
@@ -307,11 +312,14 @@ See [AWS SNS Message Signature Verification](https://docs.aws.amazon.com/sns/lat
 
 ### 3. Subscription Confirmation
 
-When you first subscribe your endpoint to the SNS topic, you'll receive a `SubscriptionConfirmation` notification. The service throws an `UnsupportedOperationException` with the confirmation URL. You must visit this URL to confirm the subscription.
+When you first subscribe your endpoint to the SNS topic, you'll receive a `SubscriptionConfirmation` notification. The
+service throws an `UnsupportedOperationException` with the confirmation URL. You must visit this URL to confirm the
+subscription.
 
 ### 4. Idempotency
 
-SES may send duplicate notifications for the same email. Your application should handle duplicates by checking the `messageId` field.
+SES may send duplicate notifications for the same email. Your application should handle duplicates by checking the
+`messageId` field.
 
 ## Data Models
 

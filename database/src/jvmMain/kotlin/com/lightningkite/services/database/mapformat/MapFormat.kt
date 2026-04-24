@@ -38,7 +38,8 @@ public class MapFormat(public val config: MapFormatConfig) {
 
         // Check for top-level converter (handles types like Uuid that serialize as primitives) - by Claude
         config.converters.get(serializer.descriptor)?.let { _ ->
-            val converted = if (value == null) null else config.converters.toDatabase(serializer.descriptor, value as Any)
+            val converted =
+                if (value == null) null else config.converters.toDatabase(serializer.descriptor, value as Any)
             target.writeField("", converted)
             return target.result()
         }
@@ -56,10 +57,13 @@ public class MapFormat(public val config: MapFormatConfig) {
         config.converters.get(serializer.descriptor)?.let { _ ->
             val dbValue = source.readField("")
             @Suppress("UNCHECKED_CAST")
-            return if (dbValue == null) null as T else config.converters.fromDatabase(serializer.descriptor, dbValue as Any) as T
+            return if (dbValue == null) null as T else config.converters.fromDatabase(
+                serializer.descriptor,
+                dbValue
+            ) as T
         }
 
-        val decoder = MapDecoder(config, source, serializer.descriptor)
+        val decoder = MapDecoder(config, source)
         return serializer.deserialize(decoder)
     }
 
@@ -86,13 +90,34 @@ public class MapFormat(public val config: MapFormatConfig) {
                 collectionHandler = ArrayListCollectionHandler(
                     MapFormatConfig(
                         collectionHandler = object : CollectionHandler {
-                            override fun createListEncoder(fieldPath: String, elementDescriptor: kotlinx.serialization.descriptors.SerialDescriptor, output: WriteTarget) =
+                            override fun createListEncoder(
+                                fieldPath: String,
+                                elementDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
+                                output: WriteTarget,
+                            ) =
                                 throw UnsupportedOperationException("Nested collections not supported in simple mode")
-                            override fun createListDecoder(fieldPath: String, elementDescriptor: kotlinx.serialization.descriptors.SerialDescriptor, input: ReadSource) =
+
+                            override fun createListDecoder(
+                                fieldPath: String,
+                                elementDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
+                                input: ReadSource,
+                            ) =
                                 throw UnsupportedOperationException("Nested collections not supported in simple mode")
-                            override fun createMapEncoder(fieldPath: String, keyDescriptor: kotlinx.serialization.descriptors.SerialDescriptor, valueDescriptor: kotlinx.serialization.descriptors.SerialDescriptor, output: WriteTarget) =
+
+                            override fun createMapEncoder(
+                                fieldPath: String,
+                                keyDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
+                                valueDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
+                                output: WriteTarget,
+                            ) =
                                 throw UnsupportedOperationException("Nested collections not supported in simple mode")
-                            override fun createMapDecoder(fieldPath: String, keyDescriptor: kotlinx.serialization.descriptors.SerialDescriptor, valueDescriptor: kotlinx.serialization.descriptors.SerialDescriptor, input: ReadSource) =
+
+                            override fun createMapDecoder(
+                                fieldPath: String,
+                                keyDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
+                                valueDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
+                                input: ReadSource,
+                            ) =
                                 throw UnsupportedOperationException("Nested collections not supported in simple mode")
                         }
                     )

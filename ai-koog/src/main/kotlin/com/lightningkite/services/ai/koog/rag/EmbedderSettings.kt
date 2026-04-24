@@ -7,21 +7,15 @@ import ai.koog.prompt.executor.clients.bedrock.BedrockLLMClient
 import ai.koog.prompt.executor.clients.google.GoogleLLMClient
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
 import ai.koog.prompt.executor.ollama.client.OllamaClient
-import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLModel
-import aws.sdk.kotlin.runtime.auth.credentials.DefaultChainCredentialsProvider
-import aws.sdk.kotlin.runtime.auth.credentials.ProfileCredentialsProvider
-import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.*
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
-import com.lightningkite.services.Setting
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.UrlSettingParser
+import com.lightningkite.services.*
 import com.lightningkite.services.ai.koog.LLMClientAndModel.Settings
 import com.lightningkite.services.ai.koog.LLMClientAndModel.Settings.Companion.knownModels
 import com.lightningkite.services.ai.koog.OllamaManager
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
-import kotlin.jvm.JvmInline
 
 /**
  * Settings for instantiating Koog's [Embedder].
@@ -53,15 +47,24 @@ import kotlin.jvm.JvmInline
 @Serializable
 @JvmInline
 public value class EmbedderSettings(
-    public val url: String
+    public val url: String,
 ) : Setting<Embedder> {
 
     public companion object : UrlSettingParser<Embedder>() {
-        public fun openai(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("openai://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-        public fun anthropic(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("anthropic://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-        public fun google(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("google://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-        public fun ollama(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("ollama://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
-        public fun openrouter(model: LLModel, apiKey: String? = null): EmbedderSettings = EmbedderSettings("openrouter://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+        public fun openai(model: LLModel, apiKey: String? = null): EmbedderSettings =
+            EmbedderSettings("openai://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+
+        public fun anthropic(model: LLModel, apiKey: String? = null): EmbedderSettings =
+            EmbedderSettings("anthropic://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+
+        public fun google(model: LLModel, apiKey: String? = null): EmbedderSettings =
+            EmbedderSettings("google://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+
+        public fun ollama(model: LLModel, apiKey: String? = null): EmbedderSettings =
+            EmbedderSettings("ollama://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
+
+        public fun openrouter(model: LLModel, apiKey: String? = null): EmbedderSettings =
+            EmbedderSettings("openrouter://${model.id}" + (apiKey?.let { "?apiKey=$it" } ?: ""))
 
         /**
          * Creates settings for AWS Bedrock using the default credential chain.
@@ -91,14 +94,14 @@ public value class EmbedderSettings(
             model: LLModel,
             accessKeyId: String,
             secretAccessKey: String,
-            region: String? = null
+            region: String? = null,
         ): Settings =
             Settings("bedrock://${accessKeyId}:${secretAccessKey}@${model.id}" + (region?.let { "?region=$it" } ?: ""))
 
         public fun bedrock(
             model: LLModel,
             profile: String,
-            region: String? = null
+            region: String? = null,
         ): Settings =
             Settings("bedrock://${profile}@${model.id}" + (region?.let { "?region=$it" } ?: ""))
 
@@ -211,7 +214,7 @@ public value class EmbedderSettings(
                     // Format: accessKeyId:secretKey@model-id
                     val credentials = authority.substringBefore("@")
                     val model = authority.substringAfter("@")
-                    if(credentials.contains(':')) {
+                    if (credentials.contains(':')) {
                         val accessKeyId = resolveEnvVars(credentials.substringBefore(":"))
                         val secretKey = resolveEnvVars(credentials.substringAfter(":"))
                         StaticCredentialsProvider(Credentials(accessKeyId, secretKey)) to model
@@ -238,7 +241,7 @@ public value class EmbedderSettings(
 
     override fun invoke(
         name: String,
-        context: SettingContext
+        context: SettingContext,
     ): Embedder {
         return parse(name, url, context)
     }

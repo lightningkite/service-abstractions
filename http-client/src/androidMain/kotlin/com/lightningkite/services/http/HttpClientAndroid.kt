@@ -4,7 +4,7 @@ import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.websocket.*
-import io.ktor.serialization.kotlinx.json.json
+import io.ktor.serialization.kotlinx.json.*
 
 /**
  * Android-specific HTTP client.
@@ -14,7 +14,7 @@ import io.ktor.serialization.kotlinx.json.json
  *
  * Note: Lazy initialization to avoid eager instantiation issues in serverless environments.
  */
-actual val client: HttpClient by lazy {
+public actual val client: HttpClient by lazy {
     HttpClient(CIO) {
         install(ContentNegotiation) {
             json()

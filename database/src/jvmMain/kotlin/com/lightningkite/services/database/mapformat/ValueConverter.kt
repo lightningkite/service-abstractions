@@ -35,7 +35,7 @@ public interface ValueConverter<K : Any, D : Any> {
  * Database layers create these with their specific converters.
  */
 public class ValueConverterRegistry(
-    converters: List<ValueConverter<*, *>> = emptyList()
+    converters: List<ValueConverter<*, *>> = emptyList(),
 ) {
     private val bySerialName: Map<String, ValueConverter<*, *>> =
         converters.associateBy { it.descriptor.serialName.removeSuffix("?") }

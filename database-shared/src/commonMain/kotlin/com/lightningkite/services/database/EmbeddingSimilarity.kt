@@ -108,6 +108,7 @@ public object EmbeddingSimilarity {
                     i++
                     j++
                 }
+
                 a.indices[i] < b.indices[j] -> i++
                 else -> j++
             }
@@ -131,6 +132,7 @@ public object EmbeddingSimilarity {
                     i++
                     j++
                 }
+
                 a.indices[i] < b.indices[j] -> i++
                 else -> j++
             }
@@ -153,10 +155,12 @@ public object EmbeddingSimilarity {
                     i++
                     j++
                 }
+
                 aIdx < bIdx -> {
                     sum += a.values[i] * a.values[i]
                     i++
                 }
+
                 else -> {
                     sum += b.values[j] * b.values[j]
                     j++
@@ -184,10 +188,12 @@ public object EmbeddingSimilarity {
                     i++
                     j++
                 }
+
                 aIdx < bIdx -> {
                     sum += abs(a.values[i])
                     i++
                 }
+
                 else -> {
                     sum += abs(b.values[j])
                     j++

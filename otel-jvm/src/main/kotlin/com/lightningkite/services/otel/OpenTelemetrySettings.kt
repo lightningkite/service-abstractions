@@ -6,9 +6,7 @@ import com.lightningkite.services.*
 import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
 import io.opentelemetry.context.propagation.ContextPropagators
-import io.opentelemetry.exporter.logging.LoggingMetricExporter
-import io.opentelemetry.exporter.logging.LoggingSpanExporter
-import io.opentelemetry.exporter.logging.SystemOutLogRecordExporter
+import io.opentelemetry.exporter.logging.*
 import io.opentelemetry.exporter.otlp.http.logs.OtlpHttpLogRecordExporter
 import io.opentelemetry.exporter.otlp.http.metrics.OtlpHttpMetricExporter
 import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter
@@ -17,32 +15,24 @@ import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter
 import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import io.opentelemetry.sdk.OpenTelemetrySdk
+import io.opentelemetry.sdk.common.CompletableResultCode
 import io.opentelemetry.sdk.logs.SdkLoggerProvider
+import io.opentelemetry.sdk.logs.SdkLoggerProviderBuilder
 import io.opentelemetry.sdk.logs.data.LogRecordData
-import io.opentelemetry.sdk.logs.export.BatchLogRecordProcessor
-import io.opentelemetry.sdk.logs.export.LogRecordExporter
-import io.opentelemetry.sdk.logs.export.SimpleLogRecordProcessor
+import io.opentelemetry.sdk.logs.export.*
 import io.opentelemetry.sdk.metrics.SdkMeterProvider
 import io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder
 import io.opentelemetry.sdk.metrics.export.MetricExporter
 import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader
 import io.opentelemetry.sdk.resources.Resource
-import io.opentelemetry.sdk.trace.SdkTracerProvider
-import io.opentelemetry.sdk.trace.SdkTracerProviderBuilder
-import io.opentelemetry.sdk.trace.SpanLimits
+import io.opentelemetry.sdk.trace.*
 import io.opentelemetry.sdk.trace.data.SpanData
-import io.opentelemetry.sdk.trace.export.BatchSpanProcessor
-import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
-import io.opentelemetry.sdk.trace.export.SpanExporter
+import io.opentelemetry.sdk.trace.export.*
 import io.opentelemetry.sdk.trace.samplers.Sampler
-import io.opentelemetry.sdk.common.CompletableResultCode
-import io.opentelemetry.sdk.logs.SdkLoggerProviderBuilder
 import kotlinx.serialization.Serializable
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.util.concurrent.Executors
-import java.util.concurrent.Semaphore
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -142,7 +132,10 @@ public data class OpenTelemetrySettings(
     val batching: BatchingRules? = BatchingRules(),
     val metricReportBatching: BatchingRules? = batching,
     val traceReportBatching: BatchingRules? = batching,
-    val logReportBatching: BatchingRules? = batching?.copy(maxQueueSize = batching.maxQueueSize * 10, maxSize = batching.maxSize * 10),
+    val logReportBatching: BatchingRules? = batching?.copy(
+        maxQueueSize = batching.maxQueueSize * 10,
+        maxSize = batching.maxSize * 10
+    ),
 
     // Batch processing limits to prevent unbounded queues and memory exhaustion
     val batchingLimits: BatchingRules = BatchingRules(),
@@ -216,7 +209,7 @@ public data class OpenTelemetrySettings(
 
         return SdkTracerProvider.builder()
             .let {
-                if(sampling != null)
+                if (sampling != null)
                     it.setSampler(sampling.make())
                 else it
             }
@@ -267,7 +260,8 @@ public data class OpenTelemetrySettings(
         init {
 //            this.register("none") { _, _, _ -> null}
             this.register("otlp-grpc") { name: String, setting: OpenTelemetrySettings, context ->
-                val targetWithoutSchema = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4317"
+                val targetWithoutSchema =
+                    setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4317"
                 val target = "http://$targetWithoutSchema"
                 val resource =
                     Resource.getDefault().merge(Resource.builder().put("service.name", setting.serviceName).build())
@@ -302,7 +296,8 @@ public data class OpenTelemetrySettings(
                 telemetry
             }
             this.register("otlp-http") { name: String, setting: OpenTelemetrySettings, context ->
-                val targetWithoutSchema = setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4318"
+                val targetWithoutSchema =
+                    setting.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4318"
                 val target = "http://$targetWithoutSchema"
                 val resource =
                     Resource.getDefault().merge(Resource.builder().put("service.name", setting.serviceName).build())
@@ -451,7 +446,8 @@ public data class OpenTelemetrySettings(
                 val outputFile = pathPart?.let { java.io.File(it) }
                 val logDelayMs = queryParams["log_delay"]?.toLongOrNull() ?: 0
 
-                val config = DevExporterConfig(color = colorEnabled, output = outputFile, logCorrelationDelayMs = logDelayMs)
+                val config =
+                    DevExporterConfig(color = colorEnabled, output = outputFile, logCorrelationDelayMs = logDelayMs)
 
                 // Dev mode: NO batching - use SimpleProcessor for immediate output
                 val telemetry = OpenTelemetrySdk.builder()
@@ -582,7 +578,7 @@ private fun otelLoggingSetup(telemetry: OpenTelemetrySdk?, silenceConsole: Boole
 private class SafeLogRecordExporter(
     private val delegate: LogRecordExporter,
     private val maxBodyLength: Int,
-    @Suppress("UNUSED_PARAMETER") private val maxStackTraceDepth: Int
+    @Suppress("UNUSED_PARAMETER") private val maxStackTraceDepth: Int,
 ) : LogRecordExporter {
     override fun export(logs: Collection<LogRecordData>): CompletableResultCode {
         // Note: LogRecordData is immutable, so we can't modify it directly.
@@ -612,7 +608,7 @@ private class SafeLogRecordExporter(
  */
 private class RateLimitedSpanExporter(
     private val delegate: SpanExporter,
-    private val maxSpansPerSecond: Int
+    private val maxSpansPerSecond: Int,
 ) : SpanExporter {
     private val permits = Semaphore(maxSpansPerSecond)
     private val refillScheduler = Executors.newScheduledThreadPool(1)
@@ -665,7 +661,7 @@ private class RateLimitedSpanExporter(
  */
 private class RateLimitedLogRecordExporter(
     private val delegate: LogRecordExporter,
-    private val maxLogsPerSecond: Int
+    private val maxLogsPerSecond: Int,
 ) : LogRecordExporter {
     private val permits = Semaphore(maxLogsPerSecond)
     private val refillScheduler = Executors.newScheduledThreadPool(1)

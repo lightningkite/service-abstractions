@@ -1,13 +1,11 @@
 package com.lightningkite.services.sms.twilio
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.*
 import com.lightningkite.services.recordExceptionWithFingerprint
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
 import com.lightningkite.services.sms.InboundSms
 import com.lightningkite.services.sms.SmsInboundService
-import com.lightningkite.toPhoneNumber
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -16,9 +14,7 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.api.trace.*
 import kotlinx.serialization.json.Json
 import java.net.URLDecoder
 import javax.crypto.Mac
@@ -163,7 +159,7 @@ public class TwilioSmsInboundService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): InboundSms {
             val span = tracer?.spanBuilder("sms.webhook.parse")
                 ?.setSpanKind(SpanKind.SERVER)
@@ -274,7 +270,7 @@ public class TwilioSmsInboundService(
     private fun validateWebhookSignature(
         headers: Map<String, List<String>>,
         params: Map<String, String>,
-        webhookUrl: String?
+        webhookUrl: String?,
     ) {
         // Skip validation if webhook URL not configured (e.g., in tests)
         if (webhookUrl == null) {
@@ -350,7 +346,7 @@ public class TwilioSmsInboundService(
         public fun SmsInboundService.Settings.Companion.twilio(
             account: String,
             authToken: String,
-            phoneNumber: String
+            phoneNumber: String,
         ): SmsInboundService.Settings = SmsInboundService.Settings("twilio://$account:$authToken@$phoneNumber")
 
         init {

@@ -2,7 +2,8 @@
 
 ## Overview
 
-A clean abstraction for serializing/deserializing Kotlin objects to/from database-friendly `Map<String, Any?>` structures, with proper support for:
+A clean abstraction for serializing/deserializing Kotlin objects to/from database-friendly `Map<String, Any?>`
+structures, with proper support for:
 
 1. **Value classes** (inline classes) - handled correctly via `encodeInline`/`decodeInline`
 2. **Type conversions** - pluggable converters for database-specific types
@@ -14,12 +15,14 @@ A clean abstraction for serializing/deserializing Kotlin objects to/from databas
 ## Design Principle: Separation of Concerns
 
 The **format** handles:
+
 - Serializing objects to `Map<String, Any?>`
 - Deserializing `Map<String, Any?>` back to objects
 - Flattening embedded structs (e.g., `address.city` → `address__city`)
 - Delegating collection handling to pluggable handlers
 
 The **database layer** handles:
+
 - Providing appropriate ValueConverters for its native types
 - Providing appropriate CollectionHandler for its storage strategy
 - Schema generation (DDL)
@@ -358,8 +361,10 @@ val cassandraFormat = MapFormat(MapFormatConfig(
 
 ## What's NOT in this design (intentionally)
 
-- **FieldStructure/TypeStructure/StructureAnalyzer** - Database layers walk SerialDescriptor directly for schema generation
-- **nestedCollectionHandler** - Single handler; if complex nested behavior needed, handler can inspect element descriptor
+- **FieldStructure/TypeStructure/StructureAnalyzer** - Database layers walk SerialDescriptor directly for schema
+  generation
+- **nestedCollectionHandler** - Single handler; if complex nested behavior needed, handler can inspect element
+  descriptor
 - **InlineHint enum** - Database layer knows what handler it's using
 - **Child table implementation** - Interface supports it, implementation deferred
 
@@ -367,6 +372,7 @@ val cassandraFormat = MapFormat(MapFormatConfig(
 
 ## Open Questions
 
-1. Should `WriteResult` just be `Map<String, Any?>` since we're deferring child tables? Or keep the structure for future compatibility?
+1. Should `WriteResult` just be `Map<String, Any?>` since we're deferring child tables? Or keep the structure for future
+   compatibility?
 
 2. Field separator default `__` vs `.` - which is more broadly compatible?

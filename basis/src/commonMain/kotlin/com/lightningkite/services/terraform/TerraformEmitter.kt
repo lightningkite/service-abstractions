@@ -1,13 +1,7 @@
 package com.lightningkite.services.terraform
 
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
-import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.json.*
 
 /**
  * Interface for emitting Terraform configuration programmatically.
@@ -83,7 +77,7 @@ public inline fun <reified T> TerraformNeed<T>.direct(value: T): Unit = with(emi
     fulfillSetting(name, terraformJson.encodeToJsonElement(value))
 }
 
-public fun SerialDescriptor.toTerraformType(): String = if(isInline){
+public fun SerialDescriptor.toTerraformType(): String = if (isInline) {
     getElementDescriptor(0).toTerraformType()
 } else when (kind) {
     PrimitiveKind.CHAR,

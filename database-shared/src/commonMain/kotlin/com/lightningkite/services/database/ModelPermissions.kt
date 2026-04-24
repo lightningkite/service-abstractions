@@ -34,7 +34,7 @@ public data class ModelPermissions<Model>(
      * The user may only delete models that match this condition.
      */
     val delete: Condition<Model> = Condition.Never,
-    val maxQueryTimeMs: Long = 1_000L
+    val maxQueryTimeMs: Long = 1_000L,
 ) {
     public companion object {
         /**
@@ -48,7 +48,7 @@ public data class ModelPermissions<Model>(
         )
     }
 
-    public  constructor(
+    public constructor(
         read: Condition<Model>,
         readMask: Mask<Model> = Mask(),
         manage: Condition<Model>,
@@ -78,7 +78,8 @@ public data class ModelPermissions<Model>(
     /**
      * @return a condition defining under what circumstances the given [modification] is permitted in.
      */
-    public fun allowed(modification: Modification<Model>): Condition<Model> = updateRestrictions(modification) and update
+    public fun allowed(modification: Modification<Model>): Condition<Model> =
+        updateRestrictions(modification) and update
 
     /**
      * Masks a single instance of the model.

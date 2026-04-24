@@ -2,21 +2,14 @@ package com.lightningkite.services.test
 
 import com.lightningkite.services.ClockContextElement
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.TestResult
-import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.testTimeSource
-import kotlin.time.Clock
-import kotlin.time.Instant
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.UtcOffset
-import kotlinx.datetime.toInstant
+import kotlinx.coroutines.test.*
+import kotlinx.datetime.*
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.time.ComparableTimeMark
-import kotlin.time.Duration
+import kotlin.time.*
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.measureTime
+import kotlin.time.Instant
 
 /**
  * Runs a coroutine test with a controllable test clock.
@@ -50,7 +43,7 @@ import kotlin.time.measureTime
 public inline fun runTestWithClock(
     context: CoroutineContext = EmptyCoroutineContext,
     timeout: Duration = 60.seconds,
-    crossinline testBody: suspend TestScope.() -> Unit
+    crossinline testBody: suspend TestScope.() -> Unit,
 ): TestResult {
     lateinit var started: ComparableTimeMark
     return runTest(context + ClockContextElement(object : Clock {
@@ -84,7 +77,7 @@ public inline fun runTestWithClock(
  * @param block Code to measure
  * @return Average duration per iteration
  */
-inline fun performance(times: Int = 1_000_000, warmup: Int = times / 10, block: ()->Unit): Duration {
+inline fun performance(times: Int = 1_000_000, warmup: Int = times / 10, block: () -> Unit): Duration {
     repeat(warmup) { block() }
     return measureTime {
         repeat(times) { block() }

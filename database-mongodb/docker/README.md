@@ -1,6 +1,7 @@
 # MongoDB Atlas Local - Vector Search Test Environment
 
-This directory contains Docker configuration to run MongoDB Atlas Local with integrated mongot for vector search testing.
+This directory contains Docker configuration to run MongoDB Atlas Local with integrated mongot for vector search
+testing.
 
 ## Requirements
 
@@ -28,8 +29,8 @@ docker-compose down -v
 
 ## Services
 
-| Service | Port | Description |
-|---------|------|-------------|
+| Service             | Port  | Description                     |
+|---------------------|-------|---------------------------------|
 | mongodb-atlas-local | 27017 | MongoDB 8.0 with bundled mongot |
 
 ## Connection String
@@ -51,7 +52,8 @@ MONGO_VECTOR_TEST_URL="mongodb://localhost:27017/test?directConnection=true" \
 
 ## Creating a Vector Search Index
 
-Vector search indexes can be created programmatically. The mongodb-atlas-local image supports the `createSearchIndexes` command. Example using mongosh:
+Vector search indexes can be created programmatically. The mongodb-atlas-local image supports the `createSearchIndexes`
+command. Example using mongosh:
 
 ```javascript
 // Connect to MongoDB
@@ -78,17 +80,22 @@ db.runCommand({
 ## Troubleshooting
 
 ### Container won't start
+
 Check logs:
+
 ```bash
 docker logs mongodb-atlas-local
 ```
 
 ### Search queries fail with "SearchNotEnabled"
-Ensure you're using the `mongodb-atlas-local` image, not the standalone community server. The atlas-local image bundles mongod and mongot pre-configured.
+
+Ensure you're using the `mongodb-atlas-local` image, not the standalone community server. The atlas-local image bundles
+mongod and mongot pre-configured.
 
 ## Architecture
 
 The `mongodb-atlas-local` Docker image bundles:
+
 - MongoDB 8.0 Community Server (mongod)
 - MongoDB Search (mongot) for vector and text search
 - A runner process that initializes the replica set and connects mongod to mongot

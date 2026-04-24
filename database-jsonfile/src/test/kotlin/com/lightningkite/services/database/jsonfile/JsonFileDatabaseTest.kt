@@ -1,41 +1,44 @@
 package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.KFile
+import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.database.Database
-import com.lightningkite.services.database.test.AggregationsTest
-import com.lightningkite.services.database.test.ConditionTests
-import com.lightningkite.services.database.test.InlinePropertiesTests
-import com.lightningkite.services.database.test.MetaTest
-import com.lightningkite.services.database.test.ModificationTests
-import com.lightningkite.services.database.test.OperationsTests
-import com.lightningkite.services.database.test.SortTest
+import com.lightningkite.services.database.test.*
 import kotlin.test.Test
 
 private fun db() = JsonFileDatabase("test", KFile("build/testrun").also {
     it.deleteRecursively()
     it.createDirectories()
 }, TestSettingContext())
-class JsonFileAggregationsTest: AggregationsTest() {
+
+class JsonFileAggregationsTest : AggregationsTest() {
     override val database: Database = db()
 }
-class JsonFileConditionTests: ConditionTests() {
+
+class JsonFileConditionTests : ConditionTests() {
     override val database: Database = db()
 }
-class JsonFileModificationTests: ModificationTests() {
+
+class JsonFileModificationTests : ModificationTests() {
     override val database: Database = db()
 }
-class JsonFileOperationsTests: OperationsTests() {
+
+class JsonFileOperationsTests : OperationsTests() {
     override val database: Database = db()
 }
-class JsonFileSortTest: SortTest() {
+
+class JsonFileSortTest : SortTest() {
     override val database: Database = db()
 }
-class JsonFileMetaTest: MetaTest() {
+
+class JsonFileMetaTest : MetaTest() {
     override val database: Database = db()
 }
-class JsonFileInlinesTest: InlinePropertiesTests() {
+
+class JsonFileInlinesTest : InlinePropertiesTests() {
     override val database: Database = db()
 
-    @Test fun start() {}
+    @Test
+    fun start() {
+    }
 }

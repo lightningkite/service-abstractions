@@ -1,15 +1,13 @@
 package com.lightningkite.services.voiceagent.test
 
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.test.runTestWithClock
 import com.lightningkite.services.voiceagent.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.withTimeout
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
+import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -63,7 +61,7 @@ public abstract class VoiceAgentServiceTests {
         }
 
         assertIs<VoiceAgentEvent.SessionCreated>(event)
-        assertEquals(session.sessionId, (event as VoiceAgentEvent.SessionCreated).sessionId)
+        assertEquals(session.sessionId, event.sessionId)
 
         session.close()
     }
@@ -204,6 +202,6 @@ public abstract class VoiceAgentServiceTests {
     @Test
     public fun healthCheck_returnsOK(): TestResult = runSuspendingTest {
         val status = service.healthCheck()
-        assertEquals(com.lightningkite.services.HealthStatus.Level.OK, status.level)
+        assertEquals(HealthStatus.Level.OK, status.level)
     }
 }

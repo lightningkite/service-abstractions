@@ -13,7 +13,7 @@ internal actual suspend fun <T> traceFileOperation(
     path: String,
     storageSystem: String,
     attributes: Map<String, Any>,
-    block: suspend () -> T
+    block: suspend () -> T,
 ): T {
     return block()
 }

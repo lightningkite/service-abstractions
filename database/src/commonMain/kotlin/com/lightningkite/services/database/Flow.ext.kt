@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
  */
 public suspend inline fun <Model> Flow<Model>.collectChunked(
     chunkSize: Int,
-    crossinline action: suspend (List<Model>) -> Unit
+    crossinline action: suspend (List<Model>) -> Unit,
 ) {
     val list = ArrayList<Model>()
     this.collect {

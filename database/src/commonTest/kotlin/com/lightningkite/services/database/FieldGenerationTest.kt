@@ -8,14 +8,15 @@ import kotlinx.serialization.Serializable
 data class Sample(
     val x: Int,
     val y: String? = null,
-    val z: List<String> = listOf()
+    val z: List<String> = listOf(),
 )
+
 @GenerateDataClassPaths
 @Serializable
-data class SampleGeneric<A, B: Comparable<B>>(
+data class SampleGeneric<A, B : Comparable<B>>(
     val x: A,
     val y: B,
-    val z: List<String> = listOf()
+    val z: List<String> = listOf(),
 )
 
 fun ifSyntaxWorksWereOk() {

@@ -2,7 +2,6 @@ package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.test.assertPlannableAws
-import com.lightningkite.services.test.expensive
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.hours
 

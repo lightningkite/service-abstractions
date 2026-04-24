@@ -2,13 +2,12 @@ package com.lightningkite.services.pubsub.aws
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.cache.dynamodb.embeddedDynamo
-import com.lightningkite.services.pubsub.PubSub
 import kotlinx.coroutines.*
+import kotlinx.coroutines.future.await
 import kotlinx.serialization.Serializable
 import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
-import kotlinx.coroutines.future.await
 import software.amazon.awssdk.services.dynamodb.model.DeleteTableRequest
 import kotlin.test.*
 import kotlin.time.Duration.Companion.milliseconds
@@ -108,7 +107,7 @@ class DynamoDbPubSubIntegrationTest {
     data class TestMessage(
         val id: String,
         val value: Int,
-        val timestamp: Long = System.currentTimeMillis()
+        val timestamp: Long = System.currentTimeMillis(),
     )
 
     @Serializable
@@ -116,13 +115,13 @@ class DynamoDbPubSubIntegrationTest {
         val id: String,
         val nested: NestedData,
         val list: List<Int>,
-        val map: Map<String, String>
+        val map: Map<String, String>,
     )
 
     @Serializable
     data class NestedData(
         val value: Double,
-        val flag: Boolean
+        val flag: Boolean,
     )
 
     @Test

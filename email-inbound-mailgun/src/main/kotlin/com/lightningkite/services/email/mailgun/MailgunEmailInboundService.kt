@@ -1,28 +1,12 @@
 package com.lightningkite.services.email.mailgun
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.services.Untested
-import com.lightningkite.MediaType
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
-import com.lightningkite.services.email.EmailAddressWithName
-import com.lightningkite.services.email.EmailEnvelope
-import com.lightningkite.services.email.EmailInboundService
-import com.lightningkite.services.email.ReceivedAttachment
-import com.lightningkite.services.email.ReceivedEmail
-import com.lightningkite.toEmailAddress
+import com.lightningkite.services.*
+import com.lightningkite.services.data.*
+import com.lightningkite.services.email.*
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
-import kotlinx.io.readByteArray
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import io.opentelemetry.api.trace.*
+import kotlinx.serialization.json.*
 import kotlin.time.Duration.Companion.milliseconds
 
 private val logger = KotlinLogging.logger("MailgunEmailInboundService")
@@ -99,8 +83,8 @@ public class MailgunEmailInboundService(
                 val apiKey = userInfo?.firstOrNull()?.takeIf { it.isNotBlank() }
                     ?: throw IllegalArgumentException(
                         "Mailgun API key is required. " +
-                        "URL format: mailgun://API_KEY@domain " +
-                        "Get your API key from Mailgun dashboard > API Keys"
+                                "URL format: mailgun://API_KEY@domain " +
+                                "Get your API key from Mailgun dashboard > API Keys"
                     )
                 val domain = uri.host ?: ""
                 MailgunEmailInboundService(name, context, apiKey, domain)
@@ -117,7 +101,7 @@ public class MailgunEmailInboundService(
          */
         public fun EmailInboundService.Settings.Companion.mailgun(
             apiKey: String,
-            domain: String? = null
+            domain: String? = null,
         ): EmailInboundService.Settings {
             val url = buildString {
                 append("mailgun://")
@@ -138,7 +122,7 @@ public class MailgunEmailInboundService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): ReceivedEmail {
             val span = tracer?.spanBuilder("email.webhook.parse")
                 ?.setSpanKind(SpanKind.SERVER)
@@ -213,11 +197,13 @@ public class MailgunEmailInboundService(
             contentType.startsWith("application/x-www-form-urlencoded", ignoreCase = true) -> {
                 parseUrlEncoded(body.data.text())
             }
+
             contentType.startsWith("multipart/form-data", ignoreCase = true) -> {
                 // For multipart, we'll parse the simpler fields first
                 // Attachments will be handled separately if needed
                 parseMultipartFormData(body)
             }
+
             else -> {
                 logger.warn { "[$name] Unexpected content type: $contentType, attempting urlencoded parsing" }
                 parseUrlEncoded(body.data.text())

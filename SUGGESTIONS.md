@@ -4,9 +4,12 @@
 
 ## Payment Service Abstraction
 
-3 out of 4 projects built on Lightning Server integrate Stripe for payments. Each builds its own payment service layer from scratch. A `PaymentService` abstraction (similar to `EmailService` or `NotificationService`) would save significant effort.
+3 out of 4 projects built on Lightning Server integrate Stripe for payments. Each builds its own payment service layer
+from scratch. A `PaymentService` abstraction (similar to `EmailService` or `NotificationService`) would save significant
+effort.
 
 Proposed interface:
+
 ```kotlin
 interface PaymentService {
     suspend fun createCustomer(email: String, name: String?): String  // returns customer ID
@@ -17,4 +20,5 @@ interface PaymentService {
 }
 ```
 
-With a `StripePaymentService` implementation in a `payments-stripe` module, similar to `email-javasmtp` or `notifications-fcm`.
+With a `StripePaymentService` implementation in a `payments-stripe` module, similar to `email-javasmtp` or
+`notifications-fcm`.

@@ -100,7 +100,8 @@ public class DynamoDbCacheKmp(
                 this.tableName = tableName
                 this.billingMode = BillingMode.PayPerRequest
                 this.keySchema = listOf(KeySchemaElement { attributeName = "key"; keyType = KeyType.Hash })
-                this.attributeDefinitions = listOf(AttributeDefinition { attributeName = "key"; attributeType = ScalarAttributeType.S })
+                this.attributeDefinitions =
+                    listOf(AttributeDefinition { attributeName = "key"; attributeType = ScalarAttributeType.S })
             }
             while (client.describeTable { this.tableName = tableName }.table?.tableStatus != TableStatus.Active) {
                 delay(100)
@@ -144,7 +145,9 @@ public class DynamoDbCacheKmp(
         val item = buildMap<String, AttributeValue> {
             put("key", AttributeValue { s = key })
             put("value", AttributeValue { s = json().encodeToString(serializer, value) })
-            if (timeToLive != null) put("expires", AttributeValue { n = Clock.System.now().plus(timeToLive).epochSeconds.toString() })
+            if (timeToLive != null) put(
+                "expires",
+                AttributeValue { n = Clock.System.now().plus(timeToLive).epochSeconds.toString() })
         }
         client.putItem {
             tableName = this@DynamoDbCacheKmp.tableName
@@ -163,7 +166,9 @@ public class DynamoDbCacheKmp(
             val item = buildMap<String, AttributeValue> {
                 put("key", AttributeValue { s = key })
                 put("value", AttributeValue { s = json().encodeToString(serializer, value) })
-                if (timeToLive != null) put("expires", AttributeValue { n = Clock.System.now().plus(timeToLive).epochSeconds.toString() })
+                if (timeToLive != null) put(
+                    "expires",
+                    AttributeValue { n = Clock.System.now().plus(timeToLive).epochSeconds.toString() })
             }
             client.putItem {
                 tableName = this@DynamoDbCacheKmp.tableName
@@ -197,7 +202,9 @@ public class DynamoDbCacheKmp(
                 put(":now", AttributeValue { n = now.toString() })
                 put(":z", AttributeValue { n = "0" })
                 put(":v", AttributeValue { n = value.toString() })
-                if (timeToLive != null) put(":exp", AttributeValue { n = Clock.System.now().plus(timeToLive).epochSeconds.toString() })
+                if (timeToLive != null) put(
+                    ":exp",
+                    AttributeValue { n = Clock.System.now().plus(timeToLive).epochSeconds.toString() })
             }
         }
     }

@@ -1,6 +1,8 @@
 # Database Query DSL
 
-The `database-shared` module provides a type-safe, serializable query language for database operations. This DSL allows you to write queries that work across different database backends (MongoDB, PostgreSQL, in-memory, etc.) without learning database-specific syntax.
+The `database-shared` module provides a type-safe, serializable query language for database operations. This DSL allows
+you to write queries that work across different database backends (MongoDB, PostgreSQL, in-memory, etc.) without
+learning database-specific syntax.
 
 ## Core Concepts
 
@@ -11,6 +13,7 @@ The query DSL consists of three main components:
 3. **DataClassPath** - Type-safe field references
 
 All components are:
+
 - **Serializable** - Can be sent over network or stored
 - **Translatable** - Database backends convert them to native queries
 - **Evaluatable** - Can test against in-memory objects
@@ -306,15 +309,15 @@ val query = Query<User>(
 
 Not all database backends support all operations:
 
-| Condition Type | MongoDB | PostgreSQL | In-Memory |
-|---------------|---------|------------|-----------|
-| Basic comparisons | ✅ | ✅ | ✅ |
-| String contains | ✅ | ✅ | ✅ |
-| Full-text search | ✅ | ✅ | ~approximation |
-| Regex matches | ✅ | ✅ | ✅ |
-| Geo queries | ✅ | ✅ (PostGIS) | ✅ |
-| Bitwise ops | ✅ | ✅ | ✅ |
-| Collection ops | ✅ | ✅ (array ops) | ✅ |
+| Condition Type    | MongoDB | PostgreSQL    | In-Memory      |
+|-------------------|---------|---------------|----------------|
+| Basic comparisons | ✅       | ✅             | ✅              |
+| String contains   | ✅       | ✅             | ✅              |
+| Full-text search  | ✅       | ✅             | ~approximation |
+| Regex matches     | ✅       | ✅             | ✅              |
+| Geo queries       | ✅       | ✅ (PostGIS)   | ✅              |
+| Bitwise ops       | ✅       | ✅             | ✅              |
+| Collection ops    | ✅       | ✅ (array ops) | ✅              |
 
 Check your database backend's documentation for specific limitations.
 
@@ -403,6 +406,7 @@ val decoded = Json.decodeFromString<Condition<User>>(json)
 ```
 
 This enables:
+
 - Sending queries from client to server
 - Storing query templates
 - Building query builders in admin UIs

@@ -15,15 +15,12 @@
  */
 package com.lightningkite.services.database.mongodb.bson
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
+import kotlinx.serialization.*
 import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.serializer
 import org.bson.codecs.Codec
 import org.bson.codecs.configuration.CodecProvider
 import org.bson.codecs.configuration.CodecRegistry
 import java.lang.reflect.Type
-import kotlin.jvm.kotlin
 
 /**
  * A Kotlin Serialization based Codec Provider
@@ -33,7 +30,7 @@ import kotlin.jvm.kotlin
 @OptIn(ExperimentalSerializationApi::class)
 public class KotlinSerializerCodecProvider(
     private val serializersModule: SerializersModule = defaultSerializersModule,
-    private val bsonConfiguration: BsonConfiguration = BsonConfiguration()
+    private val bsonConfiguration: BsonConfiguration = BsonConfiguration(),
 ) : CodecProvider {
 
     override fun <T : Any> get(clazz: Class<T>, registry: CodecRegistry): Codec<T>? =
@@ -41,10 +38,12 @@ public class KotlinSerializerCodecProvider(
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> get(clazz: Class<T>, typeArguments: List<Type>, registry: CodecRegistry): Codec<T> {
-        return KotlinSerializerCodec.create(clazz.kotlin,
+        return KotlinSerializerCodec.create(
+            clazz.kotlin,
             serializersModule.serializer(clazz.kotlin, typeArguments.map {
                 serializersModule.serializer(it)
-            }, isNullable = false) as KSerializer<T>, serializersModule, bsonConfiguration)
+            }, isNullable = false) as KSerializer<T>, serializersModule, bsonConfiguration
+        )
     }
 }
 

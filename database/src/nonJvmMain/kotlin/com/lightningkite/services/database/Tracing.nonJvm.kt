@@ -12,5 +12,5 @@ internal actual suspend fun <R> traced(
     operation: String,
     tableName: String,
     attributes: Map<String, Any>,
-    block: suspend () -> R
+    block: suspend () -> R,
 ): R = block()

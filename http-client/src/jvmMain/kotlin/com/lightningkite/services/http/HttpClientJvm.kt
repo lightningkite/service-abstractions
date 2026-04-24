@@ -4,10 +4,8 @@ import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.websocket.*
-import io.ktor.serialization.kotlinx.json.json
-import org.crac.Context
-import org.crac.Core
-import org.crac.Resource
+import io.ktor.serialization.kotlinx.json.*
+import org.crac.*
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -29,7 +27,7 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * This allows the client to be used both before and after snapshots without issues.
  */
-actual val client: HttpClient
+public actual val client: HttpClient
     get() = HttpClientHolder.client
 
 /**

@@ -14,7 +14,7 @@ public value class SubscriptionPriceId(public val value: String)
 @Serializable
 public data class SubscriptionProductConfiguration(
     val product: SubscriptionProductId,
-    val prices: Map<SubscriptionRecurrence, SubscriptionPriceId>
+    val prices: Map<SubscriptionRecurrence, SubscriptionPriceId>,
 )
 
 @Serializable

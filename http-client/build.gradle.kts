@@ -3,8 +3,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
     id("signing")
@@ -12,10 +10,7 @@ plugins {
 }
 
 kotlin {
-    compilerOptions {
-        optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-    }
+    explicitApi()
     applyDefaultHierarchyTemplate()
     androidTarget {
         compilerOptions {
@@ -35,28 +30,16 @@ kotlin {
     iosX64()
     iosArm64()
     iosSimulatorArm64()
-    macosX64()
     macosArm64()
 
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(libs.kotlinx.json)
-                api(libs.kotlinx.datetime)
-                api(project(":basis"))
-                api(libs.coroutines.core)
                 api(libs.ktor.client.cio)
                 api(libs.ktor.client.websockets)
                 api(libs.ktor.contentNegotiation)
                 api(libs.ktor.json)
                 api(libs.ktor.client.auth)
-            }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
         val commonTest by getting {
@@ -64,24 +47,9 @@ kotlin {
                 api(libs.kotlin.test)
                 api(libs.coroutines.testing)
             }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
-            }
         }
-        val androidMain by getting {
-            dependencies {
-//                api(libs.kotlin.test.junit)
-            }
-        }
-        val jsMain by getting {
-            dependencies {
-//                api(libs.kotlin.test.js)
-            }
-        }
+        val androidMain by getting {}
+        val jsMain by getting {}
         val jvmMain by getting {
             dependencies {
                 compileOnly(project(":otel-jvm"))
@@ -90,12 +58,9 @@ kotlin {
                 implementation(libs.crac)
             }
         }
-        val jvmTest by getting {
-        }
+        val jvmTest by getting {}
     }
 }
-
-lkLibrary("lightningkite", "service-abstractions") {}
 
 android {
     namespace = "com.lightningkite.services"
@@ -112,4 +77,12 @@ android {
     dependencies {
         coreLibraryDesugaring(libs.androidDesugaring)
     }
+}
+
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {
+    description.set("A common source for an HTTP Client using Ktor's Client.")
 }

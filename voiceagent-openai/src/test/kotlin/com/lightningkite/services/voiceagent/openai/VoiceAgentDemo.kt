@@ -1,28 +1,19 @@
 package com.lightningkite.services.voiceagent.openai
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.voiceagent.SerializableToolDescriptor
-import com.lightningkite.services.voiceagent.SerializableToolParameterDescriptor
-import com.lightningkite.services.voiceagent.SerializableToolParameterType
-import com.lightningkite.services.voiceagent.TurnDetection
-import com.lightningkite.services.voiceagent.VoiceAgentEvent
-import com.lightningkite.services.voiceagent.VoiceAgentService
-import com.lightningkite.services.voiceagent.VoiceAgentSession
-import com.lightningkite.services.voiceagent.VoiceAgentSessionConfig
-import com.lightningkite.services.voiceagent.VoiceConfig
-import com.lightningkite.services.voiceagent.AudioFormat as VoiceAudioFormat
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
+import com.lightningkite.services.voiceagent.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.serialization.json.*
 import java.io.File
-import java.util.Base64
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.*
 import javax.sound.sampled.*
+import javax.sound.sampled.AudioFormat
 import kotlin.random.Random
+import com.lightningkite.services.voiceagent.AudioFormat as VoiceAudioFormat
 
 /**
  * Demo tool definitions for the voice agent.
@@ -96,7 +87,12 @@ private fun executeTool(toolName: String, arguments: String): String {
             val conditions = listOf("sunny", "partly cloudy", "cloudy", "rainy", "windy")
             val temp = Random.nextInt(45, 85)
             val condition = conditions.random()
-            """{"location": "$location", "temperature": $temp, "unit": "fahrenheit", "condition": "$condition", "humidity": ${Random.nextInt(30, 80)}}"""
+            """{"location": "$location", "temperature": $temp, "unit": "fahrenheit", "condition": "$condition", "humidity": ${
+                Random.nextInt(
+                    30,
+                    80
+                )
+            }}"""
         }
 
         "calculate" -> {
@@ -207,8 +203,9 @@ fun main() = runBlocking {
 
     // Create the voice agent service
     val context = TestSettingContext()
-    val service = VoiceAgentService.Settings("openai-realtime://?apiKey=$apiKey&model=gpt-4o-realtime-preview-2024-12-17")
-        .invoke("demo", context)
+    val service =
+        VoiceAgentService.Settings("openai-realtime://?apiKey=$apiKey&model=gpt-4o-realtime-preview-2024-12-17")
+            .invoke("demo", context)
 
     println("Connecting to OpenAI Realtime API...")
 

@@ -1,50 +1,17 @@
 package com.lightningkite.services.database.postgres
 
-import com.lightningkite.atZone
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.atDate
-import kotlinx.datetime.atStartOfDayIn
-import kotlinx.datetime.toInstant
-import kotlinx.datetime.toJavaLocalDate
-import kotlinx.datetime.toJavaLocalDateTime
-import kotlinx.datetime.toJavaLocalTime
-import kotlinx.datetime.toKotlinLocalDate
-import kotlinx.datetime.toKotlinLocalDateTime
-import kotlinx.datetime.toKotlinLocalTime
-import kotlinx.datetime.toLocalDateTime
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationStrategy
+import kotlinx.datetime.*
+import kotlinx.serialization.*
 import kotlinx.serialization.builtins.ByteArraySerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import org.jetbrains.exposed.sql.BasicBinaryColumnType
-import org.jetbrains.exposed.sql.BinaryColumnType
-import org.jetbrains.exposed.sql.BlobColumnType
 import org.jetbrains.exposed.sql.UUIDColumnType
-import org.jetbrains.exposed.sql.javatime.JavaDurationColumnType
-import org.jetbrains.exposed.sql.javatime.JavaInstantColumnType
-import org.jetbrains.exposed.sql.javatime.JavaLocalDateColumnType
-import org.jetbrains.exposed.sql.javatime.JavaLocalDateTimeColumnType
-import org.jetbrains.exposed.sql.javatime.JavaLocalTimeColumnType
-import java.sql.Blob
-import java.util.UUID
-import kotlin.io.encoding.Base64
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.DurationUnit
+import org.jetbrains.exposed.sql.javatime.*
+import java.util.*
+import kotlin.time.*
 import kotlin.time.Instant
-import kotlin.time.toJavaDuration
-import kotlin.time.toJavaInstant
-import kotlin.time.toKotlinDuration
-import kotlin.time.toKotlinInstant
-import kotlin.uuid.Uuid
-import kotlin.uuid.toJavaUuid
-import kotlin.uuid.toKotlinUuid
+import kotlin.uuid.*
 
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -54,6 +21,7 @@ private val serializationOverrides = mapOf<SerialDescriptor, JdbcConversion<*, *
             ColumnTypeInfo(listOf<String>(), UUIDColumnType(), listOf())
         override val columnTypeInfoNullable: ColumnTypeInfo =
             ColumnTypeInfo(listOf<String>(), UUIDColumnType().also { it.nullable = true }, listOf())
+
         override fun toJava(value: Uuid): UUID = value.toJavaUuid()
         override fun toKotlin(value: UUID): Uuid = value.toKotlinUuid()
     },
@@ -131,7 +99,7 @@ internal fun serializationOverride(descriptor: SerialDescriptor): JdbcConversion
 internal interface JdbcConversion<KOTLIN, JAVA> {
     val columnTypeInfo: ColumnTypeInfo
     val columnTypeInfoNullable: ColumnTypeInfo
-    fun columnTypeInfo(nullable: Boolean): ColumnTypeInfo = if(nullable) columnTypeInfoNullable else columnTypeInfo
+    fun columnTypeInfo(nullable: Boolean): ColumnTypeInfo = if (nullable) columnTypeInfoNullable else columnTypeInfo
     fun toJava(value: KOTLIN): JAVA
     fun toKotlin(value: JAVA): KOTLIN
 }

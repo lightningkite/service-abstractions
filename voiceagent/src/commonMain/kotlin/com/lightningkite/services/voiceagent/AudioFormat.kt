@@ -46,8 +46,10 @@ public enum class AudioFormat(
 public enum class AudioEncoding {
     /** Linear PCM 16-bit signed little-endian */
     PCM16,
+
     /** G.711 μ-law companding */
     G711_ULAW,
+
     /** G.711 A-law companding */
     G711_ALAW,
 }

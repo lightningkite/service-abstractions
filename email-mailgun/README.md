@@ -25,14 +25,15 @@ val emailService = EmailService.Settings("mailgun://[key]@[domain]").invoke(cont
 #### URL Format
 
 The Mailgun URL format is:
+
 ```
 mailgun://[key]@[domain]
 ```
 
 Required parameters:
+
 - `key`: You Mailgun API Key
 - `domain`: Your Mailgun Domain
-
 
 ### Sending Emails
 
@@ -49,7 +50,6 @@ emailService.send(
 ```
 
 See the main [email module documentation](../email/README.md) for more examples of sending emails.
-
 
 ## Implementation Details
 

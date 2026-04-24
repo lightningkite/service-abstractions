@@ -1,13 +1,7 @@
 package com.lightningkite.services.files.s3
 
-import com.lightningkite.services.Untested
 import com.lightningkite.services.files.PublicFileSystem
-import com.lightningkite.services.terraform.AwsPolicyStatement
-import com.lightningkite.services.terraform.TerraformEmitterAws
-import com.lightningkite.services.terraform.TerraformNeed
-import com.lightningkite.services.terraform.TerraformProvider
-import com.lightningkite.services.terraform.TerraformProviderImport
-import com.lightningkite.services.terraform.terraformJsonObject
+import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.time.Duration
 
@@ -32,12 +26,13 @@ import kotlin.time.Duration
  *                     Set to false in production to prevent accidental data loss.
  * @throws IllegalArgumentException if S3PublicFileSystem is not registered in the settings parser
  */
-context(emitter: TerraformEmitterAws) public fun TerraformNeed<PublicFileSystem.Settings>.awsS3Bucket(
+context(emitter: TerraformEmitterAws)
+public fun TerraformNeed<PublicFileSystem.Settings>.awsS3Bucket(
     signedUrlDuration: Duration? = null,
     forceDestroy: Boolean = true,
     corsOrigins: Set<String> = setOf("*"),
 ): Unit {
-    if(!PublicFileSystem.Settings.supports("s3")) throw IllegalArgumentException("You need to reference S3PublicFileSystem in your server definition to use this.")
+    if (!PublicFileSystem.Settings.supports("s3")) throw IllegalArgumentException("You need to reference S3PublicFileSystem in your server definition to use this.")
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = if (signedUrlDuration == null) {

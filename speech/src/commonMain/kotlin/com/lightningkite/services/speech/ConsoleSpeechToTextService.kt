@@ -1,7 +1,7 @@
 package com.lightningkite.services.speech
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlin.time.Duration.Companion.seconds
@@ -23,7 +23,7 @@ private val logger = KotlinLogging.logger("ConsoleSpeechToTextService")
  */
 public class ConsoleSpeechToTextService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : SpeechToTextService {
 
     /**
@@ -33,7 +33,7 @@ public class ConsoleSpeechToTextService(
 
     override suspend fun transcribe(
         audio: TypedData,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult {
         logger.info {
             "[$name] STT transcribe: ${audio.data.size} bytes (${audio.mediaType}), " +
@@ -49,7 +49,7 @@ public class ConsoleSpeechToTextService(
 
     override suspend fun transcribeUrl(
         audioUrl: String,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult {
         logger.info {
             "[$name] STT transcribeUrl: $audioUrl, " +

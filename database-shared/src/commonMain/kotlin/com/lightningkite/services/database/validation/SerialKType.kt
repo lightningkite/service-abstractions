@@ -2,20 +2,12 @@ package com.lightningkite.services.database.validation
 
 import com.lightningkite.services.database.nullElement
 import com.lightningkite.services.database.typeParametersSerializersOrNull
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.*
 import kotlinx.serialization.builtins.NothingSerializer
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.serializer
-import kotlin.reflect.KClass
-import kotlin.reflect.KType
-import kotlin.reflect.typeOf
+import kotlin.reflect.*
 
 /**
  * A type representation system for `kotlinx.serialization` types.
@@ -113,7 +105,7 @@ public sealed interface SerialKType {
     public data class Specified(
         val descriptor: SerialDescriptor,
         val arguments: List<SerialKType>,
-        val nullable: Boolean
+        val nullable: Boolean,
     ) : SerialKType {
         public val serialName: String get() = descriptor.serialName
 
@@ -166,6 +158,7 @@ public sealed interface SerialKType {
             return if (arguments.isEmpty()) type + if (nullable) '?' else ""
             else "$type<${arguments.joinToString { it.toString(qualified) }}>" + if (nullable) '?' else ""
         }
+
         override fun toString(): String = toString(qualified = false)
     }
 }
@@ -196,7 +189,8 @@ public fun SerialKType(kType: KType, module: SerializersModule = EmptySerializer
     return d
 }
 
-public inline fun <reified T> serialKTypeOf(module: SerializersModule = EmptySerializersModule()): SerialKType = SerialKType(typeOf<T>(), module)
+public inline fun <reified T> serialKTypeOf(module: SerializersModule = EmptySerializersModule()): SerialKType =
+    SerialKType(typeOf<T>(), module)
 
 @Suppress("FunctionName")
 public fun SerialKType(serializer: KSerializer<*>): SerialKType.Specified {
@@ -238,6 +232,7 @@ public fun SerialKType.generality(): Double =
                 (0.5 / n.toDouble()) * arguments.sumOf { it.generality() }
             }
         }
+
         SerialKType.Wildcard -> 1.0  // Most general
     }
 

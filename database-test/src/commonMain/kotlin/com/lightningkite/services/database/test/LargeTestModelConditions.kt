@@ -1,15 +1,10 @@
 package com.lightningkite.services.database.test
 
-import kotlinx.coroutines.flow.*
-import com.lightningkite.services.database.*
-import com.lightningkite.services.data.*
-import com.lightningkite.*
-import com.lightningkite.Length.Companion.kilometers
-import kotlinx.coroutines.test.*
-import kotlin.test.*
-import kotlin.time.*
+import com.lightningkite.services.database.Condition
+import com.lightningkite.services.database.SerializableProperty
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
-import kotlin.uuid.*
+import kotlin.time.Instant
 
 object LargeTestModelConditions {
     class Case(
@@ -18,7 +13,7 @@ object LargeTestModelConditions {
         val exclude: List<LargeTestModel>,
     )
 
-    class ComparableType<T: Comparable<T>>(
+    class ComparableType<T : Comparable<T>>(
         val field: SerializableProperty<LargeTestModel, T>,
         val nullable: SerializableProperty<LargeTestModel, T?>,
         val low: T,
@@ -59,7 +54,11 @@ object LargeTestModelConditions {
             Case(
                 condition = Condition.OnField(nullable, Condition.IfNotNull(Condition.Equal(high))),
                 include = listOf(nullable.setCopy(LargeTestModel(), high)),
-                exclude = listOf(nullable.setCopy(LargeTestModel(), low), field.setCopy(LargeTestModel(), middle), nullable.setCopy(LargeTestModel(), null)),
+                exclude = listOf(
+                    nullable.setCopy(LargeTestModel(), low),
+                    field.setCopy(LargeTestModel(), middle),
+                    nullable.setCopy(LargeTestModel(), null)
+                ),
             ),
             Case(
                 condition = Condition.OnField(nullable, Condition.IfNotNull(Condition.NotEqual(high))),
@@ -69,12 +68,20 @@ object LargeTestModelConditions {
             Case(
                 condition = Condition.OnField(nullable, Condition.IfNotNull(Condition.GreaterThan(middle))),
                 include = listOf(nullable.setCopy(LargeTestModel(), high)),
-                exclude = listOf(nullable.setCopy(LargeTestModel(), low), field.setCopy(LargeTestModel(), middle), nullable.setCopy(LargeTestModel(), null)),
+                exclude = listOf(
+                    nullable.setCopy(LargeTestModel(), low),
+                    field.setCopy(LargeTestModel(), middle),
+                    nullable.setCopy(LargeTestModel(), null)
+                ),
             ),
             Case(
                 condition = Condition.OnField(nullable, Condition.IfNotNull(Condition.LessThan(middle))),
                 include = listOf(nullable.setCopy(LargeTestModel(), low)),
-                exclude = listOf(nullable.setCopy(LargeTestModel(), high), field.setCopy(LargeTestModel(), middle), nullable.setCopy(LargeTestModel(), null)),
+                exclude = listOf(
+                    nullable.setCopy(LargeTestModel(), high),
+                    field.setCopy(LargeTestModel(), middle),
+                    nullable.setCopy(LargeTestModel(), null)
+                ),
             ),
             Case(
                 condition = Condition.OnField(nullable, Condition.IfNotNull(Condition.GreaterThanOrEqual(middle))),
@@ -97,8 +104,14 @@ object LargeTestModelConditions {
 
     val types: List<ComparableType<*>> = listOf(
         ComparableType<Byte>(LargeTestModel_byte, LargeTestModel_byteNullable, 0.toByte(), 1.toByte(), 2.toByte()),
-        ComparableType<Short>(LargeTestModel_short, LargeTestModel_shortNullable, 0.toShort(), 1.toShort(), 2.toShort()),
-        ComparableType<Int>(LargeTestModel_int, LargeTestModel_intNullable, 0.toInt(), 1.toInt(), 2.toInt()),
+        ComparableType<Short>(
+            LargeTestModel_short,
+            LargeTestModel_shortNullable,
+            0.toShort(),
+            1.toShort(),
+            2.toShort()
+        ),
+        ComparableType<Int>(LargeTestModel_int, LargeTestModel_intNullable, 0, 1, 2),
         ComparableType<Long>(LargeTestModel_long, LargeTestModel_longNullable, 0.toLong(), 1.toLong(), 2.toLong()),
         ComparableType<Float>(LargeTestModel_float, LargeTestModel_floatNullable, 0f, 1f, 2f),
         ComparableType<Double>(LargeTestModel_double, LargeTestModel_doubleNullable, 0.0, 1.0, 2.0),
@@ -112,9 +125,4 @@ object LargeTestModelConditions {
             Clock.System.now().plus(1.seconds)
         ),
     )
-
-    val cases = listOf<List<Case>>(
-        types.flatMap { it.cases }
-    ).flatten()
 }
-

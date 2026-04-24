@@ -1,8 +1,8 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.services.data.KFile
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.temporary
+import com.lightningkite.services.data.*
+import com.lightningkite.services.kfile.KFile
+import com.lightningkite.services.kfile.temporary
 import kotlinx.io.files.SystemFileSystem
 import kotlin.uuid.Uuid
 
@@ -13,7 +13,7 @@ import kotlin.uuid.Uuid
  * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
  */
 public suspend fun FileObject.download(
-    file: KFile?
+    file: KFile?,
 ): KFile? = get()?.let { download(file ?: SystemFileSystem.temporary(extension = it.mediaType.extension)) }
 
 /**
@@ -23,7 +23,7 @@ public suspend fun FileObject.download(
  * @return The KFile containing the downloaded content
  */
 public fun TypedData.download(
-    file: KFile = SystemFileSystem.temporary(extension = mediaType.extension)
+    file: KFile = SystemFileSystem.temporary(extension = mediaType.extension),
 ): KFile {
     write(file.sink())
     return file

@@ -1,10 +1,12 @@
 # Files-S3 Module
 
-The `files-s3` module provides an AWS S3 implementation of the `PublicFileSystem` interface, enabling file storage in S3 buckets with support for signed URLs, CORS configuration, and Terraform infrastructure generation.
+The `files-s3` module provides an AWS S3 implementation of the `PublicFileSystem` interface, enabling file storage in S3
+buckets with support for signed URLs, CORS configuration, and Terraform infrastructure generation.
 
 ## Overview
 
-This module is part of the service-abstractions library's file storage system. It implements the `PublicFileSystem` interface using AWS S3 as the backend storage, with features including:
+This module is part of the service-abstractions library's file storage system. It implements the `PublicFileSystem`
+interface using AWS S3 as the backend storage, with features including:
 
 - **Signed URLs**: Custom AWS Signature V4 implementation for faster URL generation
 - **Server-side operations**: Optimized copy operations within the same bucket
@@ -179,7 +181,8 @@ println(secureFile.signedUrl)
 
 ### Performance Optimization
 
-The module includes a custom AWS Signature V4 implementation that is significantly faster than the AWS SDK's built-in presigner:
+The module includes a custom AWS Signature V4 implementation that is significantly faster than the AWS SDK's built-in
+presigner:
 
 ```kotlin
 // Custom signing (used automatically)
@@ -194,7 +197,8 @@ val officialSignedUrl = (file as S3FileObject).signedUrlOfficial
 
 ### Server-Side Copy
 
-When copying files within the same bucket, the module uses S3's server-side copy operation, which is much faster than downloading and re-uploading:
+When copying files within the same bucket, the module uses S3's server-side copy operation, which is much faster than
+downloading and re-uploading:
 
 ```kotlin
 val source = fileSystem.root.then("original.jpg")
@@ -257,8 +261,8 @@ The Terraform function creates:
 2. **CORS Configuration** allowing browser uploads
 3. **IAM Policy** granting S3 access to Lambda execution role
 4. **Public Access Configuration** (only if signedUrlDuration is null):
-   - Public access block disabled
-   - Bucket policy allowing `s3:GetObject` for all principals
+    - Public access block disabled
+    - Bucket policy allowing `s3:GetObject` for all principals
 
 ### Terraform Output
 
@@ -348,6 +352,7 @@ Controls how long signed URLs remain valid:
 The module supports multiple AWS credential providers:
 
 #### 1. Environment Variables
+
 ```bash
 export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
@@ -359,6 +364,7 @@ PublicFileSystem.Settings("s3://my-bucket.s3-us-west-2.amazonaws.com/")
 ```
 
 #### 2. Named Profile
+
 ```bash
 # ~/.aws/credentials
 [production]
@@ -371,14 +377,17 @@ PublicFileSystem.Settings("s3://production@my-bucket.s3-us-west-2.amazonaws.com/
 ```
 
 #### 3. Static Credentials (Not Recommended for Production)
+
 ```kotlin
 PublicFileSystem.Settings("s3://user:password@my-bucket.s3-us-west-2.amazonaws.com/")
 ```
 
 #### 4. Instance Profile / ECS Task Role (Automatic)
+
 When running on EC2 or ECS, credentials are automatically obtained from the instance metadata service.
 
 #### 5. Web Identity Token (EKS, Lambda)
+
 Automatically used when running in Kubernetes (EKS) or AWS Lambda with appropriate IAM roles.
 
 ## Health Checks
@@ -595,6 +604,7 @@ val urls = files.map { it.signedUrl }  // ~10x faster than AWS SDK
 ### Common Issues
 
 #### 1. "No bucket provided" Error
+
 ```kotlin
 // Wrong: Missing bucket name
 "s3://.s3-us-west-2.amazonaws.com/"
@@ -604,16 +614,19 @@ val urls = files.map { it.signedUrl }  // ~10x faster than AWS SDK
 ```
 
 #### 2. "Could not verify signature" Error
+
 - Check that credentials haven't expired
 - Verify system clock is synchronized
 - Ensure URL hasn't been modified
 
 #### 3. Slow Performance
+
 - Use custom signing (automatic) for signed URLs
 - Enable HTTP connection pooling via AwsConnections
 - Consider using CloudFront CDN for frequently accessed files
 
 #### 4. CORS Errors in Browser
+
 - Verify CORS configuration allows your domain
 - Check that proper headers are set when uploading
 - Ensure browser is using the signed upload URL correctly
@@ -625,6 +638,7 @@ val urls = files.map { it.signedUrl }  // ~10x faster than AWS SDK
 Main class implementing PublicFileSystem for S3.
 
 **Properties:**
+
 - `name: String` - Service name
 - `region: Region` - AWS region
 - `bucket: String` - S3 bucket name
@@ -634,6 +648,7 @@ Main class implementing PublicFileSystem for S3.
 - `s3Async: S3AsyncClient` - Asynchronous S3 client
 
 **Methods:**
+
 - `parseInternalUrl(url: String): S3FileObject?` - Parse internal URL
 - `parseExternalUrl(url: String): S3FileObject?` - Parse and validate external URL
 - `healthCheck(): HealthStatus` - Check S3 connectivity
@@ -643,6 +658,7 @@ Main class implementing PublicFileSystem for S3.
 Represents a file or directory in S3.
 
 **Properties:**
+
 - `system: S3PublicFileSystem` - Parent file system
 - `path: File` - File path
 - `name: String` - File name
@@ -651,6 +667,7 @@ Represents a file or directory in S3.
 - `signedUrl: String` - Signed URL for GET
 
 **Methods:**
+
 - `then(path: String): S3FileObject` - Resolve relative path
 - `list(): List<FileObject>?` - List directory contents
 - `head(): FileInfo?` - Get file metadata

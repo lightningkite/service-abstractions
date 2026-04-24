@@ -21,7 +21,7 @@ import kotlin.time.Duration
 public fun embeddedCassandra(
     name: String,
     context: SettingContext,
-    version: String? = null
+    version: String? = null,
 ): CassandraDatabase {
     val settings = ensureEmbeddedCassandraStarted(version)
     val keyspace = "test_${System.nanoTime()}"
@@ -52,7 +52,7 @@ public fun embeddedCassandraPersistent(
     name: String,
     context: SettingContext,
     keyspace: String = "app",
-    version: String? = null
+    version: String? = null,
 ): CassandraDatabase {
     val settings = ensureEmbeddedCassandraStarted(version)
 

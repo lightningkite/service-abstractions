@@ -28,17 +28,20 @@ public object ConditionNormalizer {
                 if (normalized == condition.conditions) condition
                 else Condition.And(normalized)
             }
+
             is Condition.Or -> {
                 val normalized = condition.conditions.map { normalize(it) }
                 if (normalized == condition.conditions) condition
                 else Condition.Or(normalized)
             }
+
             is Condition.OnField<*, *> -> normalizeOnField(condition as Condition.OnField<T, Any?>)
             is Condition.IfNotNull<*> -> {
                 val normalized = normalize(condition.condition as Condition<Any?>)
                 if (normalized === condition.condition) condition
                 else Condition.IfNotNull(normalized) as Condition<T>
             }
+
             else -> condition
         }
     }
@@ -70,6 +73,7 @@ public object ConditionNormalizer {
                 // Not(And(a, b)) -> Or(Not(a), Not(b))
                 Condition.Or(inner.conditions.map { normalizeNot(it) })
             }
+
             is Condition.Or -> {
                 // Not(Or(a, b)) -> And(Not(a), Not(b))
                 Condition.And(inner.conditions.map { normalizeNot(it) })
@@ -82,7 +86,10 @@ public object ConditionNormalizer {
             // Propagate into OnField
             is Condition.OnField<*, *> -> {
                 val normalizedInner = normalizeNot(inner.condition as Condition<Any?>)
-                Condition.OnField(inner.key as com.lightningkite.services.database.SerializableProperty<T, Any?>, normalizedInner)
+                Condition.OnField(
+                    inner.key as com.lightningkite.services.database.SerializableProperty<T, Any?>,
+                    normalizedInner
+                )
             }
 
             // Propagate into IfNotNull
@@ -101,13 +108,16 @@ public object ConditionNormalizer {
                 // Not(All(x)) -> Any(Not(x))
                 Condition.ListAnyElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
             }
+
             is Condition.ListAnyElements<*> -> {
                 // Not(Any(x)) -> All(Not(x))
                 Condition.ListAllElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
             }
+
             is Condition.SetAllElements<*> -> {
                 Condition.SetAnyElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
             }
+
             is Condition.SetAnyElements<*> -> {
                 Condition.SetAllElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
             }
@@ -117,6 +127,7 @@ public object ConditionNormalizer {
                 // Not(Exists(key)) - no direct equivalent, keep as Not
                 Condition.Not(inner)
             }
+
             is Condition.OnKey<*> -> {
                 // Not(OnKey(k, cond)) -> OnKey(k, Not(cond)) normalized
                 Condition.OnKey(inner.key, normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
@@ -127,7 +138,8 @@ public object ConditionNormalizer {
             is Condition.RawStringContains<*>,
             is Condition.RegexMatches,
             is Condition.FullTextSearch<*>,
-            is Condition.GeoDistance -> {
+            is Condition.GeoDistance,
+                -> {
                 // No positive equivalent exists, keep as Not
                 Condition.Not(normalize(inner))
             }

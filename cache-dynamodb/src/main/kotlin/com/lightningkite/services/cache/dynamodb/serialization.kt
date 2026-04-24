@@ -4,18 +4,19 @@ import com.lightningkite.services.SettingContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.reactive.asFlow
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationException
+import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.json.*
 import software.amazon.awssdk.core.async.SdkPublisher
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import java.util.*
-import kotlinx.serialization.ExperimentalSerializationApi
 
 
 // REVIEW NOTE: This function appears to be unused (dead code). Consider removing it. - by Claude
-private fun <T> SdkPublisher<Map<String, AttributeValue>>.parse(serializer: KSerializer<T>, context: SettingContext): Flow<T> {
+private fun <T> SdkPublisher<Map<String, AttributeValue>>.parse(
+    serializer: KSerializer<T>,
+    context: SettingContext,
+): Flow<T> {
     return asFlow().map { serializer.fromDynamoMap(it, context) }
 }
 
@@ -39,20 +40,23 @@ internal fun <T> KSerializer<T>.fromDynamo(value: AttributeValue, context: Setti
     try {
         val element = value.toJson()
         return json(context).decodeFromJsonElement(this, element)
-    } catch(e: Exception) {
+    } catch (e: Exception) {
         throw SerializationException("Could not parse $value as ${this.descriptor.serialName}", e)
     }
 }
 
 // REVIEW NOTE: These two functions are only used by the unused `parse` function above (dead code). - by Claude
-private fun <T> KSerializer<T>.toDynamoMap(value: T, context: SettingContext): Map<String, AttributeValue> = toDynamo(value, context).m()
-private fun <T> KSerializer<T>.fromDynamoMap(value: Map<String, AttributeValue>, context: SettingContext): T = fromDynamo(AttributeValue.fromM(value), context)
+private fun <T> KSerializer<T>.toDynamoMap(value: T, context: SettingContext): Map<String, AttributeValue> =
+    toDynamo(value, context).m()
+
+private fun <T> KSerializer<T>.fromDynamoMap(value: Map<String, AttributeValue>, context: SettingContext): T =
+    fromDynamo(AttributeValue.fromM(value), context)
 
 private fun JsonElement.toDynamoDb(): AttributeValue {
     return when (this) {
         JsonNull -> AttributeValue.fromNul(true)
         is JsonPrimitive -> if (isString) AttributeValue.fromS(this.content)
-        else if(content == "true" || content == "false") AttributeValue.fromBool(this.content.toBoolean())
+        else if (content == "true" || content == "false") AttributeValue.fromBool(this.content.toBoolean())
         else AttributeValue.fromN(this.content)
 
         is JsonArray -> AttributeValue.fromL(this.map { it.toDynamoDb() })
@@ -86,7 +90,7 @@ private fun AttributeValue.toJson(): JsonElement {
 // The outer `when { else -> ... }` construct is redundant. - by Claude
 @OptIn(ExperimentalSerializationApi::class)
 private fun SerialDescriptor.dynamoType(context: SettingContext): AttributeValue.Type = when {
-    else -> when(this.kind) {
+    else -> when (this.kind) {
         PolymorphicKind.OPEN -> TODO()
         PolymorphicKind.SEALED -> TODO()
         PrimitiveKind.BOOLEAN -> AttributeValue.Type.BOOL

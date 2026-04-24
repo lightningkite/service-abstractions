@@ -46,7 +46,14 @@ class SerializationLoopTest {
         // --- String Conditions ---
         "StringContains (also: Search)" to condition { it.string contains "test" },
         "RawStringContains (also: Search, StringContains)" to condition { it.email contains "test" },
-        "RegexMatches" to condition { it.string.condition { Condition.RegexMatches("test.*pattern", ignoreCase = true) } },
+        "RegexMatches" to condition {
+            it.string.condition {
+                Condition.RegexMatches(
+                    "test.*pattern",
+                    ignoreCase = true
+                )
+            }
+        },
 
         // --- Full-Text Search ---
         "FullTextSearch" to condition { it.fullTextSearch("search terms", levenshteinDistance = 2) },
@@ -185,8 +192,8 @@ class SerializationLoopTest {
         // Complex example combining multiple condition types
         loop("Complex Condition", condition<LargeTestModel> {
             (it.int gt 0 and (it.int lt 100)) or
-            (it.string contains "special") and
-            !(it.boolean eq true)
+                    (it.string contains "special") and
+                    !(it.boolean eq true)
         })
     }
 
@@ -205,7 +212,8 @@ class SerializationLoopTest {
     @Test
     fun queryDeserialization() {
         // Verify Query deserialization works with condition serial names
-        val query = Json.decodeFromString<Query<LargeTestModel>>("""
+        val query = Json.decodeFromString<Query<LargeTestModel>>(
+            """
             {
               "condition": {
                 "And": [
@@ -222,7 +230,8 @@ class SerializationLoopTest {
                 "_id"
               ]
             }
-        """.trimIndent())
+        """.trimIndent()
+        )
         println("Query deserialization: $query")
     }
 

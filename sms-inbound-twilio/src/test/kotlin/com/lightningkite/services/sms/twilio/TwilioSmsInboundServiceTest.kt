@@ -5,12 +5,7 @@ import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.sms.SmsInboundService
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Unit tests for TwilioSmsInboundService.
@@ -140,7 +135,7 @@ class TwilioSmsInboundServiceTest {
             phoneNumber = "+18008008000"
         )
 
-        val body = TypedData(Data.Text(sampleSmsWebhookBody), com.lightningkite.MediaType.Application.FormUrlEncoded)
+        val body = TypedData(Data.Text(sampleSmsWebhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
@@ -167,7 +162,7 @@ class TwilioSmsInboundServiceTest {
             phoneNumber = "+18008008000"
         )
 
-        val body = TypedData(Data.Text(sampleMmsWebhookBody), com.lightningkite.MediaType.Application.FormUrlEncoded)
+        val body = TypedData(Data.Text(sampleMmsWebhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
@@ -203,7 +198,7 @@ class TwilioSmsInboundServiceTest {
 
         // Webhook with empty message body (can happen with MMS-only messages)
         val webhookBody = "From=%2B15559876543&To=%2B15551234567&Body=&NumMedia=0&MessageSid=SM123"
-        val body = TypedData(Data.Text(webhookBody), com.lightningkite.MediaType.Application.FormUrlEncoded)
+        val body = TypedData(Data.Text(webhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
@@ -227,7 +222,7 @@ class TwilioSmsInboundServiceTest {
         )
 
         val webhookBody = "To=%2B15551234567&Body=Hello&NumMedia=0&MessageSid=SM123"
-        val body = TypedData(Data.Text(webhookBody), com.lightningkite.MediaType.Application.FormUrlEncoded)
+        val body = TypedData(Data.Text(webhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
 
         assertFailsWith<IllegalArgumentException> {
             service.onReceived.parse(
@@ -249,7 +244,7 @@ class TwilioSmsInboundServiceTest {
         )
 
         val webhookBody = "From=%2B15559876543&Body=Hello&NumMedia=0&MessageSid=SM123"
-        val body = TypedData(Data.Text(webhookBody), com.lightningkite.MediaType.Application.FormUrlEncoded)
+        val body = TypedData(Data.Text(webhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
 
         assertFailsWith<IllegalArgumentException> {
             service.onReceived.parse(
@@ -271,8 +266,9 @@ class TwilioSmsInboundServiceTest {
         )
 
         // URL-encoded special characters: "Hello! How are you? 😀 <test> & 'quotes'"
-        val webhookBody = "From=%2B15559876543&To=%2B15551234567&Body=Hello%21+How+are+you%3F+%F0%9F%98%80+%3Ctest%3E+%26+%27quotes%27&NumMedia=0&MessageSid=SM123"
-        val body = TypedData(Data.Text(webhookBody), com.lightningkite.MediaType.Application.FormUrlEncoded)
+        val webhookBody =
+            "From=%2B15559876543&To=%2B15551234567&Body=Hello%21+How+are+you%3F+%F0%9F%98%80+%3Ctest%3E+%26+%27quotes%27&NumMedia=0&MessageSid=SM123"
+        val body = TypedData(Data.Text(webhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
@@ -295,7 +291,7 @@ class TwilioSmsInboundServiceTest {
 
         // UK phone number
         val webhookBody = "From=%2B447700900123&To=%2B15551234567&Body=Hello+from+UK&NumMedia=0&MessageSid=SM123"
-        val body = TypedData(Data.Text(webhookBody), com.lightningkite.MediaType.Application.FormUrlEncoded)
+        val body = TypedData(Data.Text(webhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
@@ -340,6 +336,7 @@ class TwilioSmsInboundServiceTest {
         val keySpec = javax.crypto.spec.SecretKeySpec("12345".toByteArray(Charsets.UTF_8), "HmacSHA1")
         mac.init(keySpec)
         val rawHmac = mac.doFinal(data.toByteArray(Charsets.UTF_8))
+
         @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
         val computedSignature = kotlin.io.encoding.Base64.encode(rawHmac)
 
@@ -429,7 +426,7 @@ class TwilioSmsInboundServiceTest {
 
         val health = service.healthCheck()
 
-        assertEquals(com.lightningkite.services.HealthStatus.Level.OK, health.level)
+        assertEquals(com.lightningkite.services.data.HealthStatus.Level.OK, health.level)
         assertNotNull(health.additionalMessage)
         assertTrue(health.additionalMessage!!.contains("AC1234567890"))
     }

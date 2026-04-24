@@ -44,7 +44,7 @@ public suspend inline fun <reified T : Any> Cache.set(key: String, value: T, tim
 public suspend inline fun <reified T : Any> Cache.setIfNotExists(
     key: String,
     value: T,
-    timeToLive: Duration? = null
+    timeToLive: Duration? = null,
 ): Boolean {
     return setIfNotExists(key, value, context.internalSerializersModule.serializer<T>(), timeToLive)
 }
@@ -66,6 +66,6 @@ public suspend inline fun <reified T : Any> Cache.modify(
     key: String,
     maxTries: Int = 1,
     timeToLive: Duration? = null,
-    noinline modification: (T?) -> T?
+    noinline modification: (T?) -> T?,
 ): Boolean =
     modify(key, context.internalSerializersModule.serializer<T>(), maxTries, timeToLive, modification)

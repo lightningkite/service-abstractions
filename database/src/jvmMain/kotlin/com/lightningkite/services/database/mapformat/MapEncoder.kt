@@ -3,12 +3,8 @@
 
 package com.lightningkite.services.database.mapformat
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.SerializationStrategy
-import kotlinx.serialization.descriptors.PolymorphicKind
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.StructureKind
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
@@ -88,6 +84,7 @@ public class MapEncoder(
             serializersModule = config.serializersModule
             encodeDefaults = true
         }
+
         @Suppress("UNCHECKED_CAST")
         val jsonString = json.encodeToString(serializer as kotlinx.serialization.KSerializer<T>, value)
         output.writeField(popTag(), jsonString)
@@ -160,6 +157,7 @@ public class MapEncoder(
                 PolymorphicKind.SEALED, PolymorphicKind.OPEN -> {
                     output.writeField(path, null)
                 }
+
                 else -> {
                     output.writeField(path, null)
                 }
@@ -258,7 +256,7 @@ public class MapEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T
+        value: T,
     ) {
         pushTag(nested(descriptor.getElementName(index)))
         encodeSerializableValue(serializer, value)
@@ -268,7 +266,7 @@ public class MapEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T?
+        value: T?,
     ) {
         pushTag(nested(descriptor.getElementName(index)))
         encodeNullableSerializableValue(serializer, value)
@@ -287,7 +285,7 @@ internal class ConverterEncoder(
     override val serializersModule: SerializersModule = EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> write(value: T) {
+    private fun <T : Any> write(value: T) {
         val conv = converter as ValueConverter<T, Any>
         output.writeField(path, conv.toDatabase(value))
     }
@@ -301,6 +299,7 @@ internal class ConverterEncoder(
     override fun encodeDouble(value: Double): Unit = write(value)
     override fun encodeChar(value: Char): Unit = write(value)
     override fun encodeString(value: String): Unit = write(value)
+
     @ExperimentalSerializationApi
     override fun encodeNull(): Unit = output.writeField(path, null)
 

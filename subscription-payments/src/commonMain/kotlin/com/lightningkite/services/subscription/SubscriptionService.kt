@@ -1,8 +1,8 @@
 package com.lightningkite.services.subscription
 
 import com.lightningkite.services.*
-import com.lightningkite.services.data.WebhookSubservice
-import com.lightningkite.services.database.Database
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -102,7 +102,7 @@ public interface SubscriptionService : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "console"
+        public val url: String = "console",
     ) : Setting<SubscriptionService> {
         public companion object : UrlSettingParser<SubscriptionService>() {
             init {
@@ -133,7 +133,7 @@ public interface SubscriptionService : Service {
     public suspend fun createCustomer(
         email: String,
         name: String? = null,
-        metadata: Map<String, String> = emptyMap()
+        metadata: Map<String, String> = emptyMap(),
     ): SubscriptionCustomerId
 
     /**
@@ -214,7 +214,7 @@ public interface SubscriptionService : Service {
      */
     public suspend fun cancelSubscription(
         subscriptionId: SubscriptionId,
-        immediately: Boolean = false
+        immediately: Boolean = false,
     ): Subscription
 
     /**

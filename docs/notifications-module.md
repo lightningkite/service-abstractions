@@ -8,7 +8,8 @@
 
 ## Overview
 
-The Notifications module provides a unified interface for sending push notifications across multiple platforms. Currently supports Firebase Cloud Messaging (FCM) which can deliver to iOS, Android, and web.
+The Notifications module provides a unified interface for sending push notifications across multiple platforms.
+Currently supports Firebase Cloud Messaging (FCM) which can deliver to iOS, Android, and web.
 
 ### Key Features
 
@@ -27,9 +28,9 @@ The Notifications module provides a unified interface for sending push notificat
 1. Create a Firebase project at https://console.firebase.google.com
 2. Add your iOS/Android/Web apps to the project
 3. Download service account JSON credentials:
-   - Go to Project Settings → Service Accounts
-   - Click "Generate New Private Key"
-   - Save the JSON file securely
+    - Go to Project Settings → Service Accounts
+    - Click "Generate New Private Key"
+    - Save the JSON file securely
 
 ### 2. Configure Notification Service
 
@@ -46,6 +47,7 @@ val notificationService: NotificationService = settings.notifications("push", co
 ```
 
 **Supported URL schemes:**
+
 - `console` - Print notifications to console (development)
 - `test` - Collect notifications in memory for testing
 - `fcm://path/to/credentials.json` - Firebase Cloud Messaging (requires `notifications-fcm` module)
@@ -81,11 +83,13 @@ results.forEach { (token, result) ->
 
 ### What Are Device Tokens?
 
-Device tokens are unique identifiers for each app installation. Clients obtain tokens from FCM and send them to your server.
+Device tokens are unique identifiers for each app installation. Clients obtain tokens from FCM and send them to your
+server.
 
 ### Client-Side Token Registration
 
 **Android (Kotlin):**
+
 ```kotlin
 FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
     if (task.isSuccessful) {
@@ -97,6 +101,7 @@ FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
 ```
 
 **iOS (Swift):**
+
 ```swift
 import FirebaseMessaging
 
@@ -109,6 +114,7 @@ Messaging.messaging().token { token, error in
 ```
 
 **Web (JavaScript):**
+
 ```javascript
 import { getToken } from "firebase/messaging";
 
@@ -162,12 +168,14 @@ suspend fun getUserTokens(userId: String): List<String> {
 ### Token Lifecycle Management
 
 Tokens can become invalid when:
+
 - User uninstalls the app
 - User clears app data
 - Token expires (rare, but FCM may refresh)
 - App is reinstalled
 
 **Handle dead tokens:**
+
 ```kotlin
 val results = notificationService.send(targets, notificationData)
 
@@ -202,6 +210,7 @@ NotificationData(
 ```
 
 **Fields:**
+
 - `title` - Bold text at top
 - `body` - Main message content
 - `imageUrl` - Large image displayed in notification (optional)
@@ -223,6 +232,7 @@ NotificationData(
 ```
 
 **Use cases:**
+
 - Background data sync
 - Cache updates
 - Silent app state changes
@@ -263,6 +273,7 @@ notificationManager.createNotificationChannel(channel)
 ```
 
 **Priority:**
+
 - `NotificationPriority.NORMAL` - Standard priority
 - `NotificationPriority.HIGH` - Wakes device, makes sound
 
@@ -282,11 +293,13 @@ NotificationData(
 ```
 
 **Critical alerts:**
+
 - Bypass Do Not Disturb and mute switch
 - Requires special permission from Apple
 - Use sparingly (emergency alerts only)
 
 **Sounds:**
+
 - Must be < 30 seconds
 - Must be in iOS app bundle
 - Default sound: `"default"`
@@ -309,6 +322,7 @@ NotificationData(
 ```
 
 **Web push requirements:**
+
 - User must grant permission
 - HTTPS required (or localhost for dev)
 - Service worker must be registered
@@ -332,6 +346,7 @@ NotificationData(
 ```
 
 **Use cases:**
+
 - Time-sensitive offers
 - Event reminders
 - Live updates
@@ -351,6 +366,7 @@ NotificationData(
 ```
 
 iOS app code:
+
 ```swift
 func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) {
     if let badgeCount = userInfo["badge"] as? String,
@@ -664,6 +680,7 @@ Use Firebase Console to send test notifications before going live.
 ### Tokens Always Return DeadToken
 
 **Causes:**
+
 - Token format is invalid
 - Token is from wrong Firebase project
 - App not properly configured with Firebase
@@ -673,16 +690,19 @@ Use Firebase Console to send test notifications before going live.
 ### Notifications Not Appearing
 
 **iOS:**
+
 - Check notification permissions granted
 - Verify APNs certificate configured in Firebase
 - Check device isn't in Do Not Disturb mode
 
 **Android:**
+
 - Verify notification channel exists in app
 - Check app isn't in battery optimization
 - Ensure FCM service is running
 
 **Web:**
+
 - Verify HTTPS (or localhost for dev)
 - Check service worker registered
 - User must grant permission
@@ -692,6 +712,7 @@ Use Firebase Console to send test notifications before going live.
 **Cause:** Firebase service account JSON is invalid or not found
 
 **Fix:**
+
 1. Download new service account JSON from Firebase Console
 2. Verify file path in configuration
 3. Check file permissions (must be readable)
@@ -701,6 +722,7 @@ Use Firebase Console to send test notifications before going live.
 **Cause:** Sending too many notifications too quickly
 
 **Fix:**
+
 - Batch sends with delays
 - Implement rate limiting
 - Upgrade Firebase plan if needed
@@ -709,8 +731,10 @@ Use Firebase Console to send test notifications before going live.
 
 ## See Also
 
-- [NotificationService.kt](../notifications/src/commonMain/kotlin/com/lightningkite/services/notifications/NotificationService.kt) - Interface documentation
-- [FcmNotificationClient.kt](../notifications-fcm/src/main/kotlin/com/lightningkite/services/notifications/fcm/FcmNotificationClient.kt) - FCM implementation
+- [NotificationService.kt](../notifications/src/commonMain/kotlin/com/lightningkite/services/notifications/NotificationService.kt) -
+  Interface documentation
+- [FcmNotificationClient.kt](../notifications-fcm/src/main/kotlin/com/lightningkite/services/notifications/fcm/FcmNotificationClient.kt) -
+  FCM implementation
 - [email-module.md](./email-module.md) - Email alternative for longer content
 - [sms-module.md](./sms-module.md) - SMS alternative
 - [Firebase Cloud Messaging Documentation](https://firebase.google.com/docs/cloud-messaging) - Official FCM docs

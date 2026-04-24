@@ -9,13 +9,13 @@ plugins {
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
-    id("org.jetbrains.kotlinx.atomicfu") version "0.29.0"
+    id("org.jetbrains.kotlinx.atomicfu") version "0.32.1"
 }
 
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
@@ -37,19 +37,15 @@ kotlin {
     iosX64()
     iosArm64()
     iosSimulatorArm64()
-    macosX64()
     macosArm64()
 
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(project(path = ":data"))
+                api(project(path = ":data-shared"))
+                implementation(libs.kotlinx.serialization.json)
             }
             kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
@@ -60,38 +56,26 @@ kotlin {
                 implementation(libs.coroutines.testing)
             }
             kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
         val nonJvmMain by creating {
             dependsOn(commonMain)
-            dependencies {
-            }
         }
         val jvmCommonMain by creating {
             dependsOn(commonMain)
-            dependencies {
-            }
         }
         val androidMain by getting {
             dependsOn(jvmCommonMain)
         }
         val jvmMain by getting {
             dependsOn(jvmCommonMain)
-            dependencies {
-            }
         }
-        val jvmTest by getting {
-        }
+        val jvmTest by getting {}
         val jsMain by getting { dependsOn(nonJvmMain) }
         val iosX64Main by getting { dependsOn(nonJvmMain) }
         val iosArm64Main by getting { dependsOn(nonJvmMain) }
         val iosSimulatorArm64Main by getting { dependsOn(nonJvmMain) }
-        val macosX64Main by getting { dependsOn(nonJvmMain) }
         val macosArm64Main by getting { dependsOn(nonJvmMain) }
     }
 }
@@ -101,8 +85,6 @@ dependencies {
         add(it.name, project(":database-processor"))
     }
 }
-
-lkLibrary("lightningkite", "service-abstractions") {}
 
 android {
     namespace = "com.lightningkite.services"
@@ -119,4 +101,12 @@ android {
     dependencies {
         coreLibraryDesugaring(libs.androidDesugaring)
     }
+}
+
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {
+    description.set("A set of classes used in querying and modifying databases.")
 }

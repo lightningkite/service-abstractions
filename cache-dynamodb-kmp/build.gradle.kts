@@ -12,7 +12,8 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
+        freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
@@ -29,7 +30,7 @@ kotlin {
             dependencies {
                 api(project(":cache"))
                 api(awssdk.services.dynamodb)
-                implementation(libs.kotlinx.json)
+                implementation(libs.kotlinx.serialization.json)
                 implementation(libs.coroutines.core)
             }
         }
@@ -41,4 +42,8 @@ kotlin {
     }
 }
 
-lkLibrary("lightningkite", "service-abstractions") {}
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {}

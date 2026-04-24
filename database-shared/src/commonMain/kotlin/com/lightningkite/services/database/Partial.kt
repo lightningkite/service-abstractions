@@ -1,15 +1,13 @@
 package com.lightningkite.services.database
 
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.serializer
+import kotlinx.serialization.*
 import kotlin.jvm.JvmName
 
 // TODO : Optimize for fully complete subobjects
 // TODO : Better handle nullable objects for mod translation
 @Serializable(PartialSerializer::class)
-public data class Partial<T> (
-    public val parts: MutableMap<SerializableProperty<T, *>, Any?> = mutableMapOf()
+public data class Partial<T>(
+    public val parts: MutableMap<SerializableProperty<T, *>, Any?> = mutableMapOf(),
 ) {
 
     public fun total(serializer: KSerializer<T>): T? =

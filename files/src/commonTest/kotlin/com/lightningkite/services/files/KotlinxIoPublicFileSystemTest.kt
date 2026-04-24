@@ -1,7 +1,7 @@
 package com.lightningkite.services.files
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.KFile
+import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.files.test.FileSystemTests
 import kotlin.test.Test
 import kotlin.test.assertFailsWith

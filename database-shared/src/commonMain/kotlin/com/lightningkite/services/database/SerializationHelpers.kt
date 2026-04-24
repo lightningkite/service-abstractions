@@ -3,27 +3,13 @@
 package com.lightningkite.services.database
 
 import kotlinx.serialization.*
-import kotlinx.serialization.builtins.NothingSerializer
-import kotlinx.serialization.builtins.PairSerializer
-import kotlinx.serialization.builtins.TripleSerializer
-import kotlinx.serialization.builtins.nullable
-import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.descriptors.PolymorphicKind
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
-import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.encoding.AbstractDecoder
-import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.CompositeEncoder
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.builtins.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
 import kotlinx.serialization.internal.GeneratedSerializer
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
-import kotlin.reflect.KClass
-import kotlin.reflect.KType
-import kotlin.reflect.typeOf
+import kotlin.reflect.*
 
 
 public abstract class WrappingSerializer<OUTER, INNER>(public val name: String) : KSerializer<OUTER> {
@@ -159,7 +145,7 @@ private val ANY = Any()
 @Suppress("UNCHECKED_CAST")
 private class CheatingBastardDecoder(
     var count: Int = 0,
-    override val serializersModule: SerializersModule = EmptySerializersModule()
+    override val serializersModule: SerializersModule = EmptySerializersModule(),
 ) : AbstractDecoder() {
     var counter = 0
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
@@ -280,7 +266,8 @@ internal fun KSerializer<*>.typeParametersSerializersOrNull2(): Array<KSerialize
 }
 
 private val pairSerialName = PairSerializer(NothingSerializer(), NothingSerializer()).descriptor.serialName
-private val tripleSerialName = TripleSerializer(NothingSerializer(), NothingSerializer(), NothingSerializer()).descriptor.serialName
+private val tripleSerialName =
+    TripleSerializer(NothingSerializer(), NothingSerializer(), NothingSerializer()).descriptor.serialName
 
 @OptIn(InternalSerializationApi::class)
 private fun KSerializer<*>.typeParameterSerializersOrNullImpl(): Array<KSerializer<*>>? = when (descriptor.kind) {
@@ -319,7 +306,8 @@ private fun KSerializer<*>.typeParameterSerializersOrNullImpl(): Array<KSerializ
 }
 
 public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*>>? =
-    if (descriptor.isNullable) typeParameterSerializersOrNullImpl() ?: nullElement()?.typeParameterSerializersOrNullImpl()
+    if (descriptor.isNullable) typeParameterSerializersOrNullImpl()
+        ?: nullElement()?.typeParameterSerializersOrNullImpl()
     else typeParameterSerializersOrNullImpl()
 
 @OptIn(InternalSerializationApi::class)
@@ -361,7 +349,9 @@ public fun KSerializer<*>.childAndTypeParameterSerializersOrNull(): Array<KSeria
 internal val <T> KSerializer<T>.nullable2: KSerializer<T?> get() = if (this.descriptor.isNullable) this as KSerializer<T?> else (this as KSerializer<Any>).nullable as KSerializer<T?>
 
 @Suppress("UNCHECKED_CAST")
-public inline fun <reified T> serializerOrContextual(): KSerializer<T> = serializerOrContextual(typeOf<T>()) as KSerializer<T>
+public inline fun <reified T> serializerOrContextual(): KSerializer<T> =
+    serializerOrContextual(typeOf<T>()) as KSerializer<T>
+
 public fun serializerOrContextual(type: KType): KSerializer<*> {
     val args = type.arguments.map { serializerOrContextual(it.type!!) }
     val kclass = type.classifier as KClass<*>

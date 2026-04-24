@@ -1,11 +1,10 @@
 package com.lightningkite.services.ai.koog
 
-import ai.koog.embeddings.base.Vector as KoogVector
-import com.lightningkite.services.database.Embedding as DbEmbedding
 // Note by Claude: DbSparseEmbedding is imported but unused. Consider removing this import
 // if sparse embedding adapters are not planned. If sparse embedding conversion is needed,
 // add corresponding toDbSparseEmbedding() / toKoogSparseVector() functions.
-import com.lightningkite.services.database.SparseEmbedding as DbSparseEmbedding
+import ai.koog.embeddings.base.Vector as KoogVector
+import com.lightningkite.services.database.Embedding as DbEmbedding
 
 /**
  * Adapters between Koog AI embeddings and database embeddings.

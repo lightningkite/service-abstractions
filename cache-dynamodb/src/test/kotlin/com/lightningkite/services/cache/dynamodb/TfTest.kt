@@ -3,7 +3,6 @@ package com.lightningkite.services.cache.dynamodb
 
 import com.lightningkite.services.Untested
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.test.assertPlannableAws
 import kotlin.test.Test
 

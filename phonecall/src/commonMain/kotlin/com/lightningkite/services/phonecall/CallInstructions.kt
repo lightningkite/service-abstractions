@@ -1,6 +1,6 @@
 package com.lightningkite.services.phonecall
 
-import com.lightningkite.PhoneNumber
+import com.lightningkite.services.data.PhoneNumber
 import kotlinx.serialization.Serializable
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -67,7 +67,7 @@ public sealed class CallInstructions {
     public data class Accept(
         val transcriptionEnabled: Boolean = false,
         val initialMessage: String? = null,
-        val voice: TtsVoice = TtsVoice()
+        val voice: TtsVoice = TtsVoice(),
     ) : CallInstructions()
 
     /**
@@ -91,7 +91,7 @@ public sealed class CallInstructions {
         val text: String,
         val voice: TtsVoice = TtsVoice(),
         val loop: Int = 1,
-        val then: CallInstructions? = null
+        val then: CallInstructions? = null,
     ) : CallInstructions()
 
     /**
@@ -105,7 +105,7 @@ public sealed class CallInstructions {
     public data class Play(
         val url: String,
         val loop: Int = 1,
-        val then: CallInstructions? = null
+        val then: CallInstructions? = null,
     ) : CallInstructions()
 
     /**
@@ -129,7 +129,7 @@ public sealed class CallInstructions {
         val speechEnabled: Boolean = false,
         val actionUrl: String,
         val finishOnKey: String = "#",
-        val then: CallInstructions? = null
+        val then: CallInstructions? = null,
     ) : CallInstructions()
 
     /**
@@ -145,7 +145,7 @@ public sealed class CallInstructions {
         val to: PhoneNumber,
         val timeout: Duration = 30.seconds,
         val callerId: PhoneNumber? = null,
-        val then: CallInstructions? = null
+        val then: CallInstructions? = null,
     ) : CallInstructions()
 
     /**
@@ -174,7 +174,7 @@ public sealed class CallInstructions {
         val waitUrl: String? = null,
         val statusCallbackUrl: String? = null,
         val statusCallbackEvents: List<String> = listOf("join", "leave"),
-        val then: CallInstructions? = null
+        val then: CallInstructions? = null,
     ) : CallInstructions()
 
     /**
@@ -192,7 +192,7 @@ public sealed class CallInstructions {
     @Serializable
     public data class Pause(
         val duration: Duration = 1.seconds,
-        val then: CallInstructions? = null
+        val then: CallInstructions? = null,
     ) : CallInstructions()
 
     /**
@@ -214,7 +214,7 @@ public sealed class CallInstructions {
         val transcribe: Boolean = false,
         val playBeep: Boolean = true,
         val finishOnKey: String = "#",
-        val then: CallInstructions? = null
+        val then: CallInstructions? = null,
     ) : CallInstructions()
 
     /**
@@ -224,7 +224,7 @@ public sealed class CallInstructions {
      */
     @Serializable
     public data class Redirect(
-        val url: String
+        val url: String,
     ) : CallInstructions()
 
     /**
@@ -238,11 +238,11 @@ public sealed class CallInstructions {
     public data class Enqueue(
         val name: String,
         val waitUrl: String? = null,
-        val then: CallInstructions? = null
+        val then: CallInstructions? = null,
     ) : CallInstructions()
 
     @Serializable
-    public data class ImplementationSpecific(val raw: String): CallInstructions()
+    public data class ImplementationSpecific(val raw: String) : CallInstructions()
 
     /**
      * Start bidirectional audio streaming to a WebSocket endpoint.
@@ -287,7 +287,7 @@ public sealed class CallInstructions {
         val websocketUrl: String,
         val track: AudioTrack = AudioTrack.INBOUND,
         val customParameters: Map<String, String> = emptyMap(),
-        val then: CallInstructions? = null
+        val then: CallInstructions? = null,
     ) : CallInstructions() {
         init {
             require(websocketUrl.startsWith("wss://")) { "WebSocket URL (${websocketUrl}) must start with wss://" }

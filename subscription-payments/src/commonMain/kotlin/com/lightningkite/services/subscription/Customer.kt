@@ -20,5 +20,5 @@ public data class Customer(
     val email: String?,
     val name: String?,
     val metadata: Map<String, String> = emptyMap(),
-    val defaultPaymentMethodId: String? = null
+    val defaultPaymentMethodId: String? = null,
 )

@@ -111,5 +111,6 @@ public sealed class SerializableToolParameterType {
 
     @Serializable
     @SerialName("any_of")
-    public data class AnyOf(val types: kotlin.collections.List<SerializableToolParameterDescriptor>) : SerializableToolParameterType()
+    public data class AnyOf(val types: kotlin.collections.List<SerializableToolParameterDescriptor>) :
+        SerializableToolParameterType()
 }

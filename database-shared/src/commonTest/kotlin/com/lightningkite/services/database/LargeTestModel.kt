@@ -1,10 +1,6 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.services.data.GenerateDataClassPaths
-import com.lightningkite.services.data.Index
-import com.lightningkite.services.data.TextIndex
-import com.lightningkite.toEmailAddress
+import com.lightningkite.services.data.*
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
@@ -56,8 +52,8 @@ data class LargeTestModel(
 @GenerateDataClassPaths
 @Serializable
 data class ClassUsedForEmbedding(
-    var value1:String = "default",
-    var value2:Int = 1
+    var value1: String = "default",
+    var value2: Int = 1,
 )
 
 @Serializable

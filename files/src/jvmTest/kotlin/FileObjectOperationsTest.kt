@@ -1,22 +1,18 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.MediaType
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import kotlinx.coroutines.runBlocking
-import kotlin.test.Test
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
-import kotlin.test.fail
+import kotlin.test.*
 
 /**
  * Tests for FileObject operations and edge cases.
  */
 class FileObjectOperationsTest {
 
-    private val fileSystem = PublicFileSystem.Settings("file://build/test-files-ops?serveUrl=http://localhost:8080/files")
-        .invoke("test", TestSettingContext())
+    private val fileSystem =
+        PublicFileSystem.Settings("file://build/test-files-ops?serveUrl=http://localhost:8080/files")
+            .invoke("test", TestSettingContext())
 
     @Test
     fun testCopyToWithNonExistentSource() = runBlocking {
@@ -27,7 +23,7 @@ class FileObjectOperationsTest {
         try {
             source.copyTo(destination)
             fail("Should have thrown")
-        } catch(e: IllegalArgumentException) {
+        } catch (e: IllegalArgumentException) {
             //OK cool
         }
 

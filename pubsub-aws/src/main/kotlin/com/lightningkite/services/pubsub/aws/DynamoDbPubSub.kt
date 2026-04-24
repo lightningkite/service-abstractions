@@ -1,26 +1,21 @@
 package com.lightningkite.services.pubsub.aws
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.get
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
+import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.future.await
-import kotlinx.coroutines.isActive
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
-import software.amazon.awssdk.auth.credentials.AwsCredentials
-import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
+import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.model.*
-import software.amazon.awssdk.services.dynamodb.model.ReturnValue
-import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlin.coroutines.coroutineContext
 import kotlin.math.min
 import kotlin.random.Random
@@ -118,7 +113,8 @@ public class DynamoDbPubSub(
         init {
             PubSub.Settings.register("dynamodb-pubsub") { name, url, context ->
                 // Parse URL: dynamodb-pubsub://[access:secret@]region/tableName[?pollInterval=ms]
-                val regex = Regex("""dynamodb-pubsub://(?:(?<access>[^:]+):(?<secret>[^@]+)@)?(?<region>[^/]+)/(?<tableName>[^?]+)(?:\?(?<params>.+))?""")
+                val regex =
+                    Regex("""dynamodb-pubsub://(?:(?<access>[^:]+):(?<secret>[^@]+)@)?(?<region>[^/]+)/(?<tableName>[^?]+)(?:\?(?<params>.+))?""")
                 val match = regex.matchEntire(url)
                     ?: throw IllegalStateException("Invalid dynamodb-pubsub URL. Expected: dynamodb-pubsub://[access:secret@]region/tableName[?pollInterval=ms]")
 
@@ -193,7 +189,8 @@ public class DynamoDbPubSub(
                         KeySchemaElement.builder().attributeName("seq").keyType(KeyType.RANGE).build()
                     )
                     it.attributeDefinitions(
-                        AttributeDefinition.builder().attributeName("channel").attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder().attributeName("channel").attributeType(ScalarAttributeType.S)
+                            .build(),
                         AttributeDefinition.builder().attributeName("seq").attributeType(ScalarAttributeType.N).build()
                     )
                 }.await()
@@ -273,16 +270,20 @@ public class DynamoDbPubSub(
                     // Strict ordering path: Atomically increment counter (2 DynamoDB operations)
                     val counterResult = client.updateItem {
                         it.tableName(tableName)
-                        it.key(mapOf(
-                            "channel" to AttributeValue.fromS(key),
-                            "seq" to AttributeValue.fromN("0") // seq=0 is reserved for counter
-                        ))
+                        it.key(
+                            mapOf(
+                                "channel" to AttributeValue.fromS(key),
+                                "seq" to AttributeValue.fromN("0") // seq=0 is reserved for counter
+                            )
+                        )
                         it.updateExpression("SET #c = if_not_exists(#c, :zero) + :one")
                         it.expressionAttributeNames(mapOf("#c" to "counter"))
-                        it.expressionAttributeValues(mapOf(
-                            ":zero" to AttributeValue.fromN("0"),
-                            ":one" to AttributeValue.fromN("1")
-                        ))
+                        it.expressionAttributeValues(
+                            mapOf(
+                                ":zero" to AttributeValue.fromN("0"),
+                                ":one" to AttributeValue.fromN("1")
+                            )
+                        )
                         it.returnValues(ReturnValue.UPDATED_NEW)
                     }.await()
 
@@ -294,12 +295,14 @@ public class DynamoDbPubSub(
 
                 client.putItem {
                     it.tableName(tableName)
-                    it.item(mapOf(
-                        "channel" to AttributeValue.fromS(key),
-                        "seq" to AttributeValue.fromN(seq.toString()),
-                        "message" to AttributeValue.fromS(message),
-                        "expires" to AttributeValue.fromN(((now / 1000) + messageTtl.inWholeSeconds).toString())
-                    ))
+                    it.item(
+                        mapOf(
+                            "channel" to AttributeValue.fromS(key),
+                            "seq" to AttributeValue.fromN(seq.toString()),
+                            "message" to AttributeValue.fromS(message),
+                            "expires" to AttributeValue.fromN(((now / 1000) + messageTtl.inWholeSeconds).toString())
+                        )
+                    )
                 }.await()
             }
 
@@ -325,10 +328,12 @@ public class DynamoDbPubSub(
                         val response = client.query {
                             it.tableName(tableName)
                             it.keyConditionExpression("channel = :c AND seq > :s")
-                            it.expressionAttributeValues(mapOf(
-                                ":c" to AttributeValue.fromS(key),
-                                ":s" to AttributeValue.fromN(lastSeq)
-                            ))
+                            it.expressionAttributeValues(
+                                mapOf(
+                                    ":c" to AttributeValue.fromS(key),
+                                    ":s" to AttributeValue.fromN(lastSeq)
+                                )
+                            )
                             it.scanIndexForward(true) // Oldest first
                         }.await()
 
@@ -355,10 +360,12 @@ public class DynamoDbPubSub(
                             // Delete message after processing (TTL will clean up anyway, but this reduces storage)
                             client.deleteItem {
                                 it.tableName(tableName)
-                                it.key(mapOf(
-                                    "channel" to AttributeValue.fromS(key),
-                                    "seq" to AttributeValue.fromN(seq)
-                                ))
+                                it.key(
+                                    mapOf(
+                                        "channel" to AttributeValue.fromS(key),
+                                        "seq" to AttributeValue.fromN(seq)
+                                    )
+                                )
                             }.whenComplete { _, error ->
                                 if (error != null) {
                                     logger.debug(error) { "Failed to delete message channel=$key seq=$seq (TTL will clean up)" }
@@ -399,16 +406,20 @@ public class DynamoDbPubSub(
                     // Strict ordering path: Atomically increment counter (2 DynamoDB operations)
                     val counterResult = client.updateItem {
                         it.tableName(tableName)
-                        it.key(mapOf(
-                            "channel" to AttributeValue.fromS(key),
-                            "seq" to AttributeValue.fromN("0") // seq=0 is reserved for counter
-                        ))
+                        it.key(
+                            mapOf(
+                                "channel" to AttributeValue.fromS(key),
+                                "seq" to AttributeValue.fromN("0") // seq=0 is reserved for counter
+                            )
+                        )
                         it.updateExpression("SET #c = if_not_exists(#c, :zero) + :one")
                         it.expressionAttributeNames(mapOf("#c" to "counter"))
-                        it.expressionAttributeValues(mapOf(
-                            ":zero" to AttributeValue.fromN("0"),
-                            ":one" to AttributeValue.fromN("1")
-                        ))
+                        it.expressionAttributeValues(
+                            mapOf(
+                                ":zero" to AttributeValue.fromN("0"),
+                                ":one" to AttributeValue.fromN("1")
+                            )
+                        )
                         it.returnValues(ReturnValue.UPDATED_NEW)
                     }.await()
 
@@ -420,12 +431,14 @@ public class DynamoDbPubSub(
 
                 client.putItem {
                     it.tableName(tableName)
-                    it.item(mapOf(
-                        "channel" to AttributeValue.fromS(key),
-                        "seq" to AttributeValue.fromN(seq.toString()),
-                        "message" to AttributeValue.fromS(value),
-                        "expires" to AttributeValue.fromN(((now / 1000) + messageTtl.inWholeSeconds).toString())
-                    ))
+                    it.item(
+                        mapOf(
+                            "channel" to AttributeValue.fromS(key),
+                            "seq" to AttributeValue.fromN(seq.toString()),
+                            "message" to AttributeValue.fromS(value),
+                            "expires" to AttributeValue.fromN(((now / 1000) + messageTtl.inWholeSeconds).toString())
+                        )
+                    )
                 }.await()
             }
 
@@ -451,10 +464,12 @@ public class DynamoDbPubSub(
                         val response = client.query {
                             it.tableName(tableName)
                             it.keyConditionExpression("channel = :c AND seq > :s")
-                            it.expressionAttributeValues(mapOf(
-                                ":c" to AttributeValue.fromS(key),
-                                ":s" to AttributeValue.fromN(lastSeq)
-                            ))
+                            it.expressionAttributeValues(
+                                mapOf(
+                                    ":c" to AttributeValue.fromS(key),
+                                    ":s" to AttributeValue.fromN(lastSeq)
+                                )
+                            )
                             it.scanIndexForward(true)
                         }.await()
 
@@ -477,10 +492,12 @@ public class DynamoDbPubSub(
                             // Delete message after processing (TTL will clean up anyway, but this reduces storage)
                             client.deleteItem {
                                 it.tableName(tableName)
-                                it.key(mapOf(
-                                    "channel" to AttributeValue.fromS(key),
-                                    "seq" to AttributeValue.fromN(seq)
-                                ))
+                                it.key(
+                                    mapOf(
+                                        "channel" to AttributeValue.fromS(key),
+                                        "seq" to AttributeValue.fromN(seq)
+                                    )
+                                )
                             }.whenComplete { _, error ->
                                 if (error != null) {
                                     logger.debug(error) { "Failed to delete message channel=$key seq=$seq (TTL will clean up)" }

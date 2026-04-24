@@ -1,31 +1,19 @@
 package com.lightningkite.services.database.jsonfile
 
-import com.lightningkite.services.data.KFile
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.database.*
+import com.lightningkite.services.recordExceptionWithFingerprint
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.Span
-import io.opentelemetry.api.trace.SpanBuilder
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.api.trace.*
 import io.opentelemetry.extension.kotlin.asContextElement
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ObsoleteCoroutinesApi
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.actor
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.*
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
 import java.io.Closeable
-import java.util.Collections
+import java.util.*
 
 /**
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
@@ -36,7 +24,7 @@ public class JsonFileTable<Model : Any>(
     serializer: KSerializer<Model>,
     public val file: KFile,
     public val tableName: String,
-    private val tracer: Tracer?
+    private val tracer: Tracer?,
 ) : InMemoryTable<Model>(
     data = Collections.synchronizedList(ArrayList()),
     serializer = serializer
@@ -48,7 +36,7 @@ public class JsonFileTable<Model : Any>(
     private suspend inline fun <R> traced(
         operation: String,
         crossinline attributes: SpanBuilder.() -> Unit = {},
-        crossinline block: suspend (Span?) -> R
+        crossinline block: suspend (Span?) -> R,
     ): R {
         return if (tracer != null) {
             val span = tracer.spanBuilder("jsonfile.$operation")
@@ -119,7 +107,7 @@ public class JsonFileTable<Model : Any>(
         orderBy: List<SortPart<Model>>,
         skip: Int,
         limit: Int,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<Model> = flow {
         val results = traced(
             operation = "find",
@@ -145,7 +133,7 @@ public class JsonFileTable<Model : Any>(
 
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>
+        groupBy: DataClassPath<Model, Key>,
     ): Map<Key, Int> = traced(
         operation = "groupCount",
         attributes = {
@@ -160,7 +148,7 @@ public class JsonFileTable<Model : Any>(
     override suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: DataClassPath<Model, N>
+        property: DataClassPath<Model, N>,
     ): Double? = traced(
         operation = "aggregate",
         attributes = {
@@ -175,7 +163,7 @@ public class JsonFileTable<Model : Any>(
         aggregate: Aggregate,
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>
+        property: DataClassPath<Model, N>,
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
         attributes = {
@@ -200,7 +188,7 @@ public class JsonFileTable<Model : Any>(
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> = traced(
         operation = "replaceOne"
     ) { span ->
@@ -212,7 +200,7 @@ public class JsonFileTable<Model : Any>(
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = traced(
         operation = "replaceOneIgnoringResult"
     ) { span ->
@@ -224,7 +212,7 @@ public class JsonFileTable<Model : Any>(
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> = traced(
         operation = "upsertOne"
     ) { span ->
@@ -237,7 +225,7 @@ public class JsonFileTable<Model : Any>(
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean = traced(
         operation = "upsertOneIgnoringResult"
     ) { span ->
@@ -249,7 +237,7 @@ public class JsonFileTable<Model : Any>(
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> = traced(
         operation = "updateOne"
     ) { span ->
@@ -261,7 +249,7 @@ public class JsonFileTable<Model : Any>(
     override suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = traced(
         operation = "updateOneIgnoringResult"
     ) { span ->
@@ -272,7 +260,7 @@ public class JsonFileTable<Model : Any>(
 
     override suspend fun updateMany(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): CollectionChanges<Model> = traced(
         operation = "updateMany"
     ) { span ->
@@ -283,7 +271,7 @@ public class JsonFileTable<Model : Any>(
 
     override suspend fun updateManyIgnoringResult(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): Int = traced(
         operation = "updateManyIgnoringResult"
     ) { span ->
@@ -294,7 +282,7 @@ public class JsonFileTable<Model : Any>(
 
     override suspend fun deleteOne(
         condition: Condition<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Model? = traced(
         operation = "deleteOne"
     ) { span ->
@@ -305,7 +293,7 @@ public class JsonFileTable<Model : Any>(
 
     override suspend fun deleteOneIgnoringOld(
         condition: Condition<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean = traced(
         operation = "deleteOneIgnoringOld"
     ) { span ->
@@ -334,7 +322,7 @@ public class JsonFileTable<Model : Any>(
         vectorField: DataClassPath<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> = flow {
         val results = traced(
             operation = "findSimilar",
@@ -356,7 +344,7 @@ public class JsonFileTable<Model : Any>(
         vectorField: DataClassPath<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> = flow {
         val results = traced(
             operation = "findSimilarSparse",

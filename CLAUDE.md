@@ -4,9 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Service Abstractions is a Kotlin Multiplatform library that provides abstract interfaces for common backend infrastructure services (databases, caches, file systems, email, SMS, etc.) with multiple implementations. This allows applications to switch between different service providers (e.g., MongoDB vs PostgreSQL, Redis vs Memcached) via configuration without code changes.
+Service Abstractions is a Kotlin Multiplatform library that provides abstract interfaces for common backend
+infrastructure services (databases, caches, file systems, email, SMS, etc.) with multiple implementations. This allows
+applications to switch between different service providers (e.g., MongoDB vs PostgreSQL, Redis vs Memcached) via
+configuration without code changes.
 
 **Key Dependencies:**
+
 - kotlin-logging
 - KotlinX Serialization
 - KotlinX Coroutines
@@ -15,6 +19,7 @@ Service Abstractions is a Kotlin Multiplatform library that provides abstract in
 ## Build and Test Commands
 
 ### Building
+
 ```bash
 # Build all modules
 ./gradlew build
@@ -25,6 +30,7 @@ Service Abstractions is a Kotlin Multiplatform library that provides abstract in
 ```
 
 ### Testing
+
 ```bash
 # Run all tests
 ./gradlew allTests
@@ -44,6 +50,7 @@ Service Abstractions is a Kotlin Multiplatform library that provides abstract in
 ```
 
 ### Platform-Specific Tests
+
 ```bash
 # JavaScript tests
 ./gradlew jsTest
@@ -56,6 +63,7 @@ Service Abstractions is a Kotlin Multiplatform library that provides abstract in
 ```
 
 ### Publishing (Internal)
+
 ```bash
 # Publish to local Maven
 ./gradlew publishToMavenLocal
@@ -65,7 +73,8 @@ Service Abstractions is a Kotlin Multiplatform library that provides abstract in
 
 ### Settings System
 
-The project uses a **Settings-based configuration pattern** where services are instantiated from serializable configuration objects:
+The project uses a **Settings-based configuration pattern** where services are instantiated from serializable
+configuration objects:
 
 ```kotlin
 @Serializable
@@ -81,8 +90,10 @@ val cache = settings.cache("app-cache", context)
 ```
 
 **Key Components:**
+
 - `Setting<T>`: Functional interface that creates service instances
-- `SettingContext`: Context object passed to all services during instantiation (contains SerializersModule, OpenTelemetry, shared resources)
+- `SettingContext`: Context object passed to all services during instantiation (contains SerializersModule,
+  OpenTelemetry, shared resources)
 - `UrlSettingParser`: Registry pattern that maps URL schemes to service factories
 
 ### Service Abstraction Pattern
@@ -108,6 +119,7 @@ interface Service {
 - **database-shared/**: Shared types for database abstraction (`Condition`, `Modification`, `SortPart`)
 
 #### Database Modules
+
 - **database/**: Abstract `Database` and `Table` interfaces, `InMemoryDatabase` implementation
 - **database-processor/**: KSP code generator for type-safe database queries
 - **database-mongodb/**: MongoDB implementation
@@ -116,6 +128,7 @@ interface Service {
 - **database-test/**: Shared test suite used by all database implementations
 
 #### Cache Modules
+
 - **cache/**: Abstract `Cache` interface, in-memory MapCache
 - **cache-redis/**: Redis implementation
 - **cache-memcached/**: Memcached implementation
@@ -123,6 +136,7 @@ interface Service {
 - **cache-test/**: Shared test suite
 
 #### Other Service Modules
+
 - **files/**: File system abstraction (`PublicFileSystem`)
 - **files-s3/**: S3 implementation
 - **files-client/**: HTTP client for file systems
@@ -136,6 +150,7 @@ interface Service {
 - **notifications-fcm/**: Firebase Cloud Messaging implementation
 
 #### Observability
+
 - **otel-jvm/**: OpenTelemetry integration for JVM
 
 ### Database Abstraction in Detail
@@ -143,6 +158,7 @@ interface Service {
 The database abstraction provides **type-safe queries** via KSP code generation:
 
 **Model Definition:**
+
 ```kotlin
 @GenerateDataClassPaths
 @Serializable
@@ -210,13 +226,15 @@ This ensures all implementations satisfy the same contract.
 
 ### Testing with Real Services
 
-Many tests require real service instances (MongoDB, Redis, etc.). URL schemes with `-test` suffix (e.g., `mongodb-test://`) often start ephemeral instances for testing.
+Many tests require real service instances (MongoDB, Redis, etc.). URL schemes with `-test` suffix (e.g.,
+`mongodb-test://`) often start ephemeral instances for testing.
 
 ## Important Patterns
 
 ### URL-Based Configuration
 
 Services use URL strings for configuration. Common schemes:
+
 - `ram` or `ram://` - In-memory implementation
 - `mongodb://...` - MongoDB
 - `postgresql://...` - PostgreSQL
@@ -226,11 +244,13 @@ Services use URL strings for configuration. Common schemes:
 
 ### Serverless Awareness
 
-Services support `disconnect()`/`connect()` for serverless environments (AWS Lambda, SnapStart) where long-lived connections aren't guaranteed.
+Services support `disconnect()`/`connect()` for serverless environments (AWS Lambda, SnapStart) where long-lived
+connections aren't guaranteed.
 
 ### Serialization
 
-All services use `context.internalSerializersModule` for consistent serialization. Custom types must be registered in the SerializersModule.
+All services use `context.internalSerializersModule` for consistent serialization. Custom types must be registered in
+the SerializersModule.
 
 ### Explicit API Mode
 

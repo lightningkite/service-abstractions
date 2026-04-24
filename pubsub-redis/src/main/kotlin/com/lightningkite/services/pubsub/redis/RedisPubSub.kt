@@ -1,19 +1,15 @@
 package com.lightningkite.services.pubsub.redis
 
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
+import com.lightningkite.services.recordExceptionWithFingerprint
 import io.lettuce.core.RedisClient
 import io.lettuce.core.resource.ClientResources
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.api.trace.*
 import io.opentelemetry.instrumentation.lettuce.v5_1.LettuceTelemetry
 import kotlinx.coroutines.flow.FlowCollector
-import kotlinx.coroutines.reactive.asFlow
-import kotlinx.coroutines.reactive.awaitFirst
-import kotlinx.coroutines.reactive.collect
+import kotlinx.coroutines.reactive.*
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import reactor.core.publisher.Flux
@@ -142,13 +138,14 @@ import reactor.core.publisher.Mono
 public class RedisPubSub(
     override val name: String,
     override val context: SettingContext,
-    private val client: RedisClient
+    private val client: RedisClient,
 ) : PubSub {
     private val tracer: Tracer? = context.openTelemetry?.getTracer("pubsub-redis")
     private val json = Json { serializersModule = context.internalSerializersModule }
 
     public companion object {
         public fun PubSub.Settings.Companion.redis(url: String): PubSub.Settings = PubSub.Settings("redis://$url")
+
         init {
             PubSub.Settings.register("redis") { name, url, context ->
                 val telemetry = context.openTelemetry?.let { LettuceTelemetry.create(it) }

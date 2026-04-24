@@ -1,9 +1,6 @@
 package com.lightningkite.services.ai.koog
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Tests for URL parsing and serialization of settings classes.
@@ -14,7 +11,7 @@ class UrlParsingTest {
     @Test
     fun testLLMClientAndModelSettingsSerialization() {
         val url = "openai://gpt-4o?apiKey=test-key"
-        val settings = LLMClientAndModelSettings(url)
+        val settings = LLMClientAndModel.Settings(url)
 
         assertEquals(url, settings.url)
     }
@@ -22,7 +19,7 @@ class UrlParsingTest {
     @Test
     fun testLLMClientAndModelSettingsUrlWithoutQueryParams() {
         val url = "anthropic://claude-sonnet-4-5"
-        val settings = LLMClientAndModelSettings(url)
+        val settings = LLMClientAndModel.Settings(url)
 
         assertEquals(url, settings.url)
     }
@@ -30,14 +27,14 @@ class UrlParsingTest {
     @Test
     fun testLLMClientAndModelSettingsWithMultipleParams() {
         val url = "openai://gpt-4o?apiKey=test-key&param2=value2"
-        val settings = LLMClientAndModelSettings(url)
+        val settings = LLMClientAndModel.Settings(url)
 
         assertEquals(url, settings.url)
     }
 
     @Test
     fun testKnownModelsMapIsPopulated() {
-        val knownModels = LLMClientAndModelSettings.knownModels
+        val knownModels = LLMClientAndModel.Settings.knownModels
 
         assertNotNull(knownModels)
         assertTrue(knownModels.isNotEmpty(), "Known models map should not be empty")
@@ -51,7 +48,7 @@ class UrlParsingTest {
 
     @Test
     fun testKnownModelsContainsProviderInformation() {
-        val knownModels = LLMClientAndModelSettings.knownModels
+        val knownModels = LLMClientAndModel.Settings.knownModels
 
         // Verify that keys contain provider information
         val keys = knownModels.keys
@@ -65,7 +62,7 @@ class UrlParsingTest {
 
     @Test
     fun testAllKnownModelsHaveValidIds() {
-        val knownModels = LLMClientAndModelSettings.knownModels
+        val knownModels = LLMClientAndModel.Settings.knownModels
 
         knownModels.values.forEach { model ->
             assertTrue(model.id.isNotBlank(), "Model ID should not be blank: $model")

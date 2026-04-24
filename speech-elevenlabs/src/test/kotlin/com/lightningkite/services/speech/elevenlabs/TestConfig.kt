@@ -1,7 +1,7 @@
 package com.lightningkite.services.speech.elevenlabs
 
 import java.io.File
-import java.util.Properties
+import java.util.*
 
 /**
  * Test configuration that reads API keys from environment variables

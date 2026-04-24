@@ -23,7 +23,7 @@ public data class VoiceInfo(
     val description: String? = null,
     val previewUrl: String? = null,
     val supportedLanguages: List<String> = emptyList(),
-    val labels: Map<String, String> = emptyMap()
+    val labels: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -47,7 +47,7 @@ public data class TtsVoiceConfig(
     val similarityBoost: Float = 0.75f,
     val style: Float = 0f,
     val speakerBoost: Boolean = true,
-    val ssml: Boolean = false
+    val ssml: Boolean = false,
 )
 
 /**
@@ -63,7 +63,7 @@ public data class TtsSynthesisOptions(
     val model: String? = null,
     val outputFormat: AudioFormat = AudioFormat.MP3_44100_128,
     val speed: Float = 1.0f,
-    val seed: Int? = null
+    val seed: Int? = null,
 )
 
 /**
@@ -80,7 +80,7 @@ public data class TtsSynthesisOptions(
 public enum class AudioFormat(
     public val mediaType: String,
     public val sampleRate: Int,
-    public val bitrate: Int? = null
+    public val bitrate: Int? = null,
 ) {
     /** MP3 at 44.1kHz, 128kbps - Good balance of quality and size */
     MP3_44100_128("audio/mpeg", 44100, 128),
