@@ -21,19 +21,19 @@ dependencies {
     testImplementation(libs.greenmail)
 
     // Lightning Server for webhook testing demo
-//    testImplementation(libs.lightningServer.core) {
-//        exclude(group = "com.lightningkite.services")
-//    }
+    testImplementation(libs.lightningServer.core) {
+        exclude(group = "com.lightningkite.services")
+    }
     testImplementation(project(path = ":cache"))
     testImplementation(project(path = ":database"))
     testImplementation(project(path = ":otel-jvm"))
     testImplementation(project(path = ":pubsub"))
-//    testImplementation(libs.lightningServer.typed) {
-//        exclude(group = "com.lightningkite.services")
-//    }
-//    testImplementation(libs.lightningServer.engine.netty) {
-//        exclude(group = "com.lightningkite.services")
-//    }
+    testImplementation(libs.lightningServer.typed) {
+        exclude(group = "com.lightningkite.services")
+    }
+    testImplementation(libs.lightningServer.engine.netty) {
+        exclude(group = "com.lightningkite.services")
+    }
     testImplementation(libs.logBackClassic)
 }
 

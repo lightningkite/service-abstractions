@@ -2,6 +2,7 @@ package com.lightningkite.services.files
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.*
+import com.lightningkite.services.kfile.workingDirectory
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.HMAC
 import kotlinx.coroutines.runBlocking

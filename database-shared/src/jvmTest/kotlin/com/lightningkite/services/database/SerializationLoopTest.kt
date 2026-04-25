@@ -1,8 +1,7 @@
 // by Claude - Comprehensive serialization loop test for all Condition and Modification types
 package com.lightningkite.services.database
 
-import com.lightningkite.GeoCoordinate
-import com.lightningkite.services.database.*
+import com.lightningkite.services.data.GeoCoordinate
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals

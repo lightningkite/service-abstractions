@@ -29,7 +29,7 @@ kotlinXSerialization = "1.11.0"
 ksp = "2.3.6"
 ktor = "3.4.3"
 lettuce = "6.7.1.RELEASE"
-#lightningServer = "5.0.0-prerelease-420"
+lightningServer = "5.0.0"
 lkGradleHelpers = "4.0.7"
 logBackClassic = "1.5.32"
 memcached = "2.4.9"
@@ -98,9 +98,9 @@ ktor-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version = { re
 ktor-http = { module = "io.ktor:ktor-http ", version = { ref = "ktor" } }
 lettuce = { module = "io.lettuce:lettuce-core", version = { ref = "lettuce" } }
 lettuce-otel = { module = "io.opentelemetry.instrumentation:opentelemetry-lettuce-5.1", version = { ref = "openTelemetryInstrumentationAlpha" } }
-#lightningServer-core = { module = "com.lightningkite.lightningserver:core", version.ref = "lightningServer" }
-#lightningServer-engine-netty = { module = "com.lightningkite.lightningserver:engine-netty", version.ref = "lightningServer" }
-#lightningServer-typed = { module = "com.lightningkite.lightningserver:typed", version.ref = "lightningServer" }
+lightningServer-core = { module = "com.lightningkite.lightningserver:core", version.ref = "lightningServer" }
+lightningServer-engine-netty = { module = "com.lightningkite.lightningserver:engine-netty", version.ref = "lightningServer" }
+lightningServer-typed = { module = "com.lightningkite.lightningserver:typed", version.ref = "lightningServer" }
 lkGradleHelpers = { module = "com.lightningkite:lk-gradle-helpers", version = { ref = "lkGradleHelpers" } }
 logBackClassic = { module = "ch.qos.logback:logback-classic", version = { ref = "logBackClassic" } }
 memcached = { module = "com.googlecode.xmemcached:xmemcached", version = { ref = "memcached" } }
