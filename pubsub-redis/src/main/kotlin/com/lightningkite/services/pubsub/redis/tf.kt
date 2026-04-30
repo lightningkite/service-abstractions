@@ -7,7 +7,7 @@ import kotlinx.datetime.LocalTime
 import kotlinx.serialization.json.JsonPrimitive
 
 @Untested
-context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Settings>.awsElasticacheRedis(
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<PubSub.Settings>.awsElasticacheRedis(
     type: String = "cache.t2.micro",
     parameterGroupName: String = "default.redis7",
     count: Int = 1,
@@ -19,10 +19,15 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Setting
     )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+
     emitter.emit(name) {
-        "resource.aws_elasticache_subnet_group.${name}" {
-            "name" - "${emitter.projectPrefix}-${name}"
-            "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
+        if (vpcInfo != null) {
+            "resource.aws_elasticache_subnet_group.${name}" {
+                "name" - "${emitter.projectPrefix}-${name}"
+                "subnet_ids" - vpcInfo.privateSubnets
+            }
         }
         "resource.aws_elasticache_cluster.${name}" {
             "cluster_id" - "${emitter.projectPrefix}-${name}"
@@ -31,8 +36,12 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Setting
             "num_cache_nodes" - count
             "parameter_group_name" - parameterGroupName
             "port" - 6379
-            "security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
-            "subnet_group_name" - expression("aws_elasticache_subnet_group.${name}.name")
+            if (vpcInfo != null) {
+                "security_group_ids" - listOf<String>(vpcInfo.securityGroup)
+                "subnet_group_name" - expression("aws_elasticache_subnet_group.${name}.name")
+            } else {
+
+            }
         }
     }
 }
@@ -46,7 +55,7 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Setting
  * @return A TerraformServiceResult with the configuration for the Redis cluster.
  */
 @Untested
-context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Settings>.awsElasticacheRedisServerless(
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<PubSub.Settings>.awsElasticacheRedisServerless(
     version: String = "1.6",
     dailySnapshotTime: LocalTime = LocalTime(9, 0),
     maxEcpuPerSecond: Int = 5000,
@@ -59,6 +68,8 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Setting
     )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
     emitter.emit(name) {
         "resource.aws_elasticache_serverless_cache.${name}" {
             "name" - "${emitter.projectPrefix}-${name}"
@@ -75,8 +86,10 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Setting
             "daily_snapshot_time" - dailySnapshotTime.toString()
             "major_engine_version" - version
             "snapshot_retention_limit" - snapshotRetentionLimit
-            "security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
-            "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
+            if (vpcInfo != null) {
+                "security_group_ids" - listOf<String>(vpcInfo.securityGroup)
+                "subnet_ids" - vpcInfo.privateSubnets
+            }
         }
     }
 }

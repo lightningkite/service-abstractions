@@ -29,11 +29,15 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+
     emitter.emit(name) {
-        if (emitter is TerraformEmitterAwsVpc) {
+
+        vpcInfo?.also { vpcInfo ->
             "resource.aws_db_subnet_group.${name}" {
                 "name" - "${emitter.projectPrefix}-${name}"
-                "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
+                "subnet_ids" - vpcInfo.privateSubnets
             }
         }
         "resource.random_password.${name}" {
@@ -46,14 +50,14 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "engine" - "aurora-postgresql"
             "engine_mode" - "provisioned"
             "engine_version" - "13.6"
-            "database_name" - "${name}"
+            "database_name" - name
             "master_username" - "master"
             "master_password" - expression("random_password.${name}.result")
             "skip_final_snapshot" - true
             "final_snapshot_identifier" - "${emitter.projectPrefix}-${name}"
 
-            if (emitter is TerraformEmitterAwsVpc) {
-                "vpc_security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
+            vpcInfo?.also { vpcInfo ->
+                "vpc_security_group_ids" - listOf<String>(vpcInfo.securityGroup)
                 "db_subnet_group_name" - expression("aws_db_subnet_group.${name}.name")
             }
 
@@ -63,13 +67,13 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             }
         }
         "resource.aws_rds_cluster_instance.${name}" {
-            "publicly_accessible" - (emitter is TerraformEmitterAwsVpc)
+            "publicly_accessible" - (vpcInfo != null)
             "cluster_identifier" - expression("aws_rds_cluster.${name}.id")
             "instance_class" - "db.serverless"
             "engine" - expression("aws_rds_cluster.${name}.engine")
             "engine_version" - expression("aws_rds_cluster.${name}.engine_version")
 
-            if (emitter is TerraformEmitterAwsVpc) {
+            if (vpcInfo != null) {
                 "db_subnet_group_name" - expression("aws_db_subnet_group.${name}.name")
             }
         }
@@ -100,11 +104,14 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
     )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+
     emitter.emit(name) {
-        if (emitter is TerraformEmitterAwsVpc) {
+        vpcInfo?.also { vpcInfo ->
             "resource.aws_db_subnet_group.${name}" {
                 "name" - "${emitter.projectPrefix}-${name}"
-                "subnet_ids" - (expression(emitter.applicationVpc.privateSubnets))
+                "subnet_ids" - vpcInfo.privateSubnets
             }
         }
         "resource.random_password.${name}" {
@@ -117,15 +124,15 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "engine" - "aurora-postgresql"
             "engine_mode" - "serverless"
             "engine_version" - "10.18"
-            "database_name" - "${name}"
+            "database_name" - name
             "master_username" - "master"
             "master_password" - expression("random_password.${name}.result")
             "skip_final_snapshot" - true
             "final_snapshot_identifier" - "${emitter.projectPrefix}-${name}"
             "enable_http_endpoint" - true
 
-            if (emitter is TerraformEmitterAwsVpc) {
-                "vpc_security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
+            vpcInfo?.also { vpcInfo ->
+                "vpc_security_group_ids" - listOf<String>(vpcInfo.securityGroup)
                 "db_subnet_group_name" - expression("aws_db_subnet_group.${name}.name")
             }
 

@@ -5,6 +5,11 @@ import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+public data class MongoAutoScale(
+    val minSize: String = "M10",
+    val maxSize: String = "M40",
+)
+
 
 context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.mongodbAtlas(
@@ -12,8 +17,10 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     backupEnabled: Boolean = true,
     atlasSearch: Boolean = true,
     zoneName: String? = null,
-    minSize: String = "M10",
-    maxSize: String = "M40",
+    instanceSize: String = "M10",
+    autoScale: MongoAutoScale? = null,
+    electableNodeCount: Int = 3,
+    analyticNodeCount: Int = 1,
     existingProjectId: String? = null,
 ): Unit {
     if (!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
@@ -38,7 +45,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
 
         val projectId = if (existingProjectId == null) {
             "resource.mongodbatlas_project.$name" {
-                "name" - "$projectName"
+                "name" - projectName
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -55,31 +62,35 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
         }
         "resource.mongodbatlas_advanced_cluster.$name" {
             "project_id" - projectId
-            "name" - "$projectName"
+            "name" - projectName
             "cluster_type" - "REPLICASET"
-
             "backup_enabled" - backupEnabled
+            if (autoScale != null)
+                "use_effective_fields" - true
 
             "replication_specs" - listOf(
                 terraformJsonObject {
                     "zone_name" - zoneName
                     "region_configs" - listOf(
                         terraformJsonObject {
-                            "auto_scaling" {
-                                "compute_enabled" - true
-                                "compute_min_instance_size" - minSize
-                                "compute_max_instance_size" - maxSize
-                                "compute_scale_down_enabled" - true
-                                "disk_gb_enabled" - true
+                            if (autoScale != null) {
+                                "auto_scaling" {
+                                    "compute_enabled" - true
+                                    "compute_min_instance_size" - autoScale.minSize
+                                    "compute_max_instance_size" - autoScale.maxSize
+                                    "compute_scale_down_enabled" - true
+                                    "disk_gb_enabled" - true
+                                }
                             }
                             "electable_specs" {
-                                "instance_size" - minSize
-                                "node_count" - 3
+                                "instance_size" - instanceSize
+                                "node_count" - electableNodeCount
                             }
-                            "analytics_specs" {
-                                "instance_size" - minSize
-                                "node_count" - 1
-                            }
+                            if (analyticNodeCount > 0)
+                                "analytics_specs" {
+                                    "instance_size" - instanceSize
+                                    "node_count" - analyticNodeCount
+                                }
                             "priority" - 7
                             "provider_name" - "AWS"
                             "region_name" - region
@@ -105,9 +116,10 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                 }
             )
         }
-        (emitter as? TerraformEmitterAwsVpc)?.let { emitter ->
+
+        (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
             val atlasCidr = "192.168.248.0/21"
-            val cidr = emitter.applicationVpc.cidr
+            val cidr = vpcInfo.cidr
             // MongoDB ATLAS VPC Peer Conf
             "data.aws_caller_identity.${this@mongodbAtlas.name}_current" {}
             "resource.mongodbatlas_network_peering.atlas_network_peering" {
@@ -116,7 +128,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                 "container_id" - expression("one(values(mongodbatlas_advanced_cluster.${name}.replication_specs[0].container_id))")
                 "provider_name" - "AWS"
                 "route_table_cidr_block" - cidr
-                "vpc_id" - expression(emitter.applicationVpc.id)
+                "vpc_id" - vpcInfo.id
                 "aws_account_id" - expression("data.aws_caller_identity.${this@mongodbAtlas.name}_current.account_id")
             }
             // IP Whitelist on ATLAS side
@@ -131,25 +143,19 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                 "vpc_peering_connection_id" - expression("mongodbatlas_network_peering.atlas_network_peering.connection_id")
                 "auto_accept" - true
             }
-            "data.aws_vpc_peering_connection.vpc_peering_conn_ds" {
-                "vpc_id" - expression("mongodbatlas_network_peering.atlas_network_peering.atlas_vpc_name")
-                "cidr_block" - atlasCidr
-                // by Claude: removed peer_region - it's a computed attribute in AWS provider 6.x, not configurable
-                "depends_on" - listOf("aws_vpc_peering_connection_accepter.peer")
-            }
             "data.aws_route_table.application_subnets_route_table" {
-                "subnet_id" - expression("element(${emitter.applicationVpc.applicationSubnets}, 0)")
+                "subnet_id" - vpcInfo.applicationSubnet
             }
             // VPC Peer Device to ATLAS Route Table Association on AWS
             "resource.aws_route.aws_peer_to_atlas_route_1" {
                 "route_table_id" - expression("data.aws_route_table.application_subnets_route_table.id")
                 "destination_cidr_block" - atlasCidr
-                "vpc_peering_connection_id" - expression("data.aws_vpc_peering_connection.vpc_peering_conn_ds.id")
+                "vpc_peering_connection_id" - expression("aws_vpc_peering_connection_accepter.peer.id")
             }
             "resource.aws_vpc_security_group_egress_rule" {
                 "atlas" {
                     "cidr_ipv4" - "192.168.248.0/21"
-                    "security_group_id" - expression(emitter.applicationVpc.securityGroup)
+                    "security_group_id" - vpcInfo.securityGroup
                     "ip_protocol" - "tcp"
                     "from_port" - 27015
                     "to_port" - 27017
@@ -201,7 +207,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
 
         val projectId = if (existingProjectId == null) {
             "resource.mongodbatlas_project.$name" {
-                "name" - "$projectName"
+                "name" - projectName
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -218,7 +224,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
         }
         "resource.mongodbatlas_advanced_cluster.$name" {
             "project_id" - projectId
-            "name" - "$projectName"
+            "name" - projectName
             "cluster_type" - "REPLICASET"
 
             "replication_specs" - listOf(
@@ -296,7 +302,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
         val region1 = emitter.applicationRegion.uppercase().replace("-", "_")
         val projectId1 = if (existingProjectId == null) {
             "resource.mongodbatlas_project.${name}" {
-                "name" - "$projectName1"
+                "name" - projectName1
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -313,7 +319,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
         }
         "resource.mongodbatlas_advanced_cluster.${name}" {
             "project_id" - projectId1
-            "name" - "$projectName1"
+            "name" - projectName1
             "cluster_type" - "REPLICASET"
 
             "backup_enabled" - backupEnabled
