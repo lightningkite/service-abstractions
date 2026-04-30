@@ -38,7 +38,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
 
         val projectId = if (existingProjectId == null) {
             "resource.mongodbatlas_project.$name" {
-                "name" - "$projectName"
+                "name" - projectName
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -55,7 +55,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
         }
         "resource.mongodbatlas_advanced_cluster.$name" {
             "project_id" - projectId
-            "name" - "$projectName"
+            "name" - projectName
             "cluster_type" - "REPLICASET"
 
             "backup_enabled" - backupEnabled
@@ -116,7 +116,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                 "container_id" - expression("one(values(mongodbatlas_advanced_cluster.${name}.replication_specs[0].container_id))")
                 "provider_name" - "AWS"
                 "route_table_cidr_block" - cidr
-                "vpc_id" - expression(emitter.applicationVpc.id)
+                "vpc_id" - emitter.applicationVpc.id
                 "aws_account_id" - expression("data.aws_caller_identity.${this@mongodbAtlas.name}_current.account_id")
             }
             // IP Whitelist on ATLAS side
@@ -138,7 +138,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                 "depends_on" - listOf("aws_vpc_peering_connection_accepter.peer")
             }
             "data.aws_route_table.application_subnets_route_table" {
-                "subnet_id" - expression("element(${emitter.applicationVpc.applicationSubnets}, 0)")
+                "subnet_id" - emitter.applicationVpc.applicationSubnet
             }
             // VPC Peer Device to ATLAS Route Table Association on AWS
             "resource.aws_route.aws_peer_to_atlas_route_1" {
@@ -149,7 +149,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
             "resource.aws_vpc_security_group_egress_rule" {
                 "atlas" {
                     "cidr_ipv4" - "192.168.248.0/21"
-                    "security_group_id" - expression(emitter.applicationVpc.securityGroup)
+                    "security_group_id" - emitter.applicationVpc.securityGroup
                     "ip_protocol" - "tcp"
                     "from_port" - 27015
                     "to_port" - 27017
@@ -201,7 +201,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
 
         val projectId = if (existingProjectId == null) {
             "resource.mongodbatlas_project.$name" {
-                "name" - "$projectName"
+                "name" - projectName
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -218,7 +218,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
         }
         "resource.mongodbatlas_advanced_cluster.$name" {
             "project_id" - projectId
-            "name" - "$projectName"
+            "name" - projectName
             "cluster_type" - "REPLICASET"
 
             "replication_specs" - listOf(
@@ -296,7 +296,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
         val region1 = emitter.applicationRegion.uppercase().replace("-", "_")
         val projectId1 = if (existingProjectId == null) {
             "resource.mongodbatlas_project.${name}" {
-                "name" - "$projectName1"
+                "name" - projectName1
                 "org_id" - orgId
                 "is_collect_database_specifics_statistics_enabled" - true
                 "is_data_explorer_enabled" - true
@@ -313,7 +313,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
         }
         "resource.mongodbatlas_advanced_cluster.${name}" {
             "project_id" - projectId1
-            "name" - "$projectName1"
+            "name" - projectName1
             "cluster_type" - "REPLICASET"
 
             "backup_enabled" - backupEnabled

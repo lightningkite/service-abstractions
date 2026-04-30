@@ -1,6 +1,7 @@
 package com.lightningkite.services.test
 
 import com.lightningkite.services.terraform.*
+import com.lightningkite.services.terraform.TerraformJsonObject.Companion.expression
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 import java.io.File
@@ -188,7 +189,7 @@ private fun TerraformEmitterAws.vpc(cidr: String = "10.0.0.0/16"): TerraformAwsV
             "source" - "terraform-aws-modules/vpc/aws"
             "version" - "5.16.0"  // by Claude: Updated from 4.0.2 for AWS provider 6.x compatibility
 
-            "name" - "$projectPrefix"
+            "name" - projectPrefix
             "cidr" - cidr
 
             "azs" - listOf("us-west-2a", "us-west-2b", "us-west-2c")
@@ -219,13 +220,12 @@ private fun TerraformEmitterAws.vpc(cidr: String = "10.0.0.0/16"): TerraformAwsV
         }
     }
     return TerraformAwsVpcInfo(
-        id = "module.vpc.vpc_id",
-        securityGroup = "aws_security_group.internal.id",
-        privateSubnets = "module.vpc.private_subnets",
+        id = expression("module.vpc.vpc_id"),
+        securityGroup = expression("aws_security_group.internal.id"),
+        privateSubnets = expression("module.vpc.private_subnets"),
         publicSubnets = "module.vpc.public_subnets",
-        applicationSubnets = "module.vpc.public_subnets",
-//        applicationSubnets = "module.vpc.private_subnets",
-        natGatewayIps = "module.vpc.nat_public_ips",
+        applicationSubnet = expression("module.vpc.public_subnets[0]"),
+        natGatewayIps = expression("module.vpc.nat_public_ips"),
         cidr = cidr
     )
 }
@@ -306,7 +306,7 @@ fun TerraformEmitterAwsVpc.bastion(
         "resource.aws_security_group.bastion" {
             "name" - "${projectPrefix}-bastion"
             "description" - "The rules for the server"
-            "vpc_id" - expression(applicationVpc.id)
+            "vpc_id" - applicationVpc.id
 
             "tags" {
                 "Name" - "${projectPrefix}-bastion"
@@ -346,10 +346,10 @@ fun TerraformEmitterAwsVpc.bastion(
             "key_name" - expression("aws_key_pair.bastion.key_name")
 
             "vpc_security_group_ids" - listOf(
-                expression(applicationVpc.securityGroup),
+                applicationVpc.securityGroup,
                 expression("aws_security_group.bastion.id")
             )
-            "subnet_id" - expression("element(${applicationVpc.publicSubnets}, 0)")
+            "subnet_id" - applicationVpc.applicationSubnet
 
             "tags" {
                 "Name" - "$projectPrefix-single-ec2"

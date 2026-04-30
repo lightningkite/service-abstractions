@@ -33,7 +33,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         if (emitter is TerraformEmitterAwsVpc) {
             "resource.aws_db_subnet_group.${name}" {
                 "name" - "${emitter.projectPrefix}-${name}"
-                "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
+                "subnet_ids" - emitter.applicationVpc.privateSubnets
             }
         }
         "resource.random_password.${name}" {
@@ -46,14 +46,14 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "engine" - "aurora-postgresql"
             "engine_mode" - "provisioned"
             "engine_version" - "13.6"
-            "database_name" - "${name}"
+            "database_name" - name
             "master_username" - "master"
             "master_password" - expression("random_password.${name}.result")
             "skip_final_snapshot" - true
             "final_snapshot_identifier" - "${emitter.projectPrefix}-${name}"
 
             if (emitter is TerraformEmitterAwsVpc) {
-                "vpc_security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
+                "vpc_security_group_ids" - listOf<String>(emitter.applicationVpc.securityGroup)
                 "db_subnet_group_name" - expression("aws_db_subnet_group.${name}.name")
             }
 
@@ -104,7 +104,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
         if (emitter is TerraformEmitterAwsVpc) {
             "resource.aws_db_subnet_group.${name}" {
                 "name" - "${emitter.projectPrefix}-${name}"
-                "subnet_ids" - (expression(emitter.applicationVpc.privateSubnets))
+                "subnet_ids" - emitter.applicationVpc.privateSubnets
             }
         }
         "resource.random_password.${name}" {
@@ -117,7 +117,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "engine" - "aurora-postgresql"
             "engine_mode" - "serverless"
             "engine_version" - "10.18"
-            "database_name" - "${name}"
+            "database_name" - name
             "master_username" - "master"
             "master_password" - expression("random_password.${name}.result")
             "skip_final_snapshot" - true
@@ -125,7 +125,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Database.Settings
             "enable_http_endpoint" - true
 
             if (emitter is TerraformEmitterAwsVpc) {
-                "vpc_security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
+                "vpc_security_group_ids" - listOf<String>(emitter.applicationVpc.securityGroup)
                 "db_subnet_group_name" - expression("aws_db_subnet_group.${name}.name")
             }
 

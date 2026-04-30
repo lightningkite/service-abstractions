@@ -13,6 +13,11 @@ public data class TerraformProviderImport(
             source = "hashicorp/aws",
             version = "~> 6.34.0",
         )
+        public val external: TerraformProviderImport = TerraformProviderImport(
+            name = "external",
+            source = "hashicorp/external",
+            version = "~> 2.3.0",
+        )
         public val random: TerraformProviderImport = TerraformProviderImport(
             name = "random",
             source = "hashicorp/random",

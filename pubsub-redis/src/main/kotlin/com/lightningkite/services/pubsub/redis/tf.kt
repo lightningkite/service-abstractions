@@ -22,7 +22,7 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Setting
     emitter.emit(name) {
         "resource.aws_elasticache_subnet_group.${name}" {
             "name" - "${emitter.projectPrefix}-${name}"
-            "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
+            "subnet_ids" - emitter.applicationVpc.privateSubnets
         }
         "resource.aws_elasticache_cluster.${name}" {
             "cluster_id" - "${emitter.projectPrefix}-${name}"
@@ -31,7 +31,7 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Setting
             "num_cache_nodes" - count
             "parameter_group_name" - parameterGroupName
             "port" - 6379
-            "security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
+            "security_group_ids" - listOf<String>(emitter.applicationVpc.securityGroup)
             "subnet_group_name" - expression("aws_elasticache_subnet_group.${name}.name")
         }
     }
@@ -75,8 +75,8 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Setting
             "daily_snapshot_time" - dailySnapshotTime.toString()
             "major_engine_version" - version
             "snapshot_retention_limit" - snapshotRetentionLimit
-            "security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
-            "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
+            "security_group_ids" - listOf<String>(emitter.applicationVpc.securityGroup)
+            "subnet_ids" - emitter.applicationVpc.privateSubnets
         }
     }
 }

@@ -43,7 +43,7 @@ public class TerraformAwsVpcInfo(
     public val securityGroup: String,
     public val privateSubnets: String,
     public val publicSubnets: String,
-    public val applicationSubnets: String,
+    public val applicationSubnet: String,
     public val natGatewayIps: String,
     public val cidr: String,
 )
