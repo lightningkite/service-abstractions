@@ -222,10 +222,10 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
         }
 
         // VPC endpoint for SMTP (if in VPC context)
-        if (emitter is TerraformEmitterAwsVpc) {
+        (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
             "resource.aws_security_group.$name" {
                 "name" - "${emitter.projectPrefix}-${name}-security-group"
-                "vpc_id" - expression(emitter.applicationVpc.id)
+                "vpc_id" - vpcInfo.id
             }
             "resource.aws_vpc_security_group_ingress_rule.${name}" {
                 "security_group_id" - expression("aws_security_group.$name.id")
@@ -235,7 +235,7 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
                 "cidr_ipv4" - "0.0.0.0/0"
             }
             "resource.aws_vpc_endpoint.$name" {
-                "vpc_id" - expression(emitter.applicationVpc.id)
+                "vpc_id" - vpcInfo.id
                 "service_name" - "com.amazonaws.${emitter.applicationRegion}.email-smtp"
                 "security_group_ids" - listOf(expression("aws_security_group.$name.id"))
                 "vpc_endpoint_type" - "Interface"
@@ -277,6 +277,9 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtpLegacy(
     )
     emptyList<com.lightningkite.services.terraform.TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+
     emitter.emit(this.name) {
         "resource.aws_iam_user.$name" {
             "name" - "${emitter.projectPrefix}-${name}-user"
@@ -299,10 +302,10 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtpLegacy(
             "user" - expression("aws_iam_user.$name.name")
             "policy_arn" - expression("aws_iam_policy.$name.arn")
         }
-        if (emitter is TerraformEmitterAwsVpc) {
+        vpcInfo?.also { vpcInfo ->
             "resource.aws_security_group.$name" {
                 "name" - "${emitter.projectPrefix}-${name}-security-group"
-                "vpc_id" - expression(emitter.applicationVpc.id)
+                "vpc_id" - vpcInfo.id
             }
             "resource.aws_vpc_security_group_ingress_rule.${name}" {
                 "security_group_id" - expression("aws_security_group.$name.id")
@@ -312,7 +315,7 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtpLegacy(
                 "cidr_ipv4" - "0.0.0.0/0"
             }
             "resource.aws_vpc_endpoint.$name" {
-                "vpc_id" - expression(emitter.applicationVpc.id)
+                "vpc_id" - vpcInfo.id
                 "service_name" - "com.amazonaws.${emitter.applicationRegion}.email-smtp"
                 "security_group_ids" - listOf(expression("aws_security_group.$name.id"))
                 "vpc_endpoint_type" - "Interface"

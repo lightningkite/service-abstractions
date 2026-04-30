@@ -154,10 +154,10 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
         }
 
         // VPC endpoint for SMTP (if in VPC context)
-        if (emitter is TerraformEmitterAwsVpc) {
+        (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
             "resource.aws_security_group.$name" {
                 "name" - "${emitter.projectPrefix}-${name}-security-group"
-                "vpc_id" - expression(emitter.applicationVpc.id)
+                "vpc_id" - vpcInfo.id
             }
             "resource.aws_vpc_security_group_ingress_rule.${name}" {
                 "security_group_id" - expression("aws_security_group.$name.id")
@@ -167,7 +167,7 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
                 "cidr_ipv4" - "0.0.0.0/0"
             }
             "resource.aws_vpc_endpoint.$name" {
-                "vpc_id" - expression(emitter.applicationVpc.id)
+                "vpc_id" - vpcInfo.id
                 "service_name" - "com.amazonaws.${emitter.applicationRegion}.email-smtp"
                 "security_group_ids" - listOf(expression("aws_security_group.$name.id"))
                 "vpc_endpoint_type" - "Interface"

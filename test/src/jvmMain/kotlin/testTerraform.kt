@@ -1,6 +1,7 @@
 package com.lightningkite.services.test
 
 import com.lightningkite.services.terraform.*
+import com.lightningkite.services.terraform.TerraformJsonObject.Companion.expression
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 import java.io.File
@@ -80,6 +81,8 @@ open class TerraformEmitterAwsTest<S>(
 
     override val applicationRegion: String
         get() = "us-west-2"
+
+    override val applicationVpc: AwsVpc = AwsVpc.None
 
     init {
         require(
@@ -182,14 +185,14 @@ open class TerraformEmitterAwsTest<S>(
     }
 }
 
-private fun TerraformEmitterAws.vpc(cidr: String = "10.0.0.0/16"): TerraformAwsVpcInfo {
+private fun TerraformEmitterAws.vpc(ipPrefix: String = "10.0"): AwsVpc.VpcInfo {
     emit("cloud") {
         "module.vpc" {
             "source" - "terraform-aws-modules/vpc/aws"
             "version" - "5.16.0"  // by Claude: Updated from 4.0.2 for AWS provider 6.x compatibility
 
-            "name" - "$projectPrefix"
-            "cidr" - cidr
+            "name" - projectPrefix
+            "cidr" - "$ipPrefix.0.0/16"
 
             "azs" - listOf("us-west-2a", "us-west-2b", "us-west-2c")
             "private_subnets" - listOf("10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24")
@@ -218,16 +221,7 @@ private fun TerraformEmitterAws.vpc(cidr: String = "10.0.0.0/16"): TerraformAwsV
             "ip_protocol" - -1
         }
     }
-    return TerraformAwsVpcInfo(
-        id = "module.vpc.vpc_id",
-        securityGroup = "aws_security_group.internal.id",
-        privateSubnets = "module.vpc.private_subnets",
-        publicSubnets = "module.vpc.public_subnets",
-        applicationSubnets = "module.vpc.public_subnets",
-//        applicationSubnets = "module.vpc.private_subnets",
-        natGatewayIps = "module.vpc.nat_public_ips",
-        cidr = cidr
-    )
+    return AwsVpc.TFManaged(ipPrefix, listOf("${applicationRegion}a"), AwsVpc.NatGateway.Single)
 }
 
 private fun TerraformEmitterAws.domain(): String {
@@ -239,7 +233,7 @@ private fun TerraformEmitterAws.domain(): String {
     return TerraformJsonObject.expression("data.aws_route53_zone.main.zone_id")
 }
 
-fun TerraformEmitterAwsVpc.bastion(
+fun TerraformEmitterAws.bastion(
     ubuntu_version: String = "24.04",
     arch: String = "amd64",
     virtualization_type: String = "hvm",
@@ -259,6 +253,9 @@ fun TerraformEmitterAwsVpc.bastion(
     )
     require(TerraformProviderImport.tls)
     require(TerraformProviderImport.ssh)
+
+    val vpcInfo = applicationVpc as? AwsVpc.VpcInfo
+
     emit("bastion") {
         val admins = listOf(Admin())
 
@@ -306,7 +303,9 @@ fun TerraformEmitterAwsVpc.bastion(
         "resource.aws_security_group.bastion" {
             "name" - "${projectPrefix}-bastion"
             "description" - "The rules for the server"
-            "vpc_id" - expression(applicationVpc.id)
+
+            if(vpcInfo != null)
+                "vpc_id" - vpcInfo.id
 
             "tags" {
                 "Name" - "${projectPrefix}-bastion"
@@ -345,11 +344,13 @@ fun TerraformEmitterAwsVpc.bastion(
             instanceProfile?.let { "iam_instance_profile" - it }
             "key_name" - expression("aws_key_pair.bastion.key_name")
 
-            "vpc_security_group_ids" - listOf(
-                expression(applicationVpc.securityGroup),
-                expression("aws_security_group.bastion.id")
-            )
-            "subnet_id" - expression("element(${applicationVpc.publicSubnets}, 0)")
+            if(vpcInfo != null) {
+                "vpc_security_group_ids" - listOf(
+                    vpcInfo.securityGroup,
+                    expression("aws_security_group.bastion.id")
+                )
+                "subnet_id" - vpcInfo.applicationSubnet
+            }
 
             "tags" {
                 "Name" - "$projectPrefix-single-ec2"
@@ -413,18 +414,19 @@ class TerraformEmitterAwsTestWithDomain<S>(root: File, targetSetting: String, se
     TerraformEmitterAwsTest<S>(root, targetSetting, serializer), TerraformEmitterAwsDomain {
     override val domainZoneId: String = domain()
     override val domain: String get() = "test.cs.lightningkite.com"
+    override val applicationVpc: AwsVpc = AwsVpc.None
 }
 
 class TerraformEmitterAwsTestWithDomainVpc<S>(root: File, targetSetting: String, serializer: KSerializer<S>) :
-    TerraformEmitterAwsTest<S>(root, targetSetting, serializer), TerraformEmitterAwsDomain, TerraformEmitterAwsVpc {
+    TerraformEmitterAwsTest<S>(root, targetSetting, serializer), TerraformEmitterAwsDomain, TerraformEmitterAws {
     override val domainZoneId: String = domain()
     override val domain: String get() = "test.cs.lightningkite.com"
-    override val applicationVpc: TerraformAwsVpcInfo = vpc()
+    override val applicationVpc:AwsVpc = AwsVpc.TFManaged("10.0", listOf("${applicationRegion}a"), AwsVpc.NatGateway.Single)
 }
 
 class TerraformEmitterAwsTestWithVpc<S>(root: File, targetSetting: String, serializer: KSerializer<S>) :
-    TerraformEmitterAwsTest<S>(root, targetSetting, serializer), TerraformEmitterAwsVpc {
-    override val applicationVpc: TerraformAwsVpcInfo = vpc()
+    TerraformEmitterAwsTest<S>(root, targetSetting, serializer), TerraformEmitterAws {
+    override val applicationVpc:AwsVpc = AwsVpc.TFManaged("10.0", listOf("${applicationRegion}a"), AwsVpc.NatGateway.Single)
 }
 
 private fun File.runTerraform(vararg args: String): String {
@@ -500,7 +502,7 @@ inline fun <reified T> assertPlannableAwsDomain(
 
 inline fun <reified T> assertPlannableAwsVpc(
     name: String,
-    fulfill: context(TerraformEmitterAwsVpc) (TerraformNeed<T>) -> Unit,
+    fulfill: context(TerraformEmitterAws) (TerraformNeed<T>) -> Unit,
 ) = expensive {
     if (!hasTerraform()) return@expensive
     for (tester in listOf(
