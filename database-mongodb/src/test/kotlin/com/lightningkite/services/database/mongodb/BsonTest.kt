@@ -1,14 +1,21 @@
 package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.database.Condition
+import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.mongodb.bson.KBson
+import com.lightningkite.services.database.serializableProperties
 import com.lightningkite.services.database.test.LargeTestModel
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
+import org.bson.Document
 import org.bson.types.ObjectId
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class BsonTest {
     @Test

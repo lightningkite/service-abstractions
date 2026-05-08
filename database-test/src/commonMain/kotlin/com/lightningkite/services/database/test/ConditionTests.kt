@@ -2608,6 +2608,50 @@ abstract class ConditionTests() {
     }
 
     @Test
+    fun test_List_all_greaterThan() = runTest {
+        val collection = database.collection<LargeTestModel>("LargeTestModel_test_List_all_gt")
+        val allHigher = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value2 = 10),
+                ClassUsedForEmbedding(value2 = 20),
+                ClassUsedForEmbedding(value2 = 30),
+            )
+        )
+        val oneLower = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value2 = 10),
+                ClassUsedForEmbedding(value2 = 4),
+                ClassUsedForEmbedding(value2 = 30)
+            )
+        )
+        val allLower = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value2 = 1),
+                ClassUsedForEmbedding(value2 = 2),
+                ClassUsedForEmbedding(value2 = 3)
+            )
+        )
+
+        val manualList = listOf(allHigher, oneLower, allLower)
+        collection.insertOne(allHigher)
+        collection.insertOne(oneLower)
+        collection.insertOne(allLower)
+
+        val condition = path<LargeTestModel>().listEmbedded.all { it.value2 gt 5 }
+        val results = collection.find(condition).toList()
+
+        assertContains(results, allHigher, "Should find the document where all elements are > 5")
+        assertTrue(oneLower !in results, "Should NOT find document where one element (4) fails the condition")
+        assertTrue(allLower !in results, "Should NOT find document where all elements fail")
+
+        val expected = manualList.filter { model -> model.listEmbedded.all { it.value2 > 5 } }.sortedBy { it._id }
+
+        assertEquals(expected, results.sortedBy { it._id })
+
+        Unit
+    }
+
+    @Test
     fun test_List_any() = runTest {
         val collection = database.collection<LargeTestModel>("LargeTestModel_test_List_any")
         val lower = LargeTestModel(list = listOf(1, 2, 3))
@@ -3089,6 +3133,7 @@ abstract class ConditionTests() {
     val testDataUuidMax = Uuid.fromLongs(0L, Int.MAX_VALUE.toLong() + 1L)
     fun testDataUuid(id: Int) = Uuid.fromLongs(0L, id.toLong() + 1L)
     val <T> DataClassPath<T, Uuid>.isTestData: Condition<T> get() = gte(testDataUuidMin) and lte(testDataUuidMax)
+
     @Test
     fun test_UUID_between() = runTest {
         val collection = database.collection<LargeTestModel>("test_UUID_between")

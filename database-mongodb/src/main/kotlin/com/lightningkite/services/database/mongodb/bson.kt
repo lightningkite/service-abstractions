@@ -94,13 +94,19 @@ private fun <T> Condition<T>.dump(
                 (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
         }
 
-        is Condition.ListAllElements<*> -> (condition as Condition<Any?>).dump(
-            serializer.listElement()!! as KSerializer<Any?>,
-            into.sub(key).sub("\$not").sub("\$elemMatch"),
-            key = "\$not",
-            atlasSearch = atlasSearch,
-            bson = bson
-        )
+        is Condition.ListAllElements<*> -> {
+            val innerSerializer = serializer.listElement()!! as KSerializer<Any?>
+            val matchDoc = Document()
+            (Condition.Not(condition as Condition<Any?>)).dump(
+                innerSerializer,
+                into = matchDoc,
+                key = null,
+                atlasSearch = atlasSearch,
+                bson = bson
+            )
+            into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
+        }
+
 
         is Condition.ListAnyElements<*> -> if (atlasSearch) {
             (condition as Condition<Any?>).dump(
@@ -138,8 +144,21 @@ private fun <T> Condition<T>.dump(
         is Condition.IntBitsAnySet -> into.sub(key)["\$bitsAllSet"] = mask
         is Condition.IntBitsClear -> into.sub(key)["\$bitsAnyClear"] = mask
         is Condition.IntBitsSet -> into.sub(key)["\$bitsAnySet"] = mask
+
         is Condition.Not -> {
-            into["\$nor"] = listOf(condition.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson))
+            // the $not operator is a field-level operator. It must be used like { field: { $not: { <operator> } } }
+            // This is to avoid `{"$elemMatch": {"$not": {"value2": {"$gte": 5}}}}`
+            val inner = Document()
+            condition.dump(serializer, inner, null, atlasSearch, bson)
+            val target = if (key == null) into else into.sub(key)
+            for ((k, v) in inner) {
+                if (k.startsWith("$")) { // direct operator
+                    target["\$not"] = inner
+                    break
+                } else { // It's a field (e.g., {"value2": {"$gte": 5}}).
+                    target.sub(k)["\$not"] = v
+                }
+            }
         }
 //        is Condition.Not -> condition.dump(serializer, into.sub(key)["\$not"], key)
         is Condition.OnKey<*> -> (condition as Condition<Any?>).dump(
