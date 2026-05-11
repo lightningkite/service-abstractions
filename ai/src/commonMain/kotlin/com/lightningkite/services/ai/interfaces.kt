@@ -86,6 +86,18 @@ public suspend fun LlmAccess.inference(model: LlmModelId, prompt: LlmPrompt): Ll
     )
 }
 
+/**
+ * Reasoning effort hint. Providers that take an effort enum (OpenAI, Bedrock Nova, newer
+ * Ollama models) consume this directly. Providers that take a token budget (Anthropic,
+ * Gemini) ignore this in favor of [LlmPrompt.reasoningBudgetTokens]. Providers that
+ * don't expose a reasoning knob ignore both.
+ *
+ * `Off` requests no reasoning where the provider supports a toggle; otherwise treated
+ * the same as null (provider default).
+ */
+@Serializable
+public enum class LlmReasoningEffort { Off, Minimal, Low, Medium, High }
+
 @Serializable
 public data class LlmModelId(
     val id: String,
@@ -148,14 +160,23 @@ public data class LlmPrompt(
     val temperature: Double? = null,
     val stopSequences: List<String> = emptyList(),
     /**
-     * Hint to providers that support prompt caching: if true, cache the system prompt.
-     *
-     * Honored by: Anthropic, Bedrock (model-dependent).
-     * Ignored by: OpenAI (auto-caches at >1024 tokens), Ollama, LM Studio.
-     *
-     * Cache hits require ≥~1024 tokens of cached content (provider-dependent).
+     * Reasoning effort level. Mapped per-provider:
+     * - OpenAI o-series / gpt-5: `reasoning.effort` (`Minimal` only on gpt-5).
+     * - Bedrock Nova: `reasoning_config.effort` (`Minimal` rounds up to `Low`).
+     * - Ollama: `think` field (bool or enum, model-dependent).
+     * - Anthropic / Bedrock Claude: ignored — use [reasoningBudgetTokens] instead.
+     * `Off` disables reasoning where the provider supports a toggle.
+     * Null = provider default.
      */
-    val systemPromptCacheBoundary: Boolean = false,
+    val reasoningEffort: LlmReasoningEffort? = null,
+    /**
+     * Reasoning token budget. Mapped per-provider:
+     * - Anthropic / Bedrock Claude: `thinking.budget_tokens` (must be ≥1024 and < [maxTokens]).
+     * - Gemini: `thinking_config.thinking_budget` (-1=dynamic, 0=off).
+     * - OpenAI / Nova / Ollama: ignored — use [reasoningEffort] instead.
+     * Null = provider default.
+     */
+    val reasoningBudgetTokens: Int? = null,
 ) {
     /**
      * Collects all [LlmSharedContext] from [tools], deduplicates, and joins their content.
@@ -236,12 +257,12 @@ public data class LlmToolDescriptor<T>(
     /**
      * Hint to providers that support prompt caching: if true, cache the tool definitions
      * up to and including this tool. Anthropic sends tools before messages, so a tool
-     * boundary caches only the tool list (and system prompt); use [LlmMessage.cacheBoundary]
+     * boundary caches only the tool list (and system prompt); use [LlmMessage.cacheBreak]
      * to cache conversation history.
      *
-     * Same provider support and limits as [LlmMessage.cacheBoundary].
+     * Same provider support and limits as [LlmMessage.cacheBreak].
      */
-    val cacheBoundary: Boolean = false,
+    val cacheBreak: Boolean = false,
 )
 
 
@@ -254,33 +275,37 @@ public data class LlmToolDescriptor<T>(
 @Serializable
 public sealed interface LlmMessage {
     /**
-     * Hint to providers that support prompt caching: if true, cache everything in
-     * the prompt UP TO AND INCLUDING this message. Subsequent calls reusing the
-     * same prefix will read from the provider's cache instead of re-processing.
+     * Hint to providers that support prompt caching: if true, the content BEFORE this
+     * message should be cached. Semantically: "new section starts here; cache the prefix."
+     *
+     * On the first message (index 0), this caches the system prompt (and tools, if any
+     * tool has [LlmToolDescriptor.cacheBreak] set). On subsequent messages, it caches
+     * everything up to and including the previous message.
      *
      * Honored by: Anthropic, Bedrock (model-dependent).
      * Ignored by: OpenAI (auto-caches at >1024 tokens), Ollama, LM Studio.
      *
      * Limits: Anthropic/Bedrock allow up to 4 cache boundaries per request across
-     * messages and tools combined. Exceeding the limit raises [LlmException.InvalidRequest].
+     * messages and tools combined. Adapters silently drop excess boundaries, keeping
+     * only the last 4 (which are the most valuable for prefix-based caching).
      * Cache hits require ≥~1024 tokens of cached content (provider-dependent); smaller
      * prefixes are silently not cached.
      *
      * Tradeoff: cache writes cost ~25% more than normal input tokens; cache reads cost
      * ~90% less. Net win when the same prefix is reused across multiple calls.
      */
-    public val cacheBoundary: Boolean
+    public val cacheBreak: Boolean
 
     @Serializable
     public data class User(
         val parts: List<LlmPart.ContentOnly>,
-        override val cacheBoundary: Boolean = false,
+        override val cacheBreak: Boolean = false,
     ) : LlmMessage
 
     @Serializable
     public data class Agent(
         val parts: List<LlmPart>,
-        override val cacheBoundary: Boolean = false,
+        override val cacheBreak: Boolean = false,
     ) : LlmMessage
 
     @Serializable
@@ -288,7 +313,7 @@ public sealed interface LlmMessage {
         val toolCallId: String,
         val parts: List<LlmPart.ContentOnly>,
         val isError: Boolean = false,
-        override val cacheBoundary: Boolean = false,
+        override val cacheBreak: Boolean = false,
     ) : LlmMessage
 }
 
@@ -412,6 +437,13 @@ public data class LlmUsage(
      * leave this at 0.
      */
     val cacheReadTokens: Int = 0,
+    /**
+     * Input tokens that were written to the provider's prompt cache on this request.
+     * Cache writes typically cost ~25% more than normal input tokens; cache reads cost ~90% less.
+     * Zero if the provider does not support prompt caching, the request missed the cache,
+     * or the provider does not expose cache-write metrics (e.g. OpenAI).
+     */
+    val cacheWriteTokens: Int = 0,
 )
 
 /**

@@ -7,6 +7,7 @@ import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmModelId
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
+import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
@@ -43,6 +44,53 @@ internal object BedrockWire {
     }
 
     /**
+     * Pre-computed set of cache boundary locations for Bedrock's `cachePoint` blocks.
+     * Same semantics as the Anthropic adapter: [LlmMessage.cacheBreak] on message N means
+     * "cache everything before me," so the cachePoint goes on the previous element.
+     * Bedrock allows up to 4 cache points; excess are silently dropped (last 4 kept).
+     */
+    internal data class ActiveCacheBoundaries(
+        val system: Boolean,
+        val toolIndices: Set<Int>,
+        val messageIndices: Set<Int>,
+    )
+
+    /**
+     * Collect all requested cache boundaries and keep only the last 4 in wire order
+     * (system → messages → tools for Bedrock).
+     */
+    internal fun computeActiveBoundaries(prompt: LlmPrompt): ActiveCacheBoundaries {
+        data class Entry(val wireOrder: Int, val type: Char, val index: Int)
+
+        val all = mutableListOf<Entry>()
+        var order = 0
+
+        // cacheBreak on the first message → cache system prompt
+        if (prompt.messages.firstOrNull()?.cacheBreak == true) {
+            all.add(Entry(order++, 's', 0))
+        }
+
+        // Message-level: cacheBreak at index N (N>0) → cachePoint after message N-1
+        prompt.messages.forEachIndexed { i, msg ->
+            if (msg.cacheBreak && i > 0) {
+                all.add(Entry(order++, 'm', i - 1))
+            }
+        }
+
+        // Tool-level boundaries
+        prompt.tools.forEachIndexed { i, tool ->
+            if (tool.cacheBreak) all.add(Entry(order++, 't', i))
+        }
+
+        val active = all.takeLast(4)
+        return ActiveCacheBoundaries(
+            system = active.any { it.type == 's' },
+            toolIndices = active.filter { it.type == 't' }.mapTo(mutableSetOf()) { it.index },
+            messageIndices = active.filter { it.type == 'm' }.mapTo(mutableSetOf()) { it.index },
+        )
+    }
+
+    /**
      * Turn an [LlmPrompt] into the JSON body for `POST /model/{id}/converse` or
      * `…/converse-stream`.
      *
@@ -50,6 +98,7 @@ internal object BedrockWire {
      * `system` array. All other messages map 1:1 to Converse `messages`.
      */
     fun buildRequestBody(
+        modelId: String,
         prompt: LlmPrompt,
         module: SerializersModule,
     ): JsonObject = buildJsonObject {
@@ -59,6 +108,7 @@ internal object BedrockWire {
         // toolChoice back to "auto", and inject a system-message instruction forbidding new
         // tool calls this turn. See interfaces.kt doc for LlmToolChoice.None.
         val suppressToolsPrompt = prompt.tools.isNotEmpty() && prompt.toolChoice == LlmToolChoice.None
+        val boundaries = computeActiveBoundaries(prompt)
         val sharedContext = prompt.collectSharedContext()
         val systemBlocks = buildJsonArray {
             if (sharedContext != null) {
@@ -73,22 +123,22 @@ internal object BedrockWire {
             if (suppressToolsPrompt) {
                 addJsonObject { put("text", TOOL_SUPPRESSION_INSTRUCTION) }
             }
-            // Append a cachePoint after system blocks when the prompt requests caching.
-            if (prompt.systemPromptCacheBoundary) {
+            if (boundaries.system) {
                 add(CACHE_POINT_BLOCK)
             }
         }
         if (systemBlocks.isNotEmpty()) put("system", systemBlocks)
 
         putJsonArray("messages") {
-            prompt.messages.forEach { msg ->
+            prompt.messages.forEachIndexed { msgIndex, msg ->
+                val shouldCache = msgIndex in boundaries.messageIndices
                 addJsonObject {
                     when (msg) {
                         is LlmMessage.User -> {
                             put("role", "user")
                             putJsonArray("content") {
                                 msg.parts.forEach { part -> add(encodeContentOnlyBlock(part)) }
-                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
+                                if (shouldCache) add(CACHE_POINT_BLOCK)
                             }
                         }
                         is LlmMessage.Agent -> {
@@ -99,7 +149,7 @@ internal object BedrockWire {
                                     // an empty content object Bedrock would reject.
                                     if (part !is LlmPart.Reasoning) add(encodeAgentPart(part))
                                 }
-                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
+                                if (shouldCache) add(CACHE_POINT_BLOCK)
                             }
                         }
                         is LlmMessage.ToolResult -> {
@@ -119,7 +169,7 @@ internal object BedrockWire {
                                         if (msg.isError) put("status", "error")
                                     }
                                 })
-                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
+                                if (shouldCache) add(CACHE_POINT_BLOCK)
                             }
                         }
                     }
@@ -137,10 +187,14 @@ internal object BedrockWire {
             }
         }
 
+        bedrockReasoningFields(modelId, prompt)?.let { fields ->
+            put("additionalModelRequestFields", fields)
+        }
+
         if (prompt.tools.isNotEmpty()) {
             putJsonObject("toolConfig") {
                 putJsonArray("tools") {
-                    prompt.tools.forEach { tool ->
+                    prompt.tools.forEachIndexed { i, tool ->
                         addJsonObject {
                             putJsonObject("toolSpec") {
                                 put("name", tool.name)
@@ -150,8 +204,7 @@ internal object BedrockWire {
                                 }
                             }
                         }
-                        // Append a cachePoint entry after this tool when marked.
-                        if (tool.cacheBoundary) add(CACHE_POINT_BLOCK)
+                        if (i in boundaries.toolIndices) add(CACHE_POINT_BLOCK)
                     }
                 }
                 put("toolChoice", toolChoiceObject(prompt.toolChoice))
@@ -287,6 +340,50 @@ internal object BedrockWire {
         // Malformed or unknown reasons: still surface as EndTurn so callers finish cleanly.
         else -> LlmStopReason.EndTurn
     }
+
+    /**
+     * Build the model-family-specific reasoning fields injected into Bedrock's
+     * `additionalModelRequestFields`. Returns null when no reasoning is requested.
+     *
+     * - Claude (`anthropic.*` / `*claude*`): `thinking: { type: "enabled", budget_tokens }`.
+     *   Budget comes from [LlmPrompt.reasoningBudgetTokens] or is bucketed from
+     *   [LlmPrompt.reasoningEffort]. Minimum 1024 enforced by Anthropic.
+     * - DeepSeek (`*deepseek*`): same shape as Claude.
+     * - Nova (`amazon.nova-*`): `reasoning_config: { type: "enabled" }` —
+     *   Nova doesn't take effort/budget granularity, just on/off.
+     * - Other models: ignored.
+     */
+    fun bedrockReasoningFields(modelId: String, prompt: LlmPrompt): JsonObject? {
+        val effort = prompt.reasoningEffort
+        val budget = prompt.reasoningBudgetTokens
+        if (effort == null && budget == null) return null
+        if (effort == LlmReasoningEffort.Off && budget == null) return null
+
+        val lower = modelId.lowercase()
+        return when {
+            lower.contains("claude") || lower.contains("anthropic") || lower.contains("deepseek") -> {
+                val resolved = budget?.coerceAtLeast(1024) ?: when (effort) {
+                    null, LlmReasoningEffort.Off -> return null
+                    LlmReasoningEffort.Minimal -> 1024
+                    LlmReasoningEffort.Low -> 2048
+                    LlmReasoningEffort.Medium -> 8192
+                    LlmReasoningEffort.High -> 16384
+                }
+                buildJsonObject {
+                    putJsonObject("thinking") {
+                        put("type", "enabled")
+                        put("budget_tokens", resolved)
+                    }
+                }
+            }
+            lower.contains("nova") -> buildJsonObject {
+                putJsonObject("reasoning_config") {
+                    put("type", "enabled")
+                }
+            }
+            else -> null
+        }
+    }
 }
 
 /**
@@ -305,6 +402,7 @@ internal class BedrockStreamState {
     var inputTokens: Int = 0
     var outputTokens: Int = 0
     var cacheReadTokens: Int = 0
+    var cacheWriteTokens: Int = 0
     var stopReason: LlmStopReason = LlmStopReason.EndTurn
     var finished: Boolean = false
     val toolsInFlight: HashMap<Int, ToolCallInProgress> = HashMap()

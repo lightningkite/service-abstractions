@@ -160,8 +160,11 @@ abstract class InlinePropertiesTests {
             val ram = ints.aggregate(type)
             val control = c.all().toList().asSequence().aggregateOf(type) { it.wrappedInt.int.toDouble() }
             val test = c.aggregate(type, Condition.Always, path<ValueClassContainingTest>().wrappedInt.int)
-            assertEquals(ram, control)
-            assertEquals(control, test)
+            // Tolerance: in-RAM table iterates a map (unspecified order); precision aggregators
+            // are order-sensitive at the 1-ulp level, so values may differ from `ram` (computed
+            // in monotonic 0..9 order) by tiny floating-point roundoff.
+            assertEquals(ram!!, control!!, absoluteTolerance = 1e-9)
+            assertEquals(control, test!!, absoluteTolerance = 1e-9)
         }
     }
 

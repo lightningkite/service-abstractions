@@ -6,6 +6,7 @@ import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmToolDescriptor
+import com.lightningkite.services.ai.userMessage
 import com.lightningkite.services.data.Description
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer
@@ -83,20 +84,22 @@ public const val STABLE_BLUE_IMAGE_URL: String =
 /**
  * Convenience constructor for a single user-text message.
  */
-public fun userText(text: String): LlmMessage.User =
-    LlmMessage.User(listOf(LlmPart.Text(text)))
+@Deprecated("Use userMessage(text) from com.lightningkite.services.ai", ReplaceWith("userMessage(text)", "com.lightningkite.services.ai.userMessage"))
+public fun userText(text: String): LlmMessage.User = userMessage(text)
 
 /**
- * Convenience: build a [LlmPrompt] with a system instruction as the first argument.
+ * Convenience: build a system prompt content list from a single text string.
  */
+@Deprecated("Use systemPrompt(text) from com.lightningkite.services.ai", ReplaceWith("systemPrompt(text)", "com.lightningkite.services.ai.systemPrompt"))
 public fun systemPrompt(text: String): List<LlmPart.ContentOnly> =
-    listOf(LlmPart.Text(text))
+    com.lightningkite.services.ai.systemPrompt(text)
 
 /**
  * Convenience constructor for a user message carrying one attachment and a caption.
  */
+@Deprecated("Use userMessage(caption, attachment) from com.lightningkite.services.ai", ReplaceWith("userMessage(caption, attachment)", "com.lightningkite.services.ai.userMessage"))
 public fun userWithAttachment(caption: String, attachment: LlmAttachment): LlmMessage.User =
-    LlmMessage.User(listOf(LlmPart.Text(caption), LlmPart.Attachment(attachment)))
+    userMessage(caption, attachment)
 
 /** Shorthand for the PNG [MediaType], used by the multimodal tests. */
 public val pngMediaType: MediaType get() = MediaType.Image.PNG

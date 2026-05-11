@@ -12,17 +12,39 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.KSerializer
 
 /**
- * A FieldCollection who's underlying implementation is actually manipulating a MutableList.
- * This is useful for times that an actual database is not needed, and you need to move fast, such as during Unit Tests.
+ * A [Table] backed by an in-process [MutableMap] keyed by the model's `_id`.
+ *
+ * Useful for unit tests, fast prototypes, or as the storage tier of file-backed
+ * implementations such as `JsonFileTable`.
+ *
+ * The backing [data] map can be supplied by the caller, allowing JVM users to
+ * pass a `java.util.concurrent.ConcurrentHashMap` (or any other concrete map)
+ * to control concurrency/storage characteristics.
+ *
+ * Lookups by `_id` (the most common case via [Table] extensions) are O(1).
+ *
+ * Note: iteration order is unspecified. Callers that depend on deterministic
+ * ordering should pass an `orderBy` to [find].
  */
 public open class InMemoryTable<Model : Any>(
-    public val data: MutableList<Model> = ArrayList(),
+    public val data: MutableMap<Any?, Model> = HashMap(),
     override val serializer: KSerializer<Model>,
     private val tableName: String = "unknown",
     private val tracer: OpenTelemetry? = null,
 ) : Table<Model> {
 
     private val lock = ReentrantLock()
+
+    @Suppress("UNCHECKED_CAST")
+    private val idProp: SerializableProperty<Model, Any?> =
+        serializer.serializableProperties!!.first { it.name == "_id" } as SerializableProperty<Model, Any?>
+
+    private fun idOf(model: Model): Any? = idProp.get(model)
+
+    /** Place items into [data] keyed by `_id`. Bypasses unique checks; intended for trusted preload paths. */
+    public fun preload(items: Iterable<Model>) {
+        for (item in items) data[idOf(item)] = item
+    }
 
     private val uniqueIndexChecks: AtomicRef<List<(List<EntryChange<Model>>) -> Unit>> = atomic(emptyList())
 
@@ -37,6 +59,7 @@ public open class InMemoryTable<Model : Any>(
                     setOf(IndexUniqueness.Unique, IndexUniqueness.UniqueNullSparse)
                 ) {
                     val fields = serializer.serializableProperties!!.filter { index.fields.contains(it.name) }
+                    val isPrimaryKey = index.fields.size == 1 && index.fields[0] == "_id"
                     uniqueIndexChecks.update { it ->
                         it.plus({ changes: List<EntryChange<Model>> ->
                             val fieldChanges = changes.mapNotNull { entryChange ->
@@ -46,14 +69,24 @@ public open class InMemoryTable<Model : Any>(
                                             entryChange.new != null &&
                                             fields.any { it.get(entryChange.old!!) != it.get(entryChange.new!!) })
                                 )
-                                    fields.map { it to it.get(entryChange.new!!) }
+                                    entryChange to fields.map { it to it.get(entryChange.new!!) }
                                 else
                                     null
                             }
-                            fieldChanges.forEach { fieldValues ->
-                                if (index.unique == IndexUniqueness.Unique) {
-                                    if (data.any { fromDb ->
-                                            fieldValues.all { (property, value) ->
+                            fieldChanges.forEach { (entryChange, fieldValues) ->
+                                if (isPrimaryKey) {
+                                    val newId = idOf(entryChange.new!!)
+                                    val existing = data[newId]
+                                    if (existing != null && existing !== entryChange.old) {
+                                        throw UniqueViolationException(
+                                            table = serializer.descriptor.serialName,
+                                            key = "_id",
+                                            cause = IllegalStateException()
+                                        )
+                                    }
+                                } else if (index.unique == IndexUniqueness.Unique) {
+                                    if (data.values.any { fromDb ->
+                                            fromDb !== entryChange.old && fieldValues.all { (property, value) ->
                                                 property.get(fromDb) == value
                                             }
                                         }) {
@@ -64,11 +97,10 @@ public open class InMemoryTable<Model : Any>(
                                         )
                                     }
                                 } else {
-                                    if (data.any { fromDb ->
-                                            fieldValues
-                                                .all { (property, value) ->
-                                                    value != null && property.get(fromDb) == value
-                                                }
+                                    if (data.values.any { fromDb ->
+                                            fromDb !== entryChange.old && fieldValues.all { (property, value) ->
+                                                value != null && property.get(fromDb) == value
+                                            }
                                         }) {
                                         throw UniqueViolationException(
                                             table = serializer.descriptor.serialName,
@@ -82,6 +114,32 @@ public open class InMemoryTable<Model : Any>(
                     }
                 }
             }
+    }
+
+    /**
+     * If [c] is structurally `Condition.OnField(_id, Equal(x))` or `Condition.OnField(_id, Inside(xs))`,
+     * return the candidate keys to look up directly. Otherwise null (caller falls back to scan).
+     */
+    private fun idEqualityKeys(c: Condition<Model>): List<Any?>? = when (c) {
+        is Condition.OnField<*, *> ->
+            if (c.key.name == "_id") when (val inner = c.condition) {
+                is Condition.Equal<*> -> listOf(inner.value)
+                is Condition.Inside<*> -> inner.values.toList()
+                else -> null
+            } else null
+        else -> null
+    }
+
+    private fun candidatesFor(condition: Condition<Model>): Sequence<Model> {
+        idEqualityKeys(condition)?.let { keys ->
+            return keys.asSequence().mapNotNull { data[it] }
+        }
+        return data.values.asSequence()
+    }
+
+    private fun snapshotFor(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Iterable<Model> {
+        val seq = candidatesFor(condition).filter { condition(it) }
+        return orderBy.comparator?.let { c -> seq.sortedWith(c).toList() } ?: seq.toList()
     }
 
     override suspend fun find(
@@ -101,22 +159,14 @@ public open class InMemoryTable<Model : Any>(
             )
         ) {
             lock.withLock {
-                data.asSequence()
-                    .filter { condition(it) }
-                    .let {
-                        orderBy.comparator?.let { c ->
-                            it.sortedWith(c)
-                        } ?: it
-                    }
+                snapshotFor(condition, orderBy)
+                    .asSequence()
                     .drop(skip)
                     .take(limit)
                     .toList()
             }
         }
-        result
-            .forEach {
-                emit(it)
-            }
+        result.forEach { emit(it) }
     }
 
     override suspend fun count(condition: Condition<Model>): Int = traced(
@@ -124,7 +174,9 @@ public open class InMemoryTable<Model : Any>(
         operation = "count",
         tableName = tableName
     ) {
-        data.count { condition(it) }
+        lock.withLock {
+            candidatesFor(condition).count { condition(it) }
+        }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -136,7 +188,10 @@ public open class InMemoryTable<Model : Any>(
         operation = "groupCount",
         tableName = tableName
     ) {
-        data.filter { condition(it) }.groupingBy { groupBy.get(it) }.eachCount().minus(null) as Map<Key, Int>
+        lock.withLock {
+            data.values.asSequence().filter { condition(it) }
+                .groupingBy { groupBy.get(it) }.eachCount().minus(null) as Map<Key, Int>
+        }
     }
 
     override suspend fun <N : Number?> aggregate(
@@ -149,9 +204,11 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName,
         attributes = mapOf("db.aggregate" to aggregate.toString())
     ) {
-        data.asSequence()
-            .filter { condition(it) }
-            .aggregateOfNotNull(aggregate) { property.get(it)?.toDouble() }
+        lock.withLock {
+            data.values.asSequence()
+                .filter { condition(it) }
+                .aggregateOfNotNull(aggregate) { property.get(it)?.toDouble() }
+        }
     }
 
     override suspend fun <N : Number?, Key> groupAggregate(
@@ -165,15 +222,17 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName,
         attributes = mapOf("db.aggregate" to aggregate.toString())
     ) {
-        data.asSequence()
-            .filter { condition(it) }
-            .groupAggregateNotNull(aggregate) {
-                @Suppress("UNCHECKED_CAST")
-                Pair(
-                    groupBy.get(it) as Key,
-                    property.get(it)?.toDouble() ?: return@groupAggregateNotNull null
-                )
-            }
+        lock.withLock {
+            data.values.asSequence()
+                .filter { condition(it) }
+                .groupAggregateNotNull(aggregate) {
+                    @Suppress("UNCHECKED_CAST")
+                    Pair(
+                        groupBy.get(it) as Key,
+                        property.get(it)?.toDouble() ?: return@groupAggregateNotNull null
+                    )
+                }
+        }
     }
 
     override suspend fun insert(models: Iterable<Model>): List<Model> = traced(
@@ -181,10 +240,11 @@ public open class InMemoryTable<Model : Any>(
         operation = "insert",
         tableName = tableName
     ) {
+        val list = models.toList()
         lock.withLock {
-            uniqueCheck(models.map { EntryChange(null, it) })
-            data.addAll(models)
-            return@traced models.toList()
+            uniqueCheck(list.map { EntryChange(null, it) })
+            for (m in list) data[idOf(m)] = m
+            return@traced list
         }
     }
 
@@ -198,24 +258,16 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName
     ) {
         lock.withLock {
-            for (it in sortIndices(orderBy)) {
-                val old = data[it]
-                if (condition(old)) {
-                    val changed = EntryChange(old, model)
-                    uniqueCheck(changed)
-                    data[it] = model
-                    return@traced changed
-                }
+            for (old in snapshotFor(condition, orderBy)) {
+                val changed = EntryChange(old, model)
+                uniqueCheck(changed)
+                val oldId = idOf(old)
+                val newId = idOf(model)
+                if (oldId != newId) data.remove(oldId)
+                data[newId] = model
+                return@traced changed
             }
             return@traced EntryChange(null, null)
-        }
-    }
-
-    private fun sortIndices(orderBy: List<SortPart<Model>>): Iterable<Int> {
-        return data.indices.let {
-            orderBy.comparator?.let { c ->
-                it.sortedWith { a, b -> c.compare(data[a], data[b]) }
-            } ?: it
         }
     }
 
@@ -229,17 +281,18 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName
     ) {
         lock.withLock {
-            for (it in data.indices) {
-                val old = data[it]
-                if (condition(old)) {
-                    val new = modification(old)
-                    val changed = EntryChange(old, new)
-                    uniqueCheck(changed)
-                    data[it] = new
-                    return@traced changed
-                }
+            for (old in snapshotFor(condition, emptyList())) {
+                val new = modification(old)
+                val changed = EntryChange(old, new)
+                uniqueCheck(changed)
+                val oldId = idOf(old)
+                val newId = idOf(new)
+                if (oldId != newId) data.remove(oldId)
+                data[newId] = new
+                return@traced changed
             }
-            data.add(model)
+            uniqueCheck(EntryChange(null, model))
+            data[idOf(model)] = model
             return@traced EntryChange(null, model)
         }
     }
@@ -254,15 +307,15 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName
     ) {
         lock.withLock {
-            for (it in sortIndices(orderBy)) {
-                val old = data[it]
-                if (condition(old)) {
-                    val new = modification(old)
-                    val changed = EntryChange(old, new)
-                    uniqueCheck(changed)
-                    data[it] = new
-                    return@traced changed
-                }
+            for (old in snapshotFor(condition, orderBy)) {
+                val new = modification(old)
+                val changed = EntryChange(old, new)
+                uniqueCheck(changed)
+                val oldId = idOf(old)
+                val newId = idOf(new)
+                if (oldId != newId) data.remove(oldId)
+                data[newId] = new
+                return@traced changed
             }
             return@traced EntryChange(null, null)
         }
@@ -277,20 +330,16 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName
     ) {
         lock.withLock {
-            return@traced data.indices
-                .mapNotNull {
-                    val old = data[it]
-                    if (condition(old)) {
-                        val new = modification(old)
-                        it to EntryChange(old, new)
-                    } else null
-                }
-                .let {
-                    val changes = it.map { it.second }
-                    uniqueCheck(changes)
-                    it.forEach { (index, change) -> data[index] = change.new!! }
-                    CollectionChanges(changes = changes)
-                }
+            val matches = snapshotFor(condition, emptyList())
+                .map { old -> EntryChange(old, modification(old)) }
+            uniqueCheck(matches)
+            for (change in matches) {
+                val oldId = idOf(change.old!!)
+                val newId = idOf(change.new!!)
+                if (oldId != newId) data.remove(oldId)
+                data[newId] = change.new!!
+            }
+            return@traced CollectionChanges(changes = matches)
         }
     }
 
@@ -300,12 +349,9 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName
     ) {
         lock.withLock {
-            for (it in sortIndices(orderBy)) {
-                val old = data[it]
-                if (condition(old)) {
-                    data.removeAt(it)
-                    return@traced old
-                }
+            for (old in snapshotFor(condition, orderBy)) {
+                data.remove(idOf(old))
+                return@traced old
             }
             return@traced null
         }
@@ -317,15 +363,8 @@ public open class InMemoryTable<Model : Any>(
         tableName = tableName
     ) {
         lock.withLock {
-            val removed = ArrayList<Model>()
-            data.removeAll {
-                if (condition(it)) {
-                    removed.add(it)
-                    true
-                } else {
-                    false
-                }
-            }
+            val removed = snapshotFor(condition, emptyList()).toList()
+            for (m in removed) data.remove(idOf(m))
             return@traced removed
         }
     }
@@ -334,11 +373,7 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         model: Model,
         orderBy: List<SortPart<Model>>,
-    ): Boolean = replaceOne(
-        condition,
-        model,
-        orderBy
-    ).new != null
+    ): Boolean = replaceOne(condition, model, orderBy).new != null
 
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
@@ -387,7 +422,7 @@ public open class InMemoryTable<Model : Any>(
         ) {
             val minScore = params.minScore
             lock.withLock {
-                data.asSequence()
+                data.values.asSequence()
                     .filter { condition(it) }
                     .mapNotNull { model ->
                         val embedding = vectorField.get(model) ?: return@mapNotNull null
@@ -420,7 +455,7 @@ public open class InMemoryTable<Model : Any>(
         ) {
             val minScore = params.minScore
             lock.withLock {
-                data.asSequence()
+                data.values.asSequence()
                     .filter { condition(it) }
                     .mapNotNull { model ->
                         val embedding = vectorField.get(model) ?: return@mapNotNull null
@@ -436,4 +471,3 @@ public open class InMemoryTable<Model : Any>(
         results.forEach { emit(it) }
     }
 }
-

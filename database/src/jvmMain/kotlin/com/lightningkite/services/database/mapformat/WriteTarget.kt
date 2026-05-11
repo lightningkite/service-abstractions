@@ -99,7 +99,7 @@ public class SimpleReadSource(
     override fun readField(path: String): Any? = main[path]
 
     override fun hasField(path: String): Boolean =
-        main.containsKey(path) || main.keys.any { it.startsWith("$path$fieldSeparator") }
+        main.containsKey(path) || main.keys.any { it.startsWith("$path$fieldSeparator") } || children.containsKey(path)
 
     // Check for nested fields with non-null values - by Claude
     // This correctly handles nullable collections where the schema has columns

@@ -64,7 +64,7 @@ public class BedrockLlmAccess(
 
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         try {
-            val body = BedrockWire.buildRequestBody(prompt, module).toString().encodeToByteArray()
+            val body = BedrockWire.buildRequestBody(model.id, prompt, module).toString().encodeToByteArray()
             val path = "/model/${encodePathSegment(model.id)}/converse-stream"
             val amzDate = clock.nowAmzDate()
 
@@ -104,7 +104,7 @@ public class BedrockLlmAccess(
                     emit(
                         LlmStreamEvent.Finished(
                             stopReason = state.stopReason,
-                            usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens),
+                            usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
                         ),
                     )
                 }
@@ -456,12 +456,13 @@ internal suspend fun handleBedrockEvent(
                 // Prompt-caching tokens are only reported by newer models (Claude 3.5 Sonnet,
                 // Nova) on cache hits — absent on older models and cache misses.
                 usage.int("cacheReadInputTokenCount")?.let { state.cacheReadTokens = it }
+                usage.int("cacheWriteInputTokenCount")?.let { state.cacheWriteTokens = it }
             }
             state.finished = true
             emit(
                 LlmStreamEvent.Finished(
                     stopReason = state.stopReason,
-                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens),
+                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
                 ),
             )
             true

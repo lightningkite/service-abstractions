@@ -101,6 +101,8 @@ public class MapDecoder(
             input.readField(path) != null -> true
             // No direct value, but has nested fields (embedded class without exists marker)
             input.hasNestedFields(path) -> true
+            // Has child rows (for nullable collections stored in child tables)
+            input.readChildren(path).isNotEmpty() -> true
             else -> false
         }
     }

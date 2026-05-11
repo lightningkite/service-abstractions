@@ -43,6 +43,14 @@ public class OpenAiEmbeddingService(
     public val dimensions: Int? = null,
 ) : EmbeddingService {
 
+    public companion object {
+        init {
+            if (!EmbeddingService.Settings.supports("openai")) {
+                OpenAiEmbeddingSettings.ensureRegistered()
+            }
+        }
+    }
+
     private val client: HttpClient = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) { json(openAiEmbeddingJson) }
     }

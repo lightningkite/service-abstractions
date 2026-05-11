@@ -5,23 +5,26 @@ import com.lightningkite.services.data.KFile
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
 
 /**
- * A Database implementation that exists entirely in the applications Heap. There are no external connections.
- * It uses InMemoryFieldCollections in its implementation. This is NOT meant for persistent or long term storage.
- * This database will be completely erased everytime the application is stopped.
- * This is useful in places that persistent data is not needed and speed is desired such as Unit Tests.
+ * A Database implementation that exists entirely in the application's heap.
  *
- * @param premadeData A JsonObject that contains data you wish to populate the database with on creation.
+ * Each [Table] is backed by an [InMemoryTable] keyed by `_id`. The backing map
+ * is produced by [mapFactory], which lets JVM users supply
+ * `java.util.concurrent.ConcurrentHashMap` (or any other concrete map) instead
+ * of the default [HashMap].
+ *
+ * Not intended for persistent storage; data is erased when the process stops.
+ *
+ * @param premadeData Optional preload source.
+ * @param mapFactory Factory for the per-table backing map.
  */
 public class InMemoryDatabase(
     override val name: String,
     private val premadeData: PreloadData? = null,
-    override val context: SettingContext
+    override val context: SettingContext,
+    private val mapFactory: () -> MutableMap<Any?, Any> = { HashMap() },
 ) : Database {
     public val collections: HashMap<Pair<KSerializer<*>, String>, InMemoryTable<*>> = HashMap()
 
@@ -53,10 +56,14 @@ public class InMemoryDatabase(
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
-            val made = InMemoryTable(serializer = serializer, tableName = name, tracer = context.openTelemetry)
-            premadeData
-                ?.get(context, json, serializer, name)
-                ?.let { made.data.addAll(it) }
+            val backing = mapFactory() as MutableMap<Any?, T>
+            val made = InMemoryTable(
+                data = backing,
+                serializer = serializer,
+                tableName = name,
+                tracer = context.openTelemetry,
+            )
+            premadeData?.get(context, json, serializer, name)?.let { made.preload(it) }
             made
         } as Table<T>)
 }

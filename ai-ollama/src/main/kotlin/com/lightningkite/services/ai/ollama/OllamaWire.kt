@@ -4,6 +4,7 @@ import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
+import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
 import com.lightningkite.services.ai.toJsonSchema
@@ -11,6 +12,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
@@ -97,6 +99,7 @@ internal object OllamaWire {
                 }
             }
         }
+        ollamaThink(prompt)?.let { put("think", it) }
     }
 
     /**
@@ -202,6 +205,28 @@ internal object OllamaWire {
             }
         }
 
+    /**
+     * Resolve Ollama's `think` field. Ollama accepts a boolean toggle (older versions)
+     * or a level string `"low" | "medium" | "high"` (newer thinking-capable models).
+     * `Off` -> `false`, anything else -> level string. Budget alone (no effort) maps to
+     * a bucketed level. Returns null when reasoning is unset.
+     */
+    private fun ollamaThink(prompt: LlmPrompt): JsonElement? {
+        prompt.reasoningEffort?.let { effort ->
+            return when (effort) {
+                LlmReasoningEffort.Off -> JsonPrimitive(false)
+                LlmReasoningEffort.Minimal, LlmReasoningEffort.Low -> JsonPrimitive("low")
+                LlmReasoningEffort.Medium -> JsonPrimitive("medium")
+                LlmReasoningEffort.High -> JsonPrimitive("high")
+            }
+        }
+        val budget = prompt.reasoningBudgetTokens ?: return null
+        return JsonPrimitive(when {
+            budget <= 4096 -> "low"
+            budget <= 12288 -> "medium"
+            else -> "high"
+        })
+    }
 }
 
 // ----------------------------------------------------------------------------------------

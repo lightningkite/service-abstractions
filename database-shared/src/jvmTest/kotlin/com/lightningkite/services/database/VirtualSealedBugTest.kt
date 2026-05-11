@@ -38,6 +38,10 @@ class VirtualSealedBugTest {
 
     // ── Registration ───────────────────────────────────────────────────────────
 
+    @Test fun defaulting() {
+        println(Shape.serializer().default())
+    }
+
     @Test
     fun `sealed class registers as VirtualSealed`() {
         val registry = SerializationRegistry(EmptySerializersModule())

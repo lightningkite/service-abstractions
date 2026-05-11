@@ -150,7 +150,7 @@ public class AnthropicLlmAccess(
             emit(
                 LlmStreamEvent.Finished(
                     stopReason = state.stopReason,
-                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens),
+                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
                 ),
             )
         }
@@ -337,6 +337,7 @@ public class AnthropicLlmAccess(
         var inputTokens: Int = 0
         var outputTokens: Int = 0
         var cacheReadTokens: Int = 0
+        var cacheWriteTokens: Int = 0
         var stopReason: LlmStopReason = LlmStopReason.EndTurn
         var finished: Boolean = false
 
@@ -402,6 +403,8 @@ private suspend fun handleSseEvent(
                 ?: state.inputTokens
             state.cacheReadTokens = usage?.get("cache_read_input_tokens")?.jsonPrimitive?.intOrNull
                 ?: state.cacheReadTokens
+            state.cacheWriteTokens = usage?.get("cache_creation_input_tokens")?.jsonPrimitive?.intOrNull
+                ?: state.cacheWriteTokens
             false
         }
 
@@ -469,7 +472,7 @@ private suspend fun handleSseEvent(
             emit(
                 LlmStreamEvent.Finished(
                     stopReason = state.stopReason,
-                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens),
+                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
                 ),
             )
             true

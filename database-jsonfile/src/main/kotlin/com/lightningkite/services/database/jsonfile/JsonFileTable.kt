@@ -25,7 +25,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
 import java.io.Closeable
-import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
@@ -38,7 +38,7 @@ public class JsonFileTable<Model : Any>(
     public val tableName: String,
     private val tracer: Tracer?
 ) : InMemoryTable<Model>(
-    data = Collections.synchronizedList(ArrayList()),
+    data = ConcurrentHashMap<Any?, Model>(),
     serializer = serializer
 ), Closeable {
     public companion object {
@@ -87,7 +87,7 @@ public class JsonFileTable<Model : Any>(
     }
 
     init {
-        data.addAll(
+        preload(
             encoding.decodeFromString(
                 ListSerializer(serializer),
                 file.readStringOrNull() ?: "[]"
@@ -107,7 +107,7 @@ public class JsonFileTable<Model : Any>(
 
     public fun handleCollectionDump() {
         val temp = file.parent!!.then(file.name + ".saving")
-        temp.writeString(encoding.encodeToString(ListSerializer(serializer), data.toList()))
+        temp.writeString(encoding.encodeToString(ListSerializer(serializer), data.values.toList()))
         temp.atomicMove(file)
         logger.debug { "Saved $file" }
     }

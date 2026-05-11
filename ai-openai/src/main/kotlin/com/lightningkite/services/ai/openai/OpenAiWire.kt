@@ -9,6 +9,7 @@ import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmModelId
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
+import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
@@ -180,9 +181,36 @@ internal fun buildRequestBody(
     if (prompt.stopSequences.isNotEmpty()) {
         putJsonArray("stop") { prompt.stopSequences.forEach { add(it) } }
     }
+    openAiReasoningEffort(prompt)?.let { put("reasoning_effort", it) }
     if (stream) {
         put("stream", true)
         putJsonObject("stream_options") { put("include_usage", true) }
+    }
+}
+
+/**
+ * Resolve OpenAI's `reasoning_effort` value. Explicit [LlmPrompt.reasoningEffort] wins;
+ * otherwise [LlmPrompt.reasoningBudgetTokens] buckets into the nearest enum so
+ * cross-provider configs with only a budget set still route through. Returns null when
+ * no reasoning is requested or it is explicitly Off (OpenAI has no off toggle — omitting
+ * the field uses the model default; for non-reasoning models OpenAI ignores the field).
+ */
+private fun openAiReasoningEffort(prompt: LlmPrompt): String? {
+    prompt.reasoningEffort?.let { effort ->
+        return when (effort) {
+            LlmReasoningEffort.Off -> null
+            LlmReasoningEffort.Minimal -> "minimal"
+            LlmReasoningEffort.Low -> "low"
+            LlmReasoningEffort.Medium -> "medium"
+            LlmReasoningEffort.High -> "high"
+        }
+    }
+    val budget = prompt.reasoningBudgetTokens ?: return null
+    return when {
+        budget <= 1024 -> "minimal"
+        budget <= 4096 -> "low"
+        budget <= 12288 -> "medium"
+        else -> "high"
     }
 }
 

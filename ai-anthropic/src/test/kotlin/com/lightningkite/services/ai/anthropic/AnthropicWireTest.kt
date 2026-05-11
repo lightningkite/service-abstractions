@@ -603,7 +603,7 @@ class AnthropicWireTest {
         val state = AnthropicLlmAccess.SseState()
         val stream = """
             event: message_start
-            data: {"type":"message_start","message":{"id":"msg_cached","role":"assistant","usage":{"input_tokens":1500,"cache_read_input_tokens":1200,"output_tokens":0}}}
+            data: {"type":"message_start","message":{"id":"msg_cached","role":"assistant","usage":{"input_tokens":1500,"cache_read_input_tokens":1200,"cache_creation_input_tokens":300,"output_tokens":0}}}
 
             event: content_block_start
             data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
@@ -627,6 +627,7 @@ class AnthropicWireTest {
         val finished = events.filterIsInstance<LlmStreamEvent.Finished>().single()
         assertEquals(1500, finished.usage.inputTokens)
         assertEquals(1200, finished.usage.cacheReadTokens)
+        assertEquals(300, finished.usage.cacheWriteTokens)
         assertEquals(5, finished.usage.outputTokens)
     }
 

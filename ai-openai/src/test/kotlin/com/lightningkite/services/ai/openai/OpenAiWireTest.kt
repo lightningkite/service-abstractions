@@ -542,5 +542,6 @@ class OpenAiWireTest {
         assertEquals(1500, finished.usage.inputTokens)
         assertEquals(42, finished.usage.outputTokens)
         assertEquals(1200, finished.usage.cacheReadTokens)
+        assertEquals(0, finished.usage.cacheWriteTokens)
     }
 }

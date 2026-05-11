@@ -35,7 +35,7 @@ class BedrockWireTest {
                 LlmMessage.User(listOf(LlmPart.Text("Hello"))),
             ),
         )
-        val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
+        val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
         val system = body["system"] as JsonArray
         assertEquals(1, system.size)
         val block = system[0] as JsonObject
@@ -53,7 +53,7 @@ class BedrockWireTest {
                 LlmMessage.Agent(listOf(LlmPart.Text("done"))),
             ),
         )
-        val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
+        val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
         val messages = body["messages"] as JsonArray
         val role = (messages[0] as JsonObject)["role"] as JsonPrimitive
         assertEquals("assistant", role.content)
@@ -68,7 +68,7 @@ class BedrockWireTest {
                 ),
             ),
         )
-        val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
+        val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
         val messages = body["messages"] as JsonArray
         val msg = messages[0] as JsonObject
         assertEquals("user", (msg["role"] as JsonPrimitive).content)
@@ -96,7 +96,7 @@ class BedrockWireTest {
                 ),
             ),
         )
-        val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
+        val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
         val messages = body["messages"] as JsonArray
         val block = ((messages[0] as JsonObject)["content"] as JsonArray)[0] as JsonObject
         val toolUse = block["toolUse"] as JsonObject
@@ -117,7 +117,7 @@ class BedrockWireTest {
             ),
             toolChoice = LlmToolChoice.Required,
         )
-        val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
+        val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
         val toolConfig = body["toolConfig"] as JsonObject
         val tools = toolConfig["tools"] as JsonArray
         val toolSpec = (tools[0] as JsonObject)["toolSpec"] as JsonObject
@@ -150,7 +150,7 @@ class BedrockWireTest {
             ),
             toolChoice = LlmToolChoice.None,
         )
-        val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
+        val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
 
         // Tools must remain declared.
         val toolConfig = body["toolConfig"] as JsonObject
@@ -177,7 +177,7 @@ class BedrockWireTest {
             temperature = 0.3,
             stopSequences = listOf("STOP"),
         )
-        val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
+        val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
         val inf = body["inferenceConfig"] as JsonObject
         assertEquals(200, (inf["maxTokens"] as JsonPrimitive).content.toInt())
         assertEquals(0.3, (inf["temperature"] as JsonPrimitive).content.toDouble())
@@ -202,7 +202,7 @@ class BedrockWireTest {
         )
         var threw = false
         try {
-            BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
+            BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
         } catch (e: IllegalArgumentException) {
             threw = true
             assertTrue("URL" in (e.message ?: ""))
@@ -364,7 +364,7 @@ class BedrockWireTest {
                 ),
             ),
         )
-        val body = BedrockWire.buildRequestBody(prompt, EmptySerializersModule())
+        val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
         val content = ((body["messages"] as JsonArray)[0] as JsonObject)["content"] as JsonArray
         assertEquals(1, content.size, "Reasoning block must be filtered out")
         val block = content[0] as JsonObject
@@ -417,7 +417,7 @@ class BedrockWireTest {
             headers = mapOf(":event-type" to "metadata", ":message-type" to "event"),
             payload = """
                 {"usage":{"inputTokens":1500,"outputTokens":42,"totalTokens":1542,
-                "cacheReadInputTokenCount":1200,"cacheWriteInputTokenCount":0}}
+                "cacheReadInputTokenCount":1200,"cacheWriteInputTokenCount":300}}
             """.trimIndent().encodeToByteArray(),
         )
 
@@ -427,5 +427,6 @@ class BedrockWireTest {
         assertEquals(1500, finished.usage.inputTokens)
         assertEquals(42, finished.usage.outputTokens)
         assertEquals(1200, finished.usage.cacheReadTokens)
+        assertEquals(300, finished.usage.cacheWriteTokens)
     }
 }
