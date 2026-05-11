@@ -1,15 +1,20 @@
 package com.lightningkite.services.pubsub.redis
 
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
-import com.lightningkite.services.recordExceptionWithFingerprint
 import io.lettuce.core.RedisClient
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
 import io.lettuce.core.resource.ClientResources
-import io.opentelemetry.api.trace.*
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.instrumentation.lettuce.v5_1.LettuceTelemetry
 import kotlinx.coroutines.flow.FlowCollector
-import kotlinx.coroutines.reactive.*
+import kotlinx.coroutines.reactive.asFlow
+import kotlinx.coroutines.reactive.awaitFirst
+import kotlinx.coroutines.reactive.collect
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import reactor.core.publisher.Flux
@@ -138,14 +143,19 @@ import reactor.core.publisher.Mono
 public class RedisPubSub(
     override val name: String,
     override val context: SettingContext,
-    private val client: RedisClient,
+    private val client: RedisClient
 ) : PubSub {
     private val tracer: Tracer? = context.openTelemetry?.getTracer("pubsub-redis")
     private val json = Json { serializersModule = context.internalSerializersModule }
 
+    // Shared publish connection. Lettuce connections are thread-safe and pipeline commands.
+    // Opening a connection per emit caused TLS handshake storms that pegged Netty event loops.
+    private val publishConnection: StatefulRedisPubSubConnection<String, String> by lazy {
+        client.connectPubSub()
+    }
+
     public companion object {
         public fun PubSub.Settings.Companion.redis(url: String): PubSub.Settings = PubSub.Settings("redis://$url")
-
         init {
             PubSub.Settings.register("redis") { name, url, context ->
                 val telemetry = context.openTelemetry?.let { LettuceTelemetry.create(it) }
@@ -239,14 +249,12 @@ public class RedisPubSub(
                     ?.setAttribute("pubsub.system", "redis")
                     ?.startSpan()
 
-                // Create fresh connection for publish - no caching for serverless compatibility
-                val connection = client.connectPubSub()
                 try {
                     val scope = span?.makeCurrent()
                     try {
                         val message = json.encodeToString(serializer, value)
                         span?.setAttribute("message.size", message.length.toLong())
-                        val result = connection.reactive().publish(key, message).awaitFirst()
+                        val result = publishConnection.reactive().publish(key, message).awaitFirst()
                         span?.setAttribute("pubsub.subscribers_reached", result)
                         span?.setStatus(StatusCode.OK)
                     } finally {
@@ -257,7 +265,6 @@ public class RedisPubSub(
                     span?.recordExceptionWithFingerprint(e)
                     throw e
                 } finally {
-                    connection.close()
                     span?.end()
                 }
             }
@@ -316,12 +323,10 @@ public class RedisPubSub(
                     ?.setAttribute("message.size", value.length.toLong())
                     ?.startSpan()
 
-                // Create fresh connection for publish - no caching for serverless compatibility
-                val connection = client.connectPubSub()
                 try {
                     val scope = span?.makeCurrent()
                     try {
-                        val result = connection.reactive().publish(key, value).awaitFirst()
+                        val result = publishConnection.reactive().publish(key, value).awaitFirst()
                         span?.setAttribute("pubsub.subscribers_reached", result)
                         span?.setStatus(StatusCode.OK)
                     } finally {
@@ -332,7 +337,6 @@ public class RedisPubSub(
                     span?.recordExceptionWithFingerprint(e)
                     throw e
                 } finally {
-                    connection.close()
                     span?.end()
                 }
             }
