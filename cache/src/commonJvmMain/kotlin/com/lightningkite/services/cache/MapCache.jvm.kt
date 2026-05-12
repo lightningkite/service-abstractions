@@ -103,7 +103,7 @@ public actual class MapCache actual constructor(
         assertValidTtl(timeToLive)
         return instrumentedModify<T>(context, key, maxTries, timeToLive) {
             entries.compute(key) { _, existing ->
-                val current = existing?.value as? T 
+                val current = existing?.value as? T
                 val new = modification(current)
                 if (new != null) {
                     Entry(new, existing?.expires)

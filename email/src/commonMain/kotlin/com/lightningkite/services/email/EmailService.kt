@@ -1,13 +1,7 @@
 package com.lightningkite.services.email
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.services.HealthStatus
-import com.lightningkite.services.Service
-import com.lightningkite.services.Setting
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.UrlSettingParser
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.toEmailAddress
+import com.lightningkite.services.*
+import com.lightningkite.services.data.*
 import kotlinx.html.HTML
 import kotlinx.html.html
 import kotlinx.html.stream.appendHTML
@@ -122,7 +116,7 @@ public interface EmailService : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "console"
+        public val url: String = "console",
     ) : Setting<EmailService> {
         public companion object : UrlSettingParser<EmailService>() {
             init {
@@ -258,6 +252,7 @@ public data class Email @Deprecated("Use KotlinX HTML to build HTML emails.") co
         attachments = attachments,
         customHeaders = customHeaders,
     )
+
     @Suppress("DEPRECATION")
     public constructor(
         subject: String,
@@ -265,7 +260,7 @@ public data class Email @Deprecated("Use KotlinX HTML to build HTML emails.") co
         to: List<EmailAddressWithName>,
         cc: List<EmailAddressWithName> = listOf(),
         bcc: List<EmailAddressWithName> = listOf(),
-        html: HTML.()->Unit,
+        html: HTML.() -> Unit,
         plainText: String = buildString {
             appendHTML(true).html(block = html)
         }.emailApproximatePlainText(),
@@ -296,7 +291,7 @@ public data class Email @Deprecated("Use KotlinX HTML to build HTML emails.") co
     public data class Attachment(
         public val inline: Boolean,
         public val filename: String,
-        public val typedData: TypedData
+        public val typedData: TypedData,
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -344,7 +339,7 @@ public data class Email @Deprecated("Use KotlinX HTML to build HTML emails.") co
  */
 public data class EmailAddressWithName(
     public val value: EmailAddress,
-    public val label: String? = null
+    public val label: String? = null,
 ) {
     public constructor(value: String) : this(value.toEmailAddress())
 }

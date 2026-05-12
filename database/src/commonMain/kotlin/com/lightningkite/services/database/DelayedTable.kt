@@ -17,7 +17,7 @@ import kotlin.time.DurationUnit
  */
 public open class DelayedTable<Model : Any>(
     override val wraps: Table<Model>,
-    private val range: ClosedRange<Duration>
+    private val range: ClosedRange<Duration>,
 ) : Table<Model> {
     private suspend fun doDelay() {
         delay(
@@ -45,7 +45,7 @@ public open class DelayedTable<Model : Any>(
         orderBy: List<SortPart<Model>>,
         skip: Int,
         limit: Int,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<Partial<Model>> =
         wraps.findPartial(fields, condition, orderBy, skip, limit, maxQueryMs).onStart { doDelay() }
 
@@ -56,7 +56,7 @@ public open class DelayedTable<Model : Any>(
 
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>
+        groupBy: DataClassPath<Model, Key>,
     ): Map<Key, Int> {
         doDelay()
         return wraps.groupCount(condition, groupBy)
@@ -177,7 +177,7 @@ public open class DelayedTable<Model : Any>(
         vectorField: DataClassPath<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> {
         doDelay()
         return wraps.findSimilar(vectorField, params, condition, maxQueryMs)
@@ -187,7 +187,7 @@ public open class DelayedTable<Model : Any>(
         vectorField: DataClassPath<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> {
         doDelay()
         return wraps.findSimilarSparse(vectorField, params, condition, maxQueryMs)
@@ -200,6 +200,7 @@ public fun <Model : Any> Table<Model>.delayed(range: ClosedRange<Duration>): Tab
 public fun Database.delayed(range: ClosedRange<Duration>): Database = object : Database {
     override val name: String
         get() = this@delayed.name
+
     override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> {
         return this@delayed.table(serializer, name).delayed(range)
     }

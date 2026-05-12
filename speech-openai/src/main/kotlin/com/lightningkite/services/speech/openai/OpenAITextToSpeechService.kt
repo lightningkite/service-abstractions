@@ -1,13 +1,9 @@
 package com.lightningkite.services.speech.openai
 
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -70,7 +66,7 @@ public class OpenAITextToSpeechService(
     override val name: String,
     override val context: SettingContext,
     private val apiKey: String,
-    private val defaultModel: String = "tts-1"
+    private val defaultModel: String = "tts-1",
 ) : TextToSpeechService {
 
     private val baseUrl = "https://api.openai.com/v1"
@@ -146,7 +142,7 @@ public class OpenAITextToSpeechService(
     override suspend fun synthesize(
         text: String,
         voice: TtsVoiceConfig,
-        options: TtsSynthesisOptions
+        options: TtsSynthesisOptions,
     ): TypedData {
         val voiceId = voice.voiceId ?: getDefaultVoice(voice.gender)
         val model = options.model ?: defaultModel
@@ -177,7 +173,7 @@ public class OpenAITextToSpeechService(
     override fun synthesizeStream(
         text: String,
         voice: TtsVoiceConfig,
-        options: TtsSynthesisOptions
+        options: TtsSynthesisOptions,
     ): Flow<TypedData> = flow {
         val voiceId = voice.voiceId ?: getDefaultVoice(voice.gender)
         val model = options.model ?: defaultModel
@@ -231,7 +227,7 @@ public class OpenAITextToSpeechService(
         voice: String,
         model: String,
         responseFormat: String,
-        speed: Float
+        speed: Float,
     ): String {
         return buildString {
             append("{")
@@ -297,7 +293,7 @@ public class OpenAITextToSpeechService(
          */
         public fun TextToSpeechService.Settings.Companion.openai(
             apiKey: String,
-            model: String = "tts-1"
+            model: String = "tts-1",
         ): TextToSpeechService.Settings = TextToSpeechService.Settings("openai://$apiKey@$model")
     }
 }
@@ -325,7 +321,7 @@ private fun parseOpenAITtsUrl(url: String): Pair<String, String> {
         if (apiKey.isBlank() || apiKey.startsWith("\${")) {
             throw IllegalArgumentException(
                 "OpenAI API key required. " +
-                    "Format: openai://apiKey@model or openai://\${OPENAI_API_KEY}@model"
+                        "Format: openai://apiKey@model or openai://\${OPENAI_API_KEY}@model"
             )
         }
 
@@ -338,7 +334,7 @@ private fun parseOpenAITtsUrl(url: String): Pair<String, String> {
         ?: System.getenv("OPENAI_API_KEY")
         ?: throw IllegalArgumentException(
             "OpenAI API key required. " +
-                "Format: openai://apiKey@model or set OPENAI_API_KEY environment variable."
+                    "Format: openai://apiKey@model or set OPENAI_API_KEY environment variable."
         )
     val model = params["model"] ?: defaultModel
 

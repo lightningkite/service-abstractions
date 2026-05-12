@@ -1,28 +1,15 @@
 package com.lightningkite.services.email.javasmtp
 
-import com.lightningkite.MediaType
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.MediaType
+import com.lightningkite.services.email.*
 import com.lightningkite.services.recordExceptionWithFingerprint
-import com.lightningkite.services.email.Email
-import com.lightningkite.services.email.EmailAddressWithName
-import com.lightningkite.services.email.EmailPersonalization
-import com.lightningkite.services.email.EmailService
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.api.trace.*
 import jakarta.activation.DataHandler
-import jakarta.mail.Authenticator
-import jakarta.mail.Message
-import jakarta.mail.PasswordAuthentication
-import jakarta.mail.Session
-import jakarta.mail.Transport
-import jakarta.mail.internet.InternetAddress
-import jakarta.mail.internet.MimeBodyPart
-import jakarta.mail.internet.MimeMessage
-import jakarta.mail.internet.MimeMultipart
+import jakarta.mail.*
+import jakarta.mail.internet.*
 import jakarta.mail.util.ByteArrayDataSource
-import java.util.Properties
-import kotlin.use
+import java.util.*
 
 /**
  * SMTP email implementation using Jakarta Mail (JavaMail) for sending emails.
@@ -136,7 +123,8 @@ public class JavaSmtpEmailService(
             port: String,
             fromEmail: String,
             fromLabel: String? = null,
-        ): EmailService.Settings = EmailService.Settings("smtp://$username:$password@$host:$port?fromEmail=$fromEmail&fromLabel=$fromLabel")
+        ): EmailService.Settings =
+            EmailService.Settings("smtp://$username:$password@$host:$port?fromEmail=$fromEmail&fromLabel=$fromLabel")
 
         init {
             EmailService.Settings.register("smtp") { name, url, context ->
@@ -196,7 +184,7 @@ public class JavaSmtpEmailService(
             ?.setAttribute("email.system", "smtp")
             ?.setAttribute("email.smtp.host", hostName)
             ?.setAttribute("email.smtp.port", port.toLong())
-            ?.setAttribute("email.from", email.from?.value.toString() ?: from.value.toString())
+            ?.setAttribute("email.from", email.from?.value?.toString() ?: from.value.toString())
             ?.setAttribute("email.to", email.to.joinToString(", ") { it.value.toString() })
             ?.setAttribute("email.subject", email.subject)
             ?.also { builder ->
@@ -240,7 +228,7 @@ public class JavaSmtpEmailService(
             ?.setAttribute("email.system", "smtp")
             ?.setAttribute("email.smtp.host", hostName)
             ?.setAttribute("email.smtp.port", port.toLong())
-            ?.setAttribute("email.from", template.from?.value.toString() ?: from.value.toString())
+            ?.setAttribute("email.from", template.from?.value?.toString() ?: from.value.toString())
             ?.setAttribute("email.subject", template.subject)
             ?.setAttribute("email.personalizations.count", personalizations.size.toLong())
             ?.startSpan()

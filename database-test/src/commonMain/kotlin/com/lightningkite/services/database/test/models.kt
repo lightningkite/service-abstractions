@@ -1,16 +1,11 @@
-
 package com.lightningkite.services.database.test
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.GeoCoordinate
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.*
-import com.lightningkite.services.database.HasId
-import com.lightningkite.toEmailAddress
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
-import kotlin.uuid.Uuid
 import kotlin.time.Instant
+import kotlin.uuid.Uuid
 
 @GenerateDataClassPaths()
 @Serializable
@@ -19,7 +14,7 @@ data class User(
     @Index(unique = IndexUniqueness.Unique) override var email: String,
     @Index(unique = IndexUniqueness.Unique) override val phoneNumber: String,
     var age: Long = 0,
-    var friends: List<Uuid> = listOf()
+    var friends: List<Uuid> = listOf(),
 ) : HasId<Uuid>, HasEmail, HasPhoneNumber {
     companion object
 }
@@ -34,25 +29,26 @@ data class ValidatedModel(
 @Serializable
 data class HasWeirdMap(
     override val _id: Uuid = Uuid.random(),
-    val map: Map<TestEnum, String> = mapOf(TestEnum.One to "One", TestEnum.Two to "Two")
-): HasId<Uuid>
+    val map: Map<TestEnum, String> = mapOf(TestEnum.One to "One", TestEnum.Two to "Two"),
+) : HasId<Uuid>
 
 @GenerateDataClassPaths
 @Serializable
 data class CompoundKeyTestModel(
     override val _id: CompoundTestKey = CompoundTestKey("first", "second"),
     val value: Int = 0,
-): HasId<CompoundTestKey>
+) : HasId<CompoundTestKey>
 
 @GenerateDataClassPaths
 @Serializable
 data class CompoundTestKey(
     val first: String,
     val second: String,
-): Comparable<CompoundTestKey> {
+) : Comparable<CompoundTestKey> {
     companion object {
         val comparator = compareBy<CompoundTestKey> { it.first }.thenBy { it.second }
     }
+
     override fun compareTo(other: CompoundTestKey): Int = comparator.compare(this, other)
 }
 
@@ -62,7 +58,7 @@ data class Post(
     override val _id: Uuid = Uuid.random(),
     var author: Uuid,
     var content: String,
-    var at: Long? = null
+    var at: Long? = null,
 ) : HasId<Uuid> {
     companion object
 }
@@ -90,14 +86,14 @@ data class EmbeddedObjectTest(
 @GenerateDataClassPaths
 @Serializable
 data class ClassUsedForEmbedding(
-    var value1:String = "default",
-    var value2:Int = 1
+    var value1: String = "default",
+    var value2: Int = 1,
 )
 
 @Serializable
 data class RecursiveEmbed(
-    var embedded:RecursiveEmbed? = null,
-    var value2:String = "value2"
+    var embedded: RecursiveEmbed? = null,
+    var value2: String = "value2",
 )
 
 @GenerateDataClassPaths
@@ -146,7 +142,7 @@ data class LargeTestModel(
     var listNullable: List<Int>? = null,
     var mapNullable: Map<String, Int>? = null,
     var embeddedNullable: ClassUsedForEmbedding? = null,
-    var email: EmailAddress = "test@test.com".toEmailAddress()
+    var email: EmailAddress = "test@test.com".toEmailAddress(),
 ) : HasId<Uuid> {
     companion object
 }
@@ -158,7 +154,7 @@ data class ValueClassContainingTest(
     val direct: ValueClass = ValueClass("direct"),
     val set: Set<ValueClass> = setOf(ValueClass("set")),
     val wrappedInt: IntWrapper = IntWrapper(42),
-): HasId<Uuid>
+) : HasId<Uuid>
 
 @Serializable
 @JvmInline
@@ -189,7 +185,7 @@ data class ExtendedValueClassTest(
     val wrappedUuidNullable: UuidWrapper? = null,
     val list: List<ValueClass> = listOf(),
     val listInt: List<IntWrapper> = listOf(),
-): HasId<Uuid>
+) : HasId<Uuid>
 
 @GenerateDataClassPaths
 @Serializable
@@ -215,7 +211,7 @@ data class SimpleLargeTestModel(
 @Serializable
 data class NestedEnumTestModel(
     override val _id: Uuid = Uuid.random(),
-    val thing: NestedEnumHolder = NestedEnumHolder()
+    val thing: NestedEnumHolder = NestedEnumHolder(),
 ) : HasId<Uuid> {
     companion object
 }
@@ -223,7 +219,7 @@ data class NestedEnumTestModel(
 @GenerateDataClassPaths
 @Serializable
 data class NestedEnumHolder(
-    val enumValue: TestEnum = TestEnum.One
+    val enumValue: TestEnum = TestEnum.One,
 )
 
 @Serializable
@@ -233,7 +229,7 @@ enum class TestEnum { One, Two }
 @Serializable
 data class GeoTest(
     override val _id: Uuid = Uuid.random(),
-    @Index val geo: GeoCoordinate = GeoCoordinate(41.727019, -111.8443002)
+    @Index val geo: GeoCoordinate = GeoCoordinate(41.727019, -111.8443002),
 ) : HasId<Uuid> {
     companion object
 }
@@ -250,7 +246,7 @@ data class EmbeddedMap(
 data class MetaTestModel(
     override val _id: Uuid = Uuid.random(),
     val condition: Condition<LargeTestModel>,
-    val modification: Modification<LargeTestModel>
+    val modification: Modification<LargeTestModel>,
 ) : HasId<Uuid> {
 }
 
@@ -258,14 +254,14 @@ data class MetaTestModel(
 @Serializable
 data class HasGenerics<T>(
     override val _id: Uuid,
-    val value: T
+    val value: T,
 ) : HasId<Uuid>
 
 @GenerateDataClassPaths
 @Serializable
 data class HasGenerics2<T>(
     override val _id: Uuid,
-    val value: T
+    val value: T,
 ) : HasId<Uuid>
 
 @GenerateDataClassPaths
@@ -322,7 +318,10 @@ data class UniqueIndexTestModel(
 data class UniqueNullSparseIndexTestModel(
     override val _id: Uuid = Uuid.random(),
 
-    @Index(unique = IndexUniqueness.UniqueNullSparse, name = "uniqueNullSparseValue") val value: String? = String.random(),
+    @Index(
+        unique = IndexUniqueness.UniqueNullSparse,
+        name = "uniqueNullSparseValue"
+    ) val value: String? = String.random(),
 
     val set1: String? = String.random(),
     val set2: String? = String.random(),

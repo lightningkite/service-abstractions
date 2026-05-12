@@ -18,19 +18,20 @@ import kotlin.test.Test
  * - AWS_REGION
  */
 class S3PublicFileSystemTest : FileSystemTests() {
-    
+
     override val system: S3PublicFileSystem? by lazy {
         S3PublicFileSystem
         PublicFileSystem.Settings(
             "s3://lk@lightningkite-unit-test-bucket.us-west-2.amazonaws.com"
         ).invoke("test", TestSettingContext()) as? S3PublicFileSystem
     }
-    
+
     override fun uploadHeaders(builder: HttpRequestBuilder) {
         builder.headers.append("Content-Type", "text/plain")
     }
 
-    @Test fun signingPerformance() {
+    @Test
+    fun signingPerformance() {
         val system = system ?: return
         val file = system.root.then("test.txt")
 //        val mine = performance(10_000) {
@@ -45,7 +46,8 @@ class S3PublicFileSystemTest : FileSystemTests() {
 //        assert(mine < theirs)
     }
 
-    @Test fun settingParse() {
+    @Test
+    fun settingParse() {
         S3PublicFileSystem
         PublicFileSystem.Settings("s3://demo-example-files20220920193513533900000004.s3-us-west-2.amazonaws.com/?signedUrlDuration=1d")
             .invoke("test", TestSettingContext()) as? S3PublicFileSystem

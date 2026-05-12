@@ -8,7 +8,8 @@
 
 ## Overview
 
-The PubSub module provides publish-subscribe messaging for decoupled communication. Multiple subscribers can listen to messages on a channel, and all receive every published message (fan-out pattern).
+The PubSub module provides publish-subscribe messaging for decoupled communication. Multiple subscribers can listen to
+messages on a channel, and all receive every published message (fan-out pattern).
 
 ### Key Features
 
@@ -35,6 +36,7 @@ val pubsub: PubSub = settings.pubsub("messaging", context)
 ```
 
 **Supported URL schemes:**
+
 - `local` - In-memory pub/sub within single JVM process (default)
 - `debug` - Prints all messages to console
 - `redis://host:port` - Redis Pub/Sub for cross-instance messaging (requires `pubsub-redis` module)
@@ -289,16 +291,19 @@ scope.launch {
 ### Local PubSub (`local`)
 
 **When to use:**
+
 - Single server deployment
 - Development/testing
 - Within a single JVM process
 
 **Limitations:**
+
 - Only works within one process
 - Lost on application restart
 - Can't communicate across servers
 
 **Example:**
+
 ```kotlin
 val pubsub = PubSub.Settings("local")("pubsub", context)
 ```
@@ -306,21 +311,25 @@ val pubsub = PubSub.Settings("local")("pubsub", context)
 ### Redis PubSub (`redis://`)
 
 **When to use:**
+
 - Multiple server instances
 - Microservices architecture
 - Horizontal scaling
 
 **Benefits:**
+
 - Messages broadcast across all instances
 - Works across different servers
 - Redis handles routing
 
 **Example:**
+
 ```kotlin
 val pubsub = PubSub.Settings("redis://localhost:6379")("pubsub", context)
 ```
 
 **Requirements:**
+
 - Redis server running
 - All instances connected to same Redis
 - Reliable network between instances
@@ -332,6 +341,7 @@ val pubsub = PubSub.Settings("redis://localhost:6379")("pubsub", context)
 ### When to Use PubSub
 
 ✅ **Good for:**
+
 - Real-time event notifications
 - Cache invalidation across instances
 - WebSocket message broadcasting
@@ -339,6 +349,7 @@ val pubsub = PubSub.Settings("redis://localhost:6379")("pubsub", context)
 - Temporary, ephemeral messages
 
 ❌ **Not good for:**
+
 - Guaranteed delivery (use message queue)
 - Durable storage (use database)
 - Task distribution (use work queue)
@@ -347,32 +358,32 @@ val pubsub = PubSub.Settings("redis://localhost:6379")("pubsub", context)
 
 ### PubSub vs Database
 
-| Feature | PubSub | Database |
-|---------|--------|----------|
-| Persistence | No | Yes |
-| Delivery guarantee | At-most-once | Guaranteed |
-| Query history | No | Yes |
-| Speed | Very fast | Fast |
-| Use case | Real-time events | Long-term storage |
+| Feature            | PubSub           | Database          |
+|--------------------|------------------|-------------------|
+| Persistence        | No               | Yes               |
+| Delivery guarantee | At-most-once     | Guaranteed        |
+| Query history      | No               | Yes               |
+| Speed              | Very fast        | Fast              |
+| Use case           | Real-time events | Long-term storage |
 
 ### PubSub vs Message Queue
 
-| Feature | PubSub | Message Queue |
-|---------|--------|---------------|
+| Feature     | PubSub             | Message Queue                |
+|-------------|--------------------|------------------------------|
 | Subscribers | Multiple (fan-out) | Single (competing consumers) |
-| Delivery | At-most-once | At-least-once |
-| Persistence | No | Yes |
-| Order | No guarantee | Often guaranteed |
-| Use case | Broadcasting | Task processing |
+| Delivery    | At-most-once       | At-least-once                |
+| Persistence | No                 | Yes                          |
+| Order       | No guarantee       | Often guaranteed             |
+| Use case    | Broadcasting       | Task processing              |
 
 ### PubSub vs Cache
 
-| Feature | PubSub | Cache |
-|---------|--------|-------|
-| Data storage | No | Yes |
-| Read access | No (consume once) | Yes (multiple reads) |
-| Expiration | Immediate | TTL-based |
-| Use case | Event notification | Shared state |
+| Feature      | PubSub             | Cache                |
+|--------------|--------------------|----------------------|
+| Data storage | No                 | Yes                  |
+| Read access  | No (consume once)  | Yes (multiple reads) |
+| Expiration   | Immediate          | TTL-based            |
+| Use case     | Event notification | Shared state         |
 
 ---
 
@@ -637,12 +648,14 @@ scope.launch {
 ### Messages Not Received
 
 **Check:**
+
 1. Is subscriber running before publisher?
 2. Are they using the same channel name?
 3. Is serialization working correctly?
 4. Are errors being silently caught?
 
 **Debug:**
+
 ```kotlin
 // Add logging
 scope.launch {
@@ -658,6 +671,7 @@ scope.launch {
 **Cause:** PubSub is at-most-once delivery
 
 **Solutions:**
+
 - Use message queue for guaranteed delivery
 - Add persistence layer (save to database)
 - Implement retry logic
@@ -668,6 +682,7 @@ scope.launch {
 **Cause:** Subscribers can't keep up with publishers
 
 **Solutions:**
+
 - Add buffering with limits
 - Make subscribers faster
 - Reduce publishing rate
@@ -678,6 +693,7 @@ scope.launch {
 **Symptoms:** Messages not crossing instances
 
 **Check:**
+
 1. All instances connected to same Redis?
 2. Network connectivity between instances and Redis?
 3. Redis server running?
@@ -687,6 +703,7 @@ scope.launch {
 ## See Also
 
 - [PubSub.kt](../pubsub/src/commonMain/kotlin/com/lightningkite/services/pubsub/PubSub.kt) - Interface documentation
-- [RedisPubSub.kt](../pubsub-redis/src/main/kotlin/com/lightningkite/services/pubsub/redis/RedisPubSub.kt) - Redis implementation
+- [RedisPubSub.kt](../pubsub-redis/src/main/kotlin/com/lightningkite/services/pubsub/redis/RedisPubSub.kt) - Redis
+  implementation
 - [database-module.md](./database-module.md) - Persistent storage alternative
 - [cache-module.md](./cache-module.md) - Shared state alternative

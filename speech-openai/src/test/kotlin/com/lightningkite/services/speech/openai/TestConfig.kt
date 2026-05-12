@@ -1,7 +1,7 @@
 package com.lightningkite.services.speech.openai
 
 import java.io.File
-import java.util.Properties
+import java.util.*
 
 /**
  * Test configuration that reads API keys from environment variables

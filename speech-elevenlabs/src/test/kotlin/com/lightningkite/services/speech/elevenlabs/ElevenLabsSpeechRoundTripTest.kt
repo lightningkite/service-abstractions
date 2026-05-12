@@ -1,12 +1,10 @@
 package com.lightningkite.services.speech.elevenlabs
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.speech.*
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Round-trip integration tests for ElevenLabs TTS + STT.
@@ -97,7 +95,7 @@ class ElevenLabsSpeechRoundTripTest {
         val stt = ElevenLabsSpeechToTextService(
             name = "test",
             context = testContext,
-            apiKey = apiKey!!
+            apiKey = apiKey
         )
 
         // Get a voice to use
@@ -150,7 +148,7 @@ class ElevenLabsSpeechRoundTripTest {
         val stt = ElevenLabsSpeechToTextService(
             name = "test",
             context = testContext,
-            apiKey = apiKey!!
+            apiKey = apiKey
         )
 
         val voices = tts.listVoices()

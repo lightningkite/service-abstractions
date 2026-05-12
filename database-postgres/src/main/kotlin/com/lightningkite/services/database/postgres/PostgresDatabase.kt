@@ -1,13 +1,10 @@
 package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.SettingContext
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.serializer
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.reflect.KType
 
 /**
  * PostgreSQL implementation of the Database abstraction using Exposed ORM.
@@ -81,8 +78,10 @@ public class PostgresDatabase(
         public fun com.lightningkite.services.database.Database.Settings.Companion.postgres(
             username: String,
             password: String,
-            host: String
-        ): com.lightningkite.services.database.Database.Settings = com.lightningkite.services.database.Database.Settings("postgresql://$username:$password@$host")
+            host: String,
+        ): com.lightningkite.services.database.Database.Settings =
+            com.lightningkite.services.database.Database.Settings("postgresql://$username:$password@$host")
+
         init {
             // postgresql://user:password@endpoint/database
             com.lightningkite.services.database.Database.Settings.register("postgresql") { name, url, context ->

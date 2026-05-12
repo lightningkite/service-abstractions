@@ -15,28 +15,6 @@
  */
 package com.lightningkite.services.database.mongodb.bson
 
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.descriptors.PolymorphicKind
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
-import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.encoding.AbstractDecoder
-import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.CompositeDecoder.Companion.DECODE_DONE
-import kotlinx.serialization.encoding.CompositeDecoder.Companion.UNKNOWN_NAME
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.modules.SerializersModule
-import org.bson.AbstractBsonReader
-import org.bson.BsonInvalidOperationException
-import org.bson.BsonReader
-import org.bson.BsonReaderMark
-import org.bson.BsonType
-import org.bson.BsonValue
-import org.bson.codecs.BsonValueCodec
-import org.bson.codecs.DecoderContext
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.cacheElementNamesByDescriptor
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.createBsonArrayDecoder
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.createBsonDecoder
@@ -44,6 +22,15 @@ import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.cre
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.createBsonMapDecoder
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.createBsonPolymorphicDecoder
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.getCachedElementNamesByDescriptor
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
+import kotlinx.serialization.encoding.CompositeDecoder.Companion.DECODE_DONE
+import kotlinx.serialization.encoding.CompositeDecoder.Companion.UNKNOWN_NAME
+import kotlinx.serialization.modules.SerializersModule
+import org.bson.*
+import org.bson.codecs.BsonValueCodec
+import org.bson.codecs.DecoderContext
 import org.bson.internal.NumberCodecHelper
 import org.bson.internal.StringCodecHelper
 import org.bson.types.ObjectId
@@ -58,6 +45,7 @@ public sealed interface BsonDecoder : Decoder, CompositeDecoder {
 
     /** @return the decoded ObjectId */
     public fun decodeObjectId(): ObjectId
+
     /** @return the decoded BsonValue */
     public fun decodeBsonValue(): BsonValue
 }
@@ -66,7 +54,7 @@ public sealed interface BsonDecoder : Decoder, CompositeDecoder {
 internal sealed class AbstractBsonDecoder(
     val reader: AbstractBsonReader,
     override val serializersModule: SerializersModule,
-    val configuration: BsonConfiguration
+    val configuration: BsonConfiguration,
 ) : BsonDecoder, AbstractDecoder() {
     companion object {
         val bsonValueCodec = BsonValueCodec()
@@ -77,19 +65,21 @@ internal sealed class AbstractBsonDecoder(
             reader: BsonReader,
             expectedType: BsonType,
             descriptor: SerialDescriptor,
-            actualType: (descriptor: SerialDescriptor) -> String = { it.kind.toString() }
+            actualType: (descriptor: SerialDescriptor) -> String = { it.kind.toString() },
         ) {
             reader.currentBsonType?.let {
                 if (it != expectedType) {
                     throw SerializationException(
                         "Invalid data for `${actualType(descriptor)}` expected a bson " +
-                            "${expectedType.name.lowercase()} found: ${reader.currentBsonType}")
+                                "${expectedType.name.lowercase()} found: ${reader.currentBsonType}"
+                    )
                 }
             }
         }
     }
 
     private data class ElementMetadata(val name: String, val nullable: Boolean, var processed: Boolean = false)
+
     private var elementsMetadata: Array<ElementMetadata>? = null
     private var currentIndex: Int = UNKNOWN_INDEX
 
@@ -99,7 +89,8 @@ internal sealed class AbstractBsonDecoder(
             Array(descriptor.elementsCount) {
                 val elementDescriptor = descriptor.getElementDescriptor(it)
                 ElementMetadata(
-                    elementDescriptor.serialName, elementDescriptor.isNullable && !descriptor.isElementOptional(it))
+                    elementDescriptor.serialName, elementDescriptor.isNullable && !descriptor.isElementOptional(it)
+                )
             }
         this.elementsMetadata = elementsMetadata
         cacheElementNamesByDescriptor(descriptor, configuration)
@@ -123,9 +114,12 @@ internal sealed class AbstractBsonDecoder(
                     reader.readBsonType()
                     return decodeElementIndexImpl(descriptor)
                 }
+
                 AbstractBsonReader.State.END_OF_DOCUMENT,
-                AbstractBsonReader.State.END_OF_ARRAY ->
+                AbstractBsonReader.State.END_OF_ARRAY,
+                    ->
                     return elementMetadata.indexOfFirst { it.nullable && !it.processed }
+
                 else -> null
             }
 
@@ -152,7 +146,9 @@ internal sealed class AbstractBsonDecoder(
             is PolymorphicKind -> createBsonPolymorphicDecoder(descriptor, reader, serializersModule, configuration)
             is StructureKind.LIST -> createBsonArrayDecoder(descriptor, reader, serializersModule, configuration)
             is StructureKind.CLASS,
-            StructureKind.OBJECT -> createBsonDocumentDecoder(descriptor, reader, serializersModule, configuration)
+            StructureKind.OBJECT,
+                -> createBsonDocumentDecoder(descriptor, reader, serializersModule, configuration)
+
             is StructureKind.MAP -> createBsonMapDecoder(descriptor, reader, serializersModule, configuration)
             else -> throw SerializationException("Primitives are not supported at top-level")
         }
@@ -163,7 +159,9 @@ internal sealed class AbstractBsonDecoder(
             is StructureKind.LIST -> reader.readEndArray()
             is StructureKind.MAP,
             StructureKind.CLASS,
-            StructureKind.OBJECT -> reader.readEndDocument()
+            StructureKind.OBJECT,
+                -> reader.readEndDocument()
+
             else -> {}
         }
     }
@@ -199,13 +197,15 @@ internal sealed class AbstractBsonDecoder(
         } catch (e: BsonInvalidOperationException) {
             throw BsonInvalidOperationException(
                 "Reading field '${reader.currentName}' failed expected $bsonType type but found:" +
-                    " ${reader.currentBsonType}.",
-                e)
+                        " ${reader.currentBsonType}.",
+                e
+            )
         }
     }
+
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
         val override = serializationOverride(deserializer)
-        return if(override != null) override.toKotlin(decodeBsonValue())
+        return if (override != null) override.toKotlin(decodeBsonValue())
         else deserializer.deserialize(this)
     }
 }
@@ -214,7 +214,7 @@ internal sealed class AbstractBsonDecoder(
 internal open class BsonDecoderImpl(
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : AbstractBsonDecoder(reader, serializersModule, configuration)
 
 /** The Bson array decoder */
@@ -222,7 +222,7 @@ internal open class BsonArrayDecoder(
     descriptor: SerialDescriptor,
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : AbstractBsonDecoder(reader, serializersModule, configuration) {
 
     init {
@@ -244,7 +244,7 @@ internal open class BsonDocumentDecoder(
     descriptor: SerialDescriptor,
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : AbstractBsonDecoder(reader, serializersModule, configuration) {
 
     init {
@@ -259,7 +259,7 @@ internal open class BsonPolymorphicDecoder(
     descriptor: SerialDescriptor,
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : AbstractBsonDecoder(reader, serializersModule, configuration) {
     private var index = 0
     private var mark: BsonReaderMark?
@@ -277,7 +277,7 @@ internal open class BsonPolymorphicDecoder(
         }
         val decoder = createBsonDecoder(reader, serializersModule, configuration)
         val override = serializationOverride(deserializer)
-        return if(override != null) override.toKotlin(decoder.decodeBsonValue())
+        return if (override != null) override.toKotlin(decoder.decodeBsonValue())
         else deserializer.deserialize(decoder)
     }
 
@@ -295,10 +295,12 @@ internal open class BsonPolymorphicDecoder(
                 if (!found) {
                     throw SerializationException(
                         "Missing required discriminator field `${configuration.classDiscriminator}` " +
-                            "for polymorphic class: `${descriptor.serialName}`.")
+                                "for polymorphic class: `${descriptor.serialName}`."
+                    )
                 }
                 index++
             }
+
             1 -> index++
             else -> DECODE_DONE
         }
@@ -311,7 +313,7 @@ internal open class BsonMapDecoder(
     descriptor: SerialDescriptor,
     reader: AbstractBsonReader,
     serializersModule: SerializersModule,
-    configuration: BsonConfiguration
+    configuration: BsonConfiguration,
 ) : AbstractBsonDecoder(reader, serializersModule, configuration) {
     private var index = 0
     private var isKey = false
@@ -333,7 +335,8 @@ internal open class BsonMapDecoder(
         val keyKind = descriptor.getElementDescriptor(0).kind
         if (!validKeyKinds.contains(keyKind)) {
             throw SerializationException(
-                "Invalid key type for ${descriptor.serialName}. Expected STRING or ENUM but found: `${keyKind}`")
+                "Invalid key type for ${descriptor.serialName}. Expected STRING or ENUM but found: `${keyKind}`"
+            )
         }
 
         if (!isKey) {

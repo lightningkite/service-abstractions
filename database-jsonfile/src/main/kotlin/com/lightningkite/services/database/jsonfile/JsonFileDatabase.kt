@@ -1,16 +1,13 @@
 package com.lightningkite.services.database.jsonfile
 
+import com.lightningkite.services.SettingContext
+import com.lightningkite.services.kfile.KFile
+import com.lightningkite.services.kfile.workingDirectory
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.Table
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.KFile
-import com.lightningkite.services.data.root
-import com.lightningkite.services.data.workingDirectory
 import kotlinx.io.buffered
-import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
-import kotlin.collections.HashMap
 
 /**
  * JSON file-based database implementation for development and testing.
@@ -109,7 +106,7 @@ import kotlin.collections.HashMap
 public class JsonFileDatabase(
     override val name: String,
     public val folder: KFile,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) :
     Database {
     internal val tracer by lazy { context.openTelemetry?.getTracer("database-jsonfile") }
@@ -119,7 +116,9 @@ public class JsonFileDatabase(
     }
 
     public companion object {
-        public fun Database.Settings.Companion.jsonFile(folder: KFile): Database.Settings = Database.Settings("json-files://$folder")
+        public fun Database.Settings.Companion.jsonFile(folder: KFile): Database.Settings =
+            Database.Settings("json-files://$folder")
+
         init {
             Database.Settings.register("json-files") { name, url, context ->
                 val pathString = url.substringAfter("://")

@@ -42,12 +42,12 @@ import java.nio.file.Path
 @Serializable
 public data class EmbeddingBasedDocumentStorageSettings(
     public val embedder: EmbedderSettings,
-    public val storage: VectorStorageSettings<Path>
+    public val storage: VectorStorageSettings<Path>,
 ) : Setting<EmbeddingBasedDocumentStorage<Path>> {
 
     override fun invoke(
         name: String,
-        context: SettingContext
+        context: SettingContext,
     ): EmbeddingBasedDocumentStorage<Path> {
         // Instantiate the embedder
         val embedderInstance: Embedder = embedder("$name-embedder", context)

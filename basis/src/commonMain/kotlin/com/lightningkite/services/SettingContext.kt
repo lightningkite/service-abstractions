@@ -158,7 +158,7 @@ public interface SettingContext {
      *
      * This is primarily used internally by service implementations to instrument operations.
      */
-    public suspend fun report(action: suspend ()->Unit): Unit = action()
+    public suspend fun report(action: suspend () -> Unit): Unit = action()
 
     public companion object {
     }

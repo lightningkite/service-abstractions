@@ -1,10 +1,7 @@
 package com.lightningkite.services.database.test
 
 import com.lightningkite.services.database.*
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Instant
@@ -964,7 +961,7 @@ abstract class ModificationTests() {
         val modification = modification<LargeTestModel> { it.int += 3 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
-        assertEquals((3 + 2).toInt(), result.int)
+        assertEquals((3 + 2), result.int)
         assertEquals(modification(item), result)
         Unit
     }
@@ -977,7 +974,7 @@ abstract class ModificationTests() {
         val modification = modification<LargeTestModel> { it.int *= 3 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
-        assertEquals((3 * 2).toInt(), result.int)
+        assertEquals((3 * 2), result.int)
         assertEquals(modification(item), result)
         Unit
     }
@@ -990,7 +987,7 @@ abstract class ModificationTests() {
         val modification = modification<LargeTestModel> { it.long += 3L }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
-        assertEquals((3L + 2L).toLong(), result.long)
+        assertEquals((3L + 2L), result.long)
         assertEquals(modification(item), result)
         Unit
     }
@@ -1003,7 +1000,7 @@ abstract class ModificationTests() {
         val modification = modification<LargeTestModel> { it.long *= 3L }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
-        assertEquals((3L * 2L).toLong(), result.long)
+        assertEquals((3L * 2L), result.long)
         assertEquals(modification(item), result)
         Unit
     }
@@ -1016,7 +1013,7 @@ abstract class ModificationTests() {
         val modification = modification<LargeTestModel> { it.float += 3f }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
-        assertEquals((3f + 2f).toFloat(), result.float)
+        assertEquals((3f + 2f), result.float)
         assertEquals(modification(item), result)
         Unit
     }
@@ -1029,7 +1026,7 @@ abstract class ModificationTests() {
         val modification = modification<LargeTestModel> { it.float *= 3f }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
-        assertEquals((3f * 2f).toFloat(), result.float)
+        assertEquals((3f * 2f), result.float)
         assertEquals(modification(item), result)
         Unit
     }
@@ -1042,7 +1039,7 @@ abstract class ModificationTests() {
         val modification = modification<LargeTestModel> { it.double += 3.0 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
-        assertEquals((3.0 + 2.0).toDouble(), result.double)
+        assertEquals((3.0 + 2.0), result.double)
         assertEquals(modification(item), result)
         Unit
     }
@@ -1055,7 +1052,7 @@ abstract class ModificationTests() {
         val modification = modification<LargeTestModel> { it.double *= 3.0 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
-        assertEquals((3.0 * 2.0).toDouble(), result.double)
+        assertEquals((3.0 * 2.0), result.double)
         assertEquals(modification(item), result)
         Unit
     }
@@ -1267,8 +1264,8 @@ abstract class ModificationTests() {
         val modification = modification<LargeTestModel> {
             it.map.modifyByKey(
                 mapOf(
-                "a" to { it += 1 }
-            ))
+                    "a" to { it += 1 }
+                ))
         }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!

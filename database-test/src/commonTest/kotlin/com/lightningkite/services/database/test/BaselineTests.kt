@@ -5,35 +5,46 @@ import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.InMemoryDatabase
 import kotlin.test.Test
 
-class RamAggregationsTest: AggregationsTest() {
+class RamAggregationsTest : AggregationsTest() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
-class RamConditionTests: ConditionTests() {
+
+class RamConditionTests : ConditionTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
-class RamModificationTests: ModificationTests() {
+
+class RamModificationTests : ModificationTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
-class RamOperationsTests: OperationsTests() {
+
+class RamOperationsTests : OperationsTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
-class RamSortTest: SortTest() {
+
+class RamSortTest : SortTest() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
-class RamMetaTest: MetaTest() {
+
+class RamMetaTest : MetaTest() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
-class RamInlinePropertiesTest: InlinePropertiesTests() {
+
+class RamInlinePropertiesTest : InlinePropertiesTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 
-    @Test fun start() {}
+    @Test
+    fun start() {
+    }
 }
+
 // by Claude
-class RamVectorSearchTests: VectorSearchTests() {
+class RamVectorSearchTests : VectorSearchTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
+
 class MetadataTest {
-    @Test fun check() {
+    @Test
+    fun check() {
         println(LargeTestModel_uuid.serializer.descriptor.serialName)
         println(LargeTestModel_uuidNullable.serializer.descriptor.serialName)
     }

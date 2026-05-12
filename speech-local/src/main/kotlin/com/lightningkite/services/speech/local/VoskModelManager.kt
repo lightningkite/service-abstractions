@@ -35,7 +35,7 @@ private val logger = KotlinLogging.logger("VoskModelManager")
  */
 public class VoskModelManager(
     private val modelsDirectory: File = File("./local/vosk-models"),
-    private val defaultModelName: String = DEFAULT_MODEL_NAME
+    private val defaultModelName: String = DEFAULT_MODEL_NAME,
 ) {
     public companion object {
         /** Default small English model - good balance of size and accuracy */
@@ -244,5 +244,5 @@ public class VoskModelManager(
  */
 public class VoskModelException(
     override val message: String,
-    override val cause: Throwable? = null
+    override val cause: Throwable? = null,
 ) : Exception(message, cause)

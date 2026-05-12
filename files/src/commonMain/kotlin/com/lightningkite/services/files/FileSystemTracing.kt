@@ -13,5 +13,5 @@ internal expect suspend fun <T> traceFileOperation(
     path: String,
     storageSystem: String,
     attributes: Map<String, Any> = emptyMap(),
-    block: suspend () -> T
+    block: suspend () -> T,
 ): T

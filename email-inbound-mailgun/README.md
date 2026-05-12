@@ -4,7 +4,8 @@ Mailgun implementation of `EmailInboundService` for receiving inbound emails via
 
 ## Overview
 
-This module provides integration with Mailgun's inbound email processing. Mailgun forwards incoming emails to your application via HTTP POST webhooks.
+This module provides integration with Mailgun's inbound email processing. Mailgun forwards incoming emails to your
+application via HTTP POST webhooks.
 
 ## Installation
 
@@ -38,6 +39,7 @@ val inboundService = EmailInboundService.Settings(
 ```
 
 URL format: `mailgun-inbound://[api-key@]domain`
+
 - `api-key`: Optional Mailgun API key for webhook signature verification
 - `domain`: Your Mailgun domain (e.g., `mg.yourdomain.com`)
 
@@ -46,10 +48,10 @@ URL format: `mailgun-inbound://[api-key@]domain`
 1. Log into your [Mailgun Dashboard](https://app.mailgun.com/)
 2. Go to **Receiving** → **Routes**
 3. Create a new route:
-   - **Expression Type**: Match Recipient
-   - **Recipient**: `.*@inbound.yourdomain.com` (or your inbound pattern)
-   - **Actions**: Forward to URL
-   - **URL**: `https://api.yourdomain.com/webhooks/mailgun/inbound`
+    - **Expression Type**: Match Recipient
+    - **Recipient**: `.*@inbound.yourdomain.com` (or your inbound pattern)
+    - **Actions**: Forward to URL
+    - **URL**: `https://api.yourdomain.com/webhooks/mailgun/inbound`
 4. Save the route
 
 ## Usage with Ktor
@@ -157,6 +159,7 @@ val service = EmailInboundService.Settings(
 ```
 
 Verification checks:
+
 1. All signature fields (`timestamp`, `token`, `signature`) are present
 2. Timestamp is recent (within 15 minutes)
 3. HMAC-SHA256 signature matches
@@ -213,7 +216,8 @@ val cleanHtml = email.html        // This is parsed from stripped-html
 
 ## Limitations
 
-- **Attachment parsing**: Currently, attachment metadata is recognized but file content is not parsed. For full attachment support, integrate a multipart parser library.
+- **Attachment parsing**: Currently, attachment metadata is recognized but file content is not parsed. For full
+  attachment support, integrate a multipart parser library.
 - **Large emails**: Mailgun limits payload sizes. Very large emails may be truncated.
 
 ## Testing
@@ -243,5 +247,6 @@ val testEmail = ReceivedEmail(
 ## Support
 
 For issues or questions:
+
 - Service Abstractions: [GitHub Issues](https://github.com/lightningkite/service-abstractions/issues)
 - Mailgun Support: [Mailgun Help Center](https://help.mailgun.com/)

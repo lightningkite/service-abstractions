@@ -1,8 +1,8 @@
 package com.lightningkite.services.sms
 
-import com.lightningkite.PhoneNumber
-import kotlin.time.Instant
+import com.lightningkite.services.data.PhoneNumber
 import kotlinx.serialization.Serializable
+import kotlin.time.Instant
 
 /**
  * Represents an incoming SMS or MMS message received via webhook.
@@ -53,5 +53,5 @@ public data class InboundSms(
     val receivedAt: Instant,
     val mediaUrls: List<String> = emptyList(),
     val mediaContentTypes: List<String> = emptyList(),
-    val providerMessageId: String? = null
+    val providerMessageId: String? = null,
 )

@@ -17,7 +17,7 @@ import kotlinx.serialization.Serializable
 public data class AudioStreamStart(
     val callId: String,
     val streamId: String,
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -53,7 +53,7 @@ public sealed class AudioStreamEvent {
     public data class Connected(
         val callId: String,
         val streamId: String,
-        val customParameters: Map<String, String> = emptyMap()
+        val customParameters: Map<String, String> = emptyMap(),
     ) : AudioStreamEvent()
 
     /**
@@ -77,7 +77,7 @@ public sealed class AudioStreamEvent {
         val streamId: String,
         val payload: String,
         val timestamp: Long,
-        val sequenceNumber: Long
+        val sequenceNumber: Long,
     ) : AudioStreamEvent()
 
     /**
@@ -94,7 +94,7 @@ public sealed class AudioStreamEvent {
     public data class Dtmf(
         val callId: String,
         val streamId: String,
-        val digit: String
+        val digit: String,
     ) : AudioStreamEvent()
 
     /**
@@ -109,7 +109,7 @@ public sealed class AudioStreamEvent {
     @Serializable
     public data class Stop(
         val callId: String,
-        val streamId: String
+        val streamId: String,
     ) : AudioStreamEvent()
 
     /**
@@ -150,7 +150,7 @@ public sealed class AudioStreamCommand {
     @Serializable
     public data class Audio(
         val streamId: String,
-        val payload: String
+        val payload: String,
     ) : AudioStreamCommand()
 
     /**
@@ -163,7 +163,7 @@ public sealed class AudioStreamCommand {
      */
     @Serializable
     public data class Clear(
-        val streamId: String
+        val streamId: String,
     ) : AudioStreamCommand()
 
     /**
@@ -178,7 +178,7 @@ public sealed class AudioStreamCommand {
     @Serializable
     public data class Mark(
         val streamId: String,
-        val name: String
+        val name: String,
     ) : AudioStreamCommand()
 }
 
@@ -189,8 +189,10 @@ public sealed class AudioStreamCommand {
 public enum class AudioTrack {
     /** Stream only the inbound audio (from the caller) */
     INBOUND,
+
     /** Stream only the outbound audio (what the caller hears) */
     OUTBOUND,
+
     /** Stream both inbound and outbound audio */
     BOTH
 }

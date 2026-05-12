@@ -4,7 +4,8 @@ SendGrid Inbound Parse implementation for the `EmailInboundService` abstraction.
 
 ## Overview
 
-This module provides webhook-based inbound email processing using SendGrid's Inbound Parse service. SendGrid receives emails and posts them to your webhook endpoint as `multipart/form-data`.
+This module provides webhook-based inbound email processing using SendGrid's Inbound Parse service. SendGrid receives
+emails and posts them to your webhook endpoint as `multipart/form-data`.
 
 ## Installation
 
@@ -44,12 +45,12 @@ val emailService: EmailInboundService = settings.inboundEmail("email-receiver", 
 2. Navigate to **Settings** → **Inbound Parse**
 3. Click **Add Host & URL**
 4. Configure:
-   - **Domain**: Your domain (e.g., `mail.example.com`)
-   - **Subdomain** (optional): `inbound` for `inbound.mail.example.com`
-   - **Destination URL**: Your webhook endpoint (e.g., `https://api.example.com/webhooks/email`)
-   - **Options**:
-     - ✓ Check incoming mail for spam (recommended)
-     - ✓ Post the raw, full MIME message (optional, for advanced use)
+    - **Domain**: Your domain (e.g., `mail.example.com`)
+    - **Subdomain** (optional): `inbound` for `inbound.mail.example.com`
+    - **Destination URL**: Your webhook endpoint (e.g., `https://api.example.com/webhooks/email`)
+    - **Options**:
+        - ✓ Check incoming mail for spam (recommended)
+        - ✓ Post the raw, full MIME message (optional, for advanced use)
 
 ### 2. Configure MX Records
 
@@ -216,7 +217,8 @@ Attachments are sent as file parts with their original filenames.
 
 ### IP Filtering (Recommended)
 
-SendGrid webhooks originate from specific IP ranges. Configure your firewall or application to only accept requests from [SendGrid's IPs](https://docs.sendgrid.com/for-developers/parsing-email/setting-up-the-inbound-parse-webhook#ip-addresses-used-to-send-requests):
+SendGrid webhooks originate from specific IP ranges. Configure your firewall or application to only accept requests
+from [SendGrid's IPs](https://docs.sendgrid.com/for-developers/parsing-email/setting-up-the-inbound-parse-webhook#ip-addresses-used-to-send-requests):
 
 ```kotlin
 // In your application middleware
@@ -306,7 +308,8 @@ Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
 
 ### Missing Headers
 
-SendGrid only includes select headers by default. To get all headers, enable "Post the raw, full MIME message" in SendGrid settings.
+SendGrid only includes select headers by default. To get all headers, enable "Post the raw, full MIME message" in
+SendGrid settings.
 
 ## References
 

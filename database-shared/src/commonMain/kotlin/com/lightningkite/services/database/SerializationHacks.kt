@@ -10,4 +10,4 @@ internal expect fun GeneratedSerializer<*>.factory(): (typeArguments: Array<KSer
 // by Claude - Reflection-based annotation parsing (JVM only, returns null on other platforms)
 internal expect fun reflectAnnotation(annotation: Annotation): SerializableAnnotation?
 
-internal class PlatformNotSupportedError: Error("This function is not supported on this platform.")
+internal class PlatformNotSupportedError : Error("This function is not supported on this platform.")

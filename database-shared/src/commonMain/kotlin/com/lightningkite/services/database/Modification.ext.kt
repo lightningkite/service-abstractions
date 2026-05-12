@@ -38,7 +38,10 @@ public fun <T> Modification<T>.vet(onModification: (Modification<T>) -> Unit) {
 }
 
 @Suppress("UNCHECKED_CAST")
-public fun <V> Modification<*>.vet(fieldChain: List<SerializableProperty<*, *>>, onModification: (Modification<V>) -> Unit) {
+public fun <V> Modification<*>.vet(
+    fieldChain: List<SerializableProperty<*, *>>,
+    onModification: (Modification<V>) -> Unit,
+) {
     val field: SerializableProperty<*, *> = fieldChain.firstOrNull() ?: run {
         onModification(this as Modification<V>)
         return

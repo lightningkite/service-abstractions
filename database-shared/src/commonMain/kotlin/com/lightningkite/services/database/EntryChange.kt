@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 public data class EntryChange<T>(
     val old: T? = null,
-    val new: T? = null
+    val new: T? = null,
 )
 
 // This will not convert well. Manually add the type argument to the return EntryChange on the swift side. "EntryChange<B>"

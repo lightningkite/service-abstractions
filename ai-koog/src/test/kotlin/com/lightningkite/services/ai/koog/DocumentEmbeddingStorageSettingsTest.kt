@@ -2,9 +2,7 @@ package com.lightningkite.services.ai.koog.rag
 
 import kotlinx.serialization.json.Json
 import java.nio.file.Path
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
+import kotlin.test.*
 
 /**
  * Tests for DocumentEmbeddingStorageSettings focusing on configuration and serialization.

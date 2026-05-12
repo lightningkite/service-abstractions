@@ -62,7 +62,7 @@ public abstract class UrlSettingParser<T> {
      * @throws Error if the key is already registered (security: prevents hostile takeover)
      */
     public fun register(key: String, handler: (name: String, url: String, SettingContext) -> T) {
-        if(key in handlers) throw Error("Key $key already registered for ${this::class}.  This could be an attempt from a hostile library to control a particular implementation.")
+        if (key in handlers) throw Error("Key $key already registered for ${this::class}.  This could be an attempt from a hostile library to control a particular implementation.")
         handlers[key] = handler
     }
 
@@ -139,7 +139,7 @@ public interface HasUrl {
  * @param SETTING Settings data class type that contains a URL
  * @param T The type of service this parser creates
  */
-public abstract class HasUrlSettingParser<SETTING: HasUrl, T> {
+public abstract class HasUrlSettingParser<SETTING : HasUrl, T> {
     private val handlers = HashMap<String, (name: String, setting: SETTING, SettingContext) -> T>()
 
     /**
@@ -155,7 +155,7 @@ public abstract class HasUrlSettingParser<SETTING: HasUrl, T> {
      * @throws Error if the key is already registered (security: prevents hostile takeover)
      */
     public fun register(key: String, handler: (name: String, setting: SETTING, SettingContext) -> T) {
-        if(key in handlers) throw Error("Key $key already registered for ${this::class}.  This could be an attempt from a hostile library to control a particular implementation.")
+        if (key in handlers) throw Error("Key $key already registered for ${this::class}.  This could be an attempt from a hostile library to control a particular implementation.")
         handlers[key] = handler
     }
 

@@ -1,4 +1,3 @@
-
 plugins {
     alias(libs.plugins.dokka) apply false
     alias(libs.plugins.vanniktechMavenPublish) apply false
@@ -9,7 +8,7 @@ plugins {
     alias(libs.plugins.graalVmNative) apply false
     alias(libs.plugins.shadow) apply false
     alias(libs.plugins.versionCatalogUpdate)
-    id("org.jetbrains.kotlinx.atomicfu") version "0.29.0"
+    id("org.jetbrains.kotlinx.atomicfu") version "0.32.1"
 }
 
 buildscript {

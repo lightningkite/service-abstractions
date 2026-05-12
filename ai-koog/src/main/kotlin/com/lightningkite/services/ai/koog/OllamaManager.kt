@@ -16,7 +16,6 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -48,7 +47,7 @@ import kotlin.time.Duration.Companion.seconds
  * @property baseUrl The Ollama server URL (default: http://localhost:11434)
  */
 public class OllamaManager(
-    public val baseUrl: String = "http://localhost:11434"
+    public val baseUrl: String = "http://localhost:11434",
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -91,15 +90,18 @@ public class OllamaManager(
                 "/opt/homebrew/bin/ollama",
                 "${System.getProperty("user.home")}/.ollama/bin/ollama"
             )
+
             os.contains("linux") -> listOf(
                 "/usr/bin/ollama",
                 "/usr/local/bin/ollama",
                 "${System.getProperty("user.home")}/.local/bin/ollama"
             )
+
             os.contains("windows") -> listOf(
                 "${System.getenv("LOCALAPPDATA")}\\Ollama\\ollama.exe",
                 "${System.getenv("ProgramFiles")}\\Ollama\\ollama.exe"
             )
+
             else -> emptyList()
         }
 
@@ -209,7 +211,7 @@ public class OllamaManager(
      */
     public suspend fun waitForServerReady(
         timeout: Duration = 30.seconds,
-        pollInterval: Duration = 500.milliseconds
+        pollInterval: Duration = 500.milliseconds,
     ) {
         val startTime = System.currentTimeMillis()
         val timeoutMs = timeout.inWholeMilliseconds
@@ -234,7 +236,7 @@ public class OllamaManager(
 
         throw IllegalStateException(
             "Ollama server failed to start within $timeout. " +
-                "Check if port ${baseUrl.substringAfterLast(":")} is available."
+                    "Check if port ${baseUrl.substringAfterLast(":")} is available."
         )
     }
 
@@ -299,8 +301,8 @@ public class OllamaManager(
 
         return models.any { modelInfo ->
             normalizeModelName(modelInfo.name) == normalizedModel ||
-                modelInfo.name == model ||
-                modelInfo.name.startsWith("$model:")
+                    modelInfo.name == model ||
+                    modelInfo.name.startsWith("$model:")
         }
     }
 
@@ -316,7 +318,7 @@ public class OllamaManager(
      */
     public suspend fun pullModel(
         model: String,
-        onProgress: (OllamaPullProgress) -> Unit = {}
+        onProgress: (OllamaPullProgress) -> Unit = {},
     ) {
         logger.info { "Pulling model: $model" }
 
@@ -372,7 +374,7 @@ public class OllamaManager(
         pullModel: Boolean = true,
         onProgress: (OllamaPullProgress) -> Unit = { progress ->
             progress.status?.let { logger.info { "Ollama: $it" } }
-        }
+        },
     ) {
         // Start server if needed
         if (startServer && !isServerRunning()) {
@@ -388,7 +390,7 @@ public class OllamaManager(
         if (!isServerRunning()) {
             throw IllegalStateException(
                 "Ollama server is not running at $baseUrl. " +
-                    "Start it with 'ollama serve' or set autoStart=true"
+                        "Start it with 'ollama serve' or set autoStart=true"
             )
         }
 
@@ -401,7 +403,7 @@ public class OllamaManager(
         if (!isModelPulled(model)) {
             throw IllegalStateException(
                 "Model '$model' is not available. " +
-                    "Pull it with 'ollama pull $model' or set autoPull=true"
+                        "Pull it with 'ollama pull $model' or set autoPull=true"
             )
         }
 
@@ -436,7 +438,7 @@ public class OllamaManager(
 
 @Serializable
 internal data class OllamaTagsResponse(
-    val models: List<OllamaModelInfo> = emptyList()
+    val models: List<OllamaModelInfo> = emptyList(),
 )
 
 /**
@@ -448,7 +450,7 @@ public data class OllamaModelInfo(
     val modified_at: String? = null,
     val size: Long? = null,
     val digest: String? = null,
-    val details: OllamaModelDetails? = null
+    val details: OllamaModelDetails? = null,
 )
 
 @Serializable
@@ -457,14 +459,14 @@ public data class OllamaModelDetails(
     val family: String? = null,
     val families: List<String>? = null,
     val parameter_size: String? = null,
-    val quantization_level: String? = null
+    val quantization_level: String? = null,
 )
 
 @Serializable
 internal data class OllamaPullRequest(
     val name: String,
     val insecure: Boolean = false,
-    val stream: Boolean = true
+    val stream: Boolean = true,
 )
 
 /**
@@ -476,7 +478,7 @@ public data class OllamaPullProgress(
     val digest: String? = null,
     val total: Long? = null,
     val completed: Long? = null,
-    val error: String? = null
+    val error: String? = null,
 ) {
     /**
      * Download progress as a percentage (0-100), or null if not applicable.

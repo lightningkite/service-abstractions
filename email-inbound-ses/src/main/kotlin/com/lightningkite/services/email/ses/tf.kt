@@ -2,10 +2,7 @@ package com.lightningkite.services.email.ses
 
 import com.lightningkite.services.email.EmailInboundService
 import com.lightningkite.services.email.javasmtp.AwsSesDomainConfiguration
-import com.lightningkite.services.terraform.AwsPolicyStatement
-import com.lightningkite.services.terraform.TerraformEmitterAwsDomain
-import com.lightningkite.services.terraform.TerraformNeed
-import com.lightningkite.services.terraform.TerraformProviderImport
+import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonPrimitive
 
 /**

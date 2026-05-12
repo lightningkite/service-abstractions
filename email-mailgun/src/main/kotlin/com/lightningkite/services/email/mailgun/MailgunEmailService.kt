@@ -3,12 +3,8 @@ package com.lightningkite.services.email.mailgun
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.email.*
 import com.lightningkite.services.recordExceptionWithFingerprint
-import io.ktor.client.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.auth.Auth
-import io.ktor.client.plugins.auth.providers.BasicAuthCredentials
-import io.ktor.client.plugins.auth.providers.basic
-import io.ktor.client.request.*
+import io.ktor.client.plugins.auth.*
+import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -16,7 +12,6 @@ import io.ktor.utils.io.jvm.javaio.*
 import io.opentelemetry.api.trace.*
 import kotlinx.io.asInputStream
 import kotlinx.io.buffered
-import kotlin.text.get
 
 public class MailgunEmailService(
     override val name: String,

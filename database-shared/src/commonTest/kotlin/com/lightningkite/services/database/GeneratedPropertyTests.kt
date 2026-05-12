@@ -1,3 +1,5 @@
+@file:OptIn(InlineProperty::class)
+
 package com.lightningkite.services.database
 
 import com.lightningkite.services.data.GenerateDataClassPaths
@@ -5,10 +7,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.jvm.JvmInline
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
-import kotlin.test.fail
+import kotlin.test.*
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -53,7 +52,7 @@ data class ClassWithWrappedValue(
 @Serializable
 data class NestedType(
     val nestedType: NestedType? = null,
-    val name: String = "Hello World"
+    val name: String = "Hello World",
 ) {
     constructor(depth: Int) : this(
         Unit.run {
@@ -168,7 +167,10 @@ class GeneratedPropertyTests {
 
         val id = IdWrapper(Uuid.random())
 
-        assertEquals(ClassWithWrappedValue(LongWrapper(5L), id), prop2.set(ClassWithWrappedValue(LongWrapper(0L), id), 5L))
+        assertEquals(
+            ClassWithWrappedValue(LongWrapper(5L), id),
+            prop2.set(ClassWithWrappedValue(LongWrapper(0L), id), 5L)
+        )
 
         val cond2 = condition<ClassWithWrappedValue> { it.long.long eq 5L }
         val mod2 = modification<ClassWithWrappedValue> { it.long.long assign 5L }
@@ -183,25 +185,29 @@ class GeneratedPropertyTests {
         encodeDecode(mod2, Modification.serializer(ClassWithWrappedValue.serializer()))
     }
 
-    fun <T> modification(serializer: KSerializer<T>, old: T, new: T): Modification<T>? = run {  // ripped from ls-kiteui (maybe we should just move into service abstractions)
-        if (old == new) return@run null
-        if (old == null || new == null) return@run Modification.Assign(new)
-        return@run (serializer.nullElement() ?: serializer).serializableProperties.also { println("Properties: ${it?.joinToString { it.name }}") }?.let {
-            Modification.Chain<T>(it.mapNotNull { prop ->
-                @Suppress("UNCHECKED_CAST")
-                prop as SerializableProperty<T, Any?>
-                val oldValue = prop.get(old as T)
-                val newValue = prop.get(new as T)   // issue comes from SerializableProperty.get going to MinEncoder
-                println("New value for ${prop.name} is $newValue of type ${newValue?.let {it::class}}, type is ${prop.serializer.descriptor.serialName}")
-                val inner = modification(prop.serializer, oldValue, newValue)?.let { mod ->
-                    if(prop.serializer.descriptor.isNullable && mod !is Modification.Assign<*>)
-                        Modification.IfNotNull(mod)
-                    else mod
-                } ?: return@mapNotNull null
-                Modification.OnField(prop, inner).also { println("modifying ${prop.name} -> $it") }
-            })
-        } ?: Modification.Assign<T>(new)
-    }
+    fun <T> modification(serializer: KSerializer<T>, old: T, new: T): Modification<T>? =
+        run {  // ripped from ls-kiteui (maybe we should just move into service abstractions)
+            if (old == new) return@run null
+            if (old == null || new == null) return@run Modification.Assign(new)
+            return@run (serializer.nullElement()
+                ?: serializer).serializableProperties.also { println("Properties: ${it?.joinToString { it.name }}") }
+                ?.let {
+                    Modification.Chain<T>(it.mapNotNull { prop ->
+                        @Suppress("UNCHECKED_CAST")
+                        prop as SerializableProperty<T, Any?>
+                        val oldValue = prop.get(old as T)
+                        val newValue =
+                            prop.get(new as T)   // issue comes from SerializableProperty.get going to MinEncoder
+                        println("New value for ${prop.name} is $newValue of type ${newValue?.let { it::class }}, type is ${prop.serializer.descriptor.serialName}")
+                        val inner = modification(prop.serializer, oldValue, newValue)?.let { mod ->
+                            if (prop.serializer.descriptor.isNullable && mod !is Modification.Assign<*>)
+                                Modification.IfNotNull(mod)
+                            else mod
+                        } ?: return@mapNotNull null
+                        Modification.OnField(prop, inner).also { println("modifying ${prop.name} -> $it") }
+                    })
+                } ?: Modification.Assign<T>(new)
+        }
 
     @Test
     fun testNestedEncoding() {

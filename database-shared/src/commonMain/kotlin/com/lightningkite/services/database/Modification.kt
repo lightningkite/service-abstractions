@@ -1,6 +1,6 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.IsRawString
+import com.lightningkite.services.data.IsRawString
 import kotlinx.serialization.Serializable
 
 /**
@@ -242,7 +242,8 @@ public sealed class Modification<T> {
     }
 
     @Serializable
-    public data class SetPerElement<T>(val condition: Condition<T>, val modification: Modification<T>) : Modification<Set<T>>() {
+    public data class SetPerElement<T>(val condition: Condition<T>, val modification: Modification<T>) :
+        Modification<Set<T>>() {
         override fun invoke(on: Set<T>): Set<T> = on.map { if (condition(it)) modification(it) else it }.toSet()
         override fun toString(): String = ".onEach { if ($condition) $modification }"
     }
@@ -265,7 +266,8 @@ public sealed class Modification<T> {
         override fun toString(): String = " -= $fields"
     }
 
-    public data class OnField<K, V>(val key: SerializableProperty<K, V>, val modification: Modification<V>) : Modification<K>() {
+    public data class OnField<K, V>(val key: SerializableProperty<K, V>, val modification: Modification<V>) :
+        Modification<K>() {
         override fun invoke(on: K): K = key.setCopy(on, modification(key.get(on)))
         override fun toString(): String {
             return if (modification is OnField<*, *>)

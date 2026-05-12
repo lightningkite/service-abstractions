@@ -15,34 +15,17 @@
  */
 package com.lightningkite.services.database.mongodb.bson
 
-import kotlin.reflect.KClass
-import kotlin.reflect.full.findAnnotation
-import kotlin.reflect.full.findAnnotations
-import kotlin.reflect.full.hasAnnotation
-import kotlin.reflect.full.primaryConstructor
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.serializer
-import org.bson.AbstractBsonReader
-import org.bson.BsonReader
-import org.bson.BsonWriter
-import org.bson.codecs.Codec
-import org.bson.codecs.DecoderContext
-import org.bson.codecs.EncoderContext
-import org.bson.codecs.configuration.CodecConfigurationException
+import com.lightningkite.services.database.mongodb.bson.KotlinSerializerCodec.Companion.create
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.createBsonDecoder
 import com.lightningkite.services.database.mongodb.bson.utils.BsonCodecUtils.createBsonEncoder
-import org.bson.codecs.pojo.annotations.BsonCreator
-import org.bson.codecs.pojo.annotations.BsonDiscriminator
-import org.bson.codecs.pojo.annotations.BsonExtraElements
-import org.bson.codecs.pojo.annotations.BsonId
-import org.bson.codecs.pojo.annotations.BsonIgnore
-import org.bson.codecs.pojo.annotations.BsonProperty
-import org.bson.codecs.pojo.annotations.BsonRepresentation
+import kotlinx.serialization.*
+import kotlinx.serialization.modules.SerializersModule
+import org.bson.*
+import org.bson.codecs.*
+import org.bson.codecs.configuration.CodecConfigurationException
+import org.bson.codecs.pojo.annotations.*
+import kotlin.reflect.KClass
+import kotlin.reflect.full.*
 
 /**
  * The Kotlin serializer codec which utilizes the kotlinx serialization module.
@@ -55,7 +38,7 @@ private constructor(
     private val kClass: KClass<T>,
     private val serializer: KSerializer<T>,
     private val serializersModule: SerializersModule,
-    private val bsonConfiguration: BsonConfiguration
+    private val bsonConfiguration: BsonConfiguration,
 ) : Codec<T> {
 
     /** KotlinSerializerCodec companion object */
@@ -71,7 +54,7 @@ private constructor(
          */
         public inline fun <reified T : Any> create(
             serializersModule: SerializersModule = defaultSerializersModule,
-            bsonConfiguration: BsonConfiguration = BsonConfiguration()
+            bsonConfiguration: BsonConfiguration = BsonConfiguration(),
         ): Codec<T>? = create(T::class, serializersModule, bsonConfiguration)
 
         /**
@@ -87,7 +70,7 @@ private constructor(
         public fun <T : Any> create(
             kClass: KClass<T>,
             serializersModule: SerializersModule = defaultSerializersModule,
-            bsonConfiguration: BsonConfiguration = BsonConfiguration()
+            bsonConfiguration: BsonConfiguration = BsonConfiguration(),
         ): Codec<T>? {
             return if (kClass.hasAnnotation<Serializable>()) {
                 try {
@@ -114,7 +97,7 @@ private constructor(
             kClass: KClass<T>,
             serializer: KSerializer<T>,
             serializersModule: SerializersModule,
-            bsonConfiguration: BsonConfiguration
+            bsonConfiguration: BsonConfiguration,
         ): Codec<T> {
             validateAnnotations(kClass)
             return KotlinSerializerCodec(kClass, serializer, serializersModule, bsonConfiguration)
@@ -166,6 +149,7 @@ private constructor(
                 }
             }
         }
+
         private fun codecConfigurationRequires(value: Boolean, lazyMessage: () -> String) {
             if (!value) {
                 throw CodecConfigurationException(lazyMessage.invoke())

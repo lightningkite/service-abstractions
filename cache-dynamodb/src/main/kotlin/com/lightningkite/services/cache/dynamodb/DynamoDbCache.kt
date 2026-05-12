@@ -69,27 +69,20 @@ package com.lightningkite.services.cache.dynamodb
 // actually converts values via JSON intermediate (encodeToJsonElement -> toDynamoDb). The
 // AttributeValue structure matches native DynamoDB types, but the path is Kotlin -> JSON -> AttributeValue. - by Claude
 
-import com.lightningkite.services.HealthStatus
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
+// REVIEW NOTE: The import below (kotlin.text.get) appears to be unused and could be removed - by Claude
+import com.lightningkite.services.*
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.get
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import com.lightningkite.services.data.HealthStatus
+import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.serializer
-import software.amazon.awssdk.auth.credentials.AwsCredentials
-import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
+import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.model.*
-// REVIEW NOTE: The import below (kotlin.text.get) appears to be unused and could be removed - by Claude
-import kotlin.text.get
 import kotlin.time.Clock.System.now
 import kotlin.time.Duration
 
@@ -107,20 +100,24 @@ public class DynamoDbCache(
         public fun Cache.Settings.Companion.dynamoDbLocal(): Cache.Settings = Cache.Settings("dynamodb-local")
         public fun Cache.Settings.Companion.dynamoDb(
             region: Region,
-            tableName: String
+            tableName: String,
         ): Cache.Settings = Cache.Settings("dynamodb://$region/$tableName")
+
         public fun Cache.Settings.Companion.dynamoDb(
             accessKey: String,
             secretKey: String,
             region: Region,
-            tableName: String
+            tableName: String,
         ): Cache.Settings = Cache.Settings("dynamodb://$accessKey:$secretKey@$region/$tableName")
+
         init {
             Cache.Settings.register("dynamodb-local") { name, url, context ->
                 DynamoDbCache(name, { embeddedDynamo() }, context = context)
             }
             Cache.Settings.register("dynamodb") { name, url, context ->
-                Regex("""dynamodb://(?:(?<access>[^:]+):(?<secret>[^@]+)@)?(?<region>[^/]+)/(?<tableName>.+)""").matchEntire(url)?.let { match ->
+                Regex("""dynamodb://(?:(?<access>[^:]+):(?<secret>[^@]+)@)?(?<region>[^/]+)/(?<tableName>.+)""").matchEntire(
+                    url
+                )?.let { match ->
                     val user = match.groups["access"]?.value ?: ""
                     val password = match.groups["secret"]?.value ?: ""
                     DynamoDbCache(
@@ -147,6 +144,7 @@ public class DynamoDbCache(
             }
         }
     }
+
     override suspend fun healthCheck(): HealthStatus {
         return listOf(super.healthCheck(), context[AwsConnections].health).maxBy { it.level }
     }
@@ -260,7 +258,8 @@ public class DynamoDbCache(
                 ready.await()
                 client.putItem {
                     it.tableName(tableName)
-                    it.item(mapOf(
+                    it.item(
+                        mapOf(
                         "key" to AttributeValue.fromS(key),
                         "value" to serializer.toDynamo(value, context),
                     ) + (timeToLive?.let {
@@ -371,7 +370,7 @@ public class DynamoDbCache(
                     }.await()
 
                     response.attributes().getValue("value").n().toLong()
-                } catch(_: ConditionalCheckFailedException) {
+                } catch (_: ConditionalCheckFailedException) {
                     set(key, value, Long.serializer(), timeToLive)
                     value
                 }

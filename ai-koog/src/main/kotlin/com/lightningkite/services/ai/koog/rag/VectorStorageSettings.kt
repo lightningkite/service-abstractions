@@ -1,14 +1,9 @@
 package com.lightningkite.services.ai.koog.rag
 
-import ai.koog.rag.vector.InMemoryVectorStorage
-import ai.koog.rag.vector.JVMFileVectorStorage
-import ai.koog.rag.vector.VectorStorage
-import com.lightningkite.services.Setting
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.UrlSettingParser
+import ai.koog.rag.vector.*
+import com.lightningkite.services.*
 import kotlinx.serialization.Serializable
 import kotlin.io.path.Path
-import kotlin.jvm.JvmInline
 
 /**
  * Settings for instantiating Koog's [VectorStorage].
@@ -44,7 +39,7 @@ import kotlin.jvm.JvmInline
 @Serializable
 @JvmInline
 public value class VectorStorageSettings<Document>(
-    public val url: String
+    public val url: String,
 ) : Setting<VectorStorage<Document>> {
 
     public companion object : UrlSettingParser<VectorStorage<*>>() {
@@ -64,12 +59,13 @@ public value class VectorStorageSettings<Document>(
 
     override fun invoke(
         name: String,
-        context: SettingContext
+        context: SettingContext,
     ): VectorStorage<Document> {
         @Suppress("UNCHECKED_CAST")
         return (parse(name, url, context) as VectorStorage<Document>)
     }
 }
+
 /**
  * Extracts the path from a URL (the authority/host part).
  * For example: "rag-file://./data/vectors" -> "./data/vectors"

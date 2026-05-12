@@ -1,8 +1,8 @@
 package com.lightningkite.services.sms
 
-import com.lightningkite.PhoneNumber
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.data.PhoneNumber
 
 /**
  * A concrete implementation of SMS that prints messages to the console.
@@ -10,7 +10,7 @@ import com.lightningkite.services.SettingContext
  */
 public class ConsoleSMS(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : SMS {
 
     /**
@@ -23,6 +23,9 @@ public class ConsoleSMS(
     }
 
     override suspend fun healthCheck(): HealthStatus {
-        return HealthStatus(HealthStatus.Level.OK, additionalMessage = "Console SMS Service - No real messages are sent.")
+        return HealthStatus(
+            HealthStatus.Level.OK,
+            additionalMessage = "Console SMS Service - No real messages are sent."
+        )
     }
 }

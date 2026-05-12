@@ -1,14 +1,13 @@
 package com.lightningkite.services.sms.twilio
 
-import com.lightningkite.PhoneNumber
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.data.PhoneNumber
 import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
 import io.ktor.client.*
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -16,9 +15,7 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
@@ -97,7 +94,7 @@ public class TwilioSMS(
     override val context: SettingContext,
     private val account: String,
     private val key: String,
-    private val from: String
+    private val from: String,
 ) : SMS {
 
     private val tracer: Tracer? = context.openTelemetry?.getTracer("sms-twilio")
@@ -170,11 +167,16 @@ public class TwilioSMS(
 
     override suspend fun healthCheck(): HealthStatus {
         // TODO
-        return HealthStatus(HealthStatus.Level.OK, additionalMessage = "Twilio SMS Service - No direct health checks available yet.")
+        return HealthStatus(
+            HealthStatus.Level.OK,
+            additionalMessage = "Twilio SMS Service - No direct health checks available yet."
+        )
     }
 
     public companion object {
-        public fun SMS.Settings.Companion.twilio(account: String, key: String, from: String): SMS.Settings = SMS.Settings("twilio://$account:$key@$from")
+        public fun SMS.Settings.Companion.twilio(account: String, key: String, from: String): SMS.Settings =
+            SMS.Settings("twilio://$account:$key@$from")
+
         init {
             SMS.Settings.register("twilio") { name, url, context ->
                 val regex = Regex("""twilio://(?<user>[^:]+):(?<password>[^@]+)(?:@(?<phoneNumber>.+))?""")
@@ -186,7 +188,7 @@ public class TwilioSMS(
                 val key = match.groups["password"]?.value
                     ?: throw IllegalArgumentException("Twilio key not provided in URL")
                 val from = match.groups["phoneNumber"]?.value
-                ?: throw IllegalArgumentException("Twilio phone number not provided in URL or settings")
+                    ?: throw IllegalArgumentException("Twilio phone number not provided in URL or settings")
 
                 TwilioSMS(name, context, account, key, from)
             }

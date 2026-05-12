@@ -2,24 +2,16 @@
 package com.lightningkite.services.cache.redis
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.cache.get
-import com.lightningkite.services.cache.modify
-import com.lightningkite.services.cache.set
-import com.lightningkite.services.cache.setIfNotExists
+import com.lightningkite.services.cache.*
 import io.lettuce.core.RedisClient
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer
-import org.junit.AfterClass
+import org.junit.*
 import org.junit.Assume.assumeTrue
-import org.junit.BeforeClass
 import org.junit.Test
 import redis.embedded.RedisServer
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -73,7 +65,12 @@ class RedisCacheEdgeCaseTest {
         assumeTrue("Redis not available", serverAvailable)
 
         // Both expected and new are null should return true
-        val result = cache.compareAndSet<TestData>("redis-cas-null-null-test", cache.context.internalSerializersModule.serializer(), null, null)
+        val result = cache.compareAndSet<TestData>(
+            "redis-cas-null-null-test",
+            cache.context.internalSerializersModule.serializer(),
+            null,
+            null
+        )
         assertTrue(result, "CAS with both null should succeed")
     }
 
@@ -87,7 +84,12 @@ class RedisCacheEdgeCaseTest {
         assertEquals(TestData("initial", 1), cache.get<TestData>(key))
 
         // CAS to delete (expected exists, new is null)
-        val result = cache.compareAndSet(key, cache.context.internalSerializersModule.serializer<TestData>(), TestData("initial", 1), null)
+        val result = cache.compareAndSet(
+            key,
+            cache.context.internalSerializersModule.serializer<TestData>(),
+            TestData("initial", 1),
+            null
+        )
         assertTrue(result, "CAS delete should succeed")
         assertNull(cache.get<TestData>(key), "Key should be deleted after CAS with null new value")
     }
@@ -101,7 +103,12 @@ class RedisCacheEdgeCaseTest {
         cache.set(key, TestData("exists", 42))
 
         // Try to CAS with expected=null but key exists - should fail
-        val result = cache.compareAndSet(key, cache.context.internalSerializersModule.serializer<TestData>(), null, TestData("new", 100))
+        val result = cache.compareAndSet(
+            key,
+            cache.context.internalSerializersModule.serializer<TestData>(),
+            null,
+            TestData("new", 100)
+        )
         assertFalse(result, "CAS should fail when expected is null but key exists")
 
         // Original value should remain
@@ -117,7 +124,12 @@ class RedisCacheEdgeCaseTest {
         cache.set(key, TestData("v1", 1))
 
         // CAS with correct expected should succeed
-        val result = cache.compareAndSet(key, cache.context.internalSerializersModule.serializer<TestData>(), TestData("v1", 1), TestData("v2", 2))
+        val result = cache.compareAndSet(
+            key,
+            cache.context.internalSerializersModule.serializer<TestData>(),
+            TestData("v1", 1),
+            TestData("v2", 2)
+        )
         assertTrue(result, "CAS with correct expected should succeed")
         assertEquals(TestData("v2", 2), cache.get<TestData>(key))
     }
@@ -131,7 +143,12 @@ class RedisCacheEdgeCaseTest {
         cache.set(key, TestData("actual", 1))
 
         // CAS with wrong expected should fail
-        val result = cache.compareAndSet(key, cache.context.internalSerializersModule.serializer<TestData>(), TestData("expected", 2), TestData("new", 3))
+        val result = cache.compareAndSet(
+            key,
+            cache.context.internalSerializersModule.serializer<TestData>(),
+            TestData("expected", 2),
+            TestData("new", 3)
+        )
         assertFalse(result, "CAS with wrong expected should fail")
 
         // Original value should remain unchanged
@@ -144,7 +161,13 @@ class RedisCacheEdgeCaseTest {
         val key = "redis-cas-ttl-test-${System.currentTimeMillis()}"
 
         // CAS create with TTL (expected null, new value)
-        val result = cache.compareAndSet(key, cache.context.internalSerializersModule.serializer<TestData>(), null, TestData("with-ttl", 1), 2.seconds)
+        val result = cache.compareAndSet(
+            key,
+            cache.context.internalSerializersModule.serializer<TestData>(),
+            null,
+            TestData("with-ttl", 1),
+            2.seconds
+        )
         assertTrue(result, "CAS create with TTL should succeed")
         assertEquals(TestData("with-ttl", 1), cache.get<TestData>(key))
 

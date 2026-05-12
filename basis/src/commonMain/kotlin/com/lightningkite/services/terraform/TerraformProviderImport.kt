@@ -1,37 +1,36 @@
 package com.lightningkite.services.terraform
 
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
 
 public data class TerraformProviderImport(
     val name: String,
     val source: String,
-    val version: String
+    val version: String,
 ) {
     public companion object {
         public val aws: TerraformProviderImport = TerraformProviderImport(
             name = "aws",
-            source  = "hashicorp/aws",
+            source = "hashicorp/aws",
             version = "~> 6.34.0",
         )
         public val random: TerraformProviderImport = TerraformProviderImport(
             name = "random",
-            source  = "hashicorp/random",
+            source = "hashicorp/random",
             version = "~> 3.8.0",
         )
         public val archive: TerraformProviderImport = TerraformProviderImport(
             name = "archive",
-            source  = "hashicorp/archive",
+            source = "hashicorp/archive",
             version = "~> 2.7.0",
         )
         public val google: TerraformProviderImport = TerraformProviderImport(
             name = "google",
-            source  = "hashicorp/google",
+            source = "hashicorp/google",
             version = "~> 7.22.0",
         )
         public val mongodbAtlas: TerraformProviderImport = TerraformProviderImport(
             name = "mongodbatlas",
-            source  = "mongodb/mongodbatlas",
+            source = "mongodb/mongodbatlas",
             version = "~> 2.7.0",
         )
         public val local: TerraformProviderImport = TerraformProviderImport(
@@ -65,6 +64,7 @@ public data class TerraformProviderImport(
             version = "~> 4.27.0",
         )
     }
+
     public fun toTerraformJson(): JsonObject = terraformJsonObject {
         name {
             "source" - source

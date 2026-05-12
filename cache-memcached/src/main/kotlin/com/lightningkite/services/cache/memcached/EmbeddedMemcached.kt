@@ -1,5 +1,7 @@
 package com.lightningkite.services.cache.memcached
 
+import com.lightningkite.services.cache.memcached.EmbeddedMemcached.available
+import com.lightningkite.services.cache.memcached.EmbeddedMemcached.start
 import java.io.File
 
 /**
@@ -39,7 +41,7 @@ public object EmbeddedMemcached {
                 } ?: false
             }
     }
-    
+
     /**
      * Starts a memcached process.
      * @return The process that was started.

@@ -16,7 +16,10 @@ import kotlin.time.Duration.Companion.seconds
 // TODO: This test works, just not on Github Actions, which is horribly aggravating.  Please fix
 @Ignore
 class DynamoTest : CacheTest() {
-    init { DynamoDbCache }
+    init {
+        DynamoDbCache
+    }
+
     override val cache: DynamoDbCache?
         get() {
             return Cache.Settings("dynamodb-local").invoke("test", TestSettingContext()) as DynamoDbCache
@@ -24,7 +27,8 @@ class DynamoTest : CacheTest() {
 
     override fun runSuspendingTest(body: suspend CoroutineScope.() -> Unit) = runBlocking { body() }
 
-    @Test fun parsing() {
+    @Test
+    fun parsing() {
         val cache = cache ?: return
         val target = setOf("asdf", "fdsa")
         val serializer = SetSerializer(String.serializer())

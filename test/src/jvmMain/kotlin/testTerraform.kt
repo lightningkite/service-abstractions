@@ -1,32 +1,15 @@
 package com.lightningkite.services.test
 
-import com.lightningkite.services.terraform.AwsPolicyStatement
-import com.lightningkite.services.terraform.TerraformAwsVpcInfo
-import com.lightningkite.services.terraform.TerraformEmitter
-import com.lightningkite.services.terraform.TerraformEmitterAws
-import com.lightningkite.services.terraform.TerraformEmitterAwsDomain
-import com.lightningkite.services.terraform.TerraformEmitterAwsVpc
-import com.lightningkite.services.terraform.TerraformJsonObject
-import com.lightningkite.services.terraform.TerraformNeed
-import com.lightningkite.services.terraform.TerraformProvider
-import com.lightningkite.services.terraform.TerraformProviderImport
-import com.lightningkite.services.terraform.include
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.serializer
+import com.lightningkite.services.terraform.*
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
 import java.io.File
 
 private val prettyJson = Json { prettyPrint = true }
 
 // by Claude: Simple file-based lock to prevent parallel terraform operations (plugin cache is not concurrency-safe)
 private val terraformLockFile = File(System.getProperty("java.io.tmpdir"), "terraform-test.lock")
-private val terraformIntraJvmLock = Object()
+private val terraformIntraJvmLock = Any()
 private fun <T> withTerraformLock(action: () -> T): T = synchronized(terraformIntraJvmLock) {
     // Acquire cross-process lock using atomic file creation
     val maxWaitMs = 1_800_000L  // 30 minutes max wait (tests queue up and each can take several minutes)
@@ -81,7 +64,7 @@ open class TerraformEmitterAwsTest<S>(
 
     override fun emit(
         context: String?,
-        action: TerraformJsonObject.() -> Unit
+        action: TerraformJsonObject.() -> Unit,
     ) {
         files.getOrPut(context ?: "unclassified") { TerraformJsonObject() }.action()
     }
@@ -181,7 +164,7 @@ open class TerraformEmitterAwsTest<S>(
     }
 
     inner class Plan(
-        val plan: File
+        val plan: File,
     ) {
         fun apply(): S {
             root.runTerraform("apply", "plan.tfplan", "-no-color")
@@ -272,7 +255,7 @@ fun TerraformEmitterAwsVpc.bastion(
         val phone2: String = "",
         val keys: List<String> = listOf(
             "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDpQPSzK//RcMqYjkSdvjByZCjMNHR4A5LNFhZ9K1AblyX7TH2XEYVVvGgDzZ49+aal7UdugOgnIBWfXZZ4dlUAmfnePJfHqZ5Sapj13YrfGWLkXuie6e8hkj3V5FY5TVHIGxq0qe/rA20Ur8yRAwJSMnDOun/gq4+GjVQrtKRx0zAzDNH3QvJS79bcBYSKf7BodAXcUE2JY0JipBDlm321dJBWoFMEI1rOYJElF2fKMpZ0Y7eAxoL2MisI1addD3Vo8J+RGqrA2zJbuccDXZt+5R5ej8AOPYShhuFVfQRTG0N8AxSn3WtNg7Xj8wRvtMgPRtTAplNnoU2nUl0p3jjgGQU5/NawQkUR3B+gkv3FBZSxHJ1AnJzqOizBmfIHwm2dMDXeASUri9JJKzPvn9o1QzeM22UkBt7Oo81Ie4c4mwgTaieEo7oxHLQeyl01gNkGBADg35RgzdBqBvQzJDXEkIFhD6AD/tbpCns8iP63J0jRGQ4xxAzRi1BCnOhphnc= joseph@joseph-ThinkPad-E15"
-        )
+        ),
     )
     require(TerraformProviderImport.tls)
     require(TerraformProviderImport.ssh)
@@ -472,7 +455,7 @@ fun hasTerraform(): Boolean {
             .start()
             .waitFor()
         return result == 0
-    } catch(e: Exception) {
+    } catch (e: Exception) {
         return false
     }
 }
@@ -480,8 +463,8 @@ fun hasTerraform(): Boolean {
 inline fun <reified T> assertPlannableAws(
     name: String,
     fulfill: context(TerraformEmitterAws) (TerraformNeed<T>) -> Unit,
-) = expensive {
-    if (!hasTerraform()) return
+): Unit = expensive {
+    if (!hasTerraform()) return@expensive
     for (tester in listOf(
         TerraformEmitterAwsTest(File("build/test/$name"), "test", serializer<T>()),
         TerraformEmitterAwsTestWithVpc(File("build/test/$name-vpc"), "test", serializer<T>()),
@@ -501,7 +484,7 @@ inline fun <reified T> assertPlannableAwsDomain(
     name: String,
     fulfill: context(TerraformEmitterAwsDomain) (TerraformNeed<T>) -> Unit,
 ) = expensive {
-    if (!hasTerraform()) return
+    if (!hasTerraform()) return@expensive
     for (tester in listOf(
         TerraformEmitterAwsTestWithDomain(File("build/test/$name"), "test", serializer<T>()),
         TerraformEmitterAwsTestWithDomainVpc(File("build/test/$name-vpc"), "test", serializer<T>()),
@@ -519,7 +502,7 @@ inline fun <reified T> assertPlannableAwsVpc(
     name: String,
     fulfill: context(TerraformEmitterAwsVpc) (TerraformNeed<T>) -> Unit,
 ) = expensive {
-    if (!hasTerraform()) return
+    if (!hasTerraform()) return@expensive
     for (tester in listOf(
         TerraformEmitterAwsTestWithVpc(File("build/test/$name"), "test", serializer<T>()),
         TerraformEmitterAwsTestWithDomainVpc(File("build/test/$name-dom"), "test", serializer<T>()),

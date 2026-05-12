@@ -8,7 +8,8 @@
 
 ## Overview
 
-The SMS module provides a unified interface for sending text messages. Switch between console output (dev), test mode, or Twilio via configuration.
+The SMS module provides a unified interface for sending text messages. Switch between console output (dev), test mode,
+or Twilio via configuration.
 
 ### Key Features
 
@@ -36,6 +37,7 @@ val smsService: SMS = settings.sms("sms", context)
 ```
 
 **Supported URL schemes:**
+
 - `console` - Print SMS to console (development)
 - `test` - Collect SMS in memory for testing
 - `twilio://accountSid:authToken@fromNumber` - Twilio provider (requires `sms-twilio` module)
@@ -60,12 +62,14 @@ smsService.send(
 All phone numbers must start with `+` and country code:
 
 **Valid:**
+
 - `+15551234567` (US/Canada)
 - `+447700900123` (UK)
 - `+8613812345678` (China)
 - `+5511987654321` (Brazil)
 
 **Invalid:**
+
 - `555-123-4567` (missing country code and +)
 - `(555) 123-4567` (invalid format)
 - `5551234567` (missing + and country code)
@@ -108,6 +112,7 @@ smsService.send(
 **Cost:** Each segment is charged separately. A 320-character message costs 2x.
 
 **Segment limits:**
+
 - **153 characters** per segment for multi-part GSM-7 messages
 - **67 characters** per segment for multi-part Unicode messages
 
@@ -122,17 +127,20 @@ SMS.Settings("twilio://AC1234567890abcdef:your-auth-token@+15551234567")
 ```
 
 **Components:**
+
 - `AC1234567890abcdef` - Account SID (from Twilio console)
 - `your-auth-token` - Auth Token (from Twilio console)
 - `+15551234567` - Your Twilio phone number (must be owned/rented)
 
 **Setup steps:**
+
 1. Sign up at twilio.com
 2. Get a phone number (trial accounts get one free)
 3. Find Account SID and Auth Token in console
 4. Configure URL with these credentials
 
 **Trial account limitations:**
+
 - Can only send to verified phone numbers
 - Messages are prefixed with "Sent from your Twilio trial account"
 - Limited to specific countries
@@ -144,12 +152,14 @@ SMS.Settings("twilio://AC1234567890abcdef:your-auth-token@+15551234567")
 ### Twilio Pricing (as of 2024)
 
 **Outbound SMS costs per message:**
+
 - **US/Canada**: $0.0079
 - **UK**: $0.0490
 - **India**: $0.0069
 - **International**: Varies widely ($0.01 - $0.50+ per message)
 
 **Phone number rental:**
+
 - **US local number**: $1.15/month
 - **Toll-free number**: $2.10/month
 - **Short code**: $1,000+/month
@@ -181,6 +191,7 @@ fun sendVerificationCode(phoneNumber: String, code: String) {
 ```
 
 **Best practices:**
+
 - Include expiration time
 - Make code obvious (not buried in text)
 - Don't send sensitive info beyond the code
@@ -227,11 +238,13 @@ fun sendAppointmentReminder(phoneNumber: String, appointmentTime: Instant, locat
 **US Law (TCPA):** You must have written consent before sending marketing SMS.
 
 **Required for:**
+
 - Promotional messages
 - Marketing campaigns
 - Non-transactional content
 
 **Not required for:**
+
 - Verification codes
 - Order confirmations
 - Appointment reminders
@@ -250,6 +263,7 @@ smsService.send(
 ```
 
 **Handle STOP messages:**
+
 ```kotlin
 // When you receive a STOP reply, remove from your list
 if (incomingSMS.message.trim().uppercase() == "STOP") {
@@ -306,10 +320,12 @@ try {
 ### Twilio Limits
 
 **Default limits:**
+
 - **1 message/second** per phone number
 - **100 concurrent requests** per account
 
 **How to handle:**
+
 ```kotlin
 val messages = listOf(/* many phone numbers */)
 
@@ -442,22 +458,27 @@ try {
 ## Troubleshooting
 
 ### "Unverified phone number"
+
 - **Cause:** Trial account limitation
 - **Fix:** Verify the phone number in Twilio console, or upgrade to paid account
 
 ### "Invalid phone number"
+
 - **Cause:** Not in E.164 format
 - **Fix:** Ensure number starts with + and country code: `+15551234567`
 
 ### "Insufficient funds"
+
 - **Cause:** Twilio account balance is $0
 - **Fix:** Add funds to your Twilio account
 
 ### "Rate limit exceeded"
+
 - **Cause:** Sending too many messages too quickly
 - **Fix:** Add delays between sends, or request higher limits
 
 ### Messages not delivered
+
 - **Cause:** Phone is off, number is invalid, or carrier blocked
 - **Fix:** Check delivery status in Twilio console, remove bad numbers from list
 
@@ -484,6 +505,7 @@ try {
 ## See Also
 
 - [SMS.kt](../sms/src/commonMain/kotlin/com/lightningkite/services/sms/SMS.kt) - Interface documentation
-- [TwilioSMS.kt](../sms-twilio/src/main/kotlin/com/lightningkite/services/sms/twilio/TwilioSMS.kt) - Twilio implementation
+- [TwilioSMS.kt](../sms-twilio/src/main/kotlin/com/lightningkite/services/sms/twilio/TwilioSMS.kt) - Twilio
+  implementation
 - [email-module.md](./email-module.md) - Email alternative
 - [notifications-module.md](./notifications-module.md) - Push notifications alternative

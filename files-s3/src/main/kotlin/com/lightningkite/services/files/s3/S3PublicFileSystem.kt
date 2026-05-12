@@ -1,11 +1,10 @@
 package com.lightningkite.services.files.s3
 
-import com.lightningkite.MediaType
-import com.lightningkite.services.*
+import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.get
 import com.lightningkite.services.http.client
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -225,7 +224,7 @@ public class S3PublicFileSystem(
                     HealthStatus.Level.WARNING to
                             "File Signing is configured, but the test file was retrieved with an unsigned URL. Is the S3 Bucket permissions configured correctly?"
                 )
-            } else if(!result.status.isSuccess() && signedUrlDuration == null){
+            } else if (!result.status.isSuccess() && signedUrlDuration == null) {
                 return HealthStatus(
                     level = HealthStatus.Level.ERROR,
                     additionalMessage = "File Signing is null, but the test failed to be retrieved with an unsigned URL. Is the S3 Bucket permissions configured correctly?"

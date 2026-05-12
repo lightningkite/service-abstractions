@@ -3,11 +3,14 @@
 ## Plivo Voice API
 
 ### Authentication
+
 - Base URL: `https://api.plivo.com/v1/Account/{auth_id}/Call/`
 - Uses Basic Auth with Auth ID and Auth Token
 
 ### Making Outbound Calls
+
 POST to `/Call/` with form parameters:
+
 - `from` (required) - Caller ID in E.164 format
 - `to` (required) - Destination number(s), up to 1000 separated by `<`
 - `answer_url` (required) - URL that returns Plivo XML when call is answered
@@ -22,6 +25,7 @@ POST to `/Call/` with form parameters:
 - `hangup_on_ring` - Maximum duration from ringing to hangup
 
 ### Machine Detection
+
 - `machine_detection` - Values: `true` or `hangup`
 - `machine_detection_time` - Detection duration in ms (default: 5000; range: 2000-10000)
 - `machine_detection_url` - Callback URL for async detection results
@@ -31,6 +35,7 @@ POST to `/Call/` with form parameters:
 - `machine_detection_initial_greeting` - Max greeting length in ms (default: 1500)
 
 ### Call Status Values
+
 - `ringing` - Call is ringing
 - `in-progress` - Call is active
 - `completed` - Call ended successfully
@@ -42,22 +47,27 @@ POST to `/Call/` with form parameters:
 ### Plivo XML Elements
 
 #### `<Speak>` (TTS)
+
 ```xml
 <Speak voice="WOMAN" language="en-US" loop="1">Hello world</Speak>
 ```
+
 - `voice` - `WOMAN` or `MAN` (default: WOMAN)
 - `language` - Language code (default: en-US)
 - `loop` - Number of times to repeat (0 = infinite)
 - Supports SSML for advanced speech control
 
-Supported languages: en-US, en-GB, en-AU, fr-FR, fr-CA, es-ES, es-US, de-DE, it-IT, nl-NL, pt-PT, pt-BR, da-DK, sv-SE, pl-PL, ru-RU
+Supported languages: en-US, en-GB, en-AU, fr-FR, fr-CA, es-ES, es-US, de-DE, it-IT, nl-NL, pt-PT, pt-BR, da-DK, sv-SE,
+pl-PL, ru-RU
 
 #### `<Play>` (Audio)
+
 ```xml
 <Play loop="1">https://example.com/audio.mp3</Play>
 ```
 
 #### `<GetDigits>` (DTMF Input)
+
 ```xml
 <GetDigits action="https://example.com/dtmf" method="POST" timeout="5" numDigits="1" finishOnKey="#">
   <Speak>Press 1 for sales</Speak>
@@ -65,6 +75,7 @@ Supported languages: en-US, en-GB, en-AU, fr-FR, fr-CA, es-ES, es-US, de-DE, it-
 ```
 
 #### `<GetInput>` (Speech + DTMF)
+
 ```xml
 <GetInput action="https://example.com/input" inputType="speech dtmf">
   <Speak>Say yes or press 1</Speak>
@@ -72,6 +83,7 @@ Supported languages: en-US, en-GB, en-AU, fr-FR, fr-CA, es-ES, es-US, de-DE, it-
 ```
 
 #### `<Dial>` (Forward)
+
 ```xml
 <Dial timeout="30" callerId="+15551234567">
   <Number>+15559876543</Number>
@@ -79,11 +91,13 @@ Supported languages: en-US, en-GB, en-AU, fr-FR, fr-CA, es-ES, es-US, de-DE, it-
 ```
 
 #### `<Record>`
+
 ```xml
 <Record action="https://example.com/recording" maxLength="60" finishOnKey="#" transcriptionUrl="https://example.com/transcribe"/>
 ```
 
 #### Other Elements
+
 - `<Hangup/>` - End call
 - `<Wait length="5"/>` - Pause
 - `<Redirect>https://example.com/next</Redirect>` - Fetch new XML
@@ -93,6 +107,7 @@ Supported languages: en-US, en-GB, en-AU, fr-FR, fr-CA, es-ES, es-US, de-DE, it-
 - `<AudioStream>` - Real-time audio streaming
 
 ### URL Format for Settings
+
 ```
 plivo://{auth_id}:{auth_token}@{from_phone_number}
 ```
@@ -102,12 +117,15 @@ plivo://{auth_id}:{auth_token}@{from_phone_number}
 ## Vonage Voice API
 
 ### Authentication
+
 - Base URL: `https://api.nexmo.com/v1/calls`
 - Uses JWT authentication with Application ID and Private Key
 - Alternative: API Key + Secret for some endpoints
 
 ### Making Outbound Calls
+
 POST to `/v1/calls` with JSON body:
+
 ```json
 {
   "to": [{"type": "phone", "number": "15559876543"}],
@@ -120,6 +138,7 @@ POST to `/v1/calls` with JSON body:
 ```
 
 Key parameters:
+
 - `to` - Array of endpoint objects (phone, sip, websocket, app)
 - `from` - Caller endpoint object
 - `ncco` - Inline NCCO actions (alternative to answer_url)
@@ -130,6 +149,7 @@ Key parameters:
 - `ringing_timer` - Max ring time
 
 ### Call Status Values (Webhooks)
+
 - `started` - Call initiated
 - `ringing` - Phone is ringing
 - `answered` - Call was answered
@@ -146,6 +166,7 @@ Key parameters:
 NCCO is a JSON array of actions executed in order (FIFO).
 
 #### `talk` (TTS)
+
 ```json
 {
   "action": "talk",
@@ -158,6 +179,7 @@ NCCO is a JSON array of actions executed in order (FIFO).
   "bargeIn": false
 }
 ```
+
 - `language` - BCP-47 code (23 languages supported)
 - `style` - Voice style variant (0-5 depending on language)
 - `premium` - Use premium voices
@@ -165,6 +187,7 @@ NCCO is a JSON array of actions executed in order (FIFO).
 - `bargeIn` - Allow DTMF to interrupt
 
 #### `stream` (Audio)
+
 ```json
 {
   "action": "stream",
@@ -176,6 +199,7 @@ NCCO is a JSON array of actions executed in order (FIFO).
 ```
 
 #### `input` (DTMF + Speech)
+
 ```json
 {
   "action": "input",
@@ -195,6 +219,7 @@ NCCO is a JSON array of actions executed in order (FIFO).
 ```
 
 #### `connect` (Forward/Dial)
+
 ```json
 {
   "action": "connect",
@@ -204,9 +229,11 @@ NCCO is a JSON array of actions executed in order (FIFO).
   "eventUrl": ["https://example.com/connect-events"]
 }
 ```
+
 Endpoint types: phone, app, websocket, sip, vbc
 
 #### `record`
+
 ```json
 {
   "action": "record",
@@ -223,10 +250,12 @@ Endpoint types: phone, app, websocket, sip, vbc
 ```
 
 #### Other Actions
+
 - `conversation` - Conference/multi-party
 - `notify` - Send webhook without waiting
 
 ### Unique Vonage Features
+
 - **Conversation API** - Groups related calls into conversations
 - **WebSocket endpoint** - Connect calls to WebSocket for real-time audio
 - **SIP endpoint** - Direct SIP connectivity
@@ -234,10 +263,13 @@ Endpoint types: phone, app, websocket, sip, vbc
 - **Premium TTS** - Higher quality voices at additional cost
 
 ### URL Format for Settings
+
 ```
 vonage://{application_id}:{private_key_base64}@{from_phone_number}
 ```
+
 Or with API credentials:
+
 ```
 vonage://{api_key}:{api_secret}@{from_phone_number}?app_id={application_id}
 ```
@@ -246,47 +278,47 @@ vonage://{api_key}:{api_secret}@{from_phone_number}?app_id={application_id}
 
 ## Provider Comparison Matrix
 
-| Feature | Twilio | Plivo | Vonage |
-|---------|--------|-------|--------|
-| Call Control Format | TwiML (XML) | Plivo XML | NCCO (JSON) |
-| Auth Method | Account SID + Auth Token / API Key | Auth ID + Auth Token | JWT / API Key |
-| TTS Element | `<Say>` | `<Speak>` | `talk` action |
-| Audio Play | `<Play>` | `<Play>` | `stream` action |
-| Gather DTMF | `<Gather>` | `<GetDigits>` | `input` action (type: dtmf) |
-| Gather Speech | `<Gather input="speech">` | `<GetInput>` | `input` action (type: speech) |
-| Forward/Dial | `<Dial>` | `<Dial>` | `connect` action |
-| Record | `<Record>` | `<Record>` | `record` action |
-| Hangup | `<Hangup/>` | `<Hangup/>` | (end of NCCO) |
-| Pause | `<Pause>` | `<Wait>` | (use `talk` with silence or `stream` silent audio) |
-| Redirect | `<Redirect>` | `<Redirect>` | (fetch new NCCO) |
-| Queue | `<Enqueue>` | `<Conference>` | `conversation` action |
-| SSML Support | Yes | Yes | No (use style parameter) |
-| Caller Name (CNAM) | Limited | `caller_name` param | Via `from` object |
-| WebSocket Audio | Media Streams | AudioStream | WebSocket endpoint |
-| Multi-party | `<Conference>` | `<Conference>`, `<MultiPartyCall>` | `conversation` action |
+| Feature             | Twilio                             | Plivo                              | Vonage                                             |
+|---------------------|------------------------------------|------------------------------------|----------------------------------------------------|
+| Call Control Format | TwiML (XML)                        | Plivo XML                          | NCCO (JSON)                                        |
+| Auth Method         | Account SID + Auth Token / API Key | Auth ID + Auth Token               | JWT / API Key                                      |
+| TTS Element         | `<Say>`                            | `<Speak>`                          | `talk` action                                      |
+| Audio Play          | `<Play>`                           | `<Play>`                           | `stream` action                                    |
+| Gather DTMF         | `<Gather>`                         | `<GetDigits>`                      | `input` action (type: dtmf)                        |
+| Gather Speech       | `<Gather input="speech">`          | `<GetInput>`                       | `input` action (type: speech)                      |
+| Forward/Dial        | `<Dial>`                           | `<Dial>`                           | `connect` action                                   |
+| Record              | `<Record>`                         | `<Record>`                         | `record` action                                    |
+| Hangup              | `<Hangup/>`                        | `<Hangup/>`                        | (end of NCCO)                                      |
+| Pause               | `<Pause>`                          | `<Wait>`                           | (use `talk` with silence or `stream` silent audio) |
+| Redirect            | `<Redirect>`                       | `<Redirect>`                       | (fetch new NCCO)                                   |
+| Queue               | `<Enqueue>`                        | `<Conference>`                     | `conversation` action                              |
+| SSML Support        | Yes                                | Yes                                | No (use style parameter)                           |
+| Caller Name (CNAM)  | Limited                            | `caller_name` param                | Via `from` object                                  |
+| WebSocket Audio     | Media Streams                      | AudioStream                        | WebSocket endpoint                                 |
+| Multi-party         | `<Conference>`                     | `<Conference>`, `<MultiPartyCall>` | `conversation` action                              |
 
 ## Status Mapping
 
-| Abstract Status | Twilio | Plivo | Vonage |
-|-----------------|--------|-------|--------|
-| STARTED | - | - | started |
-| QUEUED | queued | - | - |
-| RINGING | ringing | ringing | ringing |
-| IN_PROGRESS | in-progress | in-progress | answered |
-| COMPLETED | completed | completed | completed |
-| BUSY | busy | busy | busy |
-| NO_ANSWER | no-answer | no-answer | timeout, unanswered |
-| REJECTED | - | - | rejected |
-| CANCELED | canceled | cancel | cancelled |
-| FAILED | failed | failed | failed |
+| Abstract Status | Twilio      | Plivo       | Vonage              |
+|-----------------|-------------|-------------|---------------------|
+| STARTED         | -           | -           | started             |
+| QUEUED          | queued      | -           | -                   |
+| RINGING         | ringing     | ringing     | ringing             |
+| IN_PROGRESS     | in-progress | in-progress | answered            |
+| COMPLETED       | completed   | completed   | completed           |
+| BUSY            | busy        | busy        | busy                |
+| NO_ANSWER       | no-answer   | no-answer   | timeout, unanswered |
+| REJECTED        | -           | -           | rejected            |
+| CANCELED        | canceled    | cancel      | cancelled           |
+| FAILED          | failed      | failed      | failed              |
 
 ## Machine Detection Mapping
 
-| Abstract Mode | Twilio | Plivo | Vonage |
-|---------------|--------|-------|--------|
-| DISABLED | (omit param) | (omit param) | (omit param) |
-| ENABLED | `MachineDetection=Enable` | `machine_detection=true` | `machine_detection=continue` |
-| DETECT_MESSAGE_END | `MachineDetection=DetectMessageEnd` | (use timing params) | (not directly supported) |
+| Abstract Mode      | Twilio                              | Plivo                    | Vonage                       |
+|--------------------|-------------------------------------|--------------------------|------------------------------|
+| DISABLED           | (omit param)                        | (omit param)             | (omit param)                 |
+| ENABLED            | `MachineDetection=Enable`           | `machine_detection=true` | `machine_detection=continue` |
+| DETECT_MESSAGE_END | `MachineDetection=DetectMessageEnd` | (use timing params)      | (not directly supported)     |
 
 ## Implementation Priority
 

@@ -1,9 +1,6 @@
 package com.lightningkite.services.email.imap
 
-import com.icegreen.greenmail.util.GreenMail
-import com.icegreen.greenmail.util.GreenMailUtil
-import com.icegreen.greenmail.util.ServerSetup
-import com.lightningkite.MediaType
+import com.icegreen.greenmail.util.*
 import com.lightningkite.lightningserver.BadRequestException
 import com.lightningkite.lightningserver.definition.StartupTask
 import com.lightningkite.lightningserver.definition.builder.ServerBuilder
@@ -13,10 +10,10 @@ import com.lightningkite.lightningserver.pathing.fullUrl
 import com.lightningkite.lightningserver.runtime.ServerRuntime
 import com.lightningkite.lightningserver.runtime.location
 import com.lightningkite.lightningserver.settings.loadFromFile
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.workingDirectory
+import com.lightningkite.services.data.*
 import com.lightningkite.services.email.EmailInboundService
 import com.lightningkite.services.email.ReceivedEmail
+import com.lightningkite.services.kfile.workingDirectory
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock

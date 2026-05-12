@@ -1,11 +1,9 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.MediaType
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.MediaType
 import kotlinx.io.Buffer
-import kotlin.test.Ignore
-import kotlin.test.Test
-import kotlin.test.assertFailsWith
+import kotlin.test.*
 
 /**
  * Tests for edge cases in FileScanner implementations.

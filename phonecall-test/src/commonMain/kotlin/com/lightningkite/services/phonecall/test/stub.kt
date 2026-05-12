@@ -1,3 +1,3 @@
 package com.lightningkite.services.phonecall.test
 
-public fun stub(){}
+public fun stub() {}

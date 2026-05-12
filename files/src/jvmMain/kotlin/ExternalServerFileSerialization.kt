@@ -1,23 +1,17 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.MediaType
+import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
 import dev.whyoleg.cryptography.algorithms.HMAC
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SealedSerializationApi
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import org.jetbrains.annotations.TestOnly
 import kotlin.io.encoding.Base64
-import kotlin.time.Clock
-import kotlin.time.Duration
-import kotlin.time.Instant
+import kotlin.time.*
 
 /**
  * A KSerializer for ServerFile that provides secure file upload handling with scanning and validation.
@@ -46,7 +40,7 @@ public class ExternalServerFileSerializer(
     public val jail: FileObject = fileSystems.first().root.then("upload-jail"),
     public val ready: FileObject = fileSystems.first().root.then("uploaded"),
     public val onUse: (FileObject) -> Unit,
-    public val key: HMAC.Key
+    public val key: HMAC.Key,
 ) : KSerializer<ServerFile> {
     private val primary = fileSystems.first()
     private val logger = KotlinLogging.logger("com.lightningkite.lightningserver.files.ExternalServerFileSerializer")
@@ -213,7 +207,7 @@ public class ExternalServerFileSerializer(
      */
     @TestOnly
     internal fun signUrl(url: String, expiration: Duration): String {
-        if(url.contains('?')) throw IllegalArgumentException("URL cannot contain query parameters.")
+        if (url.contains('?')) throw IllegalArgumentException("URL cannot contain query parameters.")
         return url.plus("?useUntil=${clock.now().plus(expiration).toEpochMilliseconds()}").let {
             it + "&token=" + key.signatureGenerator().generateSignatureBlocking(it.toByteArray())
                 .let { Base64.UrlSafe.encode(it) }

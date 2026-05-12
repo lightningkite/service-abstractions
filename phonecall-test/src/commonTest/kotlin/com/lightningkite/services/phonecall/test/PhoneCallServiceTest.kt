@@ -1,15 +1,11 @@
 package com.lightningkite.services.phonecall.test
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.data.toPhoneNumber
 import com.lightningkite.services.phonecall.*
-import com.lightningkite.toPhoneNumber
 import kotlinx.coroutines.test.runTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class PhoneCallServiceTest {
 
@@ -205,7 +201,7 @@ class PhoneCallServiceTest {
 
         assertTrue(callbackInvoked)
         assertNotNull(receivedCallInfo)
-        assertEquals(phoneNumber, receivedCallInfo?.to)
+        assertEquals(phoneNumber, receivedCallInfo.to)
     }
 
     @Test
@@ -224,7 +220,7 @@ class PhoneCallServiceTest {
 
         assertTrue(callbackInvoked)
         assertNotNull(receivedCallInfo)
-        assertEquals(CallStatus.COMPLETED, receivedCallInfo?.status)
+        assertEquals(CallStatus.COMPLETED, receivedCallInfo.status)
     }
 
     @Test

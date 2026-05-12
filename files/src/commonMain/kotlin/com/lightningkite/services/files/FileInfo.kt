@@ -1,6 +1,6 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.MediaType
+import com.lightningkite.services.data.MediaType
 import kotlin.time.Instant
 
 /**
@@ -30,7 +30,7 @@ public data class FileInfo(
      * May be null if the file system doesn't track modification times or if the
      * information is unavailable. Not all file system implementations populate this field.
      */
-    val lastModified: Instant? = null
+    val lastModified: Instant? = null,
 )
 
 /*

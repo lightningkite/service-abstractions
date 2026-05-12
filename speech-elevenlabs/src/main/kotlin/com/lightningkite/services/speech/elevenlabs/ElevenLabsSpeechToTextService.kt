@@ -1,11 +1,9 @@
 package com.lightningkite.services.speech.elevenlabs
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
@@ -13,7 +11,6 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 private val logger = KotlinLogging.logger("ElevenLabsSpeechToTextService")
@@ -66,7 +63,7 @@ public class ElevenLabsSpeechToTextService(
     override val name: String,
     override val context: SettingContext,
     private val apiKey: String,
-    private val defaultModel: String = "scribe_v1"
+    private val defaultModel: String = "scribe_v1",
 ) : SpeechToTextService {
 
     private val baseUrl = "https://api.elevenlabs.io/v1"
@@ -82,7 +79,7 @@ public class ElevenLabsSpeechToTextService(
 
     override suspend fun transcribe(
         audio: TypedData,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult {
         val model = options.model ?: defaultModel
 
@@ -124,7 +121,7 @@ public class ElevenLabsSpeechToTextService(
 
     override suspend fun transcribeUrl(
         audioUrl: String,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): TranscriptionResult {
         val model = options.model ?: defaultModel
 
@@ -159,7 +156,10 @@ public class ElevenLabsSpeechToTextService(
             } else {
                 val body = response.bodyAsText()
                 logger.warn { "[$name] Health check failed: ${response.status} - $body" }
-                HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "ElevenLabs API returned ${response.status}: $body")
+                HealthStatus(
+                    HealthStatus.Level.ERROR,
+                    additionalMessage = "ElevenLabs API returned ${response.status}: $body"
+                )
             }
         } catch (e: Exception) {
             logger.error(e) { "[$name] Health check error" }
@@ -170,7 +170,7 @@ public class ElevenLabsSpeechToTextService(
     private fun buildUrlTranscriptionRequest(
         audioUrl: String,
         model: String,
-        options: TranscriptionOptions
+        options: TranscriptionOptions,
     ): String {
         return buildString {
             append("{")
@@ -334,7 +334,7 @@ public class ElevenLabsSpeechToTextService(
         return events
     }
 
-    private fun getExtension(mediaType: com.lightningkite.MediaType): String {
+    private fun getExtension(mediaType: MediaType): String {
         return when {
             mediaType.toString().contains("mpeg") -> "mp3"
             mediaType.toString().contains("wav") -> "wav"
@@ -370,7 +370,7 @@ public class ElevenLabsSpeechToTextService(
          */
         public fun SpeechToTextService.Settings.Companion.elevenlabs(
             apiKey: String,
-            model: String = "scribe_v1"
+            model: String = "scribe_v1",
         ): SpeechToTextService.Settings = SpeechToTextService.Settings("elevenlabs://$apiKey@$model")
     }
 }
@@ -398,7 +398,7 @@ private fun parseElevenLabsSttUrl(url: String): Pair<String, String> {
         if (apiKey.isBlank() || apiKey.startsWith("\${")) {
             throw IllegalArgumentException(
                 "ElevenLabs API key required. " +
-                    "Format: elevenlabs-stt://apiKey@model or elevenlabs-stt://\${ELEVENLABS_API_KEY}@model"
+                        "Format: elevenlabs-stt://apiKey@model or elevenlabs-stt://\${ELEVENLABS_API_KEY}@model"
             )
         }
 
@@ -411,7 +411,7 @@ private fun parseElevenLabsSttUrl(url: String): Pair<String, String> {
         ?: System.getenv("ELEVENLABS_API_KEY")
         ?: throw IllegalArgumentException(
             "ElevenLabs API key required. " +
-                "Format: elevenlabs-stt://apiKey@model or set ELEVENLABS_API_KEY environment variable."
+                    "Format: elevenlabs-stt://apiKey@model or set ELEVENLABS_API_KEY environment variable."
         )
     val model = params["model"] ?: defaultModel
 

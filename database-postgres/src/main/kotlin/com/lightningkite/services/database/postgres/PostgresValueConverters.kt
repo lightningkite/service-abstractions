@@ -8,15 +8,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.builtins.ByteArraySerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlin.time.Duration
+import kotlin.time.*
 import kotlin.time.Instant
-import kotlin.time.toJavaDuration
-import kotlin.time.toJavaInstant
-import kotlin.time.toKotlinDuration
-import kotlin.time.toKotlinInstant
-import kotlin.uuid.Uuid
-import kotlin.uuid.toJavaUuid
-import kotlin.uuid.toKotlinUuid
+import kotlin.uuid.*
 
 /**
  * Value converters for Postgres-specific type mappings.

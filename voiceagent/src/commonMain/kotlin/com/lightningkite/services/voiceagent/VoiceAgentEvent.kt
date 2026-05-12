@@ -285,12 +285,16 @@ public sealed class VoiceAgentEvent {
 public enum class ResponseStatus {
     /** Response is currently being generated */
     IN_PROGRESS,
+
     /** Response completed successfully */
     COMPLETED,
+
     /** Response was interrupted (user spoke) */
     INCOMPLETE,
+
     /** Response was cancelled by client */
     CANCELLED,
+
     /** Response generation failed */
     FAILED,
 }

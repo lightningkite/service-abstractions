@@ -1,18 +1,11 @@
 package com.lightningkite.services.database.test
 
-import kotlinx.coroutines.flow.*
 import com.lightningkite.services.database.*
-import com.lightningkite.services.data.*
-import com.lightningkite.*
-import com.lightningkite.Length.Companion.kilometers
-import kotlinx.coroutines.test.*
 import kotlin.test.*
-import kotlin.time.*
-import kotlin.time.Duration.Companion.seconds
-import kotlin.uuid.*
 
 class MaskTest {
-    @Test fun mask() {
+    @Test
+    fun mask() {
         val model = LargeTestModel(
             byte = 1,
             short = 1,
@@ -29,7 +22,7 @@ class MaskTest {
         }
         mask(model).also(::println)
         mask(
-            partialOf<LargeTestModel>{
+            partialOf<LargeTestModel> {
                 it.byte.assign(1)
                 it.byte assign 1.toByte()
                 it.short assign 1.toShort()

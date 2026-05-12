@@ -1,18 +1,9 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
-import com.lightningkite.services.Service
-import com.lightningkite.services.Setting
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.UrlSettingParser
-import com.lightningkite.services.data.TypedData
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
-import kotlinx.io.Source
-import kotlinx.io.buffered
-import kotlinx.io.readByteArray
+import com.lightningkite.services.*
+import com.lightningkite.services.data.*
+import kotlinx.coroutines.*
+import kotlinx.io.*
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
@@ -30,8 +21,10 @@ public interface FileScanner : Service {
     public enum class Requires {
         /** The scanner doesn't need to read any file content */
         Nothing,
+
         /** The scanner needs the first 16 bytes (e.g., for magic number validation) */
         FirstSixteenBytes,
+
         /** The scanner needs the entire file content */
         Whole
     }
@@ -59,7 +52,7 @@ public interface FileScanner : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "file://files"
+        public val url: String = "file://files",
     ) : Setting<FileScanner> {
 
         public companion object : UrlSettingParser<FileScanner>() {
@@ -174,7 +167,7 @@ public suspend fun List<FileScanner>.copyAndScan(source: FileObject, destination
  */
 public class CheckMimeFileScanner(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : FileScanner {
     override fun requires(claimedType: MediaType): FileScanner.Requires = FileScanner.Requires.FirstSixteenBytes
 
@@ -221,7 +214,9 @@ public class CheckMimeFileScanner(
                     }
                 }
                 throw FileScanException(
-                    "Mime type mismatch; doesn't fit the JPEG format ${c1.toUByte().toString(16)} ${c2.toUByte().toString(16)} ${c3.toUByte().toString(16)} ${
+                    "Mime type mismatch; doesn't fit the JPEG format ${c1.toUByte().toString(16)} ${
+                        c2.toUByte().toString(16)
+                    } ${c3.toUByte().toString(16)} ${
                         c4.toUByte().toString(16)
                     }"
                 )

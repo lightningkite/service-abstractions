@@ -2,10 +2,8 @@ package com.lightningkite.services
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.*
 import kotlin.time.Clock
-import kotlin.coroutines.AbstractCoroutineContextElement
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.coroutineContext
 
 /**
  * Retrieves the current clock from coroutine context, or system clock if none is set.

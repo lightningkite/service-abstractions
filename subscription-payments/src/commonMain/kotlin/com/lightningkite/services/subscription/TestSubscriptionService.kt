@@ -1,12 +1,11 @@
 package com.lightningkite.services.subscription
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
-import com.lightningkite.services.database.Database
-import kotlin.time.Instant
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 /**
@@ -49,7 +48,7 @@ import kotlin.uuid.Uuid
  */
 public class TestSubscriptionService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : SubscriptionService {
 
     /** All created customers, keyed by customer ID */
@@ -62,7 +61,8 @@ public class TestSubscriptionService(
     public val checkoutSessions: MutableMap<CheckoutSessionId, CheckoutSessionRequest> = mutableMapOf()
 
     /** All portal sessions created */
-    public val portalSessions: MutableList<Pair<SubscriptionId, String>> = mutableListOf() // subscriptionId to returnUrl
+    public val portalSessions: MutableList<Pair<SubscriptionId, String>> =
+        mutableListOf() // subscriptionId to returnUrl
 
     /** Events that have been simulated/received */
     public val receivedEvents: MutableList<SubscriptionEvent> = mutableListOf()
@@ -86,7 +86,11 @@ public class TestSubscriptionService(
         lastCheckoutSessionId = null
     }
 
-    override suspend fun createCustomer(email: String, name: String?, metadata: Map<String, String>): SubscriptionCustomerId {
+    override suspend fun createCustomer(
+        email: String,
+        name: String?,
+        metadata: Map<String, String>,
+    ): SubscriptionCustomerId {
         val id = SubscriptionCustomerId("cus_test_${customerCounter++}")
         val customer = Customer(
             id = id,
@@ -167,7 +171,7 @@ public class TestSubscriptionService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): SubscriptionEvent? {
             throw UnsupportedOperationException(
                 "Test implementation does not parse webhooks. Use simulateEvent() instead."
@@ -247,7 +251,7 @@ public class TestSubscriptionService(
         subscriptionId: SubscriptionId,
         amountCents: Long = 999,
         currency: String = "usd",
-        failureMessage: String? = "Card declined"
+        failureMessage: String? = "Card declined",
     ) {
         val subscription = subscriptions[subscriptionId]
             ?: throw IllegalArgumentException("Subscription not found: ${subscriptionId.value}")
@@ -275,7 +279,7 @@ public class TestSubscriptionService(
     public fun simulatePaymentSucceeded(
         subscriptionId: SubscriptionId,
         amountCents: Long = 999,
-        currency: String = "usd"
+        currency: String = "usd",
     ) {
         val subscription = subscriptions[subscriptionId]
             ?: throw IllegalArgumentException("Subscription not found: ${subscriptionId.value}")

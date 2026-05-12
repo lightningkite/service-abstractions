@@ -1,20 +1,13 @@
 package com.lightningkite.services.email.ses
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.MediaType
-import com.lightningkite.services.data.Data
+import com.lightningkite.services.data.*
 import com.lightningkite.services.email.EmailAddressWithName
 import com.lightningkite.services.email.ReceivedAttachment
-import com.lightningkite.toEmailAddress
-import jakarta.mail.Address
-import jakarta.mail.Message
-import jakarta.mail.Multipart
-import jakarta.mail.Part
-import jakarta.mail.Session
+import jakarta.mail.*
 import jakarta.mail.internet.InternetAddress
 import jakarta.mail.internet.MimeMessage
 import java.io.ByteArrayInputStream
-import java.util.Properties
+import java.util.*
 
 /**
  * Utilities for parsing MIME messages using Jakarta Mail.
@@ -85,7 +78,8 @@ internal object MimeParser {
             val disposition = part.disposition
             if (Part.ATTACHMENT.equals(disposition, ignoreCase = true) ||
                 Part.INLINE.equals(disposition, ignoreCase = true) ||
-                part.fileName != null) {
+                part.fileName != null
+            ) {
 
                 val filename = part.fileName ?: "attachment_${attachments.size}"
                 val contentType = MediaType(part.contentType.substringBefore(';').trim())
@@ -128,6 +122,7 @@ internal object MimeParser {
                         null
                     }
                 }
+
                 else -> null
             }
         } ?: emptyList()

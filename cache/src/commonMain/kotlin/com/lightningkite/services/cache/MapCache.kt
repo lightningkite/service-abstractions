@@ -1,9 +1,9 @@
 package com.lightningkite.services.cache
 
 import com.lightningkite.services.SettingContext
-import kotlin.time.Instant
 import kotlinx.serialization.KSerializer
 import kotlin.time.Duration
+import kotlin.time.Instant
 
 /**
  * An in-memory cache implementation backed by a [MutableMap].
@@ -53,7 +53,7 @@ public expect class MapCache(
         key: String,
         value: T,
         serializer: KSerializer<T>,
-        timeToLive: Duration?
+        timeToLive: Duration?,
     ): Boolean
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long
@@ -67,6 +67,6 @@ public expect class MapCache(
         serializer: KSerializer<T>,
         maxTries: Int,
         timeToLive: Duration?,
-        modification: (T?) -> T?
+        modification: (T?) -> T?,
     ): Boolean
 }

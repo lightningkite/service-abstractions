@@ -18,7 +18,7 @@ import java.nio.file.Files
 
 public fun testMongo(
     databaseFolder: File = Files.createTempDirectory("embeddedMongo").toFile(),
-    version: String? = null
+    version: String? = null,
 ): MongoClientSettings = embeddedMongo(
     deleteAfter = true,
     databaseFolder = databaseFolder,
@@ -29,7 +29,7 @@ public fun testMongo(
 public fun embeddedMongo(
     databaseFolder: File = File("./build/embeddedMongo"),
     port: Int? = null,
-    version: String? = null
+    version: String? = null,
 ): MongoClientSettings =
     embeddedMongo(
         deleteAfter = false,
@@ -46,19 +46,23 @@ private fun embeddedMongo(
     deleteAfter: Boolean,
     databaseFolder: File,
     port: Int,
-    version: Version.Main = Version.Main.V8_2
+    version: Version.Main = Version.Main.V8_2,
 ): MongoClientSettings {
 
     databaseFolder.mkdirs()
-    val runner:TransitionWalker.ReachedState<RunningMongodProcess> = Mongod.instance()
-        .withProcessOutput(Start.to(ProcessOutput::class.java).initializedWith(ProcessOutput.named("lsLogger", LoggerFactory.getLogger("de.flapdoodle.embed.mongo"))))
+    val runner: TransitionWalker.ReachedState<RunningMongodProcess> = Mongod.instance()
+        .withProcessOutput(
+            Start.to(ProcessOutput::class.java)
+                .initializedWith(ProcessOutput.named("lsLogger", LoggerFactory.getLogger("de.flapdoodle.embed.mongo")))
+        )
         .withDatabaseDir(Start.to(DatabaseDir::class.java).initializedWith(DatabaseDir.of(databaseFolder.toPath())))
         .withNet(
             Start.to(de.flapdoodle.embed.mongo.config.Net::class.java)
                 .initializedWith(
                     de.flapdoodle.embed.mongo.config.Net.defaults()
                         .withPort(port)
-                ))
+                )
+        )
         .withMongodArguments(
             Start.to(MongodArguments::class.java)
                 .initializedWith(
@@ -68,7 +72,8 @@ private fun embeddedMongo(
                         .withUseNoJournal(false)
                         .withIsQuiet(true)
                         .withVerbosityLevel(0)
-        ))
+                )
+        )
         .start(version)
     val connectionString = "mongodb://${runner.current().serverAddress}"
 

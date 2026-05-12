@@ -1,12 +1,10 @@
 package com.lightningkite.services.phonecall.twilio
 
-import com.lightningkite.services.data.WebsocketAdapter
 import com.lightningkite.services.phonecall.AudioStreamCommand
 import com.lightningkite.services.phonecall.AudioStreamEvent
+import com.lightningkite.services.webhooksubservice.WebsocketAdapter
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Unit tests for TwilioAudioStreamAdapter.
@@ -49,7 +47,7 @@ class TwilioAudioStreamAdapterTest {
         val event = adapter.parse(frame)
 
         assertTrue(event is AudioStreamEvent.Connected, "Expected Connected, got $event")
-        val connected = event as AudioStreamEvent.Connected
+        val connected = event
         assertEquals("CA9876543210", connected.callId)
         assertEquals("MZ1234567890", connected.streamId)
         assertEquals("123", connected.customParameters["userId"])
@@ -73,7 +71,7 @@ class TwilioAudioStreamAdapterTest {
         val event = adapter.parse(frame)
 
         assertTrue(event is AudioStreamEvent.Audio, "Expected Audio, got $event")
-        val audio = event as AudioStreamEvent.Audio
+        val audio = event
         assertEquals("MZ1234567890", audio.streamId)
         assertEquals("SGVsbG8gV29ybGQ=", audio.payload)
         assertEquals(12345L, audio.timestamp)
@@ -95,7 +93,7 @@ class TwilioAudioStreamAdapterTest {
         val event = adapter.parse(frame)
 
         assertTrue(event is AudioStreamEvent.Dtmf, "Expected Dtmf, got $event")
-        val dtmf = event as AudioStreamEvent.Dtmf
+        val dtmf = event
         assertEquals("MZ1234567890", dtmf.streamId)
         assertEquals("5", dtmf.digit)
     }
@@ -109,7 +107,7 @@ class TwilioAudioStreamAdapterTest {
         val event = adapter.parse(frame)
 
         assertTrue(event is AudioStreamEvent.Stop, "Expected Stop, got $event")
-        val stop = event as AudioStreamEvent.Stop
+        val stop = event
         assertEquals("MZ1234567890", stop.streamId)
     }
 
@@ -125,7 +123,7 @@ class TwilioAudioStreamAdapterTest {
         val frame = adapter.render(command)
 
         assertTrue(frame is WebsocketAdapter.Frame.Text)
-        val text = (frame as WebsocketAdapter.Frame.Text).text
+        val text = frame.text
 
         assertTrue(text.contains("\"event\":\"media\""), "Missing event:media. Got: $text")
         assertTrue(text.contains("\"streamSid\":\"MZ1234567890\""), "Missing streamSid. Got: $text")
@@ -139,7 +137,7 @@ class TwilioAudioStreamAdapterTest {
         val frame = adapter.render(command)
 
         assertTrue(frame is WebsocketAdapter.Frame.Text)
-        val text = (frame as WebsocketAdapter.Frame.Text).text
+        val text = frame.text
 
         assertTrue(text.contains("\"event\":\"clear\""), "Missing event:clear. Got: $text")
         assertTrue(text.contains("\"streamSid\":\"MZ1234567890\""), "Missing streamSid. Got: $text")
@@ -155,7 +153,7 @@ class TwilioAudioStreamAdapterTest {
         val frame = adapter.render(command)
 
         assertTrue(frame is WebsocketAdapter.Frame.Text)
-        val text = (frame as WebsocketAdapter.Frame.Text).text
+        val text = frame.text
 
         assertTrue(text.contains("\"event\":\"mark\""), "Missing event:mark. Got: $text")
         assertTrue(text.contains("\"streamSid\":\"MZ1234567890\""), "Missing streamSid. Got: $text")

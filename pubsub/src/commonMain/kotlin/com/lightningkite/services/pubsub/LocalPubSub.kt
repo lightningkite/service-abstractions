@@ -11,7 +11,7 @@ import kotlinx.serialization.builtins.serializer
  */
 public class LocalPubSub(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : PubSub {
     private val channels = mutableMapOf<String, PubSubChannel<*>>()
 
@@ -45,7 +45,7 @@ public class LocalPubSub(
  */
 public class DebugPubSub(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : PubSub {
     private val channels = mutableMapOf<String, PubSubChannel<*>>()
 

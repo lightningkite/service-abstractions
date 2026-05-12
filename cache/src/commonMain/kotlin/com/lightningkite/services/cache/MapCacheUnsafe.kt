@@ -2,11 +2,8 @@ package com.lightningkite.services.cache
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.default
-import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlinx.serialization.KSerializer
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.*
 
 /**
  * An in-memory cache implementation backed by a [MutableMap].
@@ -65,7 +62,7 @@ public open class MapCacheUnsafe(
         key: String,
         value: T,
         serializer: KSerializer<T>,
-        timeToLive: Duration?
+        timeToLive: Duration?,
     ): Boolean {
         assertValidTtl(timeToLive)
         return instrumentedSetIfNotExists(context, key, timeToLive) {
@@ -116,7 +113,7 @@ public open class MapCacheUnsafe(
         serializer: KSerializer<T>,
         maxTries: Int,
         timeToLive: Duration?,
-        modification: (T?) -> T?
+        modification: (T?) -> T?,
     ): Boolean {
         assertValidTtl(timeToLive)
         return instrumentedModify<T>(context, key, maxTries, timeToLive) {

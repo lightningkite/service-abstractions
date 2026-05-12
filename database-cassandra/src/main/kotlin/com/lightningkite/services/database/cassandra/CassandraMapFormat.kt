@@ -47,28 +47,38 @@ internal class CassandraMapFormat(val serializersModule: SerializersModule) {
                     override fun createListEncoder(
                         fieldPath: String,
                         elementDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
-                        output: WriteTarget
+                        output: WriteTarget,
                     ) = ArrayListCollectionHandler(lazyConfig).createListEncoder(fieldPath, elementDescriptor, output)
 
                     override fun createListDecoder(
                         fieldPath: String,
                         elementDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
-                        input: ReadSource
+                        input: ReadSource,
                     ) = ArrayListCollectionHandler(lazyConfig).createListDecoder(fieldPath, elementDescriptor, input)
 
                     override fun createMapEncoder(
                         fieldPath: String,
                         keyDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
                         valueDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
-                        output: WriteTarget
-                    ) = ArrayListCollectionHandler(lazyConfig).createMapEncoder(fieldPath, keyDescriptor, valueDescriptor, output)
+                        output: WriteTarget,
+                    ) = ArrayListCollectionHandler(lazyConfig).createMapEncoder(
+                        fieldPath,
+                        keyDescriptor,
+                        valueDescriptor,
+                        output
+                    )
 
                     override fun createMapDecoder(
                         fieldPath: String,
                         keyDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
                         valueDescriptor: kotlinx.serialization.descriptors.SerialDescriptor,
-                        input: ReadSource
-                    ) = ArrayListCollectionHandler(lazyConfig).createMapDecoder(fieldPath, keyDescriptor, valueDescriptor, input)
+                        input: ReadSource,
+                    ) = ArrayListCollectionHandler(lazyConfig).createMapDecoder(
+                        fieldPath,
+                        keyDescriptor,
+                        valueDescriptor,
+                        input
+                    )
                 }
             )
         )
@@ -129,7 +139,7 @@ internal class CassandraMapFormat(val serializersModule: SerializersModule) {
  */
 internal class CassandraRowReadSource(
     private val row: Row,
-    private val fieldSeparator: String = "__"
+    private val fieldSeparator: String = "__",
 ) : ReadSource {
 
     // Cache the column values to avoid repeated reads
@@ -186,6 +196,7 @@ internal class CassandraRowReadSource(
                 val list = row.getObject(index) as? List<*> ?: return null
                 list.map { convertValue(it, (dataType as ListType).elementType) }
             }
+
             dataType is SetType -> {
                 // Get as set and recursively convert elements
                 @Suppress("UNCHECKED_CAST")
@@ -193,6 +204,7 @@ internal class CassandraRowReadSource(
                 // Return as list since MapDecoder expects List for both List and Set
                 set.map { convertValue(it, (dataType as SetType).elementType) }
             }
+
             dataType is MapType -> {
                 // Get as map and recursively convert values
                 @Suppress("UNCHECKED_CAST")
@@ -201,10 +213,12 @@ internal class CassandraRowReadSource(
                     convertValue(v, (dataType as MapType).valueType)
                 }
             }
+
             dataType is UserDefinedType -> {
                 val udt = row.getUdtValue(index) ?: return null
                 udtToMap(udt)
             }
+
             else -> row.getObject(index)
         }
     }
@@ -224,17 +238,21 @@ internal class CassandraRowReadSource(
                 @Suppress("UNCHECKED_CAST")
                 (value as? List<*>)?.map { convertValue(it, dataType.elementType) }
             }
+
             is SetType -> {
                 @Suppress("UNCHECKED_CAST")
                 (value as? Set<*>)?.map { convertValue(it, dataType.elementType) }
             }
+
             is MapType -> {
                 @Suppress("UNCHECKED_CAST")
                 (value as? Map<*, *>)?.mapValues { (_, v) -> convertValue(v, dataType.valueType) }
             }
+
             is UserDefinedType -> {
                 (value as? UdtValue)?.let { udtToMap(it) }
             }
+
             else -> value
         }
     }

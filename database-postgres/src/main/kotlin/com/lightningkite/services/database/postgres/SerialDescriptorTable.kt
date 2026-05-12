@@ -1,30 +1,17 @@
 package com.lightningkite.services.database.postgres
 
-import kotlinx.coroutines.launch
-import kotlinx.serialization.*
-import kotlinx.serialization.descriptors.*
-import kotlinx.serialization.encoding.AbstractDecoder
-import kotlinx.serialization.encoding.AbstractEncoder
-import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.internal.GeneratedSerializer
-import kotlinx.serialization.modules.SerializersModule
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.javatime.*
-import org.jetbrains.exposed.sql.statements.UpdateBuilder
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.serializers.LocalDateIso8601Serializer
-import kotlinx.datetime.serializers.LocalDateTimeIso8601Serializer
-import kotlinx.datetime.serializers.LocalTimeIso8601Serializer
-import java.util.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.data.Index
-import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SealedSerializationApi
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.modules.SerializersModule
+import org.jetbrains.exposed.sql.*
 
 internal class SerialDescriptorTable(
     name: String,
     val serializersModule: SerializersModule,
-    val descriptor: SerialDescriptor
+    val descriptor: SerialDescriptor,
 ) : Table(name.replace(".", "__")) {
     val columnsByDotPath = HashMap<List<String>, ArrayList<Column<Any?>>>()
 
@@ -40,6 +27,7 @@ internal class SerialDescriptorTable(
                         current = current.getElementDescriptor(index)
                     }
                 }
+
                 @Suppress("Unchecked_cast")
                 val col = registerColumn<Any?>(it.key.joinToString("__"), it.type as ColumnType<Any>)
                 for (partialSize in 1..path.size)

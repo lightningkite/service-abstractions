@@ -1,6 +1,5 @@
 package com.lightningkite.services.email.ses
 
-import com.lightningkite.MediaType
 import com.lightningkite.lightningserver.definition.StartupTask
 import com.lightningkite.lightningserver.definition.builder.ServerBuilder
 import com.lightningkite.lightningserver.engine.netty.NettyEngine
@@ -9,13 +8,12 @@ import com.lightningkite.lightningserver.pathing.fullUrl
 import com.lightningkite.lightningserver.runtime.ServerRuntime
 import com.lightningkite.lightningserver.runtime.location
 import com.lightningkite.lightningserver.settings.loadFromFile
-import com.lightningkite.services.data.HttpAdapter
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.workingDirectory
+import com.lightningkite.services.data.*
 import com.lightningkite.services.email.EmailInboundService
 import com.lightningkite.services.email.ReceivedEmail
+import com.lightningkite.services.kfile.workingDirectory
+import com.lightningkite.services.webhooksubservice.HttpAdapter
 import kotlinx.coroutines.*
-import kotlin.coroutines.coroutineContext
 import kotlin.time.Clock
 
 /**
@@ -139,7 +137,12 @@ object EmailServer : ServerBuilder() {
                             if (email.spamScore != null) {
                                 println("     Spam Score: ${email.spamScore}")
                             }
-                            println("     Body Preview: ${email.plainText?.take(100)?.replace("\n", " ") ?: email.html?.take(100)?.replace("\n", " ") ?: "(no body)"}")
+                            println(
+                                "     Body Preview: ${
+                                    email.plainText?.take(100)?.replace("\n", " ") ?: email.html?.take(100)
+                                        ?.replace("\n", " ") ?: "(no body)"
+                                }"
+                            )
                             if (email.attachments.isNotEmpty()) {
                                 println("     Attachments (${email.attachments.size}):")
                                 email.attachments.forEachIndexed { i, att ->

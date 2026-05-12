@@ -1,15 +1,9 @@
 package com.lightningkite.services.http
 
-import com.lightningkite.services.SettingContext
 import io.ktor.client.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.json
 
 
 /**
@@ -38,23 +32,23 @@ import io.ktor.serialization.kotlinx.json.json
  *
  * Services don't need modification - instrumentation happens automatically.
  */
-expect val client: HttpClient
+public expect val client: HttpClient
 
 /**
  * HttpResponseException is an exception that handles external request error messages.
  */
-class HttpResponseException(val response: HttpResponse, val body: String) :
+public class HttpResponseException(public val response: HttpResponse, public val body: String) :
     Exception("Got response ${response.status}: ${body.take(300)}")
 
 /**
  * Checks the HttpResponse code and if it is not a success code it will throw an HttpResponseException
  */
-suspend fun HttpResponse.statusFailing(): HttpResponse {
+public suspend fun HttpResponse.statusFailing(): HttpResponse {
     if (!this.status.isSuccess()) throw HttpResponseException(this, bodyAsText())
     return this
 }
 
-fun HttpMessageBuilder.json() {
+public fun HttpMessageBuilder.json() {
     accept(ContentType.Application.Json)
     contentType(ContentType.Application.Json)
 }

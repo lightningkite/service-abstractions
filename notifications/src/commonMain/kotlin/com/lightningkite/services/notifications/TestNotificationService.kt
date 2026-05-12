@@ -1,7 +1,7 @@
 package com.lightningkite.services.notifications
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
 
 /**
  * A notification service implementation for testing purposes.
@@ -9,15 +9,15 @@ import com.lightningkite.services.SettingContext
  */
 public class TestNotificationService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : NotificationService {
 
     /**
      * Represents a notification message sent to targets.
      */
     public data class Message(
-        val targets: List<String>, 
-        val data: NotificationData
+        val targets: List<String>,
+        val data: NotificationData,
     )
 
     /**
@@ -47,17 +47,17 @@ public class TestNotificationService(
      */
     override suspend fun send(
         targets: List<String>,
-        data: NotificationData
+        data: NotificationData,
     ): Map<String, NotificationSendResult> {
         val message = Message(targets, data)
         lastMessageSent = message
         onMessageSent?.invoke(message)
-        
+
         if (printToConsole) {
             // Use the ConsoleNotificationService to print the message
             console.send(targets, data)
         }
-        
+
         return targets.associateWith { NotificationSendResult.Success }
     }
 

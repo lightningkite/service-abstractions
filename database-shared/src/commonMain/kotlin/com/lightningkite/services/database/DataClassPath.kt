@@ -2,9 +2,7 @@
 
 package com.lightningkite.services.database
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
 import kotlin.js.JsName
 import kotlin.jvm.JvmName
 
@@ -106,7 +104,8 @@ public abstract class DataClassPath<K, V> : DataClassPathPartial<K>() {
     public abstract fun mapModification(modification: Modification<V>): Modification<K>
 
     @JsName("prop")
-    public operator fun <V2> get(prop: SerializableProperty<V, V2>): DataClassPathAccess<K, V, V2> = DataClassPathAccess(this, prop)
+    public operator fun <V2> get(prop: SerializableProperty<V, V2>): DataClassPathAccess<K, V, V2> =
+        DataClassPathAccess(this, prop)
 
     override val serializerAny: KSerializer<*> get() = serializer
     public abstract val serializer: KSerializer<V>
@@ -125,7 +124,7 @@ public class DataClassPathSelf<K>(override val serializer: KSerializer<K>) : Dat
 
 public data class DataClassPathAccess<K, M, V>(
     val first: DataClassPath<K, M>,
-    val second: SerializableProperty<M, V>
+    val second: SerializableProperty<M, V>,
 ) : DataClassPath<K, V>() {
     override fun get(key: K): V? = first.get(key)?.let {
         try {

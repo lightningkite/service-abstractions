@@ -9,7 +9,7 @@ import kotlinx.serialization.KSerializer
  */
 public class ComputedColumnsHandler<T : Any>(
     private val schema: CassandraSchema<T>,
-    private val serializer: KSerializer<T>
+    private val serializer: KSerializer<T>,
 ) {
     /**
      * Computes all derived column values for a model.
@@ -32,7 +32,7 @@ public class ComputedColumnsHandler<T : Any>(
     private fun computeValue(
         model: T,
         info: ComputedColumnInfo<T>,
-        properties: Array<out com.lightningkite.services.database.SerializableProperty<T, *>>
+        properties: Array<out com.lightningkite.services.database.SerializableProperty<T, *>>,
     ): Any? {
         return when (info.transform) {
             ComputedTransform.LOWERCASE -> {
@@ -68,7 +68,7 @@ public class ComputedColumnsHandler<T : Any>(
         model: T,
         sourceProperties: List<String>,
         properties: Array<out com.lightningkite.services.database.SerializableProperty<T, *>>,
-        precision: Int
+        precision: Int,
     ): String? {
         if (sourceProperties.size < 2) return null
 
@@ -177,7 +177,7 @@ public object GeohashComputer {
     public fun neighborsForRadius(
         centerLat: Double,
         centerLon: Double,
-        radiusKm: Double
+        radiusKm: Double,
     ): List<String> {
         // Calculate appropriate precision based on radius
         val precision = when {
@@ -263,7 +263,7 @@ public data class GeoBoundingBox(
     val minLat: Double,
     val maxLat: Double,
     val minLon: Double,
-    val maxLon: Double
+    val maxLon: Double,
 ) {
     val centerLat: Double get() = (minLat + maxLat) / 2
     val centerLon: Double get() = (minLon + maxLon) / 2

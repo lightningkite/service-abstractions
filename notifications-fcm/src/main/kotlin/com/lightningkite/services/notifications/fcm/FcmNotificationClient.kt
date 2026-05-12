@@ -4,17 +4,15 @@ import com.google.auth.oauth2.GoogleCredentials
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.*
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.notifications.*
+import com.lightningkite.services.recordExceptionWithFingerprint
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 import com.google.firebase.messaging.Notification as FCMNotification
 
 /**
@@ -173,7 +171,7 @@ public class FcmNotificationClient(
             FirebaseApp.initializeApp(options, name)
     }
 
-    init{
+    init {
         initializeFirebaseApp(name, options)
     }
 
@@ -328,7 +326,7 @@ public class FcmNotificationClient(
             .forEach { (chunk, message) ->
                 withContext(Dispatchers.IO) {
                     val result = FirebaseMessaging.getInstance(FirebaseApp.getInstance(name))
-                            .sendEachForMulticast(message)
+                        .sendEachForMulticast(message)
                     result.responses.forEachIndexed { index, sendResponse ->
                         val targetToken = chunk[index]
                         log.debug { "Send: ${sendResponse.messageId} / ${sendResponse.exception?.message} ${sendResponse.exception?.messagingErrorCode}" }

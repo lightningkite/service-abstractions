@@ -35,7 +35,7 @@ public data class SnsNotification(
     @SerialName("SigningCertURL") val SigningCertURL: String,
     @SerialName("UnsubscribeURL") val UnsubscribeURL: String? = null,
     @SerialName("SubscribeURL") val SubscribeURL: String? = null,
-    @SerialName("Token") val Token: String? = null
+    @SerialName("Token") val Token: String? = null,
 )
 
 /**
@@ -54,7 +54,7 @@ public data class SesNotification(
     val notificationType: String,
     val mail: SesMailObject,
     val receipt: SesReceiptObject,
-    val content: String? = null
+    val content: String? = null,
 )
 
 /**
@@ -78,7 +78,7 @@ public data class SesMailObject(
     val destination: List<String>,
     val headersTruncated: Boolean = false,
     val headers: List<SesHeader> = emptyList(),
-    val commonHeaders: SesCommonHeaders
+    val commonHeaders: SesCommonHeaders,
 )
 
 /**
@@ -90,7 +90,7 @@ public data class SesMailObject(
 @Serializable
 public data class SesHeader(
     val name: String,
-    val value: String
+    val value: String,
 )
 
 /**
@@ -114,7 +114,7 @@ public data class SesCommonHeaders(
     val subject: String? = null,
     val messageId: String? = null,
     val date: String? = null,
-    val returnPath: String? = null
+    val returnPath: String? = null,
 )
 
 /**
@@ -140,7 +140,7 @@ public data class SesReceiptObject(
     val dkimVerdict: SesVerdict? = null,
     val dmarcVerdict: SesVerdict? = null,
     val action: SesAction? = null,
-    val processingTimeMillis: Long? = null
+    val processingTimeMillis: Long? = null,
 )
 
 /**
@@ -150,7 +150,7 @@ public data class SesReceiptObject(
  */
 @Serializable
 public data class SesVerdict(
-    val status: String
+    val status: String,
 )
 
 /**
@@ -166,5 +166,5 @@ public data class SesAction(
     val type: String,
     val topicArn: String? = null,
     val bucketName: String? = null,
-    val objectKey: String? = null
+    val objectKey: String? = null,
 )

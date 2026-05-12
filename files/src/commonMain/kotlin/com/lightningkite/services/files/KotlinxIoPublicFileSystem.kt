@@ -1,8 +1,8 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.MediaType
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
+import com.lightningkite.services.kfile.KFile
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.HMAC
 import dev.whyoleg.cryptography.algorithms.SHA256

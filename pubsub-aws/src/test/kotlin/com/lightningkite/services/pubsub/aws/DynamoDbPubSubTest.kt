@@ -1,9 +1,7 @@
 package com.lightningkite.services.pubsub.aws
 
 import com.lightningkite.services.pubsub.PubSub
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Unit tests for DynamoDbPubSub.

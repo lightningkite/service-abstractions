@@ -17,7 +17,8 @@ object PostgresDockerContainer {
      * Custom PostgreSQL container with pgvector support.
      * Uses the official pgvector Docker image which includes the extension pre-installed.
      */
-    class PgVectorContainer(dockerImageName: DockerImageName) : PostgreSQLContainer<PgVectorContainer>(dockerImageName) {
+    class PgVectorContainer(dockerImageName: DockerImageName) :
+        PostgreSQLContainer<PgVectorContainer>(dockerImageName) {
         init {
             // Enable the pgvector extension on startup
             withInitScript("init-pgvector.sql")

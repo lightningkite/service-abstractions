@@ -2,20 +2,12 @@
 
 package com.lightningkite.services.database.validation
 
-import com.lightningkite.services.data.FloatRange
-import com.lightningkite.services.data.GenerateDataClassPaths
-import com.lightningkite.services.data.IntegerRange
-import com.lightningkite.services.data.MaxLength
-import com.lightningkite.services.data.MaxSize
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerialInfo
-import kotlinx.serialization.Serializable
+import com.lightningkite.services.data.*
+import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.serializer
 import kotlin.reflect.KClass
 import kotlin.reflect.typeOf
-import kotlin.test.Test
 import kotlin.test.*
 
 @Serializable
@@ -43,7 +35,7 @@ data class BadSample(
 @GenerateDataClassPaths
 data class ArgSample<T>(
     val value: T,
-    @MaxLength(5) val str: String = "asdf"
+    @MaxLength(5) val str: String = "asdf",
 )
 
 @Serializable
@@ -53,7 +45,7 @@ data class CustomSample(
     @StringListContainsAll("unapplied") val intList: List<Int> = listOf(1, 2, 3),
     @EnumNotEqualTo(TestEnum.First) val enum: TestEnum = TestEnum.Second,
     @EnumNotEqualTo(TestEnum.First) val enumList: List<TestEnum> = emptyList(),
-    @IntegerRange(0, 100) val nullableInt: Int? = 3
+    @IntegerRange(0, 100) val nullableInt: Int? = 3,
 )
 
 @SerialInfo
@@ -113,9 +105,9 @@ class ValidationTest {
     fun testStrings() {
         println(AnnotationValidators.Standard)
         println(AnnotationValidators())
-        println(AnnotationValidators(SerializersModule {  }))
-        println(AnnotationValidators(SerializersModule {  }).prettyPrint(qualified = true))
-        println(AnnotationValidators(SerializersModule {  }).prettyPrint(qualified = false))
+        println(AnnotationValidators(SerializersModule { }))
+        println(AnnotationValidators(SerializersModule { }).prettyPrint(qualified = true))
+        println(AnnotationValidators(SerializersModule { }).prettyPrint(qualified = false))
     }
 
     @Test

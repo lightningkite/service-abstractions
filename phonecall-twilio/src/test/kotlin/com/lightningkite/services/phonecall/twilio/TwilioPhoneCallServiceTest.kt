@@ -1,18 +1,11 @@
 package com.lightningkite.services.phonecall.twilio
 
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import com.lightningkite.services.phonecall.*
-import com.lightningkite.toPhoneNumber
+import com.lightningkite.services.webhooksubservice.WebsocketAdapter
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Unit tests for TwilioPhoneCallService.
@@ -160,7 +153,8 @@ class TwilioPhoneCallServiceTest {
         // Compute valid signature
         val signature = service.computeSignature(testIncomingCallUrl, sampleIncomingCallParams)
 
-        val body = TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
+        val body =
+            TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
 
         val result = service.onIncomingCall.parse(
             queryParameters = emptyList(),
@@ -372,7 +366,10 @@ class TwilioPhoneCallServiceTest {
         assertTrue(twiml.contains("startConferenceOnEnter=\"true\""), "Missing startConferenceOnEnter. TwiML: $twiml")
         assertTrue(twiml.contains("endConferenceOnExit=\"false\""), "Missing endConferenceOnExit. TwiML: $twiml")
         assertTrue(twiml.contains("waitUrl=\"https://example.com/hold-music.mp3\""), "Missing waitUrl. TwiML: $twiml")
-        assertTrue(twiml.contains("statusCallback=\"https://example.com/conference-status\""), "Missing statusCallback. TwiML: $twiml")
+        assertTrue(
+            twiml.contains("statusCallback=\"https://example.com/conference-status\""),
+            "Missing statusCallback. TwiML: $twiml"
+        )
         assertTrue(twiml.contains("statusCallbackEvent=\"join leave\""), "Missing statusCallbackEvent. TwiML: $twiml")
     }
 
@@ -513,8 +510,10 @@ class TwilioPhoneCallServiceTest {
         assertTrue(twiml.contains("<Parameter"), "Missing <Parameter> tag. TwiML: $twiml")
         assertTrue(twiml.contains("name=\"redirectUrl\""), "Missing redirectUrl parameter. TwiML: $twiml")
         // The value should have the ? preserved and & escaped
-        assertTrue(twiml.contains("https://other.example.com/callback?param=value&amp;other=123"),
-            "Parameter value not properly XML-escaped. TwiML: $twiml")
+        assertTrue(
+            twiml.contains("https://other.example.com/callback?param=value&amp;other=123"),
+            "Parameter value not properly XML-escaped. TwiML: $twiml"
+        )
     }
 
     @Test
@@ -545,11 +544,15 @@ class TwilioPhoneCallServiceTest {
         assertTrue(twiml.contains("<Parameter"), "Missing <Parameter> tag. TwiML: $twiml")
         assertTrue(twiml.contains("name=\"callbackUrl\""), "Missing callbackUrl parameter name. TwiML: $twiml")
         // The & should be escaped to &amp; for valid XML
-        assertTrue(twiml.contains("token=abc123&amp;session=xyz789"),
-            "& not properly escaped to &amp;. TwiML: $twiml")
+        assertTrue(
+            twiml.contains("token=abc123&amp;session=xyz789"),
+            "& not properly escaped to &amp;. TwiML: $twiml"
+        )
         // The nested ? should be preserved as-is
-        assertTrue(twiml.contains("redirect=https://other.com?foo=bar"),
-            "Nested ? not preserved. TwiML: $twiml")
+        assertTrue(
+            twiml.contains("redirect=https://other.com?foo=bar"),
+            "Nested ? not preserved. TwiML: $twiml"
+        )
     }
 
     // ==================== Audio Stream Adapter Parsing Tests ====================
@@ -581,22 +584,26 @@ class TwilioPhoneCallServiceTest {
             }
         """.trimIndent()
 
-        val frame = com.lightningkite.services.data.WebsocketAdapter.Frame.Text(startEventJson)
+        val frame = WebsocketAdapter.Frame.Text(startEventJson)
         val event = adapter.parse(frame)
 
         assertTrue(event is AudioStreamEvent.Connected, "Expected Connected event, got $event")
-        val connected = event as AudioStreamEvent.Connected
+        val connected = event
 
         assertEquals("CA987654321", connected.callId)
         assertEquals("MZ123456789", connected.streamId)
 
         // Verify the customParameters are parsed correctly including ? and & in values
-        assertEquals("https://api.example.com/callback?token=abc123&session=xyz",
+        assertEquals(
+            "https://api.example.com/callback?token=abc123&session=xyz",
             connected.customParameters["callbackUrl"],
-            "callbackUrl param should preserve ? and &")
-        assertEquals("https://other.com/api?key=secret&extra=value?nested=param",
+            "callbackUrl param should preserve ? and &"
+        )
+        assertEquals(
+            "https://other.com/api?key=secret&extra=value?nested=param",
             connected.customParameters["redirectUrl"],
-            "redirectUrl param should preserve nested ?")
+            "redirectUrl param should preserve nested ?"
+        )
     }
 
     // ==================== Call Status Mapping Tests ====================
@@ -660,7 +667,8 @@ class TwilioPhoneCallServiceTest {
 
         service.setWebhookUrlsForTesting(incomingCallUrl = testIncomingCallUrl)
 
-        val body = TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
+        val body =
+            TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
 
         assertFailsWith<SecurityException> {
             service.onIncomingCall.parse(
@@ -683,7 +691,8 @@ class TwilioPhoneCallServiceTest {
 
         service.setWebhookUrlsForTesting(incomingCallUrl = testIncomingCallUrl)
 
-        val body = TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
+        val body =
+            TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
 
         assertFailsWith<SecurityException> {
             service.onIncomingCall.parse(
@@ -706,7 +715,8 @@ class TwilioPhoneCallServiceTest {
 
         // Don't configure webhook URL
 
-        val body = TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
+        val body =
+            TypedData(Data.Text(sampleIncomingCallParams.toFormUrlEncoded()), MediaType.Application.FormUrlEncoded)
 
         assertFailsWith<SecurityException> {
             service.onIncomingCall.parse(

@@ -60,8 +60,8 @@ import kotlin.time.Clock
  */
 public class TestSettingContext(
     override val internalSerializersModule: SerializersModule = EmptySerializersModule(),
-    override var clock: Clock = Clock.System
-): SettingContext {
+    override var clock: Clock = Clock.System,
+) : SettingContext {
     /**
      * Public URL for the test application.
      *

@@ -55,7 +55,8 @@ fun db(): Database {
 class CassandraUltrabasicTest {
     val database: Database get() = db()
 
-    @Test fun testBasic() = runTest {
+    @Test
+    fun testBasic() = runTest {
         val collection = database.table<LargeTestModel>("testBasic")
         // Clean up any existing data first
         collection.deleteManyIgnoringOld(Condition.Always)

@@ -1,6 +1,6 @@
 package com.lightningkite.services.demo
 
-import com.lightningkite.services.*
+import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.cache.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable

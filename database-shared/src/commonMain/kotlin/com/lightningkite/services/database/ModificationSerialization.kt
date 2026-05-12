@@ -2,30 +2,52 @@
 
 package com.lightningkite.services.database
 
-import com.lightningkite.IsRawString
+import com.lightningkite.services.data.IsRawString
 import com.lightningkite.services.database.validation.ShouldValidateSub
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
+import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.serializer
 
 @Suppress("UNCHECKED_CAST")
 private fun <T> commonOptions(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Modification<T>, *>> = listOf(
-    MySealedClassSerializer.Option(Modification.Nothing.serializer() as KSerializer<Modification<T>>, "Nothing", priority = 0) { it is Modification.Nothing },
-    MySealedClassSerializer.Option(Modification.Chain.serializer(inner), "Chain", priority = 20) { it is Modification.Chain },
-    MySealedClassSerializer.Option(Modification.Assign.serializer(inner), "Assign", priority = 50) { it is Modification.Assign },
+    MySealedClassSerializer.Option(
+        Modification.Nothing.serializer() as KSerializer<Modification<T>>,
+        "Nothing",
+        priority = 0
+    ) { it is Modification.Nothing },
+    MySealedClassSerializer.Option(
+        Modification.Chain.serializer(inner),
+        "Chain",
+        priority = 20
+    ) { it is Modification.Chain },
+    MySealedClassSerializer.Option(
+        Modification.Assign.serializer(inner),
+        "Assign",
+        priority = 50
+    ) { it is Modification.Assign },
 )
 
 private fun <T : Any> nullableOptions(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Modification<T?>, *>> =
     commonOptions(inner.nullable) + listOf(
-        MySealedClassSerializer.Option(Modification.IfNotNull.serializer(inner), "IfNotNull", priority = 45) { it is Modification.IfNotNull },
+        MySealedClassSerializer.Option(
+            Modification.IfNotNull.serializer(inner),
+            "IfNotNull",
+            priority = 45
+        ) { it is Modification.IfNotNull },
     )
 
 private fun <T : Comparable<T>> comparableOptions(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Modification<T>, *>> =
     commonOptions(inner) + listOf(
-        MySealedClassSerializer.Option(Modification.CoerceAtLeast.serializer(inner), "CoerceAtLeast", priority = 40) { it is Modification.CoerceAtLeast },
-        MySealedClassSerializer.Option(Modification.CoerceAtMost.serializer(inner), "CoerceAtMost", priority = 40) { it is Modification.CoerceAtMost },
+        MySealedClassSerializer.Option(
+            Modification.CoerceAtLeast.serializer(inner),
+            "CoerceAtLeast",
+            priority = 40
+        ) { it is Modification.CoerceAtLeast },
+        MySealedClassSerializer.Option(
+            Modification.CoerceAtMost.serializer(inner),
+            "CoerceAtMost",
+            priority = 40
+        ) { it is Modification.CoerceAtMost },
     )
 
 private fun <T> listOptions(element: KSerializer<T>): List<MySealedClassSerializer.Option<Modification<List<T>>, *>> =
@@ -76,36 +98,85 @@ private fun <T> setOptions(element: KSerializer<T>): List<MySealedClassSerialize
             setOf("AppendSet"),
             priority = 45
         ) { it is Modification.SetAppend },
-        MySealedClassSerializer.Option(Modification.SetRemove.serializer(element), "SetRemove", priority = 45) { it is Modification.SetRemove },
-        MySealedClassSerializer.Option(Modification.SetRemoveInstances.serializer(element), "SetRemoveInstances", priority = 45) { it is Modification.SetRemoveInstances },
-        MySealedClassSerializer.Option(Modification.SetDropFirst.serializer(element), "SetDropFirst", priority = 45) { it is Modification.SetDropFirst },
-        MySealedClassSerializer.Option(Modification.SetDropLast.serializer(element), "SetDropLast", priority = 45) { it is Modification.SetDropLast },
-        MySealedClassSerializer.Option(Modification.SetPerElement.serializer(element), "SetPerElement", priority = 45) { it is Modification.SetPerElement },
+        MySealedClassSerializer.Option(
+            Modification.SetRemove.serializer(element),
+            "SetRemove",
+            priority = 45
+        ) { it is Modification.SetRemove },
+        MySealedClassSerializer.Option(
+            Modification.SetRemoveInstances.serializer(element),
+            "SetRemoveInstances",
+            priority = 45
+        ) { it is Modification.SetRemoveInstances },
+        MySealedClassSerializer.Option(
+            Modification.SetDropFirst.serializer(element),
+            "SetDropFirst",
+            priority = 45
+        ) { it is Modification.SetDropFirst },
+        MySealedClassSerializer.Option(
+            Modification.SetDropLast.serializer(element),
+            "SetDropLast",
+            priority = 45
+        ) { it is Modification.SetDropLast },
+        MySealedClassSerializer.Option(
+            Modification.SetPerElement.serializer(element),
+            "SetPerElement",
+            priority = 45
+        ) { it is Modification.SetPerElement },
     )
 
 private fun <T> stringMapOptions(element: KSerializer<T>): List<MySealedClassSerializer.Option<Modification<Map<String, T>>, *>> =
     commonOptions(
         MapSerializer(String.serializer(), element)
     ) + listOf(
-        MySealedClassSerializer.Option(Modification.Combine.serializer(element), "Combine", priority = 45) { it is Modification.Combine },
-        MySealedClassSerializer.Option(Modification.ModifyByKey.serializer(element), "ModifyByKey", priority = 45) { it is Modification.ModifyByKey },
-        MySealedClassSerializer.Option(Modification.RemoveKeys.serializer(element), "RemoveKeys", priority = 45) { it is Modification.RemoveKeys },
+        MySealedClassSerializer.Option(
+            Modification.Combine.serializer(element),
+            "Combine",
+            priority = 45
+        ) { it is Modification.Combine },
+        MySealedClassSerializer.Option(
+            Modification.ModifyByKey.serializer(element),
+            "ModifyByKey",
+            priority = 45
+        ) { it is Modification.ModifyByKey },
+        MySealedClassSerializer.Option(
+            Modification.RemoveKeys.serializer(element),
+            "RemoveKeys",
+            priority = 45
+        ) { it is Modification.RemoveKeys },
     )
 
 private fun <T> numberOptions(serializer: KSerializer<T>): List<MySealedClassSerializer.Option<Modification<T>, *>> where T : Number, T : Comparable<T> =
     comparableOptions(serializer) + listOf(
-        MySealedClassSerializer.Option(Modification.Increment.serializer(serializer), "Increment", priority = 45) { it is Modification.Increment },
-        MySealedClassSerializer.Option(Modification.Multiply.serializer(serializer), "Multiply", priority = 45) { it is Modification.Multiply },
+        MySealedClassSerializer.Option(
+            Modification.Increment.serializer(serializer),
+            "Increment",
+            priority = 45
+        ) { it is Modification.Increment },
+        MySealedClassSerializer.Option(
+            Modification.Multiply.serializer(serializer),
+            "Multiply",
+            priority = 45
+        ) { it is Modification.Multiply },
     )
 
 private val stringOptions: List<MySealedClassSerializer.Option<Modification<String>, *>> =
     comparableOptions(String.serializer()) + listOf(
-        MySealedClassSerializer.Option(Modification.AppendString.serializer(), "AppendString", priority = 45) { it is Modification.AppendString },
+        MySealedClassSerializer.Option(
+            Modification.AppendString.serializer(),
+            "AppendString",
+            priority = 45
+        ) { it is Modification.AppendString },
     )
 
 private fun <T : IsRawString> rawStringOptions(element: KSerializer<T>) =
     comparableOptions(element) + listOf(
-        MySealedClassSerializer.Option(Modification.AppendRawString.serializer(element), "AppendString", alternativeNames = setOf("AppendRawString"), priority = 45) { true },
+        MySealedClassSerializer.Option(
+            Modification.AppendRawString.serializer(element),
+            "AppendString",
+            alternativeNames = setOf("AppendRawString"),
+            priority = 45
+        ) { true },
     )
 
 //private fun <T: Any> classOptions(inner: KSerializer<T>, fields: List<SerializableProperty<T, *>>): List<MySealedClassSerializer.Option<Modification<T>, *>> = commonOptions(inner) + fields.map { prop ->
@@ -157,7 +228,7 @@ public data class ModificationSerializer<T>(public val inner: KSerializer<T>) :
 }
 
 public class ModificationOnFieldSerializer<K : Any, V>(
-    private val field: SerializableProperty<K, V>
+    private val field: SerializableProperty<K, V>,
 ) : WrappingSerializer<Modification.OnField<K, V>, Modification<V>>(field.name),
     ShouldValidateSub<Modification.OnField<K, V>> {
     override fun getDeferred(): KSerializer<Modification<V>> = Modification.serializer(field.serializer)
@@ -166,7 +237,7 @@ public class ModificationOnFieldSerializer<K : Any, V>(
     override fun validate(
         value: Modification.OnField<K, V>,
         annotations: List<Annotation>,
-        defer: (value: ShouldValidateSub.SerializerAndValue<*>, annotations: List<Annotation>) -> Unit
+        defer: (value: ShouldValidateSub.SerializerAndValue<*>, annotations: List<Annotation>) -> Unit,
     ) {
         fun Modification<V>.check() {
             when (this) {
@@ -177,6 +248,7 @@ public class ModificationOnFieldSerializer<K : Any, V>(
                     ),
                     annotations
                 )
+
                 is Modification.Chain<V> -> modifications.forEach { it.check() }
                 else -> {}
             }
@@ -234,7 +306,8 @@ internal class ModificationMultiplySerializer<T : Number>(internal val inner: KS
     override fun outer(it: T): Modification.Multiply<T> = Modification.Multiply(it)
 }
 
-internal object ModificationAppendStringSerializer : WrappingSerializer<Modification.AppendString, String>("com.lightningkite.services.database.Modification.AppendString") {
+internal object ModificationAppendStringSerializer :
+    WrappingSerializer<Modification.AppendString, String>("com.lightningkite.services.database.Modification.AppendString") {
     override fun getDeferred(): KSerializer<String> = String.serializer()
     override fun inner(it: Modification.AppendString): String = it.value
     override fun outer(it: String): Modification.AppendString = Modification.AppendString(it)

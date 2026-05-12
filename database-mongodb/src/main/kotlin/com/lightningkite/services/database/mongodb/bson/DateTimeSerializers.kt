@@ -15,28 +15,16 @@
  */
 package com.lightningkite.services.database.mongodb.bson
 
-import java.time.ZoneOffset
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.UtcOffset
-import kotlinx.datetime.atDate
-import kotlinx.datetime.atStartOfDayIn
-import kotlinx.datetime.toInstant
-import kotlinx.datetime.toLocalDateTime
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.descriptors.SerialDescriptor
+import com.lightningkite.services.database.mongodb.bson.utils.SerializationModuleUtils.isClassAvailable
+import kotlinx.datetime.*
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.plus
 import org.bson.BsonDateTime
-import com.lightningkite.services.database.mongodb.bson.utils.SerializationModuleUtils.isClassAvailable
+import java.time.ZoneOffset
 import kotlin.time.Instant
 
 /**
@@ -120,6 +108,7 @@ public object LocalDateAsBsonDateTime : KSerializer<LocalDate> {
                 val epochMillis = value.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds()
                 encoder.encodeBsonValue(BsonDateTime(epochMillis))
             }
+
             else -> throw SerializationException("LocalDate is not supported by ${encoder::class}")
         }
     }
@@ -130,6 +119,7 @@ public object LocalDateAsBsonDateTime : KSerializer<LocalDate> {
                 Instant.fromEpochMilliseconds(decoder.decodeBsonValue().asDateTime().value)
                     .toLocalDateTime(TimeZone.UTC)
                     .date
+
             else -> throw SerializationException("LocalDate is not supported by ${decoder::class}")
         }
     }
@@ -160,6 +150,7 @@ public object LocalDateTimeAsBsonDateTime : KSerializer<LocalDateTime> {
                 val epochMillis = value.toInstant(UtcOffset(ZoneOffset.UTC)).toEpochMilliseconds()
                 encoder.encodeBsonValue(BsonDateTime(epochMillis))
             }
+
             else -> throw SerializationException("LocalDateTime is not supported by ${encoder::class}")
         }
     }
@@ -169,6 +160,7 @@ public object LocalDateTimeAsBsonDateTime : KSerializer<LocalDateTime> {
             is BsonDecoder ->
                 Instant.fromEpochMilliseconds(decoder.decodeBsonValue().asDateTime().value)
                     .toLocalDateTime(TimeZone.UTC)
+
             else -> throw SerializationException("LocalDateTime is not supported by ${decoder::class}")
         }
     }
@@ -200,6 +192,7 @@ public object LocalTimeAsBsonDateTime : KSerializer<LocalTime> {
                     value.atDate(LocalDate.fromEpochDays(0)).toInstant(UtcOffset(ZoneOffset.UTC)).toEpochMilliseconds()
                 encoder.encodeBsonValue(BsonDateTime(epochMillis))
             }
+
             else -> throw SerializationException("LocalTime is not supported by ${encoder::class}")
         }
     }
@@ -210,6 +203,7 @@ public object LocalTimeAsBsonDateTime : KSerializer<LocalTime> {
                 Instant.fromEpochMilliseconds(decoder.decodeBsonValue().asDateTime().value)
                     .toLocalDateTime(TimeZone.UTC)
                     .time
+
             else -> throw SerializationException("LocalTime is not supported by ${decoder::class}")
         }
     }

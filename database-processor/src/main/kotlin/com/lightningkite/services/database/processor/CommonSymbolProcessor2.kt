@@ -9,7 +9,7 @@ import java.io.Writer
 abstract class CommonSymbolProcessor2(
     private val myCodeGenerator: CodeGenerator,
     val myId: String,
-    val version: Int = 0
+    val version: Int = 0,
 ) : SymbolProcessor {
     lateinit var log: Appendable
     abstract fun process2(resolver: Resolver, files: Set<KSFile>)
@@ -113,7 +113,7 @@ abstract class CommonSymbolProcessor2(
         dependencies: Dependencies,
         packageName: String,
         fileName: String,
-        extensionName: String = "kt"
+        extensionName: String = "kt",
     ): Writer {
         return fileCreator(dependencies, packageName, fileName, extensionName)
     }
@@ -130,7 +130,7 @@ fun processFiles(
     dependencies: Sequence<File>,
     lockFile: File,
     destinationFolder: File,
-    action: FileGenerator.() -> Unit
+    action: FileGenerator.() -> Unit,
 ) {
     lockFile.parentFile.mkdirs()
     val dependenciesFile = File(lockFile.absolutePath + ".dependencies")

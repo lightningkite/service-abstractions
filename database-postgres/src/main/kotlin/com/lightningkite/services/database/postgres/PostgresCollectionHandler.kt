@@ -4,15 +4,10 @@
 package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.database.mapformat.*
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.CompositeEncoder
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.encoding.*
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 
@@ -83,7 +78,7 @@ private class PostgresListEncoder(
     private val elementDescriptor: SerialDescriptor,
     private val config: MapFormatConfig,
     private val output: WriteTarget,
-    private val leafPathsResolver: (SerialDescriptor) -> List<String>,
+    leafPathsResolver: (SerialDescriptor) -> List<String>,
 ) : CompositeEncoder {
 
     override val serializersModule: SerializersModule = config.serializersModule
@@ -154,7 +149,7 @@ private class PostgresListEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T
+        value: T,
     ) {
         // Check for converter
         config.converters.get(serializer.descriptor)?.let {
@@ -184,7 +179,7 @@ private class PostgresListEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T?
+        value: T?,
     ) {
         if (value == null) {
             // Add null to all arrays
@@ -212,16 +207,45 @@ private class PostgresListElementEncoder(
 
     override val serializersModule: SerializersModule = config.serializersModule
 
-    override fun encodeBoolean(value: Boolean) { arrays[""]?.add(value) }
-    override fun encodeByte(value: Byte) { arrays[""]?.add(value) }
-    override fun encodeShort(value: Short) { arrays[""]?.add(value) }
-    override fun encodeInt(value: Int) { arrays[""]?.add(value) }
-    override fun encodeLong(value: Long) { arrays[""]?.add(value) }
-    override fun encodeFloat(value: Float) { arrays[""]?.add(value) }
-    override fun encodeDouble(value: Double) { arrays[""]?.add(value) }
-    override fun encodeChar(value: Char) { arrays[""]?.add(value.toString()) }
-    override fun encodeString(value: String) { arrays[""]?.add(value) }
-    override fun encodeNull() { arrays[""]?.add(null) }
+    override fun encodeBoolean(value: Boolean) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeByte(value: Byte) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeShort(value: Short) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeInt(value: Int) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeLong(value: Long) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeFloat(value: Float) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeDouble(value: Double) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeChar(value: Char) {
+        arrays[""]?.add(value.toString())
+    }
+
+    override fun encodeString(value: String) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeNull() {
+        arrays[""]?.add(null)
+    }
 
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) {
         arrays[""]?.add(enumDescriptor.getElementName(index))
@@ -250,7 +274,7 @@ private class PostgresListElementConverterEncoder(
     override val serializersModule: SerializersModule = EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> write(value: T) {
+    private fun <T : Any> write(value: T) {
         val conv = converter as ValueConverter<T, Any>
         arrays[""]?.add(conv.toDatabase(value))
     }
@@ -264,10 +288,15 @@ private class PostgresListElementConverterEncoder(
     override fun encodeDouble(value: Double) = write(value)
     override fun encodeChar(value: Char) = write(value)
     override fun encodeString(value: String) = write(value)
+
     @ExperimentalSerializationApi
-    override fun encodeNull() { arrays[""]?.add(null) }
+    override fun encodeNull() {
+        arrays[""]?.add(null)
+    }
+
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) =
         write(enumDescriptor.getElementName(index))
+
     override fun encodeInline(descriptor: SerialDescriptor): Encoder = this
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -285,7 +314,7 @@ private class PostgresListDecoder(
     private val elementDescriptor: SerialDescriptor,
     private val config: MapFormatConfig,
     private val input: ReadSource,
-    private val leafPathsResolver: (SerialDescriptor) -> List<String>,
+    leafPathsResolver: (SerialDescriptor) -> List<String>,
 ) : CompositeDecoder {
 
     override val serializersModule: SerializersModule = config.serializersModule
@@ -357,7 +386,7 @@ private class PostgresListDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T>,
-        previousValue: T?
+        previousValue: T?,
     ): T {
         // Check for converter
         config.converters.get(deserializer.descriptor)?.let {
@@ -371,7 +400,7 @@ private class PostgresListDecoder(
                 getValueAt(path, index)
             }
             val source = SimpleReadSource(reconstructedMap, emptyMap(), config.fieldSeparator)
-            return MapDecoder(config, source, deserializer.descriptor).decodeSerializableValue(deserializer)
+            return MapDecoder(config, source).decodeSerializableValue(deserializer)
         }
 
         // For primitives - get value directly from array - by Claude
@@ -384,11 +413,16 @@ private class PostgresListDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T?>,
-        previousValue: T?
+        previousValue: T?,
     ): T? {
         // Check if all values at this index are null
         val firstValue = getValueAt(paths.firstOrNull() ?: "", index)
-        return if (firstValue == null) null else decodeSerializableElement(descriptor, index, deserializer, previousValue)
+        return if (firstValue == null) null else decodeSerializableElement(
+            descriptor,
+            index,
+            deserializer,
+            previousValue
+        )
     }
 
     override fun endStructure(descriptor: SerialDescriptor) {}
@@ -416,6 +450,7 @@ private class PrimitiveValueDecoder(
         val name = value as String
         return enumDescriptor.getElementIndex(name)
     }
+
     override fun decodeInline(descriptor: SerialDescriptor): Decoder = this
     override fun decodeNotNullMark(): Boolean = value != null
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder =
@@ -433,7 +468,7 @@ private class PostgresListElementConverterDecoder(
     override val serializersModule: SerializersModule = EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> read(): T {
+    private fun <T : Any> read(): T {
         val conv = converter as ValueConverter<T, Any>
         return conv.fromDatabase(element as Any)
     }
@@ -447,13 +482,16 @@ private class PostgresListElementConverterDecoder(
     override fun decodeDouble(): Double = read()
     override fun decodeChar(): Char = read()
     override fun decodeString(): String = read()
+
     @ExperimentalSerializationApi
     override fun decodeNull(): Nothing? = null
     override fun decodeEnum(enumDescriptor: SerialDescriptor): Int {
         val name: String = read()
         return enumDescriptor.getElementIndex(name)
     }
+
     override fun decodeInline(descriptor: SerialDescriptor): Decoder = this
+
     @ExperimentalSerializationApi
     override fun decodeNotNullMark(): Boolean = element != null
 
@@ -473,13 +511,14 @@ private class PostgresMapEncoder(
     private val valueDescriptor: SerialDescriptor,
     private val config: MapFormatConfig,
     private val output: WriteTarget,
-    private val leafPathsResolver: (SerialDescriptor) -> List<String>,
+    leafPathsResolver: (SerialDescriptor) -> List<String>,
 ) : CompositeEncoder {
 
     override val serializersModule: SerializersModule = config.serializersModule
 
     // Parallel arrays for keys
     private val keyArrays: Map<String, MutableList<Any?>>
+
     // Parallel arrays for values (with "__value" suffix)
     private val valueArrays: Map<String, MutableList<Any?>>
     private var isKey = true
@@ -569,7 +608,7 @@ private class PostgresMapEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T
+        value: T,
     ) {
         val arrays = currentArrays()
         isKey = !isKey
@@ -600,7 +639,7 @@ private class PostgresMapEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T?
+        value: T?,
     ) {
         val arrays = currentArrays()
         isKey = !isKey
@@ -631,16 +670,45 @@ private class PostgresMapElementEncoder(
 
     override val serializersModule: SerializersModule = config.serializersModule
 
-    override fun encodeBoolean(value: Boolean) { arrays[""]?.add(value) }
-    override fun encodeByte(value: Byte) { arrays[""]?.add(value) }
-    override fun encodeShort(value: Short) { arrays[""]?.add(value) }
-    override fun encodeInt(value: Int) { arrays[""]?.add(value) }
-    override fun encodeLong(value: Long) { arrays[""]?.add(value) }
-    override fun encodeFloat(value: Float) { arrays[""]?.add(value) }
-    override fun encodeDouble(value: Double) { arrays[""]?.add(value) }
-    override fun encodeChar(value: Char) { arrays[""]?.add(value.toString()) }
-    override fun encodeString(value: String) { arrays[""]?.add(value) }
-    override fun encodeNull() { arrays[""]?.add(null) }
+    override fun encodeBoolean(value: Boolean) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeByte(value: Byte) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeShort(value: Short) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeInt(value: Int) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeLong(value: Long) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeFloat(value: Float) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeDouble(value: Double) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeChar(value: Char) {
+        arrays[""]?.add(value.toString())
+    }
+
+    override fun encodeString(value: String) {
+        arrays[""]?.add(value)
+    }
+
+    override fun encodeNull() {
+        arrays[""]?.add(null)
+    }
 
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) {
         arrays[""]?.add(enumDescriptor.getElementName(index))
@@ -668,7 +736,7 @@ private class PostgresMapElementConverterEncoder(
     override val serializersModule: SerializersModule = EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> write(value: T) {
+    private fun <T : Any> write(value: T) {
         val conv = converter as ValueConverter<T, Any>
         arrays[""]?.add(conv.toDatabase(value))
     }
@@ -682,10 +750,15 @@ private class PostgresMapElementConverterEncoder(
     override fun encodeDouble(value: Double) = write(value)
     override fun encodeChar(value: Char) = write(value)
     override fun encodeString(value: String) = write(value)
+
     @ExperimentalSerializationApi
-    override fun encodeNull() { arrays[""]?.add(null) }
+    override fun encodeNull() {
+        arrays[""]?.add(null)
+    }
+
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) =
         write(enumDescriptor.getElementName(index))
+
     override fun encodeInline(descriptor: SerialDescriptor): Encoder = this
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -703,7 +776,7 @@ private class PostgresMapDecoder(
     private val valueDescriptor: SerialDescriptor,
     private val config: MapFormatConfig,
     private val input: ReadSource,
-    private val leafPathsResolver: (SerialDescriptor) -> List<String>,
+    leafPathsResolver: (SerialDescriptor) -> List<String>,
 ) : CompositeDecoder {
 
     override val serializersModule: SerializersModule = config.serializersModule
@@ -741,9 +814,6 @@ private class PostgresMapDecoder(
     }
 
     override fun decodeCollectionSize(descriptor: SerialDescriptor): Int = size / 2
-
-    private fun isKey(): Boolean = currentIndex % 2 == 1 // After increment, odd = was key
-    private fun pairIndex(): Int = (currentIndex - 1) / 2
 
     override fun decodeBooleanElement(descriptor: SerialDescriptor, index: Int): Boolean {
         val pairIdx = index / 2
@@ -815,7 +885,7 @@ private class PostgresMapDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T>,
-        previousValue: T?
+        previousValue: T?,
     ): T {
         val pairIdx = index / 2
         val isKeyElement = index % 2 == 0
@@ -834,7 +904,7 @@ private class PostgresMapDecoder(
                 if (isKeyElement) getKeyValueAt(path, pairIdx) else getValueValueAt(path, pairIdx)
             }
             val source = SimpleReadSource(reconstructedMap, emptyMap(), config.fieldSeparator)
-            return MapDecoder(config, source, deserializer.descriptor).decodeSerializableValue(deserializer)
+            return MapDecoder(config, source).decodeSerializableValue(deserializer)
         }
 
         // For primitives
@@ -847,14 +917,19 @@ private class PostgresMapDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T?>,
-        previousValue: T?
+        previousValue: T?,
     ): T? {
         val pairIdx = index / 2
         val isKeyElement = index % 2 == 0
         val paths = if (isKeyElement) keyPaths else valuePaths
         val firstValue = if (isKeyElement) getKeyValueAt(paths.firstOrNull() ?: "", pairIdx)
         else getValueValueAt(paths.firstOrNull() ?: "", pairIdx)
-        return if (firstValue == null) null else decodeSerializableElement(descriptor, index, deserializer, previousValue)
+        return if (firstValue == null) null else decodeSerializableElement(
+            descriptor,
+            index,
+            deserializer,
+            previousValue
+        )
     }
 
     override fun endStructure(descriptor: SerialDescriptor) {}

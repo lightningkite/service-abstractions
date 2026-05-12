@@ -1,9 +1,6 @@
 package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.database.DataClassPathPartial
-import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.KSerializer
-import org.jetbrains.exposed.sql.ColumnType
 import org.jetbrains.exposed.sql.IColumnType
 import org.jetbrains.exposed.sql.QueryParameter
 
@@ -11,4 +8,5 @@ internal val DataClassPathPartial<*>.colName: String get() = properties.joinToSt
 internal fun <T> sqlLiteralOfSomeKind(type: IColumnType<T & Any>, value: T) = QueryParameter(value, type)
 
 @Suppress("Unchecked_cast")
-internal fun sqlLiteralOfSomeKindUntyped(type: IColumnType<*>, value: Any?) = QueryParameter(value, type as IColumnType<Any>)
+internal fun sqlLiteralOfSomeKindUntyped(type: IColumnType<*>, value: Any?) =
+    QueryParameter(value, type as IColumnType<Any>)

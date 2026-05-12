@@ -412,6 +412,7 @@ class LLMClientAndModelSettingsTest {
     fun testDeprecatedTypeAlias() {
         // Verify the deprecated type alias still works
         val url = "openai://gpt-4o?apiKey=test"
+
         @Suppress("DEPRECATION")
         val settings: LLMClientAndModelSettings = LLMClientAndModelSettings(url)
         assertEquals(url, settings.url)

@@ -6,6 +6,6 @@ import kotlinx.serialization.Serializable
 public data class ListChange<T>(
     val wholeList: List<T>? = null,
     val old: T? = null,
-    val new: T? = null
+    val new: T? = null,
 )
 

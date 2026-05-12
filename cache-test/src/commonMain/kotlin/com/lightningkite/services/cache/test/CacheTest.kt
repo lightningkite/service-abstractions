@@ -1,11 +1,11 @@
 package com.lightningkite.services.cache.test
-import com.lightningkite.services.HealthStatus
+
 import com.lightningkite.services.cache.*
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.test.runTestWithClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlin.test.*
-import kotlin.test.Test
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
@@ -105,6 +105,7 @@ abstract class CacheTest {
     }
 
     open val waitScale: Duration = 0.25.seconds
+
     @Test
     fun expirationTest() {
         val cache = cache ?: run {

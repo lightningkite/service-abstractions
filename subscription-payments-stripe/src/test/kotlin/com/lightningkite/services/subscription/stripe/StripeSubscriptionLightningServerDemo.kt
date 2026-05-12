@@ -1,8 +1,6 @@
 package com.lightningkite.services.subscription.stripe
 
-import com.lightningkite.MediaType
 import com.lightningkite.lightningserver.BadRequestException
-import com.lightningkite.lightningserver.definition.StartupTask
 import com.lightningkite.lightningserver.definition.builder.ServerBuilder
 import com.lightningkite.lightningserver.engine.netty.NettyEngine
 import com.lightningkite.lightningserver.http.*
@@ -10,10 +8,10 @@ import com.lightningkite.lightningserver.pathing.fullUrl
 import com.lightningkite.lightningserver.runtime.ServerRuntime
 import com.lightningkite.lightningserver.runtime.location
 import com.lightningkite.lightningserver.settings.loadFromFile
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.workingDirectory
+import com.lightningkite.services.data.*
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.jsonfile.JsonFileDatabase
+import com.lightningkite.services.kfile.workingDirectory
 import com.lightningkite.services.subscription.*
 import kotlinx.coroutines.*
 import kotlin.time.Clock
@@ -104,6 +102,7 @@ object SubscriptionServer : ServerBuilder() {
     init {
         JsonFileDatabase
     }
+
     val stripe = setting("stripe", SubscriptionService.Settings())
     val database = setting("database", Database.Settings())
 
@@ -166,13 +165,17 @@ object SubscriptionServer : ServerBuilder() {
                         println("Usage: checkout <customer email or ID> <priceId>")
                         continue
                     }
-                    val customerId = if(customerIdOrEmail.contains("@")) stripe().createCustomer(customerIdOrEmail) else SubscriptionCustomerId(customerIdOrEmail)
+                    val customerId =
+                        if (customerIdOrEmail.contains("@")) stripe().createCustomer(customerIdOrEmail) else SubscriptionCustomerId(
+                            customerIdOrEmail
+                        )
                     try {
                         val session = stripe().checkoutUrl(
                             CheckoutSessionRequest(
                                 customerId = customerId,
                                 priceId = SubscriptionPriceId(priceId),
-                                successUrl = success.location.path.resolved().fullUrl() + "?session_id={CHECKOUT_SESSION_ID}",
+                                successUrl = success.location.path.resolved()
+                                    .fullUrl() + "?session_id={CHECKOUT_SESSION_ID}",
                                 cancelUrl = cancel.location.path.resolved().fullUrl(),
                                 metadata = mapOf("source" to "demo")
                             )
@@ -211,7 +214,10 @@ object SubscriptionServer : ServerBuilder() {
                         println("Usage: subscriptions <customerIdOrEmail>")
                         continue
                     }
-                    val customerId = if(customerIdOrEmail.contains("@")) stripe().createCustomer(customerIdOrEmail) else SubscriptionCustomerId(customerIdOrEmail)
+                    val customerId =
+                        if (customerIdOrEmail.contains("@")) stripe().createCustomer(customerIdOrEmail) else SubscriptionCustomerId(
+                            customerIdOrEmail
+                        )
                     try {
                         val subs = stripe().getSubscriptions(customerId)
                         if (subs.isEmpty()) {
@@ -262,27 +268,33 @@ object SubscriptionServer : ServerBuilder() {
                                     println("     Customer ID: ${event.customerId.value}")
                                     println("     Subscription ID: ${event.subscriptionId?.value}")
                                 }
+
                                 is SubscriptionEvent.SubscriptionCreated -> {
                                     println("     Subscription: ${event.subscription.id.value}")
                                     println("     Status: ${event.subscription.status}")
                                 }
+
                                 is SubscriptionEvent.SubscriptionUpdated -> {
                                     println("     Subscription: ${event.subscription.id.value}")
                                     println("     Status: ${event.subscription.status}")
                                     println("     Previous attributes: ${event.previousAttributes}")
                                 }
+
                                 is SubscriptionEvent.SubscriptionDeleted -> {
                                     println("     Subscription: ${event.subscription.id.value}")
                                 }
+
                                 is SubscriptionEvent.PaymentSucceeded -> {
                                     println("     Subscription ID: ${event.subscriptionId.value}")
                                     println("     Amount: ${event.amountCents} ${event.currency}")
                                 }
+
                                 is SubscriptionEvent.PaymentFailed -> {
                                     println("     Subscription ID: ${event.subscriptionId.value}")
                                     println("     Amount: ${event.amountCents} ${event.currency}")
                                     println("     Failure: ${event.failureMessage}")
                                 }
+
                                 else -> {}
                             }
                             println()
@@ -351,32 +363,38 @@ object SubscriptionServer : ServerBuilder() {
                     println("  Subscription: ${event.subscriptionId?.value}")
                     println("  Metadata: ${event.metadata}")
                 }
+
                 is SubscriptionEvent.SubscriptionCreated -> {
                     println("Subscription created!")
                     println("  ID: ${event.subscription.id.value}")
                     println("  Status: ${event.subscription.status}")
                 }
+
                 is SubscriptionEvent.SubscriptionUpdated -> {
                     println("Subscription updated!")
                     println("  ID: ${event.subscription.id.value}")
                     println("  Status: ${event.subscription.status}")
                     println("  Changes: ${event.previousAttributes}")
                 }
+
                 is SubscriptionEvent.SubscriptionDeleted -> {
                     println("Subscription deleted!")
                     println("  ID: ${event.subscription.id.value}")
                 }
+
                 is SubscriptionEvent.PaymentSucceeded -> {
                     println("Payment succeeded!")
                     println("  Subscription: ${event.subscriptionId.value}")
                     println("  Amount: ${event.amountCents / 100.0} ${event.currency.uppercase()}")
                 }
+
                 is SubscriptionEvent.PaymentFailed -> {
                     println("Payment failed!")
                     println("  Subscription: ${event.subscriptionId.value}")
                     println("  Amount: ${event.amountCents / 100.0} ${event.currency.uppercase()}")
                     println("  Reason: ${event.failureMessage}")
                 }
+
                 else -> {
                     println("Other event received")
                 }

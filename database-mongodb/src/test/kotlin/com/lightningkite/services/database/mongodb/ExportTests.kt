@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.data.KFile
+import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.database.table
 import com.lightningkite.services.database.test.LargeTestModel
 import com.lightningkite.services.database.test.SimpleLargeTestModel

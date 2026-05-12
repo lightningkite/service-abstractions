@@ -1,8 +1,9 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.MediaType
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
+import com.lightningkite.services.kfile.KFile
+import com.lightningkite.services.kfile.workingDirectory
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration

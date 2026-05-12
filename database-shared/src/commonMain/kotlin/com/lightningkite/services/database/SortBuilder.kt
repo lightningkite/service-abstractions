@@ -21,7 +21,9 @@ public class SortBuilder<K>() {
     public fun <V : Comparable<V>> DataClassPath<K, V>.descending(): Unit = sort(false)
 
     @JvmName("stringSort")
-    public fun DataClassPath<K, String>.sort(ascending: Boolean, ignoreCase: Boolean): Unit = add(SortPart(this, ascending, ignoreCase))
+    public fun DataClassPath<K, String>.sort(ascending: Boolean, ignoreCase: Boolean): Unit =
+        add(SortPart(this, ascending, ignoreCase))
+
     public fun DataClassPath<K, String>.ascending(ignoreCase: Boolean): Unit = sort(true, ignoreCase)
     public fun DataClassPath<K, String>.descending(ignoreCase: Boolean): Unit = sort(false, ignoreCase)
 
@@ -31,9 +33,11 @@ public class SortBuilder<K>() {
     @SortByEnumName
     @JvmName("enumSort")
     public fun <V : Enum<V>> DataClassPath<K, V>.sort(ascending: Boolean): Unit = add(SortPart(this, ascending))
+
     @SortByEnumName
     @JvmName("enumAscending")
     public fun <V : Enum<V>> DataClassPath<K, V>.ascending(): Unit = sort(true)
+
     @SortByEnumName
     @JvmName("enumDescending")
     public fun <V : Enum<V>> DataClassPath<K, V>.descending(): Unit = sort(false)

@@ -83,6 +83,7 @@ public data class UpdateRestrictions<T>(
     public enum class Mode {
         /** All fields can be modified except explicitly restricted ones */
         Blacklist,
+
         /** Only explicitly allowed fields can be modified */
         Whitelist,
     }
@@ -119,7 +120,7 @@ public data class UpdateRestrictions<T>(
     public data class Part<T>(
         val property: DataClassPathPartial<T>,
         val requires: Condition<T>,
-        val limitedTo: Condition<T>
+        val limitedTo: Condition<T>,
     )
 
     /**
@@ -175,6 +176,7 @@ public data class UpdateRestrictions<T>(
                     }
                 }
             }
+
             Mode.Whitelist -> {
                 for (path in on.affectsPaths()) {
                     val affected = fields.filter { field ->
@@ -199,6 +201,7 @@ public data class UpdateRestrictions<T>(
                 Mode.Whitelist -> Condition.Never
                 Mode.Blacklist -> Condition.Always
             }
+
             1 -> distinct[0]
             else -> Condition.And(distinct)
         }
@@ -219,7 +222,7 @@ public data class UpdateRestrictions<T>(
      */
     public class Builder<T>(
         mode: Mode,
-        public val fields: ArrayList<Part<T>> = ArrayList()
+        public val fields: ArrayList<Part<T>> = ArrayList(),
     ) {
         public var mode: Mode = mode
             private set
@@ -351,7 +354,7 @@ public data class UpdateRestrictions<T>(
          */
         public inline fun <reified V> DataClassPath<T, V>.requires(
             requires: Condition<T>,
-            valueMust: (DataClassPath<V, V>) -> Condition<V>
+            valueMust: (DataClassPath<V, V>) -> Condition<V>,
         ) {
             fields.add(Part(property = this, requires = requires, limitedTo = this.condition(valueMust)))
         }
@@ -462,7 +465,7 @@ public data class UpdateRestrictions<T>(
  */
 public inline fun <reified T> updateRestrictions(
     mode: UpdateRestrictions.Mode = UpdateRestrictions.Mode.Blacklist,
-    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
+    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
 ): UpdateRestrictions<T> {
     return UpdateRestrictions.Builder<T>(mode).apply { builder(path<T>()) }.build()
 }
@@ -487,7 +490,7 @@ public inline fun <reified T> updateRestrictions(
  * @see updateRestrictions
  */
 public inline fun <reified T> blacklistRestrictions(
-    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
+    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
 ): UpdateRestrictions<T> =
     updateRestrictions(UpdateRestrictions.Mode.Blacklist, builder)
 
@@ -512,7 +515,7 @@ public inline fun <reified T> blacklistRestrictions(
  * @see updateRestrictions
  */
 public inline fun <reified T> whitelistRestrictions(
-    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
+    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
 ): UpdateRestrictions<T> =
     updateRestrictions(UpdateRestrictions.Mode.Whitelist, builder)
 
@@ -554,7 +557,7 @@ public inline fun <reified T> whitelistRestrictions(
  * @return New [ModelPermissions] with combined restrictions
  */
 public inline fun <reified T> ModelPermissions<T>.withAdditionalUpdateRestrictions(
-    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit
+    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
 ): ModelPermissions<T> =
     copy(
         updateRestrictions = updateRestrictions(this.updateRestrictions.mode) {

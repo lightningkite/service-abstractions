@@ -1,25 +1,13 @@
 package com.lightningkite.services.email.imap
 
-import com.icegreen.greenmail.util.GreenMail
-import com.icegreen.greenmail.util.GreenMailUtil
-import com.icegreen.greenmail.util.ServerSetup
-import com.lightningkite.services.HealthStatus
+import com.icegreen.greenmail.util.*
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.email.EmailInboundService
 import jakarta.mail.Message
-import jakarta.mail.internet.InternetAddress
-import jakarta.mail.internet.MimeBodyPart
-import jakarta.mail.internet.MimeMessage
-import jakarta.mail.internet.MimeMultipart
+import jakarta.mail.internet.*
 import kotlinx.coroutines.test.runTest
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Unit tests for ImapEmailInboundService using GreenMail mock server.
@@ -115,7 +103,8 @@ class ImapEmailInboundServiceTest {
     @Test
     fun testUrlParsing_urlEncodedCredentials() {
         // Password with special characters: p@ss:word!
-        val settings = EmailInboundService.Settings("imaps://user%40domain.com:p%40ss%3Aword%21@imap.example.com:993/INBOX")
+        val settings =
+            EmailInboundService.Settings("imaps://user%40domain.com:p%40ss%3Aword%21@imap.example.com:993/INBOX")
         val service = settings("test-imap", testContext) as ImapEmailInboundService
 
         assertEquals("user@domain.com", service.username)
@@ -262,7 +251,7 @@ class ImapEmailInboundServiceTest {
             service.onReceived.parse(
                 queryParameters = emptyList(),
                 headers = emptyMap(),
-                body = com.lightningkite.services.data.TypedData.text("test", com.lightningkite.MediaType.Text.Plain)
+                body = com.lightningkite.services.data.TypedData.text("test", com.lightningkite.services.data.MediaType.Text.Plain)
             )
         }
     }
@@ -279,7 +268,7 @@ class ImapEmailInboundServiceTest {
         body: String,
         html: String? = null,
         inReplyTo: String? = null,
-        references: List<String>? = null
+        references: List<String>? = null,
     ) {
         val message = GreenMailUtil.createTextEmail(
             to,
@@ -325,7 +314,7 @@ class ImapEmailInboundServiceTest {
         body: String,
         attachmentName: String,
         attachmentContent: ByteArray,
-        attachmentContentType: String
+        attachmentContentType: String,
     ) {
         val session = greenMail.smtp.createSession()
         val message = MimeMessage(session)

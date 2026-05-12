@@ -1,8 +1,8 @@
 package com.lightningkite.services.files
 
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.recordExceptionWithFingerprint
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
 
@@ -15,7 +15,7 @@ internal actual suspend fun <T> traceFileOperation(
     path: String,
     storageSystem: String,
     attributes: Map<String, Any>,
-    block: suspend () -> T
+    block: suspend () -> T,
 ): T {
     val tracer = context.openTelemetry?.getTracer("files-kotlinxio")
 

@@ -1,10 +1,8 @@
-import com.lightningkite.deployhelpers.*
+import com.lightningkite.deployhelpers.lkLibrary
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
-    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -21,7 +19,7 @@ dependencies {
     implementation(libs.coroutines.core)
 
     // Testing
-    testImplementation(libs.kotlin.test)
+//    testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
     testImplementation(project(path = ":test"))
     testImplementation(project(path = ":voiceagent-openai"))
@@ -51,12 +49,6 @@ kotlin {
         freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
     explicitApi()
-    sourceSets.main {
-        kotlin.srcDir("build/generated/ksp/main/kotlin")
-    }
-    sourceSets.test {
-        kotlin.srcDir("build/generated/ksp/test/kotlin")
-    }
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -71,4 +63,10 @@ tasks.register<JavaExec>("runLightningServerDemo") {
     standardInput = System.`in`
 }
 
-lkLibrary("lightningkite", "service-abstractions") {}
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {
+    description.set("A tool for connecting a voice agent to a phone call.")
+}

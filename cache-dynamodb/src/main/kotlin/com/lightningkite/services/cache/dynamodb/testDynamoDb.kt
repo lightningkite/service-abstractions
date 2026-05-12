@@ -40,14 +40,14 @@ private var existingDynamo: DynamoDbAsyncClient? = null
 // adding a health check loop or catching process start failures. - by Claude
 public fun embeddedDynamo(port: Int = 7999): DynamoDbAsyncClient {
     existingDynamo?.let { return it }
-    if(!localFolder.exists()) {
+    if (!localFolder.exists()) {
         localFolder.mkdirs()
         logger.info("Downloading local DynamoDB...")
         ZipInputStream(url.openStream()).use {
-            while(true) {
+            while (true) {
                 val next = it.nextEntry ?: break
                 val dest = localFolder.resolve(next.name)
-                if(next.isDirectory) {
+                if (next.isDirectory) {
                     it.closeEntry()
                     continue
                 }
@@ -63,7 +63,15 @@ public fun embeddedDynamo(port: Int = 7999): DynamoDbAsyncClient {
     val server = ProcessBuilder()
         .directory(localFolder)
         .inheritIO()
-        .command("java", "-Djava.library.path=./DynamoDBLocal_lib", "-jar", "DynamoDBLocal.jar", "-inMemory", "-port", port.toString())
+        .command(
+            "java",
+            "-Djava.library.path=./DynamoDBLocal_lib",
+            "-jar",
+            "DynamoDBLocal.jar",
+            "-inMemory",
+            "-port",
+            port.toString()
+        )
         .start()
     Thread.sleep(1000L)
     val shutdownHook = Thread {

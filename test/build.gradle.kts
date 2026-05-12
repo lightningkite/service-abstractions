@@ -3,7 +3,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
@@ -14,7 +13,8 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
+        freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
     applyDefaultHierarchyTemplate()
     androidTarget {
@@ -35,39 +35,21 @@ kotlin {
     iosX64()
     iosArm64()
     iosSimulatorArm64()
-    macosX64()
     macosArm64()
 
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(libs.kotlinx.json)
+                api(libs.kotlinx.serialization.json)
                 api(libs.kotlinx.datetime)
-                api(project(":basis"))
+                api(project(path = ":basis"))
                 api(libs.coroutines.core)
                 api(libs.kotlin.test)
                 api(libs.coroutines.testing)
                 api(libs.logBackClassic)
             }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
-            }
         }
-        val commonTest by getting {
-            dependencies {
-            }
-            kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
-                srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
-            }
-        }
+        val commonTest by getting {}
         val androidMain by getting {
             dependencies {
                 api(libs.kotlin.test.junit)
@@ -83,14 +65,9 @@ kotlin {
                 api(libs.kotlin.test.junit)
             }
         }
-        val jvmTest by getting {
-            dependencies {
-            }
-        }
+        val jvmTest by getting {}
     }
 }
-
-lkLibrary("lightningkite", "service-abstractions") {}
 
 android {
     namespace = "com.lightningkite.services"
@@ -107,4 +84,12 @@ android {
     dependencies {
         coreLibraryDesugaring(libs.androidDesugaring)
     }
+}
+
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {
+    description.set("A set of tools to help with unit tests.")
 }

@@ -13,7 +13,7 @@ import kotlin.uuid.Uuid
 @Serializable
 data class PersonV1(
     override val _id: Uuid = Uuid.random(),
-    val name: String
+    val name: String,
 ) : HasId<Uuid>
 
 // Version 2: Added age field
@@ -21,14 +21,14 @@ data class PersonV1(
 data class PersonV2(
     override val _id: Uuid = Uuid.random(),
     val name: String,
-    val age: Int? = null
+    val age: Int? = null,
 ) : HasId<Uuid>
 
 // Version 3: Removed age, back to just name
 @Serializable
 data class PersonV3(
     override val _id: Uuid = Uuid.random(),
-    val name: String
+    val name: String,
 ) : HasId<Uuid>
 
 /**

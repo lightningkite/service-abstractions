@@ -21,7 +21,8 @@ private val KSType.useCustomType: Boolean
             "com.lightningkite.UUID",
             "kotlin.Uuid",
             "kotlinx.datetime.Instant",
-            "org.litote.kmongo.Id" -> false
+            "org.litote.kmongo.Id",
+                -> false
 
             else -> true
         }
@@ -41,7 +42,8 @@ private val KSType.conditionType: String
             "kotlin.Uuid",
             "com.lightningkite.UUID",
             "kotlinx.datetime.Instant",
-            "kotlin.Char" -> "ComparableCondition" + "<${this.makeNotNullable().toKotlin()}>"
+            "kotlin.Char",
+                -> "ComparableCondition" + "<${this.makeNotNullable().toKotlin()}>"
 
             "kotlin.collections.List" -> "ArrayCondition" + "<${
                 this.arguments[0].run {
@@ -83,12 +85,15 @@ private val KSType.modificationType: String
             "kotlin.Int",
             "kotlin.Long",
             "kotlin.Float",
-            "kotlin.Double" -> "NumberModification" + "<${this.makeNotNullable().toKotlin(annotations)}>"
+            "kotlin.Double",
+                -> "NumberModification" + "<${this.makeNotNullable().toKotlin(annotations)}>"
+
             "java.util.UUID",
             "com.lightningkite.UUID",
             "kotlin.Uuid",
             "kotlinx.datetime.Instant",
-            "kotlin.String", "kotlin.Char" -> "ComparableModification" + "<${
+            "kotlin.String", "kotlin.Char",
+                -> "ComparableModification" + "<${
                 this.makeNotNullable().toKotlin(annotations)
             }>"
 
@@ -130,7 +135,7 @@ private fun ResolvedAnnotation.writeSerialzable(): String {
 private fun Any?.jsonRender(): String {
     return when (this) {
         is KClass<*> -> "\"" + (this.qualifiedName) + "\""
-        is KSType -> "\"" + (this.declaration?.qualifiedName?.asString() ?: "") + "\""
+        is KSType -> "\"" + (this.declaration.qualifiedName?.asString() ?: "") + "\""
         is KSTypeReference -> "\"" + (this.tryResolve()?.declaration?.qualifiedName?.asString() ?: "") + "\""
         is KSClassDeclaration -> "\"" + (this.qualifiedName?.asString() ?: "") + "\""
         is Array<*> -> joinToString(", ", "[", "]") { it.jsonRender() }

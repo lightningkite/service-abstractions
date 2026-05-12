@@ -13,7 +13,7 @@ import kotlin.time.Duration.Companion.milliseconds
 internal expect suspend fun <T> instrumentedGet(
     context: SettingContext,
     key: String,
-    operation: suspend () -> T?
+    operation: suspend () -> T?,
 ): T?
 
 /**
@@ -23,7 +23,7 @@ internal expect suspend fun <T> instrumentedSet(
     context: SettingContext,
     key: String,
     timeToLive: Duration?,
-    operation: suspend () -> Unit
+    operation: suspend () -> Unit,
 )
 
 /**
@@ -33,7 +33,7 @@ internal expect suspend fun instrumentedSetIfNotExists(
     context: SettingContext,
     key: String,
     timeToLive: Duration?,
-    operation: suspend () -> Boolean
+    operation: suspend () -> Boolean,
 ): Boolean
 
 /**
@@ -44,7 +44,7 @@ internal expect suspend fun <N : Number> instrumentedAdd(
     key: String,
     value: Long,
     timeToLive: Duration?,
-    operation: suspend () -> N
+    operation: suspend () -> N,
 ): N
 
 /**
@@ -53,7 +53,7 @@ internal expect suspend fun <N : Number> instrumentedAdd(
 internal expect suspend fun instrumentedRemove(
     context: SettingContext,
     key: String,
-    operation: suspend () -> Unit
+    operation: suspend () -> Unit,
 )
 
 /**
@@ -64,7 +64,7 @@ internal expect suspend fun <T> instrumentedModify(
     key: String,
     maxTries: Int,
     timeToLive: Duration?,
-    operation: suspend () -> Boolean
+    operation: suspend () -> Boolean,
 ): Boolean
 
 internal fun assertValidTtl(timeToLive: Duration?) {

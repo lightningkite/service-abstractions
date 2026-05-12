@@ -1,12 +1,8 @@
 package com.lightningkite.services.speech.local
 
-import com.lightningkite.MediaType
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.speech.TranscriptionOptions
-import com.lightningkite.services.speech.TtsSynthesisOptions
-import com.lightningkite.services.speech.TtsVoiceConfig
+import com.lightningkite.services.data.*
+import com.lightningkite.services.speech.*
 import kotlinx.coroutines.runBlocking
 import java.io.File
 

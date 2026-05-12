@@ -34,6 +34,7 @@ internal val cassandraValueConverters: List<ValueConverter<*, *>> = listOf(
         override val descriptor: SerialDescriptor = kotlinx.datetime.Instant.serializer().descriptor
         override fun toDatabase(value: kotlinx.datetime.Instant): java.time.Instant =
             java.time.Instant.ofEpochMilli(value.toEpochMilliseconds())
+
         override fun fromDatabase(value: java.time.Instant): kotlinx.datetime.Instant =
             kotlinx.datetime.Instant.fromEpochMilliseconds(value.toEpochMilli())
     },

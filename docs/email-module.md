@@ -8,7 +8,8 @@
 
 ## Overview
 
-The Email module provides a unified interface for sending emails across different email service providers. Switch between console output (dev), test mode, SMTP, or cloud providers via configuration.
+The Email module provides a unified interface for sending emails across different email service providers. Switch
+between console output (dev), test mode, SMTP, or cloud providers via configuration.
 
 ### Key Features
 
@@ -38,6 +39,7 @@ val emailService: EmailService = settings.email("mailer", context)
 ```
 
 **Supported URL schemes:**
+
 - `console` - Print emails to console (development)
 - `test` - Collect emails in memory for testing
 - `smtp://user:password@host:port` - SMTP provider (requires `email-javasmtp` module)
@@ -110,6 +112,7 @@ emailService.send(Email(
 ```
 
 **Inline attachments** (for embedding images in HTML):
+
 ```kotlin
 Email.Attachment(
     inline = true,
@@ -175,7 +178,8 @@ val personalizations = listOf(
 emailService.sendBulk(template, personalizations)
 ```
 
-**Template syntax:** Use `{{variableName}}` for substitutions. All instances in subject, HTML, and plain text are replaced.
+**Template syntax:** Use `{{variableName}}` for substitutions. All instances in subject, HTML, and plain text are
+replaced.
 
 ---
 
@@ -190,6 +194,7 @@ EmailService.Settings(
 ```
 
 **Requirements:**
+
 1. Enable 2-factor authentication on your Google account
 2. Generate an "App Password" at https://myaccount.google.com/apppasswords
 3. Use the app password (not your regular password)
@@ -205,6 +210,7 @@ EmailService.Settings(
 ```
 
 **Requirements:**
+
 1. Sign up at sendgrid.com
 2. Create an API key with "Mail Send" permission
 3. Username is literally "apikey", password is your API key
@@ -220,6 +226,7 @@ EmailService.Settings(
 ```
 
 **Requirements:**
+
 1. Use your full Outlook/Office 365 email and password
 2. Enable "Less secure app access" if using 2FA
 
@@ -232,6 +239,7 @@ EmailService.Settings(
 ```
 
 **Requirements:**
+
 1. Create SMTP credentials in AWS SES Console
 2. Verify sender email addresses or domains
 3. Start in sandbox mode (must request production access)
@@ -270,6 +278,7 @@ Modern CSS doesn't work in many email clients. Use tables:
 ### Test Across Clients
 
 Email renders differently in Gmail, Outlook, Apple Mail, etc. Test with tools like:
+
 - Litmus
 - Email on Acid
 - Mailtrap
@@ -299,6 +308,7 @@ Most providers require sender verification. Don't use random email addresses.
 ### 3. Avoid Spam Trigger Words
 
 Words to avoid in subject lines:
+
 - "FREE", "Click here", "Act now"
 - Multiple exclamation marks!!!!
 - ALL CAPS SUBJECT LINES
@@ -315,6 +325,7 @@ Required by law in many jurisdictions:
 ```
 
 Add to headers:
+
 ```kotlin
 customHeaders = mapOf(
     "List-Unsubscribe" to listOf("<mailto:unsubscribe@example.com>"),
@@ -515,16 +526,19 @@ messageQueue.consume { message ->
 ## Troubleshooting
 
 ### "Authentication failed"
+
 - Check username/password
 - For Gmail, use app password not regular password
 - Verify SMTP port (usually 587 for TLS, 465 for SSL)
 
 ### "Connection timeout"
+
 - Check if firewall blocks SMTP ports
 - Try different port (587, 465, 25)
 - Verify SMTP server address
 
 ### Emails go to spam
+
 - Set up SPF/DKIM/DMARC
 - Verify sender domain
 - Avoid spam trigger words
@@ -532,11 +546,13 @@ messageQueue.consume { message ->
 - Maintain low bounce rate
 
 ### "Recipient address rejected"
+
 - Email address doesn't exist
 - Domain doesn't accept email
 - Remove from your mailing list
 
 ### Rate limit exceeded
+
 - Reduce sending frequency
 - Upgrade to higher tier plan
 - Split sends across multiple days
@@ -545,6 +561,8 @@ messageQueue.consume { message ->
 
 ## See Also
 
-- [EmailService.kt](../email/src/commonMain/kotlin/com/lightningkite/services/email/EmailService.kt) - Interface documentation
-- [JavaSmtpEmailService.kt](../email-javasmtp/src/main/kotlin/com/lightningkite/services/email/javasmtp/JavaSmtpEmailService.kt) - SMTP implementation
+- [EmailService.kt](../email/src/commonMain/kotlin/com/lightningkite/services/email/EmailService.kt) - Interface
+  documentation
+- [JavaSmtpEmailService.kt](../email-javasmtp/src/main/kotlin/com/lightningkite/services/email/javasmtp/JavaSmtpEmailService.kt) -
+  SMTP implementation
 - [sms-module.md](./sms-module.md) - SMS messaging alternative

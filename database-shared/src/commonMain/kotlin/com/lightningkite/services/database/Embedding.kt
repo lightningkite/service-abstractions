@@ -1,18 +1,11 @@
 package com.lightningkite.services.database
 
-import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SealedSerializationApi
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.*
 import kotlinx.serialization.builtins.FloatArraySerializer
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
-import kotlinx.serialization.descriptors.StructureKind
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.internal.GeneratedSerializer
-import kotlin.jvm.JvmInline
 
 /**
  * Represents a dense vector embedding for similarity search.
@@ -30,6 +23,7 @@ public class Embedding(public val values: FloatArray) {
         public fun of(vararg values: Float): Embedding = Embedding(values)
         public fun fromDoubles(values: DoubleArray): Embedding =
             Embedding(FloatArray(values.size) { values[it].toFloat() })
+
         public fun fromList(values: List<Number>): Embedding =
             Embedding(FloatArray(values.size) { values[it].toFloat() })
     }
@@ -43,8 +37,9 @@ public class Embedding(public val values: FloatArray) {
 // equals/hashCode for value class with array need special handling via serializer
 
 @OptIn(InternalSerializationApi::class)
-public class EmbeddingSerializer: GeneratedSerializer<Embedding> {
+public class EmbeddingSerializer : GeneratedSerializer<Embedding> {
     private val defer = FloatArraySerializer()
+
     @OptIn(SealedSerializationApi::class)
     override val descriptor: SerialDescriptor = object : SerialDescriptor {
         override val serialName: String get() = "com.lightningkite.services.files.ServerFile"
@@ -60,7 +55,7 @@ public class EmbeddingSerializer: GeneratedSerializer<Embedding> {
 
     override fun serialize(
         encoder: Encoder,
-        value: Embedding
+        value: Embedding,
     ): Unit = encoder.encodeSerializableValue(defer, value.values)
 
     override fun deserialize(decoder: Decoder): Embedding = decoder.decodeSerializableValue(defer).let { Embedding(it) }

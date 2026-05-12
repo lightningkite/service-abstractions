@@ -1,19 +1,9 @@
 package com.lightningkite.services.files
 
-import kotlinx.serialization.ContextualSerializer
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SealedSerializationApi
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.SerialKind
-import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.descriptors.buildClassSerialDescriptor
-import kotlinx.serialization.encoding.CompositeDecoder
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.encoding.decodeStructure
-import kotlinx.serialization.encoding.encodeStructure
 
 public object DirectServerFileSerializer : KSerializer<ServerFile> {
     //Description("A URL referencing a file that the server owns.")
@@ -62,6 +52,6 @@ public object DeferToContextualServerFileSerializer : KSerializer<ServerFile> {
     override fun deserialize(decoder: Decoder): ServerFile = decoder.decodeInline(descriptor).decodeSerializableValue(c)
     override fun serialize(
         encoder: Encoder,
-        value: ServerFile
+        value: ServerFile,
     ): Unit = encoder.encodeInline(descriptor).encodeSerializableValue(c, value)
 }

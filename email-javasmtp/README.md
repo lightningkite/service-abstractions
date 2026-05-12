@@ -25,16 +25,19 @@ val emailService = EmailService.Settings("smtp://user:pass@smtp.example.com:587?
 #### URL Format
 
 The SMTP URL format is:
+
 ```
 smtp://[username]:[password]@[host]:[port]?[params]
 ```
 
 Required parameters:
+
 - `host`: The SMTP server hostname
 - `port`: The SMTP server port
 - `fromEmail`: The default sender email address (in query parameters)
 
 Optional parameters:
+
 - `username` and `password`: Authentication credentials
 - `fromLabel`: The default sender name
 - `useSsl`: Whether to use SSL (defaults to true for port 465)

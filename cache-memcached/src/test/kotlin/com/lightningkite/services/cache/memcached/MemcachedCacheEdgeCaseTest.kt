@@ -2,22 +2,14 @@
 package com.lightningkite.services.cache.memcached
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.cache.get
-import com.lightningkite.services.cache.modify
-import com.lightningkite.services.cache.set
-import com.lightningkite.services.cache.setIfNotExists
+import com.lightningkite.services.cache.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer
-import org.junit.AfterClass
+import org.junit.*
 import org.junit.Assume.assumeTrue
-import org.junit.BeforeClass
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -71,7 +63,12 @@ class MemcachedCacheEdgeCaseTest {
         val c = cache!!
 
         // Both expected and new are null should return true
-        val result = c.compareAndSet<TestData>("cas-null-null-test", c.context.internalSerializersModule.serializer(), null, null)
+        val result = c.compareAndSet<TestData>(
+            "cas-null-null-test",
+            c.context.internalSerializersModule.serializer(),
+            null,
+            null
+        )
         assertTrue(result, "CAS with both null should succeed")
     }
 
@@ -86,7 +83,12 @@ class MemcachedCacheEdgeCaseTest {
         assertEquals(TestData("initial", 1), c.get<TestData>(key))
 
         // CAS to delete (expected exists, new is null)
-        val result = c.compareAndSet(key, c.context.internalSerializersModule.serializer<TestData>(), TestData("initial", 1), null)
+        val result = c.compareAndSet(
+            key,
+            c.context.internalSerializersModule.serializer<TestData>(),
+            TestData("initial", 1),
+            null
+        )
         assertTrue(result, "CAS delete should succeed")
         assertNull(c.get<TestData>(key), "Key should be deleted after CAS with null new value")
     }
@@ -101,7 +103,8 @@ class MemcachedCacheEdgeCaseTest {
         c.set(key, TestData("exists", 42))
 
         // Try to CAS with expected=null but key exists - should fail
-        val result = c.compareAndSet(key, c.context.internalSerializersModule.serializer<TestData>(), null, TestData("new", 100))
+        val result =
+            c.compareAndSet(key, c.context.internalSerializersModule.serializer<TestData>(), null, TestData("new", 100))
         assertFalse(result, "CAS should fail when expected is null but key exists")
 
         // Original value should remain
@@ -118,7 +121,12 @@ class MemcachedCacheEdgeCaseTest {
         c.set(key, TestData("v1", 1))
 
         // CAS with correct expected should succeed
-        val result = c.compareAndSet(key, c.context.internalSerializersModule.serializer<TestData>(), TestData("v1", 1), TestData("v2", 2))
+        val result = c.compareAndSet(
+            key,
+            c.context.internalSerializersModule.serializer<TestData>(),
+            TestData("v1", 1),
+            TestData("v2", 2)
+        )
         assertTrue(result, "CAS with correct expected should succeed")
         assertEquals(TestData("v2", 2), c.get<TestData>(key))
     }
@@ -133,7 +141,12 @@ class MemcachedCacheEdgeCaseTest {
         c.set(key, TestData("actual", 1))
 
         // CAS with wrong expected should fail
-        val result = c.compareAndSet(key, c.context.internalSerializersModule.serializer<TestData>(), TestData("expected", 2), TestData("new", 3))
+        val result = c.compareAndSet(
+            key,
+            c.context.internalSerializersModule.serializer<TestData>(),
+            TestData("expected", 2),
+            TestData("new", 3)
+        )
         assertFalse(result, "CAS with wrong expected should fail")
 
         // Original value should remain unchanged
@@ -147,7 +160,13 @@ class MemcachedCacheEdgeCaseTest {
         val key = "cas-ttl-test-${System.currentTimeMillis()}"
 
         // CAS create with TTL (expected null, new value)
-        val result = c.compareAndSet(key, c.context.internalSerializersModule.serializer<TestData>(), null, TestData("with-ttl", 1), 2.seconds)
+        val result = c.compareAndSet(
+            key,
+            c.context.internalSerializersModule.serializer<TestData>(),
+            null,
+            TestData("with-ttl", 1),
+            2.seconds
+        )
         assertTrue(result, "CAS create with TTL should succeed")
         assertEquals(TestData("with-ttl", 1), c.get<TestData>(key))
 

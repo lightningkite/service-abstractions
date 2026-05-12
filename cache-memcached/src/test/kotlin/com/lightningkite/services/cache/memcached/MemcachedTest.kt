@@ -7,7 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import org.junit.AfterClass
 import org.junit.BeforeClass
-import java.lang.Exception
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -24,6 +23,7 @@ class MemcachedTest : CacheTest() {
             null
         }
     }
+
     override fun runSuspendingTest(body: suspend CoroutineScope.() -> Unit) = runBlocking { body() }
     override val waitScale: Duration
         get() = 1.seconds

@@ -1,6 +1,8 @@
 # Cache Module
 
-The `cache` module provides an abstract interface for key-value caching with implementations for various backends (Redis, Memcached, in-memory, etc.). All values are serialized using KotlinX Serialization for type-safe storage and retrieval.
+The `cache` module provides an abstract interface for key-value caching with implementations for various backends (
+Redis, Memcached, in-memory, etc.). All values are serialized using KotlinX Serialization for type-safe storage and
+retrieval.
 
 ## Getting Started
 
@@ -36,6 +38,7 @@ cache.remove("user:123")
 The `Cache` interface provides these operations:
 
 ### get()
+
 Retrieves a value from the cache:
 
 ```kotlin
@@ -46,11 +49,13 @@ val user: User? = cache.get("user:123")
 ```
 
 Returns `null` if:
+
 - The key doesn't exist
 - The value has expired
 - Deserialization fails
 
 ### set()
+
 Stores a value in the cache:
 
 ```kotlin
@@ -70,6 +75,7 @@ cache.set("user:123", user, timeToLive = 30.minutes)
 - Use reasonable TTLs to prevent stale data and memory bloat
 
 ### setIfNotExists()
+
 Atomically stores a value only if the key doesn't exist:
 
 ```kotlin
@@ -81,6 +87,7 @@ if (wasSet) {
 ```
 
 **Use Cases:**
+
 - Distributed locking
 - Ensuring only one instance initializes data
 - Rate limiting (first request sets a key)
@@ -88,6 +95,7 @@ if (wasSet) {
 **Note:** Atomic behavior depends on implementation. MapCache may have race conditions.
 
 ### modify()
+
 Atomically modifies a value using compare-and-swap:
 
 ```kotlin
@@ -97,19 +105,23 @@ cache.modify<Counter>("page-views", maxTries = 5) { current ->
 ```
 
 **How it works:**
+
 1. Reads current value
 2. Calls modification function
 3. Writes back only if value hasn't changed
 4. Retries up to `maxTries` times on conflicts
 
-**Important:** The default implementation has a race condition - it reads the value twice. Use implementations that override with proper CAS operations for production use.
+**Important:** The default implementation has a race condition - it reads the value twice. Use implementations that
+override with proper CAS operations for production use.
 
 **Use Cases:**
+
 - Incrementing counters with validation
 - Updating complex objects atomically
 - Implementing optimistic locking patterns
 
 ### add()
+
 Atomically increments a numeric value:
 
 ```kotlin
@@ -123,6 +135,7 @@ cache.add("count", -1)     // Decrement
 - Non-numeric values are treated as 0 in MapCache
 
 ### remove()
+
 Removes a key from the cache:
 
 ```kotlin
@@ -144,6 +157,7 @@ Cache.Settings("ram://")
 ```
 
 **Characteristics:**
+
 - Fast (no network overhead)
 - Data lost on restart
 - Memory-limited
@@ -159,6 +173,7 @@ Cache.Settings("ram-unsafe")
 ```
 
 **Characteristics:**
+
 - Fastest (no synchronization overhead)
 - **Not thread-safe** - use only in single-threaded contexts
 - Good for: Single-threaded applications, testing
@@ -172,6 +187,7 @@ Cache.Settings("redis://localhost:6379/0")
 ```
 
 **Characteristics:**
+
 - Persistent (configurable)
 - Shared across multiple instances
 - Supports clustering
@@ -186,6 +202,7 @@ Cache.Settings("memcached://localhost:11211")
 ```
 
 **Characteristics:**
+
 - Pure in-memory (never persists)
 - Simple and fast
 - LRU eviction
@@ -200,6 +217,7 @@ Cache.Settings("dynamodb://table-name")
 ```
 
 **Characteristics:**
+
 - Fully managed
 - Automatic scaling
 - Global replication available
@@ -220,11 +238,13 @@ userCache.remove()
 ```
 
 **Benefits:**
+
 - No need to specify key and serializer repeatedly
 - Type-safe - compile-time checking of value type
 - Cleaner code for frequently accessed keys
 
 **Creating Handles:**
+
 ```kotlin
 val cache: () -> Cache = { myCache }
 
@@ -246,6 +266,7 @@ val user: User? = cache.get("user:123", context.internalSerializersModule.serial
 ```
 
 All operations have reified variants:
+
 - `get<T>(key: String)`
 - `set<T>(key: String, value: T, timeToLive: Duration?)`
 - `setIfNotExists<T>(key: String, value: T, timeToLive: Duration?)`
@@ -373,6 +394,7 @@ when (status.level) {
 ```
 
 The default health check:
+
 1. Writes a test value with current timestamp
 2. Reads it back
 3. Verifies it was written recently (within 10 seconds)
@@ -383,26 +405,31 @@ The default health check:
 ### TTL Strategy
 
 **Short TTLs (seconds to minutes):**
+
 - Session data
 - Real-time information
 - High-change-rate data
 
 **Medium TTLs (hours):**
+
 - User profiles
 - Configuration
 - Computed aggregations
 
 **Long TTLs (days):**
+
 - Static content
 - Rarely-changing reference data
 
 **No TTL:**
+
 - Avoid in production - leads to unbounded memory growth
 - Use only for truly static data with manual invalidation
 
 ### Key Design
 
 Use structured key naming:
+
 ```kotlin
 // Good
 "user:${userId}:profile"
@@ -415,6 +442,7 @@ userId  // Ambiguous
 ```
 
 Benefits:
+
 - Easy to understand what's cached
 - Pattern-based operations (where supported)
 - Simpler debugging
@@ -438,6 +466,7 @@ class MapCache(
 ```
 
 **Entry Structure:**
+
 ```kotlin
 data class Entry(
     val value: Any?,      // Stored untyped
@@ -448,22 +477,22 @@ data class Entry(
 **Important Characteristics:**
 
 1. **No Serialization**: Values are stored as-is (not serialized). This is faster but means:
-   - Objects are not copied (mutations affect cached value)
-   - Memory references are preserved
-   - Not suitable for distributed scenarios
+    - Objects are not copied (mutations affect cached value)
+    - Memory references are preserved
+    - Not suitable for distributed scenarios
 
 2. **Expiration Handling**:
-   - Expired entries checked on access only
-   - No background cleanup - memory grows until keys are accessed
-   - Consider periodic `clear()` for long-running applications
+    - Expired entries checked on access only
+    - No background cleanup - memory grows until keys are accessed
+    - Consider periodic `clear()` for long-running applications
 
 3. **Thread Safety**: Depends on the backing map
-   - Use `ConcurrentHashMap` for multi-threaded access
-   - Use plain `HashMap` for single-threaded (faster)
+    - Use `ConcurrentHashMap` for multi-threaded access
+    - Use plain `HashMap` for single-threaded (faster)
 
 4. **Known Issues**:
-   - `setIfNotExists()` doesn't check if entry is expired
-   - Treats expired entry as existing, preventing new writes
+    - `setIfNotExists()` doesn't check if entry is expired
+    - Treats expired entry as existing, preventing new writes
 
 ## Platform Support
 

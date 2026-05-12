@@ -1,16 +1,19 @@
 # OpenTelemetry Cost Mitigation Guide
 
-This document describes the cost mitigation features added to the `otel-jvm` module to prevent excessive infrastructure charges from OpenTelemetry data transmission.
+This document describes the cost mitigation features added to the `otel-jvm` module to prevent excessive infrastructure
+charges from OpenTelemetry data transmission.
 
 ## Problem Statement
 
 OpenTelemetry can generate massive amounts of data in production environments:
+
 - Large stack traces from exceptions
 - High-frequency spans in busy applications
 - Verbose log messages
 - Error bursts during incidents
 
 Without proper limits, this can lead to:
+
 - Excessive network bandwidth usage
 - High costs from telemetry backends (DataDog, New Relic, Honeycomb, etc.)
 - Memory exhaustion from unbounded queues
@@ -21,6 +24,7 @@ Without proper limits, this can lead to:
 ### 1. Batch Processor Limits
 
 **Configuration:**
+
 ```kotlin
 OpenTelemetrySettings(
     url = "otlp-http://collector:4318",
@@ -31,11 +35,13 @@ OpenTelemetrySettings(
 ```
 
 **Benefits:**
+
 - Prevents unbounded memory growth
 - Fails fast when backend is slow or unavailable
 - Provides backpressure when system is overloaded
 
 **Default values:**
+
 - `maxQueueSize`: 2048 items
 - `maxExportBatchSize`: 512 items
 - `exportTimeoutMillis`: 30000 ms (30 seconds)
@@ -43,6 +49,7 @@ OpenTelemetrySettings(
 ### 2. Payload Size Limits
 
 **Configuration:**
+
 ```kotlin
 OpenTelemetrySettings(
     url = "otlp-http://collector:4318",
@@ -55,11 +62,13 @@ OpenTelemetrySettings(
 ```
 
 **Benefits:**
+
 - Prevents individual items from being excessively large
 - Truncates long attribute values automatically
 - Limits nested complexity
 
 **Default values:**
+
 - `maxAttributeLength`: 1024 characters
 - `maxSpanAttributeCount`: 128 attributes
 - `maxSpanEventCount`: 128 events
@@ -69,6 +78,7 @@ OpenTelemetrySettings(
 ### 3. Sampling
 
 **Configuration:**
+
 ```kotlin
 OpenTelemetrySettings(
     url = "otlp-http://collector:4318",
@@ -78,15 +88,18 @@ OpenTelemetrySettings(
 ```
 
 **Benefits:**
+
 - Dramatically reduces data volume (95% reduction at 5% sampling)
 - Maintains statistical validity for metrics
 - Can use parent-based sampling to keep full traces
 
 **Default values:**
+
 - `traceSamplingRatio`: 1.0 (100% - no sampling)
 - `parentBasedSampling`: true
 
 **How sampling works:**
+
 - `traceSamplingRatio = 1.0`: Export 100% of traces (no sampling)
 - `traceSamplingRatio = 0.1`: Export 10% of traces (90% cost reduction)
 - `traceSamplingRatio = 0.01`: Export 1% of traces (99% cost reduction)
@@ -95,6 +108,7 @@ OpenTelemetrySettings(
 ### 4. Rate Limiting
 
 **Configuration:**
+
 ```kotlin
 OpenTelemetrySettings(
     url = "otlp-http://collector:4318",
@@ -104,15 +118,18 @@ OpenTelemetrySettings(
 ```
 
 **Benefits:**
+
 - Prevents cost spikes during incidents
 - Limits damage from runaway error loops
 - Token bucket algorithm allows short bursts
 
 **Default values:**
+
 - `maxSpansPerSecond`: null (unlimited)
 - `maxLogsPerSecond`: null (unlimited)
 
 **How rate limiting works:**
+
 - Uses token bucket algorithm with 1-second refill
 - Allows bursts up to the configured limit
 - Drops excess items and logs a warning
@@ -122,11 +139,13 @@ OpenTelemetrySettings(
 
 Automatically applied to all log exports. Monitors log body sizes and warns when they exceed `maxLogBodyLength`.
 
-**Note:** Full truncation of log bodies is complex due to OpenTelemetry's immutable data structures. The current implementation focuses on monitoring and relies on attribute limits for actual truncation.
+**Note:** Full truncation of log bodies is complex due to OpenTelemetry's immutable data structures. The current
+implementation focuses on monitoring and relies on attribute limits for actual truncation.
 
 ## Recommended Configurations
 
 ### Development Environment
+
 ```kotlin
 OpenTelemetrySettings(
     url = "console",                  // Log to console
@@ -136,6 +155,7 @@ OpenTelemetrySettings(
 ```
 
 ### Staging Environment
+
 ```kotlin
 OpenTelemetrySettings(
     url = "otlp-http://collector:4318",
@@ -147,6 +167,7 @@ OpenTelemetrySettings(
 ```
 
 ### Production - Low Cost
+
 ```kotlin
 OpenTelemetrySettings(
     url = "otlp-http://collector:4318",
@@ -161,6 +182,7 @@ OpenTelemetrySettings(
 ```
 
 ### Production - High Fidelity
+
 ```kotlin
 OpenTelemetrySettings(
     url = "otlp-http://collector:4318",
@@ -174,6 +196,7 @@ OpenTelemetrySettings(
 ```
 
 ### Emergency - Incident Mode
+
 ```kotlin
 OpenTelemetrySettings(
     url = "otlp-http://collector:4318",
@@ -191,6 +214,7 @@ OpenTelemetrySettings(
 ### Rate Limit Warnings
 
 When rate limits are exceeded, warnings are logged:
+
 ```
 WARNING: Rate limit exceeded: dropped 42 spans
 WARNING: Rate limit exceeded: dropped 123 log records
@@ -200,11 +224,13 @@ These warnings use `java.util.logging.Logger` and appear in your application log
 
 ### Queue Overflow
 
-When `maxQueueSize` is exceeded, OpenTelemetry's BatchSpanProcessor will drop items. This is logged by OpenTelemetry itself.
+When `maxQueueSize` is exceeded, OpenTelemetry's BatchSpanProcessor will drop items. This is logged by OpenTelemetry
+itself.
 
 ### Sampling
 
 Sampled-out spans are silently dropped (not exported). To verify sampling is working:
+
 1. Generate known number of spans
 2. Check exported count in your telemetry backend
 3. Verify ratio matches `traceSamplingRatio`
@@ -214,14 +240,15 @@ Sampled-out spans are silently dropped (not exported). To verify sampling is wor
 Example cost reduction with different sampling ratios:
 
 | Sampling Ratio | Traces Exported | Cost Reduction |
-|----------------|----------------|----------------|
-| 1.0 (default)  | 100%           | 0%             |
-| 0.5            | 50%            | 50%            |
-| 0.1            | 10%            | 90%            |
-| 0.05           | 5%             | 95%            |
-| 0.01           | 1%             | 99%            |
+|----------------|-----------------|----------------|
+| 1.0 (default)  | 100%            | 0%             |
+| 0.5            | 50%             | 50%            |
+| 0.1            | 10%             | 90%            |
+| 0.05           | 5%              | 95%            |
+| 0.01           | 1%              | 99%            |
 
 **Additional reductions from:**
+
 - Payload size limits: 10-30% reduction (depends on attribute verbosity)
 - Rate limiting: Prevents unbounded spikes (protects against incidents)
 - Batch limits: Prevents memory exhaustion (improves reliability)
@@ -231,6 +258,7 @@ Example cost reduction with different sampling ratios:
 ### Rate Limiting Algorithm
 
 Uses token bucket with semaphores:
+
 - Permits are granted at configured rate per second
 - Permits refill every second
 - No blocking - excess items are immediately dropped
@@ -239,6 +267,7 @@ Uses token bucket with semaphores:
 ### Sampling Algorithm
 
 Uses OpenTelemetry's built-in samplers:
+
 - `Sampler.traceIdRatioBased(ratio)`: Consistent sampling based on trace ID
 - `Sampler.parentBasedBuilder()`: Respects parent sampling decisions
 - Sampling decision made at span creation time
@@ -247,6 +276,7 @@ Uses OpenTelemetry's built-in samplers:
 ### Span Limits
 
 Applied via `SpanLimits.builder()`:
+
 - Attribute values truncated at `maxAttributeLength`
 - Extra attributes dropped after `maxSpanAttributeCount`
 - Extra events dropped after `maxSpanEventCount`
@@ -255,6 +285,7 @@ Applied via `SpanLimits.builder()`:
 ## Backward Compatibility
 
 All new configuration parameters have sensible defaults that maintain current behavior:
+
 - Sampling defaults to 1.0 (100% - no sampling)
 - Rate limits default to null (unlimited)
 - Payload limits have generous defaults
@@ -263,6 +294,7 @@ All new configuration parameters have sensible defaults that maintain current be
 ## Testing
 
 Comprehensive tests added in `OpenTelemetrySettingsTest.kt`:
+
 - `testWithLimits()`: Tests all limits work together
 - `testLogTruncation()`: Verifies log body length monitoring
 - `testRateLimiting()`: Verifies rate limiter drops excess items
@@ -270,6 +302,7 @@ Comprehensive tests added in `OpenTelemetrySettingsTest.kt`:
 - `testBatchProcessorLimits()`: Verifies queue overflow handling
 
 Run tests with:
+
 ```bash
 ./gradlew :otel-jvm:test
 ```
@@ -277,6 +310,7 @@ Run tests with:
 ## Future Enhancements
 
 Potential improvements for future versions:
+
 1. Dynamic sampling based on error rates
 2. Metric-based sampling (sample more when errors occur)
 3. Content-aware truncation (preserve important log context)
@@ -287,6 +321,7 @@ Potential improvements for future versions:
 ## Questions?
 
 If you encounter issues or have questions about these cost mitigation features:
+
 1. Check application logs for rate limit warnings
 2. Verify configuration values match your needs
 3. Start with conservative limits and gradually increase

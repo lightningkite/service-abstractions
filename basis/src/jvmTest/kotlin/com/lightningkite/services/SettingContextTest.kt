@@ -4,6 +4,7 @@ import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.test.*
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Tests for SettingContext and related functionality.
@@ -23,7 +24,7 @@ class SettingContextTest {
 
     @Test
     fun testTestSettingContextWithCustomClock() {
-        val fixedInstant = kotlinx.datetime.Instant.parse("2025-01-01T00:00:00Z")
+        val fixedInstant = Instant.parse("2025-01-01T00:00:00Z")
         val customClock = object : Clock {
             override fun now() = fixedInstant
         }

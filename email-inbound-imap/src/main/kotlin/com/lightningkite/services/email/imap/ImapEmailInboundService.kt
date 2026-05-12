@@ -1,39 +1,20 @@
 package com.lightningkite.services.email.imap
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
-import com.lightningkite.services.email.EmailAddressWithName
-import com.lightningkite.services.email.EmailEnvelope
-import com.lightningkite.services.email.EmailInboundService
-import com.lightningkite.services.email.ReceivedAttachment
-import com.lightningkite.services.email.ReceivedEmail
-import com.lightningkite.toEmailAddress
+import com.lightningkite.services.data.*
+import com.lightningkite.services.email.*
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.HttpClient
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import jakarta.mail.BodyPart
-import jakarta.mail.Flags
-import jakarta.mail.Folder
-import jakarta.mail.Message
-import jakarta.mail.Multipart
-import jakarta.mail.Part
-import jakarta.mail.Session
-import jakarta.mail.Store
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.http.*
+import jakarta.mail.*
 import jakarta.mail.internet.InternetAddress
 import jakarta.mail.internet.MimeMessage
-import kotlin.time.Instant
+import kotlinx.serialization.json.Json
 import java.net.URLDecoder
-import java.util.Properties
+import java.util.*
+import kotlin.time.Instant
 
 private val logger = KotlinLogging.logger("ImapEmailInboundService")
 
@@ -183,7 +164,7 @@ public class ImapEmailInboundService(
             ?.filter { it.isNotBlank() }
             ?.map {
                 URLDecoder.decode(it.substringBefore('='), "UTF-8") to
-                    URLDecoder.decode(it.substringAfter('=', ""), "UTF-8")
+                        URLDecoder.decode(it.substringAfter('=', ""), "UTF-8")
             }
             ?.groupBy { it.first }
             ?.mapValues { it.value.map { it.second } }
@@ -338,11 +319,11 @@ public class ImapEmailInboundService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): ReceivedEmail {
             throw UnsupportedOperationException(
                 "IMAP is a pull-based protocol and does not support inbound webhooks. " +
-                "Use onSchedule() to poll for new emails instead."
+                        "Use onSchedule() to poll for new emails instead."
             )
         }
 
@@ -484,7 +465,7 @@ public class ImapEmailInboundService(
     private data class ContentResult(
         val plainText: String?,
         val html: String?,
-        val attachments: List<ReceivedAttachment>
+        val attachments: List<ReceivedAttachment>,
     )
 
     private fun parseContent(part: Part): ContentResult {
@@ -496,9 +477,11 @@ public class ImapEmailInboundService(
             part.isMimeType("text/plain") -> {
                 plainText = part.content as? String
             }
+
             part.isMimeType("text/html") -> {
                 html = part.content as? String
             }
+
             part.isMimeType("multipart/*") -> {
                 val multipart = part.content as Multipart
                 for (i in 0 until multipart.count) {
@@ -510,10 +493,12 @@ public class ImapEmailInboundService(
                     attachments.addAll(result.attachments)
                 }
             }
+
             Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) ||
-            Part.INLINE.equals(part.disposition, ignoreCase = true) -> {
+                    Part.INLINE.equals(part.disposition, ignoreCase = true) -> {
                 attachments.add(parseAttachment(part))
             }
+
             else -> {
                 // Check if it has a filename (likely an attachment)
                 if (part.fileName != null) {

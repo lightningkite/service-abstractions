@@ -1,15 +1,10 @@
 package com.lightningkite.services.speech.local
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.speech.TextToSpeechService
-import com.lightningkite.services.speech.TtsSynthesisOptions
-import com.lightningkite.services.speech.TtsVoiceConfig
+import com.lightningkite.services.speech.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class FreeTtsTextToSpeechServiceTest {
 
@@ -91,6 +86,6 @@ class FreeTtsTextToSpeechServiceTest {
         val service = createService()
         val status = service.healthCheck()
 
-        assertEquals(com.lightningkite.services.HealthStatus.Level.OK, status.level)
+        assertEquals(com.lightningkite.services.data.HealthStatus.Level.OK, status.level)
     }
 }

@@ -22,7 +22,7 @@ public data class TranscriptionOptions(
     val speakerDiarization: Boolean = false,
     val maxSpeakers: Int? = null,
     val audioEvents: Boolean = false,
-    val prompt: String? = null
+    val prompt: String? = null,
 )
 
 /**
@@ -44,7 +44,7 @@ public data class TranscriptionResult(
     val words: List<TranscribedWord> = emptyList(),
     val speakers: List<SpeakerSegment> = emptyList(),
     val audioEvents: List<AudioEvent> = emptyList(),
-    val duration: Duration? = null
+    val duration: Duration? = null,
 )
 
 /**
@@ -62,7 +62,7 @@ public data class TranscribedWord(
     val startTime: Duration,
     val endTime: Duration,
     val confidence: Float? = null,
-    val speakerId: String? = null
+    val speakerId: String? = null,
 )
 
 /**
@@ -81,7 +81,7 @@ public data class SpeakerSegment(
     val speakerId: String,
     val startTime: Duration,
     val endTime: Duration,
-    val text: String
+    val text: String,
 )
 
 /**
@@ -95,7 +95,7 @@ public data class SpeakerSegment(
 public data class AudioEvent(
     val type: AudioEventType,
     val startTime: Duration,
-    val endTime: Duration
+    val endTime: Duration,
 )
 
 /**

@@ -11,7 +11,7 @@ public class TestEmailService(override val name: String, override val context: S
      * The list of emails that have been sent.
      */
     private val _sentEmails: MutableList<Email> = mutableListOf()
-    
+
     /**
      * Access to sent emails.
      */
@@ -36,7 +36,7 @@ public class TestEmailService(override val name: String, override val context: S
      * Returns the last email sent to the specified address, or null if none was sent.
      */
     public fun lastEmailTo(email: String): Email? {
-        return sentEmails.lastOrNull { emailObj -> 
+        return sentEmails.lastOrNull { emailObj ->
             emailObj.to.any { it.value.toString() == email }
         }
     }
@@ -45,7 +45,7 @@ public class TestEmailService(override val name: String, override val context: S
      * Returns all emails sent to the specified address.
      */
     public fun emailsTo(email: String): List<Email> {
-        return sentEmails.filter { emailObj -> 
+        return sentEmails.filter { emailObj ->
             emailObj.to.any { it.value.toString() == email }
         }
     }

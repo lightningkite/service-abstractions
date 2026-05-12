@@ -1,6 +1,5 @@
 package com.lightningkite.services.email.ses
 
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.cert.X509v3CertificateBuilder
@@ -9,17 +8,12 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import java.math.BigInteger
-import java.security.KeyPair
-import java.security.KeyPairGenerator
-import java.security.PrivateKey
-import java.security.Security
-import java.security.Signature
+import java.security.*
 import java.security.cert.X509Certificate
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.Base64
-import java.util.Date
+import java.util.*
 
 /**
  * Test utilities for generating and signing SNS notifications.
@@ -129,7 +123,8 @@ object SnsTestUtils {
             append("\n")
 
             if (notification.Type == "SubscriptionConfirmation" ||
-                notification.Type == "UnsubscribeConfirmation") {
+                notification.Type == "UnsubscribeConfirmation"
+            ) {
                 if (notification.SubscribeURL != null) {
                     append("SubscribeURL\n")
                     append(notification.SubscribeURL)
@@ -148,7 +143,8 @@ object SnsTestUtils {
             append("\n")
 
             if (notification.Type == "SubscriptionConfirmation" ||
-                notification.Type == "UnsubscribeConfirmation") {
+                notification.Type == "UnsubscribeConfirmation"
+            ) {
                 if (notification.Token != null) {
                     append("Token\n")
                     append(notification.Token)
@@ -181,7 +177,7 @@ object SnsTestUtils {
         subject: String? = null,
         subscribeUrl: String? = null,
         token: String? = null,
-        signatureVersion: String = "2"
+        signatureVersion: String = "2",
     ): SnsNotification {
         val timestamp = DateTimeFormatter.ISO_INSTANT.format(Instant.now().atOffset(ZoneOffset.UTC))
 
@@ -218,7 +214,7 @@ object SnsTestUtils {
         plainText: String = "Hello, this is a test email.",
         html: String? = null,
         messageId: String = "test-message-id@example.com",
-        includeContent: Boolean = true
+        includeContent: Boolean = true,
     ): String {
         val mimeContent = if (includeContent) {
             buildMimeMessage(from, to, subject, plainText, html, messageId)
@@ -271,7 +267,7 @@ object SnsTestUtils {
         subject: String,
         plainText: String,
         html: String? = null,
-        messageId: String = "test@example.com"
+        messageId: String = "test@example.com",
     ): String {
         return if (html != null) {
             // Multipart alternative
@@ -317,12 +313,12 @@ object SnsTestUtils {
         certUrl: String,
         topicArn: String = "arn:aws:sns:us-east-1:123456789012:test-topic",
         subscribeUrl: String = "https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&TopicArn=...",
-        token: String = "test-token-12345"
+        token: String = "test-token-12345",
     ): SnsNotification {
         return createSignedNotification(
             type = "SubscriptionConfirmation",
             message = "You have chosen to subscribe to the topic $topicArn. " +
-                "To confirm the subscription, visit the SubscribeURL included in this message.",
+                    "To confirm the subscription, visit the SubscribeURL included in this message.",
             privateKey = privateKey,
             certUrl = certUrl,
             topicArn = topicArn,

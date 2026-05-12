@@ -12,7 +12,7 @@ public class SecurityException(message: String? = null, cause: Throwable? = null
  */
 public open class ModelPermissionsTable<Model : Any>(
     override val wraps: Table<Model>,
-    private val permissions: ModelPermissions<Model>
+    private val permissions: ModelPermissions<Model>,
 ) : Table<Model> {
     override val serializer: KSerializer<Model> get() = wraps.serializer
     private val textIndexPaths = serializer.descriptor.annotations.filterIsInstance<TextIndex>()
@@ -24,7 +24,7 @@ public open class ModelPermissionsTable<Model : Any>(
         orderBy: List<SortPart<Model>>,
         skip: Int,
         limit: Int,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<Model> {
         val sortImposedConditions = permissions.readMask.permitSort(orderBy)
         return wraps.find(
@@ -43,12 +43,15 @@ public open class ModelPermissionsTable<Model : Any>(
         vectorField: DataClassPath<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> {
         return wraps.findSimilar(
             vectorField = vectorField,
             params = params,
-            condition = condition and permissions.read and permissions.readMask(condition, textIndexPaths) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
+            condition = condition and permissions.read and permissions.readMask(
+                condition,
+                textIndexPaths
+            ) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
             maxQueryMs = maxQueryMs
         ).map { it.copy(model = permissions.mask(it.model)) }
     }
@@ -57,12 +60,15 @@ public open class ModelPermissionsTable<Model : Any>(
         vectorField: DataClassPath<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> {
         return wraps.findSimilarSparse(
             vectorField = vectorField,
             params = params,
-            condition = condition and permissions.read and permissions.readMask(condition, textIndexPaths) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
+            condition = condition and permissions.read and permissions.readMask(
+                condition,
+                textIndexPaths
+            ) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
             maxQueryMs = maxQueryMs
         ).map { it.copy(model = permissions.mask(it.model)) }
     }
@@ -73,7 +79,7 @@ public open class ModelPermissionsTable<Model : Any>(
         orderBy: List<SortPart<Model>>,
         skip: Int,
         limit: Int,
-        maxQueryMs: Long
+        maxQueryMs: Long,
     ): Flow<Partial<Model>> {
         val sortImposedConditions = permissions.readMask.permitSort(orderBy)
         val allFields = fields.toMutableSet()
@@ -105,7 +111,7 @@ public open class ModelPermissionsTable<Model : Any>(
 
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>
+        groupBy: DataClassPath<Model, Key>,
     ): Map<Key, Int> {
         return wraps.groupCount(
             condition and permissions.read and permissions.readMask(groupBy) and permissions.readMask(
@@ -119,7 +125,7 @@ public open class ModelPermissionsTable<Model : Any>(
     override suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: DataClassPath<Model, N>
+        property: DataClassPath<Model, N>,
     ): Double? =
         wraps.aggregate(
             aggregate,
@@ -131,7 +137,7 @@ public open class ModelPermissionsTable<Model : Any>(
         aggregate: Aggregate,
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>
+        property: DataClassPath<Model, N>,
     ): Map<Key, Double?> = wraps.groupAggregate(
         aggregate,
         condition and permissions.read and permissions.readMask(groupBy) and permissions.readMask(
@@ -145,7 +151,7 @@ public open class ModelPermissionsTable<Model : Any>(
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> {
         val sortImposedConditions = permissions.readMask.permitSort(orderBy)
         return wraps.replaceOne(
@@ -158,7 +164,7 @@ public open class ModelPermissionsTable<Model : Any>(
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model> {
         if (!permissions.create(model)) throw SecurityException("You do not have permission to insert this instance.  You can only insert instances that adhere to the following condition: ${permissions.create}")
         return wraps.upsertOne(condition and permissions.allowed(modification), modification, model)
@@ -168,7 +174,7 @@ public open class ModelPermissionsTable<Model : Any>(
     override suspend fun updateOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): EntryChange<Model> {
         val sortImposedConditions = permissions.readMask.permitSort(orderBy)
         return wraps.updateOne(
@@ -182,7 +188,7 @@ public open class ModelPermissionsTable<Model : Any>(
     override suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean {
         val sortImposedConditions = permissions.readMask.permitSort(orderBy)
         return wraps.updateOneIgnoringResult(
@@ -208,7 +214,7 @@ public open class ModelPermissionsTable<Model : Any>(
     override suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>>
+        orderBy: List<SortPart<Model>>,
     ): Boolean {
         val sortImposedConditions = permissions.readMask.permitSort(orderBy)
         return wraps.replaceOneIgnoringResult(
@@ -221,7 +227,7 @@ public open class ModelPermissionsTable<Model : Any>(
     override suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean {
         if (!permissions.create(model)) throw SecurityException("You do not have permission to insert this instance.  You can only insert instances that adhere to the following condition: ${permissions.create}")
         return wraps.upsertOneIgnoringResult(condition and permissions.allowed(modification), modification, model)
@@ -229,7 +235,7 @@ public open class ModelPermissionsTable<Model : Any>(
 
     override suspend fun updateMany(
         condition: Condition<Model>,
-        modification: Modification<Model>
+        modification: Modification<Model>,
     ): CollectionChanges<Model> {
         return wraps.updateMany(condition and permissions.allowed(modification), modification)
             .map { permissions.mask(it) }

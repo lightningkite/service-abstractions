@@ -6,8 +6,8 @@ import aws.sdk.kotlin.services.s3.S3Client
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import aws.smithy.kotlin.runtime.auth.awscredentials.CredentialsProvider
 import aws.smithy.kotlin.runtime.collections.Attributes
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
+import com.lightningkite.services.data.MediaType
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
@@ -130,7 +130,7 @@ public class S3PublicFileSystem(
     public val credentialProvider: CredentialsProvider,
     public val bucket: String,
     public val signedUrlDuration: Duration? = null,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : PublicFileSystem {
 
     internal val tracer: io.opentelemetry.api.trace.Tracer? = context.openTelemetry?.getTracer("files-s3-kmp")
@@ -237,8 +237,8 @@ public class S3PublicFileSystem(
                     Regex("""s3:\/\/(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com\/?(?:\?(?<params>.*))?""")
                 val match = regex.matchEntire(url) ?: throw IllegalArgumentException(
                     "Invalid S3 URL. The URL should match one of the pattern:" +
-                            "   s3://[user]:[password]@[bucket].[region].amazonaws.com/?[params],"+
-                            "   s3://[profile]@[bucket].[region].amazonaws.com/?[params],"+
+                            "   s3://[user]:[password]@[bucket].[region].amazonaws.com/?[params]," +
+                            "   s3://[profile]@[bucket].[region].amazonaws.com/?[params]," +
                             "       Available params are: signedUrlDuration"
                 )
 
@@ -261,7 +261,7 @@ public class S3PublicFileSystem(
 
                 val signedUrlDuration = params["signedUrlDuration"].let {
                     val value = it?.firstOrNull()
-                    when{
+                    when {
                         value == null -> 1.hours
                         value == "forever" || value == "null" -> null
                         value.all { it.isDigit() } -> value.toLong().seconds
@@ -279,9 +279,11 @@ public class S3PublicFileSystem(
                                 password
                             )
                         )
+
                         profile.isNotBlank() -> {
                             DefaultChainCredentialsProvider(profileName = profile)
                         }
+
                         else -> DefaultChainCredentialsProvider()
                     },
                     bucket = bucket,

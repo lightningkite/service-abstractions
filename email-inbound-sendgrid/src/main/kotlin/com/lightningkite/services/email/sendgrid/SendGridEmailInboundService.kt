@@ -1,27 +1,17 @@
 package com.lightningkite.services.email.sendgrid
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.services.Untested
-import com.lightningkite.MediaType
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
+import com.lightningkite.services.*
+import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
-import com.lightningkite.toEmailAddress
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import io.opentelemetry.api.trace.*
+import kotlinx.serialization.json.*
 import java.security.KeyFactory
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
-import java.util.Base64
+import java.util.*
+import kotlin.uuid.Uuid
 
 private val logger = KotlinLogging.logger("SendGridEmailInboundService")
 
@@ -99,8 +89,8 @@ public class SendGridEmailInboundService(
                 val verificationKey = uri.userInfo?.takeIf { it.isNotBlank() }
                     ?: throw IllegalArgumentException(
                         "SendGrid verification key is required. " +
-                        "URL format: sendgrid://VERIFICATION_KEY@ " +
-                        "Get your public verification key from SendGrid Settings > Mail Settings > Event Webhooks > Security features"
+                                "URL format: sendgrid://VERIFICATION_KEY@ " +
+                                "Get your public verification key from SendGrid Settings > Mail Settings > Event Webhooks > Security features"
                     )
                 SendGridEmailInboundService(name, context, verificationKey)
             }
@@ -118,7 +108,7 @@ public class SendGridEmailInboundService(
          * @return Settings configured for SendGrid inbound email
          */
         public fun EmailInboundService.Settings.Companion.sendgrid(
-            verificationKey: String
+            verificationKey: String,
         ): EmailInboundService.Settings {
             return EmailInboundService.Settings(
                 "sendgrid://${java.net.URLEncoder.encode(verificationKey, "UTF-8")}@"
@@ -135,7 +125,7 @@ public class SendGridEmailInboundService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): ReceivedEmail {
             val span = tracer?.spanBuilder("email.webhook.parse")
                 ?.setSpanKind(SpanKind.SERVER)
@@ -160,7 +150,7 @@ public class SendGridEmailInboundService(
                     if (!body.mediaType.accepts(MediaType.MultiPart.FormData)) {
                         throw IllegalArgumentException(
                             "Expected multipart/form-data but got ${body.mediaType}. " +
-                            "Ensure SendGrid Inbound Parse is configured correctly."
+                                    "Ensure SendGrid Inbound Parse is configured correctly."
                         )
                     }
 
@@ -218,7 +208,8 @@ public class SendGridEmailInboundService(
             // Check for end boundary
             if (data.size >= position + endBoundaryBytes.size &&
                 data.sliceArray(position until position + endBoundaryBytes.size)
-                    .contentEquals(endBoundaryBytes)) {
+                    .contentEquals(endBoundaryBytes)
+            ) {
                 break
             }
 
@@ -242,7 +233,8 @@ public class SendGridEmailInboundService(
             // Remove trailing CRLF before boundary
             val actualBodyEnd = if (bodyEnd >= 2 &&
                 data[bodyEnd - 2] == '\r'.code.toByte() &&
-                data[bodyEnd - 1] == '\n'.code.toByte()) {
+                data[bodyEnd - 1] == '\n'.code.toByte()
+            ) {
                 bodyEnd - 2
             } else {
                 bodyEnd
@@ -342,15 +334,17 @@ public class SendGridEmailInboundService(
         // Extract Message-ID from headers
         val messageId = emailHeaders["message-id"]?.firstOrNull()
             ?: emailHeaders["x-message-id"]?.firstOrNull()
-            ?: java.util.UUID.randomUUID().toString()
+            ?: Uuid.random().toString()
 
         // Extract threading headers
         val inReplyTo = emailHeaders["in-reply-to"]?.firstOrNull()
         val references = emailHeaders["references"]?.firstOrNull()?.split(Regex("\\s+")) ?: emptyList()
 
         // Parse attachments (any file part that isn't a standard field)
-        val standardFields = setOf("from", "to", "cc", "subject", "text", "html", "envelope",
-            "charsets", "headers", "spam_score", "spam_report", "dkim", "SPF")
+        val standardFields = setOf(
+            "from", "to", "cc", "subject", "text", "html", "envelope",
+            "charsets", "headers", "spam_score", "spam_report", "dkim", "SPF"
+        )
 
         val attachments = parts.entries
             .filter { (name, _) -> name !in standardFields }
@@ -456,6 +450,7 @@ public class SendGridEmailInboundService(
                 val email = trimmed.substringAfter("<").substringBefore(">").trim()
                 EmailAddressWithName(email.toEmailAddress(), name.ifEmpty { null })
             }
+
             else -> EmailAddressWithName(trimmed.toEmailAddress())
         }
     }
@@ -485,7 +480,7 @@ public class SendGridEmailInboundService(
     private fun verifySignature(
         headers: Map<String, List<String>>,
         rawBody: ByteArray,
-        publicKeyBase64: String
+        publicKeyBase64: String,
     ) {
         // Get signature and timestamp from headers (case-insensitive)
         val headersLower = headers.mapKeys { it.key.lowercase() }
@@ -553,7 +548,7 @@ public class SendGridEmailInboundService(
         val name: String,
         val filename: String?,
         val contentType: String,
-        val data: ByteArray
+        val data: ByteArray,
     ) {
         fun dataAsString(): String = String(data)
 

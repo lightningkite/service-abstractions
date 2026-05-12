@@ -1,9 +1,8 @@
 package com.lightningkite.services.email.javasmtp
 
+import com.lightningkite.services.data.toEmailAddress
 import com.lightningkite.services.email.EmailService
-import com.lightningkite.services.terraform.TerraformNeed
 import com.lightningkite.services.test.assertPlannableAwsDomain
-import com.lightningkite.toEmailAddress
 import kotlin.test.Test
 
 class TfTest {
@@ -11,6 +10,7 @@ class TfTest {
         JavaSmtpEmailService
     }
 
+    @Suppress("DEPRECATION")
     @Test
     fun testSesSmtpWithDomain() {
         assertPlannableAwsDomain<EmailService.Settings>("aws-ses") {

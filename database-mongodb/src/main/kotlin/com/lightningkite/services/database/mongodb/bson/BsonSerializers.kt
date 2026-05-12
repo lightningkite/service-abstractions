@@ -15,42 +15,13 @@
  */
 package com.lightningkite.services.database.mongodb.bson
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.Serializer
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.plus
-import org.bson.BsonArray
-import org.bson.BsonBinary
-import org.bson.BsonBoolean
-import org.bson.BsonDateTime
-import org.bson.BsonDbPointer
-import org.bson.BsonDecimal128
-import org.bson.BsonDocument
-import org.bson.BsonDouble
-import org.bson.BsonInt32
-import org.bson.BsonInt64
-import org.bson.BsonJavaScript
-import org.bson.BsonJavaScriptWithScope
-import org.bson.BsonMaxKey
-import org.bson.BsonMinKey
-import org.bson.BsonNull
-import org.bson.BsonObjectId
-import org.bson.BsonRegularExpression
-import org.bson.BsonString
-import org.bson.BsonSymbol
-import org.bson.BsonTimestamp
-import org.bson.BsonUndefined
-import org.bson.BsonValue
-import org.bson.RawBsonArray
-import org.bson.RawBsonDocument
+import org.bson.*
 import org.bson.types.ObjectId
 
 /**
@@ -66,9 +37,10 @@ public val defaultSerializersModule: SerializersModule =
 
 @JvmInline
 @Serializable(KObjectIdSerializer::class)
-public value class KObjectId(public val value: ObjectId): Comparable<KObjectId> {
-    public constructor(hexString: String): this(value = ObjectId(hexString))
-    public constructor(): this(value = ObjectId())
+public value class KObjectId(public val value: ObjectId) : Comparable<KObjectId> {
+    public constructor(hexString: String) : this(value = ObjectId(hexString))
+    public constructor() : this(value = ObjectId())
+
     override fun compareTo(other: KObjectId): Int {
         return value.compareTo(other.value)
     }
@@ -76,7 +48,8 @@ public value class KObjectId(public val value: ObjectId): Comparable<KObjectId> 
 
 @OptIn(ExperimentalSerializationApi::class)
 public object KObjectIdSerializer : KSerializer<KObjectId> {
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("com.lightningkite.services.database.mongodb.bson.KObjectId", PrimitiveKind.STRING)
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("com.lightningkite.services.database.mongodb.bson.KObjectId", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: KObjectId) {
         when (encoder) {
@@ -92,6 +65,7 @@ public object KObjectIdSerializer : KSerializer<KObjectId> {
         }
     }
 }
+
 @OptIn(ExperimentalSerializationApi::class)
 public object ObjectIdSerializer : KSerializer<ObjectId> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("ObjectIdSerializer", PrimitiveKind.STRING)
@@ -116,7 +90,6 @@ public object ObjectIdSerializer : KSerializer<ObjectId> {
 }
 
 @ExperimentalSerializationApi
-@Serializer(forClass = BsonValue::class)
 public object BsonValueSerializer : KSerializer<BsonValue> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("BsonValueSerializer", PrimitiveKind.STRING)
 

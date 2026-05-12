@@ -84,8 +84,10 @@ public sealed class TurnDetection {
     public enum class Eagerness {
         /** Wait longer before responding; good for thoughtful conversations */
         LOW,
+
         /** Balanced response timing */
         AUTO,
+
         /** Respond quickly; good for rapid Q&A */
         HIGH,
     }

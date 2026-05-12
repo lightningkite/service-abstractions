@@ -48,7 +48,8 @@ class S3PublicFileSystemTest : FileSystemTests() {
      * than the official AWS SDK presigner. It generates 10,000 signed URLs with each
      * method and compares the execution times.
      */
-    @Test fun signingPerformance() {
+    @Test
+    fun signingPerformance() {
         val system = system ?: return
         val file = system.root.then("test.txt")
         val mine = performance(10_000) {
@@ -70,7 +71,8 @@ class S3PublicFileSystemTest : FileSystemTests() {
      * - Bucket names without profile/credentials (uses default credential chain)
      * - Query parameters (signedUrlDuration with duration format like "1d")
      */
-    @Test fun settingParse() {
+    @Test
+    fun settingParse() {
         S3PublicFileSystem
         PublicFileSystem.Settings("s3://demo-example-files20220920193513533900000004.s3-us-west-2.amazonaws.com/?signedUrlDuration=1d")
             .invoke("test", TestSettingContext()) as? S3PublicFileSystem

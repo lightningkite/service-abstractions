@@ -10,8 +10,6 @@ import io.opentelemetry.sdk.metrics.export.MetricExporter
 import io.opentelemetry.sdk.trace.data.SpanData
 import io.opentelemetry.sdk.trace.export.SpanExporter
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.logging.Level
-import java.util.logging.Logger
 
 internal object PrintSpanExporter : SpanExporter {
     private val isShutdown = AtomicBoolean()
@@ -24,7 +22,7 @@ internal object PrintSpanExporter : SpanExporter {
         }
 
         val start = System.nanoTime()
-        for(span in spans) {
+        for (span in spans) {
             println("${span.name} (${span.traceId}/${span.spanId}) took ${span.endEpochNanos - span.startEpochNanos} nanoseconds")
             span.events.forEach {
                 println("  ${it.name} (${it.epochNanos - span.startEpochNanos} nanoseconds)")
@@ -100,12 +98,13 @@ internal object PrintMetricExporter : MetricExporter {
     }
 }
 
-internal object PrintLogExporter: LogRecordExporter {
+internal object PrintLogExporter : LogRecordExporter {
     override fun export(logs: Collection<LogRecordData>): CompletableResultCode {
         println("Got logs: ${logs.size}")
         logs.forEach { it -> println("LOG (${it.spanContext.traceId}/${it.spanContext.spanId}): ${it.bodyValue?.value}") }
         return CompletableResultCode.ofSuccess()
     }
+
     override fun flush(): CompletableResultCode = CompletableResultCode.ofSuccess()
     override fun shutdown(): CompletableResultCode = CompletableResultCode.ofSuccess()
 }

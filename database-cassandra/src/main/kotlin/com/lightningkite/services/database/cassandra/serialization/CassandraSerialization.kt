@@ -27,7 +27,7 @@ import java.util.UUID
  * Serializes/deserializes Kotlin objects to/from Cassandra rows using JSON as intermediate.
  */
 public class CassandraSerialization(
-    public val serializersModule: SerializersModule
+    public val serializersModule: SerializersModule,
 ) {
     private val json = Json {
         serializersModule = this@CassandraSerialization.serializersModule
@@ -106,7 +106,12 @@ public class CassandraSerialization(
         return prop.get(obj)
     }
 
-    private fun rowValueToJson(row: Row, index: Int, dataType: DataType, fieldDescriptor: SerialDescriptor? = null): JsonElement? {
+    private fun rowValueToJson(
+        row: Row,
+        index: Int,
+        dataType: DataType,
+        fieldDescriptor: SerialDescriptor? = null,
+    ): JsonElement? {
         return when {
             row.isNull(index) -> JsonNull
             dataType == DataTypes.ASCII || dataType == DataTypes.TEXT -> {
@@ -114,7 +119,8 @@ public class CassandraSerialization(
                 // If the field descriptor indicates a complex type (CLASS, OBJECT), parse the JSON string
                 if (fieldDescriptor != null &&
                     (fieldDescriptor.kind == StructureKind.CLASS || fieldDescriptor.kind == StructureKind.OBJECT) &&
-                    (stringValue.startsWith("{") || stringValue.startsWith("["))) {
+                    (stringValue.startsWith("{") || stringValue.startsWith("["))
+                ) {
                     try {
                         Json.parseToJsonElement(stringValue)
                     } catch (e: Exception) {
@@ -124,6 +130,7 @@ public class CassandraSerialization(
                     JsonPrimitive(stringValue)
                 }
             }
+
             dataType == DataTypes.BIGINT -> JsonPrimitive(row.getLong(index))
             dataType == DataTypes.BLOB -> JsonPrimitive(row.getByteBuffer(index)?.let { encodeBase64(it) })
             dataType == DataTypes.BOOLEAN -> JsonPrimitive(row.getBoolean(index))
@@ -136,10 +143,12 @@ public class CassandraSerialization(
                 val instant = row.getInstant(index)
                 if (instant != null) JsonPrimitive(instant.toString()) else JsonNull
             }
+
             dataType == DataTypes.UUID || dataType == DataTypes.TIMEUUID -> {
                 val uuid = row.getUuid(index)
                 if (uuid != null) JsonPrimitive(uuid.toString()) else JsonNull
             }
+
             dataType == DataTypes.VARINT -> JsonPrimitive(row.getBigInteger(index))
             dataType == DataTypes.SMALLINT -> JsonPrimitive(row.getShort(index))
             dataType == DataTypes.TINYINT -> JsonPrimitive(row.getByte(index))
@@ -147,18 +156,22 @@ public class CassandraSerialization(
                 val date = row.getLocalDate(index)
                 if (date != null) JsonPrimitive(date.toString()) else JsonNull
             }
+
             dataType == DataTypes.TIME -> {
                 val time = row.getLocalTime(index)
                 if (time != null) JsonPrimitive(time.toString()) else JsonNull
             }
+
             dataType == DataTypes.DURATION -> {
                 val duration = row.getCqlDuration(index)
                 if (duration != null) JsonPrimitive(duration.toString()) else JsonNull
             }
+
             dataType == DataTypes.INET -> {
                 val inet = row.getInetAddress(index)
                 if (inet != null) JsonPrimitive(inet.hostAddress) else JsonNull
             }
+
             dataType is ListType -> {
                 // Use getObject to get the list as a native Java type, avoiding codec issues
                 @Suppress("UNCHECKED_CAST")
@@ -167,6 +180,7 @@ public class CassandraSerialization(
                     list.forEach { item -> add(anyToJson(item)) }
                 }
             }
+
             dataType is SetType -> {
                 // Use getObject to get the set as a native Java type, avoiding codec issues
                 @Suppress("UNCHECKED_CAST")
@@ -175,6 +189,7 @@ public class CassandraSerialization(
                     set.forEach { item -> add(anyToJson(item)) }
                 }
             }
+
             dataType is MapType -> {
                 // Use getObject to get the map as a native Java type, avoiding codec issues
                 @Suppress("UNCHECKED_CAST")
@@ -183,10 +198,12 @@ public class CassandraSerialization(
                     map.forEach { (k, v) -> put(k.toString(), anyToJson(v)) }
                 }
             }
+
             dataType is UserDefinedType -> {
                 val udt = row.getUdtValue(index) ?: return JsonNull
                 udtToJson(udt)
             }
+
             else -> JsonPrimitive(row.getObject(index)?.toString())
         }
     }
@@ -197,7 +214,8 @@ public class CassandraSerialization(
             is String -> {
                 // Check if the string is actually a JSON object/array (embedded objects stored as TEXT)
                 if ((value.startsWith("{") && value.endsWith("}")) ||
-                    (value.startsWith("[") && value.endsWith("]"))) {
+                    (value.startsWith("[") && value.endsWith("]"))
+                ) {
                     try {
                         Json.parseToJsonElement(value)
                     } catch (e: Exception) {
@@ -207,6 +225,7 @@ public class CassandraSerialization(
                     JsonPrimitive(value)
                 }
             }
+
             is Number -> JsonPrimitive(value)
             is Boolean -> JsonPrimitive(value)
             is UUID -> JsonPrimitive(value.toString())
@@ -220,6 +239,7 @@ public class CassandraSerialization(
             is Map<*, *> -> buildJsonObject {
                 value.forEach { (k, v) -> put(k.toString(), anyToJson(v)) }
             }
+
             is UdtValue -> udtToJson(value)
             else -> JsonPrimitive(value.toString())
         }
@@ -260,9 +280,11 @@ public class CassandraSerialization(
                     "kotlin.uuid.Uuid", "com.lightningkite.UUID" -> {
                         content?.let { java.util.UUID.fromString(it) }
                     }
+
                     "kotlinx.datetime.Instant", "kotlin.time.Instant" -> {
                         content?.let { java.time.Instant.parse(it) }
                     }
+
                     else -> content
                 }
             }
@@ -297,10 +319,12 @@ public class CassandraSerialization(
                         val uuidStr = (element as? JsonPrimitive)?.contentOrNull
                         uuidStr?.let { java.util.UUID.fromString(it) }
                     }
+
                     "kotlinx.datetime.Instant", "kotlin.time.Instant" -> {
                         val instant = (element as? JsonPrimitive)?.contentOrNull
                         instant?.let { java.time.Instant.parse(it) }
                     }
+
                     else -> {
                         // by Claude - fix for inline value class escaping bug:
                         // Inline value classes (like GrantedScope) serialize as primitives but have
@@ -349,10 +373,12 @@ public class CassandraSerialization(
                             longVal
                         }
                     }
+
                     element.doubleOrNull != null -> element.double
                     else -> element.content
                 }
             }
+
             is JsonArray -> element.map { jsonElementToValue(it) }
             is JsonObject -> element.mapValues { (_, v) -> jsonElementToValue(v) }
         }
@@ -371,7 +397,7 @@ public class CassandraSerialization(
  */
 public data class FlattenedColumn(
     val name: String,
-    val cqlType: String
+    val cqlType: String,
 )
 
 /**
@@ -383,7 +409,7 @@ public data class FlattenedColumn(
 public fun SerialDescriptor.generateFlattenedColumns(
     prefix: String = "",
     separator: String = "__",
-    visited: MutableSet<String> = mutableSetOf() // by Claude - track visited types to prevent infinite recursion
+    visited: MutableSet<String> = mutableSetOf(), // by Claude - track visited types to prevent infinite recursion
 ): List<FlattenedColumn> {
     return buildList {
         for (i in 0 until elementsCount) {
@@ -504,18 +530,21 @@ public fun SerialDescriptor.toCqlType(insideCollection: Boolean = false): String
                 else -> "text"
             }
         }
+
         SerialKind.ENUM -> "text"
         StructureKind.LIST -> {
             // by Claude - nested collections require frozen<> in Cassandra
             val elementType = getElementDescriptor(0).toCqlType(insideCollection = true)
-            val collectionType = if (baseSerialName.contains("Set") || baseSerialName.contains("kotlin.collections.LinkedHashSet")) {
-                "set<$elementType>"
-            } else {
-                "list<$elementType>"
-            }
+            val collectionType =
+                if (baseSerialName.contains("Set") || baseSerialName.contains("kotlin.collections.LinkedHashSet")) {
+                    "set<$elementType>"
+                } else {
+                    "list<$elementType>"
+                }
             // Wrap in frozen<> if we're inside another collection
             if (insideCollection) "frozen<$collectionType>" else collectionType
         }
+
         StructureKind.MAP -> {
             // by Claude - nested collections require frozen<> in Cassandra
             val keyType = getElementDescriptor(0).toCqlType(insideCollection = true)
@@ -524,6 +553,7 @@ public fun SerialDescriptor.toCqlType(insideCollection: Boolean = false): String
             // Wrap in frozen<> if we're inside another collection
             if (insideCollection) "frozen<$collectionType>" else collectionType
         }
+
         else -> {
             // Check for known types by serial name
             // by Claude - use baseSerialName to handle nullable types
@@ -548,7 +578,7 @@ public fun SerialDescriptor.toCqlType(insideCollection: Boolean = false): String
 @OptIn(ExperimentalSerializationApi::class)
 public fun SerialDescriptor.expandKeyColumnNames(
     fieldName: String,
-    separator: String = "__"
+    separator: String = "__",
 ): List<String> {
     // Find the descriptor for this field
     val fieldIndex = (0 until elementsCount).firstOrNull { getElementName(it) == fieldName }

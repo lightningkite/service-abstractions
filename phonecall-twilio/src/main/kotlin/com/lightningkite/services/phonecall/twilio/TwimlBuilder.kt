@@ -33,7 +33,7 @@ public class TwimlBuilder private constructor() {
     public fun element(
         name: String,
         vararg attributes: Pair<String, Any?>,
-        children: (TwimlBuilder.() -> Unit)? = null
+        children: (TwimlBuilder.() -> Unit)? = null,
     ) {
         val attrs = attributes
             .filter { it.second != null }
@@ -56,7 +56,7 @@ public class TwimlBuilder private constructor() {
     public fun element(
         name: String,
         textContent: String,
-        vararg attributes: Pair<String, Any?>
+        vararg attributes: Pair<String, Any?>,
     ) {
         val attrs = attributes
             .filter { it.second != null }
@@ -79,7 +79,7 @@ public class TwimlBuilder private constructor() {
         text: String,
         voice: String? = null,
         language: String? = null,
-        loop: Int? = null
+        loop: Int? = null,
     ) {
         element("Say", text, "voice" to voice, "language" to language, "loop" to loop)
     }
@@ -94,7 +94,7 @@ public class TwimlBuilder private constructor() {
     public fun play(
         url: String? = null,
         loop: Int? = null,
-        digits: String? = null
+        digits: String? = null,
     ) {
         if (url != null) {
             element("Play", url, "loop" to loop)
@@ -125,7 +125,7 @@ public class TwimlBuilder private constructor() {
         finishOnKey: String? = null,
         input: String? = null,
         speechTimeout: String? = null,
-        children: (TwimlBuilder.() -> Unit)? = null
+        children: (TwimlBuilder.() -> Unit)? = null,
     ) {
         element(
             "Gather",
@@ -158,10 +158,18 @@ public class TwimlBuilder private constructor() {
         timeout: Int? = null,
         callerId: String? = null,
         record: String? = null,
-        children: (TwimlBuilder.() -> Unit)? = null
+        children: (TwimlBuilder.() -> Unit)? = null,
     ) {
         if (number != null && children == null) {
-            element("Dial", number, "action" to action, "method" to method, "timeout" to timeout, "callerId" to callerId, "record" to record)
+            element(
+                "Dial",
+                number,
+                "action" to action,
+                "method" to method,
+                "timeout" to timeout,
+                "callerId" to callerId,
+                "record" to record
+            )
         } else {
             element(
                 "Dial",
@@ -183,7 +191,7 @@ public class TwimlBuilder private constructor() {
         sendDigits: String? = null,
         statusCallback: String? = null,
         statusCallbackEvent: String? = null,
-        statusCallbackMethod: String? = null
+        statusCallbackMethod: String? = null,
     ) {
         element(
             "Number", phoneNumber,
@@ -200,7 +208,7 @@ public class TwimlBuilder private constructor() {
     public fun sip(
         uri: String,
         username: String? = null,
-        password: String? = null
+        password: String? = null,
     ) {
         element("Sip", uri, "username" to username, "password" to password)
     }
@@ -218,7 +226,7 @@ public class TwimlBuilder private constructor() {
     public fun queue(
         name: String,
         url: String? = null,
-        method: String? = null
+        method: String? = null,
     ) {
         element("Queue", name, "url" to url, "method" to method)
     }
@@ -243,7 +251,7 @@ public class TwimlBuilder private constructor() {
         maxLength: Int? = null,
         playBeep: Boolean? = null,
         transcribe: Boolean? = null,
-        transcribeCallback: String? = null
+        transcribeCallback: String? = null,
     ) {
         element(
             "Record",
@@ -307,7 +315,7 @@ public class TwimlBuilder private constructor() {
         action: String? = null,
         method: String? = null,
         waitUrl: String? = null,
-        waitUrlMethod: String? = null
+        waitUrlMethod: String? = null,
     ) {
         element(
             "Enqueue", name,
@@ -337,7 +345,7 @@ public class TwimlBuilder private constructor() {
         url: String,
         name: String? = null,
         track: String? = null,
-        parameters: Map<String, String>? = null
+        parameters: Map<String, String>? = null,
     ) {
         if (parameters.isNullOrEmpty()) {
             element("Stream", "url" to url, "name" to name, "track" to track)

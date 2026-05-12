@@ -9,13 +9,12 @@ plugins {
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
-    id("org.jetbrains.kotlinx.atomicfu") version "0.29.0"
+    id("org.jetbrains.kotlinx.atomicfu") version "0.32.1"
 }
 
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
@@ -37,23 +36,16 @@ kotlin {
     iosX64()
     iosArm64()
     iosSimulatorArm64()
-    macosX64()
     macosArm64()
 
     sourceSets {
         val commonMain by getting {
             dependencies {
                 api(project(path = ":basis"))
-                api(project(path = ":should-be-standard-library"))
-                api(project(path = ":data"))
                 api(project(path = ":database-shared"))
                 api(libs.atomicfu)
             }
             kotlin {
-                compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
-                }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
@@ -65,8 +57,7 @@ kotlin {
             }
             kotlin {
                 compilerOptions {
-                    optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
                 }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
@@ -98,8 +89,6 @@ dependencies {
     }
 }
 
-lkLibrary("lightningkite", "service-abstractions") {}
-
 android {
     namespace = "com.lightningkite.services"
     compileSdk = 36
@@ -115,4 +104,12 @@ android {
     dependencies {
         coreLibraryDesugaring(libs.androidDesugaring)
     }
+}
+
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {
+    description.set("An abstraction for an external database service.")
 }

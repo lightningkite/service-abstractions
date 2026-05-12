@@ -5,14 +5,11 @@ import com.lightningkite.services.phonecall.AudioStreamEvent
 import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.voiceagent.*
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
-import kotlin.time.Duration.Companion.milliseconds
 
 private val logger = KotlinLogging.logger("VoiceAgentBridge")
 
@@ -149,12 +146,14 @@ public suspend fun handlePhoneVoiceSession(
                                 val pcmBytes = AudioConverter.mulawToPcm16_24k(mulawBytes)
                                 session.sendAudio(pcmBytes)
                             }
+
                             is AudioStreamEvent.Stop -> {
                                 logger.info { "Phone stream stopped: ${event.streamId}" }
                                 jitterBuffer?.stop()
                                 session.close()  // Close session to end events flow
                                 cancel()
                             }
+
                             else -> {}
                         }
                     }
@@ -250,30 +249,36 @@ public suspend fun handleDirectVoiceSession(
                         is VoiceAgentEvent.AudioDelta -> {
                             sendAudio(event.delta)
                         }
+
                         is VoiceAgentEvent.SpeechStarted -> {
                             sendClear()
                         }
+
                         is VoiceAgentEvent.ToolCallDone -> {
                             logger.info { "Tool call: ${event.toolName}(${event.arguments})" }
                             val result = toolHandler(event.toolName, event.arguments)
                             logger.info { "Tool result: $result" }
                             session.sendToolResult(event.callId, result)
                         }
+
                         is VoiceAgentEvent.InputTranscription -> {
                             if (event.isFinal && event.text.isNotBlank()) {
                                 logger.info { "User said: ${event.text}" }
                                 onTranscript(TranscriptEntry(TranscriptRole.USER, event.text))
                             }
                         }
+
                         is VoiceAgentEvent.TextDone -> {
                             if (event.text.isNotBlank()) {
                                 logger.info { "Agent said: ${event.text}" }
                                 onTranscript(TranscriptEntry(TranscriptRole.AGENT, event.text))
                             }
                         }
+
                         is VoiceAgentEvent.Error -> {
                             logger.error { "Voice agent error: ${event.code} - ${event.message}" }
                         }
+
                         else -> {}
                     }
                 }
@@ -336,6 +341,7 @@ private suspend fun handleAgentEvent(
                 sendToPhone(AudioStreamCommand.Audio(streamId, Base64.encode(mulawBytes)))
             }
         }
+
         is VoiceAgentEvent.SpeechStarted -> {
             logger.debug { "User started speaking" }
             currentResponseId.set(null)  // Reset - new response expected
@@ -343,35 +349,42 @@ private suspend fun handleAgentEvent(
             jitterBuffer?.clear()
             sendToPhone(AudioStreamCommand.Clear(streamId))
         }
+
         is VoiceAgentEvent.SpeechEnded -> {
             logger.debug { "User stopped speaking" }
         }
+
         is VoiceAgentEvent.ToolCallDone -> {
             logger.info { "Tool call: ${event.toolName}(${event.arguments})" }
             val result = toolHandler(event.toolName, event.arguments)
             logger.info { "Tool result: $result" }
             session.sendToolResult(event.callId, result)
         }
+
         is VoiceAgentEvent.InputTranscription -> {
             if (event.isFinal && event.text.isNotBlank()) {
                 logger.info { "User said: ${event.text}" }
                 onTranscript(TranscriptEntry(TranscriptRole.USER, event.text))
             }
         }
+
         is VoiceAgentEvent.TextDone -> {
             if (event.text.isNotBlank()) {
                 logger.info { "Agent said: ${event.text}" }
                 onTranscript(TranscriptEntry(TranscriptRole.AGENT, event.text))
             }
         }
+
         is VoiceAgentEvent.ResponseDone -> {
             event.usage?.let { usage ->
                 logger.info { "Usage: input=${usage.inputTokens}, output=${usage.outputTokens}" }
             }
         }
+
         is VoiceAgentEvent.Error -> {
             logger.error { "Voice agent error: ${event.code} - ${event.message}" }
         }
+
         else -> {}
     }
 }

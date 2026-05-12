@@ -1,12 +1,10 @@
 package com.lightningkite.services.speech.openai
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.speech.*
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Round-trip integration tests for OpenAI TTS + STT.
@@ -70,7 +68,7 @@ class OpenAISpeechRoundTripTest {
         val stt = OpenAISpeechToTextService(
             name = "test",
             context = testContext,
-            apiKey = apiKey!!
+            apiKey = apiKey
         )
 
         // Generate audio from text
@@ -112,7 +110,7 @@ class OpenAISpeechRoundTripTest {
         val stt = OpenAISpeechToTextService(
             name = "test",
             context = testContext,
-            apiKey = apiKey!!
+            apiKey = apiKey
         )
 
         val audio = tts.synthesize(
@@ -126,12 +124,12 @@ class OpenAISpeechRoundTripTest {
         val transcribedLower = result.text.lowercase()
         assertTrue(
             transcribedLower.contains("one") ||
-            transcribedLower.contains("two") ||
-            transcribedLower.contains("three") ||
-            transcribedLower.contains("123") ||
-            transcribedLower.contains("1") ||
-            transcribedLower.contains("2") ||
-            transcribedLower.contains("3"),
+                    transcribedLower.contains("two") ||
+                    transcribedLower.contains("three") ||
+                    transcribedLower.contains("123") ||
+                    transcribedLower.contains("1") ||
+                    transcribedLower.contains("2") ||
+                    transcribedLower.contains("3"),
             "Should transcribe numbers. Got: ${result.text}"
         )
     }
@@ -149,7 +147,7 @@ class OpenAISpeechRoundTripTest {
         val stt = OpenAISpeechToTextService(
             name = "test",
             context = testContext,
-            apiKey = apiKey!!
+            apiKey = apiKey
         )
 
         val voices = listOf("alloy", "echo", "nova")

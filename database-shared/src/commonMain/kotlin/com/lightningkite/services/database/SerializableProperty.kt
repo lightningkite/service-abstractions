@@ -1,15 +1,15 @@
+@file:OptIn(ExperimentalUnsignedTypes::class)
+
 package com.lightningkite.services.database
 
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
-import kotlin.time.Instant
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.KSerializer
+import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.internal.AbstractPolymorphicSerializer
 import kotlinx.serialization.internal.GeneratedSerializer
 import kotlinx.serialization.json.JsonNames
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 public interface SerializableProperty<A, B> {
@@ -37,6 +37,7 @@ public interface SerializableProperty<A, B> {
         override val annotations: List<Annotation> by lazy {
             parent.descriptor.getElementAnnotations(index) + serializer.descriptor.annotations
         }
+
         @OptIn(ExperimentalSerializationApi::class)
         override val serializableAnnotations: List<SerializableAnnotation> by lazy {
             annotations
@@ -156,7 +157,12 @@ public val <T> KSerializer<T>.serializableProperties: Array<SerializableProperty
         }.toTypedArray()
     }
 
-public data class SealedSerializableOption<out T>(val index: Int, val name: String, val secondaryNames: Set<String> = setOf(), val serializer: KSerializer<@UnsafeVariance T>)
+public data class SealedSerializableOption<out T>(
+    val index: Int,
+    val name: String,
+    val secondaryNames: Set<String> = setOf(),
+    val serializer: KSerializer<@UnsafeVariance T>,
+)
 
 @OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
@@ -174,7 +180,7 @@ public val <T> KSerializer<T>.serializableOptions: Array<SealedSerializableOptio
             val ser = poly.findPolymorphicSerializerOrNull(StubPolymorphicDecoder, name) as? KSerializer<T>
                 ?: return null
             SealedSerializableOption(i, name, secondaryNames, ser)
-        } as Array<SealedSerializableOption<T>>
+        }
     }
 
 @OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
@@ -183,5 +189,6 @@ public fun <T> KSerializer<T>.serializableOptionsIdentify(item: T): SealedSerial
     val poly = this as? AbstractPolymorphicSerializer<Any> ?: return null
     if (descriptor.kind != PolymorphicKind.SEALED) return null
     val ser = poly.findPolymorphicSerializerOrNull(StubPolymorphicEncoder, item as Any) ?: return null
-    return serializableOptions?.firstOrNull { it.serializer.descriptor.serialName == ser.descriptor.serialName }?.let { it as SealedSerializableOption<T>? }
+    return serializableOptions?.firstOrNull { it.serializer.descriptor.serialName == ser.descriptor.serialName }
+        ?.let { it as SealedSerializableOption<T>? }
 }

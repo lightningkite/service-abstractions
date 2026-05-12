@@ -1,8 +1,8 @@
 package com.lightningkite.services.speech
 
 import com.lightningkite.services.*
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
-import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -128,7 +128,7 @@ public interface SpeechToTextService : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "test"
+        public val url: String = "test",
     ) : Setting<SpeechToTextService> {
         public companion object : UrlSettingParser<SpeechToTextService>() {
             init {
@@ -152,7 +152,7 @@ public interface SpeechToTextService : Service {
      */
     public suspend fun transcribe(
         audio: TypedData,
-        options: TranscriptionOptions = TranscriptionOptions()
+        options: TranscriptionOptions = TranscriptionOptions(),
     ): TranscriptionResult
 
     /**
@@ -168,7 +168,7 @@ public interface SpeechToTextService : Service {
      */
     public suspend fun transcribeUrl(
         audioUrl: String,
-        options: TranscriptionOptions = TranscriptionOptions()
+        options: TranscriptionOptions = TranscriptionOptions(),
     ): TranscriptionResult
 
     override val healthCheckFrequency: Duration get() = 5.minutes
@@ -192,5 +192,5 @@ public interface SpeechToTextService : Service {
  */
 public class SpeechToTextException(
     override val message: String,
-    override val cause: Throwable? = null
+    override val cause: Throwable? = null,
 ) : Exception(message, cause)

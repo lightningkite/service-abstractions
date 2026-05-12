@@ -1,12 +1,9 @@
 package com.lightningkite.services.cache
 
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.otel.TelemetrySanitization
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
-import kotlinx.serialization.KSerializer
+import com.lightningkite.services.recordExceptionWithFingerprint
+import io.opentelemetry.api.trace.*
 import kotlin.time.Duration
 
 /**
@@ -15,7 +12,7 @@ import kotlin.time.Duration
 internal actual suspend fun <T> instrumentedGet(
     context: SettingContext,
     key: String,
-    operation: suspend () -> T?
+    operation: suspend () -> T?,
 ): T? {
     val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
     val span = tracer?.spanBuilder("cache.get")
@@ -51,7 +48,7 @@ internal actual suspend fun <T> instrumentedSet(
     context: SettingContext,
     key: String,
     timeToLive: Duration?,
-    operation: suspend () -> Unit
+    operation: suspend () -> Unit,
 ) {
     val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
     val span = tracer?.spanBuilder("cache.set")
@@ -86,7 +83,7 @@ internal actual suspend fun instrumentedSetIfNotExists(
     context: SettingContext,
     key: String,
     timeToLive: Duration?,
-    operation: suspend () -> Boolean
+    operation: suspend () -> Boolean,
 ): Boolean {
     val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
     val span = tracer?.spanBuilder("cache.setIfNotExists")
@@ -124,7 +121,7 @@ internal actual suspend fun <N : Number> instrumentedAdd(
     key: String,
     value: Long,
     timeToLive: Duration?,
-    operation: suspend () -> N
+    operation: suspend () -> N,
 ): N {
     val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
     val span = tracer?.spanBuilder("cache.add")
@@ -158,7 +155,7 @@ internal actual suspend fun <N : Number> instrumentedAdd(
 internal actual suspend fun instrumentedRemove(
     context: SettingContext,
     key: String,
-    operation: suspend () -> Unit
+    operation: suspend () -> Unit,
 ) {
     val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
     val span = tracer?.spanBuilder("cache.remove")
@@ -193,7 +190,7 @@ internal actual suspend fun <T> instrumentedModify(
     key: String,
     maxTries: Int,
     timeToLive: Duration?,
-    operation: suspend () -> Boolean
+    operation: suspend () -> Boolean,
 ): Boolean {
     val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
     val span = tracer?.spanBuilder("cache.modify")

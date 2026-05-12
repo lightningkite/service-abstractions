@@ -15,6 +15,7 @@
  */
 package com.lightningkite.services.database.mongodb.bson.utils
 
+import com.lightningkite.services.database.mongodb.bson.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -23,22 +24,6 @@ import kotlinx.serialization.json.JsonNamingStrategy
 import kotlinx.serialization.modules.SerializersModule
 import org.bson.AbstractBsonReader
 import org.bson.BsonWriter
-import com.lightningkite.services.database.mongodb.bson.BsonArrayDecoder
-import com.lightningkite.services.database.mongodb.bson.BsonConfiguration
-import com.lightningkite.services.database.mongodb.bson.BsonDecoder
-import com.lightningkite.services.database.mongodb.bson.BsonDecoderImpl
-import com.lightningkite.services.database.mongodb.bson.BsonDocumentDecoder
-import com.lightningkite.services.database.mongodb.bson.BsonEncoder
-import com.lightningkite.services.database.mongodb.bson.BsonEncoderImpl
-import com.lightningkite.services.database.mongodb.bson.BsonMapDecoder
-import com.lightningkite.services.database.mongodb.bson.BsonNamingStrategy
-import com.lightningkite.services.database.mongodb.bson.BsonPolymorphicDecoder
-import com.lightningkite.services.database.mongodb.bson.JsonBsonArrayDecoder
-import com.lightningkite.services.database.mongodb.bson.JsonBsonDecoderImpl
-import com.lightningkite.services.database.mongodb.bson.JsonBsonDocumentDecoder
-import com.lightningkite.services.database.mongodb.bson.JsonBsonEncoder
-import com.lightningkite.services.database.mongodb.bson.JsonBsonMapDecoder
-import com.lightningkite.services.database.mongodb.bson.JsonBsonPolymorphicDecoder
 
 @ExperimentalSerializationApi
 internal object BsonCodecUtils {
@@ -68,7 +53,7 @@ internal object BsonCodecUtils {
     internal fun createBsonEncoder(
         writer: BsonWriter,
         serializersModule: SerializersModule,
-        configuration: BsonConfiguration
+        configuration: BsonConfiguration,
     ): BsonEncoder {
         return if (hasJsonEncoder) JsonBsonEncoder(writer, serializersModule, configuration)
         else BsonEncoderImpl(writer, serializersModule, configuration)
@@ -77,7 +62,7 @@ internal object BsonCodecUtils {
     internal fun createBsonDecoder(
         reader: AbstractBsonReader,
         serializersModule: SerializersModule,
-        configuration: BsonConfiguration
+        configuration: BsonConfiguration,
     ): BsonDecoder {
         return if (hasJsonDecoder) JsonBsonDecoderImpl(reader, serializersModule, configuration)
         else BsonDecoderImpl(reader, serializersModule, configuration)
@@ -87,7 +72,7 @@ internal object BsonCodecUtils {
         descriptor: SerialDescriptor,
         reader: AbstractBsonReader,
         serializersModule: SerializersModule,
-        configuration: BsonConfiguration
+        configuration: BsonConfiguration,
     ): BsonArrayDecoder {
         return if (hasJsonDecoder) JsonBsonArrayDecoder(descriptor, reader, serializersModule, configuration)
         else BsonArrayDecoder(descriptor, reader, serializersModule, configuration)
@@ -97,7 +82,7 @@ internal object BsonCodecUtils {
         descriptor: SerialDescriptor,
         reader: AbstractBsonReader,
         serializersModule: SerializersModule,
-        configuration: BsonConfiguration
+        configuration: BsonConfiguration,
     ): BsonDocumentDecoder {
         return if (hasJsonDecoder) JsonBsonDocumentDecoder(descriptor, reader, serializersModule, configuration)
         else BsonDocumentDecoder(descriptor, reader, serializersModule, configuration)
@@ -107,7 +92,7 @@ internal object BsonCodecUtils {
         descriptor: SerialDescriptor,
         reader: AbstractBsonReader,
         serializersModule: SerializersModule,
-        configuration: BsonConfiguration
+        configuration: BsonConfiguration,
     ): BsonPolymorphicDecoder {
         return if (hasJsonDecoder) JsonBsonPolymorphicDecoder(descriptor, reader, serializersModule, configuration)
         else BsonPolymorphicDecoder(descriptor, reader, serializersModule, configuration)
@@ -117,7 +102,7 @@ internal object BsonCodecUtils {
         descriptor: SerialDescriptor,
         reader: AbstractBsonReader,
         serializersModule: SerializersModule,
-        configuration: BsonConfiguration
+        configuration: BsonConfiguration,
     ): BsonMapDecoder {
         return if (hasJsonDecoder) JsonBsonMapDecoder(descriptor, reader, serializersModule, configuration)
         else BsonMapDecoder(descriptor, reader, serializersModule, configuration)
@@ -143,6 +128,7 @@ internal object BsonCodecUtils {
 
                     snakeCasedNames.entries.associate { it.value to it.key }
                 }
+
                 else -> emptyMap()
             }
 

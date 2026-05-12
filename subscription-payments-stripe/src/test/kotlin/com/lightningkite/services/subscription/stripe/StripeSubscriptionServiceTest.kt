@@ -6,11 +6,7 @@ import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.database.SecurityException
 import com.lightningkite.services.subscription.SubscriptionService
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * Unit tests for StripeSubscriptionService.
@@ -184,7 +180,7 @@ class StripeSubscriptionServiceTest {
             staticWebhookSecret = "whsec_test_secret"
         )
 
-        val body = TypedData(Data.Text(sampleCheckoutCompletedPayload), com.lightningkite.MediaType.Application.Json)
+        val body = TypedData(Data.Text(sampleCheckoutCompletedPayload), com.lightningkite.services.data.MediaType.Application.Json)
 
         assertFailsWith<IllegalArgumentException> {
             service.onEvent.parse(
@@ -204,7 +200,7 @@ class StripeSubscriptionServiceTest {
             staticWebhookSecret = "whsec_test_secret"
         )
 
-        val body = TypedData(Data.Text(sampleCheckoutCompletedPayload), com.lightningkite.MediaType.Application.Json)
+        val body = TypedData(Data.Text(sampleCheckoutCompletedPayload), com.lightningkite.services.data.MediaType.Application.Json)
 
         assertFailsWith<SecurityException> {
             service.onEvent.parse(

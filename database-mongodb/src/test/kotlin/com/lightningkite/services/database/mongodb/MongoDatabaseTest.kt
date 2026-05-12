@@ -3,15 +3,7 @@ package com.lightningkite.services.database.mongodb
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.mongodb.TestDatabase.mongoClient
-import com.lightningkite.services.database.test.AggregationsTest
-import com.lightningkite.services.database.test.ConditionTests
-import com.lightningkite.services.database.test.IndexTests
-import com.lightningkite.services.database.test.InlinePropertiesTests
-import com.lightningkite.services.database.test.MetaTest
-import com.lightningkite.services.database.test.ModificationTests
-import com.lightningkite.services.database.test.OperationsTests
-import com.lightningkite.services.database.test.SortTest
-import com.lightningkite.services.database.test.VectorSearchTests
+import com.lightningkite.services.database.test.*
 import kotlin.test.Test
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -19,8 +11,10 @@ import kotlin.time.Duration.Companion.seconds
 
 object TestDatabase {
     val settings = testMongo()
-    val mongoClient = MongoDatabase("default", clientSettings = settings, databaseName = "test", context = TestSettingContext())
+    val mongoClient =
+        MongoDatabase("default", clientSettings = settings, databaseName = "test", context = TestSettingContext())
 }
+
 fun db() = mongoClient
 
 object UniqueIndexTests {
@@ -71,56 +65,81 @@ object VectorTestDatabase {
         )
     }
 }
+
 fun vectorDb() = VectorTestDatabase.mongoClient ?: db()
 
-class MongodbAggregationsTest: AggregationsTest() {
-    override val database: Database = db()
-
-    @Test fun start() {}
-}
-class MongodbConditionTests: ConditionTests() {
-    override val database: Database = db()
-
-    @Test fun start() {}
-}
-class MongodbModificationTests: ModificationTests() {
-    override val database: Database = db()
-
-    @Test fun start() {}
-}
-class MongodbOperationsTests: OperationsTests() {
-    override val database: Database = db()
-
-    @Test fun start() {}
-}
-class MongodbSortTest: SortTest() {
-    override val database: Database = db()
-
-    @Test fun start() {}
-}
-class MongodbMetaTest: MetaTest() {
-    override val database: Database = db()
-
-    @Test fun start() {}
-}
-class MongodbIndexTest: IndexTests() {
+class MongodbAggregationsTest : AggregationsTest() {
     override val database: Database = db()
 
     @Test
-    fun start() {}
+    fun start() {
+    }
 }
-class MondodbInlineTests: InlinePropertiesTests() {
+
+class MongodbConditionTests : ConditionTests() {
     override val database: Database = db()
 
-    @Test fun start() {}
+    @Test
+    fun start() {
+    }
 }
 
-class MongodbVectorSearchTests: VectorSearchTests() {
+class MongodbModificationTests : ModificationTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MongodbOperationsTests : OperationsTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MongodbSortTest : SortTest() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MongodbMetaTest : MetaTest() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MongodbIndexTest : IndexTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MondodbInlineTests : InlinePropertiesTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MongodbVectorSearchTests : VectorSearchTests() {
     override val database: Database = vectorDb()
+
     // Vector search requires MongoDB Atlas or MongoDB 8.2+ with mongot
     // Tests will run if MONGO_VECTOR_TEST_URL environment variable is set
     override val supportsVectorSearch: Boolean = VectorTestDatabase.isAvailable
     override val supportsSparseVectorSearch: Boolean = false // MongoDB doesn't support sparse vectors
+
     // MongoDB Atlas requires similarity metric at index creation time, not query time
     override val supportsQueryTimeMetrics: Boolean = false
 

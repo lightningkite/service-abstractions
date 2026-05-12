@@ -1,6 +1,6 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.IsRawString
+import com.lightningkite.services.data.IsRawString
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.serializer
 import kotlin.jvm.JvmName
@@ -13,7 +13,7 @@ public inline fun <reified T> modification(setup: ModificationBuilder<T>.(DataCl
 
 public inline fun <T> modification(
     path: DataClassPath<T, T>,
-    setup: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit
+    setup: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit,
 ): Modification<T> {
     return ModificationBuilder<T>().apply {
         setup(this, path)
@@ -224,7 +224,9 @@ public class ModificationBuilder<K>() {
     }
 }
 
-public fun <T, V> DataClassPathWithValue<T, V>.modify(): Modification<T> = path.mapModification(Modification.Assign(value))
+public fun <T, V> DataClassPathWithValue<T, V>.modify(): Modification<T> =
+    path.mapModification(Modification.Assign(value))
+
 public inline fun <reified T> Partial<T>.toModification(): Modification<T> = toModification(serializer())
 public fun <T> Partial<T>.toModification(serializer: KSerializer<T>): Modification<T> {
     val out = ArrayList<Modification<T>>()

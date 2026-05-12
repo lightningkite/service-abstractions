@@ -1,31 +1,26 @@
 package com.lightningkite.services.subscription.stripe
 
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
-import com.lightningkite.services.data.HttpAdapter
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
-import com.lightningkite.services.database.*
+import com.lightningkite.services.database.HasId
+import com.lightningkite.services.database.SecurityException
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.subscription.*
+import com.lightningkite.services.subscription.Customer
+import com.lightningkite.services.subscription.Subscription
+import com.lightningkite.services.webhooksubservice.HttpAdapter
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import com.stripe.Stripe
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
 import com.stripe.exception.InvalidRequestException
-import com.stripe.model.Event
-import com.stripe.model.Invoice
-import com.stripe.model.StripeObject
-import com.stripe.model.WebhookEndpoint
+import com.stripe.model.*
 import com.stripe.model.checkout.Session
 import com.stripe.net.Webhook
-import com.stripe.param.CustomerCreateParams
-import com.stripe.param.SubscriptionListParams
-import com.stripe.param.SubscriptionUpdateParams
-import com.stripe.param.WebhookEndpointListParams
+import com.stripe.param.*
 import com.stripe.param.checkout.SessionCreateParams
-import kotlin.time.Instant
+import io.opentelemetry.api.trace.*
 import kotlinx.serialization.Serializable
+import kotlin.time.Instant
 
 /**
  * Stripe implementation of SubscriptionService.
@@ -83,7 +78,7 @@ public class StripeSubscriptionService(
     override val name: String,
     override val context: SettingContext,
     private val apiKey: String,
-    private val staticWebhookSecret: String
+    private val staticWebhookSecret: String,
 ) : SubscriptionService {
 
     private val tracer: Tracer? = context.openTelemetry?.getTracer("subscription-payments-stripe")
@@ -92,7 +87,11 @@ public class StripeSubscriptionService(
         Stripe.apiKey = apiKey
     }
 
-    override suspend fun createCustomer(email: String, name: String?, metadata: Map<String, String>): SubscriptionCustomerId {
+    override suspend fun createCustomer(
+        email: String,
+        name: String?,
+        metadata: Map<String, String>,
+    ): SubscriptionCustomerId {
         val span = tracer?.spanBuilder("subscription.create_customer")
             ?.setSpanKind(SpanKind.CLIENT)
             ?.setAttribute("subscription.operation", "create_customer")
@@ -263,7 +262,8 @@ public class StripeSubscriptionService(
         return try {
             val scope = span?.makeCurrent()
             try {
-                val sub = getSubscription(subscriptionId) ?: throw IllegalArgumentException("Subscription not found: ${subscriptionId.value}")
+                val sub = getSubscription(subscriptionId)
+                    ?: throw IllegalArgumentException("Subscription not found: ${subscriptionId.value}")
 
                 span?.setAttribute("subscription.customer_id", sub.customerId.value)
 
@@ -409,7 +409,7 @@ public class StripeSubscriptionService(
     // Note: Stripe does support pausing via pause_collection, but it's less common
     // We leave the default UnsupportedOperationException for now
 
-    override val onEvent: WebhookSubservice<SubscriptionEvent?> = object: WebhookSubservice<SubscriptionEvent?> {
+    override val onEvent: WebhookSubservice<SubscriptionEvent?> = object : WebhookSubservice<SubscriptionEvent?> {
         override suspend fun configureWebhook(httpUrl: String) {
             val params = WebhookEndpointListParams.builder()
                 .setLimit(100)
@@ -423,7 +423,7 @@ public class StripeSubscriptionService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): SubscriptionEvent? {
             val span = tracer?.spanBuilder("subscription.webhook.parse")
                 ?.setSpanKind(SpanKind.SERVER)
@@ -538,7 +538,9 @@ public class StripeSubscriptionService(
                     val invoice = dataObject as Invoice
                     SubscriptionEvent.PaymentSucceeded(
                         providerEventId = event.id,
-                        subscriptionId = SubscriptionId(invoice.parent.subscriptionDetails?.subscription ?: return null),
+                        subscriptionId = SubscriptionId(
+                            invoice.parent.subscriptionDetails?.subscription ?: return null
+                        ),
                         customerId = SubscriptionCustomerId(invoice.customer),
                         amountCents = invoice.amountPaid,
                         currency = invoice.currency
@@ -549,7 +551,9 @@ public class StripeSubscriptionService(
                     val invoice = dataObject as Invoice
                     SubscriptionEvent.PaymentFailed(
                         providerEventId = event.id,
-                        subscriptionId = SubscriptionId(invoice.parent.subscriptionDetails?.subscription ?: return null),
+                        subscriptionId = SubscriptionId(
+                            invoice.parent.subscriptionDetails?.subscription ?: return null
+                        ),
                         customerId = SubscriptionCustomerId(invoice.customer),
                         amountCents = invoice.amountDue,
                         currency = invoice.currency,
@@ -617,7 +621,7 @@ public class StripeSubscriptionService(
          */
         public fun SubscriptionService.Settings.Companion.stripe(
             apiKey: String,
-            webhookSecret: String
+            webhookSecret: String,
         ): SubscriptionService.Settings = SubscriptionService.Settings("stripe://$apiKey@$webhookSecret")
 
         init {
@@ -644,6 +648,6 @@ public class StripeSubscriptionService(
         override val _id: String,
         val secret: String,
         val providerWebhookId: String,
-        val createdAt: Instant
+        val createdAt: Instant,
     ) : HasId<String>
 }

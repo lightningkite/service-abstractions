@@ -11,7 +11,7 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 public data class SortPart<T>(
     val field: DataClassPathPartial<T>,
     val ascending: Boolean = true,
-    val ignoreCase: Boolean = false
+    val ignoreCase: Boolean = false,
 ) {
     override fun toString(): String = buildString {
         if (!ascending) append('-')

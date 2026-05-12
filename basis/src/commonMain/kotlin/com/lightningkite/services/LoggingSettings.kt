@@ -1,6 +1,5 @@
 package com.lightningkite.services
 
-import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.Level
 import kotlinx.serialization.Serializable
 
@@ -62,7 +61,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 public data class LoggingSettings(
     val default: ContextSettings? = ContextSettings(null, true, Level.INFO, false),
-    val logger: Map<String, ContextSettings>? = null
+    val logger: Map<String, ContextSettings>? = null,
 ) {
     /**
      * Logging configuration for a specific context (default or package-specific).

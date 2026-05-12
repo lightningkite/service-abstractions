@@ -1,8 +1,6 @@
 package com.lightningkite.services.database
 
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.*
 
 /**
  * Returns a Flow that will contain ALL the instances of *Model* in the collection.
@@ -43,7 +41,7 @@ public suspend fun <Model : Any>
  */
 public suspend fun <Model : Any>
         Table<Model>.updateManyIgnoringResult(
-    mass: MassModification<Model>
+    mass: MassModification<Model>,
 ): Int = updateManyIgnoringResult(mass.condition, mass.modification)
 
 
@@ -56,7 +54,7 @@ public suspend fun <Model : Any>
 public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.updateOneByIdIgnoringResult(
     id: ID,
-    modification: Modification<Model>
+    modification: Modification<Model>,
 ): Boolean {
     return updateOneIgnoringResult(Condition.OnField(serializer._id(), Condition.Equal(id)), modification)
 }
@@ -70,7 +68,7 @@ public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
 public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.updateOneById(
     id: ID,
-    modification: Modification<Model>
+    modification: Modification<Model>,
 ): EntryChange<Model> {
     return updateOne(Condition.OnField(serializer._id(), Condition.Equal(id)), modification)
 }
@@ -82,7 +80,7 @@ public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  */
 public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.deleteOneById(
-    id: ID
+    id: ID,
 ): Boolean {
     return deleteOneIgnoringOld(Condition.OnField(serializer._id(), Condition.Equal(id)))
 }
@@ -96,7 +94,7 @@ public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
 public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.replaceOneById(
     id: ID,
-    model: Model
+    model: Model,
 ): EntryChange<Model> = replaceOne(Condition.OnField(serializer._id(), Condition.Equal(id)), model)
 
 
@@ -109,8 +107,9 @@ public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
 public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.upsertOneById(
     id: ID,
-    model: Model
-): EntryChange<Model> = upsertOne(Condition.OnField(serializer._id(), Condition.Equal(id)), Modification.Assign(model), model)
+    model: Model,
+): EntryChange<Model> =
+    upsertOne(Condition.OnField(serializer._id(), Condition.Equal(id)), Modification.Assign(model), model)
 
 
 /**
@@ -120,7 +119,7 @@ public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  */
 public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.get(
-    id: ID
+    id: ID,
 ): Model? {
     return find(Condition.OnField(serializer._id(), Condition.Equal(id)), limit = 1).firstOrNull()
 }
@@ -132,7 +131,7 @@ public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  */
 public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
         Table<Model>.getMany(
-    ids: Collection<ID>
+    ids: Collection<ID>,
 ): List<Model> {
     return find(Condition.OnField(serializer._id(), Condition.Inside(ids.toList()))).toList()
 }

@@ -2,10 +2,7 @@ package com.lightningkite.services.pubsub.redis
 
 import com.lightningkite.services.Untested
 import com.lightningkite.services.pubsub.PubSub
-import com.lightningkite.services.terraform.TerraformEmitterAwsVpc
-import com.lightningkite.services.terraform.TerraformNeed
-import com.lightningkite.services.terraform.TerraformProvider
-import com.lightningkite.services.terraform.TerraformProviderImport
+import com.lightningkite.services.terraform.*
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -13,9 +10,9 @@ import kotlinx.serialization.json.JsonPrimitive
 context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Settings>.awsElasticacheRedis(
     type: String = "cache.t2.micro",
     parameterGroupName: String = "default.redis7",
-    count: Int = 1
+    count: Int = 1,
 ): Unit {
-    if(!PubSub.Settings.supports("redis")) throw IllegalArgumentException("You need to reference RedisPubSub in your server definition to use this.")
+    if (!PubSub.Settings.supports("redis")) throw IllegalArgumentException("You need to reference RedisPubSub in your server definition to use this.")
     emitter.fulfillSetting(
         name,
         JsonPrimitive(value = $$"redis://${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).address}:${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).port}/0")
@@ -39,7 +36,6 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<PubSub.Setting
         }
     }
 }
-
 
 
 /**

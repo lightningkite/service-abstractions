@@ -34,6 +34,7 @@ class TerraformJsonObjectTest {
             println(toString())
         }.toJsonObject().toString().let(::println)
     }
+
     @Test
     fun test() {
         TerraformJsonObject().apply {

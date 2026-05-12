@@ -1,6 +1,6 @@
 package com.lightningkite.services.files.s3
 
-import com.lightningkite.MediaType
+import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
@@ -14,24 +14,30 @@ import io.ktor.utils.io.core.canRead
 import io.ktor.utils.io.core.takeWhile
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
-import kotlinx.io.Source
-import kotlinx.io.asInputStream
-import kotlinx.io.asSource
-import kotlinx.io.buffered
+import kotlinx.io.*
 import software.amazon.awssdk.core.sync.RequestBody
-import software.amazon.awssdk.services.s3.model.GetObjectRequest
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException
-import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.model.*
 import java.io.File
 import java.net.URLDecoder
 import java.time.ZoneOffset
-import kotlin.time.Duration
-import kotlin.time.toJavaDuration
-import kotlin.time.toKotlinInstant
+import kotlin.text.Charsets
+import kotlin.text.buildString
+import kotlin.text.concatToString
+import kotlin.text.contains
+import kotlin.text.isNotEmpty
+import kotlin.text.isSurrogate
+import kotlin.text.padStart
+import kotlin.text.removePrefix
+import kotlin.text.replace
+import kotlin.text.split
+import kotlin.text.substringAfter
+import kotlin.text.substringBefore
+import kotlin.text.toByteArray
+import kotlin.text.toString
+import kotlin.text.trimIndent
+import kotlin.time.*
 
 /**
  * An implementation of [FileObject] that uses AWS S3 for storage.
@@ -50,8 +56,8 @@ public class S3FileObject(
     public val path: File,
 ) : FileObject {
 
-    init{
-        if(this.path.path.contains("+"))
+    init {
+        if (this.path.path.contains("+"))
             throw IllegalArgumentException("Invalid File Path. File Path cannot contain '+'")
     }
 
@@ -288,7 +294,12 @@ public class S3FileObject(
             ?.setAttribute("file.operation", "copy")
             ?.setAttribute("file.source.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
             ?.setAttribute("file.source.bucket", system.bucket)
-            ?.setAttribute("file.destination.path", if (other is S3FileObject) TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath) else TelemetrySanitization.sanitizeFilePath(other.toString()))
+            ?.setAttribute(
+                "file.destination.path",
+                if (other is S3FileObject) TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath) else TelemetrySanitization.sanitizeFilePath(
+                    other.toString()
+                )
+            )
             ?.setAttribute("file.copy.server_side", isServerSideCopy)
             ?.setAttribute("storage.system", "s3")
             ?.startSpan()

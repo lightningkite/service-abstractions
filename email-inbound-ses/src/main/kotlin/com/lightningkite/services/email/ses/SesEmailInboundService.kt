@@ -1,16 +1,10 @@
 package com.lightningkite.services.email.ses
 
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.HttpAdapter
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
-import com.lightningkite.services.email.EmailAddressWithName
-import com.lightningkite.services.email.EmailEnvelope
-import com.lightningkite.services.email.EmailInboundService
-import com.lightningkite.services.email.ReceivedEmail
-import com.lightningkite.toEmailAddress
+import com.lightningkite.services.data.*
+import com.lightningkite.services.email.*
+import com.lightningkite.services.webhooksubservice.HttpAdapter
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
 import java.net.URI
@@ -18,7 +12,7 @@ import java.net.URL
 import java.security.Signature
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
-import java.util.Base64
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
@@ -69,7 +63,7 @@ private val logger = KotlinLogging.logger("SesEmailInboundService")
  */
 public class SesEmailInboundService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : EmailInboundService {
 
     public companion object {
@@ -141,7 +135,7 @@ public class SesEmailInboundService(
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
-            body: TypedData
+            body: TypedData,
         ): ReceivedEmail {
             logger.debug { "[$name] Parsing SES webhook notification" }
 
@@ -213,7 +207,7 @@ public class SesEmailInboundService(
             val rawContent = sesNotification.content
                 ?: throw UnsupportedOperationException(
                     "Email content not included in notification (likely stored in S3). " +
-                    "S3-based content retrieval is not yet implemented."
+                            "S3-based content retrieval is not yet implemented."
                 )
 
             return parseReceivedEmail(sesNotification, rawContent)
@@ -440,7 +434,8 @@ public class SesEmailInboundService(
 
             // For SubscriptionConfirmation and UnsubscribeConfirmation, include SubscribeURL
             if (notification.Type == "SubscriptionConfirmation" ||
-                notification.Type == "UnsubscribeConfirmation") {
+                notification.Type == "UnsubscribeConfirmation"
+            ) {
                 if (notification.SubscribeURL != null) {
                     append("SubscribeURL\n")
                     append(notification.SubscribeURL)
@@ -461,7 +456,8 @@ public class SesEmailInboundService(
 
             // For SubscriptionConfirmation and UnsubscribeConfirmation, include Token
             if (notification.Type == "SubscriptionConfirmation" ||
-                notification.Type == "UnsubscribeConfirmation") {
+                notification.Type == "UnsubscribeConfirmation"
+            ) {
                 if (notification.Token != null) {
                     append("Token\n")
                     append(notification.Token)

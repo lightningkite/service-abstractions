@@ -51,7 +51,7 @@ public sealed class SubscriptionEvent {
         val sessionId: CheckoutSessionId,
         val customerId: SubscriptionCustomerId,
         val subscriptionId: SubscriptionId?,
-        val metadata: Map<String, String> = emptyMap()
+        val metadata: Map<String, String> = emptyMap(),
     ) : SubscriptionEvent()
 
     /**
@@ -63,7 +63,7 @@ public sealed class SubscriptionEvent {
     @Serializable
     public data class SubscriptionCreated(
         override val providerEventId: String,
-        val subscription: Subscription
+        val subscription: Subscription,
     ) : SubscriptionEvent()
 
     /**
@@ -76,7 +76,7 @@ public sealed class SubscriptionEvent {
     public data class SubscriptionUpdated(
         override val providerEventId: String,
         val subscription: Subscription,
-        val previousAttributes: Map<String, String> = emptyMap()
+        val previousAttributes: Map<String, String> = emptyMap(),
     ) : SubscriptionEvent()
 
     /**
@@ -88,7 +88,7 @@ public sealed class SubscriptionEvent {
     @Serializable
     public data class SubscriptionDeleted(
         override val providerEventId: String,
-        val subscription: Subscription
+        val subscription: Subscription,
     ) : SubscriptionEvent()
 
     /**
@@ -100,7 +100,7 @@ public sealed class SubscriptionEvent {
     @Serializable
     public data class SubscriptionPaused(
         override val providerEventId: String,
-        val subscription: Subscription
+        val subscription: Subscription,
     ) : SubscriptionEvent()
 
     /**
@@ -111,7 +111,7 @@ public sealed class SubscriptionEvent {
     @Serializable
     public data class SubscriptionResumed(
         override val providerEventId: String,
-        val subscription: Subscription
+        val subscription: Subscription,
     ) : SubscriptionEvent()
 
     /**
@@ -123,7 +123,7 @@ public sealed class SubscriptionEvent {
     @Serializable
     public data class SubscriptionExpired(
         override val providerEventId: String,
-        val subscription: Subscription
+        val subscription: Subscription,
     ) : SubscriptionEvent()
 
     /**
@@ -137,7 +137,7 @@ public sealed class SubscriptionEvent {
         val subscriptionId: SubscriptionId,
         val customerId: SubscriptionCustomerId,
         val amountCents: Long,
-        val currency: String
+        val currency: String,
     ) : SubscriptionEvent()
 
     /**
@@ -153,7 +153,7 @@ public sealed class SubscriptionEvent {
         val customerId: SubscriptionCustomerId,
         val amountCents: Long,
         val currency: String,
-        val failureMessage: String? = null
+        val failureMessage: String? = null,
     ) : SubscriptionEvent()
 
     /**
@@ -168,6 +168,6 @@ public sealed class SubscriptionEvent {
         val subscriptionId: SubscriptionId,
         val customerId: SubscriptionCustomerId,
         val amountCents: Long,
-        val currency: String
+        val currency: String,
     ) : SubscriptionEvent()
 }

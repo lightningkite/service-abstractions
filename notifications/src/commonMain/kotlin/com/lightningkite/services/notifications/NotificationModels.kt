@@ -39,7 +39,7 @@ public data class Notification(
 @Serializable
 public data class NotificationIos(
     val critical: Boolean = false,
-    val sound: String? = null
+    val sound: String? = null,
 )
 
 /**
@@ -60,7 +60,7 @@ public data class NotificationData(
     val android: NotificationAndroid? = null,
     val ios: NotificationIos? = null,
     val web: NotificationWeb? = null,
-    val timeToLive: Duration? = null
+    val timeToLive: Duration? = null,
 )
 
 /**

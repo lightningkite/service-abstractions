@@ -1,10 +1,8 @@
 package com.lightningkite.services.email
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.MediaType
-import com.lightningkite.services.data.Data
-import kotlin.time.Instant
+import com.lightningkite.services.data.*
 import kotlinx.serialization.Serializable
+import kotlin.time.Instant
 
 /**
  * Represents an email received via inbound email processing.

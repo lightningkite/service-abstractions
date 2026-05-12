@@ -8,8 +8,6 @@ import org.junit.Test
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 /**
  * Tests for the DynamoDB serialization utilities in serialization.kt.
@@ -224,7 +222,7 @@ class SerializationTest {
     data class SimpleData(
         val name: String,
         val count: Int,
-        val active: Boolean
+        val active: Boolean,
     )
 
     @Test
@@ -239,7 +237,7 @@ class SerializationTest {
     data class DataWithDefaults(
         val required: String,
         val optional: Int = 10,
-        val nullable: String? = null
+        val nullable: String? = null,
     )
 
     @Test
@@ -261,7 +259,7 @@ class SerializationTest {
     @Serializable
     data class NestedData(
         val inner: SimpleData,
-        val items: List<SimpleData>
+        val items: List<SimpleData>,
     )
 
     @Test
@@ -281,7 +279,7 @@ class SerializationTest {
     @Serializable
     data class DataWithMap(
         val properties: Map<String, String>,
-        val counts: Map<String, Int>
+        val counts: Map<String, Int>,
     )
 
     @Test

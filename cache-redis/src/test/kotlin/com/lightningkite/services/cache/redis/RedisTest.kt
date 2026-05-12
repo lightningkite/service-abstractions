@@ -4,7 +4,8 @@ import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.cache.test.CacheTest
 import io.lettuce.core.RedisClient
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.runBlocking
 import org.junit.AfterClass
 import org.junit.BeforeClass
 import redis.embedded.RedisServer
@@ -12,7 +13,7 @@ import kotlin.test.Test
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-class RedisTest: CacheTest() {
+class RedisTest : CacheTest() {
 
     // TODO: Why does redis-test not work?
 //    init { RedisCache }
@@ -26,6 +27,7 @@ class RedisTest: CacheTest() {
 
     companion object {
         lateinit var redisServer: RedisServer
+
         @JvmStatic
         @BeforeClass
         fun start() {
@@ -40,6 +42,7 @@ class RedisTest: CacheTest() {
                 .build()
             redisServer.start()
         }
+
         @JvmStatic
         @AfterClass
         fun stop() {

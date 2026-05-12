@@ -1,12 +1,11 @@
 package com.lightningkite.services.email.javasmtp
 
-import com.lightningkite.MediaType
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.email.Email
-import com.lightningkite.services.email.EmailAddressWithName
-import com.lightningkite.services.email.EmailPersonalization
+import com.lightningkite.services.email.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.html.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.junit.Test
@@ -54,7 +53,13 @@ class JavaSmtpEmailServiceTest {
                 Email(
                     subject = "Subject 2",
                     to = listOf(EmailAddressWithName("joseph@lightningkite.com", "Joseph Ivie")),
-                    html = "<p>Hello world!</p>",
+                    html = {
+                        body {
+                            p {
+                                +"Hello world!"
+                            }
+                        }
+                    },
                 )
             )
         }
@@ -68,12 +73,20 @@ class JavaSmtpEmailServiceTest {
                 Email(
                     subject = "Test email with attachment",
                     to = listOf(EmailAddressWithName("joseph@lightningkite.com", "Joseph Ivie")),
-                    html = "<p>Hello world!</p>",
-                    attachments = listOf(Email.Attachment(
-                        inline = false,
-                        filename = "test.txt",
-                        typedData = TypedData.text("Test", MediaType.Text.Plain)
-                    ))
+                    html = {
+                        body {
+                            p {
+                                +"Hello world!"
+                            }
+                        }
+                    },
+                    attachments = listOf(
+                        Email.Attachment(
+                            inline = false,
+                            filename = "test.txt",
+                            typedData = TypedData.text("Test", MediaType.Text.Plain)
+                        )
+                    )
                 )
             )
         }
@@ -102,12 +115,18 @@ class JavaSmtpEmailServiceTest {
                 Email(
                     subject = "Inline CID image test",
                     to = listOf(EmailAddressWithName("joseph@lightningkite.com", "Joseph Ivie")),
-                    html = """
-                        <h2>Inline Image Test</h2>
-                        <p>The image below should appear inline, not as a separate attachment:</p>
-                        <img src="cid:$filename" alt="Test image" style="width:200px;height:200px;" />
-                        <p>If you see a blue square with white text above, CID inline images are working.</p>
-                    """.trimIndent(),
+                    html = {
+                        body {
+                            h2 { +"Inline Image Test" }
+                            p { +"The image below should appear inline, not as a separate attachment:" }
+                            img {
+                                src = "cid:$filename"
+                                alt = "Test image"
+                                style = "width:200px;height:200px;"
+                            }
+                            p { +"If you see a blue square with white text above, CID inline images are working." }
+                        }
+                    },
                     attachments = listOf(
                         Email.Attachment(
                             inline = true,
@@ -140,7 +159,13 @@ class JavaSmtpEmailServiceTest {
             Email(
                 subject = "Bulk Email Test",
                 to = emptyList(),
-                html = "<p>Hello {{UserName}}!</p>",
+                html = {
+                    body {
+                        p {
+                            +"Hello {{UserName}}!"
+                        }
+                    }
+                },
             ),
             personalizations = listOf(
                 EmailPersonalization(

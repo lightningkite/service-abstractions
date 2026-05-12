@@ -1,11 +1,8 @@
 package com.lightningkite.services.email
 
-import com.lightningkite.services.HealthStatus
-import com.lightningkite.services.Service
-import com.lightningkite.services.Setting
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.UrlSettingParser
-import com.lightningkite.services.data.WebhookSubservice
+import com.lightningkite.services.*
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -88,7 +85,7 @@ public interface EmailInboundService : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "console"
+        public val url: String = "console",
     ) : Setting<EmailInboundService> {
         public companion object : UrlSettingParser<EmailInboundService>() {
             init {

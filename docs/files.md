@@ -1,6 +1,7 @@
 # File System Abstraction
 
-The `files` module provides an abstraction for working with file storage systems across different backends (local filesystem, S3, etc.) using a consistent API.
+The `files` module provides an abstraction for working with file storage systems across different backends (local
+filesystem, S3, etc.) using a consistent API.
 
 ## Overview
 
@@ -88,15 +89,17 @@ val settings = PublicFileSystem.Settings(
 ```
 
 **Parameters:**
+
 - `serveUrl` (required) - Base URL where files will be served from
-  - Relative: `serveUrl=files` → uses context.publicUrl
-  - Absolute: `serveUrl=https://cdn.example.com/files`
+    - Relative: `serveUrl=files` → uses context.publicUrl
+    - Absolute: `serveUrl=https://cdn.example.com/files`
 - `signedUrlDuration` (optional) - How long signed URLs remain valid
-  - Default: 1 hour
-  - Format: ISO 8601 duration (e.g., `PT1H`, `PT30M`) or seconds (e.g., `3600`)
-  - Special values: `forever`, `null` (disables signing)
+    - Default: 1 hour
+    - Format: ISO 8601 duration (e.g., `PT1H`, `PT30M`) or seconds (e.g., `3600`)
+    - Special values: `forever`, `null` (disables signing)
 
 **Example URLs:**
+
 ```
 file:///var/storage?serveUrl=files
 file:///tmp/uploads?serveUrl=https://example.com/files&signedUrlDuration=PT2H
@@ -133,6 +136,7 @@ scanner.copyAndScan(source = uploadedFile, destination = safeFile)
 ### Supported File Types (CheckMimeFileScanner)
 
 The built-in `CheckMimeFileScanner` validates these formats by checking magic numbers:
+
 - JPEG images (including EXIF)
 - GIF images
 - TIFF images
@@ -182,6 +186,7 @@ val fileObject = fileSystem.parseExternalUrl(signedUrl)
 ```
 
 **Important Security Notes:**
+
 - The signing key is stored in `.signingKey` in the root directory
 - Ensure proper file permissions on the storage directory (600/700)
 - Signed URLs include expiration timestamps to prevent replay attacks
@@ -190,6 +195,7 @@ val fileObject = fileSystem.parseExternalUrl(signedUrl)
 ### Content Type Storage
 
 The local filesystem stores content types in sidecar files:
+
 ```
 photo.jpg           # The actual file
 photo.jpg.contenttype  # Contains "image/jpeg"
@@ -200,6 +206,7 @@ This allows accurate content type tracking independent of file extensions.
 ### Health Checks
 
 File systems implement health checks that verify:
+
 - Ability to write files
 - Ability to read files with correct content
 - Ability to delete files
@@ -310,6 +317,7 @@ try {
 ## API Reference
 
 For detailed API documentation, see the KDoc comments in the source files:
+
 - `PublicFileSystem.kt` - Main file system interface
 - `FileObject.kt` - File/directory operations
 - `FileScanner.kt` - File validation

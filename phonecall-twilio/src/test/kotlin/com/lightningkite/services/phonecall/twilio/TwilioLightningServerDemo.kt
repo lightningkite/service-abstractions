@@ -1,6 +1,5 @@
 package com.lightningkite.services.phonecall.twilio
 
-import com.lightningkite.MediaType
 import com.lightningkite.lightningserver.BadRequestException
 import com.lightningkite.lightningserver.definition.StartupTask
 import com.lightningkite.lightningserver.definition.builder.ServerBuilder
@@ -11,23 +10,14 @@ import com.lightningkite.lightningserver.pathing.fullUrl
 import com.lightningkite.lightningserver.plainText
 import com.lightningkite.lightningserver.runtime.ServerRuntime
 import com.lightningkite.lightningserver.runtime.location
-import com.lightningkite.lightningserver.runtime.serverRuntime
 import com.lightningkite.lightningserver.settings.loadFromFile
 import com.lightningkite.lightningserver.typed.*
-import com.lightningkite.lightningserver.websockets.WebSocketClose
-import com.lightningkite.lightningserver.websockets.WebSocketHandler
-import com.lightningkite.lightningserver.websockets.send
-import com.lightningkite.lightningserver.websockets.text
-import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebsocketAdapter
-import com.lightningkite.services.data.workingDirectory
+import com.lightningkite.lightningserver.websockets.*
+import com.lightningkite.services.data.*
+import com.lightningkite.services.kfile.workingDirectory
 import com.lightningkite.services.phonecall.*
-import com.lightningkite.toPhoneNumber
+import com.lightningkite.services.webhooksubservice.WebsocketAdapter
 import kotlinx.coroutines.*
-import kotlinx.serialization.Serializable
-import java.io.File
-import kotlin.coroutines.coroutineContext
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 
@@ -87,7 +77,7 @@ object TwilioLightningServerDemo {
                 println("Engine starting...")
                 engine.start()
                 println("Engine started!")
-            } catch(e: Exception) {
+            } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
@@ -110,7 +100,7 @@ object PhoneServer : ServerBuilder() {
         val from: String,
         val to: String,
         var menuSelection: String? = null,
-        var gatheredDigits: String? = null
+        var gatheredDigits: String? = null,
     )
 
     context(runtime: ServerRuntime)
@@ -118,14 +108,16 @@ object PhoneServer : ServerBuilder() {
         println("\n" + "=".repeat(60))
         println("🎮 INTERACTIVE OPTIONS")
         println("=".repeat(60))
-        println("""
+        println(
+            """
             |
             |Enter a command:
             |  call <phone>  - Make an outbound call
             |  status        - Show active calls
             |  quit          - Stop server and exit
             |
-        """.trimMargin())
+        """.trimMargin()
+        )
 
         // Interactive command loop
         while (currentCoroutineContext().isActive) {
@@ -147,7 +139,10 @@ object PhoneServer : ServerBuilder() {
                             println("✅ Call started! SID: $callId")
 
                             // Speak a message
-                            twilio().speak(callId, "Hello! This is an outbound call from the Lightning Server demo. Goodbye!")
+                            twilio().speak(
+                                callId,
+                                "Hello! This is an outbound call from the Lightning Server demo. Goodbye!"
+                            )
                             twilio().hangup(callId)
                             println("✅ Call completed!")
                         } catch (e: Exception) {
@@ -155,13 +150,16 @@ object PhoneServer : ServerBuilder() {
                         }
                     }
                 }
+
                 input == "status" -> {
                     println("Active calls: (check /calls endpoint)")
                 }
+
                 input == "quit" || input == "exit" -> {
                     println("👋 Shutting down...")
                     break
                 }
+
                 input.isNotEmpty() -> {
                     println("Unknown command: $input")
                 }
@@ -210,7 +208,7 @@ object PhoneServer : ServerBuilder() {
         HttpResponse(
             status = HttpStatus(response.status),
             body = response.body,
-            headers = HttpHeaders(response.headers.entries.flatMap { it.value.map { v -> it.key to v }})
+            headers = HttpHeaders(response.headers.entries.flatMap { it.value.map { v -> it.key to v } })
         )
     }
 
@@ -242,6 +240,7 @@ object PhoneServer : ServerBuilder() {
                     )
                 )
             }
+
             "2" -> {
                 // Record a message
                 CallInstructions.Say(
@@ -254,6 +253,7 @@ object PhoneServer : ServerBuilder() {
                     )
                 )
             }
+
             "3" -> {
                 // Transfer (demo - just says transferring)
                 CallInstructions.Say(
@@ -261,6 +261,7 @@ object PhoneServer : ServerBuilder() {
                     then = CallInstructions.Redirect("/webhooks/voice")
                 )
             }
+
             "4" -> {
                 // Audio streaming demo - echoes audio back with a delay
                 // Build WebSocket URL from publicUrl setting
@@ -281,6 +282,7 @@ object PhoneServer : ServerBuilder() {
                     )
                 )
             }
+
             "9" -> {
                 // Hang up
                 CallInstructions.Say(
@@ -288,6 +290,7 @@ object PhoneServer : ServerBuilder() {
                     then = CallInstructions.Hangup
                 )
             }
+
             else -> {
                 // Invalid input
                 CallInstructions.Say(
@@ -302,7 +305,7 @@ object PhoneServer : ServerBuilder() {
         HttpResponse(
             status = HttpStatus(response.status),
             body = response.body,
-            headers = HttpHeaders(response.headers.entries.flatMap { it.value.map { v -> it.key to v }})
+            headers = HttpHeaders(response.headers.entries.flatMap { it.value.map { v -> it.key to v } })
         )
     }
 
@@ -313,7 +316,11 @@ object PhoneServer : ServerBuilder() {
         twilio().onTranscription.configureWebhook(transcriptionWebhook.location.path.resolved().fullUrl())
     }
     val transcriptionWebhook = path.path("webhooks").path("transcription").post bind HttpHandler { request ->
-        val parsed = twilio().onTranscription.parse(request.queryParameters.entries, request.headers.normalizedEntries.mapValues { it.value.map { it.toHttpString() } }, request.body ?: throw BadRequestException())
+        val parsed = twilio().onTranscription.parse(
+            request.queryParameters.entries,
+            request.headers.normalizedEntries.mapValues { it.value.map { it.toHttpString() } },
+            request.body ?: throw BadRequestException()
+        )
 
         println("\n🎙️ Recording received!")
         println("   Call SID: ${parsed.callId}")
@@ -357,7 +364,7 @@ object PhoneServer : ServerBuilder() {
     data class AudioStreamState(
         val adapter: WebsocketAdapter<AudioStreamStart, AudioStreamEvent, AudioStreamCommand>,
         var streamId: String? = null,
-        var callId: String? = null
+        var callId: String? = null,
     )
 
     /**
@@ -392,6 +399,7 @@ object PhoneServer : ServerBuilder() {
                         currentState.streamId = event.streamId
                         currentState.callId = event.callId
                     }
+
                     is AudioStreamEvent.Audio -> {
                         // Echo the audio back with the same payload
                         // In a real app, you'd process this audio (send to AI, etc.)
@@ -405,15 +413,18 @@ object PhoneServer : ServerBuilder() {
                             send((responseFrame as WebsocketAdapter.Frame.Text).text)
                         }
                     }
+
                     is AudioStreamEvent.Dtmf -> {
                         println("🎙️ DTMF received: ${event.digit} - closing stream")
                         // On any key press, close the WebSocket to end the stream
                         // This will cause Twilio to proceed to the "then" instruction
                         close(WebSocketClose.NORMAL)
                     }
+
                     is AudioStreamEvent.Stop -> {
                         println("🎙️ Stream stopping: ${event.streamId}")
                     }
+
                     is AudioStreamEvent.NoOp -> {
                         // Ignore no-op events
                     }

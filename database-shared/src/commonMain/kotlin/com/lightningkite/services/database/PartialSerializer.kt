@@ -5,9 +5,7 @@ package com.lightningkite.services.database
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.nullable
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.buildClassSerialDescriptor
-import kotlinx.serialization.descriptors.elementNames
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 
 public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializer<Partial<T>> {

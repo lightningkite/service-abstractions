@@ -3,9 +3,7 @@ package com.lightningkite.services.database.mongodb
 import com.lightningkite.services.database.DataClassPathPartial
 import com.mongodb.client.model.changestream.UpdateDescription
 import org.bson.*
-import org.bson.codecs.Codec
-import org.bson.codecs.DecoderContext
-import org.bson.codecs.EncoderContext
+import org.bson.codecs.*
 import org.bson.codecs.configuration.CodecRegistry
 
 public fun BsonValue.setPath(path: String, value: BsonValue) {

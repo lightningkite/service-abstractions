@@ -1,10 +1,7 @@
 package com.lightningkite.services.speech
 
-import com.lightningkite.MediaType
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.Data
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
@@ -27,7 +24,7 @@ import kotlinx.coroutines.flow.flowOf
  */
 public class TestTextToSpeechService(
     override val name: String,
-    override val context: SettingContext
+    override val context: SettingContext,
 ) : TextToSpeechService {
 
     /**
@@ -81,7 +78,7 @@ public class TestTextToSpeechService(
     override suspend fun synthesize(
         text: String,
         voice: TtsVoiceConfig,
-        options: TtsSynthesisOptions
+        options: TtsSynthesisOptions,
     ): TypedData {
         synthesisHistory.add(SynthesisRequest(text, voice, options))
         return TypedData(Data.Bytes(mockAudioData), MediaType.Audio.MPEG)
@@ -90,7 +87,7 @@ public class TestTextToSpeechService(
     override fun synthesizeStream(
         text: String,
         voice: TtsVoiceConfig,
-        options: TtsSynthesisOptions
+        options: TtsSynthesisOptions,
     ): Flow<TypedData> {
         synthesisHistory.add(SynthesisRequest(text, voice, options))
         return flowOf(TypedData(Data.Bytes(mockAudioData), MediaType.Audio.MPEG))
@@ -113,6 +110,6 @@ public class TestTextToSpeechService(
     public data class SynthesisRequest(
         val text: String,
         val voice: TtsVoiceConfig,
-        val options: TtsSynthesisOptions
+        val options: TtsSynthesisOptions,
     )
 }

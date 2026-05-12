@@ -20,11 +20,11 @@ class BsonTest {
         assertEquals(sample, bson.decodeFromByteArray(ser, bson.encodeToByteArray(ser, sample)))
     }
 
-    @Test fun stringifyAnyTest() {
+    @Test
+    fun stringifyAnyTest() {
         println(KBson().stringifyAny(Int.serializer(), 1))
     }
 }
-
 
 
 @Serializable

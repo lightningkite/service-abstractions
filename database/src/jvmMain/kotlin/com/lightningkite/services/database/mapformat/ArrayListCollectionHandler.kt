@@ -3,16 +3,10 @@
 
 package com.lightningkite.services.database.mapformat
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.SerializationStrategy
-import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.encoding.CompositeDecoder
-import kotlinx.serialization.encoding.CompositeEncoder
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
@@ -42,7 +36,7 @@ public class ArrayListCollectionHandler(
         input: ReadSource,
     ): CompositeDecoder {
         val list = input.readField(fieldPath) as? List<*> ?: emptyList<Any?>()
-        return ListReadDecoder(list, elementDescriptor, config)
+        return ListReadDecoder(list, config)
     }
 
     override fun createMapEncoder(
@@ -128,7 +122,7 @@ internal class ListAccumulatorEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T
+        value: T,
     ) {
         // Check for converter
         config.converters.get(serializer.descriptor)?.let {
@@ -165,7 +159,7 @@ internal class ListAccumulatorEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T?
+        value: T?,
     ) {
         if (value == null) {
             elements.add(null)
@@ -190,16 +184,45 @@ internal class ListElementEncoder(
 
     override val serializersModule: SerializersModule = config.serializersModule
 
-    override fun encodeBoolean(value: Boolean) { elements.add(value) }
-    override fun encodeByte(value: Byte) { elements.add(value) }
-    override fun encodeShort(value: Short) { elements.add(value) }
-    override fun encodeInt(value: Int) { elements.add(value) }
-    override fun encodeLong(value: Long) { elements.add(value) }
-    override fun encodeFloat(value: Float) { elements.add(value) }
-    override fun encodeDouble(value: Double) { elements.add(value) }
-    override fun encodeChar(value: Char) { elements.add(value.toString()) }
-    override fun encodeString(value: String) { elements.add(value) }
-    override fun encodeNull() { elements.add(null) }
+    override fun encodeBoolean(value: Boolean) {
+        elements.add(value)
+    }
+
+    override fun encodeByte(value: Byte) {
+        elements.add(value)
+    }
+
+    override fun encodeShort(value: Short) {
+        elements.add(value)
+    }
+
+    override fun encodeInt(value: Int) {
+        elements.add(value)
+    }
+
+    override fun encodeLong(value: Long) {
+        elements.add(value)
+    }
+
+    override fun encodeFloat(value: Float) {
+        elements.add(value)
+    }
+
+    override fun encodeDouble(value: Double) {
+        elements.add(value)
+    }
+
+    override fun encodeChar(value: Char) {
+        elements.add(value.toString())
+    }
+
+    override fun encodeString(value: String) {
+        elements.add(value)
+    }
+
+    override fun encodeNull() {
+        elements.add(null)
+    }
 
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) {
         elements.add(enumDescriptor.getElementName(index))
@@ -225,7 +248,7 @@ internal class ListElementEncoder(
 @OptIn(ExperimentalSerializationApi::class)
 internal class NestedStructureEncoder(
     private val elements: MutableList<Any?>,
-    private val config: MapFormatConfig,
+    config: MapFormatConfig,
     private val nestedTarget: SimpleWriteTarget,
 ) : CompositeEncoder {
 
@@ -267,14 +290,14 @@ internal class NestedStructureEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T
+        value: T,
     ) = delegate.encodeSerializableElement(descriptor, index, serializer, value)
 
     override fun <T : Any> encodeNullableSerializableElement(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T?
+        value: T?,
     ) = delegate.encodeNullableSerializableElement(descriptor, index, serializer, value)
 
     override fun endStructure(descriptor: SerialDescriptor) {
@@ -293,7 +316,7 @@ internal class ListElementConverterEncoder(
     override val serializersModule: SerializersModule = EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> write(value: T) {
+    private fun <T : Any> write(value: T) {
         val conv = converter as ValueConverter<T, Any>
         elements.add(conv.toDatabase(value))
     }
@@ -309,9 +332,13 @@ internal class ListElementConverterEncoder(
     override fun encodeString(value: String) = write(value)
 
     @ExperimentalSerializationApi
-    override fun encodeNull() { elements.add(null) }
+    override fun encodeNull() {
+        elements.add(null)
+    }
+
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) =
         write(enumDescriptor.getElementName(index))
+
     override fun encodeInline(descriptor: SerialDescriptor): Encoder = this
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -325,7 +352,6 @@ internal class ListElementConverterEncoder(
 @OptIn(ExperimentalSerializationApi::class)
 internal class ListReadDecoder(
     private val list: List<*>,
-    private val elementDescriptor: SerialDescriptor,
     private val config: MapFormatConfig,
 ) : CompositeDecoder {
 
@@ -378,7 +404,7 @@ internal class ListReadDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T>,
-        previousValue: T?
+        previousValue: T?,
     ): T {
         val element = list[index]
 
@@ -400,7 +426,7 @@ internal class ListReadDecoder(
             } else if (element is Map<*, *>) {
                 @Suppress("UNCHECKED_CAST")
                 val source = SimpleReadSource(element as Map<String, Any?>, emptyMap(), config.fieldSeparator)
-                return MapDecoder(config, source, deserializer.descriptor).decodeSerializableValue(deserializer)
+                return MapDecoder(config, source).decodeSerializableValue(deserializer)
             }
         }
 
@@ -413,7 +439,7 @@ internal class ListReadDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T?>,
-        previousValue: T?
+        previousValue: T?,
     ): T? {
         val element = list[index]
         return if (element == null) null else decodeSerializableElement(descriptor, index, deserializer, previousValue)
@@ -463,7 +489,7 @@ internal class ListElementDecoder(
         @Suppress("UNCHECKED_CAST")
         val map = element as Map<String, Any?>
         val source = SimpleReadSource(map, emptyMap(), config.fieldSeparator)
-        return MapDecoder(config, source, descriptor)
+        return MapDecoder(config, source)
     }
 }
 
@@ -478,7 +504,7 @@ internal class ListElementConverterDecoder(
     override val serializersModule: SerializersModule = EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> read(): T {
+    private fun <T : Any> read(): T {
         val conv = converter as ValueConverter<T, Any>
         return conv.fromDatabase(element as Any)
     }
@@ -492,13 +518,16 @@ internal class ListElementConverterDecoder(
     override fun decodeDouble(): Double = read()
     override fun decodeChar(): Char = read()
     override fun decodeString(): String = read()
+
     @ExperimentalSerializationApi
     override fun decodeNull(): Nothing? = null
     override fun decodeEnum(enumDescriptor: SerialDescriptor): Int {
         val name: String = read()
         return enumDescriptor.getElementIndex(name)
     }
+
     override fun decodeInline(descriptor: SerialDescriptor): Decoder = this
+
     @ExperimentalSerializationApi
     override fun decodeNotNullMark(): Boolean = element != null
 
@@ -582,7 +611,7 @@ internal class MapAccumulatorEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T
+        value: T,
     ) {
         // Check for converter
         config.converters.get(serializer.descriptor)?.let {
@@ -618,7 +647,7 @@ internal class MapAccumulatorEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T?
+        value: T?,
     ) {
         if (value == null) {
             handleElement(index, null)
@@ -648,16 +677,45 @@ internal class MapElementEncoder(
 
     override val serializersModule: SerializersModule = config.serializersModule
 
-    override fun encodeBoolean(value: Boolean) { parent.addElement(index, value) }
-    override fun encodeByte(value: Byte) { parent.addElement(index, value) }
-    override fun encodeShort(value: Short) { parent.addElement(index, value) }
-    override fun encodeInt(value: Int) { parent.addElement(index, value) }
-    override fun encodeLong(value: Long) { parent.addElement(index, value) }
-    override fun encodeFloat(value: Float) { parent.addElement(index, value) }
-    override fun encodeDouble(value: Double) { parent.addElement(index, value) }
-    override fun encodeChar(value: Char) { parent.addElement(index, value.toString()) }
-    override fun encodeString(value: String) { parent.addElement(index, value) }
-    override fun encodeNull() { parent.addElement(index, null) }
+    override fun encodeBoolean(value: Boolean) {
+        parent.addElement(index, value)
+    }
+
+    override fun encodeByte(value: Byte) {
+        parent.addElement(index, value)
+    }
+
+    override fun encodeShort(value: Short) {
+        parent.addElement(index, value)
+    }
+
+    override fun encodeInt(value: Int) {
+        parent.addElement(index, value)
+    }
+
+    override fun encodeLong(value: Long) {
+        parent.addElement(index, value)
+    }
+
+    override fun encodeFloat(value: Float) {
+        parent.addElement(index, value)
+    }
+
+    override fun encodeDouble(value: Double) {
+        parent.addElement(index, value)
+    }
+
+    override fun encodeChar(value: Char) {
+        parent.addElement(index, value.toString())
+    }
+
+    override fun encodeString(value: String) {
+        parent.addElement(index, value)
+    }
+
+    override fun encodeNull() {
+        parent.addElement(index, null)
+    }
 
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) {
         parent.addElement(this.index, enumDescriptor.getElementName(index))
@@ -683,7 +741,7 @@ internal class MapElementEncoder(
 internal class NestedMapStructureEncoder(
     private val parent: MapAccumulatorEncoder,
     private val index: Int,
-    private val config: MapFormatConfig,
+    config: MapFormatConfig,
     private val nestedTarget: SimpleWriteTarget,
 ) : CompositeEncoder {
 
@@ -725,14 +783,14 @@ internal class NestedMapStructureEncoder(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T
+        value: T,
     ) = delegate.encodeSerializableElement(descriptor, index, serializer, value)
 
     override fun <T : Any> encodeNullableSerializableElement(
         descriptor: SerialDescriptor,
         index: Int,
         serializer: SerializationStrategy<T>,
-        value: T?
+        value: T?,
     ) = delegate.encodeNullableSerializableElement(descriptor, index, serializer, value)
 
     override fun endStructure(descriptor: SerialDescriptor) {
@@ -752,7 +810,7 @@ internal class MapElementConverterEncoder(
     override val serializersModule: SerializersModule = EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> write(value: T) {
+    private fun <T : Any> write(value: T) {
         val conv = converter as ValueConverter<T, Any>
         parent.addElement(index, conv.toDatabase(value))
     }
@@ -766,10 +824,15 @@ internal class MapElementConverterEncoder(
     override fun encodeDouble(value: Double) = write(value)
     override fun encodeChar(value: Char) = write(value)
     override fun encodeString(value: String) = write(value)
+
     @ExperimentalSerializationApi
-    override fun encodeNull() { parent.addElement(index, null) }
+    override fun encodeNull() {
+        parent.addElement(index, null)
+    }
+
     override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) =
         write(enumDescriptor.getElementName(index))
+
     override fun encodeInline(descriptor: SerialDescriptor): Encoder = this
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -800,9 +863,6 @@ internal class MapReadDecoder(
 
     override fun decodeCollectionSize(descriptor: SerialDescriptor): Int = map.size
 
-    private fun currentEntry(): Map.Entry<*, *> = entries[currentIndex / 2]
-    private fun isKey(): Boolean = currentIndex % 2 == 0
-    private fun currentValue(): Any? = if (isKey()) currentEntry().key else currentEntry().value
 
     override fun decodeBooleanElement(descriptor: SerialDescriptor, index: Int): Boolean =
         getValue(index) as Boolean
@@ -848,7 +908,7 @@ internal class MapReadDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T>,
-        previousValue: T?
+        previousValue: T?,
     ): T {
         val element = getValue(index)
 
@@ -870,7 +930,7 @@ internal class MapReadDecoder(
             } else if (element is Map<*, *>) {
                 @Suppress("UNCHECKED_CAST")
                 val source = SimpleReadSource(element as Map<String, Any?>, emptyMap(), config.fieldSeparator)
-                return MapDecoder(config, source, deserializer.descriptor).decodeSerializableValue(deserializer)
+                return MapDecoder(config, source).decodeSerializableValue(deserializer)
             }
         }
 
@@ -883,7 +943,7 @@ internal class MapReadDecoder(
         descriptor: SerialDescriptor,
         index: Int,
         deserializer: DeserializationStrategy<T?>,
-        previousValue: T?
+        previousValue: T?,
     ): T? {
         val element = getValue(index)
         return if (element == null) null else decodeSerializableElement(descriptor, index, deserializer, previousValue)

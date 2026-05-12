@@ -13,7 +13,7 @@ public data class ConditionAnalysis<T>(
     /** True if no useful CQL condition could be generated (requires full table scan) */
     val requiresFullScan: Boolean,
     /** Performance warnings about the query */
-    val warnings: List<String>
+    val warnings: List<String>,
 )
 
 /**
@@ -21,7 +21,7 @@ public data class ConditionAnalysis<T>(
  * and which must be filtered in the application.
  */
 public class ConditionAnalyzer<T : Any>(
-    private val schema: CassandraSchema<T>
+    private val schema: CassandraSchema<T>,
 ) {
     /**
      * Analyzes a condition and splits it into CQL-pushable and app-side parts.
@@ -158,11 +158,13 @@ public class ConditionAnalyzer<T : Any>(
     @Suppress("UNCHECKED_CAST")
     private fun <V> analyzePartitionKeyCondition(
         onField: Condition.OnField<T, V>,
-        inner: Condition<V>
+        inner: Condition<V>,
     ): ConditionAnalysis<T> {
         return when (inner) {
             is Condition.Equal<*>,
-            is Condition.Inside<*> -> pushable(onField as Condition<T>)
+            is Condition.Inside<*>,
+                -> pushable(onField as Condition<T>)
+
             else -> appFallback(onField as Condition<T>, "Partition key only supports equality and IN queries")
         }
     }
@@ -170,7 +172,7 @@ public class ConditionAnalyzer<T : Any>(
     @Suppress("UNCHECKED_CAST")
     private fun <V> analyzeClusteringCondition(
         onField: Condition.OnField<T, V>,
-        inner: Condition<V>
+        inner: Condition<V>,
     ): ConditionAnalysis<T> {
         return when (inner) {
             is Condition.Equal<*>,
@@ -178,7 +180,9 @@ public class ConditionAnalyzer<T : Any>(
             is Condition.GreaterThan<*>,
             is Condition.LessThan<*>,
             is Condition.GreaterThanOrEqual<*>,
-            is Condition.LessThanOrEqual<*> -> pushable(onField as Condition<T>)
+            is Condition.LessThanOrEqual<*>,
+                -> pushable(onField as Condition<T>)
+
             else -> appFallback(onField as Condition<T>, "Clustering column doesn't support this condition type")
         }
     }
@@ -187,7 +191,7 @@ public class ConditionAnalyzer<T : Any>(
     private fun <V> analyzeSasiCondition(
         onField: Condition.OnField<T, V>,
         inner: Condition<V>,
-        fieldName: String
+        fieldName: String,
     ): ConditionAnalysis<T> {
         val sasiInfo = schema.sasiIndexes[fieldName]!!
 
@@ -200,6 +204,7 @@ public class ConditionAnalyzer<T : Any>(
                         // SASI CONTAINS mode supports LIKE '%value%'
                         pushable(onField as Condition<T>)
                     }
+
                     SasiMode.PREFIX -> {
                         // Can only do prefix match, not contains
                         appFallback(
@@ -207,6 +212,7 @@ public class ConditionAnalyzer<T : Any>(
                             "SASI PREFIX mode doesn't support contains; use CONTAINS mode"
                         )
                     }
+
                     SasiMode.SPARSE -> {
                         appFallback(onField as Condition<T>, "SASI SPARSE mode doesn't support string operations")
                     }
@@ -214,7 +220,8 @@ public class ConditionAnalyzer<T : Any>(
             }
 
             is Condition.GreaterThan<*>, is Condition.LessThan<*>,
-            is Condition.GreaterThanOrEqual<*>, is Condition.LessThanOrEqual<*> -> {
+            is Condition.GreaterThanOrEqual<*>, is Condition.LessThanOrEqual<*>,
+                -> {
                 // SASI supports range queries
                 pushable(onField as Condition<T>)
             }
@@ -231,7 +238,7 @@ public class ConditionAnalyzer<T : Any>(
     @Suppress("UNCHECKED_CAST")
     private fun <V> analyzeSaiCondition(
         onField: Condition.OnField<T, V>,
-        inner: Condition<V>
+        inner: Condition<V>,
     ): ConditionAnalysis<T> {
         return when (inner) {
             // SAI supports: equality and range queries
@@ -240,7 +247,8 @@ public class ConditionAnalyzer<T : Any>(
             is Condition.GreaterThan<*>,
             is Condition.LessThan<*>,
             is Condition.GreaterThanOrEqual<*>,
-            is Condition.LessThanOrEqual<*> -> pushable(onField as Condition<T>)
+            is Condition.LessThanOrEqual<*>,
+                -> pushable(onField as Condition<T>)
 
             is Condition.NotEqual<*> -> appFallback(onField as Condition<T>, "SAI does not support != queries")
             is Condition.Inside<*> -> appFallback(onField as Condition<T>, "SAI does not support IN queries")
@@ -271,7 +279,7 @@ public class ConditionAnalyzer<T : Any>(
     private fun <V> analyzeComputedColumnRedirect(
         onField: Condition.OnField<T, V>,
         inner: Condition<V>,
-        fieldName: String
+        fieldName: String,
     ): ConditionAnalysis<T> {
         val computedColumn = schema.isComputedFrom(fieldName)
         if (computedColumn == null) {
@@ -299,7 +307,7 @@ public class ConditionAnalyzer<T : Any>(
                 requiresFullScan = true,
                 warnings = listOf(
                     "Query on '$fieldName' could use computed column '$computedColumn' for case-insensitive search. " +
-                    "Rewrite the query to target '$computedColumn' directly."
+                            "Rewrite the query to target '$computedColumn' directly."
                 )
             )
         }

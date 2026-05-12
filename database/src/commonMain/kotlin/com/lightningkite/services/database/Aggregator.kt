@@ -18,17 +18,19 @@ public inline fun <T> Aggregator.aggregate(iterator: Iterator<T>, transform: (T)
 }
 
 public fun Aggregate.aggregator(
-    mode: Aggregator.Mode = Aggregator.Mode.Precision
+    mode: Aggregator.Mode = Aggregator.Mode.Precision,
 ): Aggregator = when (this) {
     Aggregate.Sum -> SumAggregator(mode)
     Aggregate.Average -> when (mode) {
         Aggregator.Mode.Speed -> AverageAggregatorSpeed()
         Aggregator.Mode.Precision -> AverageAggregatorPrecision()
     }
+
     Aggregate.StandardDeviationSample -> when (mode) {
         Aggregator.Mode.Speed -> StandardDeviationSampleAggregatorSpeed()
         Aggregator.Mode.Precision -> StandardDeviationSampleAggregatorPrecision()
     }
+
     Aggregate.StandardDeviationPopulation -> when (mode) {
         Aggregator.Mode.Speed -> StandardDeviationPopulationAggregatorSpeed()
         Aggregator.Mode.Precision -> StandardDeviationPopulationAggregatorPrecision()

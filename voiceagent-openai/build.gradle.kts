@@ -1,8 +1,7 @@
-import com.lightningkite.deployhelpers.*
+import com.lightningkite.deployhelpers.lkLibrary
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.ksp)
     alias(libs.plugins.dokka)
     alias(libs.plugins.kotlin.serialization)
     id("signing")
@@ -40,19 +39,11 @@ kotlin {
         freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
     explicitApi()
-    sourceSets.main {
-        kotlin.srcDir("build/generated/ksp/main/kotlin")
-    }
-    sourceSets.test {
-        kotlin.srcDir("build/generated/ksp/test/kotlin")
-    }
 }
 
 tasks.withType<JavaCompile>().configureEach {
     this.targetCompatibility = "17"
 }
-
-lkLibrary("lightningkite", "service-abstractions") {}
 
 // Task to run the voice agent demo
 tasks.register<JavaExec>("runVoiceAgentDemo") {
@@ -60,4 +51,12 @@ tasks.register<JavaExec>("runVoiceAgentDemo") {
     description = "Run the interactive voice agent demo (requires OPENAI_API_KEY env var)"
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("com.lightningkite.services.voiceagent.openai.VoiceAgentDemoKt")
+}
+
+lkLibrary(
+    "lightningkite",
+    "service-abstractions",
+    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
+) {
+    description.set("An speech/dialog generator implementation using OpenAI.")
 }

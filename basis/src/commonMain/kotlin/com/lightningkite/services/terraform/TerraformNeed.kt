@@ -27,7 +27,7 @@ public inline fun <reified T> TerraformNeed(
     name: String,
     default: T? = null,
     instructions: String = "No instructions provided.",
-): TerraformNeed<T>  =
+): TerraformNeed<T> =
     object : TerraformNeed<T> {
         override val name: String = name
         override val serializer: KSerializer<T> = serializer()

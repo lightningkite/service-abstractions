@@ -20,6 +20,7 @@ val emailService = EmailService.Settings("console").invoke(context)
 ```
 
 Available URL formats:
+
 - `console://` - Outputs emails to the console (for development)
 - `test://` - Stores emails in memory (for testing)
 - SMTP and Mailgun implementations are available in separate modules

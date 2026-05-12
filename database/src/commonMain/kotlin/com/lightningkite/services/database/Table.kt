@@ -120,7 +120,7 @@ public interface Table<Model : Any> {
         orderBy: List<SortPart<Model>> = listOf(),
         skip: Int = 0,
         limit: Int = Int.MAX_VALUE,
-        maxQueryMs: Long = 15_000
+        maxQueryMs: Long = 15_000,
     ): Flow<Model>
 
     /**
@@ -147,7 +147,7 @@ public interface Table<Model : Any> {
      * Count the number of matching items in the collection.
      */
     public suspend fun count(
-        condition: Condition<Model> = Condition.Always
+        condition: Condition<Model> = Condition.Always,
     ): Int
 
     /**
@@ -155,7 +155,7 @@ public interface Table<Model : Any> {
      */
     public suspend fun <Key> groupCount(
         condition: Condition<Model> = Condition.Always,
-        groupBy: DataClassPath<Model, Key>
+        groupBy: DataClassPath<Model, Key>,
     ): Map<Key, Int>
 
     /**
@@ -164,7 +164,7 @@ public interface Table<Model : Any> {
     public suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model> = Condition.Always,
-        property: DataClassPath<Model, N>
+        property: DataClassPath<Model, N>,
     ): Double?
 
     /**
@@ -174,7 +174,7 @@ public interface Table<Model : Any> {
         aggregate: Aggregate,
         condition: Condition<Model> = Condition.Always,
         groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>
+        property: DataClassPath<Model, N>,
     ): Map<Key, Double?>
 
 
@@ -183,7 +183,7 @@ public interface Table<Model : Any> {
      * @return The items that were actually inserted in the end.
      */
     public suspend fun insert(
-        models: Iterable<Model>
+        models: Iterable<Model>,
     ): List<Model>
 
 
@@ -194,7 +194,7 @@ public interface Table<Model : Any> {
     public suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>> = listOf()
+        orderBy: List<SortPart<Model>> = listOf(),
     ): EntryChange<Model>
 
     /**
@@ -204,7 +204,7 @@ public interface Table<Model : Any> {
     public suspend fun replaceOneIgnoringResult(
         condition: Condition<Model>,
         model: Model,
-        orderBy: List<SortPart<Model>> = listOf()
+        orderBy: List<SortPart<Model>> = listOf(),
     ): Boolean
 
     /**
@@ -214,7 +214,7 @@ public interface Table<Model : Any> {
     public suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): EntryChange<Model>
 
     /**
@@ -224,7 +224,7 @@ public interface Table<Model : Any> {
     public suspend fun upsertOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        model: Model
+        model: Model,
     ): Boolean
 
     /**
@@ -244,7 +244,7 @@ public interface Table<Model : Any> {
     public suspend fun updateOneIgnoringResult(
         condition: Condition<Model>,
         modification: Modification<Model>,
-        orderBy: List<SortPart<Model>> = listOf()
+        orderBy: List<SortPart<Model>> = listOf(),
     ): Boolean
 
 
@@ -272,7 +272,7 @@ public interface Table<Model : Any> {
      */
     public suspend fun deleteOne(
         condition: Condition<Model>,
-        orderBy: List<SortPart<Model>> = listOf()
+        orderBy: List<SortPart<Model>> = listOf(),
     ): Model?
 
     /**
@@ -281,7 +281,7 @@ public interface Table<Model : Any> {
      */
     public suspend fun deleteOneIgnoringOld(
         condition: Condition<Model>,
-        orderBy: List<SortPart<Model>> = listOf()
+        orderBy: List<SortPart<Model>> = listOf(),
     ): Boolean
 
 
@@ -290,7 +290,7 @@ public interface Table<Model : Any> {
      * @return The item removed from the collection.
      */
     public suspend fun deleteMany(
-        condition: Condition<Model>
+        condition: Condition<Model>,
     ): List<Model>
 
     /**
@@ -298,7 +298,7 @@ public interface Table<Model : Any> {
      * @return The number of deleted items.
      */
     public suspend fun deleteManyIgnoringOld(
-        condition: Condition<Model>
+        condition: Condition<Model>,
     ): Int
 
     // ===== Vector Search Methods =====

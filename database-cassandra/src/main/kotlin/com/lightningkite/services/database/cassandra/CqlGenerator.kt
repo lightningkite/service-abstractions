@@ -60,7 +60,7 @@ public fun convertToCassandraType(value: Any?): Any? {
  */
 public data class CqlQuery(
     val cql: String,
-    val parameters: List<Any?>
+    val parameters: List<Any?>,
 )
 
 /**
@@ -71,7 +71,7 @@ public class CqlGenerator<T : Any>(
     private val schema: CassandraSchema<T>,
     private val tableName: String = schema.tableName,
     // by Claude - SerializersModule for encoding embedded types
-    private val serializersModule: kotlinx.serialization.modules.SerializersModule = kotlinx.serialization.modules.EmptySerializersModule()
+    private val serializersModule: kotlinx.serialization.modules.SerializersModule = kotlinx.serialization.modules.EmptySerializersModule(),
 ) {
     // by Claude - lazy MapFormat for encoding embedded types to flattened fields
     private val mapFormat by lazy { CassandraMapFormat(serializersModule) }
@@ -98,6 +98,7 @@ public class CqlGenerator<T : Any>(
     private fun expandEmbeddedValue(path: String, value: Any): List<Pair<String, Any?>> {
         // Use reflection to get the serializer for the value's type
         val valueSerializer = serializer(value::class.java)
+
         @Suppress("UNCHECKED_CAST")
         val encoded = mapFormat.encode(valueSerializer as kotlinx.serialization.KSerializer<Any>, value)
 
@@ -114,7 +115,7 @@ public class CqlGenerator<T : Any>(
     public fun generateSelect(
         condition: Condition<T>,
         orderBy: List<SortPart<T>>,
-        limit: Int?
+        limit: Int?,
     ): CqlQuery {
         val builder = StringBuilder("SELECT * FROM $tableName")
         val params = mutableListOf<Any?>()
@@ -182,7 +183,7 @@ public class CqlGenerator<T : Any>(
     public fun generateUpdateWithLwt(
         setColumns: List<String>,
         pkColumns: List<String>,
-        ckColumns: List<String>
+        ckColumns: List<String>,
     ): String {
         val setClauses = setColumns.joinToString(", ") { "${it.quoteCql()} = ?" }
         val pkConditions = pkColumns.joinToString(" AND ") { "${it.quoteCql()} = ?" }
@@ -198,7 +199,7 @@ public class CqlGenerator<T : Any>(
      */
     public fun buildWhereClause(
         condition: Condition<T>,
-        params: MutableList<Any?>
+        params: MutableList<Any?>,
     ): String {
         return when (condition) {
             is Condition.Always -> ""
@@ -242,7 +243,7 @@ public class CqlGenerator<T : Any>(
         column: String,
         condition: Condition<*>,
         params: MutableList<Any?>,
-        pathPrefix: String = ""
+        pathPrefix: String = "",
     ): String {
         // Build full column path with __ separator for flattened embedded objects
         val fullPath = if (pathPrefix.isEmpty()) column else "${pathPrefix}__${column}"
@@ -321,10 +322,12 @@ public class CqlGenerator<T : Any>(
                         (condition.condition as? Condition.Equal<*>)?.value
                             ?: throw IllegalArgumentException("ListAnyElements requires Equal condition for CQL CONTAINS")
                     }
+
                     is Condition.SetAnyElements<*> -> {
                         (condition.condition as? Condition.Equal<*>)?.value
                             ?: throw IllegalArgumentException("SetAnyElements requires Equal condition for CQL CONTAINS")
                     }
+
                     else -> throw IllegalStateException()
                 }
                 params.add(convertToCassandraType(value))

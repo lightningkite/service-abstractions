@@ -1,6 +1,7 @@
 package com.lightningkite.services.speech
 
 import com.lightningkite.services.*
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
@@ -124,7 +125,7 @@ public interface TextToSpeechService : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "test"
+        public val url: String = "test",
     ) : Setting<TextToSpeechService> {
         public companion object : UrlSettingParser<TextToSpeechService>() {
             init {
@@ -158,7 +159,7 @@ public interface TextToSpeechService : Service {
     public suspend fun synthesize(
         text: String,
         voice: TtsVoiceConfig = TtsVoiceConfig(),
-        options: TtsSynthesisOptions = TtsSynthesisOptions()
+        options: TtsSynthesisOptions = TtsSynthesisOptions(),
     ): TypedData
 
     /**
@@ -176,7 +177,7 @@ public interface TextToSpeechService : Service {
     public fun synthesizeStream(
         text: String,
         voice: TtsVoiceConfig = TtsVoiceConfig(),
-        options: TtsSynthesisOptions = TtsSynthesisOptions()
+        options: TtsSynthesisOptions = TtsSynthesisOptions(),
     ): Flow<TypedData>
 
     override val healthCheckFrequency: Duration get() = 5.minutes
@@ -199,5 +200,5 @@ public interface TextToSpeechService : Service {
  */
 public class TextToSpeechException(
     override val message: String,
-    override val cause: Throwable? = null
+    override val cause: Throwable? = null,
 ) : Exception(message, cause)

@@ -1,19 +1,9 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.GeoCoordinate
-import com.lightningkite.IsRawString
-import com.lightningkite.services.data.DisplayName
-import com.lightningkite.services.data.DoesNotNeedLabel
-import com.lightningkite.services.data.TextIndex
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
+import com.lightningkite.services.data.*
+import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlin.jvm.JvmName
+import kotlinx.serialization.json.*
 
 /**
  * Represents a boolean query condition for filtering database records.
@@ -136,6 +126,7 @@ public sealed class Condition<in T> {
     @Serializable(ConditionInsideSerializer::class)
     public data class Inside<T>(val values: Set<T>) : Condition<T>() {
         public constructor(values: Collection<T>) : this(values.toSet())
+
         override fun invoke(on: T): Boolean = values.contains(on)
         override fun toString(): String = " in $values"
     }
@@ -143,6 +134,7 @@ public sealed class Condition<in T> {
     @Serializable(ConditionNotInsideSerializer::class)
     public data class NotInside<T>(val values: Set<T>) : Condition<T>() {
         public constructor(values: Collection<T>) : this(values.toSet())
+
         override fun invoke(on: T): Boolean = !values.contains(on)
         override fun toString(): String = " !in $values"
     }
@@ -179,7 +171,8 @@ public sealed class Condition<in T> {
     }
 
     @Serializable
-    public data class RawStringContains<T : IsRawString>(val value: String, val ignoreCase: Boolean = false) : Condition<T>() {
+    public data class RawStringContains<T : IsRawString>(val value: String, val ignoreCase: Boolean = false) :
+        Condition<T>() {
         override fun invoke(on: T): Boolean = on.raw.contains(value, ignoreCase)
         override fun toString(): String = ".contains($value, $ignoreCase)"
     }
@@ -188,7 +181,7 @@ public sealed class Condition<in T> {
     public data class GeoDistance(
         val value: GeoCoordinate,
         val greaterThanKilometers: Double = 0.0,
-        val lessThanKilometers: Double = 100_000.0
+        val lessThanKilometers: Double = 100_000.0,
     ) : Condition<GeoCoordinate>() {
         override fun invoke(on: GeoCoordinate): Boolean =
             on.distanceToKilometers(value) in greaterThanKilometers..lessThanKilometers
@@ -209,24 +202,28 @@ public sealed class Condition<in T> {
                 if (on != null) {
                     kotlinx.serialization.serializer(on::class, listOf(), false)
                 } else null
-            } catch(e: Exception) { null }
-            if(ser != null && ser.descriptor.kind == StructureKind.CLASS) {
+            } catch (e: Exception) {
+                null
+            }
+            if (ser != null && ser.descriptor.kind == StructureKind.CLASS) {
                 val fieldNames = ser.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
                 val element = Json.encodeToJsonElement(ser, on) as? JsonObject
-                val fromString = element?.let { e -> fieldNames?.joinToString(" ") { fieldPath ->
-                    // by Claude: Handle nested field paths like "metadata.category" by traversing the JSON structure
-                    val pathParts = fieldPath.split(".")
-                    var current: kotlinx.serialization.json.JsonElement? = e
-                    for (part in pathParts) {
-                        current = (current as? JsonObject)?.get(part)
-                        if (current == null) break
+                val fromString = element?.let { e ->
+                    fieldNames?.joinToString(" ") { fieldPath ->
+                        // by Claude: Handle nested field paths like "metadata.category" by traversing the JSON structure
+                        val pathParts = fieldPath.split(".")
+                        var current: kotlinx.serialization.json.JsonElement? = e
+                        for (part in pathParts) {
+                            current = (current as? JsonObject)?.get(part)
+                            if (current == null) break
+                        }
+                        when (val p = current) {
+                            is JsonPrimitive -> p.content
+                            null -> ""
+                            else -> p.toString()
+                        }
                     }
-                    when(val p = current) {
-                        is JsonPrimitive -> p.content
-                        null -> ""
-                        else -> p.toString()
-                    }
-                } } ?: on.toString()
+                } ?: on.toString()
                 return TextQuery.fromString(value).fuzzyPresent(fromString, levenshteinDistance)
             } else return TextQuery.fromString(value).fuzzyPresent(on.toString(), levenshteinDistance)
         }
@@ -373,7 +370,8 @@ public fun <T> Condition.Companion.orNotNull(vararg conditions: Condition<T>?): 
  *
  * Useful when building [Mask] or [UpdateRestrictions] when changes only _sometimes_ must meet conditions
  */
-public fun <T> Condition.Companion.ifThen(if_: Condition<T>, then: Condition<T>): Condition.Or<T> = (if_ and then) or !if_
+public fun <T> Condition.Companion.ifThen(if_: Condition<T>, then: Condition<T>): Condition.Or<T> =
+    (if_ and then) or !if_
 
 /**
  * Creates a conditional condition that evaluates to one of two conditions based on another condition.
@@ -385,7 +383,11 @@ public fun <T> Condition.Companion.ifThen(if_: Condition<T>, then: Condition<T>)
  *
  * Useful when you need to express alternative sets of requirements
  */
-public fun <T> Condition.Companion.ifThenElse(if_: Condition<T>, then: Condition<T>, else_: Condition<T>): Condition.Or<T> =
+public fun <T> Condition.Companion.ifThenElse(
+    if_: Condition<T>,
+    then: Condition<T>,
+    else_: Condition<T>,
+): Condition.Or<T> =
     (if_ and then) or (!if_ and else_)
 
 // TODO: API Recommendation - Add empty/notEmpty collection conditions

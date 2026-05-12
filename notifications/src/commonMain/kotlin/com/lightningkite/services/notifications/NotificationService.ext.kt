@@ -25,7 +25,7 @@ public suspend fun NotificationService.send(
     critical: Boolean = false,
     androidChannel: String? = null,
     timeToLive: Duration? = null,
-    link: String? = null
+    link: String? = null,
 ): Map<String, NotificationSendResult> = send(
     targets = targets,
     data = NotificationData(
@@ -61,7 +61,7 @@ public suspend fun NotificationService.send(
     ios: NotificationIos? = null,
     web: NotificationWeb? = null,
 ): Map<String, NotificationSendResult> = send(
-    targets, 
+    targets,
     NotificationData(notification, data, android, ios, web)
 )
 
@@ -74,5 +74,5 @@ public suspend fun NotificationService.send(
  */
 public suspend fun NotificationService.sendToOne(
     target: String,
-    data: NotificationData
+    data: NotificationData,
 ): NotificationSendResult = send(listOf(target), data)[target] ?: NotificationSendResult.Failure
