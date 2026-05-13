@@ -41,15 +41,13 @@ package com.lightningkite.services
  *
  * ## Thread Safety
  *
- * On JVM/Android the underlying map is a `ConcurrentHashMap` and `computeIfAbsent`
- * is used to guarantee [Key.setup] is called at most once per key under concurrent
- * access. On Kotlin/Native and JS the underlying map is a synchronized wrapper;
- * concurrent access is safe but [Key.setup] may run more than once per key in a
- * narrow race window (the first inserted value still wins).
+ * Storage is a [ConcurrentMutableMap] and uses its atomic [ConcurrentMutableMap.compute]
+ * operation, so [Key.setup] is guaranteed to run at most once per key on every platform
+ * (JVM, Android, JS, Native iOS/macOS).
  *
  * @property map Internal storage for cached resources (default: [ConcurrentMutableMap]).
  */
-public class SharedResources(private val map: MutableMap<Key<*>, Any?> = ConcurrentMutableMap()) {
+public class SharedResources(private val map: ConcurrentMutableMap<Key<*>, Any?> = ConcurrentMutableMap()) {
     /**
      * Resource key that knows how to create its associated resource.
      *
@@ -90,16 +88,15 @@ public class SharedResources(private val map: MutableMap<Key<*>, Any?> = Concurr
      * @return The resource instance (either cached or newly created)
      */
     @Suppress("UNCHECKED_CAST")
-    public fun <T> get(key: Key<T>, context: SettingContext): T =
-        getOrSetupAtomic(map, key) { key.setup(context) } as T
+    public fun <T> get(key: Key<T>, context: SettingContext): T {
+        // compute is atomic on every platform, so setup runs at most once per key.
+        // Null results from setup are intentionally cached: a sentinel is stored because
+        // ConcurrentHashMap (JVM/Android) does not allow null values.
+        val stored = map.compute(key) { _, existing ->
+            existing ?: (key.setup(context) ?: NULL_SENTINEL)
+        }
+        return if (stored === NULL_SENTINEL) null as T else stored as T
+    }
 }
 
-/**
- * Platform-specific lookup-or-compute used by [SharedResources.get].
- *
- * On JVM/Android the implementation uses `ConcurrentHashMap.computeIfAbsent`, which guarantees
- * [setup] runs at most once per key even under concurrent access. On other targets a simple
- * `getOrPut` is used; the map's own synchronization makes individual operations safe, but
- * `setup` may execute more than once in a narrow race window (the first inserted value wins).
- */
-internal expect fun <K> getOrSetupAtomic(map: MutableMap<K, Any?>, key: K, setup: () -> Any?): Any?
+private val NULL_SENTINEL: Any = Any()

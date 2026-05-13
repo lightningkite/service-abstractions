@@ -197,78 +197,58 @@ public class RedisPubSub(
         }
     }
 
-    override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
-        return object : PubSubChannel<T> {
-            override suspend fun collect(collector: FlowCollector<T>): Unit = otel.span("pubsub.subscribe", configure = {
-                setSpanKind(SpanKind.CONSUMER)
-                setAttribute("pubsub.operation", "subscribe")
-                setAttribute("messaging.destination", key)
-                setAttribute("messaging.system", "redis")
-            }) {
-                // Create fresh subscription - no caching for serverless compatibility
-                // Per-message spans created in the coroutine context (after asFlow()) so
-                // makeCurrent() works correctly and child spans get the right parent.
-                createSubscription(key).asFlow().collect { message ->
-                    otel.span("pubsub.receive", configure = {
-                        setSpanKind(SpanKind.CONSUMER)
-                        setAttribute("pubsub.operation", "receive")
-                        setAttribute("messaging.destination", key)
-                        setAttribute("messaging.system", "redis")
-                        setAttribute("message.size", message.length.toLong())
-                    }) {
-                        val decoded = json.decodeFromString(serializer, message)
-                        collector.emit(decoded)
-                    }
+    /**
+     * Builds a [PubSubChannel] backed by Redis pub/sub, using the given codec to
+     * translate between [T] and the raw on-the-wire Redis string payload.
+     *
+     * @param key Redis channel name to subscribe to and publish on.
+     * @param encode Serializes a value of [T] into the string payload published to Redis.
+     * @param decode Parses an incoming Redis message back into a value of [T].
+     */
+    private fun <T> channelImpl(
+        key: String,
+        encode: (T) -> String,
+        decode: (String) -> T,
+    ): PubSubChannel<T> = object : PubSubChannel<T> {
+        override suspend fun collect(collector: FlowCollector<T>): Unit = otel.span("pubsub.subscribe", configure = {
+            setSpanKind(SpanKind.CONSUMER)
+            setAttribute("pubsub.operation", "subscribe")
+            setAttribute("messaging.destination", key)
+            setAttribute("messaging.system", "redis")
+        }) {
+            // Create fresh subscription - no caching for serverless compatibility
+            // Per-message spans created in the coroutine context (after asFlow()) so
+            // makeCurrent() works correctly and child spans get the right parent.
+            createSubscription(key).asFlow().collect { message ->
+                otel.span("pubsub.receive", configure = {
+                    setSpanKind(SpanKind.CONSUMER)
+                    setAttribute("pubsub.operation", "receive")
+                    setAttribute("messaging.destination", key)
+                    setAttribute("messaging.system", "redis")
+                    setAttribute("message.size", message.length.toLong())
+                }) {
+                    collector.emit(decode(message))
                 }
             }
+        }
 
-            override suspend fun emit(value: T): Unit = otel.span("pubsub.publish", configure = {
-                setSpanKind(SpanKind.PRODUCER)
-                setAttribute("pubsub.operation", "publish")
-                setAttribute("messaging.destination", key)
-                setAttribute("messaging.system", "redis")
-            }) { span ->
-                val message = json.encodeToString(serializer, value)
-                span?.setAttribute("message.size", message.length.toLong())
-                val result = publishConnection.reactive().publish(key, message).awaitFirst()
-                span?.setAttribute("pubsub.subscribers_reached", result)
-            }
+        override suspend fun emit(value: T): Unit = otel.span("pubsub.publish", configure = {
+            setSpanKind(SpanKind.PRODUCER)
+            setAttribute("pubsub.operation", "publish")
+            setAttribute("messaging.destination", key)
+            setAttribute("messaging.system", "redis")
+        }) { span ->
+            val message = encode(value)
+            span?.setAttribute("message.size", message.length.toLong())
+            val result = publishConnection.reactive().publish(key, message).awaitFirst()
+            span?.setAttribute("pubsub.subscribers_reached", result)
         }
     }
 
-    override fun string(key: String): PubSubChannel<String> {
-        return object : PubSubChannel<String> {
-            override suspend fun collect(collector: FlowCollector<String>): Unit = otel.span("pubsub.subscribe", configure = {
-                setSpanKind(SpanKind.CONSUMER)
-                setAttribute("pubsub.operation", "subscribe")
-                setAttribute("messaging.destination", key)
-                setAttribute("messaging.system", "redis")
-            }) {
-                // Create fresh subscription - no caching for serverless compatibility
-                createSubscription(key).asFlow().collect { message ->
-                    otel.span("pubsub.receive", configure = {
-                        setSpanKind(SpanKind.CONSUMER)
-                        setAttribute("pubsub.operation", "receive")
-                        setAttribute("messaging.destination", key)
-                        setAttribute("messaging.system", "redis")
-                        setAttribute("message.size", message.length.toLong())
-                    }) {
-                        collector.emit(message)
-                    }
-                }
-            }
+    override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> =
+        channelImpl(key, { json.encodeToString(serializer, it) }, { json.decodeFromString(serializer, it) })
 
-            override suspend fun emit(value: String): Unit = otel.span("pubsub.publish", configure = {
-                setSpanKind(SpanKind.PRODUCER)
-                setAttribute("pubsub.operation", "publish")
-                setAttribute("messaging.destination", key)
-                setAttribute("messaging.system", "redis")
-                setAttribute("message.size", value.length.toLong())
-            }) { span ->
-                val result = publishConnection.reactive().publish(key, value).awaitFirst()
-                span?.setAttribute("pubsub.subscribers_reached", result)
-            }
-        }
-    }
+    override fun string(key: String): PubSubChannel<String> =
+        channelImpl(key, { it }, { it })
 
 }

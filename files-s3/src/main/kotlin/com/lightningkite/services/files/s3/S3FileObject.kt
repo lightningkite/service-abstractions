@@ -92,32 +92,35 @@ public class S3FileObject(
      * This method uses pagination to handle directories with many files efficiently.
      * It filters results to only include direct children (not nested subdirectories).
      *
-     * @return A list of [S3FileObject] representing the directory contents, or null if this is not a directory
+     * S3 has no concept of directories — "directory" is just a naming convention on object keys.
+     * `listObjectsV2` returns an empty result set for a non-existent prefix rather than throwing,
+     * so this method never returns null in practice. Use [head] to distinguish "exists and empty"
+     * from "doesn't exist" if that distinction matters to the caller. Operational failures
+     * (NoSuchBucket, AccessDenied, throttling, network) propagate so the surrounding telemetry
+     * span records them as errors.
+     *
+     * @return A list of [S3FileObject] representing the directory contents (empty if no children)
      */
     override suspend fun list(): List<FileObject>? =
         system.otel.span("file.list", configure = s3SpanAttrs("list")) { span ->
             val result = withContext(Dispatchers.IO) {
-                try {
-                    val results = ArrayList<S3FileObject>()
-                    var token: String? = null
-                    while (true) {
-                        val r = system.s3Async.listObjectsV2 {
-                            it.bucket(system.bucket)
-                            it.prefix(unixPath)
-                            it.delimiter("/")
-                            token?.let { t -> it.continuationToken(t) }
-                        }.await()
-                        results += r.contents().filter { !it.key().substringAfter(unixPath).contains('/') }
-                            .map { S3FileObject(system, File(it.key())) }
-                        if (r.isTruncated) token = r.nextContinuationToken()
-                        else break
-                    }
-                    results
-                } catch (e: Exception) {
-                    null
+                val results = ArrayList<S3FileObject>()
+                var token: String? = null
+                while (true) {
+                    val r = system.s3Async.listObjectsV2 {
+                        it.bucket(system.bucket)
+                        it.prefix(unixPath)
+                        it.delimiter("/")
+                        token?.let { t -> it.continuationToken(t) }
+                    }.await()
+                    results += r.contents().filter { !it.key().substringAfter(unixPath).contains('/') }
+                        .map { S3FileObject(system, File(it.key())) }
+                    if (r.isTruncated) token = r.nextContinuationToken()
+                    else break
                 }
+                results
             }
-            result?.let { span?.setAttribute("file.count", it.size.toLong()) }
+            span?.setAttribute("file.count", result.size.toLong())
             result
         }
 

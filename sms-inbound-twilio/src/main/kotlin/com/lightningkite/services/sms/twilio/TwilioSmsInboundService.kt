@@ -3,6 +3,7 @@ package com.lightningkite.services.sms.twilio
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.TelemetrySanitization
 import com.lightningkite.services.otel.get
 import com.lightningkite.services.otel.span
 import com.lightningkite.services.sms.InboundSms
@@ -29,16 +30,6 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Clock
 
 private val logger = io.github.oshai.kotlinlogging.KotlinLogging.logger("TwilioSmsInboundService")
-
-/** Redacts a phone number for telemetry. Mirrors `TelemetrySanitization.redactPhoneNumber`. */
-private fun redactPhone(phoneNumber: String): String {
-    if (phoneNumber.startsWith("+") && phoneNumber.length > 6) {
-        val countryCode = phoneNumber.takeWhile { it.isDigit() || it == '+' }.take(3)
-        val lastFour = phoneNumber.takeLast(4)
-        return "$countryCode***$lastFour"
-    }
-    return if (phoneNumber.length > 4) "***${phoneNumber.takeLast(4)}" else "***"
-}
 
 /**
  * Twilio implementation for receiving inbound SMS/MMS messages via webhooks.
@@ -200,8 +191,8 @@ public class TwilioSmsInboundService(
             }
 
             // Set span attributes
-            span?.setAttribute("sms.from", redactPhone(from))
-            span?.setAttribute("sms.to", redactPhone(to))
+            span?.setAttribute("sms.from", TelemetrySanitization.redactPhoneNumber(from))
+            span?.setAttribute("sms.to", TelemetrySanitization.redactPhoneNumber(to))
             span?.setAttribute("sms.body_length", messageBody.length.toLong())
             span?.setAttribute("sms.media_count", numMedia.toLong())
             messageSid?.let { span?.setAttribute("sms.message_id", it) }

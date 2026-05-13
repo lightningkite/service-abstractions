@@ -2,79 +2,24 @@ package com.lightningkite.services
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 import kotlin.test.*
 
 /**
- * Tests for ConcurrentMutableMap functionality.
+ * JVM-only concurrency tests for [ConcurrentMutableMap].
+ *
+ * These exercise real threads to validate that [ConcurrentMutableMap.compute] is atomic on the JVM.
+ * The contract tests for non-concurrent behavior live in commonTest.
  */
-class ConcurrentMutableMapTest {
-
-    @Test
-    fun testBasicOperations() {
-        val map = ConcurrentMutableMap<String, Int>()
-
-        map["key1"] = 1
-        map["key2"] = 2
-
-        assertEquals(1, map["key1"])
-        assertEquals(2, map["key2"])
-        assertEquals(2, map.size)
-    }
-
-    @Test
-    fun testRemove() {
-        val map = ConcurrentMutableMap<String, String>()
-
-        map["key1"] = "value1"
-        map["key2"] = "value2"
-
-        val removed = map.remove("key1")
-
-        assertEquals("value1", removed)
-        assertNull(map["key1"])
-        assertEquals(1, map.size)
-    }
-
-    @Test
-    fun testClear() {
-        val map = ConcurrentMutableMap<String, Int>()
-
-        map["key1"] = 1
-        map["key2"] = 2
-        map.clear()
-
-        assertTrue(map.isEmpty())
-        assertEquals(0, map.size)
-    }
-
-    @Test
-    fun testContainsKey() {
-        val map = ConcurrentMutableMap<String, Int>()
-
-        map["exists"] = 42
-
-        assertTrue(map.containsKey("exists"))
-        assertFalse(map.containsKey("missing"))
-    }
-
-    @Test
-    fun testGetOrPut() {
-        val map = ConcurrentMutableMap<String, String>()
-
-        val value1 = map.getOrPut("key1") { "value1" }
-        val value2 = map.getOrPut("key1") { "should not be called" }
-
-        assertEquals("value1", value1)
-        assertEquals("value1", value2)
-        assertEquals(1, map.size)
-    }
+class ConcurrentMutableMapJvmTest {
 
     @Test
     fun testConcurrentWrites() = runTest {
         val map = ConcurrentMutableMap<String, Int>()
         val iterations = 1000
 
-        // Launch multiple coroutines that write to the map concurrently
         val jobs = (1..10).map { threadId ->
             async(Dispatchers.Default) {
                 repeat(iterations) { i ->
@@ -85,101 +30,61 @@ class ConcurrentMutableMapTest {
 
         jobs.awaitAll()
 
-        // All writes should have succeeded
         assertEquals(10 * iterations, map.size)
     }
 
+    /**
+     * 16 threads each increment a single shared counter 1000 times via [ConcurrentMutableMap.compute].
+     * If compute were not atomic, lost updates would make the final value less than 16_000.
+     */
     @Test
-    fun testConcurrentGetOrPut() = runTest {
+    fun testComputeIsAtomicUnderConcurrentIncrement() {
         val map = ConcurrentMutableMap<String, Int>()
-        val key = "shared-key"
-        var constructorCalls = 0
+        val threadCount = 16
+        val perThread = 1000
+        val startGate = CountDownLatch(1)
 
-        // Note: This test may be flaky due to the race condition mentioned in SharedResources
-        // On JVM with ConcurrentHashMap, getOrPut should be thread-safe and only call the
-        // constructor once, but the behavior isn't strictly guaranteed
-        val jobs = (1..10).map {
-            async(Dispatchers.Default) {
-                map.getOrPut(key) {
-                    synchronized(this@ConcurrentMutableMapTest) {
-                        constructorCalls++
-                    }
+        val threads = (1..threadCount).map {
+            thread(start = true) {
+                startGate.await()
+                repeat(perThread) {
+                    map.compute("counter") { _, existing -> (existing ?: 0) + 1 }
+                }
+            }
+        }
+        startGate.countDown()
+        threads.forEach { it.join() }
+
+        assertEquals(threadCount * perThread, map["counter"])
+    }
+
+    /**
+     * Validates that under contention only one [ConcurrentMutableMap.computeIfAbsent] mapping function
+     * actually executes per key. ConcurrentHashMap guarantees this; documenting it via a test.
+     */
+    @Test
+    fun testComputeIfAbsentRunsMappingOnceUnderContention() {
+        val map = ConcurrentMutableMap<String, Int>()
+        val calls = AtomicInteger(0)
+        val threadCount = 32
+        val startGate = CountDownLatch(1)
+
+        val threads = (1..threadCount).map {
+            thread(start = true) {
+                startGate.await()
+                map.computeIfAbsent("shared") {
+                    calls.incrementAndGet()
+                    // Stall briefly to widen the race window. ConcurrentHashMap should still
+                    // hold the per-bin lock, ensuring only one thread enters this block.
+                    Thread.sleep(5)
                     42
                 }
             }
         }
+        startGate.countDown()
+        threads.forEach { it.join() }
 
-        jobs.awaitAll()
-
-        assertEquals(42, map[key])
-        // Note: constructorCalls might be > 1 due to concurrent getOrPut calls
-        // This is expected behavior and documented in SharedResources
-        assertTrue(constructorCalls >= 1, "Constructor should be called at least once")
-    }
-
-    @Test
-    fun testPutAll() {
-        val map = ConcurrentMutableMap<String, Int>()
-        val sourceMap = mapOf("key1" to 1, "key2" to 2, "key3" to 3)
-
-        map.putAll(sourceMap)
-
-        assertEquals(3, map.size)
-        assertEquals(1, map["key1"])
-        assertEquals(2, map["key2"])
-        assertEquals(3, map["key3"])
-    }
-
-    @Test
-    fun testKeys() {
-        val map = ConcurrentMutableMap<String, Int>()
-
-        map["key1"] = 1
-        map["key2"] = 2
-
-        val keys = map.keys
-
-        assertTrue(keys.contains("key1"))
-        assertTrue(keys.contains("key2"))
-        assertEquals(2, keys.size)
-    }
-
-    @Test
-    fun testValues() {
-        val map = ConcurrentMutableMap<String, Int>()
-
-        map["key1"] = 1
-        map["key2"] = 2
-
-        val values = map.values
-
-        assertTrue(values.contains(1))
-        assertTrue(values.contains(2))
-        assertEquals(2, values.size)
-    }
-
-    @Test
-    fun testEntries() {
-        val map = ConcurrentMutableMap<String, Int>()
-
-        map["key1"] = 1
-        map["key2"] = 2
-
-        val entries = map.entries
-
-        assertEquals(2, entries.size)
-        assertTrue(entries.any { it.key == "key1" && it.value == 1 })
-        assertTrue(entries.any { it.key == "key2" && it.value == 2 })
-    }
-
-    @Test
-    fun testOverwriteExistingValue() {
-        val map = ConcurrentMutableMap<String, String>()
-
-        map["key"] = "value1"
-        map["key"] = "value2"
-
-        assertEquals("value2", map["key"])
-        assertEquals(1, map.size)
+        assertEquals(42, map["shared"])
+        assertEquals(1, calls.get())
     }
 }

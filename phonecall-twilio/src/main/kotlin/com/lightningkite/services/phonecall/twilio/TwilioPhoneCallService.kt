@@ -3,6 +3,7 @@ package com.lightningkite.services.phonecall.twilio
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.TelemetrySanitization
 import com.lightningkite.services.otel.get
 import com.lightningkite.services.otel.span
 import com.lightningkite.services.phonecall.*
@@ -34,16 +35,6 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private val logger = KotlinLogging.logger("TwilioPhoneCallService")
-
-/** Redacts a phone number for telemetry. Mirrors `TelemetrySanitization.redactPhoneNumber`. */
-private fun redactPhone(phoneNumber: String): String {
-    if (phoneNumber.startsWith("+") && phoneNumber.length > 6) {
-        val countryCode = phoneNumber.takeWhile { it.isDigit() || it == '+' }.take(3)
-        val lastFour = phoneNumber.takeLast(4)
-        return "$countryCode***$lastFour"
-    }
-    return if (phoneNumber.length > 4) "***${phoneNumber.takeLast(4)}" else "***"
-}
 
 /**
  * Twilio Voice implementation for making and receiving phone calls.
@@ -322,8 +313,8 @@ public class TwilioPhoneCallService(
         return otel.span("phonecall.start", configure = {
             setSpanKind(SpanKind.CLIENT)
             setAttribute("phonecall.operation", "start")
-            setAttribute("phonecall.to", redactPhone(to.raw))
-            setAttribute("phonecall.from", redactPhone(from))
+            setAttribute("phonecall.to", TelemetrySanitization.redactPhoneNumber(to.raw))
+            setAttribute("phonecall.from", TelemetrySanitization.redactPhoneNumber(from))
             setAttribute("phonecall.provider", "twilio")
             setAttribute("phonecall.recording_enabled", options.recordingEnabled)
             setAttribute("phonecall.machine_detection", options.machineDetection.name)
@@ -1153,7 +1144,7 @@ public class TwilioPhoneCallService(
         return otel.span("phonecall.lookup_number_sid", configure = {
             setSpanKind(SpanKind.CLIENT)
             setAttribute("phonecall.operation", "lookup_number_sid")
-            setAttribute("phonecall.phone_number", redactPhone(phoneNumber))
+            setAttribute("phonecall.phone_number", TelemetrySanitization.redactPhoneNumber(phoneNumber))
             setAttribute("messaging.system", "twilio")
         }) { span ->
             val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
@@ -1174,7 +1165,7 @@ public class TwilioPhoneCallService(
                 ?.firstOrNull()
                 ?.jsonObject?.get("sid")
                 ?.jsonPrimitive?.content
-                ?: throw PhoneCallException("Phone number ${redactPhone(phoneNumber)} not found in Twilio account $account")
+                ?: throw PhoneCallException("Phone number ${TelemetrySanitization.redactPhoneNumber(phoneNumber)} not found in Twilio account $account")
 
             phoneNumberSidCache[phoneNumber] = sid
             span?.setAttribute("phonecall.phone_number_sid", sid)
