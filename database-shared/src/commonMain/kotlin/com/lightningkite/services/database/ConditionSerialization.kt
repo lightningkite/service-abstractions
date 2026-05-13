@@ -4,6 +4,7 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.data.GeoCoordinate
 import com.lightningkite.services.data.IsRawString
+import com.lightningkite.services.data.serialNameFQN
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.*
@@ -207,10 +208,10 @@ public class ConditionSerializer<T>(public val inner: KSerializer<T>) :
         MySealedClassSerializer<Condition<T>>("com.lightningkite.services.database.Condition", {
             val r = when {
                 inner.descriptor.isNullable -> nullableOptions(inner.innerElement() as KSerializer<Any>)
-                inner.descriptor.serialName.substringBefore('/') == "kotlin.String" -> stringOptions
+                inner.descriptor.serialNameFQN() == "kotlin.String" -> stringOptions
                 IsRawString.Companion.serialNames.contains(inner.descriptor.serialName) -> rawStringOptions(inner as KSerializer<IsRawString>)
                 inner.descriptor.serialName == "kotlin.Int" -> intOptions
-                inner.descriptor.serialName.substringBefore('/') == "com.lightningkite.GeoCoordinate" -> geocoordinateOptions
+                inner.descriptor.serialNameFQN() == "com.lightningkite.services.data.GeoCoordinate" -> geocoordinateOptions
                 inner.descriptor.kind == StructureKind.MAP -> stringMapOptions(inner.innerElement2())
                 inner.descriptor.kind == StructureKind.LIST -> {
                     if (inner.descriptor.serialName.contains("Set")) setOptions(inner.innerElement())
