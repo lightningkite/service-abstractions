@@ -19,10 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
 import kotlin.uuid.Uuid
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.json.*
-import org.bson.*
 import java.util.Date
-import java.time.Instant
 
 internal fun documentOf(): Document {
     return Document()
@@ -51,7 +48,6 @@ internal fun <T> Iterable<Pair<String, T>>.toDocument(): Document {
 @Serializable
 private data class Wrapper<T>(val value: T)
 
-internal fun <T> KBson.toBsonValue(serializer: KSerializer<T>, obj: T): BsonValue = stringifyAny(serializer, obj)
 internal fun <T> KBson.stringifyAny(serializer: KSerializer<T>, obj: T): BsonValue {
     return stringify(Wrapper.serializer(serializer), Wrapper(obj))["value"]!!
 }
@@ -110,8 +106,6 @@ private fun <T> Condition<T>.dump(
                 atlasSearch = atlasSearch,
                 bson = bson
             )
-            println("Done negating.")
-            matchDoc.print()
             into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
         }
 
@@ -154,20 +148,20 @@ private fun <T> Condition<T>.dump(
         is Condition.IntBitsSet -> into.sub(key)["\$bitsAnySet"] = mask
         is Condition.Not -> {
             val inner = condition.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson)
-            val isLogicalOperator = inner.keys.any {
-                it.contains("\$and") ||
-                        it.contains("\$or") ||
-                        it.contains("\$not")
-            }
-            // Check if inner is an operator doc (starts with $)
-            if (inner.keys.all { it.startsWith("$") } && !isLogicalOperator) {
-                // Return { "$not": { "$lt": 4 } }
+            val isOperatorDocument =
+                inner.keys.all {
+                    it.startsWith("$") &&
+                            !it.contains("\$and") &&
+                            !it.contains("\$or") &&
+                            !it.contains("\$not")
+                }
+            if (isOperatorDocument) { // i.e. { "$not": { "$lt": 4 } }
                 into["\$not"] = inner
             } else {
-                // Return { "$nor": [ { "subField": 1 } ] }
                 into["\$nor"] = listOf(inner)
             }
         }
+
         is Condition.OnKey<*> -> (condition as Condition<Any?>).dump(
             serializer.mapValueElement() as KSerializer<Any?>,
             into,
@@ -243,13 +237,7 @@ private fun <T> Condition<T>.dump(
             bson = bson
         )
     }
-    return into.also {
-        it.print()
-    }
-}
-
-private fun Document.print() {
-    println("--- : ${this.toString().replace("Document{{", " { ").replace("}}", " } ")}")
+    return into
 }
 
 @Suppress("UNCHECKED_CAST")
