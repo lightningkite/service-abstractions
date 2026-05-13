@@ -40,11 +40,11 @@ public interface IsRawString : Comparable<IsRawString> {
          * Used for polymorphic serialization and type identification.
          */
         public val serialNames: Set<String> = setOf(
-            "com.lightningkite.TrimmedString",
-            "com.lightningkite.CaselessString",
-            "com.lightningkite.TrimmedCaselessString",
-            "com.lightningkite.EmailAddress",
-            "com.lightningkite.PhoneNumber",
+            "com.lightningkite.services.data.TrimmedString",
+            "com.lightningkite.services.data.CaselessString",
+            "com.lightningkite.services.data.TrimmedCaselessString",
+            "com.lightningkite.services.data.EmailAddress",
+            "com.lightningkite.services.data.PhoneNumber",
         )
     }
 }
@@ -119,7 +119,7 @@ public object TrimLowercaseOnSerialize : KSerializer<String> {
 public object TrimmedStringSerializer : KSerializer<TrimmedString> {
     override fun deserialize(decoder: Decoder): TrimmedString = decoder.decodeString().trimmed()
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.TrimmedString", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.data.TrimmedString", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: TrimmedString): Unit = encoder.encodeString(value.raw)
 }
@@ -160,7 +160,7 @@ public inline fun String.trimmed(): TrimmedString = TrimmedString(this.trim())
 public object CaselessStringSerializer : KSerializer<CaselessString> {
     override fun deserialize(decoder: Decoder): CaselessString = decoder.decodeString().caseless()
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.CaselessString", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.data.CaselessString", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: CaselessString): Unit = encoder.encodeString(value.raw)
 }
@@ -180,7 +180,7 @@ public inline fun String.caseless(): CaselessString = CaselessString(this.lowerc
 public object TrimmedCaselessStringSerializer : KSerializer<TrimmedCaselessString> {
     override fun deserialize(decoder: Decoder): TrimmedCaselessString = decoder.decodeString().trimmedCaseless()
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.TrimmedCaselessString", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.data.TrimmedCaselessString", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: TrimmedCaselessString): Unit = encoder.encodeString(value.raw)
 }
@@ -201,7 +201,7 @@ public inline fun String.trimmedCaseless(): TrimmedCaselessString = TrimmedCasel
 public object EmailAddressSerializer : KSerializer<EmailAddress> {
     override fun deserialize(decoder: Decoder): EmailAddress = decoder.decodeString().toEmailAddress()
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.EmailAddress", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.data.EmailAddress", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: EmailAddress): Unit = encoder.encodeString(value.raw)
 }
@@ -326,7 +326,7 @@ public fun String.toEmailAddressOrNull(): EmailAddress? {
 public object PhoneNumberSerializer : KSerializer<PhoneNumber> {
     override fun deserialize(decoder: Decoder): PhoneNumber = decoder.decodeString().toPhoneNumber()
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.PhoneNumber", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.data.PhoneNumber", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: PhoneNumber): Unit = encoder.encodeString(value.raw)
 }
