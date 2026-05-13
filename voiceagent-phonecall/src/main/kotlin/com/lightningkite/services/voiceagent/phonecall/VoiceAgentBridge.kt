@@ -1,11 +1,12 @@
 package com.lightningkite.services.voiceagent.phonecall
 
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.phonecall.AudioStreamCommand
 import com.lightningkite.services.phonecall.AudioStreamEvent
-import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.voiceagent.*
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.*
+import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlin.io.encoding.Base64
@@ -77,7 +78,7 @@ public data class TranscriptEntry(
  * @param jitterBufferMs Size of the jitter buffer in milliseconds. Higher values add latency
  *   but smooth out irregular audio delivery (e.g., from DynamoDB PubSub polling). Set to 0
  *   to disable jitter buffering. Default is 300ms.
- * @param tracer Optional OpenTelemetry tracer
+ * @param otel Optional OpenTelemetry sub-context
  */
 @OptIn(ExperimentalEncodingApi::class)
 public suspend fun handlePhoneVoiceSession(
@@ -91,103 +92,86 @@ public suspend fun handlePhoneVoiceSession(
     onTranscript: suspend (TranscriptEntry) -> Unit = {},
     onStreamConnected: suspend (VoiceAgentSession) -> Unit = {},
     jitterBufferMs: Long = 300L,
-    tracer: Tracer? = null,
+    otel: OpenTelemetrySub? = null,
 ) {
-    val span = tracer?.spanBuilder("voiceagent.phone_session")
-        ?.setSpanKind(SpanKind.SERVER)
-        ?.startSpan()
+    otel.span("voiceagent.phone_session", configure = {
+        setSpanKind(SpanKind.SERVER)
+    }) { span ->
+        val jitterBuffer = if (jitterBufferMs > 0) AudioJitterBuffer(targetBufferMs = jitterBufferMs) else null
 
-    try {
-        val spanScope = span?.makeCurrent()
-        try {
-            val jitterBuffer = if (jitterBufferMs > 0) AudioJitterBuffer(targetBufferMs = jitterBufferMs) else null
+        logger.info { "Phone stream ready: callId=$callId, streamId=$streamId, jitterBuffer=${jitterBufferMs}ms" }
+        span?.setAttribute("voiceagent.call_id", callId)
+        span?.setAttribute("voiceagent.stream_id", streamId)
 
-            logger.info { "Phone stream ready: callId=$callId, streamId=$streamId, jitterBuffer=${jitterBufferMs}ms" }
-            span?.setAttribute("voiceagent.call_id", callId)
-            span?.setAttribute("voiceagent.stream_id", streamId)
+        // Create voice agent session with phone-appropriate audio format
+        val effectiveConfig = sessionConfig.copy(
+            inputAudioFormat = AudioFormat.PCM16_24K,
+            outputAudioFormat = AudioFormat.PCM16_24K,
+        )
 
-            // Create voice agent session with phone-appropriate audio format
-            val effectiveConfig = sessionConfig.copy(
-                inputAudioFormat = AudioFormat.PCM16_24K,
-                outputAudioFormat = AudioFormat.PCM16_24K,
-            )
+        logger.info { "Creating voice agent session..." }
+        val session = voiceAgentService.createSession(effectiveConfig)
+        session.awaitConnection()
+        logger.info { "Voice agent session connected: ${session.sessionId}" }
+        span?.setAttribute("voiceagent.session_id", session.sessionId)
 
-            logger.info { "Creating voice agent session..." }
-            val session = voiceAgentService.createSession(effectiveConfig)
-            session.awaitConnection()
-            logger.info { "Voice agent session connected: ${session.sessionId}" }
-            span?.setAttribute("voiceagent.session_id", session.sessionId)
+        // Trigger greeting
+        onStreamConnected(session)
 
-            // Trigger greeting
-            onStreamConnected(session)
+        // Track current response ID for interleaving detection
+        val currentResponseId = java.util.concurrent.atomic.AtomicReference<String?>(null)
+        // Our own sequence counter since OpenAI doesn't provide one
+        val audioSeqCounter = java.util.concurrent.atomic.AtomicInteger(0)
 
-            // Track current response ID for interleaving detection
-            val currentResponseId = java.util.concurrent.atomic.AtomicReference<String?>(null)
-            // Our own sequence counter since OpenAI doesn't provide one
-            val audioSeqCounter = java.util.concurrent.atomic.AtomicInteger(0)
-
-            // Process events
-            coroutineScope {
-                // Run jitter buffer playback (if enabled)
-                val jitterJob = jitterBuffer?.let { buffer ->
-                    launch {
-                        buffer.runPlayback { audio ->
-                            sendToPhone(AudioStreamCommand.Audio(streamId, Base64.encode(audio)))
-                        }
-                    }
-                }
-
-                // Forward phone audio to agent
+        // Process events
+        coroutineScope {
+            // Run jitter buffer playback (if enabled)
+            val jitterJob = jitterBuffer?.let { buffer ->
                 launch {
-                    phoneAudioEvents.collect { event ->
-                        when (event) {
-                            is AudioStreamEvent.Audio -> {
-                                val mulawBytes = Base64.decode(event.payload)
-                                val pcmBytes = AudioConverter.mulawToPcm16_24k(mulawBytes)
-                                session.sendAudio(pcmBytes)
-                            }
-
-                            is AudioStreamEvent.Stop -> {
-                                logger.info { "Phone stream stopped: ${event.streamId}" }
-                                jitterBuffer?.stop()
-                                session.close()  // Close session to end events flow
-                                cancel()
-                            }
-
-                            else -> {}
-                        }
+                    buffer.runPlayback { audio ->
+                        sendToPhone(AudioStreamCommand.Audio(streamId, Base64.encode(audio)))
                     }
-                }
-
-                // Forward agent events to phone (via jitter buffer if enabled)
-                session.events.collect { event ->
-                    handleAgentEvent(
-                        event = event,
-                        session = session,
-                        streamId = streamId,
-                        jitterBuffer = jitterBuffer,
-                        sendToPhone = sendToPhone,
-                        toolHandler = toolHandler,
-                        onTranscript = onTranscript,
-                        currentResponseId = currentResponseId,
-                        audioSeqCounter = audioSeqCounter,
-                    )
                 }
             }
-            span?.setStatus(StatusCode.OK)
-        } finally {
-            spanScope?.close()
+
+            // Forward phone audio to agent
+            launch {
+                phoneAudioEvents.collect { event ->
+                    when (event) {
+                        is AudioStreamEvent.Audio -> {
+                            val mulawBytes = Base64.decode(event.payload)
+                            val pcmBytes = AudioConverter.mulawToPcm16_24k(mulawBytes)
+                            session.sendAudio(pcmBytes)
+                        }
+
+                        is AudioStreamEvent.Stop -> {
+                            logger.info { "Phone stream stopped: ${event.streamId}" }
+                            jitterBuffer?.stop()
+                            session.close()  // Close session to end events flow
+                            cancel()
+                        }
+
+                        else -> {}
+                    }
+                }
+            }
+
+            // Forward agent events to phone (via jitter buffer if enabled)
+            session.events.collect { event ->
+                handleAgentEvent(
+                    event = event,
+                    session = session,
+                    streamId = streamId,
+                    jitterBuffer = jitterBuffer,
+                    sendToPhone = sendToPhone,
+                    toolHandler = toolHandler,
+                    onTranscript = onTranscript,
+                    currentResponseId = currentResponseId,
+                    audioSeqCounter = audioSeqCounter,
+                    otel = otel,
+                )
+            }
         }
-    } catch (e: CancellationException) {
-        span?.setStatus(StatusCode.OK, "Session cancelled")
-        throw e
-    } catch (e: Exception) {
-        logger.error(e) { "Phone voice session error" }
-        span?.setStatus(StatusCode.ERROR, e.message ?: "Unknown error")
-        span?.recordExceptionWithFingerprint(e)
-        throw e
-    } finally {
-        span?.end()
     }
 }
 
@@ -203,7 +187,7 @@ public suspend fun handlePhoneVoiceSession(
  * @param toolHandler Handler for tool calls
  * @param onTranscript Callback for transcripts
  * @param onSessionReady Callback when session is ready (for triggering greeting)
- * @param tracer Optional OpenTelemetry tracer
+ * @param otel Optional OpenTelemetry sub-context
  */
 @OptIn(ExperimentalEncodingApi::class)
 public suspend fun handleDirectVoiceSession(
@@ -215,89 +199,70 @@ public suspend fun handleDirectVoiceSession(
     toolHandler: suspend (toolName: String, arguments: String) -> String,
     onTranscript: suspend (TranscriptEntry) -> Unit = {},
     onSessionReady: suspend (VoiceAgentSession) -> Unit = {},
-    tracer: Tracer? = null,
+    otel: OpenTelemetrySub? = null,
 ) {
-    val span = tracer?.spanBuilder("voiceagent.direct_session")
-        ?.setSpanKind(SpanKind.SERVER)
-        ?.startSpan()
+    otel.span("voiceagent.direct_session", configure = {
+        setSpanKind(SpanKind.SERVER)
+    }) { span ->
+        logger.info { "Creating direct voice agent session..." }
+        val session = voiceAgentService.createSession(sessionConfig)
+        session.awaitConnection()
+        logger.info { "Voice agent session connected: ${session.sessionId}" }
+        span?.setAttribute("voiceagent.session_id", session.sessionId)
 
-    try {
-        val spanScope = span?.makeCurrent()
-        try {
-            logger.info { "Creating direct voice agent session..." }
-            val session = voiceAgentService.createSession(sessionConfig)
-            session.awaitConnection()
-            logger.info { "Voice agent session connected: ${session.sessionId}" }
-            span?.setAttribute("voiceagent.session_id", session.sessionId)
+        // Trigger greeting
+        onSessionReady(session)
 
-            // Trigger greeting
-            onSessionReady(session)
-
-            // Process events
-            coroutineScope {
-                // Forward client audio to agent
-                launch {
-                    incomingAudio.collect { base64Audio ->
-                        val audioBytes = Base64.decode(base64Audio)
-                        session.sendAudio(audioBytes)
-                    }
-                }
-
-                // Forward agent events to client
-                session.events.collect { event ->
-                    when (event) {
-                        is VoiceAgentEvent.AudioDelta -> {
-                            sendAudio(event.delta)
-                        }
-
-                        is VoiceAgentEvent.SpeechStarted -> {
-                            sendClear()
-                        }
-
-                        is VoiceAgentEvent.ToolCallDone -> {
-                            logger.info { "Tool call: ${event.toolName}(${event.arguments})" }
-                            val result = toolHandler(event.toolName, event.arguments)
-                            logger.info { "Tool result: $result" }
-                            session.sendToolResult(event.callId, result)
-                        }
-
-                        is VoiceAgentEvent.InputTranscription -> {
-                            if (event.isFinal && event.text.isNotBlank()) {
-                                logger.info { "User said: ${event.text}" }
-                                onTranscript(TranscriptEntry(TranscriptRole.USER, event.text))
-                            }
-                        }
-
-                        is VoiceAgentEvent.TextDone -> {
-                            if (event.text.isNotBlank()) {
-                                logger.info { "Agent said: ${event.text}" }
-                                onTranscript(TranscriptEntry(TranscriptRole.AGENT, event.text))
-                            }
-                        }
-
-                        is VoiceAgentEvent.Error -> {
-                            logger.error { "Voice agent error: ${event.code} - ${event.message}" }
-                        }
-
-                        else -> {}
-                    }
+        // Process events
+        coroutineScope {
+            // Forward client audio to agent
+            launch {
+                incomingAudio.collect { base64Audio ->
+                    val audioBytes = Base64.decode(base64Audio)
+                    session.sendAudio(audioBytes)
                 }
             }
 
-            span?.setStatus(StatusCode.OK)
-        } finally {
-            spanScope?.close()
+            // Forward agent events to client
+            session.events.collect { event ->
+                when (event) {
+                    is VoiceAgentEvent.AudioDelta -> {
+                        sendAudio(event.delta)
+                    }
+
+                    is VoiceAgentEvent.SpeechStarted -> {
+                        sendClear()
+                    }
+
+                    is VoiceAgentEvent.ToolCallDone -> {
+                        logger.info { "Tool call: ${event.toolName}(${event.arguments})" }
+                        val result = toolHandler(event.toolName, event.arguments)
+                        logger.info { "Tool result: $result" }
+                        session.sendToolResult(event.callId, result)
+                    }
+
+                    is VoiceAgentEvent.InputTranscription -> {
+                        if (event.isFinal && event.text.isNotBlank()) {
+                            logger.info { "User said: ${event.text}" }
+                            onTranscript(TranscriptEntry(TranscriptRole.USER, event.text))
+                        }
+                    }
+
+                    is VoiceAgentEvent.TextDone -> {
+                        if (event.text.isNotBlank()) {
+                            logger.info { "Agent said: ${event.text}" }
+                            onTranscript(TranscriptEntry(TranscriptRole.AGENT, event.text))
+                        }
+                    }
+
+                    is VoiceAgentEvent.Error -> {
+                        logger.error { "Voice agent error: ${event.code} - ${event.message}" }
+                    }
+
+                    else -> {}
+                }
+            }
         }
-    } catch (e: CancellationException) {
-        span?.setStatus(StatusCode.OK, "Session cancelled")
-        throw e
-    } catch (e: Exception) {
-        logger.error(e) { "Direct voice session error" }
-        span?.setStatus(StatusCode.ERROR, e.message ?: "Unknown error")
-        span?.recordExceptionWithFingerprint(e)
-        throw e
-    } finally {
-        span?.end()
     }
 }
 
@@ -312,6 +277,7 @@ private suspend fun handleAgentEvent(
     onTranscript: suspend (TranscriptEntry) -> Unit,
     currentResponseId: java.util.concurrent.atomic.AtomicReference<String?>,
     audioSeqCounter: java.util.concurrent.atomic.AtomicInteger,
+    otel: OpenTelemetrySub? = null,
 ) {
     when (event) {
         is VoiceAgentEvent.AudioDelta -> {
@@ -356,9 +322,15 @@ private suspend fun handleAgentEvent(
 
         is VoiceAgentEvent.ToolCallDone -> {
             logger.info { "Tool call: ${event.toolName}(${event.arguments})" }
-            val result = toolHandler(event.toolName, event.arguments)
-            logger.info { "Tool result: $result" }
-            session.sendToolResult(event.callId, result)
+            otel.span("voiceagent.tool_call", configure = {
+                setSpanKind(SpanKind.INTERNAL)
+                setAttribute("tool.name", event.toolName)
+                setAttribute("tool.call_id", event.callId)
+            }) {
+                val result = toolHandler(event.toolName, event.arguments)
+                logger.info { "Tool result: $result" }
+                session.sendToolResult(event.callId, result)
+            }
         }
 
         is VoiceAgentEvent.InputTranscription -> {

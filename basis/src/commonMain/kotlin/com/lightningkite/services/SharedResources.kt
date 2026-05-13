@@ -41,20 +41,21 @@ package com.lightningkite.services
  *
  * ## Thread Safety
  *
- * The current implementation uses [MutableMap.getOrPut] which is **not thread-safe**.
- * In multi-threaded scenarios, this could result in [Key.setup] being called multiple times
- * for the same key.
+ * On JVM/Android the underlying map is a `ConcurrentHashMap` and `computeIfAbsent`
+ * is used to guarantee [Key.setup] is called at most once per key under concurrent
+ * access. On Kotlin/Native and JS the underlying map is a synchronized wrapper;
+ * concurrent access is safe but [Key.setup] may run more than once per key in a
+ * narrow race window (the first inserted value still wins).
  *
- * @property map Internal storage for cached resources (default: HashMap)
+ * @property map Internal storage for cached resources (default: [ConcurrentMutableMap]).
  */
 public class SharedResources(private val map: MutableMap<Key<*>, Any?> = ConcurrentMutableMap()) {
     /**
      * Resource key that knows how to create its associated resource.
      *
      * Implement this interface to define a new shared resource type.
-     * The [setup] method is called exactly once* per key to create the resource.
-     *
-     * *Note: Due to thread-safety issue, setup may be called multiple times in concurrent scenarios.
+     * The [setup] method is called at most once per key on JVM/Android; see the class-level
+     * thread-safety note for Kotlin/Native and JS behavior.
      *
      * @param T The type of resource this key creates
      */
@@ -89,5 +90,16 @@ public class SharedResources(private val map: MutableMap<Key<*>, Any?> = Concurr
      * @return The resource instance (either cached or newly created)
      */
     @Suppress("UNCHECKED_CAST")
-    public fun <T> get(key: Key<T>, context: SettingContext): T = map.getOrPut(key) { key.setup(context) } as T
+    public fun <T> get(key: Key<T>, context: SettingContext): T =
+        getOrSetupAtomic(map, key) { key.setup(context) } as T
 }
+
+/**
+ * Platform-specific lookup-or-compute used by [SharedResources.get].
+ *
+ * On JVM/Android the implementation uses `ConcurrentHashMap.computeIfAbsent`, which guarantees
+ * [setup] runs at most once per key even under concurrent access. On other targets a simple
+ * `getOrPut` is used; the map's own synchronization makes individual operations safe, but
+ * `setup` may execute more than once in a narrow race window (the first inserted value wins).
+ */
+internal expect fun <K> getOrSetupAtomic(map: MutableMap<K, Any?>, key: K, setup: () -> Any?): Any?

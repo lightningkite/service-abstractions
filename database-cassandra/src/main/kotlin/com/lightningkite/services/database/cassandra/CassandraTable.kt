@@ -8,16 +8,15 @@ import com.lightningkite.services.database.*
 import com.lightningkite.services.database.cassandra.serialization.generateFlattenedColumns
 import com.lightningkite.services.database.cassandra.serialization.FlattenedColumn
 import com.lightningkite.services.database.cassandra.serialization.expandKeyColumnNames
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
+import io.opentelemetry.api.trace.SpanKind
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 
@@ -60,6 +59,18 @@ public class CassandraTable<Model : Any>(
 
     private var prepared = false
     private val preparedStatements = mutableMapOf<String, PreparedStatement>()
+
+    private val otel = context.openTelemetry?.get("database-cassandra")
+
+    private suspend inline fun <R> traced(
+        operation: String,
+        crossinline block: suspend () -> R,
+    ): R = otel.span("cassandra.$operation", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("db.system", "cassandra")
+        setAttribute("db.operation", operation)
+        setAttribute("db.collection", tableName)
+    }) { block() }
 
     /**
      * Ensures the table schema exists in Cassandra.
@@ -341,47 +352,62 @@ public class CassandraTable<Model : Any>(
         limit: Int,
         @Suppress("UNUSED_PARAMETER") maxQueryMs: Long,
     ): Flow<Model> {
-        ensureSchema()
+        // by Claude - manual span management so we can stream emissions rather than buffer.
+        // Using `traced { ... }` here forced collecting all rows into a list before emitting,
+        // making memory scale with `limit`. We start the span eagerly so flowOn can install
+        // it as a context element, and close it via onCompletion when collection ends.
+        val span = tracer?.spanBuilder("cassandra.find")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("db.system", "cassandra")
+            ?.setAttribute("db.operation", "find")
+            ?.setAttribute("db.collection", tableName)
+            ?.startSpan()
+        val base: Flow<Model> = flow {
+            ensureSchema()
 
-        val normalizedCondition = ConditionNormalizer.normalize(condition.simplify())
+            val normalizedCondition = ConditionNormalizer.normalize(condition.simplify())
 
-        // Short-circuit for impossible conditions
-        if (normalizedCondition is Condition.Never) {
-            return emptyFlow()
-        }
+            // Short-circuit for impossible conditions
+            if (normalizedCondition is Condition.Never) {
+                return@flow
+            }
 
-        // Check for Inside (IN) optimization on SAI columns
-        val insideOptimization = tryInsideOptimization(normalizedCondition)
-        if (insideOptimization != null) {
-            return executeOrOptimizedQuery(insideOptimization, orderBy, skip, limit)
-        }
+            // Check for Inside (IN) optimization on SAI columns
+            val insideOptimization = tryInsideOptimization(normalizedCondition)
+            if (insideOptimization != null) {
+                emitAll(executeOrOptimizedQuery(insideOptimization, orderBy, skip, limit))
+                return@flow
+            }
 
-        // Check for OR optimization opportunity
-        val orOptimization = tryOrOptimization(normalizedCondition)
-        if (orOptimization != null) {
-            return executeOrOptimizedQuery(orOptimization, orderBy, skip, limit)
-        }
+            // Check for OR optimization opportunity
+            val orOptimization = tryOrOptimization(normalizedCondition)
+            if (orOptimization != null) {
+                emitAll(executeOrOptimizedQuery(orOptimization, orderBy, skip, limit))
+                return@flow
+            }
 
-        val analysis = analyzer.analyze(normalizedCondition)
-        val canPushSort = cqlGenerator.canPushSort(orderBy)
+            val analysis = analyzer.analyze(normalizedCondition)
+            val canPushSort = cqlGenerator.canPushSort(orderBy)
 
-        // Log warnings for query performance issues
-        if (analysis.warnings.isNotEmpty()) {
-            logger.warn { "Query on $tableName has performance warnings: ${analysis.warnings.joinToString("; ")}" }
-        }
-        if (analysis.requiresFullScan) {
-            logger.warn { "Query on $tableName requires full table scan - consider adding indexes or restructuring the query" }
-        }
+            // Log warnings for query performance issues
+            if (analysis.warnings.isNotEmpty()) {
+                logger.warn { "Query on $tableName has performance warnings: ${analysis.warnings.joinToString("; ")}" }
+            }
+            if (analysis.requiresFullScan) {
+                logger.warn { "Query on $tableName requires full table scan - consider adding indexes or restructuring the query" }
+            }
 
-        return flow {
             val rows: Flow<Row> = if (analysis.cqlCondition != null && analysis.cqlCondition !is Condition.Never) {
+                // by Claude - guard against Int overflow when limit+skip exceeds Int.MAX_VALUE
+                // (caller can pass Int.MAX_VALUE as limit which would otherwise wrap negative).
+                val cqlLimit = if (analysis.appFilter == null && canPushSort) {
+                    if (limit > Int.MAX_VALUE - skip) Int.MAX_VALUE else limit + skip
+                } else null
                 val query = cqlGenerator.generateSelect(
                     condition = analysis.cqlCondition,
                     orderBy = if (canPushSort) orderBy else emptyList(),
-                    // Only apply limit at CQL level if no app filter and sort is pushed
-                    limit = if (analysis.appFilter == null && canPushSort) limit + skip else null
+                    limit = cqlLimit,
                 )
-
                 executeQuery(query)
             } else {
                 // Full scan fallback
@@ -389,43 +415,48 @@ public class CassandraTable<Model : Any>(
                 executeQuery(query)
             }
 
-            // Collect and filter all rows
-            val models = mutableListOf<Model>()
-            rows.collect { row ->
-                val model = mapFormat.decode(serializer, row)
-
-                // Apply app-side filter
-                val passesFilter = analysis.appFilter?.invoke(model) ?: true
-                if (passesFilter) {
-                    models.add(model)
+            // Decode rows + apply app-side filter as a streaming transformation.
+            val filtered: Flow<Model> = rows
+                .map { mapFormat.decode(serializer, it) }
+                .let { decoded ->
+                    val f = analysis.appFilter
+                    if (f != null) decoded.filter { f(it) } else decoded
                 }
-            }
 
-            // Apply app-side sorting if needed
-            val sortedModels = if (!canPushSort && orderBy.isNotEmpty()) {
+            if (!canPushSort && orderBy.isNotEmpty()) {
+                // App-side sorting requires buffering — no way to stream a sort.
+                val models = filtered.toList()
                 val comparator = orderBy.comparator
-                if (comparator != null) {
-                    models.sortedWith(comparator)
-                } else {
-                    models
+                val sorted = if (comparator != null) models.sortedWith(comparator) else models
+                var emitted = 0
+                var skipped = 0
+                for (model in sorted) {
+                    if (skipped < skip) {
+                        skipped++
+                    } else if (emitted < limit) {
+                        emit(model)
+                        emitted++
+                    } else {
+                        break
+                    }
                 }
             } else {
-                models
+                // Streaming path — emit as rows arrive, applying skip/limit inline.
+                // drop+take let the upstream cancel naturally once `limit` items have flowed.
+                emitAll(filtered.drop(skip).take(limit))
             }
-
-            // Apply skip and limit
-            var count = 0
-            var skipped = 0
-            for (model in sortedModels) {
-                if (skipped < skip) {
-                    skipped++
-                } else if (count < limit) {
-                    emit(model)
-                    count++
-                } else {
-                    break
-                }
-            }
+        }.catch { e ->
+            span?.setStatus(StatusCode.ERROR)
+            span?.recordExceptionWithFingerprint(e)
+            throw e
+        }.onCompletion { cause ->
+            if (cause == null) span?.setStatus(StatusCode.OK)
+            span?.end()
+        }
+        return if (span != null) {
+            base.flowOn(span.asContextElement())
+        } else {
+            base
         }
     }
 
@@ -642,24 +673,24 @@ public class CassandraTable<Model : Any>(
         }
     }
 
-    override suspend fun count(condition: Condition<Model>): Int {
+    override suspend fun count(condition: Condition<Model>): Int = traced("count") {
         ensureSchema()
 
         val normalizedCondition = ConditionNormalizer.normalize(condition.simplify())
 
         // Short-circuit for impossible conditions
         if (normalizedCondition is Condition.Never) {
-            return 0
+            return@traced 0
         }
 
         // by Claude - AWS Keyspaces doesn't support COUNT(*), always use client-side counting
         if (useAwsKeyspaces) {
-            return find(condition).count()
+            return@traced find(condition).count()
         }
 
         val analysis = analyzer.analyze(normalizedCondition)
 
-        return if (analysis.cqlCondition != null && analysis.appFilter == null) {
+        if (analysis.cqlCondition != null && analysis.appFilter == null) {
             val query = cqlGenerator.generateCount(analysis.cqlCondition)
             val statement = SimpleStatement.newInstance(query.cql, *query.parameters.toTypedArray())
             val result = session.executeAsync(statement).toCompletableFuture().await()
@@ -769,7 +800,7 @@ public class CassandraTable<Model : Any>(
         }
     }
 
-    override suspend fun insert(models: Iterable<Model>): List<Model> {
+    override suspend fun insert(models: Iterable<Model>): List<Model> = traced("insert") {
         ensureSchema()
 
         val result = mutableListOf<Model>()
@@ -797,17 +828,17 @@ public class CassandraTable<Model : Any>(
             }
             result.add(model)
         }
-        return result
+        result
     }
 
     override suspend fun replaceOne(
         condition: Condition<Model>,
         model: Model,
         orderBy: List<SortPart<Model>>,
-    ): EntryChange<Model> {
+    ): EntryChange<Model> = traced("replaceOne") {
         ensureSchema()
         val existing = find(condition, orderBy, 0, 1).firstOrNull()
-        return if (existing != null) {
+        if (existing != null) {
             atomicUpdate(existing, model)
             EntryChange(existing, model)
         } else {
@@ -819,10 +850,10 @@ public class CassandraTable<Model : Any>(
         condition: Condition<Model>,
         model: Model,
         orderBy: List<SortPart<Model>>,
-    ): Boolean {
+    ): Boolean = traced("replaceOneIgnoringResult") {
         ensureSchema()
         val existing = find(condition, orderBy, 0, 1).firstOrNull()
-        return if (existing != null) {
+        if (existing != null) {
             atomicUpdate(existing, model)
             true
         } else {
@@ -842,13 +873,13 @@ public class CassandraTable<Model : Any>(
         condition: Condition<Model>,
         modification: Modification<Model>,
         model: Model,
-    ): EntryChange<Model> {
+    ): EntryChange<Model> = traced("upsertOne") {
         ensureSchema()
 
         // First check if a record matching the condition exists
         val existing = find(condition, emptyList(), 0, 1).firstOrNull()
 
-        return if (existing != null) {
+        if (existing != null) {
             // Record exists - apply modification using atomicUpdate
             val updated = modification(existing)
             atomicUpdate(existing, updated)
@@ -901,13 +932,13 @@ public class CassandraTable<Model : Any>(
         condition: Condition<Model>,
         modification: Modification<Model>,
         model: Model,
-    ): Boolean {
+    ): Boolean = traced("upsertOneIgnoringResult") {
         ensureSchema()
 
         // First check if a record matching the condition exists
         val existing = find(condition, emptyList(), 0, 1).firstOrNull()
 
-        return if (existing != null) {
+        if (existing != null) {
             // Record exists - apply modification using atomicUpdate
             val updated = modification(existing)
             atomicUpdate(existing, updated)

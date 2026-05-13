@@ -12,6 +12,7 @@ dependencies {
     api(project(path = ":cache"))
     implementation(libs.lettuce)
     implementation(libs.lettuce.otel)
+    compileOnly(project(":otel-jvm"))
     implementation(libs.guava)
     implementation(libs.coroutines.reactive)
 

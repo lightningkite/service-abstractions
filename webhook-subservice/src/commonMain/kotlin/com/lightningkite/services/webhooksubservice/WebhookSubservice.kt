@@ -13,6 +13,19 @@ public interface WebhookSubservice<Input> : WebhookSubserviceWithResponse<Input,
 }
 
 public interface HttpAdapter<Input, Output> {
+    /**
+     * Parses an incoming HTTP request into the adapter's input type.
+     *
+     * ## Span kind
+     * Implementations that create an OpenTelemetry span should use [io.opentelemetry.api.trace.SpanKind.SERVER],
+     * because this is the entry point of an inbound request (not an outbound client call).
+     *
+     * ## Single-use body
+     * [body] is a single-use [TypedData]: calling [TypedData.text], [TypedData.write], or any
+     * other read method more than once will throw [IllegalStateException] for [Source]- and
+     * [Sink]-backed payloads. Read the body exactly once and store the result if you need it
+     * more than once.
+     */
     public suspend fun parse(
         queryParameters: List<Pair<String, String>>,
         headers: Map<String, List<String>>,

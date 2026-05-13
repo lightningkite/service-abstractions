@@ -50,6 +50,8 @@ public class AudioJitterBuffer(
     }
 
     private val timeSource = TimeSource.Monotonic
+    // TODO: PriorityQueue + Mutex works for the current load but is not wait-free. For higher-throughput
+    //  use cases, consider replacing with a lock-free structure or a coroutine Channel with sorting.
     private val chunks = PriorityQueue<SequencedChunk>()
     private val mutex = Mutex()
 

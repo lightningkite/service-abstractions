@@ -1,15 +1,15 @@
 package com.lightningkite.services.pubsub.redis
 
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.lettuce.core.RedisClient
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
 import io.lettuce.core.resource.ClientResources
 import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.instrumentation.lettuce.v5_1.LettuceTelemetry
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.reactive.asFlow
@@ -17,6 +17,7 @@ import kotlinx.coroutines.reactive.awaitFirst
 import kotlinx.coroutines.reactive.collect
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
+import org.slf4j.LoggerFactory
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 
@@ -145,7 +146,8 @@ public class RedisPubSub(
     override val context: SettingContext,
     private val client: RedisClient
 ) : PubSub {
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("pubsub-redis")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("pubsub-redis")
+    private val redisPubSubLogger = LoggerFactory.getLogger("RedisPubSub")
     private val json = Json { serializersModule = context.internalSerializersModule }
 
     // Shared publish connection. Lettuce connections are thread-safe and pipeline commands.
@@ -190,155 +192,81 @@ public class RedisPubSub(
                 // Cleanup: unsubscribe and close the connection
                 reactiveConnection.unsubscribe(key).doFinally { statefulConnection.close() }.then()
             }
-        ).doOnError { it.printStackTrace() }
+        ).doOnError { error ->
+            redisPubSubLogger.error("Error in Redis subscription for channel $key", error)
+        }
     }
 
     override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
         return object : PubSubChannel<T> {
-            override suspend fun collect(collector: FlowCollector<T>) {
-                val span = tracer?.spanBuilder("pubsub.subscribe")
-                    ?.setSpanKind(SpanKind.CONSUMER)
-                    ?.setAttribute("pubsub.operation", "subscribe")
-                    ?.setAttribute("pubsub.channel", key)
-                    ?.setAttribute("pubsub.system", "redis")
-                    ?.startSpan()
-
-                try {
-                    val scope = span?.makeCurrent()
-                    try {
-                        // Create fresh subscription - no caching for serverless compatibility
-                        createSubscription(key).map { message ->
-                            val receiveSpan = tracer?.spanBuilder("pubsub.receive")
-                                ?.setSpanKind(SpanKind.CONSUMER)
-                                ?.setAttribute("pubsub.operation", "receive")
-                                ?.setAttribute("pubsub.channel", key)
-                                ?.setAttribute("pubsub.system", "redis")
-                                ?.setAttribute("message.size", message.length.toLong())
-                                ?.startSpan()
-
-                            try {
-                                val decoded = json.decodeFromString(serializer, message)
-                                receiveSpan?.setStatus(StatusCode.OK)
-                                decoded
-                            } catch (e: Exception) {
-                                receiveSpan?.setStatus(StatusCode.ERROR, "Failed to deserialize message: ${e.message}")
-                                receiveSpan?.recordExceptionWithFingerprint(e)
-                                throw e
-                            } finally {
-                                receiveSpan?.end()
-                            }
-                        }.collect { collector.emit(it) }
-                        span?.setStatus(StatusCode.OK)
-                    } finally {
-                        scope?.close()
+            override suspend fun collect(collector: FlowCollector<T>): Unit = otel.span("pubsub.subscribe", configure = {
+                setSpanKind(SpanKind.CONSUMER)
+                setAttribute("pubsub.operation", "subscribe")
+                setAttribute("messaging.destination", key)
+                setAttribute("messaging.system", "redis")
+            }) {
+                // Create fresh subscription - no caching for serverless compatibility
+                // Per-message spans created in the coroutine context (after asFlow()) so
+                // makeCurrent() works correctly and child spans get the right parent.
+                createSubscription(key).asFlow().collect { message ->
+                    otel.span("pubsub.receive", configure = {
+                        setSpanKind(SpanKind.CONSUMER)
+                        setAttribute("pubsub.operation", "receive")
+                        setAttribute("messaging.destination", key)
+                        setAttribute("messaging.system", "redis")
+                        setAttribute("message.size", message.length.toLong())
+                    }) {
+                        val decoded = json.decodeFromString(serializer, message)
+                        collector.emit(decoded)
                     }
-                } catch (e: Exception) {
-                    span?.setStatus(StatusCode.ERROR, "Failed to subscribe: ${e.message}")
-                    span?.recordExceptionWithFingerprint(e)
-                    throw e
-                } finally {
-                    span?.end()
                 }
             }
 
-            override suspend fun emit(value: T) {
-                val span = tracer?.spanBuilder("pubsub.publish")
-                    ?.setSpanKind(SpanKind.PRODUCER)
-                    ?.setAttribute("pubsub.operation", "publish")
-                    ?.setAttribute("pubsub.channel", key)
-                    ?.setAttribute("pubsub.system", "redis")
-                    ?.startSpan()
-
-                try {
-                    val scope = span?.makeCurrent()
-                    try {
-                        val message = json.encodeToString(serializer, value)
-                        span?.setAttribute("message.size", message.length.toLong())
-                        val result = publishConnection.reactive().publish(key, message).awaitFirst()
-                        span?.setAttribute("pubsub.subscribers_reached", result)
-                        span?.setStatus(StatusCode.OK)
-                    } finally {
-                        scope?.close()
-                    }
-                } catch (e: Exception) {
-                    span?.setStatus(StatusCode.ERROR, "Failed to publish: ${e.message}")
-                    span?.recordExceptionWithFingerprint(e)
-                    throw e
-                } finally {
-                    span?.end()
-                }
+            override suspend fun emit(value: T): Unit = otel.span("pubsub.publish", configure = {
+                setSpanKind(SpanKind.PRODUCER)
+                setAttribute("pubsub.operation", "publish")
+                setAttribute("messaging.destination", key)
+                setAttribute("messaging.system", "redis")
+            }) { span ->
+                val message = json.encodeToString(serializer, value)
+                span?.setAttribute("message.size", message.length.toLong())
+                val result = publishConnection.reactive().publish(key, message).awaitFirst()
+                span?.setAttribute("pubsub.subscribers_reached", result)
             }
         }
     }
 
     override fun string(key: String): PubSubChannel<String> {
         return object : PubSubChannel<String> {
-            override suspend fun collect(collector: FlowCollector<String>) {
-                val span = tracer?.spanBuilder("pubsub.subscribe")
-                    ?.setSpanKind(SpanKind.CONSUMER)
-                    ?.setAttribute("pubsub.operation", "subscribe")
-                    ?.setAttribute("pubsub.channel", key)
-                    ?.setAttribute("pubsub.system", "redis")
-                    ?.startSpan()
-
-                try {
-                    val scope = span?.makeCurrent()
-                    try {
-                        // Create fresh subscription - no caching for serverless compatibility
-                        createSubscription(key).asFlow().collect { message ->
-                            val receiveSpan = tracer?.spanBuilder("pubsub.receive")
-                                ?.setSpanKind(SpanKind.CONSUMER)
-                                ?.setAttribute("pubsub.operation", "receive")
-                                ?.setAttribute("pubsub.channel", key)
-                                ?.setAttribute("pubsub.system", "redis")
-                                ?.setAttribute("message.size", message.length.toLong())
-                                ?.startSpan()
-
-                            try {
-                                receiveSpan?.setStatus(StatusCode.OK)
-                                collector.emit(message)
-                            } finally {
-                                receiveSpan?.end()
-                            }
-                        }
-                        span?.setStatus(StatusCode.OK)
-                    } finally {
-                        scope?.close()
+            override suspend fun collect(collector: FlowCollector<String>): Unit = otel.span("pubsub.subscribe", configure = {
+                setSpanKind(SpanKind.CONSUMER)
+                setAttribute("pubsub.operation", "subscribe")
+                setAttribute("messaging.destination", key)
+                setAttribute("messaging.system", "redis")
+            }) {
+                // Create fresh subscription - no caching for serverless compatibility
+                createSubscription(key).asFlow().collect { message ->
+                    otel.span("pubsub.receive", configure = {
+                        setSpanKind(SpanKind.CONSUMER)
+                        setAttribute("pubsub.operation", "receive")
+                        setAttribute("messaging.destination", key)
+                        setAttribute("messaging.system", "redis")
+                        setAttribute("message.size", message.length.toLong())
+                    }) {
+                        collector.emit(message)
                     }
-                } catch (e: Exception) {
-                    span?.setStatus(StatusCode.ERROR, "Failed to subscribe: ${e.message}")
-                    span?.recordExceptionWithFingerprint(e)
-                    throw e
-                } finally {
-                    span?.end()
                 }
             }
 
-            override suspend fun emit(value: String) {
-                val span = tracer?.spanBuilder("pubsub.publish")
-                    ?.setSpanKind(SpanKind.PRODUCER)
-                    ?.setAttribute("pubsub.operation", "publish")
-                    ?.setAttribute("pubsub.channel", key)
-                    ?.setAttribute("pubsub.system", "redis")
-                    ?.setAttribute("message.size", value.length.toLong())
-                    ?.startSpan()
-
-                try {
-                    val scope = span?.makeCurrent()
-                    try {
-                        val result = publishConnection.reactive().publish(key, value).awaitFirst()
-                        span?.setAttribute("pubsub.subscribers_reached", result)
-                        span?.setStatus(StatusCode.OK)
-                    } finally {
-                        scope?.close()
-                    }
-                } catch (e: Exception) {
-                    span?.setStatus(StatusCode.ERROR, "Failed to publish: ${e.message}")
-                    span?.recordExceptionWithFingerprint(e)
-                    throw e
-                } finally {
-                    span?.end()
-                }
+            override suspend fun emit(value: String): Unit = otel.span("pubsub.publish", configure = {
+                setSpanKind(SpanKind.PRODUCER)
+                setAttribute("pubsub.operation", "publish")
+                setAttribute("messaging.destination", key)
+                setAttribute("messaging.system", "redis")
+                setAttribute("message.size", value.length.toLong())
+            }) { span ->
+                val result = publishConnection.reactive().publish(key, value).awaitFirst()
+                span?.setAttribute("pubsub.subscribers_reached", result)
             }
         }
     }

@@ -3,21 +3,27 @@ package com.lightningkite.services.sms.twilio
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.PhoneNumber
+import com.lightningkite.services.otel.OpenTelemetrySub
 import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
 import io.ktor.client.*
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import io.opentelemetry.api.trace.*
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Twilio SMS implementation for sending text messages via Twilio API.
@@ -97,7 +103,7 @@ public class TwilioSMS(
     private val from: String,
 ) : SMS {
 
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("sms-twilio")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("sms-twilio")
 
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
@@ -120,57 +126,78 @@ public class TwilioSMS(
      * Sends an SMS message using the Twilio API.
      *
      * Creates a high-level span for the SMS operation, with HTTP details traced automatically
-     * by the http-client's OpenTelemetry plugin.
+     * by the http-client's OpenTelemetry plugin. Retries on HTTP 429 and 5xx with exponential
+     * backoff (3 attempts: 1s, 2s, 4s delays).
      */
-    override suspend fun send(to: PhoneNumber, message: String) {
-        val span = tracer?.spanBuilder("sms.send")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("sms.operation", "send")
-            ?.setAttribute("sms.to", TelemetrySanitization.redactPhoneNumber(to.toString()))
-            ?.setAttribute("sms.from", TelemetrySanitization.redactPhoneNumber(from))
-            ?.setAttribute("sms.body_length", message.length.toLong())
-            ?.setAttribute("sms.provider", "twilio")
-            ?.startSpan()
+    override suspend fun send(to: PhoneNumber, message: String): Unit = otel.span("sms.send", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("sms.operation", "send")
+        setAttribute("messaging.system", "twilio")
+        setAttribute("sms.to", TelemetrySanitization.redactPhoneNumber(to.toString()))
+        setAttribute("sms.from", TelemetrySanitization.redactPhoneNumber(from))
+        setAttribute("sms.body_length", message.length.toLong())
+    }) { span ->
+        val maxAttempts = 3
+        val retryDelays = listOf(1.seconds, 2.seconds, 4.seconds)
+        var lastException: Exception? = null
 
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    client.submitForm(
-                        url = "https://api.twilio.com/2010-04-01/Accounts/${account}/Messages.json",
-                        formParameters = Parameters.build {
-                            append("From", from)
-                            append("To", to.toString())
-                            append("Body", message)
-                        }
-                    )
-                }
+        for (attempt in 0 until maxAttempts) {
+            if (attempt > 0) delay(retryDelays[attempt - 1])
 
-                if (response.status != HttpStatusCode.Created) {
-                    val errorMessage = response.bodyAsText()
-                    span?.setStatus(StatusCode.ERROR, "Failed to send SMS: HTTP ${response.status.value}")
-                    throw SMSException("Failed to send SMS: $errorMessage")
-                }
-
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+            val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                client.submitForm(
+                    url = "https://api.twilio.com/2010-04-01/Accounts/${account}/Messages.json",
+                    formParameters = Parameters.build {
+                        append("From", from)
+                        append("To", to.toString())
+                        append("Body", message)
+                    }
+                )
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to send SMS: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+
+            val statusValue = response.status.value
+            // Retry on 429 (Too Many Requests) and 5xx server errors
+            if (statusValue == 429 || statusValue in 500..599) {
+                val errorMessage = response.bodyAsText()
+                lastException = SMSException("Failed to send SMS: $errorMessage")
+                continue
+            }
+
+            if (response.status != HttpStatusCode.Created) {
+                val errorMessage = response.bodyAsText()
+                span?.setAttribute("http.status_code", statusValue.toLong())
+                span?.setStatus(StatusCode.ERROR, "Failed to send SMS: HTTP $statusValue")
+                throw SMSException("Failed to send SMS: $errorMessage")
+            }
+
+            span?.setAttribute("http.status_code", statusValue.toLong())
+            return@span
         }
+
+        // All attempts exhausted
+        throw lastException ?: SMSException("Failed to send SMS after $maxAttempts attempts")
     }
 
+    /**
+     * Checks Twilio account connectivity by calling the account-info endpoint.
+     * Returns OK on HTTP 200, ERROR otherwise.
+     */
     override suspend fun healthCheck(): HealthStatus {
-        // TODO
-        return HealthStatus(
-            HealthStatus.Level.OK,
-            additionalMessage = "Twilio SMS Service - No direct health checks available yet."
-        )
+        return try {
+            val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                client.get("https://api.twilio.com/2010-04-01/Accounts/${account}.json")
+            }
+            if (response.status.isSuccess()) {
+                HealthStatus(HealthStatus.Level.OK, additionalMessage = "Twilio SMS Service - Account: $account")
+            } else {
+                HealthStatus(
+                    HealthStatus.Level.ERROR,
+                    additionalMessage = "Twilio API returned ${response.status.value}"
+                )
+            }
+        } catch (e: Exception) {
+            HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Twilio API error: ${e.message}")
+        }
     }
 
     public companion object {

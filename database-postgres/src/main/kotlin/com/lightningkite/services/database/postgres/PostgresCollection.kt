@@ -2,9 +2,9 @@ package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.Table
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.span
 import io.opentelemetry.api.trace.*
-import io.opentelemetry.extension.kotlin.asContextElement
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -23,11 +23,18 @@ public class PostgresCollection<T : Any>(
     public val name: String,
     override val serializer: KSerializer<T>,
     public val serializersModule: SerializersModule,
-    private val tracer: Tracer?,
+    private val otel: OpenTelemetrySub?,
 ) : Table<T> {
     private var format = DbMapLikeFormat(serializersModule)
 
     private val table = SerialDescriptorTable(name, serializersModule, serializer.descriptor)
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+    /** Cancels the internal scope, releasing the prepare job and its resources. Called by [PostgresDatabase.disconnect]. */
+    internal fun close() {
+        scope.cancel()
+    }
 
     private suspend inline fun <T> t(noinline action: suspend Transaction.() -> T): T =
         newSuspendedTransaction(
@@ -35,7 +42,6 @@ public class PostgresCollection<T : Any>(
             db = db,
             transactionIsolation = TRANSACTION_READ_COMMITTED,
             statement = {
-                addLogger(StdOutSqlLogger)
                 action()
             })
 
@@ -43,37 +49,16 @@ public class PostgresCollection<T : Any>(
         operation: String,
         crossinline attributes: SpanBuilder.() -> Unit = {},
         crossinline block: suspend (Span?) -> R,
-    ): R {
-        return if (tracer != null) {
-            val span = tracer.spanBuilder("postgres.$operation")
-                .setAttribute("db.system", "postgresql")
-                .setAttribute("db.operation", operation)
-                .setAttribute("db.collection", name)
-                .apply { attributes() }
-                .startSpan()
-            try {
-                withContext(span.asContextElement()) {
-                    val result = block(span)
-                    span.setStatus(StatusCode.OK)
-                    result
-                }
-            } catch (t: CancellationException) {
-                span.addEvent("Cancelled")
-                throw t
-            } catch (t: Throwable) {
-                span.setStatus(StatusCode.ERROR)
-                span.recordExceptionWithFingerprint(t)
-                throw t
-            } finally {
-                span.end()
-            }
-        } else {
-            block(null)
-        }
-    }
+    ): R = otel.span("postgres.$operation", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("db.system", "postgresql")
+        setAttribute("db.operation", operation)
+        setAttribute("db.collection", name)
+        attributes()
+    }) { block(it) }
 
-    @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
-    private val prepare = GlobalScope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
+    @OptIn(ExperimentalSerializationApi::class)
+    private val prepare = scope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
         t {
 //            MigrationUtils.statementsRequiredForDatabaseMigration
             statementsRequiredToActualizeScheme(table).forEach {
@@ -115,7 +100,7 @@ public class PostgresCollection<T : Any>(
                 }
                     .toTypedArray())
                 .limit(limit).offset(skip.toLong())
-                .toList().also { println("list is $it") }
+                .toList()
 //                .prep
                 .map {
                     format.decode(serializer, it)

@@ -102,16 +102,30 @@ public actual class MapCache actual constructor(
     ): Boolean {
         assertValidTtl(timeToLive)
         return instrumentedModify<T>(context, key, maxTries, timeToLive) {
-            entries.compute(key) { _, existing ->
+            // CAS loop: read current value, compute new value, atomically swap only if unchanged.
+            // Retries up to maxTries times on concurrent modification so the modification function
+            // always operates on the most recent value.
+            val clock = Clock.default()
+            repeat(maxTries) {
+                val existing = entries[key]?.takeIf { it.expires == null || it.expires > clock.now() }
                 val current = existing?.value as? T
                 val new = modification(current)
-                if (new != null) {
-                    Entry(new, existing?.expires)
+                val newEntry = new?.let { Entry(it, timeToLive?.let { clock.now() + it } ?: existing?.expires) }
+                val swapped: Boolean
+                if (newEntry != null) {
+                    // Replace only if the stored entry is still the one we read.
+                    var cas = false
+                    entries.compute(key) { _, cur ->
+                        if (cur === existing) { cas = true; newEntry } else cur
+                    }
+                    swapped = cas
                 } else {
-                    null
+                    // new == null: delete only if value hasn't changed since we read it.
+                    swapped = if (existing != null) entries.remove(key, existing) else !entries.containsKey(key)
                 }
+                if (swapped) return@instrumentedModify true
             }
-            true
+            false
         }
     }
 

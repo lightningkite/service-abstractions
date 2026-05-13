@@ -2,6 +2,9 @@ package com.lightningkite.services.speech.elevenlabs
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.contentnegotiation.*
@@ -10,10 +13,59 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import io.opentelemetry.api.trace.SpanKind
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.milliseconds
 
 private val logger = KotlinLogging.logger("ElevenLabsSpeechToTextService")
+
+// Minimal response models — only fields actually used.
+
+@Serializable
+private data class ElevenLabsTranscriptionResponse(
+    val text: String = "",
+    @SerialName("language_code") val languageCode: String? = null,
+    @SerialName("language_probability") val languageProbability: Float? = null,
+    val words: List<ElevenLabsWord>? = null,
+    val speakers: List<ElevenLabsSpeakerSegment>? = null,
+    @SerialName("audio_events") val audioEvents: List<ElevenLabsAudioEvent>? = null,
+)
+
+@Serializable
+private data class ElevenLabsWord(
+    val text: String = "",
+    val start: Double = 0.0,
+    val end: Double = 0.0,
+    @SerialName("speaker_id") val speakerId: String? = null,
+)
+
+@Serializable
+private data class ElevenLabsSpeakerSegment(
+    val speaker: String = "",
+    val start: Double = 0.0,
+    val end: Double = 0.0,
+    val text: String = "",
+)
+
+@Serializable
+private data class ElevenLabsAudioEvent(
+    val type: String = "",
+    val start: Double = 0.0,
+    val end: Double = 0.0,
+)
+
+// Minimal request model for URL-based transcription.
+@Serializable
+private data class ElevenLabsUrlTranscriptionRequest(
+    @SerialName("cloud_storage_url") val cloudStorageUrl: String,
+    @SerialName("model_id") val modelId: String,
+    @SerialName("language_code") val languageCode: String? = null,
+    val diarize: Boolean? = null,
+    @SerialName("num_speakers") val numSpeakers: Int? = null,
+    @SerialName("timestamps_granularity") val timestampsGranularity: String? = null,
+)
 
 /**
  * ElevenLabs Speech-to-Text (Scribe) implementation.
@@ -68,6 +120,11 @@ public class ElevenLabsSpeechToTextService(
 
     private val baseUrl = "https://api.elevenlabs.io/v1"
 
+    private val responseJson = Json { ignoreUnknownKeys = true }
+    private val requestJson = Json { ignoreUnknownKeys = true; encodeDefaults = false }
+
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("speech-elevenlabs")
+
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
             json(Json {
@@ -82,41 +139,48 @@ public class ElevenLabsSpeechToTextService(
         options: TranscriptionOptions,
     ): TranscriptionResult {
         val model = options.model ?: defaultModel
-
         val audioBytes = audio.data.bytes()
-        logger.debug { "[$name] Transcribing ${audioBytes.size} bytes with model=$model" }
 
-        val response = client.submitFormWithBinaryData(
-            url = "$baseUrl/speech-to-text",
-            formData = formData {
-                append("file", audioBytes, Headers.build {
-                    append(HttpHeaders.ContentType, audio.mediaType.toString())
-                    append(HttpHeaders.ContentDisposition, "filename=\"audio.${getExtension(audio.mediaType)}\"")
-                })
-                append("model_id", model)
-                options.language?.let { append("language_code", it) }
-                if (options.speakerDiarization) {
-                    append("diarize", "true")
-                    options.maxSpeakers?.let { append("num_speakers", it.toString()) }
+        return otel.span("speech.transcribe", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("ai.provider", "elevenlabs")
+            setAttribute("ai.model", model)
+            setAttribute("audio.size_bytes", audioBytes.size.toLong())
+        }) {
+            logger.debug { "[$name] Transcribing ${audioBytes.size} bytes with model=$model" }
+
+            val response = client.submitFormWithBinaryData(
+                url = "$baseUrl/speech-to-text",
+                formData = formData {
+                    append("file", audioBytes, Headers.build {
+                        append(HttpHeaders.ContentType, audio.mediaType.toString())
+                        append(HttpHeaders.ContentDisposition, "filename=\"audio.${getExtension(audio.mediaType)}\"")
+                    })
+                    append("model_id", model)
+                    options.language?.let { append("language_code", it) }
+                    if (options.speakerDiarization) {
+                        append("diarize", "true")
+                        options.maxSpeakers?.let { append("num_speakers", it.toString()) }
+                    }
+                    if (options.wordTimestamps) {
+                        append("timestamps_granularity", "word")
+                    }
                 }
-                if (options.wordTimestamps) {
-                    append("timestamps_granularity", "word")
-                }
+            ) {
+                header("xi-api-key", apiKey)
             }
-        ) {
-            header("xi-api-key", apiKey)
+
+            if (!response.status.isSuccess()) {
+                val error = response.bodyAsText()
+                logger.error { "[$name] STT failed: $error" }
+                throw SpeechToTextException("Transcription failed: $error")
+            }
+
+            val body = response.bodyAsText()
+            logger.debug { "[$name] Transcription complete" }
+
+            parseTranscriptionResponse(body, options)
         }
-
-        if (!response.status.isSuccess()) {
-            val error = response.bodyAsText()
-            logger.error { "[$name] STT failed: $error" }
-            throw SpeechToTextException("Transcription failed: $error")
-        }
-
-        val body = response.bodyAsText()
-        logger.debug { "[$name] Transcription complete" }
-
-        return parseTranscriptionResponse(body, options)
     }
 
     override suspend fun transcribeUrl(
@@ -125,24 +189,39 @@ public class ElevenLabsSpeechToTextService(
     ): TranscriptionResult {
         val model = options.model ?: defaultModel
 
-        logger.debug { "[$name] Transcribing from URL: $audioUrl with model=$model" }
+        return otel.span("speech.transcribe_url", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("ai.provider", "elevenlabs")
+            setAttribute("ai.model", model)
+        }) {
+            logger.debug { "[$name] Transcribing from URL: $audioUrl with model=$model" }
 
-        val response = client.post("$baseUrl/speech-to-text") {
-            header("xi-api-key", apiKey)
-            contentType(ContentType.Application.Json)
-            setBody(buildUrlTranscriptionRequest(audioUrl, model, options))
+            val requestBody = ElevenLabsUrlTranscriptionRequest(
+                cloudStorageUrl = audioUrl,
+                modelId = model,
+                languageCode = options.language,
+                diarize = if (options.speakerDiarization) true else null,
+                numSpeakers = options.maxSpeakers,
+                timestampsGranularity = if (options.wordTimestamps) "word" else null,
+            )
+
+            val response = client.post("$baseUrl/speech-to-text") {
+                header("xi-api-key", apiKey)
+                contentType(ContentType.Application.Json)
+                setBody(requestJson.encodeToString(requestBody))
+            }
+
+            if (!response.status.isSuccess()) {
+                val error = response.bodyAsText()
+                logger.error { "[$name] STT failed: $error" }
+                throw SpeechToTextException("Transcription failed: $error")
+            }
+
+            val body = response.bodyAsText()
+            logger.debug { "[$name] Transcription complete" }
+
+            parseTranscriptionResponse(body, options)
         }
-
-        if (!response.status.isSuccess()) {
-            val error = response.bodyAsText()
-            logger.error { "[$name] STT failed: $error" }
-            throw SpeechToTextException("Transcription failed: $error")
-        }
-
-        val body = response.bodyAsText()
-        logger.debug { "[$name] Transcription complete" }
-
-        return parseTranscriptionResponse(body, options)
     }
 
     override suspend fun healthCheck(): HealthStatus {
@@ -167,171 +246,64 @@ public class ElevenLabsSpeechToTextService(
         }
     }
 
-    private fun buildUrlTranscriptionRequest(
-        audioUrl: String,
-        model: String,
-        options: TranscriptionOptions,
-    ): String {
-        return buildString {
-            append("{")
-            append("\"cloud_storage_url\":\"$audioUrl\",")
-            append("\"model_id\":\"$model\"")
-            options.language?.let { append(",\"language_code\":\"$it\"") }
-            if (options.speakerDiarization) {
-                append(",\"diarize\":true")
-                options.maxSpeakers?.let { append(",\"num_speakers\":$it") }
-            }
-            if (options.wordTimestamps) {
-                append(",\"timestamps_granularity\":\"word\"")
-            }
-            append("}")
-        }
-    }
+    private fun parseTranscriptionResponse(body: String, options: TranscriptionOptions): TranscriptionResult {
+        val parsed = responseJson.decodeFromString<ElevenLabsTranscriptionResponse>(body)
 
-    private fun parseTranscriptionResponse(json: String, options: TranscriptionOptions): TranscriptionResult {
-        // Parse text
-        val text = Regex(""""text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"""")
-            .find(json)?.groupValues?.get(1)?.unescapeJson() ?: ""
-
-        // Parse language
-        val language = Regex(""""language_code"\s*:\s*"([^"]+)"""")
-            .find(json)?.groupValues?.get(1)
-
-        val languageConfidence = Regex(""""language_probability"\s*:\s*([0-9.]+)""")
-            .find(json)?.groupValues?.get(1)?.toFloatOrNull()
-
-        // Parse words if present
         val words = if (options.wordTimestamps) {
-            parseWords(json, options.speakerDiarization)
+            parsed.words?.map { w ->
+                TranscribedWord(
+                    text = w.text,
+                    startTime = (w.start * 1000).toLong().milliseconds,
+                    endTime = (w.end * 1000).toLong().milliseconds,
+                    confidence = null,  // ElevenLabs doesn't provide per-word confidence
+                    speakerId = w.speakerId,
+                )
+            } ?: emptyList()
         } else {
             emptyList()
         }
 
-        // Parse speakers if diarization was enabled
         val speakers = if (options.speakerDiarization) {
-            parseSpeakers(json)
+            parsed.speakers?.map { s ->
+                SpeakerSegment(
+                    speakerId = s.speaker,
+                    startTime = (s.start * 1000).toLong().milliseconds,
+                    endTime = (s.end * 1000).toLong().milliseconds,
+                    text = s.text,
+                )
+            } ?: emptyList()
         } else {
             emptyList()
         }
 
-        // Parse audio events
         val audioEvents = if (options.audioEvents) {
-            parseAudioEvents(json)
+            parsed.audioEvents?.map { e ->
+                AudioEvent(
+                    type = when (e.type.lowercase()) {
+                        "laughter" -> AudioEventType.LAUGHTER
+                        "applause" -> AudioEventType.APPLAUSE
+                        "music" -> AudioEventType.MUSIC
+                        "silence" -> AudioEventType.SILENCE
+                        "noise" -> AudioEventType.NOISE
+                        else -> AudioEventType.OTHER
+                    },
+                    startTime = (e.start * 1000).toLong().milliseconds,
+                    endTime = (e.end * 1000).toLong().milliseconds,
+                )
+            } ?: emptyList()
         } else {
             emptyList()
         }
 
         return TranscriptionResult(
-            text = text,
-            language = language,
-            languageConfidence = languageConfidence,
+            text = parsed.text,
+            language = parsed.languageCode,
+            languageConfidence = parsed.languageProbability,
             words = words,
             speakers = speakers,
             audioEvents = audioEvents,
-            duration = null  // ElevenLabs returns this in alignment info
+            duration = null,  // ElevenLabs returns this in alignment info
         )
-    }
-
-    private fun parseWords(json: String, includeSpeaker: Boolean): List<TranscribedWord> {
-        val words = mutableListOf<TranscribedWord>()
-
-        // Look for words array in alignment or words field
-        val wordsArrayMatch = Regex(""""words"\s*:\s*\[([^\]]*)\]""", RegexOption.DOT_MATCHES_ALL)
-            .find(json) ?: return words
-
-        val wordsJson = wordsArrayMatch.groupValues[1]
-
-        // Parse each word object
-        val wordPattern = Regex(
-            """\{\s*"text"\s*:\s*"([^"]*)"[^}]*"start"\s*:\s*([0-9.]+)[^}]*"end"\s*:\s*([0-9.]+)[^}]*\}""",
-            RegexOption.DOT_MATCHES_ALL
-        )
-
-        wordPattern.findAll(wordsJson).forEach { match ->
-            val wordText = match.groupValues[1].unescapeJson()
-            val startMs = (match.groupValues[2].toDoubleOrNull() ?: 0.0) * 1000
-            val endMs = (match.groupValues[3].toDoubleOrNull() ?: 0.0) * 1000
-
-            // Try to extract speaker_id if present
-            val speakerId = if (includeSpeaker) {
-                Regex(""""speaker_id"\s*:\s*"([^"]+)"""").find(match.value)?.groupValues?.get(1)
-            } else null
-
-            words.add(
-                TranscribedWord(
-                    text = wordText,
-                    startTime = startMs.toLong().milliseconds,
-                    endTime = endMs.toLong().milliseconds,
-                    confidence = null,  // ElevenLabs doesn't provide per-word confidence
-                    speakerId = speakerId
-                )
-            )
-        }
-
-        return words
-    }
-
-    private fun parseSpeakers(json: String): List<SpeakerSegment> {
-        val segments = mutableListOf<SpeakerSegment>()
-
-        // Look for speaker segments - this varies by ElevenLabs response format
-        val speakersMatch = Regex(""""speakers"\s*:\s*\[([^\]]*)\]""", RegexOption.DOT_MATCHES_ALL)
-            .find(json) ?: return segments
-
-        val speakersJson = speakersMatch.groupValues[1]
-
-        val segmentPattern = Regex(
-            """\{\s*"speaker"\s*:\s*"([^"]+)"[^}]*"start"\s*:\s*([0-9.]+)[^}]*"end"\s*:\s*([0-9.]+)[^}]*"text"\s*:\s*"([^"]*)"\s*\}""",
-            RegexOption.DOT_MATCHES_ALL
-        )
-
-        segmentPattern.findAll(speakersJson).forEach { match ->
-            segments.add(
-                SpeakerSegment(
-                    speakerId = match.groupValues[1],
-                    startTime = (match.groupValues[2].toDoubleOrNull()?.times(1000) ?: 0.0).toLong().milliseconds,
-                    endTime = (match.groupValues[3].toDoubleOrNull()?.times(1000) ?: 0.0).toLong().milliseconds,
-                    text = match.groupValues[4].unescapeJson()
-                )
-            )
-        }
-
-        return segments
-    }
-
-    private fun parseAudioEvents(json: String): List<AudioEvent> {
-        val events = mutableListOf<AudioEvent>()
-
-        // Look for audio_events array
-        val eventsMatch = Regex(""""audio_events"\s*:\s*\[([^\]]*)\]""", RegexOption.DOT_MATCHES_ALL)
-            .find(json) ?: return events
-
-        val eventsJson = eventsMatch.groupValues[1]
-
-        val eventPattern = Regex(
-            """\{\s*"type"\s*:\s*"([^"]+)"[^}]*"start"\s*:\s*([0-9.]+)[^}]*"end"\s*:\s*([0-9.]+)[^}]*\}"""
-        )
-
-        eventPattern.findAll(eventsJson).forEach { match ->
-            val type = when (match.groupValues[1].lowercase()) {
-                "laughter" -> AudioEventType.LAUGHTER
-                "applause" -> AudioEventType.APPLAUSE
-                "music" -> AudioEventType.MUSIC
-                "silence" -> AudioEventType.SILENCE
-                "noise" -> AudioEventType.NOISE
-                else -> AudioEventType.OTHER
-            }
-
-            events.add(
-                AudioEvent(
-                    type = type,
-                    startTime = (match.groupValues[2].toDoubleOrNull()?.times(1000) ?: 0.0).toLong().milliseconds,
-                    endTime = (match.groupValues[3].toDoubleOrNull()?.times(1000) ?: 0.0).toLong().milliseconds
-                )
-            )
-        }
-
-        return events
     }
 
     private fun getExtension(mediaType: MediaType): String {
@@ -343,15 +315,6 @@ public class ElevenLabsSpeechToTextService(
             mediaType.toString().contains("mp4") || mediaType.toString().contains("m4a") -> "m4a"
             else -> "audio"
         }
-    }
-
-    private fun String.unescapeJson(): String {
-        return this
-            .replace("\\n", "\n")
-            .replace("\\r", "\r")
-            .replace("\\t", "\t")
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\")
     }
 
     public companion object {

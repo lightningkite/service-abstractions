@@ -5,7 +5,9 @@ import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.database.HasId
 import com.lightningkite.services.database.SecurityException
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.subscription.*
 import com.lightningkite.services.subscription.Customer
 import com.lightningkite.services.subscription.Subscription
@@ -81,9 +83,10 @@ public class StripeSubscriptionService(
     private val staticWebhookSecret: String,
 ) : SubscriptionService {
 
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("subscription-payments-stripe")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("subscription-payments-stripe")
 
     init {
+        // TODO: global apiKey limits multiple service instances
         Stripe.apiKey = apiKey
     }
 
@@ -91,320 +94,225 @@ public class StripeSubscriptionService(
         email: String,
         name: String?,
         metadata: Map<String, String>,
-    ): SubscriptionCustomerId {
-        val span = tracer?.spanBuilder("subscription.create_customer")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("subscription.operation", "create_customer")
-            ?.setAttribute("subscription.customer_email", email)
-            ?.setAttribute("subscription.provider", "stripe")
-            ?.startSpan()
-
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val params = CustomerCreateParams.builder()
-                    .setEmail(email)
-                    .apply {
-                        name?.let { setName(it) }
-                        metadata.forEach { (k, v) -> putMetadata(k, v) }
-                    }
-                    .build()
-
-                val customer = com.stripe.model.Customer.create(params)
-                val customerId = SubscriptionCustomerId(customer.id)
-
-                span?.setAttribute("subscription.customer_id", customerId.value)
-                span?.setStatus(StatusCode.OK)
-
-                customerId
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to create customer: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+    ): SubscriptionCustomerId = otel.span(
+        "subscription.create_customer",
+        configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("subscription.operation", "create_customer")
+            setAttribute("subscription.customer_email", email)
+            setAttribute("subscription.provider", "stripe")
         }
+    ) { span ->
+        val params = CustomerCreateParams.builder()
+            .setEmail(email)
+            .apply {
+                name?.let { setName(it) }
+                metadata.forEach { (k, v) -> putMetadata(k, v) }
+            }
+            .build()
+
+        val customer = com.stripe.model.Customer.create(params)
+        val customerId = SubscriptionCustomerId(customer.id)
+
+        span?.setAttribute("subscription.customer_id", customerId.value)
+
+        customerId
     }
 
-    override suspend fun getCustomer(customerId: SubscriptionCustomerId): Customer? {
-        val span = tracer?.spanBuilder("subscription.get_customer")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("subscription.operation", "get_customer")
-            ?.setAttribute("subscription.customer_id", customerId.value)
-            ?.setAttribute("subscription.provider", "stripe")
-            ?.startSpan()
-
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val stripeCustomer = com.stripe.model.Customer.retrieve(customerId.value)
-                if (stripeCustomer.deleted == true) {
-                    span?.setAttribute("subscription.customer_found", false)
-                    span?.setStatus(StatusCode.OK)
-                    return null
-                }
-
-                span?.setAttribute("subscription.customer_found", true)
-                span?.setStatus(StatusCode.OK)
-
-                Customer(
-                    id = SubscriptionCustomerId(stripeCustomer.id),
-                    email = stripeCustomer.email,
-                    name = stripeCustomer.name,
-                    metadata = stripeCustomer.metadata ?: emptyMap(),
-                    defaultPaymentMethodId = stripeCustomer.invoiceSettings?.defaultPaymentMethod
-                )
-            } finally {
-                scope?.close()
+    override suspend fun getCustomer(customerId: SubscriptionCustomerId): Customer? = otel.span(
+        "subscription.get_customer",
+        configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("subscription.operation", "get_customer")
+            setAttribute("subscription.customer_id", customerId.value)
+            setAttribute("subscription.provider", "stripe")
+        }
+    ) { span ->
+        try {
+            val stripeCustomer = com.stripe.model.Customer.retrieve(customerId.value)
+            if (stripeCustomer.deleted == true) {
+                span?.setAttribute("subscription.customer_found", false)
+                return@span null
             }
+
+            span?.setAttribute("subscription.customer_found", true)
+
+            Customer(
+                id = SubscriptionCustomerId(stripeCustomer.id),
+                email = stripeCustomer.email,
+                name = stripeCustomer.name,
+                metadata = stripeCustomer.metadata ?: emptyMap(),
+                defaultPaymentMethodId = stripeCustomer.invoiceSettings?.defaultPaymentMethod
+            )
         } catch (e: InvalidRequestException) {
             if (e.statusCode == 404) {
                 span?.setAttribute("subscription.customer_found", false)
-                span?.setStatus(StatusCode.OK)
                 null
             } else {
-                span?.setStatus(StatusCode.ERROR, "Failed to get customer: ${e.message}")
-                span?.recordExceptionWithFingerprint(e)
                 throw e
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to get customer: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
         }
     }
 
-    override suspend fun checkoutUrl(request: CheckoutSessionRequest): String {
-        val span = tracer?.spanBuilder("subscription.create_checkout_session")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("subscription.operation", "create_checkout_session")
-            ?.setAttribute("subscription.price_id", request.priceId.value)
-            ?.setAttribute("subscription.quantity", request.quantity.toLong())
-            ?.setAttribute("subscription.provider", "stripe")
-            ?.apply {
-                request.customerId?.let { setAttribute("subscription.customer_id", it.value) }
-                request.trialPeriodDays?.let { setAttribute("subscription.trial_period_days", it.toLong()) }
-            }
-            ?.startSpan()
-
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val paramsBuilder = SessionCreateParams.builder()
-                    .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
-                    .setSuccessUrl(request.successUrl)
-                    .setCancelUrl(request.cancelUrl)
-                    .addLineItem(
-                        SessionCreateParams.LineItem.builder()
-                            .setPrice(request.priceId.value)
-                            .setQuantity(request.quantity.toLong())
-                            .build()
-                    )
-
-                // Set customer or customer creation
-                val customerId = request.customerId
-                if (customerId != null) {
-                    paramsBuilder.setCustomer(customerId.value)
-                } else {
-                    val customerCreation = SessionCreateParams.CustomerCreation.ALWAYS
-                    paramsBuilder.setCustomerCreation(customerCreation)
-                    request.customerEmail?.let { paramsBuilder.setCustomerEmail(it) }
-                }
-
-                // Trial period
-                request.trialPeriodDays?.let { days ->
-                    paramsBuilder.setSubscriptionData(
-                        SessionCreateParams.SubscriptionData.builder()
-                            .setTrialPeriodDays(days.toLong())
-                            .build()
-                    )
-                }
-
-                // Promo codes
-                if (request.allowPromotionCodes) {
-                    paramsBuilder.setAllowPromotionCodes(true)
-                }
-
-                // Metadata
-                request.metadata.forEach { (k, v) -> paramsBuilder.putMetadata(k, v) }
-
-                val session = Session.create(paramsBuilder.build())
-
-                span?.setAttribute("subscription.checkout_session_id", session.id)
-                span?.setStatus(StatusCode.OK)
-
-                session.url
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to create checkout session: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+    override suspend fun checkoutUrl(request: CheckoutSessionRequest): String = otel.span(
+        "subscription.create_checkout_session",
+        configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("subscription.operation", "create_checkout_session")
+            setAttribute("subscription.price_id", request.priceId.value)
+            setAttribute("subscription.quantity", request.quantity.toLong())
+            setAttribute("subscription.provider", "stripe")
+            request.customerId?.let { setAttribute("subscription.customer_id", it.value) }
+            request.trialPeriodDays?.let { setAttribute("subscription.trial_period_days", it.toLong()) }
         }
-    }
-
-    override suspend fun manageSubscriptionUrl(subscriptionId: SubscriptionId, returnUrl: String): String {
-        val span = tracer?.spanBuilder("subscription.create_billing_portal_session")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("subscription.operation", "create_billing_portal_session")
-            ?.setAttribute("subscription.subscription_id", subscriptionId.value)
-            ?.setAttribute("subscription.provider", "stripe")
-            ?.startSpan()
-
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val sub = getSubscription(subscriptionId)
-                    ?: throw IllegalArgumentException("Subscription not found: ${subscriptionId.value}")
-
-                span?.setAttribute("subscription.customer_id", sub.customerId.value)
-
-                val params = com.stripe.param.billingportal.SessionCreateParams.builder()
-                    .setCustomer(sub.customerId.value)
-                    .setReturnUrl(returnUrl)
+    ) { span ->
+        val paramsBuilder = SessionCreateParams.builder()
+            .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
+            .setSuccessUrl(request.successUrl)
+            .setCancelUrl(request.cancelUrl)
+            .addLineItem(
+                SessionCreateParams.LineItem.builder()
+                    .setPrice(request.priceId.value)
+                    .setQuantity(request.quantity.toLong())
                     .build()
+            )
 
-                val session = com.stripe.model.billingportal.Session.create(params)
-
-                span?.setAttribute("subscription.portal_session_id", session.id)
-                span?.setStatus(StatusCode.OK)
-
-                session.url
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to create billing portal session: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        // Set customer or customer creation
+        val customerId = request.customerId
+        if (customerId != null) {
+            paramsBuilder.setCustomer(customerId.value)
+        } else {
+            val customerCreation = SessionCreateParams.CustomerCreation.ALWAYS
+            paramsBuilder.setCustomerCreation(customerCreation)
+            request.customerEmail?.let { paramsBuilder.setCustomerEmail(it) }
         }
+
+        // Trial period
+        request.trialPeriodDays?.let { days ->
+            paramsBuilder.setSubscriptionData(
+                SessionCreateParams.SubscriptionData.builder()
+                    .setTrialPeriodDays(days.toLong())
+                    .build()
+            )
+        }
+
+        // Promo codes
+        if (request.allowPromotionCodes) {
+            paramsBuilder.setAllowPromotionCodes(true)
+        }
+
+        // Metadata
+        request.metadata.forEach { (k, v) -> paramsBuilder.putMetadata(k, v) }
+
+        val session = Session.create(paramsBuilder.build())
+
+        span?.setAttribute("subscription.checkout_session_id", session.id)
+
+        session.url
     }
 
-    override suspend fun getSubscription(subscriptionId: SubscriptionId): Subscription? {
-        val span = tracer?.spanBuilder("subscription.get_subscription")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("subscription.operation", "get_subscription")
-            ?.setAttribute("subscription.subscription_id", subscriptionId.value)
-            ?.setAttribute("subscription.provider", "stripe")
-            ?.startSpan()
+    override suspend fun manageSubscriptionUrl(subscriptionId: SubscriptionId, returnUrl: String): String = otel.span(
+        "subscription.create_billing_portal_session",
+        configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("subscription.operation", "create_billing_portal_session")
+            setAttribute("subscription.subscription_id", subscriptionId.value)
+            setAttribute("subscription.provider", "stripe")
+        }
+    ) { span ->
+        val sub = getSubscription(subscriptionId)
+            ?: throw IllegalArgumentException("Subscription not found: ${subscriptionId.value}")
 
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val stripeSub = com.stripe.model.Subscription.retrieve(subscriptionId.value)
-                val subscription = stripeSub.toSubscription()
+        span?.setAttribute("subscription.customer_id", sub.customerId.value)
 
-                span?.setAttribute("subscription.status", subscription.status.name)
-                span?.setAttribute("subscription.customer_id", subscription.customerId.value)
-                span?.setStatus(StatusCode.OK)
+        val params = com.stripe.param.billingportal.SessionCreateParams.builder()
+            .setCustomer(sub.customerId.value)
+            .setReturnUrl(returnUrl)
+            .build()
 
-                subscription
-            } finally {
-                scope?.close()
-            }
+        val session = com.stripe.model.billingportal.Session.create(params)
+
+        span?.setAttribute("subscription.portal_session_id", session.id)
+
+        session.url
+    }
+
+    override suspend fun getSubscription(subscriptionId: SubscriptionId): Subscription? = otel.span(
+        "subscription.get_subscription",
+        configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("subscription.operation", "get_subscription")
+            setAttribute("subscription.subscription_id", subscriptionId.value)
+            setAttribute("subscription.provider", "stripe")
+        }
+    ) { span ->
+        try {
+            val stripeSub = com.stripe.model.Subscription.retrieve(subscriptionId.value)
+            val subscription = stripeSub.toSubscription()
+
+            span?.setAttribute("subscription.status", subscription.status.name)
+            span?.setAttribute("subscription.customer_id", subscription.customerId.value)
+
+            subscription
         } catch (e: InvalidRequestException) {
             if (e.statusCode == 404) {
                 span?.setAttribute("subscription.found", false)
-                span?.setStatus(StatusCode.OK)
                 null
             } else {
-                span?.setStatus(StatusCode.ERROR, "Failed to get subscription: ${e.message}")
-                span?.recordExceptionWithFingerprint(e)
                 throw e
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to get subscription: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
         }
     }
 
-    override suspend fun getSubscriptions(customerId: SubscriptionCustomerId): List<Subscription> {
-        val span = tracer?.spanBuilder("subscription.list_subscriptions")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("subscription.operation", "list_subscriptions")
-            ?.setAttribute("subscription.customer_id", customerId.value)
-            ?.setAttribute("subscription.provider", "stripe")
-            ?.startSpan()
+    override suspend fun getSubscriptions(customerId: SubscriptionCustomerId): List<Subscription> = otel.span(
+        "subscription.list_subscriptions",
+        configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("subscription.operation", "list_subscriptions")
+            setAttribute("subscription.customer_id", customerId.value)
+            setAttribute("subscription.provider", "stripe")
+        }
+    ) { span ->
+        val params = SubscriptionListParams.builder()
+            .setCustomer(customerId.value)
+            .build()
 
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val params = SubscriptionListParams.builder()
-                    .setCustomer(customerId.value)
-                    .build()
+        val subscriptions = com.stripe.model.Subscription.list(params).data.map { it.toSubscription() }
 
-                val subscriptions = com.stripe.model.Subscription.list(params).data.map { it.toSubscription() }
+        span?.setAttribute("subscription.count", subscriptions.size.toLong())
 
-                span?.setAttribute("subscription.count", subscriptions.size.toLong())
-                span?.setStatus(StatusCode.OK)
+        subscriptions
+    }
 
-                subscriptions
-            } finally {
-                scope?.close()
+    override suspend fun cancelSubscription(subscriptionId: SubscriptionId, immediately: Boolean): Subscription =
+        otel.span(
+            "subscription.cancel_subscription",
+            configure = {
+                setSpanKind(SpanKind.CLIENT)
+                setAttribute("subscription.operation", "cancel_subscription")
+                setAttribute("subscription.subscription_id", subscriptionId.value)
+                setAttribute("subscription.cancel_immediately", immediately)
+                setAttribute("subscription.provider", "stripe")
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to list subscriptions: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
-        }
-    }
+        ) { span ->
+            val subscription = com.stripe.model.Subscription.retrieve(subscriptionId.value)
 
-    override suspend fun cancelSubscription(subscriptionId: SubscriptionId, immediately: Boolean): Subscription {
-        val span = tracer?.spanBuilder("subscription.cancel_subscription")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("subscription.operation", "cancel_subscription")
-            ?.setAttribute("subscription.subscription_id", subscriptionId.value)
-            ?.setAttribute("subscription.cancel_immediately", immediately)
-            ?.setAttribute("subscription.provider", "stripe")
-            ?.startSpan()
+            span?.setAttribute("subscription.customer_id", subscription.customer)
 
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val subscription = com.stripe.model.Subscription.retrieve(subscriptionId.value)
-
-                span?.setAttribute("subscription.customer_id", subscription.customer)
-
-                val result = if (immediately) {
-                    subscription.cancel().toSubscription()
-                } else {
-                    subscription.update(
-                        SubscriptionUpdateParams.builder()
-                            .setCancelAtPeriodEnd(true)
-                            .build()
-                    ).toSubscription()
-                }
-
-                span?.setAttribute("subscription.status", result.status.name)
-                span?.setStatus(StatusCode.OK)
-
-                result
-            } finally {
-                scope?.close()
+            val result = if (immediately) {
+                subscription.cancel().toSubscription()
+            } else {
+                subscription.update(
+                    SubscriptionUpdateParams.builder()
+                        .setCancelAtPeriodEnd(true)
+                        .build()
+                ).toSubscription()
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to cancel subscription: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+
+            span?.setAttribute("subscription.status", result.status.name)
+
+            result
         }
-    }
 
     // Note: Stripe does support pausing via pause_collection, but it's less common
     // We leave the default UnsupportedOperationException for now
@@ -420,56 +328,56 @@ public class StripeSubscriptionService(
             if (existing == null) throw IllegalArgumentException("Webhook not found: $httpUrl")
         }
 
+        /**
+         * Parses an incoming Stripe webhook event.
+         *
+         * Uses [SpanKind.SERVER] for the span kind because this is an inbound server entry point.
+         *
+         * **Note**: [body] is a single-use [TypedData] — do not call [TypedData.text] more than once.
+         */
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): SubscriptionEvent? {
-            val span = tracer?.spanBuilder("subscription.webhook.parse")
-                ?.setSpanKind(SpanKind.SERVER)
-                ?.setAttribute("subscription.operation", "webhook_parse")
-                ?.setAttribute("subscription.provider", "stripe")
-                ?.startSpan()
-
-            return try {
-                val scope = span?.makeCurrent()
-                try {
-                    val payload = body.text()
-
-                    // Get signature header (case-insensitive lookup)
-                    val sigHeader = headers.entries
-                        .firstOrNull { it.key.equals("stripe-signature", ignoreCase = true) }
-                        ?.value?.joinToString(",")
-                        ?: throw IllegalArgumentException("Missing Stripe-Signature header")
-
-                    val secret = staticWebhookSecret
-
-                    // Verify webhook signature
-                    val event: Event = try {
-                        Webhook.constructEvent(payload, sigHeader, secret)
-                    } catch (e: Exception) {
-                        throw SecurityException("Invalid webhook signature: ${e.message}")
-                    }
-
-                    span?.setAttribute("webhook.event_id", event.id)
-                    span?.setAttribute("webhook.event_type", event.type)
-
-                    val result = parseEvent(event)
-
-                    span?.setAttribute("webhook.parsed", result != null)
-                    span?.setStatus(StatusCode.OK)
-
-                    result
-                } finally {
-                    scope?.close()
-                }
-            } catch (e: Exception) {
-                span?.setStatus(StatusCode.ERROR, "Failed to parse webhook: ${e.message}")
-                span?.recordExceptionWithFingerprint(e)
-                throw e
-            } finally {
-                span?.end()
+        ): SubscriptionEvent? = otel.span(
+            "subscription.webhook.parse",
+            configure = {
+                setSpanKind(SpanKind.SERVER)
+                setAttribute("subscription.operation", "webhook_parse")
+                setAttribute("subscription.provider", "stripe")
             }
+        ) { span -> parseInternal(span, headers, body) }
+
+        private suspend fun parseInternal(
+            span: Span?,
+            headers: Map<String, List<String>>,
+            body: TypedData,
+        ): SubscriptionEvent? {
+            val payload = body.text()
+
+            // Get signature header (case-insensitive lookup)
+            val sigHeader = headers.entries
+                .firstOrNull { it.key.equals("stripe-signature", ignoreCase = true) }
+                ?.value?.joinToString(",")
+                ?: throw IllegalArgumentException("Missing Stripe-Signature header")
+
+            val secret = staticWebhookSecret
+
+            // Verify webhook signature
+            val event: Event = try {
+                Webhook.constructEvent(payload, sigHeader, secret)
+            } catch (e: Exception) {
+                throw SecurityException("Invalid webhook signature: ${e.message}")
+            }
+
+            span?.setAttribute("webhook.event_id", event.id)
+            span?.setAttribute("webhook.event_type", event.type)
+
+            val result = parseEvent(event)
+
+            span?.setAttribute("webhook.parsed", result != null)
+
+            return result
         }
 
         private fun parseEvent(event: Event): SubscriptionEvent? {

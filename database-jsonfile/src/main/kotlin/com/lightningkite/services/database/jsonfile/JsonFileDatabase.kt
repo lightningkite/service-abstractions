@@ -5,6 +5,7 @@ import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.kfile.workingDirectory
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.Table
+import com.lightningkite.services.otel.get
 import kotlinx.io.buffered
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -109,7 +110,7 @@ public class JsonFileDatabase(
     override val context: SettingContext,
 ) :
     Database {
-    internal val tracer by lazy { context.openTelemetry?.getTracer("database-jsonfile") }
+    internal val otel by lazy { context.openTelemetry?.get("database-jsonfile") }
 
     init {
         folder.createDirectories()
@@ -159,7 +160,7 @@ public class JsonFileDatabase(
                     serializer,
                     storage,
                     name,
-                    tracer
+                    otel
                 )
             } as Table<T>
         }

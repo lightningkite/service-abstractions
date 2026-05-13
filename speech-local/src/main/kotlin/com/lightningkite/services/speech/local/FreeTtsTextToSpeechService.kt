@@ -136,10 +136,11 @@ public class FreeTtsTextToSpeechService(
         val voice = voiceManager.getVoice(voiceId)
             ?: throw TextToSpeechException("Voice not found: $voiceId")
 
-        // Create a temp file for output - SingleFileAudioPlayer writes to file
+        // Create a temp file for output - SingleFileAudioPlayer writes to file.
+        // UUID avoids collision when multiple concurrent synthesis calls run.
         val tempDir = File("./local/freetts-temp")
         tempDir.mkdirs()
-        val tempBaseName = "${tempDir.absolutePath}/tts_${System.currentTimeMillis()}"
+        val tempBaseName = "${tempDir.absolutePath}/tts_${java.util.UUID.randomUUID()}"
         val tempFile = File("$tempBaseName.wav")
 
         voice.allocate()

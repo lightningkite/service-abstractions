@@ -2,8 +2,17 @@ package com.lightningkite.services.speech.local
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -11,7 +20,6 @@ import org.vosk.Model
 import org.vosk.Recognizer
 import java.io.ByteArrayInputStream
 import java.io.File
-import java.net.URL
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 import kotlin.time.Duration.Companion.seconds
@@ -87,6 +95,15 @@ public class VoskSpeechToTextService(
     @Volatile
     private var model: Model? = null
 
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("speech-vosk")
+
+    // Dedicated HTTP client for downloading audio from URLs; 30s timeout per the audit requirement.
+    private val httpClient = HttpClient(CIO) {
+        install(HttpTimeout) {
+            requestTimeoutMillis = 30_000
+        }
+    }
+
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun connect() {
@@ -109,22 +126,27 @@ public class VoskSpeechToTextService(
         val audioBytes = audio.data.bytes()
         logger.debug { "[$name] Transcribing ${audioBytes.size} bytes of audio" }
 
-        // Convert audio to 16kHz mono WAV if needed
-        val wavBytes = convertToVoskFormat(audioBytes, audio.mediaType.toString())
-
-        transcribeWav(wavBytes, options)
+        otel.span("speech.transcribe", configure = {
+            setSpanKind(SpanKind.INTERNAL)
+            setAttribute("audio.size_bytes", audioBytes.size.toLong())
+        }) {
+            // Convert audio to 16kHz mono WAV if needed
+            val wavBytes = convertToVoskFormat(audioBytes, audio.mediaType.toString())
+            transcribeWav(wavBytes, options)
+        }
     }
 
     override suspend fun transcribeUrl(
         audioUrl: String,
         options: TranscriptionOptions,
-    ): TranscriptionResult = withContext(Dispatchers.IO) {
+    ): TranscriptionResult {
         logger.debug { "[$name] Downloading audio from: $audioUrl" }
 
-        val audioBytes = URL(audioUrl).readBytes()
+        // Use Ktor HttpClient with 30s timeout instead of URL.readBytes() (no timeout, no redirect handling)
+        val audioBytes = httpClient.get(audioUrl).readRawBytes()
         val mediaType = guessMediaType(audioUrl)
 
-        transcribe(
+        return transcribe(
             TypedData(
                 Data.Bytes(audioBytes),
                 MediaType(mediaType)

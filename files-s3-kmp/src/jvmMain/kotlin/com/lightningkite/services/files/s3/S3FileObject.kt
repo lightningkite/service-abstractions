@@ -16,12 +16,14 @@ import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
 import com.lightningkite.services.http.client
 import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.recordExceptionWithFingerprint
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.encode
 import io.ktor.utils.io.core.canRead
 import io.ktor.utils.io.core.takeWhile
+import io.opentelemetry.api.trace.SpanBuilder
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.Dispatchers
@@ -61,256 +63,135 @@ public class S3FileObject(
     override val parent: FileObject?
         get() = path.parent?.let { S3FileObject(system, it) } ?: if (unixPath.isNotEmpty()) system.root else null
 
-    override suspend fun list(): List<FileObject>? {
-        val span = system.tracer?.spanBuilder("s3.list")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "list")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
+    private fun s3SpanAttrs(operation: String): SpanBuilder.() -> Unit = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("file.operation", operation)
+        setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
+        setAttribute("file.bucket", system.bucket)
+        setAttribute("storage.system", "s3")
+    }
 
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    val results = ArrayList<S3FileObject>()
-                    var token: String? = null
-                    while (true) {
-                        val r = system.s3.listObjectsV2 {
-                            bucket = system.bucket
-                            prefix = unixPath
-                            delimiter = "/"
-                            token?.let { t -> continuationToken = t }
-                        }
-                        results += r.contents!!.filter { !it.key!!.substringAfter(unixPath).contains('/') }
-                            .map { S3FileObject(system, Path(it.key!!)) }
-                        if (r.isTruncated!!) token = r.nextContinuationToken!!
-                        else break
+    override suspend fun list(): List<FileObject>? = system.otel.span("s3.list", configure = s3SpanAttrs("list")) { span ->
+        try {
+            withContext(Dispatchers.IO) {
+                val results = ArrayList<S3FileObject>()
+                var token: String? = null
+                while (true) {
+                    val r = system.s3.listObjectsV2 {
+                        bucket = system.bucket
+                        prefix = unixPath
+                        delimiter = "/"
+                        token?.let { t -> continuationToken = t }
                     }
-                    span?.setAttribute("file.count", results.size.toLong())
-                    span?.setStatus(StatusCode.OK)
-                    results
+                    results += r.contents!!.filter { !it.key!!.substringAfter(unixPath).contains('/') }
+                        .map { S3FileObject(system, Path(it.key!!)) }
+                    if (r.isTruncated!!) token = r.nextContinuationToken!!
+                    else break
                 }
-            } finally {
-                scope?.close()
+                span?.setAttribute("file.count", results.size.toLong())
+                results
             }
         } catch (e: Exception) {
+            // Swallow exception, return null - block must set ERROR status itself.
             span?.setStatus(StatusCode.ERROR, "Failed to list files: ${e.message}")
             span?.recordExceptionWithFingerprint(e)
             null
-        } finally {
-            span?.end()
         }
     }
 
-    override suspend fun head(): FileInfo? {
-        val span = system.tracer?.spanBuilder("s3.head")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "head")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
-
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    system.s3.headObject {
-                        bucket = system.bucket
-                        key = unixPath
-                    }.let {
-                        span?.setAttribute("file.size", it.contentLength!!)
-                        span?.setAttribute("file.content_type", it.contentType!!)
-                        span?.setStatus(StatusCode.OK)
-                        FileInfo(
-                            type = MediaType(it.contentType!!),
-                            size = it.contentLength!!,
-                            lastModified = Instant.fromEpochMilliseconds(it.lastModified!!.epochMilliseconds)
-                        )
-                    }
-                }
-            } finally {
-                scope?.close()
-            }
-        } catch (e: NoSuchKey) {
-            span?.setStatus(StatusCode.OK) // Not finding a file is not an error
-            null
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to get file metadata: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
-        }
-    }
-
-    override suspend fun put(content: TypedData) {
-        val span = system.tracer?.spanBuilder("s3.put")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "put")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("file.size", content.data.size!!) // TODO: Unknown sizes will die
-            ?.setAttribute("file.content_type", content.mediaType.toString())
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
-
+    override suspend fun head(): FileInfo? = system.otel.span("s3.head", configure = s3SpanAttrs("head")) { span ->
         try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    system.s3.putObject {
-                        bucket = system.bucket
-                        key = unixPath
-                        contentType = content.mediaType.toString()
-                        this.body = ByteStream.fromBytes(content.data.bytes())
-                    }
-                }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to upload file: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
-        }
-    }
-
-    override suspend fun get(): TypedData? {
-        val span = system.tracer?.spanBuilder("s3.get")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "get")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
-
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    system.s3.getObject(
-                        GetObjectRequest {
-                            bucket = system.bucket
-                            key = unixPath
-                        }
-                    ) {
-                        val body = it.body!!
-                        val len = body.contentLength
-                        span?.setAttribute("file.size", len ?: -1L)
-                        span?.setAttribute("file.content_type", it.contentType!!)
-
-                        if (len == null || len > 100_000 || len < 0) {
-                            // copy to file first
-                            TypedData(
-                                data = Data.Bytes(body.toByteArray()),
-                                mediaType = MediaType(it.contentType!!)
-                            )
-                        } else {
-                            TypedData(
-                                data = Data.Bytes(body.toByteArray()),
-                                mediaType = MediaType(it.contentType!!)
-                            )
-                        }.also {
-                            span?.setStatus(StatusCode.OK)
-                        }
-                    }
-                }
-            } finally {
-                scope?.close()
-            }
-        } catch (e: NoSuchKey) {
-            span?.setStatus(StatusCode.OK) // Not finding a file is not an error
-            null
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to download file: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
-        }
-    }
-
-    override suspend fun copyTo(other: FileObject) {
-        val span = system.tracer?.spanBuilder("s3.copy")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "copy")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("storage.system", "s3")
-            ?.also { builder ->
-                if (other is S3FileObject) {
-                    builder.setAttribute(
-                        "file.destination.path",
-                        TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath)
+            withContext(Dispatchers.IO) {
+                system.s3.headObject {
+                    bucket = system.bucket
+                    key = unixPath
+                }.let {
+                    span?.setAttribute("file.size", it.contentLength!!)
+                    span?.setAttribute("file.content_type", it.contentType!!)
+                    FileInfo(
+                        type = MediaType(it.contentType!!),
+                        size = it.contentLength!!,
+                        lastModified = Instant.fromEpochMilliseconds(it.lastModified!!.epochMilliseconds)
                     )
-                    builder.setAttribute("file.destination.bucket", other.system.bucket)
-                    builder.setAttribute("file.same_bucket", other.system.bucket == system.bucket)
                 }
             }
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                if (other is S3FileObject && other.system.bucket == system.bucket) {
-                    withContext(Dispatchers.IO) {
-                        system.s3.copyObject {
-                            bucket = system.bucket
-                            copySource = system.bucket + "/" + unixPath
-                            key = other.unixPath
-                        }
-                    }
-                } else {
-                    super.copyTo(other)
-                }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to copy file: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        } catch (e: NoSuchKey) {
+            // Not finding a file is not an error; helper leaves status UNSET on success.
+            null
         }
     }
 
-    override suspend fun delete() {
-        val span = system.tracer?.spanBuilder("s3.delete")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "delete")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
+    override suspend fun put(content: TypedData): Unit = system.otel.span("s3.put", configure = {
+        s3SpanAttrs("put")()
+        setAttribute("file.size", content.data.size!!) // TODO: Unknown sizes will die
+        setAttribute("file.content_type", content.mediaType.toString())
+    }) {
+        withContext(Dispatchers.IO) {
+            system.s3.putObject {
+                bucket = system.bucket
+                key = unixPath
+                contentType = content.mediaType.toString()
+                this.body = ByteStream.fromBytes(content.data.bytes())
+            }
+        }
+        Unit
+    }
 
+    override suspend fun get(): TypedData? = system.otel.span("s3.get", configure = s3SpanAttrs("get")) { span ->
         try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    system.s3.deleteObject {
+            withContext(Dispatchers.IO) {
+                system.s3.getObject(
+                    GetObjectRequest {
                         bucket = system.bucket
                         key = unixPath
                     }
+                ) {
+                    val body = it.body!!
+                    val len = body.contentLength
+                    span?.setAttribute("file.size", len ?: -1L)
+                    span?.setAttribute("file.content_type", it.contentType!!)
+
+                    TypedData(
+                        data = Data.Bytes(body.toByteArray()),
+                        mediaType = MediaType(it.contentType!!)
+                    )
                 }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to delete file: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        } catch (e: NoSuchKey) {
+            // Not finding a file is not an error; helper leaves status UNSET on success.
+            null
         }
+    }
+
+    override suspend fun copyTo(other: FileObject): Unit = system.otel.span("s3.copy", configure = {
+        s3SpanAttrs("copy")()
+        if (other is S3FileObject) {
+            setAttribute("file.destination.path", TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath))
+            setAttribute("file.destination.bucket", other.system.bucket)
+            setAttribute("file.same_bucket", other.system.bucket == system.bucket)
+        }
+    }) {
+        if (other is S3FileObject && other.system.bucket == system.bucket) {
+            withContext(Dispatchers.IO) {
+                system.s3.copyObject {
+                    bucket = system.bucket
+                    copySource = system.bucket + "/" + unixPath
+                    key = other.unixPath
+                }
+            }
+        } else {
+            super.copyTo(other)
+        }
+    }
+
+    override suspend fun delete(): Unit = system.otel.span("s3.delete", configure = s3SpanAttrs("delete")) {
+        withContext(Dispatchers.IO) {
+            system.s3.deleteObject {
+                bucket = system.bucket
+                key = unixPath
+            }
+        }
+        Unit
     }
 
     private val URL_ALPHABET_CHARS = ((('a'..'z') + ('A'..'Z') + ('0'..'9'))).toSet()
@@ -366,14 +247,28 @@ public class S3FileObject(
     private val encodedUrl: String
         get() = "https://${system.bucket}.s3.${system.region}.amazonaws.com/${unixPath.aggressiveEncodeURLPath()}"
 
+    // Cache for signed URL to avoid repeated runBlocking calls.
+    // Safety window: refresh 60s before expiry to avoid handing out nearly-expired URLs.
+    // TODO: signedUrl should be suspend in interface to avoid runBlocking
+    @Volatile private var cachedSignedUrl: String? = null
+    @Volatile private var cachedSignedUrlExpiresAt: Long = 0L
+
     override val signedUrl: String
         get() = system.signedUrlDuration?.let { duration ->
-            runBlocking {
+            val safetyWindowMs = 60_000L
+            val now = System.currentTimeMillis()
+            if (cachedSignedUrl != null && now < cachedSignedUrlExpiresAt - safetyWindowMs) {
+                return@let cachedSignedUrl!!
+            }
+            val url = runBlocking {
                 system.s3.presignGetObject(GetObjectRequest {
                     bucket = system.bucket
                     key = unixPath
                 }, duration = duration).url.toString()
             }
+            cachedSignedUrl = url
+            cachedSignedUrlExpiresAt = now + duration.inWholeMilliseconds
+            url
         } ?: encodedUrl
 
     override fun uploadUrl(timeout: Duration): String {
@@ -393,6 +288,9 @@ public class S3FileObject(
 
     internal fun assertSignatureValid(queryParams: String) {
         if (system.signedUrlDuration != null) {
+            // Local verification is not feasible here (the KMP module uses KMP presigner without exposed signing details).
+            // Falling back to HTTP verification with the shared client's 60s engine timeout.
+            // TODO: make assertSignatureValid suspend to avoid runBlocking.
             runBlocking {
                 val response = client.get("$url?$queryParams") {
                     header("Range", "0-0")
