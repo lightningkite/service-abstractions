@@ -18,6 +18,11 @@ import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
 import kotlin.uuid.Uuid
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.*
+import org.bson.*
+import java.util.Date
+import java.time.Instant
 
 internal fun documentOf(): Document {
     return Document()
@@ -46,6 +51,7 @@ internal fun <T> Iterable<Pair<String, T>>.toDocument(): Document {
 @Serializable
 private data class Wrapper<T>(val value: T)
 
+internal fun <T> KBson.toBsonValue(serializer: KSerializer<T>, obj: T): BsonValue = stringifyAny(serializer, obj)
 internal fun <T> KBson.stringifyAny(serializer: KSerializer<T>, obj: T): BsonValue {
     return stringify(Wrapper.serializer(serializer), Wrapper(obj))["value"]!!
 }
@@ -104,6 +110,8 @@ private fun <T> Condition<T>.dump(
                 atlasSearch = atlasSearch,
                 bson = bson
             )
+            println("Done negating.")
+            matchDoc.print()
             into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
         }
 
@@ -144,23 +152,22 @@ private fun <T> Condition<T>.dump(
         is Condition.IntBitsAnySet -> into.sub(key)["\$bitsAllSet"] = mask
         is Condition.IntBitsClear -> into.sub(key)["\$bitsAnyClear"] = mask
         is Condition.IntBitsSet -> into.sub(key)["\$bitsAnySet"] = mask
-
         is Condition.Not -> {
-            // the $not operator is a field-level operator. It must be used like { field: { $not: { <operator> } } }
-            // This is to avoid `{"$elemMatch": {"$not": {"value2": {"$gte": 5}}}}`
-            val inner = Document()
-            condition.dump(serializer, inner, null, atlasSearch, bson)
-            val target = if (key == null) into else into.sub(key)
-            for ((k, v) in inner) {
-                if (k.startsWith("$")) { // direct operator
-                    target["\$not"] = inner
-                    break
-                } else { // It's a field (e.g., {"value2": {"$gte": 5}}).
-                    target.sub(k)["\$not"] = v
-                }
+            val inner = condition.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson)
+            val isLogicalOperator = inner.keys.any {
+                it.contains("\$and") ||
+                        it.contains("\$or") ||
+                        it.contains("\$not")
+            }
+            // Check if inner is an operator doc (starts with $)
+            if (inner.keys.all { it.startsWith("$") } && !isLogicalOperator) {
+                // Return { "$not": { "$lt": 4 } }
+                into["\$not"] = inner
+            } else {
+                // Return { "$nor": [ { "subField": 1 } ] }
+                into["\$nor"] = listOf(inner)
             }
         }
-//        is Condition.Not -> condition.dump(serializer, into.sub(key)["\$not"], key)
         is Condition.OnKey<*> -> (condition as Condition<Any?>).dump(
             serializer.mapValueElement() as KSerializer<Any?>,
             into,
@@ -236,7 +243,13 @@ private fun <T> Condition<T>.dump(
             bson = bson
         )
     }
-    return into
+    return into.also {
+        it.print()
+    }
+}
+
+private fun Document.print() {
+    println("--- : ${this.toString().replace("Document{{", " { ").replace("}}", " } ")}")
 }
 
 @Suppress("UNCHECKED_CAST")

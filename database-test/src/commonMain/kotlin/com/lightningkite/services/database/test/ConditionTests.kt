@@ -2638,13 +2638,139 @@ abstract class ConditionTests() {
         collection.insertOne(allLower)
 
         val condition = path<LargeTestModel>().listEmbedded.all { it.value2 gt 5 }
-        val results = collection.find(condition).toList()
+        val results = collection.find(condition.simplify()).toList()
 
         assertContains(results, allHigher, "Should find the document where all elements are > 5")
         assertTrue(oneLower !in results, "Should NOT find document where one element (4) fails the condition")
         assertTrue(allLower !in results, "Should NOT find document where all elements fail")
 
         val expected = manualList.filter { model -> model.listEmbedded.all { it.value2 > 5 } }.sortedBy { it._id }
+
+        assertEquals(expected, results.sortedBy { it._id })
+
+        Unit
+    }
+
+    @Test
+    fun test_List_all_equal() = runTest {
+        val collection = database.collection<LargeTestModel>("LargeTestModel_test_List_all_equal")
+
+        val allEqual = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value2 = 5,value1 = "one"),
+            )
+        )
+        val oneDifferent = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value2 = 5),
+                ClassUsedForEmbedding(value2 = 6, value1 = "one"),
+            )
+        )
+        val allDifferent = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value2 = 7,value1 = "two"),
+                ClassUsedForEmbedding(value2 = 6,value1 = "one"),
+            )
+        )
+        val manualList = listOf(allEqual, oneDifferent, allDifferent)
+
+        collection.insertOne(allEqual)
+        collection.insertOne(oneDifferent)
+        collection.insertOne(allDifferent)
+
+        val condition = path<LargeTestModel>().listEmbedded.all { it.value2 eq 5 and (it.value1 eq "one") }
+        val predicate: (LargeTestModel) -> Boolean = { it.listEmbedded.all { it.value2 == 5 && it.value1 == "one" } }
+
+        val results = collection.find(condition.simplify()).toList()
+        val expected = manualList.filter({ predicate(it) }).sortedBy { it._id }
+
+        assertEquals(expected, results.sortedBy { it._id })
+
+        Unit
+    }
+    @Test
+    fun test_List_all_equal_and_string_equal() = runTest {
+        val collection = database.collection<LargeTestModel>(
+            "LargeTestModel_test_List_all_equal_and_string_equal"
+        )
+
+        val allMatch = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value1 = "one", value2 = 5),
+                ClassUsedForEmbedding(value1 = "one", value2 = 5),
+                ClassUsedForEmbedding(value1 = "one", value2 = 5),
+            )
+        )
+
+        val wrongNumber = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value1 = "one", value2 = 5),
+                ClassUsedForEmbedding(value1 = "one", value2 = 4),
+                ClassUsedForEmbedding(value1 = "one", value2 = 5),
+            )
+        )
+
+        val wrongString = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value1 = "one", value2 = 5),
+                ClassUsedForEmbedding(value1 = "two", value2 = 5),
+                ClassUsedForEmbedding(value1 = "one", value2 = 5),
+            )
+        )
+
+        val bothWrong = LargeTestModel(
+            listEmbedded = listOf(
+                ClassUsedForEmbedding(value1 = "two", value2 = 1),
+                ClassUsedForEmbedding(value1 = "three", value2 = 2),
+            )
+        )
+
+        val manualList = listOf(
+            allMatch,
+            wrongNumber,
+            wrongString,
+            bothWrong
+        )
+
+        collection.insertOne(allMatch)
+        collection.insertOne(wrongNumber)
+        collection.insertOne(wrongString)
+        collection.insertOne(bothWrong)
+
+        val condition = path<LargeTestModel>().listEmbedded.all {
+            (it.value2 eq 5) and (it.value1 eq "one")
+        }
+
+        val results = collection.find(condition).toList()
+
+        assertContains(
+            results,
+            allMatch,
+            "Should find document where all elements satisfy both conditions"
+        )
+
+        assertTrue(
+            wrongNumber !in results,
+            "Should NOT find document where one element has wrong value2"
+        )
+
+        assertTrue(
+            wrongString !in results,
+            "Should NOT find document where one element has wrong value1"
+        )
+
+        assertTrue(
+            bothWrong !in results,
+            "Should NOT find document where all elements fail"
+        )
+
+        val expected = manualList
+            .filter { model ->
+                model.listEmbedded.all {
+                    it.value2 == 5 && it.value1 == "one"
+                }
+            }
+            .sortedBy { it._id }
 
         assertEquals(expected, results.sortedBy { it._id })
 
@@ -2800,6 +2926,21 @@ abstract class ConditionTests() {
     @Test
     fun test_Map_exists() = runTest {
         val collection = database.collection<LargeTestModel>("LargeTestModel_test_Map_exists")
+        val matching = LargeTestModel(map = mapOf("a" to 42))
+        val notMatching = LargeTestModel(map = mapOf("b" to 24))
+        val manualList = listOf(matching, notMatching)
+        collection.insertOne(matching)
+        collection.insertOne(notMatching)
+        val condition = path<LargeTestModel>().map.containsKey("a")
+        val results = collection.find(condition).toList()
+        println(results.joinToString("\n"))
+        assertContains(results, matching)
+        assertTrue(notMatching !in results)
+        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
+        Unit
+    }
+    @Test fun test_Map_onField() = runTest {
+        val collection = database.collection<LargeTestModel>("LargeTestModel_test_Map_onField")
         val matching = LargeTestModel(map = mapOf("a" to 42))
         val notMatching = LargeTestModel(map = mapOf("b" to 24))
         val manualList = listOf(matching, notMatching)
