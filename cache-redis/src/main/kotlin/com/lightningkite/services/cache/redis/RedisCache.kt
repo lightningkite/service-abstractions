@@ -2,16 +2,23 @@ package com.lightningkite.services.cache.redis
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import io.lettuce.core.RedisClient
+import io.lettuce.core.RedisNoScriptException
+import io.lettuce.core.ScriptOutputType
 import io.lettuce.core.SetArgs
 import io.lettuce.core.api.reactive.RedisReactiveCommands
 import io.lettuce.core.resource.ClientResources
+import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.instrumentation.lettuce.v5_1.LettuceTelemetry
 import kotlinx.coroutines.reactive.*
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
-import kotlin.time.toJavaDuration
 
 /**
  * Redis implementation of the Cache abstraction using Lettuce (reactive client).
@@ -66,8 +73,58 @@ public class RedisCache(
 ) : Cache {
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
 
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("cache-redis")
+
     public companion object {
         public fun Cache.Settings.Companion.redis(url: String): Cache.Settings = Cache.Settings("redis://$url")
+
+        // Lua script: atomic INCRBY + conditional PEXPIRE.
+        // KEYS[1] = key, ARGV[1] = delta, ARGV[2] = ttl ms (or "" to skip)
+        internal const val LUA_ADD: String = """
+local v = redis.call('INCRBY', KEYS[1], ARGV[1])
+if ARGV[2] ~= '' then
+    redis.call('PEXPIRE', KEYS[1], ARGV[2])
+end
+return v
+"""
+
+        // Lua scripts for compareAndSet — defined here so the SHA can be cached per-class.
+        internal const val LUA_CAS_INSERT: String = """
+if redis.call('EXISTS', KEYS[1]) == 0 then
+    if ARGV[2] ~= '' then
+        redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
+    else
+        redis.call('SET', KEYS[1], ARGV[1])
+    end
+    return 1
+else
+    return 0
+end
+"""
+
+        internal const val LUA_CAS_DELETE: String = """
+local current = redis.call('GET', KEYS[1])
+if current == ARGV[1] then
+    redis.call('DEL', KEYS[1])
+    return 1
+else
+    return 0
+end
+"""
+
+        internal const val LUA_CAS_UPDATE: String = """
+local current = redis.call('GET', KEYS[1])
+if current == ARGV[1] then
+    if ARGV[3] ~= '' then
+        redis.call('PSETEX', KEYS[1], ARGV[3], ARGV[2])
+    else
+        redis.call('SET', KEYS[1], ARGV[2])
+    end
+    return 1
+else
+    return 0
+end
+"""
 
         init {
             Cache.Settings.register("redis") { name, url, context ->
@@ -84,41 +141,87 @@ public class RedisCache(
         }
     }
 
-    public val lettuceConnection: RedisReactiveCommands<String, String> = lettuceClient.connect().reactive()
-    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
-        return lettuceConnection.get(key).awaitFirstOrNull()?.let { json.decodeFromString(serializer, it) }
+    // Cached SHAs for each Lua script — null means not yet loaded.
+    private val shaAdd = AtomicReference<String?>(null)
+    private val shaCasInsert = AtomicReference<String?>(null)
+    private val shaCasDelete = AtomicReference<String?>(null)
+    private val shaCasUpdate = AtomicReference<String?>(null)
+
+    /**
+     * Calls EVALSHA for [src]; on NOSCRIPT reloads the script and retries once.
+     * This avoids a round-trip SCRIPT LOAD on every call after the first successful load.
+     */
+    private suspend fun <T> eval(
+        shaRef: AtomicReference<String?>,
+        src: String,
+        outputType: ScriptOutputType,
+        keys: Array<String>,
+        vararg args: String,
+    ): T? {
+        // Load script if SHA not cached yet.
+        val sha = shaRef.get() ?: lettuceConnection.scriptLoad(src).awaitFirst().also { shaRef.set(it) }
+        return try {
+            lettuceConnection.evalsha<T>(sha, outputType, keys, *args).awaitFirstOrNull()
+        } catch (e: RedisNoScriptException) {
+            // Script was flushed from Redis; reload and retry once.
+            val newSha = lettuceConnection.scriptLoad(src).awaitFirst()
+            shaRef.set(newSha)
+            lettuceConnection.evalsha<T>(newSha, outputType, keys, *args).awaitFirstOrNull()
+        }
     }
 
-    override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
-        lettuceConnection.set(
-            key,
-            json.encodeToString(serializer, value),
-            SetArgs().let { timeToLive?.inWholeMilliseconds?.let { t -> it.px(t) } ?: it }
-        ).collect {}
+    public val lettuceConnection: RedisReactiveCommands<String, String> = lettuceClient.connect().reactive()
+
+    private inline fun SpanBuilderAttrs(key: String): io.opentelemetry.api.trace.SpanBuilder.() -> Unit = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("cache.system", "redis")
+        setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
     }
+
+    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
+        otel.span("cache.get", configure = SpanBuilderAttrs(key)) { span ->
+            val result = lettuceConnection.get(key).awaitFirstOrNull()?.let { json.decodeFromString(serializer, it) }
+            span?.setAttribute("cache.hit", result != null)
+            result
+        }
+
+    override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
+        otel.span("cache.set", configure = SpanBuilderAttrs(key)) {
+            lettuceConnection.set(
+                key,
+                json.encodeToString(serializer, value),
+                SetArgs().let { timeToLive?.inWholeMilliseconds?.let { t -> it.px(t) } ?: it }
+            ).collect {}
+        }
 
     override suspend fun <T> setIfNotExists(
         key: String,
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean {
-        val result = lettuceConnection.setnx(key, json.encodeToString(serializer, value)).awaitFirst()
-        if (result) timeToLive?.let { lettuceConnection.pexpire(key, it.toJavaDuration()).collect { } }
-        return result
-    }
-
-    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
-        val result = lettuceConnection.incrby(key, value).awaitFirst()
-        timeToLive?.let {
-            lettuceConnection.pexpire(key, it.toJavaDuration()).collect { }
+    ): Boolean = otel.span("cache.setIfNotExists", configure = SpanBuilderAttrs(key)) { span ->
+        // Atomic SET key value NX PX ttl — avoids the non-atomic setnx+pexpire race.
+        val args = SetArgs.Builder.nx().let { a ->
+            timeToLive?.inWholeMilliseconds?.let { a.px(it) } ?: a
         }
-        return result
+        val result = lettuceConnection.set(key, json.encodeToString(serializer, value), args)
+            .awaitFirstOrNull() != null
+        span?.setAttribute("cache.added", result)
+        result
     }
 
-    override suspend fun remove(key: String) {
-        lettuceConnection.del(key).collect { }
-    }
+    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
+        otel.span("cache.add", configure = SpanBuilderAttrs(key)) {
+            // Lua script performs INCRBY + PEXPIRE atomically to avoid the race where
+            // another caller modifies TTL between our INCRBY and PEXPIRE calls.
+            val ttlArg = timeToLive?.inWholeMilliseconds?.toString() ?: ""
+            eval<Long>(shaAdd, LUA_ADD, ScriptOutputType.INTEGER, arrayOf(key), value.toString(), ttlArg) ?: 0L
+        }
+
+    override suspend fun remove(key: String): Unit =
+        otel.span("cache.remove", configure = SpanBuilderAttrs(key)) {
+            lettuceConnection.del(key).collect { }
+        }
 
     override suspend fun <T> compareAndSet(
         key: String,
@@ -130,81 +233,27 @@ public class RedisCache(
         // Early return if expected equals new
         if (expected == new) return true
 
-        // Use a Lua script for atomic compare-and-set
-        // This is more reliable than WATCH/MULTI/EXEC in reactive contexts
-        val expectedJson = expected?.let { json.encodeToString(serializer, it) }
-        val newJson = new?.let { json.encodeToString(serializer, it) }
+        return otel.span("cache.compareAndSet", configure = SpanBuilderAttrs(key)) {
+            val expectedJson = expected?.let { json.encodeToString(serializer, it) }
+            val newJson = new?.let { json.encodeToString(serializer, it) }
+            val ttlArg = timeToLive?.inWholeMilliseconds?.toString() ?: ""
 
-        val script = when {
-
-            expected == null -> {
-                // Insert if not exists
-                """
-                if redis.call('EXISTS', KEYS[1]) == 0 then
-                    if ARGV[2] then
-                        redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
-                    else
-                        redis.call('SET', KEYS[1], ARGV[1])
-                    end
-                    return 1
-                else
-                    return 0
-                end
-                """.trimIndent()
+            val result: Long? = when {
+                expected == null -> eval(
+                    shaCasInsert, LUA_CAS_INSERT, ScriptOutputType.INTEGER, arrayOf(key),
+                    newJson!!, ttlArg,
+                )
+                new == null -> eval(
+                    shaCasDelete, LUA_CAS_DELETE, ScriptOutputType.INTEGER, arrayOf(key),
+                    expectedJson!!,
+                )
+                else -> eval(
+                    shaCasUpdate, LUA_CAS_UPDATE, ScriptOutputType.INTEGER, arrayOf(key),
+                    expectedJson!!, newJson!!, ttlArg,
+                )
             }
-
-            new == null -> {
-                // Delete if matches
-                """
-                local current = redis.call('GET', KEYS[1])
-                if current == ARGV[1] then
-                    redis.call('DEL', KEYS[1])
-                    return 1
-                else
-                    return 0
-                end
-                """.trimIndent()
-            }
-
-            else -> {
-                // Update if matches
-                """
-                local current = redis.call('GET', KEYS[1])
-                if current == ARGV[1] then
-                    if ARGV[3] then
-                        redis.call('PSETEX', KEYS[1], ARGV[3], ARGV[2])
-                    else
-                        redis.call('SET', KEYS[1], ARGV[2])
-                    end
-                    return 1
-                else
-                    return 0
-                end
-                """.trimIndent()
-            }
+            result == 1L
         }
-
-        val args = when {
-            expected == null -> {
-                // Insert: ARGV[1] = newJson, ARGV[2] = ttl (optional)
-                listOfNotNull(newJson!!, timeToLive?.inWholeMilliseconds?.toString()).toTypedArray()
-            }
-
-            new == null -> {
-                // Delete: ARGV[1] = expectedJson
-                arrayOf(expectedJson!!)
-            }
-
-            else -> {
-                // Update: ARGV[1] = expectedJson, ARGV[2] = newJson, ARGV[3] = ttl (optional)
-                listOfNotNull(expectedJson!!, newJson!!, timeToLive?.inWholeMilliseconds?.toString()).toTypedArray()
-            }
-        }
-
-        val result = lettuceConnection.eval<Long>(script, io.lettuce.core.ScriptOutputType.INTEGER, arrayOf(key), *args)
-            .awaitFirstOrNull()
-
-        return result == 1L
     }
 
 }

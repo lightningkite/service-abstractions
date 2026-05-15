@@ -4,9 +4,13 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.get
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.future.await
@@ -16,6 +20,7 @@ import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.model.*
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 import kotlin.math.min
 import kotlin.random.Random
@@ -100,6 +105,8 @@ public class DynamoDbPubSub(
 
     public val client: DynamoDbAsyncClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED, makeClient)
 
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.let { OpenTelemetrySub(it, "pubsub-dynamodb") }
+
     private val json = Json {
         serializersModule = context.internalSerializersModule
         ignoreUnknownKeys = true
@@ -142,6 +149,9 @@ public class DynamoDbPubSub(
                                 } else DefaultCredentialsProvider.builder().build()
                             )
                             .httpClient(context[AwsConnections].asyncClient)
+                            .apply {
+                                context[AwsConnections].clientOverrideConfiguration?.let { overrideConfiguration(it) }
+                            }
                             .region(Region.of(region))
                             .build()
                     },
@@ -154,20 +164,24 @@ public class DynamoDbPubSub(
         }
     }
 
-    @Volatile
-    private var initialized = false
-    private val initLock = Any()
+    // One-shot lazy initialization: the first caller runs doInitialize(); all others suspend
+    // on the same Deferred until it completes (or fails). A failed initialization permanently
+    // fails all future callers — retrying would only hammer DynamoDB with the same failing
+    // describe/create-table call.
+    private val readyDeferred = CompletableDeferred<Unit>()
+    private val initStarted = AtomicBoolean(false)
 
     private suspend fun ensureReady() {
-        if (initialized) return
-        synchronized(initLock) {
-            if (initialized) return
+        if (initStarted.compareAndSet(false, true)) {
+            try {
+                doInitialize()
+                readyDeferred.complete(Unit)
+            } catch (t: Throwable) {
+                readyDeferred.completeExceptionally(t)
+                throw t
+            }
         }
-        // Do the actual initialization outside the lock (it's suspend)
-        doInitialize()
-        synchronized(initLock) {
-            initialized = true
-        }
+        readyDeferred.await()
     }
 
     private suspend fun doInitialize() {
@@ -246,20 +260,41 @@ public class DynamoDbPubSub(
     override val healthCheckFrequency: Duration = 1.minutes
 
     override suspend fun disconnect() {
-        synchronized(initLock) {
-            initialized = false
-        }
-        // Note: We don't close the client here because it's lazily initialized
-        // and the AWS SDK handles connection pooling. The client will be garbage
-        // collected when the DynamoDbPubSub instance is no longer referenced.
-        // Explicitly closing would prevent reuse after disconnect/reconnect cycles.
+        // Note: We don't reset readyDeferred or close the client here. The AWS SDK
+        // handles connection pooling internally, so subsequent operations can reuse
+        // the already-initialized state. Explicitly closing would prevent reuse after
+        // disconnect/reconnect cycles.
     }
 
-    override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> {
-        return object : PubSubChannel<T> {
-            override suspend fun emit(value: T) {
-                ensureReady()
-                val message = json.encodeToString(serializer, value)
+    override fun <T> get(key: String, serializer: KSerializer<T>): PubSubChannel<T> =
+        channelImpl(
+            key = key,
+            encode = { json.encodeToString(serializer, it) },
+            decode = { json.decodeFromString(serializer, it) },
+        )
+
+    override fun string(key: String): PubSubChannel<String> =
+        channelImpl(key = key, encode = { it }, decode = { it })
+
+    /**
+     * Builds a [PubSubChannel] parameterized by how the in-flight `T` is serialized to / from the
+     * DynamoDB `message` String. All DynamoDB I/O (counter increment, putItem, polling query, OTel
+     * spans, error backoff) is identical across typed and untyped channels — only the codec differs.
+     */
+    private fun <T> channelImpl(
+        key: String,
+        encode: (T) -> String,
+        decode: (String) -> T,
+    ): PubSubChannel<T> = object : PubSubChannel<T> {
+        override suspend fun emit(value: T) {
+            ensureReady()
+            otel.span("pubsub.dynamodb.publish", configure = {
+                setSpanKind(SpanKind.PRODUCER)
+                setAttribute("messaging.system", "dynamodb")
+                setAttribute("messaging.destination", key)
+                setAttribute("messaging.operation", "publish")
+            }) {
+                val message = encode(value)
                 val now = System.currentTimeMillis()
 
                 val seq: Long = if (fastEmit) {
@@ -305,25 +340,36 @@ public class DynamoDbPubSub(
                     )
                 }.await()
             }
+        }
 
-            override suspend fun collect(collector: FlowCollector<T>) {
-                ensureReady()
+        override suspend fun collect(collector: FlowCollector<T>) {
+            ensureReady()
 
-                // Query DynamoDB for current max seq - uses DynamoDB as source of truth, no clock sync needed
-                val maxSeqResponse = client.query {
-                    it.tableName(tableName)
-                    it.keyConditionExpression("channel = :c")
-                    it.expressionAttributeValues(mapOf(":c" to AttributeValue.fromS(key)))
-                    it.scanIndexForward(false) // Newest first
-                    it.limit(1)
-                }.await()
+            // Query DynamoDB for current max seq - uses DynamoDB as source of truth, no clock sync needed.
+            // Filter on attribute_exists(message) so the seq=0 counter row (which has `counter`
+            // but no `message`) is skipped — otherwise strict-ordering mode bootstraps from the
+            // counter row whose seq tracks the latest message and we miss messages.
+            val maxSeqResponse = client.query {
+                it.tableName(tableName)
+                it.keyConditionExpression("channel = :c")
+                it.filterExpression("attribute_exists(#m)")
+                it.expressionAttributeNames(mapOf("#m" to "message"))
+                it.expressionAttributeValues(mapOf(":c" to AttributeValue.fromS(key)))
+                it.scanIndexForward(false) // Newest first
+                it.limit(1)
+            }.await()
 
-                var lastSeq = maxSeqResponse.items().firstOrNull()?.get("seq")?.n() ?: "0"
-                var consecutiveErrors = 0
+            var lastSeq = maxSeqResponse.items().firstOrNull()?.get("seq")?.n() ?: "0"
+            var consecutiveErrors = 0
 
-                logger.debug { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
+            logger.debug { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
 
-                while (coroutineContext.isActive) {
+            while (coroutineContext.isActive) {
+                otel.span("pubsub.dynamodb.poll", configure = {
+                    setSpanKind(SpanKind.CONSUMER)
+                    setAttribute("messaging.system", "dynamodb")
+                    setAttribute("messaging.destination", key)
+                }) { pollSpan ->
                     try {
                         val response = client.query {
                             it.tableName(tableName)
@@ -338,6 +384,7 @@ public class DynamoDbPubSub(
                         }.await()
 
                         consecutiveErrors = 0 // Reset on success
+                        pollSpan?.setAttribute("messaging.batch.message_count", response.count().toLong())
 
                         for (item in response.items()) {
                             val message = item["message"]?.s() ?: continue
@@ -347,169 +394,23 @@ public class DynamoDbPubSub(
                             logger.trace { "RECV channel=$key seq=$seq" }
 
                             try {
-                                val value = json.decodeFromString(serializer, message)
+                                val value = decode(message)
                                 collector.emit(value)
                             } catch (e: CancellationException) {
                                 // Rethrow CancellationException (includes AbortFlowException from first(), take(), etc.)
                                 throw e
                             } catch (e: Exception) {
-                                // Skip malformed messages (deserialization errors)
+                                // Skip malformed messages (deserialization errors). The string channel's
+                                // decode is the identity function and can't throw, so this only fires for typed channels.
                                 logger.debug(e) { "Failed to deserialize message channel=$key seq=$seq" }
                             }
-
-                            // Delete message after processing (TTL will clean up anyway, but this reduces storage)
-                            client.deleteItem {
-                                it.tableName(tableName)
-                                it.key(
-                                    mapOf(
-                                        "channel" to AttributeValue.fromS(key),
-                                        "seq" to AttributeValue.fromN(seq)
-                                    )
-                                )
-                            }.whenComplete { _, error ->
-                                if (error != null) {
-                                    logger.debug(error) { "Failed to delete message channel=$key seq=$seq (TTL will clean up)" }
-                                }
-                            }
                         }
-
 
                         delay(pollInterval)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        consecutiveErrors++
-                        logger.warn(e) { "Error polling channel=$key (attempt $consecutiveErrors)" }
-
-                        // Exponential backoff: pollInterval * 2^errors, capped at maxBackoff
-                        val backoffMs = min(
-                            pollInterval.inWholeMilliseconds * (1L shl min(consecutiveErrors, 10)),
-                            maxBackoff.inWholeMilliseconds
-                        )
-                        delay(backoffMs)
-                    }
-                }
-            }
-        }
-    }
-
-    override fun string(key: String): PubSubChannel<String> {
-        return object : PubSubChannel<String> {
-            override suspend fun emit(value: String) {
-                ensureReady()
-                val now = System.currentTimeMillis()
-
-                val seq: Long = if (fastEmit) {
-                    // Fast path: Use timestamp + random suffix (single DynamoDB operation)
-                    now * 1000 + Random.nextInt(1000)
-                } else {
-                    // Strict ordering path: Atomically increment counter (2 DynamoDB operations)
-                    val counterResult = client.updateItem {
-                        it.tableName(tableName)
-                        it.key(
-                            mapOf(
-                                "channel" to AttributeValue.fromS(key),
-                                "seq" to AttributeValue.fromN("0") // seq=0 is reserved for counter
-                            )
-                        )
-                        it.updateExpression("SET #c = if_not_exists(#c, :zero) + :one")
-                        it.expressionAttributeNames(mapOf("#c" to "counter"))
-                        it.expressionAttributeValues(
-                            mapOf(
-                                ":zero" to AttributeValue.fromN("0"),
-                                ":one" to AttributeValue.fromN("1")
-                            )
-                        )
-                        it.returnValues(ReturnValue.UPDATED_NEW)
-                    }.await()
-
-                    counterResult.attributes()["counter"]?.n()?.toLong()
-                        ?: throw IllegalStateException("Failed to get counter value")
-                }
-
-                logger.trace { "EMIT channel=$key seq=$seq" }
-
-                client.putItem {
-                    it.tableName(tableName)
-                    it.item(
-                        mapOf(
-                            "channel" to AttributeValue.fromS(key),
-                            "seq" to AttributeValue.fromN(seq.toString()),
-                            "message" to AttributeValue.fromS(value),
-                            "expires" to AttributeValue.fromN(((now / 1000) + messageTtl.inWholeSeconds).toString())
-                        )
-                    )
-                }.await()
-            }
-
-            override suspend fun collect(collector: FlowCollector<String>) {
-                ensureReady()
-
-                // Query DynamoDB for current max seq - uses DynamoDB as source of truth, no clock sync needed
-                val maxSeqResponse = client.query {
-                    it.tableName(tableName)
-                    it.keyConditionExpression("channel = :c")
-                    it.expressionAttributeValues(mapOf(":c" to AttributeValue.fromS(key)))
-                    it.scanIndexForward(false) // Newest first
-                    it.limit(1)
-                }.await()
-
-                var lastSeq = maxSeqResponse.items().firstOrNull()?.get("seq")?.n() ?: "0"
-                var consecutiveErrors = 0
-
-                logger.debug { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
-
-                while (coroutineContext.isActive) {
-                    try {
-                        val response = client.query {
-                            it.tableName(tableName)
-                            it.keyConditionExpression("channel = :c AND seq > :s")
-                            it.expressionAttributeValues(
-                                mapOf(
-                                    ":c" to AttributeValue.fromS(key),
-                                    ":s" to AttributeValue.fromN(lastSeq)
-                                )
-                            )
-                            it.scanIndexForward(true)
-                        }.await()
-
-                        consecutiveErrors = 0 // Reset on success
-
-                        for (item in response.items()) {
-                            val message = item["message"]?.s() ?: continue
-                            val seq = item["seq"]?.n() ?: continue
-                            lastSeq = seq
-
-                            logger.trace { "RECV channel=$key seq=$seq" }
-
-                            try {
-                                collector.emit(message)
-                            } catch (e: CancellationException) {
-                                // Rethrow CancellationException (includes AbortFlowException from first(), take(), etc.)
-                                throw e
-                            }
-
-                            // Delete message after processing (TTL will clean up anyway, but this reduces storage)
-                            client.deleteItem {
-                                it.tableName(tableName)
-                                it.key(
-                                    mapOf(
-                                        "channel" to AttributeValue.fromS(key),
-                                        "seq" to AttributeValue.fromN(seq)
-                                    )
-                                )
-                            }.whenComplete { _, error ->
-                                if (error != null) {
-                                    logger.debug(error) { "Failed to delete message channel=$key seq=$seq (TTL will clean up)" }
-                                }
-                            }
-                        }
-
-
-                        delay(pollInterval)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
+                        pollSpan?.setStatus(StatusCode.ERROR, e.message ?: "poll failed")
                         consecutiveErrors++
                         logger.warn(e) { "Error polling channel=$key (attempt $consecutiveErrors)" }
 

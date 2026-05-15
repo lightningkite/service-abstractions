@@ -46,9 +46,9 @@ import kotlin.math.roundToInt
  * ## Important Gotchas
  *
  * - **Connection limits**: Default CRT client has connection pool limits (configurable)
- * - **total/used tracking**: Currently total is Int.MAX_VALUE (manual tracking not implemented)
+ * - **total/used tracking**: `total` defaults to 100; update it to match actual CRT pool settings
  * - **Health check accuracy**: used/total metrics require manual updates by consumers
- * - **Shutdown**: CRT clients should be closed on application shutdown (not implemented here)
+ * - **Shutdown**: CRT clients should be closed on application shutdown (TODO: not yet implemented)
  * - **Memory**: Connection pools consume memory; monitor in serverless environments
  * - **OpenTelemetry overhead**: Telemetry adds ~5-10% performance overhead
  *
@@ -70,7 +70,7 @@ import kotlin.math.roundToInt
  * @property context Service context for accessing OpenTelemetry configuration
  * @property client Synchronous HTTP client for AWS SDK (blocking operations)
  * @property asyncClient Asynchronous HTTP client for AWS SDK (non-blocking operations)
- * @property total Total connection pool size (currently hardcoded to Int.MAX_VALUE)
+ * @property total Total connection pool size (default 1000; set to match your CRT client configuration)
  * @property used Currently used connections (requires manual tracking)
  * @property health Current health status based on connection utilization
  * @property clientOverrideConfiguration AWS SDK configuration with optional telemetry
@@ -84,7 +84,12 @@ public class AwsConnections(private val context: SettingContext) {
         .build() as AwsCrtHttpClient
     public val asyncClient: AwsCrtAsyncHttpClient = AwsCrtAsyncHttpClient.builder()
         .build() as AwsCrtAsyncHttpClient
-    public var total: Int = Int.MAX_VALUE
+    /**
+     * Total connection pool capacity. Update this to match your CRT client configuration
+     * so that [health] reflects real utilization. The default of 1000 is beyond a reasonable
+     * starting point; tune to match actual CRT pool limits.
+     */
+    public var total: Int = 1000
     public var used: Int = 0
     public val health: HealthStatus
         get() = when (val amount = used / total.toFloat()) {
@@ -107,10 +112,18 @@ public class AwsConnections(private val context: SettingContext) {
     private val telemetry: AwsSdkTelemetry? = context.openTelemetry?.let {
         AwsSdkTelemetry.create(it)
     }
-    public val clientOverrideConfiguration: ClientOverrideConfiguration? = ClientOverrideConfiguration.builder()
-        .let {
-            if (telemetry != null) it.addExecutionInterceptor(telemetry.newExecutionInterceptor())
-            else it
-        }
-        .build()
+    // Only build the override configuration when telemetry is present to avoid
+    // allocating a no-op interceptor on every request.
+    public val clientOverrideConfiguration: ClientOverrideConfiguration? = if (telemetry != null) {
+        ClientOverrideConfiguration.builder()
+            .addExecutionInterceptor(telemetry.newExecutionInterceptor())
+            .build()
+    } else {
+        null
+    }
+
+    public fun close() {
+        client.close()
+        asyncClient.close()
+    }
 }

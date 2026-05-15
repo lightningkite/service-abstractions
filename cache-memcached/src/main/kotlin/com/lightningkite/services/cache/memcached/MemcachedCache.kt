@@ -2,8 +2,12 @@ package com.lightningkite.services.cache.memcached
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import io.opentelemetry.api.trace.*
+import net.rubyeye.xmemcached.exception.MemcachedException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
@@ -73,7 +77,7 @@ public class MemcachedCache(
     override val context: SettingContext,
 ) : Cache {
 
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("memcached-cache")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("memcached-cache")
 
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
 
@@ -115,171 +119,88 @@ public class MemcachedCache(
         }
     }
 
-    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
-        val span = tracer?.spanBuilder("cache.get")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("cache.operation", "get")
-            ?.setAttribute("cache.key", key)
-            ?.setAttribute("cache.system", "memcached")
-            ?.startSpan()
-
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    try {
-                        client.get<String>(key)?.let { json.decodeFromString(serializer, it) }
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
-                span?.setAttribute("cache.hit", result != null)
-                span?.setStatus(StatusCode.OK)
-                result
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to get from cache: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
-        }
+    private inline fun spanAttrs(
+        operation: String,
+        key: String,
+        timeToLive: Duration? = null,
+    ): SpanBuilder.() -> Unit = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("cache.operation", operation)
+        setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
+        setAttribute("cache.system", "memcached")
+        timeToLive?.let { setAttribute("cache.ttl", it.inWholeSeconds) }
     }
 
-    override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit {
-        val span = tracer?.spanBuilder("cache.set")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("cache.operation", "set")
-            ?.setAttribute("cache.key", key)
-            ?.setAttribute("cache.system", "memcached")
-            ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    if (!client.set(
-                            key,
-                            timeToLive?.inWholeSeconds?.toInt() ?: 0,
-                            json.encodeToString(serializer, value)
-                        )
-                    ) throw IllegalStateException("Failed to set value in Memcached")
-                    Unit
+    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
+        otel.span("cache.get", configure = spanAttrs("get", key)) { span ->
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    client.get<String>(key)?.let { json.decodeFromString(serializer, it) }
+                } catch (e: MemcachedException) {
+                    // Cache-miss or protocol-level error — treat as absent.
+                    null
                 }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+                // IOException and other connection errors propagate to the outer handler.
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to set cache value: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+            span?.setAttribute("cache.hit", result != null)
+            result
         }
-    }
+
+    override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
+        otel.span("cache.set", configure = spanAttrs("set", key, timeToLive)) {
+            withContext(Dispatchers.IO) {
+                if (!client.set(
+                        key,
+                        timeToLive?.inWholeSeconds?.toInt() ?: 0,
+                        json.encodeToString(serializer, value)
+                    )
+                ) throw IllegalStateException("Failed to set value in Memcached")
+                Unit
+            }
+        }
 
     override suspend fun <T> setIfNotExists(
         key: String,
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean {
-        val span = tracer?.spanBuilder("cache.setIfNotExists")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("cache.operation", "setIfNotExists")
-            ?.setAttribute("cache.key", key)
-            ?.setAttribute("cache.system", "memcached")
-            ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
-            ?.startSpan()
+    ): Boolean = otel.span("cache.setIfNotExists", configure = spanAttrs("setIfNotExists", key, timeToLive)) { span ->
+        val result = withContext(Dispatchers.IO) {
+            client.add(
+                key,
+                timeToLive?.inWholeSeconds?.toInt() ?: 0,
+                json.encodeToString(serializer, value)
+            )
+        }
+        span?.setAttribute("cache.added", result)
+        result
+    }
 
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    client.add(
-                        key,
-                        timeToLive?.inWholeSeconds?.toInt() ?: 0,
-                        json.encodeToString(serializer, value)
-                    )
+    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
+        otel.span("cache.add", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("cache.operation", "add")
+            setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
+            setAttribute("cache.system", "memcached")
+            setAttribute("cache.value", value)
+            timeToLive?.let { setAttribute("cache.ttl", it.inWholeSeconds) }
+        }) {
+            withContext(Dispatchers.IO) {
+                val result = client.incr(key, value, value)
+                timeToLive?.let {
+                    client.touch(key, it.inWholeSeconds.toInt())
                 }
-                span?.setAttribute("cache.added", result)
-                span?.setStatus(StatusCode.OK)
                 result
-            } finally {
-                scope?.close()
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to setIfNotExists: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
         }
-    }
 
-    override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long {
-        val span = tracer?.spanBuilder("cache.add")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("cache.operation", "add")
-            ?.setAttribute("cache.key", key)
-            ?.setAttribute("cache.system", "memcached")
-            ?.setAttribute("cache.value", value)
-            ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
-            ?.startSpan()
-
-        return try {
-            val scope = span?.makeCurrent()
-            scope.use { _ ->
-                val r = withContext(Dispatchers.IO) {
-                    val result = client.incr(key, value, value)
-                    timeToLive?.let {
-                        client.touch(key, it.inWholeSeconds.toInt())
-                    }
-                    result
-                }
-                span?.setStatus(StatusCode.OK)
-                r
+    override suspend fun remove(key: String): Unit =
+        otel.span("cache.remove", configure = spanAttrs("remove", key)) {
+            withContext(Dispatchers.IO) {
+                client.delete(key)
+                Unit
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to add to cache: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
         }
-    }
-
-    override suspend fun remove(key: String): Unit {
-        val span = tracer?.spanBuilder("cache.remove")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("cache.operation", "remove")
-            ?.setAttribute("cache.key", key)
-            ?.setAttribute("cache.system", "memcached")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    client.delete(key)
-                    Unit
-                }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to remove from cache: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
-        }
-    }
 
     override suspend fun <T> compareAndSet(
         key: String,
@@ -287,76 +208,54 @@ public class MemcachedCache(
         expected: T?,
         new: T?,
         timeToLive: Duration?,
-    ): Boolean {
-        val span = tracer?.spanBuilder("cache.compareAndSet")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("cache.operation", "compareAndSet")
-            ?.setAttribute("cache.key", key)
-            ?.setAttribute("cache.system", "memcached")
-            ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
-            ?.startSpan()
+    ): Boolean = otel.span("cache.compareAndSet", configure = spanAttrs("compareAndSet", key, timeToLive)) { span ->
+        val result = withContext(Dispatchers.IO) {
+            // Early return if expected equals new
+            if (expected == new) return@withContext true
 
-        return try {
-            val scope = span?.makeCurrent()
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    // Early return if expected equals new
-                    if (expected == new) return@withContext true
-
-                    // Get the current value with CAS token
-                    val getsResult = client.gets<String>(key)
-                    val currentValue = try {
-                        getsResult?.value?.let { json.decodeFromString(serializer, it) }
-                    } catch (e: Exception) {
-                        null
-                    }
-
-                    // Check if current value matches expected
-                    if (currentValue != expected) {
-                        return@withContext false
-                    }
-
-                    // Now perform the CAS operation based on the state transition
-                    when {
-                        new == null -> {
-                            // Delete the key (expected is not null, so key exists)
-                            client.delete(key)
-                            true
-                        }
-
-                        expected == null -> {
-                            // Key doesn't exist, use add (atomic set-if-not-exists)
-                            client.add(
-                                key,
-                                timeToLive?.inWholeSeconds?.toInt() ?: 0,
-                                json.encodeToString(serializer, new)
-                            )
-                        }
-
-                        else -> {
-                            // Key exists and we have a CAS token, use it for atomic update
-                            client.cas(
-                                key,
-                                timeToLive?.inWholeSeconds?.toInt() ?: 0,
-                                json.encodeToString(serializer, new),
-                                getsResult!!.cas
-                            )
-                        }
-                    }
-                }
-                span?.setAttribute("cache.cas.success", result)
-                span?.setStatus(StatusCode.OK)
-                result
-            } finally {
-                scope?.close()
+            // Get the current value with CAS token
+            val getsResult = client.gets<String>(key)
+            val currentValue = try {
+                getsResult?.value?.let { json.decodeFromString(serializer, it) }
+            } catch (e: Exception) {
+                null
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to compareAndSet: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+
+            // Check if current value matches expected
+            if (currentValue != expected) {
+                return@withContext false
+            }
+
+            // Now perform the CAS operation based on the state transition
+            when {
+                new == null -> {
+                    // Delete the key (expected is not null, so key exists)
+                    client.delete(key)
+                    true
+                }
+
+                expected == null -> {
+                    // Key doesn't exist, use add (atomic set-if-not-exists)
+                    client.add(
+                        key,
+                        timeToLive?.inWholeSeconds?.toInt() ?: 0,
+                        json.encodeToString(serializer, new)
+                    )
+                }
+
+                else -> {
+                    // Key exists and we have a CAS token, use it for atomic update
+                    client.cas(
+                        key,
+                        timeToLive?.inWholeSeconds?.toInt() ?: 0,
+                        json.encodeToString(serializer, new),
+                        getsResult!!.cas
+                    )
+                }
+            }
         }
+        span?.setAttribute("cache.cas.success", result)
+        result
     }
 
     override suspend fun <T> modify(

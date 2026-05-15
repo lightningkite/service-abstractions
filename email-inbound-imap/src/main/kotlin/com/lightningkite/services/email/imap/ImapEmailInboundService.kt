@@ -3,17 +3,25 @@ package com.lightningkite.services.email.imap
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
+import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.http.*
+import io.opentelemetry.api.trace.*
 import jakarta.mail.*
 import jakarta.mail.internet.InternetAddress
 import jakarta.mail.internet.MimeMessage
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.net.URLDecoder
 import java.util.*
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
 private val logger = KotlinLogging.logger("ImapEmailInboundService")
@@ -157,6 +165,8 @@ public class ImapEmailInboundService(
     public val httpClient: HttpClient = HttpClient(),
 ) : EmailInboundService {
 
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-inbound-imap")
+
     public companion object {
         private fun parseParameterString(params: String): Map<String, List<String>> = params
             .takeIf { it.isNotBlank() }
@@ -258,45 +268,51 @@ public class ImapEmailInboundService(
     private var mailFolder: Folder? = null
 
     override suspend fun connect() {
-        try {
-            logger.info { "[$name] Connecting to IMAP server $host:$port" }
-            val newStore = session.getStore(if (useSsl) "imaps" else "imap")
-            newStore.connect(host, port, username, password)
-            store = newStore
-            logger.info { "[$name] Connected successfully" }
-        } catch (e: Exception) {
-            logger.error(e) { "[$name] Failed to connect to IMAP server" }
-            throw e
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                logger.info { "[$name] Connecting to IMAP server $host:$port" }
+                val newStore = session.getStore(if (useSsl) "imaps" else "imap")
+                newStore.connect(host, port, username, password)
+                store = newStore
+                logger.info { "[$name] Connected successfully" }
+            } catch (e: Exception) {
+                logger.error(e) { "[$name] Failed to connect to IMAP server" }
+                throw e
+            }
         }
     }
 
     override suspend fun disconnect() {
-        try {
-            mailFolder?.close(false)
-            mailFolder = null
-            store?.close()
-            store = null
-            logger.info { "[$name] Disconnected from IMAP server" }
-        } catch (e: Exception) {
-            logger.error(e) { "[$name] Error during disconnect" }
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                mailFolder?.close(false)
+                mailFolder = null
+                store?.close()
+                store = null
+                logger.info { "[$name] Disconnected from IMAP server" }
+            } catch (e: Exception) {
+                logger.error(e) { "[$name] Error during disconnect" }
+            }
         }
     }
 
     override suspend fun healthCheck(): HealthStatus {
         return try {
             // Try to connect and list folders
-            val tempStore = session.getStore(if (useSsl) "imaps" else "imap")
-            tempStore.use {
-                it.connect(host, port, username, password)
-                val testFolder = it.getFolder(folder)
-                if (!testFolder.exists()) {
-                    return HealthStatus(
-                        HealthStatus.Level.WARNING,
-                        additionalMessage = "Folder '$folder' does not exist"
-                    )
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val tempStore = session.getStore(if (useSsl) "imaps" else "imap")
+                tempStore.use {
+                    it.connect(host, port, username, password)
+                    val testFolder = it.getFolder(folder)
+                    if (!testFolder.exists()) {
+                        return@withContext HealthStatus(
+                            HealthStatus.Level.WARNING,
+                            additionalMessage = "Folder '$folder' does not exist"
+                        )
+                    }
                 }
+                HealthStatus(HealthStatus.Level.OK)
             }
-            HealthStatus(HealthStatus.Level.OK)
         } catch (e: Exception) {
             logger.error(e) { "[$name] Health check failed" }
             HealthStatus(HealthStatus.Level.ERROR, additionalMessage = e.message)
@@ -345,52 +361,73 @@ public class ImapEmailInboundService(
             return
         }
 
-        val currentStore = store ?: run {
-            // Create temporary connection for this poll
-            val tempStore = session.getStore(if (useSsl) "imaps" else "imap")
-            tempStore.connect(host, port, username, password)
-            tempStore
-        }
+        otel.span("email.imap.poll", configure = {
+            setSpanKind(SpanKind.CONSUMER)
+            setAttribute("messaging.system", "imap")
+        }) { pollSpan ->
+            val messages = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val currentStore = store ?: run {
+                    val tempStore = session.getStore(if (useSsl) "imaps" else "imap")
+                    tempStore.connect(host, port, username, password)
+                    tempStore
+                }
 
-        try {
-            val inbox = currentStore.getFolder(folder)
-            inbox.open(Folder.READ_WRITE)
+                val inbox = currentStore.getFolder(folder)
+                inbox.open(Folder.READ_WRITE)
+                try {
+                    inbox.search(jakarta.mail.search.FlagTerm(Flags(Flags.Flag.SEEN), false))
+                        .filterIsInstance<MimeMessage>()
+                        .map { it.toReceivedEmail() to it }
+                } finally {
+                    inbox.close(false)
+                    // Close temporary connection
+                    if (store == null) currentStore.close()
+                }
+            }
 
-            try {
-                // Fetch unread messages
-                val messages = inbox.search(
-                    jakarta.mail.search.FlagTerm(Flags(Flags.Flag.SEEN), false)
-                )
+            logger.info { "[$name] Found ${messages.size} unread message(s)" }
+            pollSpan?.setAttribute("email.messages_found", messages.size.toLong())
 
-                logger.info { "[$name] Found ${messages.size} unread message(s)" }
-
-                for (message in messages) {
+            for ((receivedEmail, rawMessage) in messages) {
+                otel.span("email.imap.message.process", configure = {
+                    setSpanKind(SpanKind.CONSUMER)
+                    setAttribute("messaging.system", "imap")
+                    setAttribute("email.message_id", receivedEmail.messageId)
+                }) { msgSpan ->
                     try {
-                        if (message is MimeMessage) {
-                            val receivedEmail = message.toReceivedEmail()
-
-                            // POST to configured webhook URL
-                            httpClient.post(targetUrl) {
-                                contentType(ContentType.Application.Json)
-                                setBody(json.encodeToString(receivedEmail))
+                        // POST to configured webhook URL with exponential backoff (3 attempts: 1s/2s/4s)
+                        var lastException: Exception? = null
+                        var backoff = 1.seconds
+                        for (attempt in 0 until 3) {
+                            try {
+                                httpClient.post(targetUrl) {
+                                    contentType(ContentType.Application.Json)
+                                    setBody(json.encodeToString(receivedEmail))
+                                }
+                                lastException = null
+                                break
+                            } catch (e: Exception) {
+                                lastException = e
+                                logger.warn(e) { "[$name] Webhook POST attempt ${attempt + 1}/3 failed for ${receivedEmail.messageId}" }
+                                if (attempt < 2) delay(backoff).also { backoff *= 2 }
                             }
-
-                            // Mark as read after successful POST
-                            message.setFlag(Flags.Flag.SEEN, true)
-                            logger.debug { "[$name] Processed and posted to webhook: ${receivedEmail.messageId}" }
                         }
+                        if (lastException != null) throw lastException
+
+                        // Mark as read after successful POST
+                        withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            rawMessage.setFlag(Flags.Flag.SEEN, true)
+                        }
+                        logger.debug { "[$name] Processed and posted to webhook: ${receivedEmail.messageId}" }
                     } catch (e: Exception) {
-                        logger.error(e) { "[$name] Error processing message" }
+                        // Record the failure on this message's span without rethrowing so the
+                        // outer poll span continues to process the remaining messages.
+                        logger.error(e) { "[$name] Error processing message ${receivedEmail.messageId}" }
+                        msgSpan?.setStatus(StatusCode.ERROR, e.message ?: "error")
+                        msgSpan?.recordExceptionWithFingerprint(e)
                         // Don't mark as read if processing fails
                     }
                 }
-            } finally {
-                inbox.close(false)
-            }
-        } finally {
-            // If we created a temporary connection, close it
-            if (store == null) {
-                currentStore.close()
             }
         }
     }
@@ -523,7 +560,7 @@ public class ImapEmailInboundService(
         val contentId = (part as? BodyPart)?.getHeader("Content-ID")?.firstOrNull()
             ?.trim('<', '>')
 
-        // Read attachment data
+        // Read attachment data (blocking I/O — called from within withContext(IO) in pollEmails)
         val bytes = part.inputStream.use { it.readBytes() }
 
         return ReceivedAttachment(

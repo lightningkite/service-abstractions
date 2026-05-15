@@ -2,6 +2,9 @@ package com.lightningkite.services.speech.openai
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.contentnegotiation.*
@@ -10,11 +13,24 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.*
+import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 private val logger = KotlinLogging.logger("OpenAITextToSpeechService")
+
+// Minimal request model — only fields actually sent.
+@Serializable
+private data class OpenAISynthesisRequest(
+    val model: String,
+    val input: String,
+    val voice: String,
+    @SerialName("response_format") val responseFormat: String,
+    val speed: Float,
+)
 
 /**
  * OpenAI Text-to-Speech implementation.
@@ -70,6 +86,10 @@ public class OpenAITextToSpeechService(
 ) : TextToSpeechService {
 
     private val baseUrl = "https://api.openai.com/v1"
+
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("speech-openai")
+
+    private val requestJson = Json { ignoreUnknownKeys = true }
 
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
@@ -148,26 +168,40 @@ public class OpenAITextToSpeechService(
         val model = options.model ?: defaultModel
         val responseFormat = mapOutputFormat(options.outputFormat)
 
-        logger.debug { "[$name] Synthesizing ${text.length} chars with voice=$voiceId, model=$model" }
+        return otel.span("speech.synthesize", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("ai.model", model)
+            setAttribute("text.char_count", text.length.toLong())
+        }) { span ->
+            logger.debug { "[$name] Synthesizing ${text.length} chars with voice=$voiceId, model=$model" }
 
-        val response = client.post("$baseUrl/audio/speech") {
-            header("Authorization", "Bearer $apiKey")
-            contentType(ContentType.Application.Json)
+            val response = client.post("$baseUrl/audio/speech") {
+                header("Authorization", "Bearer $apiKey")
+                contentType(ContentType.Application.Json)
+                setBody(requestJson.encodeToString(
+                    OpenAISynthesisRequest(
+                        model = model,
+                        input = text,
+                        voice = voiceId,
+                        responseFormat = responseFormat,
+                        speed = options.speed,
+                    )
+                ))
+            }
 
-            setBody(buildSynthesisRequest(text, voiceId, model, responseFormat, options.speed))
+            if (!response.status.isSuccess()) {
+                val error = response.bodyAsText()
+                logger.error { "[$name] TTS failed: $error" }
+                throw TextToSpeechException("TTS synthesis failed: $error")
+            }
+
+            val audioBytes = response.readRawBytes()
+            val mediaType = mapFormatToMediaType(options.outputFormat)
+
+            logger.debug { "[$name] Synthesized ${audioBytes.size} bytes of audio" }
+            span?.setAttribute("audio.size_bytes", audioBytes.size.toLong())
+            TypedData(Data.Bytes(audioBytes), mediaType)
         }
-
-        if (!response.status.isSuccess()) {
-            val error = response.bodyAsText()
-            logger.error { "[$name] TTS failed: $error" }
-            throw TextToSpeechException("TTS synthesis failed: $error")
-        }
-
-        val audioBytes = response.readRawBytes()
-        val mediaType = mapFormatToMediaType(options.outputFormat)
-
-        logger.debug { "[$name] Synthesized ${audioBytes.size} bytes of audio" }
-        return TypedData(Data.Bytes(audioBytes), mediaType)
     }
 
     override fun synthesizeStream(
@@ -179,30 +213,43 @@ public class OpenAITextToSpeechService(
         val model = options.model ?: defaultModel
         val responseFormat = mapOutputFormat(options.outputFormat)
 
-        logger.debug { "[$name] Streaming TTS for ${text.length} chars with voice=$voiceId" }
+        otel.span("speech.synthesize_stream", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("ai.model", model)
+            setAttribute("text.char_count", text.length.toLong())
+        }) {
+            logger.debug { "[$name] Streaming TTS for ${text.length} chars with voice=$voiceId" }
 
-        val response = client.post("$baseUrl/audio/speech") {
-            header("Authorization", "Bearer $apiKey")
-            contentType(ContentType.Application.Json)
+            val response = client.post("$baseUrl/audio/speech") {
+                header("Authorization", "Bearer $apiKey")
+                contentType(ContentType.Application.Json)
+                setBody(requestJson.encodeToString(
+                    OpenAISynthesisRequest(
+                        model = model,
+                        input = text,
+                        voice = voiceId,
+                        responseFormat = responseFormat,
+                        speed = options.speed,
+                    )
+                ))
+            }
 
-            setBody(buildSynthesisRequest(text, voiceId, model, responseFormat, options.speed))
-        }
+            if (!response.status.isSuccess()) {
+                val error = response.bodyAsText()
+                logger.error { "[$name] TTS stream failed: $error" }
+                throw TextToSpeechException("TTS streaming failed: $error")
+            }
 
-        if (!response.status.isSuccess()) {
-            val error = response.bodyAsText()
-            logger.error { "[$name] TTS stream failed: $error" }
-            throw TextToSpeechException("TTS streaming failed: $error")
-        }
+            val mediaType = mapFormatToMediaType(options.outputFormat)
+            val channel = response.bodyAsChannel()
 
-        val mediaType = mapFormatToMediaType(options.outputFormat)
-        val channel = response.bodyAsChannel()
-
-        // Read chunks from the stream
-        val buffer = ByteArray(4096)
-        while (!channel.isClosedForRead) {
-            val bytesRead = channel.readAvailable(buffer)
-            if (bytesRead > 0) {
-                emit(TypedData(Data.Bytes(buffer.copyOf(bytesRead)), mediaType))
+            // Read chunks from the stream
+            val buffer = ByteArray(4096)
+            while (!channel.isClosedForRead) {
+                val bytesRead = channel.readAvailable(buffer)
+                if (bytesRead > 0) {
+                    emit(TypedData(Data.Bytes(buffer.copyOf(bytesRead)), mediaType))
+                }
             }
         }
     }
@@ -219,24 +266,6 @@ public class OpenAITextToSpeechService(
             }
         } catch (e: Exception) {
             HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "OpenAI API error: ${e.message}")
-        }
-    }
-
-    private fun buildSynthesisRequest(
-        text: String,
-        voice: String,
-        model: String,
-        responseFormat: String,
-        speed: Float,
-    ): String {
-        return buildString {
-            append("{")
-            append("\"model\":\"$model\",")
-            append("\"input\":\"${escapeJson(text)}\",")
-            append("\"voice\":\"$voice\",")
-            append("\"response_format\":\"$responseFormat\",")
-            append("\"speed\":$speed")
-            append("}")
         }
     }
 
@@ -266,15 +295,6 @@ public class OpenAITextToSpeechService(
             AudioFormat.PCM_24000 -> MediaType("audio", "pcm")
             else -> MediaType.Audio.MPEG
         }
-    }
-
-    private fun escapeJson(text: String): String {
-        return text
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
     }
 
     public companion object {

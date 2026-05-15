@@ -10,6 +10,7 @@ plugins {
 
 dependencies {
     api(project(path = ":email"))
+    api(project(path = ":otel-jvm"))
     implementation(libs.angusMail)
 
     testImplementation(libs.kotlin.test)

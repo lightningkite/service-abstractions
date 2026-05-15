@@ -10,6 +10,7 @@ plugins {
 
 dependencies {
     api(project(path = ":database"))
+    api(project(path = ":otel-jvm"))
     api(libs.exposed.core)
     api(libs.exposed.javaTime)
     api(libs.exposed.jdbc)

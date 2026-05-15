@@ -6,17 +6,18 @@ import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
 import com.lightningkite.services.http.client
 import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.otel.span
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.encode
 import io.ktor.utils.io.core.canRead
 import io.ktor.utils.io.core.takeWhile
+import io.opentelemetry.api.trace.SpanBuilder
 import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.io.*
+import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
@@ -77,206 +78,135 @@ public class S3FileObject(
     override val parent: FileObject?
         get() = path.parentFile?.let { S3FileObject(system, it) } ?: if (unixPath.isNotEmpty()) system.root else null
 
+    private fun s3SpanAttrs(operation: String): SpanBuilder.() -> Unit = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("file.operation", operation)
+        setAttribute("aws.s3.key", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
+        setAttribute("aws.s3.bucket", system.bucket)
+        setAttribute("rpc.system", "aws.s3")
+    }
+
     /**
      * Lists all direct children of this directory.
      *
      * This method uses pagination to handle directories with many files efficiently.
      * It filters results to only include direct children (not nested subdirectories).
      *
-     * @return A list of [S3FileObject] representing the directory contents, or null if this is not a directory
+     * S3 has no concept of directories — "directory" is just a naming convention on object keys.
+     * `listObjectsV2` returns an empty result set for a non-existent prefix rather than throwing,
+     * so this method never returns null in practice. Use [head] to distinguish "exists and empty"
+     * from "doesn't exist" if that distinction matters to the caller. Operational failures
+     * (NoSuchBucket, AccessDenied, throttling, network) propagate so the surrounding telemetry
+     * span records them as errors.
+     *
+     * @return A list of [S3FileObject] representing the directory contents (empty if no children)
      */
-    override suspend fun list(): List<FileObject>? {
-        val span = system.tracer?.spanBuilder("file.list")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "list")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    try {
-                        val results = ArrayList<S3FileObject>()
-                        var token: String? = null
-                        while (true) {
-                            val r = system.s3Async.listObjectsV2 {
-                                it.bucket(system.bucket)
-                                it.prefix(unixPath)
-                                it.delimiter("/")
-                                token?.let { t -> it.continuationToken(t) }
-                            }.await()
-                            results += r.contents().filter { !it.key().substringAfter(unixPath).contains('/') }
-                                .map { S3FileObject(system, File(it.key())) }
-                            if (r.isTruncated) token = r.nextContinuationToken()
-                            else break
-                        }
-                        results
-                    } catch (e: Exception) {
-                        null
-                    }
+    override suspend fun list(): List<FileObject>? =
+        system.otel.span("file.list", configure = s3SpanAttrs("list")) { span ->
+            val result = withContext(Dispatchers.IO) {
+                val results = ArrayList<S3FileObject>()
+                var token: String? = null
+                while (true) {
+                    val r = system.s3Async.listObjectsV2 {
+                        it.bucket(system.bucket)
+                        it.prefix(unixPath)
+                        it.delimiter("/")
+                        token?.let { t -> it.continuationToken(t) }
+                    }.await()
+                    results += r.contents().filter { !it.key().substringAfter(unixPath).contains('/') }
+                        .map { S3FileObject(system, File(it.key())) }
+                    if (r.isTruncated) token = r.nextContinuationToken()
+                    else break
                 }
-                result?.let { span?.setAttribute("file.count", it.size.toLong()) }
-                span?.setStatus(StatusCode.OK)
-                return result
-            } finally {
-                scope?.close()
+                results
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to list directory: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+            span?.setAttribute("file.count", result.size.toLong())
+            result
         }
-    }
 
     /**
      * Gets metadata about this file without downloading its contents.
      *
      * @return [FileInfo] containing media type, size, and last modified time, or null if the file doesn't exist
      */
-    override suspend fun head(): FileInfo? {
-        val span = system.tracer?.spanBuilder("file.head")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "head")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    try {
-                        system.s3Async.headObject {
-                            it.bucket(system.bucket)
-                            it.key(unixPath)
-                        }.await().let {
-                            FileInfo(
-                                type = MediaType(it.contentType()),
-                                size = it.contentLength(),
-                                lastModified = it.lastModified().toKotlinInstant()
-                            )
-                        }
-                    } catch (e: NoSuchKeyException) {
-                        null
+    override suspend fun head(): FileInfo? =
+        system.otel.span("file.head", configure = s3SpanAttrs("head")) { span ->
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    system.s3Async.headObject {
+                        it.bucket(system.bucket)
+                        it.key(unixPath)
+                    }.await().let {
+                        FileInfo(
+                            type = MediaType(it.contentType()),
+                            size = it.contentLength(),
+                            lastModified = it.lastModified().toKotlinInstant()
+                        )
                     }
+                } catch (e: NoSuchKeyException) {
+                    null
                 }
-                result?.let {
-                    span?.setAttribute("file.size", it.size)
-                    span?.setAttribute("file.content_type", it.type.toString())
-                }
-                span?.setStatus(StatusCode.OK)
-                return result
-            } finally {
-                scope?.close()
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to get file metadata: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+            result?.let {
+                span?.setAttribute("file.size", it.size)
+                span?.setAttribute("file.content_type", it.type.toString())
+            }
+            result
         }
-    }
 
     /**
      * Uploads content to this file in S3.
      *
      * @param content The typed data to upload, including media type information
      */
-    override suspend fun put(content: TypedData) {
-        val span = system.tracer?.spanBuilder("file.put")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "put")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("file.size", content.data.size ?: -1)
-            ?.setAttribute("file.content_type", content.mediaType.toString())
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    system.s3.putObject(PutObjectRequest.builder().also {
-                        it.bucket(system.bucket)
-                        it.key(unixPath)
-                        it.contentType(content.mediaType.toString())
-                    }.build(), content.data.size?.let { size ->
-                        RequestBody.fromInputStream(content.data.source().asInputStream(), size)
-                    } ?: run {
-                        RequestBody.fromBytes(content.data.bytes())
-                    })
-                }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+    override suspend fun put(content: TypedData): Unit =
+        system.otel.span("file.put", configure = {
+            s3SpanAttrs("put")()
+            setAttribute("file.size", content.data.size ?: -1)
+            setAttribute("file.content_type", content.mediaType.toString())
+        }) {
+            withContext(Dispatchers.IO) {
+                system.s3.putObject(PutObjectRequest.builder().also {
+                    it.bucket(system.bucket)
+                    it.key(unixPath)
+                    it.contentType(content.mediaType.toString())
+                }.build(), content.data.size?.let { size ->
+                    RequestBody.fromInputStream(content.data.source().asInputStream(), size)
+                } ?: run {
+                    RequestBody.fromBytes(content.data.bytes())
+                })
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to upload file: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+            Unit
         }
-    }
 
     /**
      * Downloads the contents of this file from S3.
      *
      * @return [TypedData] containing the file contents and media type, or null if the file doesn't exist
      */
-    override suspend fun get(): TypedData? {
-        val span = system.tracer?.spanBuilder("file.get")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "get")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
+    override suspend fun get(): TypedData? =
+        system.otel.span("file.get", configure = s3SpanAttrs("get")) { span ->
+            val result = try {
+                val response = system.s3Async.getObject(
+                    GetObjectRequest.builder().also {
+                        it.bucket(system.bucket)
+                        it.key(unixPath)
+                    }.build(),
+                    AsyncResponseTransformer.toBytes()
+                ).await()
 
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    try {
-                        val response = system.s3.getObject(
-                            GetObjectRequest.builder().also {
-                                it.bucket(system.bucket)
-                                it.key(unixPath)
-                            }.build()
-                        )
-
-                        val contentType = response.response().contentType() ?: "application/octet-stream"
-                        val mediaType = MediaType(contentType)
-                        TypedData.source(response.asSource().buffered(), mediaType = mediaType)
-                    } catch (e: NoSuchKeyException) {
-                        null
-                    }
-                }
-                result?.let {
-                    span?.setAttribute("file.size", it.data.size ?: -1)
-                    span?.setAttribute("file.content_type", it.mediaType.toString())
-                }
-                span?.setStatus(StatusCode.OK)
-                return result
-            } finally {
-                scope?.close()
+                val contentType = response.response().contentType() ?: "application/octet-stream"
+                val mediaType = MediaType(contentType)
+                TypedData.bytes(response.asByteArray(), mediaType = mediaType)
+            } catch (e: NoSuchKeyException) {
+                null
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to download file: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+            result?.let {
+                span?.setAttribute("file.size", it.data.size ?: -1)
+                span?.setAttribute("file.content_type", it.mediaType.toString())
+            }
+            result
         }
-    }
 
     /**
      * Copies this file to another location.
@@ -287,48 +217,29 @@ public class S3FileObject(
      *
      * @param other The destination file object
      */
-    override suspend fun copyTo(other: FileObject) {
+    override suspend fun copyTo(other: FileObject): Unit {
         val isServerSideCopy = other is S3FileObject && other.system.bucket == system.bucket
-        val span = system.tracer?.spanBuilder("file.copy")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "copy")
-            ?.setAttribute("file.source.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.source.bucket", system.bucket)
-            ?.setAttribute(
-                "file.destination.path",
-                if (other is S3FileObject) TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath) else TelemetrySanitization.sanitizeFilePath(
-                    other.toString()
-                )
+        system.otel.span("file.copy", configure = {
+            s3SpanAttrs("copy")()
+            setAttribute(
+                "aws.s3.destination.key",
+                if (other is S3FileObject) TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath)
+                else TelemetrySanitization.sanitizeFilePath(other.toString())
             )
-            ?.setAttribute("file.copy.server_side", isServerSideCopy)
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                if (isServerSideCopy) {
-                    withContext(Dispatchers.IO) {
-                        system.s3Async.copyObject {
-                            it.sourceBucket(system.bucket)
-                            it.destinationBucket(system.bucket)
-                            it.sourceKey(unixPath)
-                            it.destinationKey(other.unixPath)
-                        }.await()
-                    }
-                } else {
-                    super.copyTo(other)
+            setAttribute("file.copy.server_side", isServerSideCopy)
+        }) {
+            if (isServerSideCopy) {
+                withContext(Dispatchers.IO) {
+                    system.s3Async.copyObject {
+                        it.sourceBucket(system.bucket)
+                        it.destinationBucket(system.bucket)
+                        it.sourceKey(unixPath)
+                        it.destinationKey((other as S3FileObject).unixPath)
+                    }.await()
                 }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+            } else {
+                super.copyTo(other)
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to copy file: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
         }
     }
 
@@ -337,36 +248,16 @@ public class S3FileObject(
      *
      * Note: S3 delete operations are eventually consistent and may not be immediately visible.
      */
-    override suspend fun delete() {
-        val span = system.tracer?.spanBuilder("file.delete")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("file.operation", "delete")
-            ?.setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-            ?.setAttribute("file.bucket", system.bucket)
-            ?.setAttribute("storage.system", "s3")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(Dispatchers.IO) {
-                    system.s3Async.deleteObject {
-                        it.bucket(system.bucket)
-                        it.key(unixPath)
-                    }.await()
-                }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+    override suspend fun delete(): Unit =
+        system.otel.span("file.delete", configure = s3SpanAttrs("delete")) {
+            withContext(Dispatchers.IO) {
+                system.s3Async.deleteObject {
+                    it.bucket(system.bucket)
+                    it.key(unixPath)
+                }.await()
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to delete file: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+            Unit
         }
-    }
 
 
     private val URL_ALPHABET_CHARS = ((('a'..'z') + ('A'..'Z') + ('0'..'9'))).toSet()
@@ -647,6 +538,9 @@ public class S3FileObject(
                 // Ignore.  It's OK if this fails; it just indicates the signature wasn't one we understand.
                 // We can validate it with a call to S3 instead.
             }
+            // Local verification failed (signature was not produced by this server); fall back to HTTP.
+            // The shared client applies a 60s engine timeout.
+            // TODO: make assertSignatureValid suspend to avoid runBlocking here.
             return runBlocking {
                 val response = client.get("$url?$queryParams") {
                     header("Range", "0-0")

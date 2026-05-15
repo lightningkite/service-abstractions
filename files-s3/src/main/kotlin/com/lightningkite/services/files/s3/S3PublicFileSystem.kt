@@ -6,9 +6,10 @@ import com.lightningkite.services.data.*
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.get
 import com.lightningkite.services.http.client
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get as otelGet
 import io.ktor.client.request.*
 import io.ktor.http.*
-import io.opentelemetry.api.trace.Tracer
 import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3AsyncClient
@@ -47,16 +48,16 @@ public class S3PublicFileSystem(
     override val context: SettingContext,
 ) : PublicFileSystem {
 
-    internal val tracer: Tracer? = context.openTelemetry?.getTracer("files-s3")
+    internal val otel: OpenTelemetrySub? = context.openTelemetry?.otelGet("files-s3")
 
     override val rootUrls: List<String> = listOf(
         "https://${bucket}.s3.${region.id()}.amazonaws.com/",
         "https://s3-${region.id()}.amazonaws.com/${bucket}/",
     )
 
-    private var credsOnHand: AwsCredentials? = null
-    private var credsOnHandMs: Long = 0
-    private var credsDirect: DirectAwsCredentials? = null
+    @Volatile private var credsOnHand: AwsCredentials? = null
+    @Volatile private var credsOnHandMs: Long = 0
+    @Volatile private var credsDirect: DirectAwsCredentials? = null
 
     /**
      * Direct AWS credentials with pre-encoded session token for efficient URL generation.
@@ -99,8 +100,8 @@ public class S3PublicFileSystem(
         } else onHand
     }
 
-    private var lastSigningKey: SecretKeySpec? = null
-    private var lastSigningKeyDate: String = ""
+    @Volatile private var lastSigningKey: SecretKeySpec? = null
+    @Volatile private var lastSigningKeyDate: String = ""
 
     /**
      * Gets a signing key for the given date, caching it for reuse within the same day.
@@ -138,6 +139,9 @@ public class S3PublicFileSystem(
             .region(region)
             .credentialsProvider(credentialProvider)
             .httpClient(context[AwsConnections].client)
+            .apply {
+                context[AwsConnections].clientOverrideConfiguration?.let { overrideConfiguration(it) }
+            }
             .build()
     }
 
@@ -152,6 +156,9 @@ public class S3PublicFileSystem(
             .region(region)
             .credentialsProvider(credentialProvider)
             .httpClient(context[AwsConnections].asyncClient)
+            .apply {
+                context[AwsConnections].clientOverrideConfiguration?.let { overrideConfiguration(it) }
+            }
             .build()
     }
 

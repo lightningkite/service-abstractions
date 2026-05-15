@@ -2,9 +2,11 @@ package com.lightningkite.services.http
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.recordExceptionWithFingerprint
 import io.ktor.client.plugins.api.*
 import io.ktor.util.*
 import io.opentelemetry.api.trace.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlin.coroutines.CoroutineContext
 
@@ -40,6 +42,10 @@ public data class SettingContextElement(val settingContext: SettingContext) : Co
  * 2. If found and OpenTelemetry is configured, creates a span for the request
  * 3. If not found, request proceeds normally without tracing
  *
+ * The span lifecycle is managed entirely within the [Send] hook so that both
+ * successful responses and transport-level errors (timeouts, connection refused,
+ * cancellation) are correctly recorded and the span is always ended.
+ *
  * This allows the base `client` to support OpenTelemetry without requiring
  * services to be modified - they just need to ensure their coroutine context
  * includes the SettingContextElement (which Service implementations can do automatically).
@@ -47,7 +53,7 @@ public data class SettingContextElement(val settingContext: SettingContext) : Co
 internal val OpenTelemetryPlugin = createClientPlugin("OpenTelemetryPlugin") {
     var tracer: Tracer? = null
 
-    onRequest { request, content ->
+    on(Send) { request ->
         // Try to get OpenTelemetry from coroutine context
         val settingContext = try {
             currentCoroutineContext()[SettingContextKey]?.settingContext
@@ -56,7 +62,10 @@ internal val OpenTelemetryPlugin = createClientPlugin("OpenTelemetryPlugin") {
         }
 
         val otel = settingContext?.openTelemetry
-        if (otel != null) {
+        if (otel == null) {
+            // No telemetry configured — proceed without tracing
+            proceed(request)
+        } else {
             if (tracer == null) {
                 tracer = otel.getTracer("http-client")
             }
@@ -69,45 +78,32 @@ internal val OpenTelemetryPlugin = createClientPlugin("OpenTelemetryPlugin") {
                 .setAttribute("http.url", TelemetrySanitization.sanitizeUrl(url.toString()))
                 .setAttribute("http.host", url.host)
                 .startSpan()
-
+            // Manual span lifecycle: the otel-jvm `useBlocking` helper is an `inline` function
+            // built for JVM 17, and this module compiles for JVM 1.8, so we can't inline it.
+            // Semantics mirror the helper: UNSET on success (only set ERROR for 4xx+), ERROR +
+            // recordExceptionWithFingerprint on throw, "Cancelled" event for CancellationException.
             val scope = span.makeCurrent()
-
-            // Store span and scope in request attributes so we can close them later
-            request.attributes.put(OtelSpanKey, span)
-            request.attributes.put(OtelScopeKey, scope)
-        }
-    }
-
-    onResponse { response ->
-        val span = response.call.request.attributes.getOrNull(OtelSpanKey)
-        val scope = response.call.request.attributes.getOrNull(OtelScopeKey)
-
-        span?.let {
-            it.setAttribute("http.status_code", response.status.value.toLong())
-
-            if (response.status.value >= 400) {
-                it.setStatus(StatusCode.ERROR, "HTTP ${response.status.value}")
-            } else {
-                it.setStatus(StatusCode.OK)
+            try {
+                val call = proceed(request)
+                val status = call.response.status.value
+                span.setAttribute("http.status_code", status.toLong())
+                if (status >= 400) span.setStatus(StatusCode.ERROR, "HTTP $status")
+                call
+            } catch (t: CancellationException) {
+                span.addEvent("Cancelled")
+                throw t
+            } catch (t: Throwable) {
+                span.setStatus(StatusCode.ERROR)
+                span.recordExceptionWithFingerprint(t)
+                throw t
+            } finally {
+                scope.close()
+                span.end()
             }
-
-            it.end()
         }
-
-        scope?.close()
     }
 
     onClose {
         // Clean up any remaining spans on client close
     }
 }
-
-/**
- * Attribute key for storing the OpenTelemetry span in request attributes.
- */
-private val OtelSpanKey = AttributeKey<Span>("OtelSpan")
-
-/**
- * Attribute key for storing the OpenTelemetry scope in request attributes.
- */
-private val OtelScopeKey = AttributeKey<io.opentelemetry.context.Scope>("OtelScope")

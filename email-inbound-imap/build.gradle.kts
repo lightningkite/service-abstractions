@@ -13,6 +13,9 @@ dependencies {
     implementation(libs.angusMail)
     implementation(libs.kotlin.logging)
 
+    // OpenTelemetry span helpers (com.lightningkite.services.otel.span)
+    compileOnly(project(path = ":otel-jvm"))
+
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
     testImplementation(project(":test"))

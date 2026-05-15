@@ -3,9 +3,12 @@ package com.lightningkite.services.email.mailgun
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.*
+import io.opentelemetry.api.trace.SpanKind
 import kotlinx.serialization.json.*
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -73,7 +76,7 @@ public class MailgunEmailInboundService(
     private val domain: String = "",
 ) : EmailInboundService {
 
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("email-inbound-mailgun")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-inbound-mailgun")
 
     public companion object {
         init {
@@ -123,54 +126,34 @@ public class MailgunEmailInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail {
-            val span = tracer?.spanBuilder("email.webhook.parse")
-                ?.setSpanKind(SpanKind.SERVER)
-                ?.setAttribute("email.operation", "webhook_parse")
-                ?.setAttribute("email.provider", "mailgun")
-                ?.setAttribute("email.webhook.event_type", "inbound")
-                ?.startSpan()
+        ): ReceivedEmail = otel.span("email.webhook.parse", configure = {
+            setSpanKind(SpanKind.SERVER)
+            setAttribute("email.operation", "webhook_parse")
+            setAttribute("email.provider", "mailgun")
+            setAttribute("messaging.system", "mailgun")
+            setAttribute("email.webhook.event_type", "inbound")
+        }) { span ->
+            // Parse form data from body
+            val formData = parseFormData(body)
 
-            return try {
-                val scope = span?.makeCurrent()
-                try {
-                    // Parse form data from body
-                    val formData = parseFormData(body)
+            // Verify signature (required for all webhooks)
+            verifySignature(formData, apiKey)
 
-                    // Verify signature (required for all webhooks)
-                    verifySignature(formData, apiKey)
+            // Parse email fields
+            val receivedEmail = parseMailgunEmail(formData, body.mediaType)
 
-                    // Parse email fields
-                    val receivedEmail = parseMailgunEmail(formData, body.mediaType)
-
-                    // Add email metadata to span
-                    span?.setAttribute("email.from", receivedEmail.from.value.toString())
-                    span?.setAttribute("email.to", receivedEmail.to.joinToString(", ") { it.value.toString() })
-                    span?.setAttribute("email.subject", receivedEmail.subject)
-                    span?.setAttribute("email.message_id", receivedEmail.messageId)
-                    if (receivedEmail.attachments.isNotEmpty()) {
-                        span?.setAttribute("email.attachments.count", receivedEmail.attachments.size.toLong())
-                    }
-                    receivedEmail.spamScore?.let { score ->
-                        span?.setAttribute("email.spam_score", score)
-                    }
-
-                    span?.setStatus(StatusCode.OK)
-                    receivedEmail
-                } finally {
-                    scope?.close()
-                }
-            } catch (e: SecurityException) {
-                span?.setStatus(StatusCode.ERROR, "Webhook signature verification failed: ${e.message}")
-                span?.recordExceptionWithFingerprint(e)
-                throw e
-            } catch (e: Exception) {
-                span?.setStatus(StatusCode.ERROR, "Failed to parse Mailgun webhook: ${e.message}")
-                span?.recordExceptionWithFingerprint(e)
-                throw e
-            } finally {
-                span?.end()
+            // Add email metadata to span (PII redacted: keep only domain for from/to, drop subject)
+            span?.setAttribute("email.from", receivedEmail.from.value.toString().let { addr -> addr.substringAfter('@', addr) })
+            span?.setAttribute("email.to", receivedEmail.to.joinToString(", ") { it.value.toString().let { addr -> addr.substringAfter('@', addr) } })
+            span?.setAttribute("email.message_id", receivedEmail.messageId)
+            if (receivedEmail.attachments.isNotEmpty()) {
+                span?.setAttribute("email.attachments.count", receivedEmail.attachments.size.toLong())
             }
+            receivedEmail.spamScore?.let { score ->
+                span?.setAttribute("email.spam_score", score)
+            }
+
+            receivedEmail
         }
 
         override suspend fun onSchedule() {
@@ -235,6 +218,8 @@ public class MailgunEmailInboundService(
      * Parses multipart form data.
      * Note: This is a simplified parser. For production use with attachments,
      * consider using a proper multipart parser library.
+     *
+     * TODO: replace with Jakarta Mail — current parser corrupts binary attachments
      */
     private fun parseMultipartFormData(body: TypedData): Map<String, List<String>> {
         // For now, we'll parse the text fields only
@@ -304,16 +289,17 @@ public class MailgunEmailInboundService(
             }
         }
 
-        // Compute expected signature
+        // Compute expected signature.
         val data = "$timestamp$token"
         val mac = javax.crypto.Mac.getInstance("HmacSHA256")
         val secretKey = javax.crypto.spec.SecretKeySpec(apiKey.toByteArray(), "HmacSHA256")
         mac.init(secretKey)
-        val expectedSignature = mac.doFinal(data.toByteArray()).joinToString("") {
-            "%02x".format(it)
-        }
+        val expectedBytes = mac.doFinal(data.toByteArray())
 
-        if (signature.lowercase() != expectedSignature.lowercase()) {
+        // Decode caller-supplied hex signature and compare in constant time. Anything that
+        // isn't valid hex of the right length is rejected outright (don't leak the reason).
+        val providedBytes = hexDecode(signature)
+        if (providedBytes == null || !java.security.MessageDigest.isEqual(providedBytes, expectedBytes)) {
             throw SecurityException("Invalid Mailgun webhook signature")
         }
 
@@ -446,6 +432,23 @@ public class MailgunEmailInboundService(
             val trimmed = address.trim()
             if (trimmed.isNotBlank()) parseEmailAddress(trimmed) else null
         }
+    }
+
+    /**
+     * Decodes a hex string into bytes, returning null for malformed input. Used in webhook
+     * signature comparison so we can do a constant-time byte compare rather than relying on
+     * `String.equals`, which short-circuits on first mismatch.
+     */
+    private fun hexDecode(hex: String): ByteArray? {
+        if (hex.length % 2 != 0) return null
+        val out = ByteArray(hex.length / 2)
+        for (i in out.indices) {
+            val hi = Character.digit(hex[i * 2], 16)
+            val lo = Character.digit(hex[i * 2 + 1], 16)
+            if (hi < 0 || lo < 0) return null
+            out[i] = ((hi shl 4) or lo).toByte()
+        }
+        return out
     }
 
     /**

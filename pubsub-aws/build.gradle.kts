@@ -10,6 +10,7 @@ plugins {
 
 dependencies {
     api(project(path = ":pubsub"))
+    api(project(path = ":otel-jvm"))
     api(libs.dynamodb)
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.reactive)
@@ -19,6 +20,7 @@ dependencies {
     implementation(libs.ktor.client.websockets)
     implementation(libs.crac)
     implementation(project(":aws-client"))
+    implementation(libs.openTelemetry.api)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
     testImplementation(project(":test"))

@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.otel.get
 import kotlinx.serialization.KSerializer
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.transactions.TransactionManager
@@ -61,9 +62,11 @@ public class PostgresDatabase(
     private var _db = lazy(makeDb)
 
     public val db: Database get() = _db.value
-    internal val tracer by lazy { context.openTelemetry?.getTracer("database-postgres") }
+    internal val otel by lazy { context.openTelemetry?.get("database-postgres") }
 
     override suspend fun disconnect() {
+        collections.values.forEach { if (it.isInitialized()) it.value.close() }
+        collections.clear()
         if (_db.isInitialized()) TransactionManager.closeAndUnregister(_db.value)
         _db = lazy(makeDb)
     }
@@ -123,7 +126,7 @@ public class PostgresDatabase(
                     name,
                     serializer,
                     context.internalSerializersModule,
-                    tracer
+                    otel
                 )
             }
         } as Lazy<PostgresCollection<T>>).value

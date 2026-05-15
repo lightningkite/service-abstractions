@@ -2,7 +2,10 @@ package com.lightningkite.services.sms.twilio
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.sms.InboundSms
 import com.lightningkite.services.sms.SmsInboundService
 import com.lightningkite.services.webhooksubservice.WebhookSubservice
@@ -14,8 +17,11 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import io.opentelemetry.api.trace.*
+import io.opentelemetry.api.trace.SpanKind
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.net.URLDecoder
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -86,7 +92,7 @@ public class TwilioSmsInboundService(
     private val phoneNumber: String,
 ) : SmsInboundService {
 
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("sms-inbound-twilio")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("sms-inbound-twilio")
 
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
@@ -107,122 +113,99 @@ public class TwilioSmsInboundService(
 
     private val baseUrl = "https://api.twilio.com/2010-04-01/Accounts/$accountSid"
 
+    // Cached HMAC key spec — SecretKeySpec is thread-safe for reading
+    private val hmacKeySpec by lazy { SecretKeySpec(authToken.toByteArray(Charsets.UTF_8), "HmacSHA1") }
+
+    // Mac is NOT thread-safe, so use a ThreadLocal
+    private val threadLocalMac = ThreadLocal.withInitial<Mac> {
+        Mac.getInstance("HmacSHA1").also { it.init(hmacKeySpec) }
+    }
+
     override val onReceived: WebhookSubservice<InboundSms> = object : WebhookSubservice<InboundSms> {
         var httpUrl: String? = null
 
-        override suspend fun configureWebhook(httpUrl: String) {
-            val span = tracer?.spanBuilder("sms.webhook.configure")
-                ?.setSpanKind(SpanKind.CLIENT)
-                ?.setAttribute("sms.webhook.operation", "configure")
-                ?.setAttribute("sms.provider", "twilio")
-                ?.setAttribute("sms.phone_number", phoneNumber)
-                ?.setAttribute("webhook.url", httpUrl)
-                ?.startSpan()
+        override suspend fun configureWebhook(httpUrl: String): Unit = otel.span("sms.webhook.configure", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("sms.webhook.operation", "configure")
+            setAttribute("messaging.system", "twilio")
+            setAttribute("sms.phone_number", phoneNumber)
+            setAttribute("webhook.url", httpUrl)
+        }) { span ->
+            this.httpUrl = httpUrl
 
-            try {
-                val scope = span?.makeCurrent()
-                try {
-                    this.httpUrl = httpUrl
+            // Look up the phone number SID
+            val phoneNumberSid = lookupPhoneNumberSid(phoneNumber)
+            span?.setAttribute("sms.phone_number_sid", phoneNumberSid)
 
-                    // Look up the phone number SID
-                    val phoneNumberSid = lookupPhoneNumberSid(phoneNumber)
-                    span?.setAttribute("sms.phone_number_sid", phoneNumberSid)
-
-                    // Update the phone number's SMS webhook URL
-                    val response = client.submitForm(
-                        url = "$baseUrl/IncomingPhoneNumbers/$phoneNumberSid.json",
-                        formParameters = io.ktor.http.Parameters.build {
-                            append("SmsUrl", httpUrl)
-                            append("SmsMethod", "POST")
-                        }
-                    )
-
-                    if (!response.status.isSuccess()) {
-                        val errorBody = response.bodyAsText()
-                        throw IllegalStateException("Failed to configure Twilio SMS webhook: $errorBody")
-                    }
-
-                    span?.setStatus(StatusCode.OK)
-                    logger.info { "[$name] Configured Twilio SMS webhook for $phoneNumber -> $httpUrl" }
-                } finally {
-                    scope?.close()
+            // Update the phone number's SMS webhook URL
+            val response = client.submitForm(
+                url = "$baseUrl/IncomingPhoneNumbers/$phoneNumberSid.json",
+                formParameters = io.ktor.http.Parameters.build {
+                    append("SmsUrl", httpUrl)
+                    append("SmsMethod", "POST")
                 }
-            } catch (e: Exception) {
-                span?.setStatus(StatusCode.ERROR, "Failed to configure webhook: ${e.message}")
-                span?.recordExceptionWithFingerprint(e)
-                throw e
-            } finally {
-                span?.end()
+            )
+
+            if (!response.status.isSuccess()) {
+                val errorBody = response.bodyAsText()
+                span?.setAttribute("http.status_code", response.status.value.toLong())
+                throw IllegalStateException("Failed to configure Twilio SMS webhook: $errorBody")
             }
+
+            span?.setAttribute("http.status_code", response.status.value.toLong())
+            logger.info { "[$name] Configured Twilio SMS webhook for $phoneNumber -> $httpUrl" }
         }
 
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): InboundSms {
-            val span = tracer?.spanBuilder("sms.webhook.parse")
-                ?.setSpanKind(SpanKind.SERVER)
-                ?.setAttribute("sms.webhook.operation", "parse")
-                ?.setAttribute("sms.provider", "twilio")
-                ?.startSpan()
+        ): InboundSms = otel.span("sms.webhook.parse", configure = {
+            setSpanKind(SpanKind.SERVER)
+            setAttribute("sms.webhook.operation", "parse")
+            setAttribute("messaging.system", "twilio")
+        }) { span ->
+            // Parse URL-encoded form data from Twilio
+            val bodyText = body.text()
+            val params = parseUrlEncodedForm(bodyText)
 
-            return try {
-                val scope = span?.makeCurrent()
-                try {
-                    // Parse URL-encoded form data from Twilio
-                    val bodyText = body.text()
-                    val params = parseUrlEncodedForm(bodyText)
+            // Validate Twilio signature for security
+            validateWebhookSignature(headers, params, httpUrl)
 
-                    // Validate Twilio signature for security
-                    validateWebhookSignature(headers, params, httpUrl)
+            // Extract required fields
+            val from = params["From"]
+                ?: throw IllegalArgumentException("Missing 'From' parameter in Twilio webhook")
+            val to = params["To"]
+                ?: throw IllegalArgumentException("Missing 'To' parameter in Twilio webhook")
+            val messageBody = params["Body"] ?: ""
+            val messageSid = params["MessageSid"]
 
-                    // Extract required fields
-                    val from = params["From"]
-                        ?: throw IllegalArgumentException("Missing 'From' parameter in Twilio webhook")
-                    val to = params["To"]
-                        ?: throw IllegalArgumentException("Missing 'To' parameter in Twilio webhook")
-                    val messageBody = params["Body"] ?: ""
-                    val messageSid = params["MessageSid"]
+            // Extract MMS media (if present)
+            val numMedia = params["NumMedia"]?.toIntOrNull() ?: 0
+            val mediaUrls = mutableListOf<String>()
+            val mediaContentTypes = mutableListOf<String>()
 
-                    // Extract MMS media (if present)
-                    val numMedia = params["NumMedia"]?.toIntOrNull() ?: 0
-                    val mediaUrls = mutableListOf<String>()
-                    val mediaContentTypes = mutableListOf<String>()
-
-                    for (i in 0 until numMedia) {
-                        params["MediaUrl$i"]?.let { mediaUrls.add(it) }
-                        params["MediaContentType$i"]?.let { mediaContentTypes.add(it) }
-                    }
-
-                    // Set span attributes
-                    span?.setAttribute("sms.from", from)
-                    span?.setAttribute("sms.to", to)
-                    span?.setAttribute("sms.body_length", messageBody.length.toLong())
-                    span?.setAttribute("sms.media_count", numMedia.toLong())
-                    messageSid?.let { span?.setAttribute("sms.message_id", it) }
-
-                    span?.setStatus(StatusCode.OK)
-
-                    InboundSms(
-                        from = from.toPhoneNumber(),
-                        to = to.toPhoneNumber(),
-                        body = messageBody,
-                        receivedAt = Clock.System.now(),
-                        mediaUrls = mediaUrls,
-                        mediaContentTypes = mediaContentTypes,
-                        providerMessageId = messageSid
-                    )
-                } finally {
-                    scope?.close()
-                }
-            } catch (e: Exception) {
-                span?.setStatus(StatusCode.ERROR, "Failed to parse webhook: ${e.message}")
-                span?.recordExceptionWithFingerprint(e)
-                throw e
-            } finally {
-                span?.end()
+            for (i in 0 until numMedia) {
+                params["MediaUrl$i"]?.let { mediaUrls.add(it) }
+                params["MediaContentType$i"]?.let { mediaContentTypes.add(it) }
             }
+
+            // Set span attributes
+            span?.setAttribute("sms.from", TelemetrySanitization.redactPhoneNumber(from))
+            span?.setAttribute("sms.to", TelemetrySanitization.redactPhoneNumber(to))
+            span?.setAttribute("sms.body_length", messageBody.length.toLong())
+            span?.setAttribute("sms.media_count", numMedia.toLong())
+            messageSid?.let { span?.setAttribute("sms.message_id", it) }
+
+            InboundSms(
+                from = from.toPhoneNumber(),
+                to = to.toPhoneNumber(),
+                body = messageBody,
+                receivedAt = Clock.System.now(),
+                mediaUrls = mediaUrls,
+                mediaContentTypes = mediaContentTypes,
+                providerMessageId = messageSid
+            )
         }
 
         override suspend fun onSchedule() {
@@ -249,33 +232,37 @@ public class TwilioSmsInboundService(
             }
         }
 
-        // Compute HMAC-SHA1
-        val mac = Mac.getInstance("HmacSHA1")
-        val keySpec = SecretKeySpec(authToken.toByteArray(Charsets.UTF_8), "HmacSHA1")
-        mac.init(keySpec)
+        // Compute HMAC-SHA1 using thread-local Mac with cached key spec
+        val mac = threadLocalMac.get()
+        mac.reset()
         val rawHmac = mac.doFinal(data.toByteArray(Charsets.UTF_8))
-        val computedSignature = Base64.encode(rawHmac)
 
-        return computedSignature == signature
+        // Decode caller-supplied signature once and compare in constant time. Twilio sends
+        // standard Base64 of the HMAC; treat anything that doesn't decode to bytes of the
+        // expected length as a mismatch.
+        val provided = try {
+            Base64.decode(signature)
+        } catch (_: IllegalArgumentException) {
+            return false
+        }
+        return java.security.MessageDigest.isEqual(provided, rawHmac)
     }
 
     /**
      * Validates the Twilio webhook signature from headers and body.
      * Throws SecurityException if signature is missing or invalid.
      *
-     * Note: Signature validation is skipped if the webhook URL has not been configured.
-     * This allows for testing scenarios where configureWebhook() has not been called.
-     * In production, always call configureWebhook() before processing webhooks.
+     * Fails closed: if the webhook URL is not configured we cannot reconstruct the signed
+     * data string, so we reject the request. Production deployments must call
+     * [configureWebhook] before traffic arrives; tests can pass a stub URL.
      */
     private fun validateWebhookSignature(
         headers: Map<String, List<String>>,
         params: Map<String, String>,
         webhookUrl: String?,
     ) {
-        // Skip validation if webhook URL not configured (e.g., in tests)
         if (webhookUrl == null) {
-            logger.warn { "[$name] Skipping signature validation - webhook URL not configured. Call configureWebhook() in production." }
-            return
+            throw SecurityException("Cannot validate Twilio webhook: webhook URL not configured. Call configureWebhook() first.")
         }
 
         val signature = headers["X-Twilio-Signature"]?.firstOrNull()
@@ -310,22 +297,34 @@ public class TwilioSmsInboundService(
      * @return The phone number SID (e.g., PN...)
      * @throws IllegalStateException if the phone number is not found
      */
-    private suspend fun lookupPhoneNumberSid(phoneNumber: String): String {
-        val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
-        val response = client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
+    private suspend fun lookupPhoneNumberSid(phoneNumber: String): String =
+        otel.span("sms.twilio.lookup_phone_sid", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("messaging.system", "twilio")
+            setAttribute("sms.phone_number", phoneNumber)
+        }) { span ->
+            val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
+            val response = client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
 
-        if (!response.status.isSuccess()) {
-            val errorBody = response.bodyAsText()
-            throw IllegalStateException("Failed to look up Twilio phone number: $errorBody")
+            if (!response.status.isSuccess()) {
+                val errorBody = response.bodyAsText()
+                throw IllegalStateException("Failed to look up Twilio phone number: $errorBody")
+            }
+
+            val responseBody = response.bodyAsText()
+            // Parse the SID from the JSON response
+            // Response format: {"incoming_phone_numbers": [{"sid": "PN...", ...}], ...}
+            val element = Json.parseToJsonElement(responseBody)
+            val sid = element.jsonObject["incoming_phone_numbers"]
+                ?.let { it as? JsonArray }
+                ?.firstOrNull()
+                ?.jsonObject?.get("sid")
+                ?.jsonPrimitive?.content
+                ?: throw IllegalStateException("Phone number $phoneNumber not found in Twilio account $accountSid")
+
+            span?.setAttribute("sms.phone_number_sid", sid)
+            sid
         }
-
-        val responseBody = response.bodyAsText()
-        // Parse the SID from the JSON response
-        // Response format: {"incoming_phone_numbers": [{"sid": "PN...", ...}], ...}
-        val sidMatch = Regex(""""sid"\s*:\s*"(PN[^"]+)"""").find(responseBody)
-        return sidMatch?.groupValues?.get(1)
-            ?: throw IllegalStateException("Phone number $phoneNumber not found in Twilio account $accountSid")
-    }
 
     override suspend fun healthCheck(): HealthStatus {
         // Could potentially verify credentials by making an API call

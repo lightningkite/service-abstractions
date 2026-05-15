@@ -248,14 +248,11 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return null
         return access {
-            // TODO: Hack, needs some retry logic at a minimum
-            withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
-                .let { if (orderBy.isEmpty()) it else it.sort(sort(orderBy)) }
-                .limit(1).firstOrNull()?.let {
-                    val id = it["_id"]
-                    deleteOne(Filters.eq("_id", id))
-                    bson.parse(serializer, it)
-                }
+            withDocumentClass<BsonDocument>().findOneAndDelete(
+                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
+                FindOneAndDeleteOptions()
+                    .let { if (orderBy.isEmpty()) it else it.sort(sort(orderBy)) }
+            )?.let { bson.parse(serializer, it) }
         }
     }
 
