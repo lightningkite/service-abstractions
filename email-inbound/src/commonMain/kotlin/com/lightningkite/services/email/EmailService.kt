@@ -2,7 +2,7 @@ package com.lightningkite.services.email
 
 import com.lightningkite.services.*
 import com.lightningkite.services.data.HealthStatus
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -41,7 +41,7 @@ import kotlin.time.Duration.Companion.hours
  * ```kotlin
  * // In your HTTP handler (Ktor, Spring, etc.)
  * post("/webhooks/email") {
- *     val email = inboundService.onReceived.parseWebhook(
+ *     val email = inboundService.onReceived.parse(
  *         queryParameters = call.request.queryParameters.entries(),
  *         headers = call.request.headers.entries().associate { it.key to it.value },
  *         body = TypedData.source(call.receiveChannel().toSource(), contentType)
@@ -53,11 +53,11 @@ import kotlin.time.Duration.Companion.hours
  *
  * ## Poll-based Usage
  *
- * Some providers (IMAP, certain APIs) require polling:
+ * Some providers (IMAP, certain APIs) deliver via polling instead of webhooks:
  *
  * ```kotlin
  * // Call periodically (e.g., via scheduled task)
- * inboundService.onReceived.onSchedule()
+ * inboundService.onReceived.pull().forEach { processEmail(it) }
  * ```
  *
  * ## Important Gotchas
@@ -69,7 +69,7 @@ import kotlin.time.Duration.Companion.hours
  * - **Threading**: Use [ReceivedEmail.inReplyTo] and [ReceivedEmail.references] for conversation threading
  *
  * @see ReceivedEmail
- * @see WebhookSubservice
+ * @see WebhookAdapter
  */
 public interface EmailInboundService : Service {
     /**
@@ -100,15 +100,16 @@ public interface EmailInboundService : Service {
     }
 
     /**
-     * Webhook subservice for receiving inbound emails.
+     * Webhook adapter for receiving inbound emails.
      *
-     * Use [WebhookSubservice.parseWebhook] to parse incoming webhook requests from your
-     * email provider. Use [WebhookSubservice.onSchedule] for poll-based implementations.
+     * Use [WebhookAdapter.parse] to parse incoming webhook requests from your email
+     * provider. Use [WebhookAdapter.pull] for poll-based implementations (e.g. IMAP)
+     * which return their inputs directly.
      *
-     * Optionally use [WebhookSubservice.configureWebhook] to programmatically register
+     * Optionally use [WebhookAdapter.configureWebhook] to programmatically register
      * webhook URLs with providers that support it.
      */
-    public val onReceived: WebhookSubservice<ReceivedEmail>
+    public val onReceived: WebhookAdapter<ReceivedEmail>
 
     /**
      * The frequency at which health checks should be performed.

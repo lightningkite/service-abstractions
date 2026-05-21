@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.minutes
  *
  * ## Webhook Architecture
  *
- * Phone calls are inherently event-driven. This service uses [WebhookSubservice]
+ * Phone calls are inherently event-driven. This service uses [WebhookAdapter]
  * for all inbound events to work properly in multi-server environments:
  *
  * - [onIncomingCall] - Incoming call webhooks; returns call handling instructions
@@ -70,7 +70,7 @@ import kotlin.time.Duration.Companion.minutes
  * ```kotlin
  * // In your HTTP handler
  * post("/webhooks/incoming-call") {
- *     val incomingCall = phoneService.onIncomingCall.parseWebhook(
+ *     val incomingCall = phoneService.onIncomingCall.parse(
  *         queryParameters, headers, body
  *     )
  *
@@ -99,7 +99,7 @@ import kotlin.time.Duration.Companion.minutes
  * - **Rate limits**: Providers limit concurrent calls (Twilio: ~100 default)
  *
  * @see CallInstructions
- * @see WebhookSubservice
+ * @see WebhookAdapter
  */
 public interface PhoneCallService : Service {
 
@@ -245,15 +245,15 @@ public interface PhoneCallService : Service {
      *
      * The parsed result is [IncomingCallEvent].
      */
-    public val onIncomingCall: WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?>
+    public val onIncomingCall: WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?>
 
     /**
      * Webhook for call status changes.
      *
      * Receives updates when calls transition states (ringing, answered, completed).
-     * Configure the callback URL via [WebhookSubservice.configureWebhook].
+     * Configure the callback URL via [WebhookAdapter.configureWebhook].
      */
-    public val onCallStatus: WebhookSubservice<CallStatusEvent>
+    public val onCallStatus: WebhookAdapter<CallStatusEvent>
 
     /**
      * Webhook for speech-to-text transcription results.
@@ -261,7 +261,7 @@ public interface PhoneCallService : Service {
      * Receives transcription when speech is detected on a call with
      * transcription enabled.
      */
-    public val onTranscription: WebhookSubservice<TranscriptionEvent>
+    public val onTranscription: WebhookAdapter<TranscriptionEvent>
 
     /**
      * Webhook for DTMF digit input and speech gather results.
@@ -272,7 +272,7 @@ public interface PhoneCallService : Service {
      * Note: This is optional. If not provided, use [CallInstructions.Gather.actionUrl]
      * to handle gather results via a custom endpoint.
      */
-    public val onDtmf: WebhookSubserviceWithResponse<DtmfEvent, CallInstructions?>?
+    public val onDtmf: WebhookAdapterWithResponse<DtmfEvent, CallInstructions?>?
         get() = null
 
     // ==================== Audio Streaming ====================

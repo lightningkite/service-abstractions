@@ -8,7 +8,7 @@ import com.lightningkite.services.otel.get
 import com.lightningkite.services.otel.span
 import com.lightningkite.services.sms.InboundSms
 import com.lightningkite.services.sms.SmsInboundService
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -121,7 +121,7 @@ public class TwilioSmsInboundService(
         Mac.getInstance("HmacSHA1").also { it.init(hmacKeySpec) }
     }
 
-    override val onReceived: WebhookSubservice<InboundSms> = object : WebhookSubservice<InboundSms> {
+    override val onReceived: WebhookAdapter<InboundSms> = object : WebhookAdapter<InboundSms> {
         var httpUrl: String? = null
 
         override suspend fun configureWebhook(httpUrl: String): Unit = otel.span("sms.webhook.configure", configure = {
@@ -208,9 +208,7 @@ public class TwilioSmsInboundService(
             )
         }
 
-        override suspend fun onSchedule() {
-            // No scheduled tasks needed for Twilio inbound
-        }
+        override suspend fun pull(): Set<InboundSms> = emptySet()
     }
 
     /**

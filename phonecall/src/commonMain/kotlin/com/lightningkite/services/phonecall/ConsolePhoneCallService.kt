@@ -100,8 +100,8 @@ public class ConsolePhoneCallService(
         return activeCalls[callId]
     }
 
-    override val onIncomingCall: WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> =
-        object : WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> {
+    override val onIncomingCall: WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?> =
+        object : WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?> {
             override suspend fun configureWebhook(httpUrl: String) {
                 println("[$name] Configured incoming call webhook: $httpUrl")
             }
@@ -130,13 +130,9 @@ public class ConsolePhoneCallService(
                     body = TypedData.text(rendered, MediaType.Application.Xml)
                 )
             }
-
-            override suspend fun onSchedule() {
-                println("[$name] Incoming call webhook scheduled check")
-            }
         }
 
-    override val onCallStatus: WebhookSubservice<CallStatusEvent> = object : WebhookSubservice<CallStatusEvent> {
+    override val onCallStatus: WebhookAdapter<CallStatusEvent> = object : WebhookAdapter<CallStatusEvent> {
         override suspend fun configureWebhook(httpUrl: String) {
             println("[$name] Configured call status webhook: $httpUrl")
         }
@@ -156,13 +152,11 @@ public class ConsolePhoneCallService(
             )
         }
 
-        override suspend fun onSchedule() {
-            println("[$name] Call status webhook scheduled check")
-        }
+        override suspend fun pull(): Set<CallStatusEvent> = emptySet()
     }
 
-    override val onTranscription: WebhookSubservice<TranscriptionEvent> =
-        object : WebhookSubservice<TranscriptionEvent> {
+    override val onTranscription: WebhookAdapter<TranscriptionEvent> =
+        object : WebhookAdapter<TranscriptionEvent> {
             override suspend fun configureWebhook(httpUrl: String) {
                 println("[$name] Configured transcription webhook: $httpUrl")
             }
@@ -180,9 +174,7 @@ public class ConsolePhoneCallService(
                 )
             }
 
-            override suspend fun onSchedule() {
-                println("[$name] Transcription webhook scheduled check")
-            }
+            override suspend fun pull(): Set<TranscriptionEvent> = emptySet()
         }
 
     /**

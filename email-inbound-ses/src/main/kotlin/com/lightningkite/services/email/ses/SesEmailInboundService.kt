@@ -7,7 +7,7 @@ import com.lightningkite.services.otel.OpenTelemetrySub
 import com.lightningkite.services.otel.get
 import com.lightningkite.services.otel.span
 import com.lightningkite.services.webhooksubservice.HttpAdapter
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.StatusCode
@@ -135,7 +135,7 @@ public class SesEmailInboundService(
         logger.info { "[$name] Disconnect called (no-op for webhook-based service)" }
     }
 
-    override val onReceived: WebhookSubservice<ReceivedEmail> = object : WebhookSubservice<ReceivedEmail> {
+    override val onReceived: WebhookAdapter<ReceivedEmail> = object : WebhookAdapter<ReceivedEmail> {
 
         override suspend fun configureWebhook(httpUrl: String) {
             logger.info { "[$name] Webhook URL configured: $httpUrl" }
@@ -248,8 +248,9 @@ public class SesEmailInboundService(
             }
         }
 
-        override suspend fun onSchedule() {
-            logger.debug { "[$name] onSchedule called (no-op for webhook-based service)" }
+        override suspend fun pull(): Set<ReceivedEmail> {
+            logger.debug { "[$name] pull called (no-op; SES delivers via webhook only)" }
+            return emptySet()
         }
     }
 

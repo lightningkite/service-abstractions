@@ -2,7 +2,7 @@ package com.lightningkite.services.sms
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import kotlin.time.Clock
 
 /**
@@ -123,7 +123,7 @@ public class TestSmsInboundService(
         return receivedMessages.lastOrNull { it.to == phoneNumber }
     }
 
-    override val onReceived: WebhookSubservice<InboundSms> = object : WebhookSubservice<InboundSms> {
+    override val onReceived: WebhookAdapter<InboundSms> = object : WebhookAdapter<InboundSms> {
         override suspend fun configureWebhook(httpUrl: String) {
             configuredWebhookUrl = httpUrl
             if (printToConsole) {
@@ -160,9 +160,7 @@ public class TestSmsInboundService(
             return inboundSms
         }
 
-        override suspend fun onSchedule() {
-            // No scheduled tasks for test implementation
-        }
+        override suspend fun pull(): Set<InboundSms> = emptySet()
     }
 
     override suspend fun healthCheck(): HealthStatus {

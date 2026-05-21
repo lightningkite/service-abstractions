@@ -2,14 +2,14 @@ package com.lightningkite.services.webhooksubservice
 
 import com.lightningkite.services.data.TypedData
 
-public interface WebhookSubserviceWithResponse<Input, Output> : HttpAdapter<Input, Output> {
+public interface WebhookAdapterWithResponse<Input, Output> : HttpAdapter<Input, Output> {
     public suspend fun configureWebhook(httpUrl: String)
-    public suspend fun onSchedule()
 }
 
-public interface WebhookSubservice<Input> : WebhookSubserviceWithResponse<Input, Unit> {
+public interface WebhookAdapter<Input> : WebhookAdapterWithResponse<Input, Unit> {
     override suspend fun render(output: Unit): HttpAdapter.HttpResponseLike =
         HttpAdapter.HttpResponseLike(204, mapOf(), null)
+    public suspend fun pull(): Set<Input>
 }
 
 public interface HttpAdapter<Input, Output> {

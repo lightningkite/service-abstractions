@@ -18,7 +18,6 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -713,15 +712,15 @@ public class TwilioPhoneCallService(
 
     // ==================== Webhooks ====================
 
-    override val onIncomingCall: WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> =
+    override val onIncomingCall: WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?> =
         TwilioIncomingCallWebhook()
 
-    override val onCallStatus: WebhookSubservice<CallStatusEvent> = TwilioCallStatusWebhook()
+    override val onCallStatus: WebhookAdapter<CallStatusEvent> = TwilioCallStatusWebhook()
 
-    override val onTranscription: WebhookSubservice<TranscriptionEvent> = TwilioTranscriptionWebhook()
+    override val onTranscription: WebhookAdapter<TranscriptionEvent> = TwilioTranscriptionWebhook()
 
     private inner class TwilioIncomingCallWebhook :
-        WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> {
+        WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?> {
         override suspend fun configureWebhook(httpUrl: String): Unit = otel.span("phonecall.webhook.configure.incoming_call", configure = {
             setSpanKind(SpanKind.CLIENT)
             setAttribute("messaging.system", "twilio")
@@ -789,13 +788,9 @@ public class TwilioPhoneCallService(
                 body = TypedData.text(twiml, MediaType.Application.Xml)
             )
         }
-
-        override suspend fun onSchedule() {
-            // No polling needed for Twilio webhooks
-        }
     }
 
-    private inner class TwilioCallStatusWebhook : WebhookSubservice<CallStatusEvent> {
+    private inner class TwilioCallStatusWebhook : WebhookAdapter<CallStatusEvent> {
         override suspend fun configureWebhook(httpUrl: String): Unit = otel.span("phonecall.webhook.configure.call_status", configure = {
             setSpanKind(SpanKind.CLIENT)
             setAttribute("messaging.system", "twilio")
@@ -859,12 +854,10 @@ public class TwilioPhoneCallService(
             )
         }
 
-        override suspend fun onSchedule() {
-            // No polling needed
-        }
+        override suspend fun pull(): Set<CallStatusEvent> = emptySet()
     }
 
-    private inner class TwilioTranscriptionWebhook : WebhookSubservice<TranscriptionEvent> {
+    private inner class TwilioTranscriptionWebhook : WebhookAdapter<TranscriptionEvent> {
         override suspend fun configureWebhook(httpUrl: String) {
             // Transcription callbacks are configured per-call via TwiML, not on the phone number
             // So we just store the URL here for use in renderInstruction()
@@ -894,18 +887,16 @@ public class TwilioPhoneCallService(
             )
         }
 
-        override suspend fun onSchedule() {
-            // No polling needed
-        }
+        override suspend fun pull(): Set<TranscriptionEvent> = emptySet()
     }
 
     // ==================== DTMF/Gather Webhook ====================
 
-    override val onDtmf: WebhookSubserviceWithResponse<DtmfEvent, CallInstructions?> = TwilioDtmfWebhook()
+    override val onDtmf: WebhookAdapterWithResponse<DtmfEvent, CallInstructions?> = TwilioDtmfWebhook()
 
     private var dtmfCallbackUrl: String? = null
 
-    private inner class TwilioDtmfWebhook : WebhookSubserviceWithResponse<DtmfEvent, CallInstructions?> {
+    private inner class TwilioDtmfWebhook : WebhookAdapterWithResponse<DtmfEvent, CallInstructions?> {
         override suspend fun configureWebhook(httpUrl: String) {
             // DTMF callbacks are configured per-Gather via TwiML action URL
             // This URL is used as a default when not specified in CallInstructions.Gather
@@ -952,10 +943,6 @@ public class TwilioPhoneCallService(
                 headers = mapOf("Content-Type" to listOf("application/xml")),
                 body = TypedData.text(twiml, MediaType.Application.Xml)
             )
-        }
-
-        override suspend fun onSchedule() {
-            // No polling needed
         }
     }
 

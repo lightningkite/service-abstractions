@@ -12,7 +12,7 @@ import com.lightningkite.services.subscription.*
 import com.lightningkite.services.subscription.Customer
 import com.lightningkite.services.subscription.Subscription
 import com.lightningkite.services.webhooksubservice.HttpAdapter
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import com.stripe.Stripe
 import com.stripe.exception.InvalidRequestException
 import com.stripe.model.*
@@ -317,7 +317,7 @@ public class StripeSubscriptionService(
     // Note: Stripe does support pausing via pause_collection, but it's less common
     // We leave the default UnsupportedOperationException for now
 
-    override val onEvent: WebhookSubservice<SubscriptionEvent?> = object : WebhookSubservice<SubscriptionEvent?> {
+    override val onEvent: WebhookAdapter<SubscriptionEvent?> = object : WebhookAdapter<SubscriptionEvent?> {
         override suspend fun configureWebhook(httpUrl: String) {
             val params = WebhookEndpointListParams.builder()
                 .setLimit(100)
@@ -473,9 +473,7 @@ public class StripeSubscriptionService(
             }
         }
 
-        override suspend fun onSchedule() {
-            // Stripe uses push webhooks, no polling needed
-        }
+        override suspend fun pull(): Set<SubscriptionEvent?> = emptySet()
 
         override suspend fun render(output: Unit): HttpAdapter.HttpResponseLike {
             // Stripe expects 200 OK with empty body

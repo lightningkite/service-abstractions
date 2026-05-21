@@ -2,7 +2,7 @@ package com.lightningkite.services.subscription
 
 import com.lightningkite.services.*
 import com.lightningkite.services.data.HealthStatus
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -248,7 +248,7 @@ public interface SubscriptionService : Service {
      * Events include subscription created, updated, canceled, payment failed, etc.
      *
      */
-    public val onEvent: WebhookSubservice<SubscriptionEvent?>
+    public val onEvent: WebhookAdapter<SubscriptionEvent?>
 
     override val healthCheckFrequency: Duration get() = 6.hours
 

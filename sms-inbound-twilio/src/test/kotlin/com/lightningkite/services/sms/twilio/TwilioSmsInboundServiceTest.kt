@@ -12,7 +12,7 @@ import kotlin.test.*
  * These tests use mock data and don't require actual Twilio credentials.
  *
  * Note: as of 1.0.0, [TwilioSmsInboundService.onReceived] fails closed when the webhook URL
- * has not been configured (i.e. [com.lightningkite.services.webhooksubservice.WebhookSubservice.configureWebhook]
+ * has not been configured (i.e. [com.lightningkite.services.webhooksubservice.WebhookAdapter.configureWebhook]
  * has not been called yet). These tests therefore install a stub webhook URL via reflection
  * and provide a valid `X-Twilio-Signature` header, equivalent to what a real Twilio request
  * would carry — exactly mirroring the pattern in `TwilioSmsInboundFailClosedTest`.
@@ -29,7 +29,7 @@ class TwilioSmsInboundServiceTest {
     private val testWebhookUrl = "https://example.com/twilio/webhook"
 
     /**
-     * Stamps the anonymous WebhookSubservice's private `httpUrl` field via reflection so
+     * Stamps the anonymous WebhookAdapter's private `httpUrl` field via reflection so
      * signature validation has a URL to reconstruct the signed string with — equivalent to
      * having previously called `configureWebhook` without making a real Twilio API call.
      */

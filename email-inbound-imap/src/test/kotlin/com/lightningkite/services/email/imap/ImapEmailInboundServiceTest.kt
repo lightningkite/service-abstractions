@@ -231,15 +231,14 @@ class ImapEmailInboundServiceTest {
         assertTrue(health.additionalMessage?.contains("does not exist") == true)
     }
 
-    // ==================== Webhook Content-Type Validation ====================
+    // ==================== Pull-only Contract ====================
 
     /**
-     * parse() now implements the loopback multipart envelope produced by the polling loop.
-     * It MUST reject anything that isn't multipart/form-data — the JSON-only path that the
-     * old implementation rejected as "pull-based protocol" is now an honest content-type check.
+     * IMAP is pull-only — parse() is on the WebhookAdapter interface but has no meaningful
+     * implementation here. It must throw rather than silently accepting bogus input.
      */
     @Test
-    fun testparse_rejectsNonMultipart() = runTest {
+    fun testParse_throwsForPullOnlyAdapter() = runTest {
         val service = ImapEmailInboundService(
             name = "test",
             context = testContext,
@@ -252,11 +251,14 @@ class ImapEmailInboundServiceTest {
             requireStartTls = false
         )
 
-        assertFailsWith<IllegalArgumentException> {
+        assertFailsWith<UnsupportedOperationException> {
             service.onReceived.parse(
                 queryParameters = emptyList(),
                 headers = emptyMap(),
-                body = com.lightningkite.services.data.TypedData.text("test", com.lightningkite.services.data.MediaType.Text.Plain)
+                body = com.lightningkite.services.data.TypedData.text(
+                    "test",
+                    com.lightningkite.services.data.MediaType.Text.Plain
+                )
             )
         }
     }

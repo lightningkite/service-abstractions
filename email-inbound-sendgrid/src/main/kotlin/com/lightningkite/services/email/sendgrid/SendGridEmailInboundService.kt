@@ -6,7 +6,7 @@ import com.lightningkite.services.email.*
 import com.lightningkite.services.otel.OpenTelemetrySub
 import com.lightningkite.services.otel.get
 import com.lightningkite.services.otel.span
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.opentelemetry.api.trace.SpanKind
 import kotlinx.serialization.json.*
@@ -125,7 +125,7 @@ public class SendGridEmailInboundService(
         }
     }
 
-    override val onReceived: WebhookSubservice<ReceivedEmail> = object : WebhookSubservice<ReceivedEmail> {
+    override val onReceived: WebhookAdapter<ReceivedEmail> = object : WebhookAdapter<ReceivedEmail> {
         override suspend fun configureWebhook(httpUrl: String) {
             logger.info { "[$name] Webhook URL should be configured in SendGrid dashboard: $httpUrl" }
             logger.warn { "[$name] Automatic webhook configuration is not supported. Configure manually in SendGrid." }
@@ -177,9 +177,9 @@ public class SendGridEmailInboundService(
             receivedEmail
         }
 
-        override suspend fun onSchedule() {
-            // SendGrid Inbound Parse is webhook-only, no polling needed
-            logger.debug { "[$name] onSchedule called (no-op for SendGrid webhook-based service)" }
+        override suspend fun pull(): Set<ReceivedEmail> {
+            logger.debug { "[$name] pull called (no-op; SendGrid Inbound Parse delivers via webhook only)" }
+            return emptySet()
         }
     }
 
