@@ -3,7 +3,7 @@ package com.lightningkite.services.subscription
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
@@ -163,7 +163,7 @@ public class TestSubscriptionService(
         return updated
     }
 
-    override val onEvent: WebhookSubservice<SubscriptionEvent?> = object : WebhookSubservice<SubscriptionEvent?> {
+    override val onEvent: WebhookAdapter<SubscriptionEvent?> = object : WebhookAdapter<SubscriptionEvent?> {
         override suspend fun configureWebhook(httpUrl: String) {
             // No-op for test implementation
         }
@@ -178,9 +178,7 @@ public class TestSubscriptionService(
             )
         }
 
-        override suspend fun onSchedule() {
-            // No-op for test implementation
-        }
+        override suspend fun pull(): Set<SubscriptionEvent?> = emptySet()
     }
 
     override suspend fun healthCheck(): HealthStatus {

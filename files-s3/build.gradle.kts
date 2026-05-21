@@ -13,6 +13,7 @@ dependencies {
     api(project(path = ":aws-client"))
     compileOnly(project(path = ":otel-jvm"))
     testImplementation(project(path = ":files-test"))
+    testImplementation(project(path = ":otel-jvm"))
 
     // AWS S3 dependencies
     fun ModuleDependency.excludeNetty() {

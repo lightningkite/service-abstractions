@@ -2,6 +2,9 @@ package com.lightningkite.services.speech.openai
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.contentnegotiation.*
@@ -10,11 +13,31 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import io.opentelemetry.api.trace.SpanKind
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private val logger = KotlinLogging.logger("OpenAISpeechToTextService")
+
+// Minimal response models — only fields actually used.
+
+@Serializable
+private data class WhisperTranscriptionResponse(
+    val text: String = "",
+    val language: String? = null,
+    val duration: Double? = null,
+    val words: List<WhisperWord>? = null,
+)
+
+@Serializable
+private data class WhisperWord(
+    val word: String = "",
+    val start: Double = 0.0,
+    val end: Double = 0.0,
+)
 
 /**
  * OpenAI Whisper Speech-to-Text implementation.
@@ -68,6 +91,10 @@ public class OpenAISpeechToTextService(
 
     private val baseUrl = "https://api.openai.com/v1"
 
+    private val responseJson = Json { ignoreUnknownKeys = true }
+
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("speech-openai")
+
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
             json(Json {
@@ -82,46 +109,52 @@ public class OpenAISpeechToTextService(
         options: TranscriptionOptions,
     ): TranscriptionResult {
         val model = options.model ?: defaultModel
-
         val audioBytes = audio.data.bytes()
-        logger.debug { "[$name] Transcribing ${audioBytes.size} bytes with model=$model" }
 
-        // Check file size limit (25MB for Whisper)
-        if (audioBytes.size > 25 * 1024 * 1024) {
-            throw SpeechToTextException("Audio file too large. OpenAI Whisper has a 25MB limit.")
-        }
+        return otel.span("speech.transcribe", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("ai.model", model)
+            setAttribute("audio.size_bytes", audioBytes.size.toLong())
+        }) {
+            logger.debug { "[$name] Transcribing ${audioBytes.size} bytes with model=$model" }
 
-        val responseFormat = if (options.wordTimestamps) "verbose_json" else "json"
-
-        val response = client.submitFormWithBinaryData(
-            url = "$baseUrl/audio/transcriptions",
-            formData = formData {
-                append("file", audioBytes, Headers.build {
-                    append(HttpHeaders.ContentType, audio.mediaType.toString())
-                    append(HttpHeaders.ContentDisposition, "filename=\"audio.${getExtension(audio.mediaType)}\"")
-                })
-                append("model", model)
-                append("response_format", responseFormat)
-                options.language?.let { append("language", it.substringBefore("-")) }
-                options.prompt?.let { append("prompt", it) }
-                if (options.wordTimestamps) {
-                    append("timestamp_granularities[]", "word")
-                }
+            // Check file size limit (25MB for Whisper)
+            if (audioBytes.size > 25 * 1024 * 1024) {
+                throw SpeechToTextException("Audio file too large. OpenAI Whisper has a 25MB limit.")
             }
-        ) {
-            header("Authorization", "Bearer $apiKey")
+
+            val responseFormat = if (options.wordTimestamps) "verbose_json" else "json"
+
+            val response = client.submitFormWithBinaryData(
+                url = "$baseUrl/audio/transcriptions",
+                formData = formData {
+                    append("file", audioBytes, Headers.build {
+                        append(HttpHeaders.ContentType, audio.mediaType.toString())
+                        append(HttpHeaders.ContentDisposition, "filename=\"audio.${getExtension(audio.mediaType)}\"")
+                    })
+                    append("model", model)
+                    append("response_format", responseFormat)
+                    options.language?.let { append("language", it.substringBefore("-")) }
+                    options.prompt?.let { append("prompt", it) }
+                    if (options.wordTimestamps) {
+                        append("timestamp_granularities[]", "word")
+                    }
+                }
+            ) {
+                header("Authorization", "Bearer $apiKey")
+            }
+
+            if (!response.status.isSuccess()) {
+                val error = response.bodyAsText()
+                logger.error { "[$name] STT failed: $error" }
+                throw SpeechToTextException("Transcription failed: $error")
+            }
+
+            val body = response.bodyAsText()
+            logger.debug { "[$name] Transcription complete" }
+
+            parseTranscriptionResponse(body, options)
         }
-
-        if (!response.status.isSuccess()) {
-            val error = response.bodyAsText()
-            logger.error { "[$name] STT failed: $error" }
-            throw SpeechToTextException("Transcription failed: $error")
-        }
-
-        val body = response.bodyAsText()
-        logger.debug { "[$name] Transcription complete" }
-
-        return parseTranscriptionResponse(body, options)
     }
 
     override suspend fun transcribeUrl(
@@ -151,70 +184,32 @@ public class OpenAISpeechToTextService(
         }
     }
 
-    private fun parseTranscriptionResponse(json: String, options: TranscriptionOptions): TranscriptionResult {
-        // Parse text
-        val text = Regex(""""text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"""")
-            .find(json)?.groupValues?.get(1)?.unescapeJson() ?: ""
+    private fun parseTranscriptionResponse(body: String, options: TranscriptionOptions): TranscriptionResult {
+        val parsed = responseJson.decodeFromString<WhisperTranscriptionResponse>(body)
 
-        // Parse language
-        val language = Regex(""""language"\s*:\s*"([^"]+)"""")
-            .find(json)?.groupValues?.get(1)
-
-        // Parse duration
-        val durationSeconds = Regex(""""duration"\s*:\s*([0-9.]+)""")
-            .find(json)?.groupValues?.get(1)?.toDoubleOrNull()
-        val duration = durationSeconds?.seconds
-
-        // Parse words if verbose_json response
         val words = if (options.wordTimestamps) {
-            parseWords(json)
+            parsed.words?.map { w ->
+                TranscribedWord(
+                    text = w.word,
+                    startTime = (w.start * 1000).toLong().milliseconds,
+                    endTime = (w.end * 1000).toLong().milliseconds,
+                    confidence = null,  // Whisper doesn't provide per-word confidence
+                    speakerId = null,
+                )
+            } ?: emptyList()
         } else {
             emptyList()
         }
 
         return TranscriptionResult(
-            text = text,
-            language = language,
+            text = parsed.text,
+            language = parsed.language,
             languageConfidence = null,  // Whisper doesn't provide confidence
             words = words,
-            speakers = emptyList(),  // Whisper doesn't support diarization
+            speakers = emptyList(),     // Whisper doesn't support diarization
             audioEvents = emptyList(),  // Whisper doesn't detect audio events
-            duration = duration
+            duration = parsed.duration?.seconds,
         )
-    }
-
-    private fun parseWords(json: String): List<TranscribedWord> {
-        val words = mutableListOf<TranscribedWord>()
-
-        // Look for words array in verbose_json response
-        val wordsArrayMatch = Regex(""""words"\s*:\s*\[([^\]]*)\]""", RegexOption.DOT_MATCHES_ALL)
-            .find(json) ?: return words
-
-        val wordsJson = wordsArrayMatch.groupValues[1]
-
-        // Parse each word object
-        val wordPattern = Regex(
-            """\{\s*"word"\s*:\s*"([^"]*)"[^}]*"start"\s*:\s*([0-9.]+)[^}]*"end"\s*:\s*([0-9.]+)[^}]*\}""",
-            RegexOption.DOT_MATCHES_ALL
-        )
-
-        wordPattern.findAll(wordsJson).forEach { match ->
-            val wordText = match.groupValues[1].unescapeJson()
-            val startSeconds = match.groupValues[2].toDoubleOrNull() ?: 0.0
-            val endSeconds = match.groupValues[3].toDoubleOrNull() ?: 0.0
-
-            words.add(
-                TranscribedWord(
-                    text = wordText,
-                    startTime = (startSeconds * 1000).toLong().milliseconds,
-                    endTime = (endSeconds * 1000).toLong().milliseconds,
-                    confidence = null,  // Whisper doesn't provide per-word confidence
-                    speakerId = null
-                )
-            )
-        }
-
-        return words
     }
 
     private fun getExtension(mediaType: MediaType): String {
@@ -227,15 +222,6 @@ public class OpenAISpeechToTextService(
             mediaType.toString().contains("flac") -> "flac"
             else -> "mp3"
         }
-    }
-
-    private fun String.unescapeJson(): String {
-        return this
-            .replace("\\n", "\n")
-            .replace("\\r", "\r")
-            .replace("\\t", "\t")
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\")
     }
 
     public companion object {

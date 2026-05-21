@@ -4,35 +4,19 @@ import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 
 /**
- * Kotlin/Native implementation of concurrent map using synchronized locking.
+ * Kotlin/Native implementation backed by a [HashMap] guarded by `kotlinx.atomicfu` synchronized blocks.
  *
- * This implementation wraps a regular [HashMap] with synchronized access to provide
- * thread-safety on Kotlin/Native platforms. While not as performant as lock-free
- * implementations, it provides correct concurrent behavior.
+ * All operations acquire a single coarse-grained lock — including the compound [compute] and
+ * [computeIfAbsent], which hold the lock for the entire read-compute-write sequence so no other thread
+ * can observe an intermediate state.
  *
- * ## Implementation Notes
+ * [keys], [values], and [entries] return snapshot collections (constructed under the lock) to keep
+ * iteration safe in the face of concurrent mutation.
  *
- * - Uses kotlinx.atomicfu's SynchronizedObject for cross-platform locking
- * - All operations are protected by a single lock (coarse-grained locking)
- * - Iterator operations are NOT thread-safe (snapshot iterator would be needed)
- * - Performance is acceptable for moderate contention
- *
- * ## Thread Safety
- *
- * - Individual operations (get, put, remove) are thread-safe
- * - Compound operations (getOrPut, compute) are atomic
- * - Iterating over keys/values/entries requires external synchronization
- *
- * @see ConcurrentMutableMap for cross-platform usage
+ * @see ConcurrentMutableMap
  */
-public actual fun <K, V> ConcurrentMutableMap(): MutableMap<K, V> {
-    return SynchronizedMap()
-}
-
-/**
- * Thread-safe wrapper around HashMap using synchronized blocks.
- */
-private class SynchronizedMap<K, V> : MutableMap<K, V> {
+@Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
+public actual class ConcurrentMutableMap<K: Any, V: Any> actual constructor() : MutableMap<K, V> {
     private val lock = SynchronizedObject()
     private val map = HashMap<K, V>()
 
@@ -40,20 +24,13 @@ private class SynchronizedMap<K, V> : MutableMap<K, V> {
         get() = synchronized(lock) { map.size }
 
     override fun isEmpty(): Boolean = synchronized(lock) { map.isEmpty() }
-
     override fun containsKey(key: K): Boolean = synchronized(lock) { map.containsKey(key) }
-
     override fun containsValue(value: V): Boolean = synchronized(lock) { map.containsValue(value) }
-
     override fun get(key: K): V? = synchronized(lock) { map[key] }
-
     override fun put(key: K, value: V): V? = synchronized(lock) { map.put(key, value) }
-
     override fun remove(key: K): V? = synchronized(lock) { map.remove(key) }
-
-    override fun putAll(from: Map<out K, V>) = synchronized(lock) { map.putAll(from) }
-
-    override fun clear() = synchronized(lock) { map.clear() }
+    override fun putAll(from: Map<out K, V>): Unit = synchronized(lock) { map.putAll(from) }
+    override fun clear(): Unit = synchronized(lock) { map.clear() }
 
     override val keys: MutableSet<K>
         get() = synchronized(lock) { map.keys.toMutableSet() }
@@ -64,9 +41,22 @@ private class SynchronizedMap<K, V> : MutableMap<K, V> {
     override val entries: MutableSet<MutableMap.MutableEntry<K, V>>
         get() = synchronized(lock) { map.entries.toMutableSet() }
 
-    // Note: This is not atomic like ConcurrentHashMap.getOrPut on JVM
-    // but it's synchronized so only one thread can execute it at a time
-    fun getOrPut(key: K, defaultValue: () -> V): V = synchronized(lock) {
-        map.getOrPut(key, defaultValue)
+    public actual fun compute(key: K, remapping: (K, V?) -> V?): V? = synchronized(lock) {
+        val existing = map[key]
+        val new = remapping(key, existing)
+        if (new == null) {
+            map.remove(key)
+        } else {
+            map[key] = new
+        }
+        new
+    }
+
+    public actual fun computeIfAbsent(key: K, mappingFn: (K) -> V): V = synchronized(lock) {
+        val existing = map[key]
+        if (existing != null) return@synchronized existing
+        val new = mappingFn(key)
+        map[key] = new
+        new
     }
 }

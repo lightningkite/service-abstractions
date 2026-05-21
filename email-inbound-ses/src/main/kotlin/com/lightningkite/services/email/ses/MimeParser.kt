@@ -14,11 +14,13 @@ import java.util.*
  */
 internal object MimeParser {
 
+    // Shared session — Session.getInstance with an empty Properties is stateless and safe to reuse.
+    private val session = Session.getInstance(Properties())
+
     /**
      * Parse a raw MIME message into a MimeMessage object.
      */
     fun parseRawMime(rawContent: String): MimeMessage {
-        val session = Session.getInstance(Properties())
         val inputStream = ByteArrayInputStream(rawContent.toByteArray(Charsets.UTF_8))
         return MimeMessage(session, inputStream)
     }

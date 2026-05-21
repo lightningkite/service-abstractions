@@ -22,7 +22,7 @@ import kotlin.time.Instant
  * val inboundService: EmailInboundService = ...
  *
  * // Parse from webhook
- * val email = inboundService.onReceived.parseWebhook(queryParams, headers, body)
+ * val email = inboundService.onReceived.parse(queryParams, headers, body)
  *
  * println("From: ${email.from}")
  * println("Subject: ${email.subject}")

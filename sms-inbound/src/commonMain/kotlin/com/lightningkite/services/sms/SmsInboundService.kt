@@ -2,7 +2,7 @@ package com.lightningkite.services.sms
 
 import com.lightningkite.services.*
 import com.lightningkite.services.data.HealthStatus
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -45,7 +45,7 @@ import kotlin.time.Duration.Companion.hours
  * smsInboundService.onReceived.configureWebhook("https://yourserver.com/webhooks/sms")
  *
  * // In your HTTP handler, parse incoming webhooks
- * val inboundSms = smsInboundService.onReceived.parseWebhook(
+ * val inboundSms = smsInboundService.onReceived.parse(
  *     queryParameters = request.queryParameters,
  *     headers = request.headers,
  *     body = TypedData(request.body, request.contentType)
@@ -61,7 +61,7 @@ import kotlin.time.Duration.Companion.hours
  * - **Rate limits**: High-volume inbound traffic may require queue-based processing
  *
  * @see InboundSms
- * @see WebhookSubservice
+ * @see WebhookAdapter
  */
 public interface SmsInboundService : Service {
     /**
@@ -91,14 +91,13 @@ public interface SmsInboundService : Service {
     }
 
     /**
-     * Webhook subservice for receiving inbound SMS messages.
+     * Webhook adapter for receiving inbound SMS messages.
      *
      * Use this to:
      * - Configure the webhook URL with the provider (if supported)
      * - Parse incoming webhook requests into [InboundSms] objects
-     * - Handle scheduled maintenance tasks
      */
-    public val onReceived: WebhookSubservice<InboundSms>
+    public val onReceived: WebhookAdapter<InboundSms>
 
     /**
      * The frequency at which health checks should be performed.

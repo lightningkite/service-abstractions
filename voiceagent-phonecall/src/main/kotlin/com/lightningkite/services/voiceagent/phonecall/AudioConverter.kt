@@ -16,6 +16,10 @@ import com.lightningkite.services.voiceagent.AudioFormat
  * Voice Agent → Phone:
  * 1. Downsample from 24kHz to 8kHz (3x decimation)
  * 2. Encode linear PCM16 to μ-law
+ *
+ * TODO: This is a stateless object, so intermediate ShortArray/ByteArray allocations happen on every
+ *  call. At high frame rates, consider introducing a per-instance (or thread-local) buffer pool to
+ *  reduce GC pressure.
  */
 public object AudioConverter {
 

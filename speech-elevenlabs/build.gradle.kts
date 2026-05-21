@@ -3,6 +3,7 @@ import com.lightningkite.deployhelpers.lkLibrary
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -12,6 +13,10 @@ dependencies {
 
     // Ktor dependencies for HTTP client
     implementation(project(":http-client"))
+    api(project(":otel-jvm"))
+    implementation(libs.openTelemetry.api)
+    implementation(libs.openTelemetry.kotlin)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)

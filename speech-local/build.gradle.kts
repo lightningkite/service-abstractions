@@ -18,6 +18,12 @@ dependencies {
     // See: https://github.com/alphacep/vosk-api/issues/1235
     implementation(libs.vosk)
 
+    // HTTP client for URL-based transcription
+    implementation(project(":http-client"))
+    implementation(libs.ktor.client.cio)
+    api(project(":otel-jvm"))
+    implementation(libs.openTelemetry.api)
+
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
     testImplementation(project(path = ":test"))

@@ -3,12 +3,15 @@ package com.lightningkite.services.email.javasmtp
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.email.*
-import com.lightningkite.services.recordExceptionWithFingerprint
-import io.opentelemetry.api.trace.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
+import io.opentelemetry.api.trace.SpanKind
 import jakarta.activation.DataHandler
 import jakarta.mail.*
 import jakarta.mail.internet.*
 import jakarta.mail.util.ByteArrayDataSource
+import kotlinx.coroutines.withContext
 import java.util.*
 
 /**
@@ -102,7 +105,7 @@ public class JavaSmtpEmailService(
     public val from: EmailAddressWithName,
 ) : EmailService {
 
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("email-javasmtp")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-javasmtp")
 
     public companion object {
         private fun parseParameterString(params: String): Map<String, List<String>> = params
@@ -178,96 +181,62 @@ public class JavaSmtpEmailService(
     override suspend fun send(email: Email) {
         if (email.to.isEmpty() && email.cc.isEmpty() && email.bcc.isEmpty()) return
 
-        val span = tracer?.spanBuilder("email.send")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("email.operation", "send")
-            ?.setAttribute("email.system", "smtp")
-            ?.setAttribute("email.smtp.host", hostName)
-            ?.setAttribute("email.smtp.port", port.toLong())
-            ?.setAttribute("email.from", email.from?.value?.toString() ?: from.value.toString())
-            ?.setAttribute("email.to", email.to.joinToString(", ") { it.value.toString() })
-            ?.setAttribute("email.subject", email.subject)
-            ?.also { builder ->
-                if (email.cc.isNotEmpty()) {
-                    builder.setAttribute("email.cc", email.cc.joinToString(", ") { it.value.toString() })
-                }
-                if (email.attachments.isNotEmpty()) {
-                    builder.setAttribute("email.attachments.count", email.attachments.size.toLong())
-                }
+        otel.span("email.send", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("email.operation", "send")
+            setAttribute("email.system", "smtp")
+            setAttribute("messaging.system", "smtp")
+            setAttribute("email.smtp.host", hostName)
+            setAttribute("email.smtp.port", port.toLong())
+            setAttribute("email.from", email.from?.value?.toString() ?: from.value.toString())
+            setAttribute("email.to", email.to.joinToString(", ") { it.value.toString() })
+            setAttribute("email.subject", email.subject)
+            if (email.cc.isNotEmpty()) {
+                setAttribute("email.cc", email.cc.joinToString(", ") { it.value.toString() })
             }
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                Transport.send(
-                    email.copy(
-                        from = email.from ?: from,
-                    ).toJavaX(session)
-                )
-                email.attachments.forEach { it.typedData.data.close() }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+            if (email.attachments.isNotEmpty()) {
+                setAttribute("email.attachments.count", email.attachments.size.toLong())
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to send email: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        }) { _ ->
+            val message = email.copy(from = email.from ?: from).toJavaX(session)
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                Transport.send(message)
+            }
+            email.attachments.forEach { it.typedData.data.close() }
         }
     }
 
     override suspend fun sendBulk(template: Email, personalizations: List<EmailPersonalization>) {
         if (personalizations.isEmpty()) return
 
-        val span = tracer?.spanBuilder("email.sendBulk")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("email.operation", "sendBulk")
-            ?.setAttribute("email.system", "smtp")
-            ?.setAttribute("email.smtp.host", hostName)
-            ?.setAttribute("email.smtp.port", port.toLong())
-            ?.setAttribute("email.from", template.from?.value?.toString() ?: from.value.toString())
-            ?.setAttribute("email.subject", template.subject)
-            ?.setAttribute("email.personalizations.count", personalizations.size.toLong())
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
+        otel.span("email.sendBulk", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("email.operation", "sendBulk")
+            setAttribute("email.system", "smtp")
+            setAttribute("messaging.system", "smtp")
+            setAttribute("email.smtp.host", hostName)
+            setAttribute("email.smtp.port", port.toLong())
+            setAttribute("email.from", template.from?.value?.toString() ?: from.value.toString())
+            setAttribute("email.subject", template.subject)
+            setAttribute("email.personalizations.count", personalizations.size.toLong())
+        }) { _ ->
+            val emails = personalizations.map { it(template).copy(from = template.from ?: from) }
+            val messages = emails.map { it.toJavaX(session).also { m -> m.saveChanges() } to it }
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
                 session.transport
                     .also { it.connect() }
                     .use { transport ->
-                        personalizations
-                            .asSequence()
-                            .map {
-                                it(template).copy(
-                                    from = template.from ?: from,
-                                )
-                            }
-                            .forEach { email ->
-                                transport.sendMessage(
-                                    email.toJavaX(session).also { it.saveChanges() },
-                                    email.to
-                                        .plus(email.cc)
-                                        .plus(email.bcc)
-                                        .map { InternetAddress(it.value.toString(), it.label) }
-                                        .toTypedArray()
-                                        .also { if (it.isEmpty()) return@forEach }
-                                )
-                            }
+                        messages.forEach { (message, email) ->
+                            val recipients = email.to
+                                .plus(email.cc)
+                                .plus(email.bcc)
+                                .map { InternetAddress(it.value.toString(), it.label) }
+                                .toTypedArray()
+                            if (recipients.isEmpty()) return@forEach
+                            transport.sendMessage(message, recipients)
+                        }
                     }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
         }
     }
 
@@ -275,95 +244,84 @@ public class JavaSmtpEmailService(
     override suspend fun sendBulk(emails: Collection<Email>) {
         if (emails.isEmpty()) return
 
-        val span = tracer?.spanBuilder("email.sendBulk")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("email.operation", "sendBulk")
-            ?.setAttribute("email.system", "smtp")
-            ?.setAttribute("email.smtp.host", hostName)
-            ?.setAttribute("email.smtp.port", port.toLong())
-            ?.setAttribute("email.from", from.value.toString())
-            ?.setAttribute("email.count", emails.size.toLong())
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
+        otel.span("email.sendBulk", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("email.operation", "sendBulk")
+            setAttribute("email.system", "smtp")
+            setAttribute("messaging.system", "smtp")
+            setAttribute("email.smtp.host", hostName)
+            setAttribute("email.smtp.port", port.toLong())
+            setAttribute("email.from", from.value.toString())
+            setAttribute("email.count", emails.size.toLong())
+        }) { _ ->
+            val messages = emails.map { email ->
+                email.copy(from = from).toJavaX(session).also { it.saveChanges() } to email
+            }
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
                 session.transport
                     .also { it.connect() }
                     .use { transport ->
-                        emails.forEach { email ->
-                            transport.sendMessage(
-                                email.copy(
-                                    from = from
-                                )
-                                    .toJavaX(session)
-                                    .also { it.saveChanges() },
-                                email.to
-                                    .plus(email.cc)
-                                    .plus(email.bcc)
-                                    .map { InternetAddress(it.value.toString(), it.label) }
-                                    .toTypedArray()
-                                    .also { if (it.isEmpty()) return@forEach }
-                            )
+                        messages.forEach { (message, email) ->
+                            val recipients = email.to
+                                .plus(email.cc)
+                                .plus(email.bcc)
+                                .map { InternetAddress(it.value.toString(), it.label) }
+                                .toTypedArray()
+                            if (recipients.isEmpty()) return@forEach
+                            transport.sendMessage(message, recipients)
                         }
                     }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
         }
     }
 
+    // Attachment data.bytes() and MIME assembly are blocking — run on IO dispatcher.
     private suspend fun Email.toJavaX(session: Session = Session.getDefaultInstance(Properties(), null)): Message =
-        MimeMessage(session).apply {
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
             val email = this@toJavaX
-            subject = email.subject
-            email.from?.let { setFrom(InternetAddress(it.value.toString(), it.label)) }
-            email.to.map { InternetAddress(it.value.toString(), it.label) }
-                .also { setRecipients(Message.RecipientType.TO, it.toTypedArray()) }
-            email.cc.map { InternetAddress(it.value.toString(), it.label) }
-                .also { setRecipients(Message.RecipientType.CC, it.toTypedArray()) }
-            email.bcc.map { InternetAddress(it.value.toString(), it.label) }
-                .also { setRecipients(Message.RecipientType.BCC, it.toTypedArray()) }
+            MimeMessage(session).apply {
+                subject = email.subject
+                email.from?.let { setFrom(InternetAddress(it.value.toString(), it.label)) }
+                email.to.map { InternetAddress(it.value.toString(), it.label) }
+                    .also { setRecipients(Message.RecipientType.TO, it.toTypedArray()) }
+                email.cc.map { InternetAddress(it.value.toString(), it.label) }
+                    .also { setRecipients(Message.RecipientType.CC, it.toTypedArray()) }
+                email.bcc.map { InternetAddress(it.value.toString(), it.label) }
+                    .also { setRecipients(Message.RecipientType.BCC, it.toTypedArray()) }
 
-            email.customHeaders.entries.forEach {
-                addHeader(it.key, it.value.joinToString(","))
-            }
-
-            setContent(MimeMultipart("mixed").apply {
-                addBodyPart(MimeBodyPart().apply {
-                    setContent(MimeMultipart("alternative").apply {
-                        addBodyPart(MimeBodyPart().apply {
-                            dataHandler = DataHandler(ByteArrayDataSource(plainText, MediaType.Text.Plain.toString()))
-                        })
-                        addBodyPart(MimeBodyPart().apply {
-                            dataHandler = DataHandler(ByteArrayDataSource(html, MediaType.Text.Html.toString()))
-                        })
-                    })
-                })
-                // by Claude - fixed Content-Disposition (was "form-data") and added Content-ID for inline/CID support
-                for (attachment in email.attachments) {
-                    addBodyPart(MimeBodyPart().apply {
-                        val disposition = if (attachment.inline) "inline" else "attachment"
-                        addHeader("Content-Disposition", "$disposition; filename=\"${attachment.filename}\"")
-                        if (attachment.inline) {
-                            addHeader("Content-ID", "<${attachment.filename}>")
-                        }
-                        dataHandler = DataHandler(
-                            ByteArrayDataSource(
-                                attachment.typedData.data.bytes(),
-                                attachment.typedData.mediaType.toString()
-                            )
-                        )
-                    })
+                email.customHeaders.entries.forEach {
+                    addHeader(it.key, it.value.joinToString(","))
                 }
-            })
+
+                setContent(MimeMultipart("mixed").apply {
+                    addBodyPart(MimeBodyPart().apply {
+                        setContent(MimeMultipart("alternative").apply {
+                            addBodyPart(MimeBodyPart().apply {
+                                dataHandler = DataHandler(ByteArrayDataSource(plainText, MediaType.Text.Plain.toString()))
+                            })
+                            addBodyPart(MimeBodyPart().apply {
+                                dataHandler = DataHandler(ByteArrayDataSource(html, MediaType.Text.Html.toString()))
+                            })
+                        })
+                    })
+                    // fixed Content-Disposition and added Content-ID for inline/CID support
+                    for (attachment in email.attachments) {
+                        addBodyPart(MimeBodyPart().apply {
+                            val disposition = if (attachment.inline) "inline" else "attachment"
+                            addHeader("Content-Disposition", "$disposition; filename=\"${attachment.filename}\"")
+                            if (attachment.inline) {
+                                addHeader("Content-ID", "<${attachment.filename}>")
+                            }
+                            dataHandler = DataHandler(
+                                ByteArrayDataSource(
+                                    attachment.typedData.data.bytes(),
+                                    attachment.typedData.mediaType.toString()
+                                )
+                            )
+                        })
+                    }
+                })
+            }
         }
 
 }

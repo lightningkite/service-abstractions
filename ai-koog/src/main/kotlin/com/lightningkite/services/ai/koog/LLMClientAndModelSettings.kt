@@ -20,7 +20,11 @@ import ai.koog.prompt.streaming.StreamFrame
 import aws.sdk.kotlin.runtime.auth.credentials.*
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import com.lightningkite.services.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import io.ktor.client.*
+import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
@@ -295,6 +299,34 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                 OpenRouterModels.Qwen2_5,
             ).associateBy { it.provider to it.id }
 
+            /**
+             * Registers a `scheme://model-name?apiKey=...` provider. The apiKey query parameter
+             * supports `${ENV_VAR}` substitution; if absent the [envVar] environment variable is
+             * consulted instead. Throws if neither source supplies a key.
+             */
+            private fun registerApiKeyProvider(
+                scheme: String,
+                envVar: String,
+                providerLabel: String,
+                build: (apiKey: String) -> LLMClient,
+            ) {
+                register(scheme) { _, url, _ ->
+                    val params = parseUrlParams(url)
+                    val modelName = url.substringAfter("://", "").substringBefore("?")
+                    val apiKey = params["apiKey"]?.let(::resolveEnvVars)
+                        ?: System.getenv(envVar)
+                        ?: throw IllegalArgumentException(
+                            "$providerLabel API key not provided in URL or $envVar environment variable"
+                        )
+                    val client = build(apiKey)
+                    val model = knownModels[client.llmProvider() to modelName]
+                        ?: throw IllegalStateException(
+                            "Unknown model '$modelName'.  Known model names: ${knownModels.keys}"
+                        )
+                    LLMClientAndModel(client, model)
+                }
+            }
+
             init {
                 register("mock") { name, url, context ->
                     val p = object : LLMProvider("mock", "Mock") {}
@@ -342,53 +374,20 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                     )
                 }
 
-                // Register OpenAI
-                register("openai") { name, url, context ->
-                    val params = parseUrlParams(url)
-                    val modelName = url.substringAfter("://", "").substringBefore("?")
-                    val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-                        ?: System.getenv("OPENAI_API_KEY")
-                        ?: throw IllegalArgumentException("OpenAI API key not provided in URL or OPENAI_API_KEY environment variable")
-
-                    val client = OpenAILLMClient(
-
+                // TODO: share each provider's HttpClient via a SharedResources.Key rather than
+                //       constructing a fresh one per Setting invocation (each instance has its
+                //       own connection pool). Currently only OpenAILLMClient is given an explicit
+                //       HttpClient; the other Koog clients build their own.
+                registerApiKeyProvider("openai", "OPENAI_API_KEY", "OpenAI") { apiKey ->
+                    OpenAILLMClient(
                         apiKey = apiKey,
                         settings = OpenAIClientSettings(),
                         baseClient = HttpClient(),
                         clock = Clock.System,
                     )
-                    val model = knownModels.get(client.llmProvider() to modelName)
-                        ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
-                    LLMClientAndModel(client, model)
                 }
-
-                // Register Anthropic
-                register("anthropic") { name, url, context ->
-                    val params = parseUrlParams(url)
-                    val modelName = url.substringAfter("://", "").substringBefore("?")
-                    val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-                        ?: System.getenv("ANTHROPIC_API_KEY")
-                        ?: throw IllegalArgumentException("Anthropic API key not provided in URL or ANTHROPIC_API_KEY environment variable")
-
-                    val client = AnthropicLLMClient(apiKey = apiKey)
-                    val model = knownModels.get(client.llmProvider() to modelName)
-                        ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
-                    LLMClientAndModel(client, model)
-                }
-
-                // Register Google (Gemini)
-                register("google") { name, url, context ->
-                    val params = parseUrlParams(url)
-                    val modelName = url.substringAfter("://", "").substringBefore("?")
-                    val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-                        ?: System.getenv("GOOGLE_API_KEY")
-                        ?: throw IllegalArgumentException("Google API key not provided in URL or GOOGLE_API_KEY environment variable")
-
-                    val client = GoogleLLMClient(apiKey = apiKey)
-                    val model = knownModels.get(client.llmProvider() to modelName)
-                        ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
-                    LLMClientAndModel(client, model)
-                }
+                registerApiKeyProvider("anthropic", "ANTHROPIC_API_KEY", "Anthropic") { AnthropicLLMClient(apiKey = it) }
+                registerApiKeyProvider("google", "GOOGLE_API_KEY", "Google") { GoogleLLMClient(apiKey = it) }
 
                 // Register Ollama
                 register("ollama") { name, url, context ->
@@ -398,7 +397,10 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                     val autoStart = params["autoStart"]?.toBooleanStrictOrNull() ?: false
                     val autoPull = params["autoPull"]?.toBooleanStrictOrNull() ?: autoStart
 
-                    // Handle auto-start and auto-pull if requested
+                    // Handle auto-start and auto-pull if requested.
+                    // runBlocking is intentional here: the Setting factory is synchronous and
+                    // ensureReady may perform I/O. Consider lazy init via Deferred if startup
+                    // latency is a concern.
                     if (autoStart || autoPull) {
                         val manager = OllamaManager(baseUrl)
                         kotlinx.coroutines.runBlocking {
@@ -424,7 +426,10 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                     val autoStart = params["autoStart"]?.toBooleanStrictOrNull() ?: true
                     val autoPull = params["autoPull"]?.toBooleanStrictOrNull() ?: true
 
-                    // Auto-start and auto-pull by default
+                    // Auto-start and auto-pull by default.
+                    // runBlocking is intentional here: the Setting factory is synchronous and
+                    // ensureReady may perform I/O. Consider lazy init via Deferred if startup
+                    // latency is a concern.
                     val manager = OllamaManager(baseUrl)
                     kotlinx.coroutines.runBlocking {
                         manager.ensureReady(
@@ -440,19 +445,7 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
                     LLMClientAndModel(client, model)
                 }
 
-                // Register OpenRouter
-                register("openrouter") { name, url, context ->
-                    val params = parseUrlParams(url)
-                    val modelName = url.substringAfter("://", "").substringBefore("?")
-                    val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-                        ?: System.getenv("OPENROUTER_API_KEY")
-                        ?: throw IllegalArgumentException("OpenRouter API key not provided in URL or OPENROUTER_API_KEY environment variable")
-
-                    val client = OpenRouterLLMClient(apiKey = apiKey)
-                    val model = knownModels.get(client.llmProvider() to modelName)
-                        ?: throw IllegalStateException("Unknown model '$modelName'.  Known model names: ${knownModels.keys}")
-                    LLMClientAndModel(client, model)
-                }
+                registerApiKeyProvider("openrouter", "OPENROUTER_API_KEY", "OpenRouter") { OpenRouterLLMClient(apiKey = it) }
 
                 // Register AWS Bedrock
                 // URL formats:
@@ -496,10 +489,69 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
         }
 
         override fun invoke(name: String, context: SettingContext): LLMClientAndModel {
-            return parse(name, url, context)
+            val otel: OpenTelemetrySub? = context.openTelemetry?.get("ai-koog")
+            return parse(name, url, context).withTracing(otel)
         }
     }
 }
+
+/**
+ * Wraps an [LLMClient] to add OpenTelemetry CLIENT spans around every call.
+ *
+ * Span attributes follow the OpenTelemetry semantic conventions for generative AI:
+ * - `ai.provider` — value of [LLMClient.llmProvider]
+ * - `ai.model` — model ID
+ *
+ * Note: token counts (`llm.token_count.input` / `llm.token_count.output`) are not yet
+ * populated because Koog's [Message.Response] does not currently expose usage metadata.
+ * TODO: add token attributes once Koog exposes usage in response metadata.
+ */
+internal class TracingLLMClient(
+    private val delegate: LLMClient,
+    private val otel: OpenTelemetrySub,
+    private val modelId: String,
+) : LLMClient {
+
+    private suspend inline fun <R> traced(operation: String, crossinline block: suspend () -> R): R =
+        otel.span("llm.$operation", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("ai.provider", delegate.llmProvider().id)
+            setAttribute("ai.model", modelId)
+        }) { block() }
+
+    override suspend fun execute(
+        prompt: Prompt,
+        model: LLModel,
+        tools: List<ToolDescriptor>,
+    ): List<Message.Response> = traced("execute") { delegate.execute(prompt, model, tools) }
+
+    override fun executeStreaming(
+        prompt: Prompt,
+        model: LLModel,
+        tools: List<ToolDescriptor>,
+    ): Flow<StreamFrame> = delegate.executeStreaming(prompt, model, tools)
+    // TODO: wrap streaming with span — requires collecting the flow which changes semantics.
+
+    override suspend fun executeMultipleChoices(
+        prompt: Prompt,
+        model: LLModel,
+        tools: List<ToolDescriptor>,
+    ): List<LLMChoice> = traced("executeMultipleChoices") { delegate.executeMultipleChoices(prompt, model, tools) }
+
+    override suspend fun moderate(prompt: Prompt, model: LLModel): ModerationResult =
+        traced("moderate") { delegate.moderate(prompt, model) }
+
+    override suspend fun models(): List<LLModel> = delegate.models()
+    override fun llmProvider(): LLMProvider = delegate.llmProvider()
+    override fun close() = delegate.close()
+}
+
+/**
+ * Wraps this [LLMClientAndModel] with OpenTelemetry tracing if [otel] is non-null.
+ * Returns the original instance unchanged when no telemetry is configured.
+ */
+internal fun LLMClientAndModel.withTracing(otel: OpenTelemetrySub?): LLMClientAndModel =
+    if (otel != null) LLMClientAndModel(TracingLLMClient(client, otel, model.id), model) else this
 
 /**
  * Parses URL query parameters into a map.

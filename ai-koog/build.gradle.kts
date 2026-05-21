@@ -11,6 +11,7 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":database-shared"))
+    implementation(project(":otel-jvm"))
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
 

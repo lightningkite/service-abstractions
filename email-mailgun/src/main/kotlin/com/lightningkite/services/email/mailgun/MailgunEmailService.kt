@@ -2,14 +2,16 @@ package com.lightningkite.services.email.mailgun
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.email.*
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.utils.io.jvm.javaio.*
-import io.opentelemetry.api.trace.*
+import io.opentelemetry.api.trace.SpanKind
 import kotlinx.io.asInputStream
 import kotlinx.io.buffered
 
@@ -20,7 +22,7 @@ public class MailgunEmailService(
     private val domain: String,
 ) : EmailService {
 
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("email-mailgun")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-mailgun")
 
     private val client = com.lightningkite.services.http.client.config {
         install(Auth) {
@@ -84,75 +86,47 @@ public class MailgunEmailService(
     override suspend fun send(email: Email) {
         if (email.to.isEmpty() && email.cc.isEmpty() && email.bcc.isEmpty()) return
 
-        val span = tracer?.spanBuilder("email.send")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("email.operation", "send")
-            ?.setAttribute("email.system", "mailgun")
-            ?.setAttribute("email.from", email.from?.value?.toString() ?: domain)
-            ?.setAttribute("email.to", email.to.joinToString(", ") { it.value.toString() })
-            ?.setAttribute("email.subject", email.subject)
-            ?.also { builder ->
-                if (email.cc.isNotEmpty()) {
-                    builder.setAttribute("email.cc", email.cc.joinToString(", ") { it.value.toString() })
-                }
-                if (email.attachments.isNotEmpty()) {
-                    builder.setAttribute("email.attachments.count", email.attachments.size.toLong())
-                }
+        otel.span("email.send", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("email.operation", "send")
+            setAttribute("email.system", "mailgun")
+            setAttribute("messaging.system", "mailgun")
+            setAttribute("email.from", email.from?.value?.toString() ?: domain)
+            setAttribute("email.to", email.to.joinToString(", ") { it.value.toString() })
+            setAttribute("email.subject", email.subject)
+            if (email.cc.isNotEmpty()) {
+                setAttribute("email.cc", email.cc.joinToString(", ") { it.value.toString() })
             }
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                sendImpl(email)
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+            if (email.attachments.isNotEmpty()) {
+                setAttribute("email.attachments.count", email.attachments.size.toLong())
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to send email: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        }) { _ ->
+            sendImpl(email)
         }
     }
 
     override suspend fun sendBulk(template: Email, personalizations: List<EmailPersonalization>) {
         if (personalizations.isEmpty()) return
 
-        val span = tracer?.spanBuilder("email.sendBulk")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("email.operation", "sendBulk")
-            ?.setAttribute("email.system", "mailgun")
-            ?.setAttribute("email.from", template.from?.value?.toString() ?: domain)
-            ?.setAttribute("email.subject", template.subject)
-            ?.setAttribute("email.personalizations.count", personalizations.size.toLong())
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                personalizations
-                    .asSequence()
-                    .map {
-                        it(template).copy(
-                            from = template.from,
-                        )
-                    }
-                    .forEach { email ->
-                        sendImpl(email)
-                    }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        otel.span("email.sendBulk", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("email.operation", "sendBulk")
+            setAttribute("email.system", "mailgun")
+            setAttribute("messaging.system", "mailgun")
+            setAttribute("email.from", template.from?.value?.toString() ?: domain)
+            setAttribute("email.subject", template.subject)
+            setAttribute("email.personalizations.count", personalizations.size.toLong())
+        }) { _ ->
+            personalizations
+                .asSequence()
+                .map {
+                    it(template).copy(
+                        from = template.from,
+                    )
+                }
+                .forEach { email ->
+                    sendImpl(email)
+                }
         }
     }
 
@@ -160,30 +134,18 @@ public class MailgunEmailService(
     override suspend fun sendBulk(emails: Collection<Email>) {
         if (emails.isEmpty()) return
 
-        val span = tracer?.spanBuilder("email.sendBulk")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("email.operation", "sendBulk")
-            ?.setAttribute("email.system", "Mailgun")
-            ?.setAttribute("email.from", domain)
-            ?.setAttribute("email.count", emails.size.toLong())
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                emails.forEach { email ->
-                    sendImpl(email)
-                }
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
+        // TODO: use Mailgun batch send API instead of individual POSTs — requires API restructure
+        otel.span("email.sendBulk", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("email.operation", "sendBulk")
+            setAttribute("email.system", "mailgun")
+            setAttribute("messaging.system", "mailgun")
+            setAttribute("email.from", domain)
+            setAttribute("email.count", emails.size.toLong())
+        }) { _ ->
+            emails.forEach { email ->
+                sendImpl(email)
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to send bulk emails: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
         }
     }
 }

@@ -3,7 +3,7 @@ package com.lightningkite.services.subscription
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import kotlin.uuid.Uuid
 
 /**
@@ -108,7 +108,7 @@ public class ConsoleSubscriptionService(
         throw IllegalStateException("Console implementation cannot resume subscriptions - no subscription data stored")
     }
 
-    override val onEvent: WebhookSubservice<SubscriptionEvent?> = object : WebhookSubservice<SubscriptionEvent?> {
+    override val onEvent: WebhookAdapter<SubscriptionEvent?> = object : WebhookAdapter<SubscriptionEvent?> {
         override suspend fun configureWebhook(httpUrl: String) {
             println("[$name] Configure webhook: $httpUrl")
             println("  (Console implementation - no actual webhook configured)")
@@ -125,9 +125,7 @@ public class ConsoleSubscriptionService(
             throw IllegalStateException("Console implementation cannot parse webhooks")
         }
 
-        override suspend fun onSchedule() {
-            // No-op for console implementation
-        }
+        override suspend fun pull(): Set<SubscriptionEvent?> = emptySet()
     }
 
     override suspend fun healthCheck(): HealthStatus {

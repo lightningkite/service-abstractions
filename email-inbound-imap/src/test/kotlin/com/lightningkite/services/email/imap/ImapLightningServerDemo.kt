@@ -1,14 +1,10 @@
 package com.lightningkite.services.email.imap
 
 import com.icegreen.greenmail.util.*
-import com.lightningkite.lightningserver.BadRequestException
-import com.lightningkite.lightningserver.definition.StartupTask
 import com.lightningkite.lightningserver.definition.builder.ServerBuilder
 import com.lightningkite.lightningserver.engine.netty.NettyEngine
 import com.lightningkite.lightningserver.http.*
-import com.lightningkite.lightningserver.pathing.fullUrl
 import com.lightningkite.lightningserver.runtime.ServerRuntime
-import com.lightningkite.lightningserver.runtime.location
 import com.lightningkite.lightningserver.settings.loadFromFile
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.EmailInboundService
@@ -22,28 +18,23 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Lightning Server demo for IMAP email inbound polling.
  *
- * This demonstrates:
- * 1. Setting up a Lightning Server to receive email webhooks
- * 2. Polling an IMAP server for new emails
- * 3. Processing received emails with a webhook handler
+ * Demonstrates IMAP polling alongside a Lightning Server runtime. IMAP is pull-only:
+ * `onReceived.pull()` returns the emails directly, so the server processes them in-process
+ * instead of looping back through an HTTP webhook.
  *
  * ## Mode 1: GreenMail Test Mode (Default)
  *
- * Runs with embedded GreenMail mock server for testing without external dependencies:
+ * Runs with an embedded GreenMail mock server (no external dependencies):
  *
  * ```bash
  * ./gradlew :email-inbound-imap:runLightningServerDemo
  * ```
  *
- * Then use the interactive commands to send test emails and poll.
- *
  * ## Mode 2: Real IMAP Server
  *
  * Create `local/imap-settings.json` with:
  * ```json
- * {
- *   "imapEmail": "imaps://user:password@imap.gmail.com:993/INBOX"
- * }
+ * { "imapEmail": "imaps://user:password@imap.gmail.com:993/INBOX" }
  * ```
  *
  * Or set environment variable:
@@ -53,18 +44,16 @@ import kotlin.time.Duration.Companion.seconds
  *
  * ## Interactive Commands
  *
- * - `send` - Send a test email (GreenMail mode only)
- * - `poll` - Poll for new emails
+ * - `send`   - Send a test email (GreenMail mode only)
+ * - `poll`   - Pull new emails from the IMAP server
  * - `emails` - Show received emails
- * - `clear` - Clear received emails
- * - `quit` - Stop server
+ * - `clear`  - Clear received emails
+ * - `quit`   - Stop server
  */
 object ImapLightningServerDemo {
     init {
         ImapEmailInboundService
     }
-
-    private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
     @JvmStatic
     fun main(args: Array<String>) = runBlocking {
@@ -72,7 +61,6 @@ object ImapLightningServerDemo {
         println("Lightning Server - IMAP Email Inbound Demo")
         println("=".repeat(60))
 
-        // Check for external IMAP URL
         val externalImapUrl = System.getenv("IMAP_URL")
 
         val greenMail: GreenMail?
@@ -116,7 +104,6 @@ object ImapLightningServerDemo {
                 }
             }
 
-            // Wait for server to start
             delay(1.seconds)
 
             with(engine) {
@@ -134,7 +121,6 @@ object ImapServer : ServerBuilder() {
     var imapUrl: String = ""
     var greenMail: GreenMail? = null
 
-    // Use a default URL that will be overwritten by main() before server starts
     val imap = setting("imapEmail", EmailInboundService.Settings("console"))
 
     private val receivedEmails = mutableListOf<ReceivedEmail>()
@@ -150,7 +136,7 @@ object ImapServer : ServerBuilder() {
             |
             |Available commands:
             |  send     - Send a test email (GreenMail mode only)
-            |  poll     - Poll IMAP for new emails
+            |  poll     - Pull new emails from the IMAP server
             |  emails   - Show received emails
             |  clear    - Clear received emails
             |  quit     - Stop server and exit
@@ -185,8 +171,9 @@ object ImapServer : ServerBuilder() {
                 input == "poll" -> {
                     println("Polling IMAP server for new emails...")
                     try {
-                        imap().onReceived.onSchedule()
-                        println("Poll complete. Check 'emails' for received messages.")
+                        val pulled = imap().onReceived.pull()
+                        receivedEmails.addAll(pulled)
+                        println("Pulled ${pulled.size} email(s). Use 'emails' to view.")
                     } catch (e: Exception) {
                         println("Error during poll: ${e.message}")
                         e.printStackTrace()
@@ -250,42 +237,6 @@ object ImapServer : ServerBuilder() {
         )
         GreenMailUtil.sendMimeMessage(message)
         println("Email sent: '$subject'")
-    }
-
-    // ==================== Webhook Endpoints ====================
-
-    val emailWebhookConfig = path.path("webhooks").path("email").path("startup") bind StartupTask {
-        val webhookUrl = emailWebhook.location.path.resolved().fullUrl()
-        println("Configuring webhook URL: $webhookUrl")
-        imap().onReceived.configureWebhook(webhookUrl)
-    }
-
-    val emailWebhook = path.path("webhooks").path("email").post bind HttpHandler { request ->
-        println("\n" + "=".repeat(40))
-        println("Incoming Email Webhook!")
-        println("=".repeat(40))
-
-        try {
-            val bodyText = request.body?.text() ?: throw BadRequestException("Missing body")
-            val email = json.decodeFromString<ReceivedEmail>(bodyText)
-
-            receivedEmails.add(email)
-
-            println("From: ${email.from.value.raw}")
-            println("Subject: ${email.subject}")
-            println("Body preview: ${email.plainText?.take(100) ?: "(no text)"}")
-
-            HttpResponse(
-                status = HttpStatus.OK,
-                body = TypedData.text("OK", MediaType.Text.Plain)
-            )
-        } catch (e: Exception) {
-            println("Error: ${e.message}")
-            HttpResponse(
-                status = HttpStatus.BadRequest,
-                body = TypedData.text("Error: ${e.message}", MediaType.Text.Plain)
-            )
-        }
     }
 
     val health = path.path("health").get bind HttpHandler {

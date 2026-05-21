@@ -5,6 +5,13 @@ import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.files.FileScanException
 import com.lightningkite.services.files.FileScanner
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get as otelGet
+import com.lightningkite.services.otel.span
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.io.Source
 import kotlinx.io.asInputStream
 import xyz.capybara.clamav.ClamavClient
@@ -47,7 +54,7 @@ import xyz.capybara.clamav.commands.scan.result.ScanResult
  *
  * - **Requires whole file**: This scanner needs the complete file contents (FileScanner.Requires.Whole)
  * - **Network dependency**: Requires network access to clamd daemon
- * - **Lazy client**: ClamAV client created on first use via `get()` factory
+ * - **Cached client**: ClamAV client is reused across calls; recreated on scan/connection errors.
  * - **Stream processing**: File contents streamed directly to clamd (no temp files)
  * - **Exception on detection**: Throws FileScanException if virus found
  *
@@ -80,7 +87,7 @@ import xyz.capybara.clamav.commands.scan.result.ScanResult
  *
  * @property name Service name for logging/metrics
  * @property context Service context
- * @property get Lazy factory for creating ClamAV client (enables reconnection)
+ * @property get Factory for creating a fresh ClamAV client (used on first use and after errors)
  */
 public class ClamAvFileScanner(
     override val name: String,
@@ -88,6 +95,17 @@ public class ClamAvFileScanner(
     private val get: () -> ClamavClient,
 ) : FileScanner {
     override fun requires(claimedType: MediaType): FileScanner.Requires = FileScanner.Requires.Whole
+
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.otelGet("files-clamav")
+
+    /** Cached client instance. Recreated on ScannerException or connection error. */
+    @Volatile private var cachedClient: ClamavClient? = null
+
+    private fun client(): ClamavClient = cachedClient ?: get().also { cachedClient = it }
+
+    private fun invalidateClient() {
+        cachedClient = null
+    }
 
     public companion object {
         public fun FileScanner.Settings.Companion.clamav(
@@ -113,15 +131,40 @@ public class ClamAvFileScanner(
         }
     }
 
-    override suspend fun scan(claimedType: MediaType, data: Source) {
-        when (val r = data.use { it -> get().scan(it.asInputStream()) }) {
-            ScanResult.OK -> {}
-            is ScanResult.VirusFound -> throw FileScanException("File seems to contain malicious content; ${r.foundViruses.keys.joinToString()}")
+    override suspend fun scan(claimedType: MediaType, data: Source): Unit = otel.span("clamav.scan", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("content_type", claimedType.toString())
+    }) { span ->
+        val result = withContext(Dispatchers.IO) {
+            data.use { source ->
+                try {
+                    client().scan(source.asInputStream())
+                } catch (e: Exception) {
+                    // Invalidate cached client on any error so the next call gets a fresh one.
+                    invalidateClient()
+                    throw e
+                }
+            }
+        }
+        when (result) {
+            ScanResult.OK -> {
+                span?.setAttribute("clamav.result", "OK")
+            }
+            is ScanResult.VirusFound -> {
+                val viruses = result.foundViruses.keys.joinToString()
+                span?.setAttribute("clamav.result", "VirusFound")
+                span?.setAttribute("clamav.viruses", viruses)
+                // Set ERROR before throwing so the helper doesn't overwrite the more specific message.
+                span?.setStatus(StatusCode.ERROR, "Virus detected: $viruses")
+                throw FileScanException("File seems to contain malicious content; $viruses")
+            }
         }
     }
 
     override suspend fun healthCheck(): HealthStatus {
-        return if (get().isReachable(5_000)) HealthStatus(HealthStatus.Level.OK)
-        else HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Service not reachable")
+        return withContext(Dispatchers.IO) {
+            if (get().isReachable(5_000)) HealthStatus(HealthStatus.Level.OK)
+            else HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Service not reachable")
+        }
     }
 }

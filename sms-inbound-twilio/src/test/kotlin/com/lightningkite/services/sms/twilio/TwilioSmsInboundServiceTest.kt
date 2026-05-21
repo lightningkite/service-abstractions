@@ -10,6 +10,12 @@ import kotlin.test.*
 /**
  * Unit tests for TwilioSmsInboundService.
  * These tests use mock data and don't require actual Twilio credentials.
+ *
+ * Note: as of 1.0.0, [TwilioSmsInboundService.onReceived] fails closed when the webhook URL
+ * has not been configured (i.e. [com.lightningkite.services.webhooksubservice.WebhookAdapter.configureWebhook]
+ * has not been called yet). These tests therefore install a stub webhook URL via reflection
+ * and provide a valid `X-Twilio-Signature` header, equivalent to what a real Twilio request
+ * would carry — exactly mirroring the pattern in `TwilioSmsInboundFailClosedTest`.
  */
 class TwilioSmsInboundServiceTest {
 
@@ -18,6 +24,67 @@ class TwilioSmsInboundServiceTest {
     init {
         // Ensure companion object init block runs to register the URL handler
         TwilioSmsInboundService
+    }
+
+    private val testWebhookUrl = "https://example.com/twilio/webhook"
+
+    /**
+     * Stamps the anonymous WebhookAdapter's private `httpUrl` field via reflection so
+     * signature validation has a URL to reconstruct the signed string with — equivalent to
+     * having previously called `configureWebhook` without making a real Twilio API call.
+     */
+    private fun TwilioSmsInboundService.installWebhookUrl(url: String = testWebhookUrl) {
+        val webhook = this.onReceived
+        val field = webhook.javaClass.getDeclaredField("httpUrl")
+        field.isAccessible = true
+        field.set(webhook, url)
+    }
+
+    /**
+     * Computes the Twilio HMAC-SHA1 + Base64 signature for the given webhook URL,
+     * form parameters, and auth token.
+     */
+    @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
+    private fun computeTwilioSignature(url: String, params: Map<String, String>, authToken: String): String {
+        val data = buildString {
+            append(url)
+            params.keys.sorted().forEach { key ->
+                append(key)
+                append(params[key] ?: "")
+            }
+        }
+        val mac = javax.crypto.Mac.getInstance("HmacSHA1")
+        mac.init(javax.crypto.spec.SecretKeySpec(authToken.toByteArray(Charsets.UTF_8), "HmacSHA1"))
+        return kotlin.io.encoding.Base64.encode(mac.doFinal(data.toByteArray(Charsets.UTF_8)))
+    }
+
+    /**
+     * Parses a URL-encoded form body the same way the service does, so we can compute the
+     * signature over the exact parameter set the service will see.
+     */
+    private fun parseFormBody(body: String): Map<String, String> {
+        if (body.isBlank()) return emptyMap()
+        return body.split("&")
+            .filter { it.isNotBlank() }
+            .associate { param ->
+                val parts = param.split("=", limit = 2)
+                val key = java.net.URLDecoder.decode(parts[0], Charsets.UTF_8)
+                val value = if (parts.size > 1) java.net.URLDecoder.decode(parts[1], Charsets.UTF_8) else ""
+                key to value
+            }
+    }
+
+    /**
+     * Builds the X-Twilio-Signature header for [webhookBody] signed with [authToken].
+     */
+    private fun signatureHeaders(
+        webhookBody: String,
+        authToken: String,
+        url: String = testWebhookUrl,
+    ): Map<String, List<String>> {
+        val params = parseFormBody(webhookBody)
+        val signature = computeTwilioSignature(url, params, authToken)
+        return mapOf("X-Twilio-Signature" to listOf(signature))
     }
 
     // Sample Twilio webhook payload (URL-encoded form data)
@@ -134,12 +201,13 @@ class TwilioSmsInboundServiceTest {
             authToken = "authtoken123",
             phoneNumber = "+18008008000"
         )
+        service.installWebhookUrl()
 
         val body = TypedData(Data.Text(sampleSmsWebhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
-            headers = emptyMap(),
+            headers = signatureHeaders(sampleSmsWebhookBody, "authtoken123"),
             body = body
         )
 
@@ -161,12 +229,13 @@ class TwilioSmsInboundServiceTest {
             authToken = "authtoken123",
             phoneNumber = "+18008008000"
         )
+        service.installWebhookUrl()
 
         val body = TypedData(Data.Text(sampleMmsWebhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
-            headers = emptyMap(),
+            headers = signatureHeaders(sampleMmsWebhookBody, "authtoken123"),
             body = body
         )
 
@@ -195,6 +264,7 @@ class TwilioSmsInboundServiceTest {
             authToken = "authtoken123",
             phoneNumber = "+18008008000"
         )
+        service.installWebhookUrl()
 
         // Webhook with empty message body (can happen with MMS-only messages)
         val webhookBody = "From=%2B15559876543&To=%2B15551234567&Body=&NumMedia=0&MessageSid=SM123"
@@ -202,7 +272,7 @@ class TwilioSmsInboundServiceTest {
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
-            headers = emptyMap(),
+            headers = signatureHeaders(webhookBody, "authtoken123"),
             body = body
         )
 
@@ -220,6 +290,7 @@ class TwilioSmsInboundServiceTest {
             authToken = "authtoken123",
             phoneNumber = "+18008008000"
         )
+        service.installWebhookUrl()
 
         val webhookBody = "To=%2B15551234567&Body=Hello&NumMedia=0&MessageSid=SM123"
         val body = TypedData(Data.Text(webhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
@@ -227,7 +298,7 @@ class TwilioSmsInboundServiceTest {
         assertFailsWith<IllegalArgumentException> {
             service.onReceived.parse(
                 queryParameters = emptyList(),
-                headers = emptyMap(),
+                headers = signatureHeaders(webhookBody, "authtoken123"),
                 body = body
             )
         }
@@ -242,6 +313,7 @@ class TwilioSmsInboundServiceTest {
             authToken = "authtoken123",
             phoneNumber = "+18008008000"
         )
+        service.installWebhookUrl()
 
         val webhookBody = "From=%2B15559876543&Body=Hello&NumMedia=0&MessageSid=SM123"
         val body = TypedData(Data.Text(webhookBody), com.lightningkite.services.data.MediaType.Application.FormUrlEncoded)
@@ -249,7 +321,7 @@ class TwilioSmsInboundServiceTest {
         assertFailsWith<IllegalArgumentException> {
             service.onReceived.parse(
                 queryParameters = emptyList(),
-                headers = emptyMap(),
+                headers = signatureHeaders(webhookBody, "authtoken123"),
                 body = body
             )
         }
@@ -264,6 +336,7 @@ class TwilioSmsInboundServiceTest {
             authToken = "authtoken123",
             phoneNumber = "+18008008000"
         )
+        service.installWebhookUrl()
 
         // URL-encoded special characters: "Hello! How are you? 😀 <test> & 'quotes'"
         val webhookBody =
@@ -272,7 +345,7 @@ class TwilioSmsInboundServiceTest {
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
-            headers = emptyMap(),
+            headers = signatureHeaders(webhookBody, "authtoken123"),
             body = body
         )
 
@@ -288,6 +361,7 @@ class TwilioSmsInboundServiceTest {
             authToken = "authtoken123",
             phoneNumber = "+18008008000"
         )
+        service.installWebhookUrl()
 
         // UK phone number
         val webhookBody = "From=%2B447700900123&To=%2B15551234567&Body=Hello+from+UK&NumMedia=0&MessageSid=SM123"
@@ -295,7 +369,7 @@ class TwilioSmsInboundServiceTest {
 
         val result = service.onReceived.parse(
             queryParameters = emptyList(),
-            headers = emptyMap(),
+            headers = signatureHeaders(webhookBody, "authtoken123"),
             body = body
         )
 

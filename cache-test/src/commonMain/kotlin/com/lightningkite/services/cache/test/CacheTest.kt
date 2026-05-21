@@ -5,6 +5,7 @@ import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.test.runTestWithClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.serialization.builtins.serializer
 import kotlin.test.*
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -105,6 +106,76 @@ abstract class CacheTest {
     }
 
     open val waitScale: Duration = 0.25.seconds
+
+    @Test
+    fun compareAndSetTtlBehavior() {
+        // RedisCache's compareAndSet went through a rewrite to use cached EVALSHA Lua
+        // scripts with an empty-string sentinel for "no TTL". This test pins down the
+        // observable contract for all implementations:
+        //
+        //   1) insert via expected=null, new=value with TTL → key expires.
+        //   2) insert via expected=null, new=value WITHOUT TTL → key persists past the
+        //      TTL window other tests use, i.e. the sentinel did not accidentally apply
+        //      a TTL.
+        //   3) update via expected=current, new=other with TTL → expires.
+        //   4) update via expected=current, new=other WITHOUT TTL → persists.
+        //   5) delete via expected=current, new=null removes the key.
+        //
+        // Regressions in the Lua TTL branches (e.g. ``if ARGV[2] then`` in Lua, which is
+        // ALWAYS true for any non-nil argv) would manifest as either case (2) or (4)
+        // expiring unexpectedly.
+        val cache = cache ?: run {
+            println("Could not test because the cache is not supported on this system.")
+            return
+        }
+        runSuspendingTest {
+            val intSerializer = Int.serializer()
+            // Case 1: insert with TTL expires.
+            val keyTtlInsert = "cas-ttl-insert-${Uuid.random()}"
+            assertTrue(cache.compareAndSet(keyTtlInsert, intSerializer, null, 1, waitScale))
+            assertEquals(1, cache.get<Int>(keyTtlInsert))
+            delay(waitScale * 1.5)
+            assertEquals(null, cache.get<Int>(keyTtlInsert), "TTL on CAS insert must expire the key")
+
+            // Case 2: insert without TTL persists past the TTL window.
+            val keyNoTtlInsert = "cas-no-ttl-insert-${Uuid.random()}"
+            assertTrue(cache.compareAndSet(keyNoTtlInsert, intSerializer, null, 2, null))
+            assertEquals(2, cache.get<Int>(keyNoTtlInsert))
+            delay(waitScale * 1.5)
+            assertEquals(2, cache.get<Int>(keyNoTtlInsert), "CAS insert without TTL must not expire")
+            cache.remove(keyNoTtlInsert)
+
+            // Case 3: update existing value with TTL expires.
+            val keyTtlUpdate = "cas-ttl-update-${Uuid.random()}"
+            cache.set(keyTtlUpdate, 10)
+            assertTrue(cache.compareAndSet(keyTtlUpdate, intSerializer, 10, 11, waitScale))
+            assertEquals(11, cache.get<Int>(keyTtlUpdate))
+            delay(waitScale * 1.5)
+            assertEquals(null, cache.get<Int>(keyTtlUpdate), "TTL on CAS update must expire the key")
+
+            // Case 4: update existing value without TTL persists.
+            val keyNoTtlUpdate = "cas-no-ttl-update-${Uuid.random()}"
+            cache.set(keyNoTtlUpdate, 20)
+            assertTrue(cache.compareAndSet(keyNoTtlUpdate, intSerializer, 20, 21, null))
+            assertEquals(21, cache.get<Int>(keyNoTtlUpdate))
+            delay(waitScale * 1.5)
+            assertEquals(21, cache.get<Int>(keyNoTtlUpdate), "CAS update without TTL must not expire")
+            cache.remove(keyNoTtlUpdate)
+
+            // Case 5: delete via expected=current, new=null removes the key.
+            val keyDelete = "cas-delete-${Uuid.random()}"
+            cache.set(keyDelete, 30)
+            assertTrue(cache.compareAndSet(keyDelete, intSerializer, 30, null))
+            assertEquals(null, cache.get<Int>(keyDelete))
+
+            // Mismatched expected must not modify the value or its expiration.
+            val keyMismatch = "cas-mismatch-${Uuid.random()}"
+            cache.set(keyMismatch, 40)
+            assertFalse(cache.compareAndSet(keyMismatch, intSerializer, 999, 41))
+            assertEquals(40, cache.get<Int>(keyMismatch), "Mismatched expected must not update value")
+            cache.remove(keyMismatch)
+        }
+    }
 
     @Test
     fun expirationTest() {

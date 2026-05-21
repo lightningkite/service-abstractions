@@ -2,8 +2,11 @@ package com.lightningkite.services.phonecall.twilio
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.TelemetrySanitization
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.phonecall.*
-import com.lightningkite.services.recordExceptionWithFingerprint
 import com.lightningkite.services.webhooksubservice.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.auth.*
@@ -14,10 +17,14 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import io.opentelemetry.api.trace.*
+import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
@@ -110,7 +117,7 @@ public class TwilioPhoneCallService(
 
     private val baseUrl = "https://api.twilio.com/2010-04-01/Accounts/$account"
 
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("phonecall-twilio")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("phonecall-twilio")
 
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
@@ -129,6 +136,17 @@ public class TwilioPhoneCallService(
             }
         }
     }
+
+    // Cached HMAC key spec — SecretKeySpec is thread-safe for reading
+    private val hmacKeySpec by lazy { SecretKeySpec(authSecret.toByteArray(Charsets.UTF_8), "HmacSHA1") }
+
+    // Mac is NOT thread-safe, so use a ThreadLocal
+    private val threadLocalMac = ThreadLocal.withInitial<Mac> {
+        Mac.getInstance("HmacSHA1").also { it.init(hmacKeySpec) }
+    }
+
+    // Cache phone number SID lookups to avoid repeated API calls per webhook configure
+    private val phoneNumberSidCache = ConcurrentHashMap<String, String>()
 
     // Stored webhook URLs - configured via configureWebhook()
     private var incomingCallWebhookUrl: String? = null
@@ -156,14 +174,19 @@ public class TwilioPhoneCallService(
             }
         }
 
-        // Compute HMAC-SHA1
-        val mac = Mac.getInstance("HmacSHA1")
-        val keySpec = SecretKeySpec(authSecret.toByteArray(Charsets.UTF_8), "HmacSHA1")
-        mac.init(keySpec)
+        // Compute HMAC-SHA1 using thread-local Mac with cached key spec
+        val mac = threadLocalMac.get()
+        mac.reset()
         val rawHmac = mac.doFinal(data.toByteArray(Charsets.UTF_8))
-        val computedSignature = Base64.encode(rawHmac)
 
-        return computedSignature == signature
+        // Decode and compare in constant time — string equality short-circuits and leaks
+        // timing information about the expected HMAC.
+        val provided = try {
+            Base64.decode(signature)
+        } catch (_: IllegalArgumentException) {
+            return false
+        }
+        return java.security.MessageDigest.isEqual(provided, rawHmac)
     }
 
     /**
@@ -247,9 +270,9 @@ public class TwilioPhoneCallService(
             }
         }
 
-        val mac = Mac.getInstance("HmacSHA1")
-        val keySpec = SecretKeySpec(authSecret.toByteArray(Charsets.UTF_8), "HmacSHA1")
-        mac.init(keySpec)
+        // Use thread-local Mac with cached key spec
+        val mac = threadLocalMac.get()
+        mac.reset()
         val rawHmac = mac.doFinal(data.toByteArray(Charsets.UTF_8))
         return Base64.encode(rawHmac)
     }
@@ -286,19 +309,15 @@ public class TwilioPhoneCallService(
     override suspend fun startCall(to: PhoneNumber, options: OutboundCallOptions): String {
         val from = options.from?.raw ?: defaultFrom
 
-        val span = tracer?.spanBuilder("phonecall.start")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "start")
-            ?.setAttribute("phonecall.to", to.raw)
-            ?.setAttribute("phonecall.from", from)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.setAttribute("phonecall.recording_enabled", options.recordingEnabled)
-            ?.setAttribute("phonecall.machine_detection", options.machineDetection.name)
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
+        return otel.span("phonecall.start", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("phonecall.operation", "start")
+            setAttribute("phonecall.to", TelemetrySanitization.redactPhoneNumber(to.raw))
+            setAttribute("phonecall.from", TelemetrySanitization.redactPhoneNumber(from))
+            setAttribute("phonecall.provider", "twilio")
+            setAttribute("phonecall.recording_enabled", options.recordingEnabled)
+            setAttribute("phonecall.machine_detection", options.machineDetection.name)
+        }) { span ->
                 val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
                     client.submitForm(
                         url = "$baseUrl/Calls.json",
@@ -357,7 +376,6 @@ public class TwilioPhoneCallService(
 
                 if (!response.status.isSuccess()) {
                     val errorMessage = response.bodyAsText()
-                    span?.setStatus(StatusCode.ERROR, "Failed to start call: HTTP ${response.status.value}")
                     throw PhoneCallException("Failed to start call: $errorMessage")
                 }
 
@@ -369,16 +387,24 @@ public class TwilioPhoneCallService(
 
                 span?.setAttribute("phonecall.call_id", callId)
 
-                // Wait for call to be answered
+                // Wait for call to be answered using exponential backoff polling.
+                // TODO: Replace this polling loop with a webhook-driven status flow via StatusCallback
+                //       for lower latency and reduced API load. See onCallStatus webhook for the event handler.
                 val maxWaitTime = options.timeout + 30.seconds  // Extra time for trial account message
-                val pollInterval = 500.milliseconds
+                var pollInterval = 1000.milliseconds  // Start at 1s, cap at 5s
+                val maxPollInterval = 5000.milliseconds
+                val maxPollCount = 30
                 var elapsed = 0.milliseconds
+                var pollCount = 0
 
                 logger.debug { "[$name] Waiting for call $callId to be answered (max wait: $maxWaitTime)" }
 
-                while (elapsed < maxWaitTime) {
+                while (elapsed < maxWaitTime && pollCount < maxPollCount) {
                     delay(pollInterval)
                     elapsed += pollInterval
+                    pollCount++
+                    // Exponential backoff capped at maxPollInterval
+                    pollInterval = minOf(pollInterval * 2, maxPollInterval)
 
                     val status = getCallStatus(callId)
                     logger.debug { "[$name] Call $callId status: ${status?.status}, answeredBy: ${status?.answeredBy}, elapsed: $elapsed" }
@@ -398,8 +424,7 @@ public class TwilioPhoneCallService(
                                             logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
                                             delay(options.postAnswerDelay)
                                         }
-                                        span?.setStatus(StatusCode.OK)
-                                        return callId
+                                        return@span callId
                                     }
 
                                     AnsweredBy.MACHINE_START, AnsweredBy.MACHINE_END_BEEP,
@@ -412,14 +437,12 @@ public class TwilioPhoneCallService(
                                             logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
                                             delay(options.postAnswerDelay)
                                         }
-                                        span?.setStatus(StatusCode.OK)
-                                        return callId
+                                        return@span callId
                                     }
 
                                     AnsweredBy.FAX -> {
                                         logger.warn { "[$name] Call $callId answered by fax machine" }
                                         span?.setAttribute("phonecall.answered_by", "FAX")
-                                        span?.setStatus(StatusCode.ERROR, "Fax machine detected")
                                         throw PhoneCallException("Fax machine detected")
                                     }
 
@@ -435,8 +458,7 @@ public class TwilioPhoneCallService(
                                     logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
                                     delay(options.postAnswerDelay)
                                 }
-                                span?.setStatus(StatusCode.OK)
-                                return callId
+                                return@span callId
                             }
                         }
 
@@ -445,7 +467,6 @@ public class TwilioPhoneCallService(
                             -> {
                             logger.warn { "[$name] Call $callId ended before connecting: ${status.status}" }
                             span?.setAttribute("phonecall.status", status.status.name)
-                            span?.setStatus(StatusCode.ERROR, "Call ended before connecting: ${status.status}")
                             throw PhoneCallException("Call ended before connecting: ${status.status}")
                         }
 
@@ -457,100 +478,57 @@ public class TwilioPhoneCallService(
                 }
 
                 logger.error { "[$name] Call $callId timed out waiting for answer after $elapsed" }
-                span?.setStatus(StatusCode.ERROR, "Call timed out waiting for answer")
                 throw PhoneCallException("Call timed out waiting for answer")
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to start call: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
         }
     }
 
-    override suspend fun speak(callId: String, text: String, voice: TtsVoice) {
+    override suspend fun speak(callId: String, text: String, voice: TtsVoice): Unit = otel.span("phonecall.speak", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("phonecall.operation", "speak")
+        setAttribute("phonecall.call_id", callId)
+        setAttribute("phonecall.text_length", text.length.toLong())
+        setAttribute("phonecall.provider", "twilio")
+        setAttribute("phonecall.voice", voice.name ?: voice.gender.name)
+    }) {
         logger.debug { "[$name] speak() called for call $callId, text length: ${text.length} chars" }
-
-        val span = tracer?.spanBuilder("phonecall.speak")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "speak")
-            ?.setAttribute("phonecall.call_id", callId)
-            ?.setAttribute("phonecall.text_length", text.length.toLong())
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.setAttribute("phonecall.voice", voice.name ?: voice.gender.name)
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val twiml = buildTwimlInternal {
-                    say(text, voice)
-                    // Keep call alive after speaking - use a long pause
-                    appendLine("""<Pause length="3600"/>""")
-                }
-                logger.trace { "[$name] TwiML for speak: $twiml" }
-
-                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    updateCallWithTwiml(callId, twiml)
-                }
-                logger.debug { "[$name] TwiML sent for call $callId" }
-
-                // Estimate TTS duration: ~150 words per minute, average 5 chars per word
-                // So roughly 750 chars per minute, or ~80ms per character
-                val estimatedDuration = (text.length * 80).milliseconds
-                logger.debug { "[$name] Waiting $estimatedDuration for TTS to complete" }
-                delay(estimatedDuration)
-                logger.debug { "[$name] speak() completed for call $callId" }
-
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to speak: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        val twiml = buildTwimlInternal {
+            say(text, voice)
+            // Keep call alive after speaking - use a long pause
+            appendLine("""<Pause length="3600"/>""")
         }
+        logger.trace { "[$name] TwiML for speak: $twiml" }
+
+        withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            updateCallWithTwiml(callId, twiml)
+        }
+        logger.debug { "[$name] TwiML sent for call $callId" }
+
+        // Estimate TTS duration: ~150 words per minute, average 5 chars per word
+        // So roughly 750 chars per minute, or ~80ms per character.
+        // TODO: Replace this heuristic delay with a Gather/status callback completion event
+        //       so that speak() returns precisely when TTS finishes rather than over/under-waiting.
+        val estimatedDuration = (text.length * 80).milliseconds
+        logger.debug { "[$name] Waiting $estimatedDuration for TTS to complete" }
+        delay(estimatedDuration)
+        logger.debug { "[$name] speak() completed for call $callId" }
     }
 
-    override suspend fun playAudioUrl(callId: String, url: String, loop: Int) {
-        val span = tracer?.spanBuilder("phonecall.play_audio")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "play_audio")
-            ?.setAttribute("phonecall.call_id", callId)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.setAttribute("phonecall.audio_url", url)
-            ?.setAttribute("phonecall.loop", loop.toLong())
-            ?.startSpan()
+    override suspend fun playAudioUrl(callId: String, url: String, loop: Int): Unit = otel.span("phonecall.play_audio", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("phonecall.operation", "play_audio")
+        setAttribute("phonecall.call_id", callId)
+        setAttribute("phonecall.provider", "twilio")
+        setAttribute("phonecall.audio_url", url)
+        setAttribute("phonecall.loop", loop.toLong())
+    }) {
+        val twiml = buildTwimlInternal {
+            appendLine("""  <Play loop="$loop">${escapeXml(url)}</Play>""")
+            // Keep call alive after playing
+            appendLine("""  <Pause length="3600"/>""")
+        }
 
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val twiml = buildTwimlInternal {
-                    appendLine("""  <Play loop="$loop">${escapeXml(url)}</Play>""")
-                    // Keep call alive after playing
-                    appendLine("""  <Pause length="3600"/>""")
-                }
-
-                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    updateCallWithTwiml(callId, twiml)
-                }
-
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to play audio: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            updateCallWithTwiml(callId, twiml)
         }
     }
 
@@ -560,219 +538,113 @@ public class TwilioPhoneCallService(
         throw PhoneCallException("playAudio requires hosting audio at a URL. Use playAudioUrl() or speak() instead.")
     }
 
-    override suspend fun sendDtmf(callId: String, digits: String) {
-        val span = tracer?.spanBuilder("phonecall.send_dtmf")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "send_dtmf")
-            ?.setAttribute("phonecall.call_id", callId)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.setAttribute("phonecall.digits", digits)
-            ?.startSpan()
+    override suspend fun sendDtmf(callId: String, digits: String): Unit = otel.span("phonecall.send_dtmf", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("phonecall.operation", "send_dtmf")
+        setAttribute("phonecall.call_id", callId)
+        setAttribute("phonecall.provider", "twilio")
+    }) {
+        val twiml = buildTwimlInternal {
+            appendLine("""<Play digits="$digits"/>""")
+        }
 
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val twiml = buildTwimlInternal {
-                    appendLine("""<Play digits="$digits"/>""")
-                }
-
-                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    updateCallWithTwiml(callId, twiml)
-                }
-
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to send DTMF: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            updateCallWithTwiml(callId, twiml)
         }
     }
 
-    override suspend fun hold(callId: String) {
-        val span = tracer?.spanBuilder("phonecall.hold")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "hold")
-            ?.setAttribute("phonecall.call_id", callId)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.startSpan()
+    override suspend fun hold(callId: String): Unit = otel.span("phonecall.hold", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("phonecall.operation", "hold")
+        setAttribute("phonecall.call_id", callId)
+        setAttribute("phonecall.provider", "twilio")
+    }) {
+        val twiml = buildTwimlInternal {
+            appendLine("""<Play loop="0">http://com.twilio.sounds.music.s3.amazonaws.com/hold-music.mp3</Play>""")
+        }
 
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val twiml = buildTwimlInternal {
-                    appendLine("""<Play loop="0">http://com.twilio.sounds.music.s3.amazonaws.com/hold-music.mp3</Play>""")
-                }
-
-                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    updateCallWithTwiml(callId, twiml)
-                }
-
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to hold call: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            updateCallWithTwiml(callId, twiml)
         }
     }
 
-    override suspend fun resume(callId: String) {
-        val span = tracer?.spanBuilder("phonecall.resume")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "resume")
-            ?.setAttribute("phonecall.call_id", callId)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.startSpan()
+    override suspend fun resume(callId: String): Unit = otel.span("phonecall.resume", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("phonecall.operation", "resume")
+        setAttribute("phonecall.call_id", callId)
+        setAttribute("phonecall.provider", "twilio")
+    }) {
+        // Resume by providing new instructions
+        val twiml = buildTwimlInternal {
+            appendLine("""<Pause length="3600"/>""")
+        }
 
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                // Resume by providing new instructions
-                val twiml = buildTwimlInternal {
-                    appendLine("""<Pause length="3600"/>""")
-                }
-
-                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    updateCallWithTwiml(callId, twiml)
-                }
-
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to resume call: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+        withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            updateCallWithTwiml(callId, twiml)
         }
     }
 
-    override suspend fun hangup(callId: String) {
+    override suspend fun hangup(callId: String): Unit = otel.span("phonecall.hangup", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("phonecall.operation", "hangup")
+        setAttribute("phonecall.call_id", callId)
+        setAttribute("phonecall.provider", "twilio")
+    }) {
         logger.info { "[$name] Hanging up call $callId" }
-
-        val span = tracer?.spanBuilder("phonecall.hangup")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "hangup")
-            ?.setAttribute("phonecall.call_id", callId)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    client.submitForm(
-                        url = "$baseUrl/Calls/$callId.json",
-                        formParameters = Parameters.build {
-                            append("Status", "completed")
-                        }
-                    )
+        val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            client.submitForm(
+                url = "$baseUrl/Calls/$callId.json",
+                formParameters = Parameters.build {
+                    append("Status", "completed")
                 }
-
-                if (!response.status.isSuccess()) {
-                    val errorMessage = response.bodyAsText()
-                    logger.error { "[$name] Failed to hangup call $callId: $errorMessage" }
-                    span?.setStatus(StatusCode.ERROR, "Failed to hangup call: HTTP ${response.status.value}")
-                    throw PhoneCallException("Failed to hangup call: $errorMessage")
-                }
-                logger.debug { "[$name] Call $callId hangup successful" }
-
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to hangup call: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+            )
         }
+
+        if (!response.status.isSuccess()) {
+            val errorMessage = response.bodyAsText()
+            logger.error { "[$name] Failed to hangup call $callId: $errorMessage" }
+            throw PhoneCallException("Failed to hangup call: $errorMessage")
+        }
+        logger.debug { "[$name] Call $callId hangup successful" }
     }
 
-    override suspend fun getCallStatus(callId: String): CallInfo? {
-        val span = tracer?.spanBuilder("phonecall.get_status")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "get_status")
-            ?.setAttribute("phonecall.call_id", callId)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    client.get("$baseUrl/Calls/$callId.json")
-                }
-
-                if (response.status == HttpStatusCode.NotFound) {
-                    span?.setAttribute("phonecall.found", false)
-                    span?.setStatus(StatusCode.OK)
-                    return null
-                }
-
-                if (!response.status.isSuccess()) {
-                    val errorMessage = response.bodyAsText()
-                    span?.setStatus(StatusCode.ERROR, "Failed to get call status: HTTP ${response.status.value}")
-                    throw PhoneCallException("Failed to get call status: $errorMessage")
-                }
-
-                val body = response.bodyAsText()
-                val callInfo = parseTwilioCallResponse(body)
-
-                span?.setAttribute("phonecall.found", true)
-                callInfo?.status?.let { span?.setAttribute("phonecall.status", it.name) }
-                span?.setStatus(StatusCode.OK)
-
-                return callInfo
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to get call status: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+    override suspend fun getCallStatus(callId: String): CallInfo? = otel.span("phonecall.get_status", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("phonecall.operation", "get_status")
+        setAttribute("phonecall.call_id", callId)
+        setAttribute("phonecall.provider", "twilio")
+    }) { span ->
+        val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            client.get("$baseUrl/Calls/$callId.json")
         }
+
+        if (response.status == HttpStatusCode.NotFound) {
+            span?.setAttribute("phonecall.found", false)
+            return@span null
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorMessage = response.bodyAsText()
+            throw PhoneCallException("Failed to get call status: $errorMessage")
+        }
+
+        val body = response.bodyAsText()
+        val callInfo = parseTwilioCallResponse(body)
+
+        span?.setAttribute("phonecall.found", true)
+        callInfo?.status?.let { span?.setAttribute("phonecall.status", it.name) }
+
+        callInfo
     }
 
-    override suspend fun updateCall(callId: String, instructions: CallInstructions) {
-        val span = tracer?.spanBuilder("phonecall.update")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "update")
-            ?.setAttribute("phonecall.call_id", callId)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    updateCallWithTwiml(callId, renderInstructions(instructions))
-                }
-
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to update call: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+    override suspend fun updateCall(callId: String, instructions: CallInstructions): Unit = otel.span("phonecall.update", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("phonecall.operation", "update")
+        setAttribute("phonecall.call_id", callId)
+        setAttribute("phonecall.provider", "twilio")
+    }) {
+        withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            updateCallWithTwiml(callId, renderInstructions(instructions))
         }
     }
 
@@ -782,47 +654,28 @@ public class TwilioPhoneCallService(
      * @param callId The call to update
      * @param instructions Raw TwiML XML string
      */
-    public suspend fun updateCallRaw(callId: String, instructions: String) {
+    public suspend fun updateCallRaw(callId: String, instructions: String): Unit = otel.span("phonecall.update_raw", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("phonecall.operation", "update_raw")
+        setAttribute("phonecall.call_id", callId)
+        setAttribute("phonecall.provider", "twilio")
+    }) {
         logger.debug { "[$name] Updating call $callId with TwiML" }
-
-        val span = tracer?.spanBuilder("phonecall.update_raw")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "update_raw")
-            ?.setAttribute("phonecall.call_id", callId)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.startSpan()
-
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    client.submitForm(
-                        url = "$baseUrl/Calls/$callId.json",
-                        formParameters = Parameters.build {
-                            append("Twiml", instructions)
-                        }
-                    )
+        val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            client.submitForm(
+                url = "$baseUrl/Calls/$callId.json",
+                formParameters = Parameters.build {
+                    append("Twiml", instructions)
                 }
-
-                if (!response.status.isSuccess()) {
-                    val responseBody = response.bodyAsText()
-                    logger.error { "[$name] Failed to update call $callId: $responseBody" }
-                    span?.setStatus(StatusCode.ERROR, "Failed to update call: HTTP ${response.status.value}")
-                    throw PhoneCallException("Failed to update call: $responseBody")
-                }
-                logger.debug { "[$name] Call $callId TwiML update successful" }
-
-                span?.setStatus(StatusCode.OK)
-            } finally {
-                scope?.close()
-            }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to update call: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+            )
         }
+
+        if (!response.status.isSuccess()) {
+            val responseBody = response.bodyAsText()
+            logger.error { "[$name] Failed to update call $callId: $responseBody" }
+            throw PhoneCallException("Failed to update call: $responseBody")
+        }
+        logger.debug { "[$name] Call $callId TwiML update successful" }
     }
 
     private suspend fun updateCallWithTwiml(callId: String, twiml: String) {
@@ -859,16 +712,20 @@ public class TwilioPhoneCallService(
 
     // ==================== Webhooks ====================
 
-    override val onIncomingCall: WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> =
+    override val onIncomingCall: WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?> =
         TwilioIncomingCallWebhook()
 
-    override val onCallStatus: WebhookSubservice<CallStatusEvent> = TwilioCallStatusWebhook()
+    override val onCallStatus: WebhookAdapter<CallStatusEvent> = TwilioCallStatusWebhook()
 
-    override val onTranscription: WebhookSubservice<TranscriptionEvent> = TwilioTranscriptionWebhook()
+    override val onTranscription: WebhookAdapter<TranscriptionEvent> = TwilioTranscriptionWebhook()
 
     private inner class TwilioIncomingCallWebhook :
-        WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> {
-        override suspend fun configureWebhook(httpUrl: String) {
+        WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?> {
+        override suspend fun configureWebhook(httpUrl: String): Unit = otel.span("phonecall.webhook.configure.incoming_call", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("messaging.system", "twilio")
+            setAttribute("webhook.url", httpUrl)
+        }) { span ->
             incomingCallWebhookUrl = httpUrl
 
             // Look up the phone number SID and configure the voice webhook
@@ -884,9 +741,11 @@ public class TwilioPhoneCallService(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
+                span?.setAttribute("http.status_code", response.status.value.toLong())
                 throw PhoneCallException("Failed to configure Twilio Voice webhook: $errorBody")
             }
 
+            span?.setAttribute("http.status_code", response.status.value.toLong())
             logger.info { "[$name] Configured Twilio Voice webhook for $defaultFrom -> $httpUrl" }
         }
 
@@ -894,11 +753,16 @@ public class TwilioPhoneCallService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): IncomingCallEvent {
+        ): IncomingCallEvent = otel.span("phonecall.webhook.parse.incoming_call", configure = {
+            setSpanKind(SpanKind.SERVER)
+            setAttribute("messaging.system", "twilio")
+        }) { span ->
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, incomingCallWebhookUrl)
 
-            return IncomingCallEvent(
+            params["CallSid"]?.let { span?.setAttribute("phonecall.call_id", it) }
+
+            IncomingCallEvent(
                 callId = params["CallSid"] ?: throw PhoneCallException("Missing CallSid"),
                 from = (params["From"] ?: throw PhoneCallException("Missing From")).toPhoneNumber(),
                 to = (params["To"] ?: throw PhoneCallException("Missing To")).toPhoneNumber(),
@@ -924,14 +788,14 @@ public class TwilioPhoneCallService(
                 body = TypedData.text(twiml, MediaType.Application.Xml)
             )
         }
-
-        override suspend fun onSchedule() {
-            // No polling needed for Twilio webhooks
-        }
     }
 
-    private inner class TwilioCallStatusWebhook : WebhookSubservice<CallStatusEvent> {
-        override suspend fun configureWebhook(httpUrl: String) {
+    private inner class TwilioCallStatusWebhook : WebhookAdapter<CallStatusEvent> {
+        override suspend fun configureWebhook(httpUrl: String): Unit = otel.span("phonecall.webhook.configure.call_status", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("messaging.system", "twilio")
+            setAttribute("webhook.url", httpUrl)
+        }) { span ->
             statusCallbackUrl = httpUrl
 
             // Look up the phone number SID and configure the status callback
@@ -947,9 +811,11 @@ public class TwilioPhoneCallService(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
+                span?.setAttribute("http.status_code", response.status.value.toLong())
                 throw PhoneCallException("Failed to configure Twilio status callback webhook: $errorBody")
             }
 
+            span?.setAttribute("http.status_code", response.status.value.toLong())
             logger.info { "[$name] Configured Twilio status callback for $defaultFrom -> $httpUrl" }
         }
 
@@ -957,11 +823,17 @@ public class TwilioPhoneCallService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): CallStatusEvent {
+        ): CallStatusEvent = otel.span("phonecall.webhook.parse.call_status", configure = {
+            setSpanKind(SpanKind.SERVER)
+            setAttribute("messaging.system", "twilio")
+        }) { span ->
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, statusCallbackUrl)
 
-            return CallStatusEvent(
+            params["CallSid"]?.let { span?.setAttribute("phonecall.call_id", it) }
+            params["CallStatus"]?.let { span?.setAttribute("phonecall.status", it) }
+
+            CallStatusEvent(
                 callId = params["CallSid"] ?: throw PhoneCallException("Missing CallSid"),
                 status = parseTwilioStatus(params["CallStatus"]),
                 direction = if (params["Direction"] == "inbound") CallDirection.INBOUND else CallDirection.OUTBOUND,
@@ -982,16 +854,14 @@ public class TwilioPhoneCallService(
             )
         }
 
-        override suspend fun onSchedule() {
-            // No polling needed
-        }
+        override suspend fun pull(): Set<CallStatusEvent> = emptySet()
     }
 
-    private inner class TwilioTranscriptionWebhook : WebhookSubservice<TranscriptionEvent> {
+    private inner class TwilioTranscriptionWebhook : WebhookAdapter<TranscriptionEvent> {
         override suspend fun configureWebhook(httpUrl: String) {
-            transcriptionCallbackUrl = httpUrl
             // Transcription callbacks are configured per-call via TwiML, not on the phone number
             // So we just store the URL here for use in renderInstruction()
+            transcriptionCallbackUrl = httpUrl
             logger.info { "[$name] Configured transcription callback URL: $httpUrl" }
         }
 
@@ -999,11 +869,16 @@ public class TwilioPhoneCallService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): TranscriptionEvent {
+        ): TranscriptionEvent = otel.span("phonecall.webhook.parse.transcription", configure = {
+            setSpanKind(SpanKind.SERVER)
+            setAttribute("messaging.system", "twilio")
+        }) { span ->
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, transcriptionCallbackUrl)
 
-            return TranscriptionEvent(
+            params["CallSid"]?.let { span?.setAttribute("phonecall.call_id", it) }
+
+            TranscriptionEvent(
                 callId = params["CallSid"] ?: throw PhoneCallException("Missing CallSid"),
                 text = params["SpeechResult"] ?: params["TranscriptionText"] ?: "",
                 isFinal = true,
@@ -1012,22 +887,20 @@ public class TwilioPhoneCallService(
             )
         }
 
-        override suspend fun onSchedule() {
-            // No polling needed
-        }
+        override suspend fun pull(): Set<TranscriptionEvent> = emptySet()
     }
 
     // ==================== DTMF/Gather Webhook ====================
 
-    override val onDtmf: WebhookSubserviceWithResponse<DtmfEvent, CallInstructions?> = TwilioDtmfWebhook()
+    override val onDtmf: WebhookAdapterWithResponse<DtmfEvent, CallInstructions?> = TwilioDtmfWebhook()
 
     private var dtmfCallbackUrl: String? = null
 
-    private inner class TwilioDtmfWebhook : WebhookSubserviceWithResponse<DtmfEvent, CallInstructions?> {
+    private inner class TwilioDtmfWebhook : WebhookAdapterWithResponse<DtmfEvent, CallInstructions?> {
         override suspend fun configureWebhook(httpUrl: String) {
-            dtmfCallbackUrl = httpUrl
             // DTMF callbacks are configured per-Gather via TwiML action URL
             // This URL is used as a default when not specified in CallInstructions.Gather
+            dtmfCallbackUrl = httpUrl
             logger.info { "[$name] Configured DTMF callback URL: $httpUrl" }
         }
 
@@ -1035,11 +908,17 @@ public class TwilioPhoneCallService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): DtmfEvent {
+        ): DtmfEvent = otel.span("phonecall.webhook.parse.dtmf", configure = {
+            setSpanKind(SpanKind.SERVER)
+            setAttribute("messaging.system", "twilio")
+        }) { span ->
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, dtmfCallbackUrl)
 
-            return DtmfEvent(
+            params["CallSid"]?.let { span?.setAttribute("phonecall.call_id", it) }
+            params["Digits"]?.let { span?.setAttribute("phonecall.dtmf.digits", it) }
+
+            DtmfEvent(
                 callId = params["CallSid"] ?: throw PhoneCallException("Missing CallSid"),
                 digits = params["Digits"] ?: "",
                 speechResult = params["SpeechResult"],
@@ -1064,10 +943,6 @@ public class TwilioPhoneCallService(
                 headers = mapOf("Content-Type" to listOf("application/xml")),
                 body = TypedData.text(twiml, MediaType.Application.Xml)
             )
-        }
-
-        override suspend fun onSchedule() {
-            // No polling needed
         }
     }
 
@@ -1119,13 +994,13 @@ public class TwilioPhoneCallService(
                 inst.numDigits?.let { append(""" numDigits="$it"""") }
                 append(""" timeout="${inst.timeout.inWholeSeconds}"""")
                 append(""" action="${escapeXml(inst.actionUrl)}"""")
-                append(""" finishOnKey="${inst.finishOnKey}"""")
+                append(""" finishOnKey="${escapeXml(inst.finishOnKey)}"""")
                 if (inst.speechEnabled) {
                     append(""" input="dtmf speech" speechTimeout="auto"""")
                 }
                 appendLine(">")
                 inst.prompt?.let {
-                    appendLine("""    <Say>$it</Say>""")
+                    appendLine("""    <Say>${escapeXml(it)}</Say>""")
                 }
                 appendLine("  </Gather>")
                 inst.then?.let { renderInstruction(it) }
@@ -1134,9 +1009,9 @@ public class TwilioPhoneCallService(
             is CallInstructions.Forward -> {
                 append("  <Dial")
                 append(""" timeout="${inst.timeout.inWholeSeconds}"""")
-                inst.callerId?.let { append(""" callerId="${it.raw}"""") }
+                inst.callerId?.let { append(""" callerId="${escapeXml(it.raw)}"""") }
                 appendLine(">")
-                appendLine("""    <Number>${inst.to.raw}</Number>""")
+                appendLine("""    <Number>${escapeXml(inst.to.raw)}</Number>""")
                 appendLine("  </Dial>")
                 inst.then?.let { renderInstruction(it) }
             }
@@ -1172,7 +1047,7 @@ public class TwilioPhoneCallService(
                     transcriptionCallbackUrl?.let { append(""" transcribeCallback="${escapeXml(it)}"""") }
                 }
                 if (inst.playBeep) append(""" playBeep="true"""")
-                append(""" finishOnKey="${inst.finishOnKey}"""")
+                append(""" finishOnKey="${escapeXml(inst.finishOnKey)}"""")
                 appendLine("/>")
                 inst.then?.let { renderInstruction(it) }
             }
@@ -1184,7 +1059,7 @@ public class TwilioPhoneCallService(
             is CallInstructions.Enqueue -> {
                 append("  <Enqueue")
                 inst.waitUrl?.let { append(""" waitUrl="${escapeXml(it)}"""") }
-                appendLine(""">${inst.name}</Enqueue>""")
+                appendLine(""">${escapeXml(inst.name)}</Enqueue>""")
                 inst.then?.let { renderInstruction(it) }
             }
 
@@ -1243,53 +1118,45 @@ public class TwilioPhoneCallService(
     // ==================== Helpers ====================
 
     /**
-     * Looks up the Twilio phone number SID for a given phone number.
+     * Looks up the Twilio phone number SID for a given phone number. Results are cached
+     * in-memory per instance to avoid repeated API calls during multiple webhook configures.
      *
      * @param phoneNumber The phone number in E.164 format (e.g., +15551234567)
      * @return The phone number SID (e.g., PN...)
      * @throws PhoneCallException if the phone number is not found
      */
     private suspend fun lookupPhoneNumberSid(phoneNumber: String): String {
-        val span = tracer?.spanBuilder("phonecall.lookup_number_sid")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("phonecall.operation", "lookup_number_sid")
-            ?.setAttribute("phonecall.phone_number", phoneNumber)
-            ?.setAttribute("phonecall.provider", "twilio")
-            ?.startSpan()
+        phoneNumberSidCache[phoneNumber]?.let { return it }
 
-        try {
-            val scope = span?.makeCurrent()
-            try {
-                val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
-                val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                    client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
-                }
-
-                if (!response.status.isSuccess()) {
-                    val errorBody = response.bodyAsText()
-                    span?.setStatus(StatusCode.ERROR, "Failed to lookup phone number: HTTP ${response.status.value}")
-                    throw PhoneCallException("Failed to look up Twilio phone number: $errorBody")
-                }
-
-                val responseBody = response.bodyAsText()
-                // Parse the SID from the JSON response
-                // Response format: {"incoming_phone_numbers": [{"sid": "PN...", ...}], ...}
-                val sidMatch = Regex(""""sid"\s*:\s*"(PN[^"]+)"""").find(responseBody)
-                val sid = sidMatch?.groupValues?.get(1)
-                    ?: throw PhoneCallException("Phone number $phoneNumber not found in Twilio account $account")
-
-                span?.setAttribute("phonecall.phone_number_sid", sid)
-                span?.setStatus(StatusCode.OK)
-                return sid
-            } finally {
-                scope?.close()
+        return otel.span("phonecall.lookup_number_sid", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("phonecall.operation", "lookup_number_sid")
+            setAttribute("phonecall.phone_number", TelemetrySanitization.redactPhoneNumber(phoneNumber))
+            setAttribute("messaging.system", "twilio")
+        }) { span ->
+            val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
+            val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+                client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
             }
-        } catch (e: Exception) {
-            span?.setStatus(StatusCode.ERROR, "Failed to lookup phone number: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        } finally {
-            span?.end()
+
+            if (!response.status.isSuccess()) {
+                val errorBody = response.bodyAsText()
+                throw PhoneCallException("Failed to look up Twilio phone number: $errorBody")
+            }
+
+            val responseBody = response.bodyAsText()
+            // Response format: {"incoming_phone_numbers": [{"sid": "PN...", ...}], ...}
+            val element = Json.parseToJsonElement(responseBody)
+            val sid = element.jsonObject["incoming_phone_numbers"]
+                ?.let { it as? JsonArray }
+                ?.firstOrNull()
+                ?.jsonObject?.get("sid")
+                ?.jsonPrimitive?.content
+                ?: throw PhoneCallException("Phone number ${TelemetrySanitization.redactPhoneNumber(phoneNumber)} not found in Twilio account $account")
+
+            phoneNumberSidCache[phoneNumber] = sid
+            span?.setAttribute("phonecall.phone_number_sid", sid)
+            sid
         }
     }
 
@@ -1319,13 +1186,13 @@ public class TwilioPhoneCallService(
     }
 
     private fun parseTwilioCallResponse(json: String): CallInfo? {
-        // Simple regex-based parsing (in production, use proper JSON parsing)
-        val sid = Regex(""""sid"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1) ?: return null
-        val status = Regex(""""status"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1)
-        val from = Regex(""""from"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1) ?: "+0"
-        val to = Regex(""""to"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1) ?: "+0"
-        val direction = Regex(""""direction"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1)
-        val answeredBy = Regex(""""answered_by"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1)
+        val obj = Json.parseToJsonElement(json).jsonObject
+        val sid = obj["sid"]?.jsonPrimitive?.content ?: return null
+        val status = obj["status"]?.jsonPrimitive?.content
+        val from = obj["from"]?.jsonPrimitive?.content ?: "+0"
+        val to = obj["to"]?.jsonPrimitive?.content ?: "+0"
+        val direction = obj["direction"]?.jsonPrimitive?.content
+        val answeredBy = obj["answered_by"]?.jsonPrimitive?.content
 
         return CallInfo(
             callId = sid,

@@ -41,20 +41,19 @@ package com.lightningkite.services
  *
  * ## Thread Safety
  *
- * The current implementation uses [MutableMap.getOrPut] which is **not thread-safe**.
- * In multi-threaded scenarios, this could result in [Key.setup] being called multiple times
- * for the same key.
+ * Storage is a [ConcurrentMutableMap] and uses its atomic [ConcurrentMutableMap.compute]
+ * operation, so [Key.setup] is guaranteed to run at most once per key on every platform
+ * (JVM, Android, JS, Native iOS/macOS).
  *
- * @property map Internal storage for cached resources (default: HashMap)
+ * @property map Internal storage for cached resources (default: [ConcurrentMutableMap]).
  */
-public class SharedResources(private val map: MutableMap<Key<*>, Any?> = ConcurrentMutableMap()) {
+public class SharedResources(private val map: ConcurrentMutableMap<Key<*>, Any> = ConcurrentMutableMap()) {
     /**
      * Resource key that knows how to create its associated resource.
      *
      * Implement this interface to define a new shared resource type.
-     * The [setup] method is called exactly once* per key to create the resource.
-     *
-     * *Note: Due to thread-safety issue, setup may be called multiple times in concurrent scenarios.
+     * The [setup] method is called at most once per key on JVM/Android; see the class-level
+     * thread-safety note for Kotlin/Native and JS behavior.
      *
      * @param T The type of resource this key creates
      */
@@ -89,5 +88,13 @@ public class SharedResources(private val map: MutableMap<Key<*>, Any?> = Concurr
      * @return The resource instance (either cached or newly created)
      */
     @Suppress("UNCHECKED_CAST")
-    public fun <T> get(key: Key<T>, context: SettingContext): T = map.getOrPut(key) { key.setup(context) } as T
+    public fun <T> get(key: Key<T>, context: SettingContext): T {
+        // compute is atomic on every platform, so setup runs at most once per key.
+        val stored = map.compute(key) { _, existing ->
+            existing ?: (key.setup(context) ?: NULL_SENTINEL)
+        }
+        return if (stored === NULL_SENTINEL) null as T else stored as T
+    }
 }
+
+private val NULL_SENTINEL: Any = Any()

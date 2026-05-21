@@ -2,6 +2,9 @@ package com.lightningkite.services.speech.elevenlabs
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.contentnegotiation.*
@@ -10,11 +13,30 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.*
+import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 private val logger = KotlinLogging.logger("ElevenLabsTextToSpeechService")
+
+// Minimal request model — only fields actually sent.
+@Serializable
+private data class ElevenLabsSynthesisRequest(
+    val text: String,
+    @SerialName("model_id") val modelId: String,
+    @SerialName("voice_settings") val voiceSettings: ElevenLabsVoiceSettings,
+)
+
+@Serializable
+private data class ElevenLabsVoiceSettings(
+    val stability: Float,
+    @SerialName("similarity_boost") val similarityBoost: Float,
+    val style: Float,
+    @SerialName("use_speaker_boost") val useSpeakerBoost: Boolean,
+)
 
 /**
  * ElevenLabs Text-to-Speech implementation.
@@ -71,6 +93,10 @@ public class ElevenLabsTextToSpeechService(
 
     private val baseUrl = "https://api.elevenlabs.io/v1"
 
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("speech-elevenlabs")
+
+    private val requestJson = Json { ignoreUnknownKeys = true }
+
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
             json(Json {
@@ -107,27 +133,45 @@ public class ElevenLabsTextToSpeechService(
         val model = options.model ?: defaultModel
         val outputFormat = mapOutputFormat(options.outputFormat)
 
-        logger.debug { "[$name] Synthesizing ${text.length} chars with voice=$voiceId, model=$model" }
+        return otel.span("speech.synthesize", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("ai.provider", "elevenlabs")
+            setAttribute("ai.model", model)
+            setAttribute("text.char_count", text.length.toLong())
+        }) { span ->
+            logger.debug { "[$name] Synthesizing ${text.length} chars with voice=$voiceId, model=$model" }
 
-        val response = client.post("$baseUrl/text-to-speech/$voiceId") {
-            header("xi-api-key", apiKey)
-            contentType(ContentType.Application.Json)
-            parameter("output_format", outputFormat)
+            val response = client.post("$baseUrl/text-to-speech/$voiceId") {
+                header("xi-api-key", apiKey)
+                contentType(ContentType.Application.Json)
+                parameter("output_format", outputFormat)
+                setBody(requestJson.encodeToString(
+                    ElevenLabsSynthesisRequest(
+                        text = text,
+                        modelId = model,
+                        voiceSettings = ElevenLabsVoiceSettings(
+                            stability = voice.stability,
+                            similarityBoost = voice.similarityBoost,
+                            style = voice.style,
+                            useSpeakerBoost = voice.speakerBoost,
+                        ),
+                    )
+                ))
+            }
 
-            setBody(buildSynthesisRequest(text, voice, model))
+            if (!response.status.isSuccess()) {
+                val error = response.bodyAsText()
+                logger.error { "[$name] TTS failed: $error" }
+                throw TextToSpeechException("TTS synthesis failed: $error")
+            }
+
+            val audioBytes = response.readRawBytes()
+            val mediaType = mapFormatToMediaType(options.outputFormat)
+
+            logger.debug { "[$name] Synthesized ${audioBytes.size} bytes of audio" }
+            span?.setAttribute("audio.size_bytes", audioBytes.size.toLong())
+            TypedData(Data.Bytes(audioBytes), mediaType)
         }
-
-        if (!response.status.isSuccess()) {
-            val error = response.bodyAsText()
-            logger.error { "[$name] TTS failed: $error" }
-            throw TextToSpeechException("TTS synthesis failed: $error")
-        }
-
-        val audioBytes = response.readRawBytes()
-        val mediaType = mapFormatToMediaType(options.outputFormat)
-
-        logger.debug { "[$name] Synthesized ${audioBytes.size} bytes of audio" }
-        return TypedData(Data.Bytes(audioBytes), mediaType)
     }
 
     override fun synthesizeStream(
@@ -139,31 +183,48 @@ public class ElevenLabsTextToSpeechService(
         val model = options.model ?: defaultModel
         val outputFormat = mapOutputFormat(options.outputFormat)
 
-        logger.debug { "[$name] Streaming TTS for ${text.length} chars with voice=$voiceId" }
+        otel.span("speech.synthesize_stream", configure = {
+            setSpanKind(SpanKind.CLIENT)
+            setAttribute("ai.provider", "elevenlabs")
+            setAttribute("ai.model", model)
+            setAttribute("text.char_count", text.length.toLong())
+        }) {
+            logger.debug { "[$name] Streaming TTS for ${text.length} chars with voice=$voiceId" }
 
-        val response = client.post("$baseUrl/text-to-speech/$voiceId/stream") {
-            header("xi-api-key", apiKey)
-            contentType(ContentType.Application.Json)
-            parameter("output_format", outputFormat)
+            val response = client.post("$baseUrl/text-to-speech/$voiceId/stream") {
+                header("xi-api-key", apiKey)
+                contentType(ContentType.Application.Json)
+                parameter("output_format", outputFormat)
+                setBody(requestJson.encodeToString(
+                    ElevenLabsSynthesisRequest(
+                        text = text,
+                        modelId = model,
+                        voiceSettings = ElevenLabsVoiceSettings(
+                            stability = voice.stability,
+                            similarityBoost = voice.similarityBoost,
+                            style = voice.style,
+                            useSpeakerBoost = voice.speakerBoost,
+                        ),
+                    )
+                ))
+            }
 
-            setBody(buildSynthesisRequest(text, voice, model))
-        }
+            if (!response.status.isSuccess()) {
+                val error = response.bodyAsText()
+                logger.error { "[$name] TTS stream failed: $error" }
+                throw TextToSpeechException("TTS streaming failed: $error")
+            }
 
-        if (!response.status.isSuccess()) {
-            val error = response.bodyAsText()
-            logger.error { "[$name] TTS stream failed: $error" }
-            throw TextToSpeechException("TTS streaming failed: $error")
-        }
+            val mediaType = mapFormatToMediaType(options.outputFormat)
+            val channel = response.bodyAsChannel()
 
-        val mediaType = mapFormatToMediaType(options.outputFormat)
-        val channel = response.bodyAsChannel()
-
-        // Read chunks from the stream
-        val buffer = ByteArray(4096)
-        while (!channel.isClosedForRead) {
-            val bytesRead = channel.readAvailable(buffer)
-            if (bytesRead > 0) {
-                emit(TypedData(Data.Bytes(buffer.copyOf(bytesRead)), mediaType))
+            // Read chunks from the stream
+            val buffer = ByteArray(4096)
+            while (!channel.isClosedForRead) {
+                val bytesRead = channel.readAvailable(buffer)
+                if (bytesRead > 0) {
+                    emit(TypedData(Data.Bytes(buffer.copyOf(bytesRead)), mediaType))
+                }
             }
         }
     }
@@ -187,22 +248,6 @@ public class ElevenLabsTextToSpeechService(
         } catch (e: Exception) {
             logger.error(e) { "[$name] Health check error" }
             HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "ElevenLabs API error: ${e.message}")
-        }
-    }
-
-    private fun buildSynthesisRequest(text: String, voice: TtsVoiceConfig, model: String): String {
-        // Build JSON request body
-        return buildString {
-            append("{")
-            append("\"text\":\"${escapeJson(text)}\",")
-            append("\"model_id\":\"$model\",")
-            append("\"voice_settings\":{")
-            append("\"stability\":${voice.stability},")
-            append("\"similarity_boost\":${voice.similarityBoost},")
-            append("\"style\":${voice.style},")
-            append("\"use_speaker_boost\":${voice.speakerBoost}")
-            append("}")
-            append("}")
         }
     }
 
@@ -335,15 +380,6 @@ public class ElevenLabsTextToSpeechService(
             gender = gender,
             labels = labels
         )
-    }
-
-    private fun escapeJson(text: String): String {
-        return text
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
     }
 
     public companion object {

@@ -2,7 +2,7 @@ package com.lightningkite.services.email
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.request.*
@@ -62,7 +62,7 @@ public class ConsoleEmailInboundService(
      *
      * Use this method to test your webhook endpoint with sample emails.
      * The email will be serialized to JSON and POSTed to the URL configured
-     * via [WebhookSubservice.configureWebhook].
+     * via [WebhookAdapter.configureWebhook].
      *
      * @param email The email to simulate receiving
      * @throws IllegalStateException if no webhook URL has been configured
@@ -84,7 +84,7 @@ public class ConsoleEmailInboundService(
         logger.info { "[$name] Successfully posted to $targetUrl" }
     }
 
-    override val onReceived: WebhookSubservice<ReceivedEmail> = object : WebhookSubservice<ReceivedEmail> {
+    override val onReceived: WebhookAdapter<ReceivedEmail> = object : WebhookAdapter<ReceivedEmail> {
         override suspend fun configureWebhook(httpUrl: String) {
             logger.info { "[$name] Webhook URL configured: $httpUrl" }
             webhookUrl = httpUrl
@@ -105,8 +105,9 @@ public class ConsoleEmailInboundService(
             return json.decodeFromString<ReceivedEmail>(bodyText)
         }
 
-        override suspend fun onSchedule() {
-            logger.info { "[$name] onSchedule called (no-op for console implementation)" }
+        override suspend fun pull(): Set<ReceivedEmail> {
+            logger.debug { "[$name] pull called (no-op for console implementation)" }
+            return emptySet()
         }
     }
 }

@@ -3,6 +3,7 @@ import com.lightningkite.deployhelpers.lkLibrary
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
+    alias(libs.plugins.kotlin.serialization)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -12,6 +13,10 @@ dependencies {
     api(project(path = ":http-client"))
     implementation(libs.angusMail)
     implementation(libs.kotlin.logging)
+    implementation(libs.kotlinx.serialization.json)
+
+    // OpenTelemetry span helpers (com.lightningkite.services.otel.span)
+    compileOnly(project(path = ":otel-jvm"))
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)

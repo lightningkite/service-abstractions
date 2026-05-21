@@ -199,10 +199,10 @@ public class TestPhoneCallService(
 
     // ==================== Webhook Subservices ====================
 
-    override val onIncomingCall: WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> =
+    override val onIncomingCall: WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?> =
         TestIncomingCallWebhook()
 
-    private inner class TestIncomingCallWebhook : WebhookSubserviceWithResponse<IncomingCallEvent, CallInstructions?> {
+    private inner class TestIncomingCallWebhook : WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?> {
         override suspend fun configureWebhook(httpUrl: String) {
             configuredWebhooks["incoming-call"] = httpUrl
             if (printToConsole) {
@@ -233,15 +233,9 @@ public class TestPhoneCallService(
                 body = TypedData.text(rendered, MediaType.Application.Xml)
             )
         }
-
-        override suspend fun onSchedule() {
-            if (printToConsole) {
-                println("[$name] incoming-call scheduled check")
-            }
-        }
     }
 
-    override val onCallStatus: WebhookSubservice<CallStatusEvent> = TestWebhookSubservice(
+    override val onCallStatus: WebhookAdapter<CallStatusEvent> = TestWebhookAdapter(
         name = "call-status",
         defaultEvent = {
             CallStatusEvent(
@@ -254,7 +248,7 @@ public class TestPhoneCallService(
         }
     )
 
-    override val onTranscription: WebhookSubservice<TranscriptionEvent> = TestWebhookSubservice(
+    override val onTranscription: WebhookAdapter<TranscriptionEvent> = TestWebhookAdapter(
         name = "transcription",
         defaultEvent = {
             TranscriptionEvent(
@@ -265,10 +259,10 @@ public class TestPhoneCallService(
         }
     )
 
-    private inner class TestWebhookSubservice<T>(
+    private inner class TestWebhookAdapter<T>(
         private val name: String,
         private val defaultEvent: (TypedData) -> T,
-    ) : WebhookSubservice<T> {
+    ) : WebhookAdapter<T> {
         var parseHandler: ((List<Pair<String, String>>, Map<String, List<String>>, TypedData) -> T)? = null
 
         override suspend fun configureWebhook(httpUrl: String) {
@@ -286,11 +280,7 @@ public class TestPhoneCallService(
             return parseHandler?.invoke(queryParameters, headers, body) ?: defaultEvent(body)
         }
 
-        override suspend fun onSchedule() {
-            if (printToConsole) {
-                println("[${this@TestPhoneCallService.name}] $name scheduled check")
-            }
-        }
+        override suspend fun pull(): Set<T> = emptySet()
     }
 
     /**
