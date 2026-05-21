@@ -66,7 +66,7 @@ public val dateTimeSerializersModule: SerializersModule by lazy {
  */
 @ExperimentalSerializationApi
 public object InstantAsBsonDateTime : KSerializer<Instant> {
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("InstantAsBsonDateTime", PrimitiveKind.STRING)
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("kotlin.time.Instant/InstantAsBsonDateTime", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: Instant) {
         when (encoder) {
@@ -100,7 +100,7 @@ public object InstantAsBsonDateTime : KSerializer<Instant> {
 @ExperimentalSerializationApi
 public object LocalDateAsBsonDateTime : KSerializer<LocalDate> {
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("LocalDateAsBsonDateTime", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("kotlinx.datetime.LocalDate/LocalDateAsBsonDateTime", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: LocalDate) {
         when (encoder) {
@@ -142,7 +142,7 @@ public object LocalDateAsBsonDateTime : KSerializer<LocalDate> {
 @ExperimentalSerializationApi
 public object LocalDateTimeAsBsonDateTime : KSerializer<LocalDateTime> {
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("LocalDateTimeAsBsonDateTime", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("kotlinx.datetime.LocalDateTime/LocalDateTimeAsBsonDateTime", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: LocalDateTime) {
         when (encoder) {
@@ -183,7 +183,7 @@ public object LocalDateTimeAsBsonDateTime : KSerializer<LocalDateTime> {
 @ExperimentalSerializationApi
 public object LocalTimeAsBsonDateTime : KSerializer<LocalTime> {
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("LocalTimeAsBsonDateTime", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("kotlinx.datetime.LocalTime/LocalTimeAsBsonDateTime", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: LocalTime) {
         when (encoder) {

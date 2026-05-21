@@ -42,7 +42,7 @@ public class EmbeddingSerializer : GeneratedSerializer<Embedding> {
 
     @OptIn(SealedSerializationApi::class)
     override val descriptor: SerialDescriptor = object : SerialDescriptor {
-        override val serialName: String get() = "com.lightningkite.services.files.ServerFile"
+        override val serialName: String get() = "com.lightningkite.services.database.Embedding"
         override val kind: SerialKind get() = StructureKind.CLASS
         override val elementsCount: Int = 1
         override fun getElementName(index: Int): String = "values"

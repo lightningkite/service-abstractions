@@ -46,7 +46,7 @@ public object ZonedDateTimeIso8601Serializer : KSerializer<ZonedDateTime> {
         }
 
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.ZonedDateTime", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.data.ZonedDateTime", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: ZonedDateTime): Unit = encoder.encodeString(value.toString())
 }
@@ -97,7 +97,7 @@ public object OffsetDateTimeIso8601Serializer : KSerializer<OffsetDateTime> {
         }
 
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.OffsetDateTime", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.data.OffsetDateTime", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: OffsetDateTime): Unit = encoder.encodeString(value.toString())
 }
