@@ -270,7 +270,7 @@ public class MailgunEmailInboundService(
      * Verifies Mailgun webhook signature.
      * Mailgun signs webhooks with HMAC-SHA256(timestamp + token).
      */
-    private fun verifySignature(formData: Map<String, List<String>>, apiKey: String) {
+    internal fun verifySignature(formData: Map<String, List<String>>, apiKey: String) {
         val timestamp = formData["timestamp"]?.firstOrNull()
         val token = formData["token"]?.firstOrNull()
         val signature = formData["signature"]?.firstOrNull()
@@ -439,7 +439,7 @@ public class MailgunEmailInboundService(
      * signature comparison so we can do a constant-time byte compare rather than relying on
      * `String.equals`, which short-circuits on first mismatch.
      */
-    private fun hexDecode(hex: String): ByteArray? {
+    internal fun hexDecode(hex: String): ByteArray? {
         if (hex.length % 2 != 0) return null
         val out = ByteArray(hex.length / 2)
         for (i in out.indices) {

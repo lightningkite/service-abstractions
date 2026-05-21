@@ -11,7 +11,9 @@ import com.lightningkite.services.webhooksubservice.WebhookSubservice
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
 import io.ktor.http.*
+import io.ktor.http.content.*
 import io.opentelemetry.api.trace.*
 import jakarta.mail.*
 import jakarta.mail.internet.InternetAddress
@@ -129,7 +131,10 @@ private val logger = KotlinLogging.logger("ImapEmailInboundService")
  * - **Read receipts**: Marking as read may trigger read receipts to senders
  * - **Large attachments**: All attachment data is loaded into memory
  * - **Threading**: Not all emails include proper In-Reply-To/References headers
- * - **Webhook limitations**: This is PULL-based; [parseWebhook] throws UnsupportedOperationException
+ * - **Loopback wire format**: The polling loop POSTs each email as `multipart/form-data` (a JSON
+ *   metadata part plus one file part per attachment). [WebhookSubservice.parse] understands the
+ *   same loopback format so the receiver can reconstruct a [ReceivedEmail] including attachment
+ *   bytes. This shape is private to this module.
  *
  * ## Common IMAP Providers
  *
@@ -332,15 +337,51 @@ public class ImapEmailInboundService(
             webhookUrl = httpUrl
         }
 
+        /**
+         * Parses the loopback multipart envelope that this service's polling loop POSTs to the
+         * configured webhook URL. The shape is:
+         *  - one `email` form part containing a JSON [ImapWebhookEnvelope]
+         *  - zero or more `attachment_$index` file parts whose bytes are paired by index to the
+         *    entries in [ImapWebhookEnvelope.attachments].
+         */
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail {
-            throw UnsupportedOperationException(
-                "IMAP is a pull-based protocol and does not support inbound webhooks. " +
-                        "Use onSchedule() to poll for new emails instead."
-            )
+        ): ReceivedEmail = otel.span("email.webhook.parse", configure = {
+            setSpanKind(SpanKind.SERVER)
+            setAttribute("email.webhook.operation", "inbound_parse")
+            setAttribute("email.provider", "imap")
+            setAttribute("messaging.system", "imap")
+        }) { span ->
+            if (!body.mediaType.accepts(MediaType.MultiPart.FormData)) {
+                throw IllegalArgumentException(
+                    "Expected multipart/form-data but got ${body.mediaType}"
+                )
+            }
+            val boundary = body.mediaType.parameters["boundary"]
+                ?: throw IllegalArgumentException("Missing boundary parameter in Content-Type")
+
+            val rawBodyBytes = body.data.bytes()
+            val parts = parseMultipartFormData(rawBodyBytes, boundary)
+
+            val emailPart = parts["email"]?.firstOrNull()
+                ?: throw IllegalArgumentException("Missing required 'email' form part")
+            val envelope = json.decodeFromString<ImapWebhookEnvelope>(String(emailPart.data, Charsets.UTF_8))
+
+            // Pair attachments[i] with the part named "attachment_i". Missing parts pass `null`
+            // — the metadata entry may still carry a `contentUrl` for out-of-band fetching.
+            val attachmentContent: List<Data?> = envelope.attachments.indices.map { i ->
+                parts["attachment_$i"]?.firstOrNull()?.let { Data.Bytes(it.data) }
+            }
+
+            val email = envelope.toReceivedEmail(attachmentContent)
+
+            span?.setAttribute("email.from", email.from.value.raw.substringAfter('@', ""))
+            span?.setAttribute("email.attachments_count", email.attachments.size.toLong())
+            span?.setAttribute("email.message_id", email.messageId)
+
+            email
         }
 
         override suspend fun onSchedule() {
@@ -365,68 +406,81 @@ public class ImapEmailInboundService(
             setSpanKind(SpanKind.CONSUMER)
             setAttribute("messaging.system", "imap")
         }) { pollSpan ->
-            val messages = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                val currentStore = store ?: run {
-                    val tempStore = session.getStore(if (useSsl) "imaps" else "imap")
-                    tempStore.connect(host, port, username, password)
-                    tempStore
+            // Open the folder once and hold it open for the whole poll cycle so SEEN flag
+            // updates after a successful webhook POST land on a live IMAP session. The folder
+            // close is in the outer finally — fetching messages, hitting the webhook, and
+            // marking them SEEN all happen against the same connection.
+            val openedStore: Store
+            val ownsStore: Boolean
+            if (store != null) {
+                openedStore = store!!
+                ownsStore = false
+            } else {
+                openedStore = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    session.getStore(if (useSsl) "imaps" else "imap").also {
+                        it.connect(host, port, username, password)
+                    }
                 }
-
-                val inbox = currentStore.getFolder(folder)
-                inbox.open(Folder.READ_WRITE)
-                try {
+                ownsStore = true
+            }
+            val inbox = openedStore.getFolder(folder)
+            withContext(kotlinx.coroutines.Dispatchers.IO) { inbox.open(Folder.READ_WRITE) }
+            try {
+                val messages = withContext(kotlinx.coroutines.Dispatchers.IO) {
                     inbox.search(jakarta.mail.search.FlagTerm(Flags(Flags.Flag.SEEN), false))
                         .filterIsInstance<MimeMessage>()
                         .map { it.toReceivedEmail() to it }
-                } finally {
-                    inbox.close(false)
-                    // Close temporary connection
-                    if (store == null) currentStore.close()
                 }
-            }
 
-            logger.info { "[$name] Found ${messages.size} unread message(s)" }
-            pollSpan?.setAttribute("email.messages_found", messages.size.toLong())
+                logger.info { "[$name] Found ${messages.size} unread message(s)" }
+                pollSpan?.setAttribute("email.messages_found", messages.size.toLong())
 
-            for ((receivedEmail, rawMessage) in messages) {
-                otel.span("email.imap.message.process", configure = {
-                    setSpanKind(SpanKind.CONSUMER)
-                    setAttribute("messaging.system", "imap")
-                    setAttribute("email.message_id", receivedEmail.messageId)
-                }) { msgSpan ->
-                    try {
-                        // POST to configured webhook URL with exponential backoff (3 attempts: 1s/2s/4s)
-                        var lastException: Exception? = null
-                        var backoff = 1.seconds
-                        for (attempt in 0 until 3) {
-                            try {
-                                httpClient.post(targetUrl) {
-                                    contentType(ContentType.Application.Json)
-                                    setBody(json.encodeToString(receivedEmail))
+                for ((receivedEmail, rawMessage) in messages) {
+                    otel.span("email.imap.message.process", configure = {
+                        setSpanKind(SpanKind.CONSUMER)
+                        setAttribute("messaging.system", "imap")
+                        setAttribute("email.message_id", receivedEmail.messageId)
+                    }) { msgSpan ->
+                        try {
+                            // POST to configured webhook URL with exponential backoff (3 attempts: 1s/2s/4s).
+                            // Build the multipart body fresh each attempt: MultiPartFormDataContent is
+                            // single-use for sourced bodies, and the inline bytes are cheap to re-wrap.
+                            var lastException: Exception? = null
+                            var backoff = 1.seconds
+                            for (attempt in 0 until 3) {
+                                try {
+                                    httpClient.post(targetUrl) {
+                                        setBody(MultiPartFormDataContent(buildWebhookFormParts(receivedEmail)))
+                                    }
+                                    lastException = null
+                                    break
+                                } catch (e: Exception) {
+                                    lastException = e
+                                    logger.warn(e) { "[$name] Webhook POST attempt ${attempt + 1}/3 failed for ${receivedEmail.messageId}" }
+                                    if (attempt < 2) delay(backoff).also { backoff *= 2 }
                                 }
-                                lastException = null
-                                break
-                            } catch (e: Exception) {
-                                lastException = e
-                                logger.warn(e) { "[$name] Webhook POST attempt ${attempt + 1}/3 failed for ${receivedEmail.messageId}" }
-                                if (attempt < 2) delay(backoff).also { backoff *= 2 }
                             }
-                        }
-                        if (lastException != null) throw lastException
+                            if (lastException != null) throw lastException
 
-                        // Mark as read after successful POST
-                        withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            rawMessage.setFlag(Flags.Flag.SEEN, true)
+                            // Mark as read after successful POST. Folder is still open here.
+                            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                rawMessage.setFlag(Flags.Flag.SEEN, true)
+                            }
+                            logger.debug { "[$name] Processed and posted to webhook: ${receivedEmail.messageId}" }
+                        } catch (e: Exception) {
+                            // Record the failure on this message's span without rethrowing so the
+                            // outer poll span continues to process the remaining messages.
+                            logger.error(e) { "[$name] Error processing message ${receivedEmail.messageId}" }
+                            msgSpan?.setStatus(StatusCode.ERROR, e.message ?: "error")
+                            msgSpan?.recordExceptionWithFingerprint(e)
+                            // Don't mark as read if processing fails
                         }
-                        logger.debug { "[$name] Processed and posted to webhook: ${receivedEmail.messageId}" }
-                    } catch (e: Exception) {
-                        // Record the failure on this message's span without rethrowing so the
-                        // outer poll span continues to process the remaining messages.
-                        logger.error(e) { "[$name] Error processing message ${receivedEmail.messageId}" }
-                        msgSpan?.setStatus(StatusCode.ERROR, e.message ?: "error")
-                        msgSpan?.recordExceptionWithFingerprint(e)
-                        // Don't mark as read if processing fails
                     }
+                }
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable + kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { inbox.close(false) }
+                    if (ownsStore) runCatching { openedStore.close() }
                 }
             }
         }
@@ -578,5 +632,125 @@ public class ImapEmailInboundService(
             value = address.toEmailAddress(),
             label = personal
         )
+    }
+
+    /**
+     * Builds the multipart parts the polling loop POSTs to the configured webhook URL.
+     *
+     *  - `email`: JSON-encoded [ImapWebhookEnvelope] carrying all metadata (including attachment
+     *    filenames, content types, and sizes).
+     *  - `attachment_$i`: one file part per attachment that has inline bytes; the index pairs with
+     *    `envelope.attachments[i]`. Attachments without inline content (`content == null`) are
+     *    skipped here — the metadata still goes through, and consumers can use `contentUrl` to
+     *    fetch them out of band.
+     */
+    private fun buildWebhookFormParts(email: ReceivedEmail): List<PartData> = formData {
+        val envelope = email.toWire()
+        append(
+            key = "email",
+            value = json.encodeToString(envelope),
+            headers = Headers.build {
+                append(HttpHeaders.ContentType, MediaType.Application.Json.toString())
+            },
+        )
+        email.attachments.forEachIndexed { i, attachment ->
+            val bytes = attachment.content?.bytes() ?: return@forEachIndexed
+            append(
+                key = "attachment_$i",
+                value = bytes,
+                headers = Headers.build {
+                    append(HttpHeaders.ContentType, attachment.contentType.toString())
+                    append(
+                        HttpHeaders.ContentDisposition,
+                        "filename=\"${attachment.filename.replace("\"", "\\\"")}\""
+                    )
+                    attachment.contentId?.let { append("Content-ID", "<$it>") }
+                },
+            )
+        }
+    }
+
+    /**
+     * Parses the multipart payload that [buildWebhookFormParts] produces.
+     *
+     * Mirrors the SendGrid implementation. This is a simple linear scanner — for the loopback
+     * format we control, payload size is bounded by IMAP attachments (already in memory).
+     */
+    internal data class WebhookPart(
+        val name: String,
+        val filename: String?,
+        val contentType: String,
+        val data: ByteArray,
+    )
+
+    internal fun parseMultipartFormData(data: ByteArray, boundary: String): Map<String, List<WebhookPart>> {
+        val parts = mutableMapOf<String, MutableList<WebhookPart>>()
+        val boundaryBytes = "--$boundary".toByteArray()
+        val endBoundaryBytes = "--$boundary--".toByteArray()
+
+        var position = findBoundary(data, boundaryBytes, 0) ?: return emptyMap()
+        position += boundaryBytes.size + 2 // skip boundary + CRLF
+
+        while (position < data.size) {
+            if (data.size >= position + endBoundaryBytes.size &&
+                data.sliceArray(position until position + endBoundaryBytes.size)
+                    .contentEquals(endBoundaryBytes)
+            ) break
+
+            val headersEnd = findSequence(data, "\r\n\r\n".toByteArray(), position) ?: break
+            val headersSection = String(data.sliceArray(position until headersEnd))
+            val partHeaders = headersSection.lines()
+                .filter { it.contains(":") }
+                .associate { line ->
+                    val (n, v) = line.split(":", limit = 2)
+                    n.trim().lowercase() to v.trim()
+                }
+
+            val contentDisposition = partHeaders["content-disposition"] ?: ""
+            // Accept both quoted (`name="email"`) and unquoted (`name=email`) — Ktor's `formData`
+            // only quotes values containing special characters.
+            val fieldName = extractDispositionParam(contentDisposition, "name") ?: "unknown"
+            val filename = extractDispositionParam(contentDisposition, "filename")
+            val contentType = partHeaders["content-type"] ?: "text/plain"
+
+            val bodyStart = headersEnd + 4
+            val bodyEnd = findBoundary(data, boundaryBytes, bodyStart) ?: data.size
+            val actualBodyEnd = if (bodyEnd >= 2 &&
+                data[bodyEnd - 2] == '\r'.code.toByte() &&
+                data[bodyEnd - 1] == '\n'.code.toByte()
+            ) bodyEnd - 2 else bodyEnd
+
+            parts.getOrPut(fieldName) { mutableListOf() }.add(
+                WebhookPart(
+                    name = fieldName,
+                    filename = filename,
+                    contentType = contentType,
+                    data = data.sliceArray(bodyStart until actualBodyEnd),
+                )
+            )
+
+            position = bodyEnd + boundaryBytes.size + 2
+        }
+        return parts
+    }
+
+    private fun extractDispositionParam(disposition: String, key: String): String? {
+        val quoted = Regex("""(?i)\b$key="((?:[^"\\]|\\.)*)"""").find(disposition)?.groupValues?.get(1)
+        if (quoted != null) return quoted.replace("\\\"", "\"")
+        return Regex("""(?i)\b$key=([^;\s]+)""").find(disposition)?.groupValues?.get(1)
+    }
+
+    private fun findBoundary(data: ByteArray, boundary: ByteArray, startPos: Int): Int? {
+        for (i in startPos..data.size - boundary.size) {
+            if (data.sliceArray(i until i + boundary.size).contentEquals(boundary)) return i
+        }
+        return null
+    }
+
+    private fun findSequence(data: ByteArray, sequence: ByteArray, startPos: Int): Int? {
+        for (i in startPos..data.size - sequence.size) {
+            if (data.sliceArray(i until i + sequence.size).contentEquals(sequence)) return i
+        }
+        return null
     }
 }

@@ -191,7 +191,7 @@ public class SendGridEmailInboundService(
      * streaming multipart parser (e.g., Apache Commons FileUpload or Jakarta Servlet multipart)
      * if large attachments become a concern.
      */
-    private fun parseMultipartFormData(data: ByteArray, boundary: String): Map<String, List<MultipartPart>> {
+    internal fun parseMultipartFormData(data: ByteArray, boundary: String): Map<String, List<MultipartPart>> {
         val parts = mutableMapOf<String, MutableList<MultipartPart>>()
         val boundaryBytes = "--$boundary".toByteArray()
         val endBoundaryBytes = "--$boundary--".toByteArray()
@@ -303,7 +303,7 @@ public class SendGridEmailInboundService(
     /**
      * Parses SendGrid multipart parts into a ReceivedEmail.
      */
-    private fun parseReceivedEmail(parts: Map<String, List<MultipartPart>>): ReceivedEmail {
+    internal fun parseReceivedEmail(parts: Map<String, List<MultipartPart>>): ReceivedEmail {
         // Extract basic fields
         val from = parts["from"]?.firstOrNull()?.dataAsString()?.let { parseEmailAddress(it) }
             ?: throw IllegalArgumentException("Missing 'from' field in SendGrid webhook")
@@ -344,6 +344,8 @@ public class SendGridEmailInboundService(
             "charsets", "headers", "spam_score", "spam_report", "dkim", "SPF"
         )
 
+        // Anything that isn't a known standard field is treated as an attachment — this catches
+        // both `attachment1`/`attachment2` style fields and inline-image fields.
         val attachments = parts.entries
             .filter { (name, _) -> name !in standardFields }
             .flatMap { (_, partList) ->
@@ -361,27 +363,9 @@ public class SendGridEmailInboundService(
                 }
             }
 
-        // Also check for attachment* fields
-        val explicitAttachments = parts.entries
-            .filter { (name, _) -> name.startsWith("attachment") }
-            .flatMap { (_, partList) ->
-                partList.mapNotNull { part ->
-                    part.filename?.let { filename ->
-                        ReceivedAttachment(
-                            filename = filename,
-                            contentType = MediaType(part.contentType),
-                            size = part.data.size.toLong(),
-                            contentId = null,
-                            content = Data.Bytes(part.data),
-                            contentUrl = null
-                        )
-                    }
-                }
-            }
-
         // Preserve all attachments — distinctBy filename silently drops duplicates with the same
-        // name (e.g. multiple inline images). Use mapIndexed to give each a unique key.
-        val allAttachments = (attachments + explicitAttachments)
+        // name (e.g. multiple inline images). Rename duplicates as `${index}_${filename}`.
+        val allAttachments = attachments
             .mapIndexed { i, a -> a.copy(filename = if (attachments.count { it.filename == a.filename } > 1) "${i}_${a.filename}" else a.filename) }
 
         return ReceivedEmail(
@@ -547,7 +531,7 @@ public class SendGridEmailInboundService(
     /**
      * Represents a part of multipart/form-data.
      */
-    private data class MultipartPart(
+    internal data class MultipartPart(
         val name: String,
         val filename: String?,
         val contentType: String,

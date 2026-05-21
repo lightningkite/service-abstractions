@@ -231,10 +231,15 @@ class ImapEmailInboundServiceTest {
         assertTrue(health.additionalMessage?.contains("does not exist") == true)
     }
 
-    // ==================== Webhook Not Supported Test ====================
+    // ==================== Webhook Content-Type Validation ====================
 
+    /**
+     * parse() now implements the loopback multipart envelope produced by the polling loop.
+     * It MUST reject anything that isn't multipart/form-data — the JSON-only path that the
+     * old implementation rejected as "pull-based protocol" is now an honest content-type check.
+     */
     @Test
-    fun testparse_throwsUnsupportedOperation() = runTest {
+    fun testparse_rejectsNonMultipart() = runTest {
         val service = ImapEmailInboundService(
             name = "test",
             context = testContext,
@@ -247,7 +252,7 @@ class ImapEmailInboundServiceTest {
             requireStartTls = false
         )
 
-        assertFailsWith<UnsupportedOperationException> {
+        assertFailsWith<IllegalArgumentException> {
             service.onReceived.parse(
                 queryParameters = emptyList(),
                 headers = emptyMap(),

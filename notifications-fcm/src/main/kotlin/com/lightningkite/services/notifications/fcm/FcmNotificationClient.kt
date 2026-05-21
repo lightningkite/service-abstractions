@@ -138,7 +138,7 @@ import com.google.firebase.messaging.Notification as FCMNotification
  * @property name Service name for logging/metrics (also used as FirebaseApp name)
  * @property context Service context
  */
-public class FcmNotificationClient(
+public open class FcmNotificationClient(
     override val name: String,
     override val context: SettingContext,
     private val options: FirebaseOptions,
@@ -149,6 +149,14 @@ public class FcmNotificationClient(
 
     // Cached FirebaseMessaging instance — avoids per-send lookup via FirebaseApp.getInstance
     private val messaging by lazy { FirebaseMessaging.getInstance(FirebaseApp.getInstance(name)) }
+
+    /**
+     * Test seam for the underlying FCM batch call. Production sends via the cached
+     * [FirebaseMessaging] instance; tests override this to inject controlled responses
+     * or transport failures without needing real Firebase credentials.
+     */
+    protected open fun sendMulticast(message: MulticastMessage): BatchResponse =
+        messaging.sendEachForMulticast(message)
 
     // Caps concurrent FCM HTTPS calls across the lifetime of this client to avoid tripping
     // per-project QPS limits when fanning out large multicasts (e.g. tens of thousands of tokens).
@@ -309,7 +317,7 @@ public class FcmNotificationClient(
                         }) { batchSpan ->
                             val chunkOutcome = HashMap<String, NotificationSendResult>(chunk.size)
                             try {
-                                val result = messaging.sendEachForMulticast(message)
+                                val result = sendMulticast(message)
                                 val successCount = result.successCount
                                 val failureCount = result.failureCount
                                 batchSpan?.setAttribute("notification.success_count", successCount.toLong())

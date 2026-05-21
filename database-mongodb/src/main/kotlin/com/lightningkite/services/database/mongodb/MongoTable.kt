@@ -266,12 +266,25 @@ public class MongoTable<Model : Any>(
         return access { deleteOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount > 0 }
     }
 
+    /**
+     * Find-then-bulk-delete in chunks of 1000.
+     *
+     * **Atomicity caveat:** the find and the subsequent `deleteMany(IN ids)` are not atomic as a pair.
+     * Under concurrent contention, two callers seeing the same matching docs will both return them
+     * in their result list even though only one actually deleted each doc. Callers that genuinely
+     * need to know which docs *this* call deleted (e.g. queue-style "claim N work items") must do
+     * the claim themselves via per-id [deleteOne] / `findOneAndDelete`.
+     *
+     * The non-atomic chunked bulk delete is preserved because the per-id atomic alternative is
+     * orders of magnitude slower (N round-trips vs N/1000) and the imperfect atomicity is
+     * acceptable for the typical cleanup/wipe use case. If you don't need the returned list,
+     * use [deleteManyIgnoringOld] — it does a single bulk delete with no read step.
+     */
     override suspend fun deleteMany(condition: Condition<Model>): List<Model> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return listOf()
         val remove = ArrayList<Model>()
         access {
-            // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
             withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
                 .collectChunked(1000) { list ->
                     deleteMany(Filters.`in`("_id", list.map { it["_id"] }))

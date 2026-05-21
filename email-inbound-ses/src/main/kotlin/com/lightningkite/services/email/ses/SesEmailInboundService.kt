@@ -104,7 +104,7 @@ public class SesEmailInboundService(
      * Cache of downloaded and validated X.509 certificates keyed by URL.
      * This avoids re-downloading certificates for each message.
      */
-    private val certificateCache = ConcurrentHashMap<String, X509Certificate>()
+    internal val certificateCache: ConcurrentHashMap<String, X509Certificate> = ConcurrentHashMap()
 
     /**
      * Valid hostnames for SNS signing certificate URLs.
@@ -349,7 +349,7 @@ public class SesEmailInboundService(
      * @param notification The SNS notification to verify
      * @throws SecurityException if signature verification fails
      */
-    private suspend fun verifySnsSignature(notification: SnsNotification) {
+    internal suspend fun verifySnsSignature(notification: SnsNotification) {
         // Validate the certificate URL
         validateCertificateUrl(notification.SigningCertURL)
 
@@ -405,7 +405,7 @@ public class SesEmailInboundService(
      * Validates that the certificate URL is from an official AWS SNS endpoint.
      * This prevents attackers from hosting their own malicious certificates.
      */
-    private fun validateCertificateUrl(certUrl: String) {
+    internal fun validateCertificateUrl(certUrl: String) {
         val uri = try {
             URI(certUrl)
         } catch (e: Exception) {
