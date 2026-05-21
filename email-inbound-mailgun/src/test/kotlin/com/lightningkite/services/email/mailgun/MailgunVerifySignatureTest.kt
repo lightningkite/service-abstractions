@@ -138,9 +138,7 @@ class MailgunVerifySignatureTest {
 
     @Test
     fun malformedHexOddLengthThrowsGenericInvalidSignature() {
-        // Odd-length hex — must surface the same error as a legit mismatch so we don't leak
-        // which check failed.
-        val e = assertFailsWith<SecurityException> {
+        val e = assertFailsWith<IllegalArgumentException> {
             service.verifySignature(
                 mapOf(
                     "timestamp" to listOf(nowEpoch()),
@@ -150,13 +148,12 @@ class MailgunVerifySignatureTest {
                 apiKey,
             )
         }
-        assertEquals("Invalid Mailgun webhook signature", e.message)
+        assertEquals("Invalid Mailgun webhook signature - not proper hex", e.message)
     }
 
     @Test
     fun malformedHexNonHexCharsThrowsGenericInvalidSignature() {
-        // Right length parity but non-hex chars — same generic error.
-        val e = assertFailsWith<SecurityException> {
+        val e = assertFailsWith<IllegalArgumentException> {
             service.verifySignature(
                 mapOf(
                     "timestamp" to listOf(nowEpoch()),
@@ -166,6 +163,6 @@ class MailgunVerifySignatureTest {
                 apiKey,
             )
         }
-        assertEquals("Invalid Mailgun webhook signature", e.message)
+        assertEquals("Invalid Mailgun webhook signature - not proper hex", e.message)
     }
 }

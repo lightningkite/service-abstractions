@@ -279,10 +279,6 @@ public class JavaSmtpEmailService(
     private suspend fun Email.toJavaX(session: Session = Session.getDefaultInstance(Properties(), null)): Message =
         withContext(kotlinx.coroutines.Dispatchers.IO) {
             val email = this@toJavaX
-            // Pre-read attachment bytes before constructing MimeMessage (readBytes is blocking)
-            val attachmentBytes = email.attachments.map {
-                Triple(it, it.typedData.data.bytes(), it.typedData.mediaType.toString())
-            }
             MimeMessage(session).apply {
                 subject = email.subject
                 email.from?.let { setFrom(InternetAddress(it.value.toString(), it.label)) }
@@ -309,14 +305,19 @@ public class JavaSmtpEmailService(
                         })
                     })
                     // fixed Content-Disposition and added Content-ID for inline/CID support
-                    for ((attachment, bytes, mediaTypeStr) in attachmentBytes) {
+                    for (attachment in email.attachments) {
                         addBodyPart(MimeBodyPart().apply {
                             val disposition = if (attachment.inline) "inline" else "attachment"
                             addHeader("Content-Disposition", "$disposition; filename=\"${attachment.filename}\"")
                             if (attachment.inline) {
                                 addHeader("Content-ID", "<${attachment.filename}>")
                             }
-                            dataHandler = DataHandler(ByteArrayDataSource(bytes, mediaTypeStr))
+                            dataHandler = DataHandler(
+                                ByteArrayDataSource(
+                                    attachment.typedData.data.bytes(),
+                                    attachment.typedData.mediaType.toString()
+                                )
+                            )
                         })
                     }
                 })

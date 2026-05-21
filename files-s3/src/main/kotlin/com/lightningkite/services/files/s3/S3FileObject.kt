@@ -186,20 +186,24 @@ public class S3FileObject(
      */
     override suspend fun get(): TypedData? =
         system.otel.span("file.get", configure = s3SpanAttrs("get")) { span ->
-            val result = try {
-                val response = system.s3Async.getObject(
-                    GetObjectRequest.builder().also {
-                        it.bucket(system.bucket)
-                        it.key(unixPath)
-                    }.build(),
-                    AsyncResponseTransformer.toBytes()
-                ).await()
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val response = system.s3.getObject(
+                        GetObjectRequest.builder().also {
+                            it.bucket(system.bucket)
+                            it.key(unixPath)
+                        }.build()
+                    )
 
-                val contentType = response.response().contentType() ?: "application/octet-stream"
-                val mediaType = MediaType(contentType)
-                TypedData.bytes(response.asByteArray(), mediaType = mediaType)
-            } catch (e: NoSuchKeyException) {
-                null
+                    val rr = response.response()
+                    TypedData.source(
+                        source = response.asSource().buffered(),
+                        mediaType = MediaType(rr.contentType() ?: "application/octet-stream"),
+                        size = rr.contentLength()
+                    )
+                } catch (e: NoSuchKeyException) {
+                    null
+                }
             }
             result?.let {
                 span?.setAttribute("file.size", it.data.size ?: -1)
@@ -540,7 +544,7 @@ public class S3FileObject(
             }
             // Local verification failed (signature was not produced by this server); fall back to HTTP.
             // The shared client applies a 60s engine timeout.
-            // TODO: make assertSignatureValid suspend to avoid runBlocking here.
+            // It would be great if we could make this async, but it's used in serialization, so not possible.
             return runBlocking {
                 val response = client.get("$url?$queryParams") {
                     header("Range", "0-0")

@@ -47,7 +47,7 @@ package com.lightningkite.services
  *
  * @property map Internal storage for cached resources (default: [ConcurrentMutableMap]).
  */
-public class SharedResources(private val map: ConcurrentMutableMap<Key<*>, Any?> = ConcurrentMutableMap()) {
+public class SharedResources(private val map: ConcurrentMutableMap<Key<*>, Any> = ConcurrentMutableMap()) {
     /**
      * Resource key that knows how to create its associated resource.
      *
@@ -90,8 +90,6 @@ public class SharedResources(private val map: ConcurrentMutableMap<Key<*>, Any?>
     @Suppress("UNCHECKED_CAST")
     public fun <T> get(key: Key<T>, context: SettingContext): T {
         // compute is atomic on every platform, so setup runs at most once per key.
-        // Null results from setup are intentionally cached: a sentinel is stored because
-        // ConcurrentHashMap (JVM/Android) does not allow null values.
         val stored = map.compute(key) { _, existing ->
             existing ?: (key.setup(context) ?: NULL_SENTINEL)
         }

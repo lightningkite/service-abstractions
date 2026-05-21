@@ -42,7 +42,7 @@ package com.lightningkite.services
  * @param V The type of values.
  */
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
-public expect class ConcurrentMutableMap<K, V>() : MutableMap<K, V> {
+public expect class ConcurrentMutableMap<K: Any, V: Any>() : MutableMap<K, V> {
 
     /**
      * Atomically read the current value for [key] (or `null` if absent), invoke [remapping] on it,

@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
  * @see ConcurrentMutableMap
  */
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
-public actual class ConcurrentMutableMap<K, V> actual constructor() : MutableMap<K, V> {
+public actual class ConcurrentMutableMap<K: Any, V: Any> actual constructor() : MutableMap<K, V> {
     private val map: ConcurrentHashMap<K, V> = ConcurrentHashMap()
 
     override val size: Int get() = map.size

@@ -296,10 +296,12 @@ public class MailgunEmailInboundService(
         mac.init(secretKey)
         val expectedBytes = mac.doFinal(data.toByteArray())
 
-        // Decode caller-supplied hex signature and compare in constant time. Anything that
-        // isn't valid hex of the right length is rejected outright (don't leak the reason).
-        val providedBytes = hexDecode(signature)
-        if (providedBytes == null || !java.security.MessageDigest.isEqual(providedBytes, expectedBytes)) {
+        val providedBytes = try {
+            signature.hexToByteArray()
+        } catch(e: IllegalArgumentException) {
+            throw IllegalArgumentException("Invalid Mailgun webhook signature - not proper hex", e)
+        }
+        if (!java.security.MessageDigest.isEqual(providedBytes, expectedBytes)) {
             throw SecurityException("Invalid Mailgun webhook signature")
         }
 
@@ -432,23 +434,6 @@ public class MailgunEmailInboundService(
             val trimmed = address.trim()
             if (trimmed.isNotBlank()) parseEmailAddress(trimmed) else null
         }
-    }
-
-    /**
-     * Decodes a hex string into bytes, returning null for malformed input. Used in webhook
-     * signature comparison so we can do a constant-time byte compare rather than relying on
-     * `String.equals`, which short-circuits on first mismatch.
-     */
-    internal fun hexDecode(hex: String): ByteArray? {
-        if (hex.length % 2 != 0) return null
-        val out = ByteArray(hex.length / 2)
-        for (i in out.indices) {
-            val hi = Character.digit(hex[i * 2], 16)
-            val lo = Character.digit(hex[i * 2 + 1], 16)
-            if (hi < 0 || lo < 0) return null
-            out[i] = ((hi shl 4) or lo).toByte()
-        }
-        return out
     }
 
     /**
