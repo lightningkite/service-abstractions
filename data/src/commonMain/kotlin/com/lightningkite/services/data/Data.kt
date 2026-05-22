@@ -33,9 +33,25 @@ import kotlin.js.JsName
  */
 public sealed interface Data : AutoCloseable {
     public val size: Long? get() = null
+
+    /**
+     * Get a byte array of the data from this instance.
+     * Closes this instance.
+     */
     public fun bytes(): ByteArray
+
+    /**
+     * Closes this instance, but leaves the sink open.
+     */
     public fun write(to: kotlinx.io.Sink)
+
+    /**
+     * Get the text data from this instance.
+     * Sources and sinks presume UTF8 by default - if you're not using UTF8, you'll need to handle parsing to text yourself.
+     * Closes this instance.
+     */
     public fun text(): String
+
     public fun source(): kotlinx.io.Source
 
     /**
