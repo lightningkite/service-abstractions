@@ -39,8 +39,7 @@ private fun sealedSubSerializer(value: KSerializer<*>, subName: String): KSerial
     return poly.findPolymorphicSerializerOrNull(StubPolymorphicDecoder, subName) as? KSerializer<*>
 }
 
-@ExperimentalUnsignedTypes
-@OptIn(ExperimentalSerializationApi::class)
+@OptIn(ExperimentalSerializationApi::class, ExperimentalUnsignedTypes::class)
 public class SerializationRegistry(public val module: SerializersModule) {
     private val direct = HashMap<String, KSerializer<*>>()
     private val factory = HashMap<String, (Array<KSerializer<*>>) -> KSerializer<*>>()
@@ -70,6 +69,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                     kClass,
                     fallbackSerializer = null,
                     typeArgumentsSerializers = Array(10) { NothingSerializer() })
+                println("Contextual serializer inserted for ${sample.descriptor.serialName}")
                 factory[sample.descriptor.serialName] = { provider(it.toList()) }
             }
 
@@ -95,10 +95,10 @@ public class SerializationRegistry(public val module: SerializersModule) {
         })
     }
 
-    public fun register(serializer: KSerializer<*>) {
+    public fun register(serializer: KSerializer<*>, name: String = serializer.descriptor.serialName) {
 //        println("$this Registered ${serializer.descriptor.serialName}")
-        if (direct.containsKey(serializer.descriptor.serialName)) return
-        direct[serializer.descriptor.serialName] = serializer
+        if (direct.containsKey(name)) return
+        direct[name] = serializer
     }
 
     public fun register(name: String, make: (Array<KSerializer<Nothing>>) -> KSerializer<*>) {
@@ -205,27 +205,32 @@ public class SerializationRegistry(public val module: SerializersModule) {
         ) { TripleSerializer(it[0], it[1], it[2]) }
         register(ClosedRangeSerializer(NothingSerializer()).descriptor.serialName) { ClosedRangeSerializer(it[0]) }
 
-        register(GeoCoordinate.serializer())
-        register(TrimmedString.serializer())
-        register(CaselessString.serializer())
-        register(TrimmedCaselessString.serializer())
-        register(EmailAddress.serializer())
-        register(PhoneNumber.serializer())
-        register(ZonedDateTime.serializer())
-        register(OffsetDateTime.serializer())
-        register(Length.serializer())
-        register(Area.serializer())
-        register(Volume.serializer())
-        register(Mass.serializer())
-        register(Speed.serializer())
-        register(Acceleration.serializer())
-        register(Force.serializer())
-        register(Pressure.serializer())
-        register(Energy.serializer())
-        register(Power.serializer())
-        register(Temperature.serializer())
-        register(RelativeTemperature.serializer())
-        register(DataSize.serializer())
+        listOf(
+            GeoCoordinate.serializer(),
+            TrimmedString.serializer(),
+            CaselessString.serializer(),
+            TrimmedCaselessString.serializer(),
+            EmailAddress.serializer(),
+            PhoneNumber.serializer(),
+            ZonedDateTime.serializer(),
+            OffsetDateTime.serializer(),
+            Length.serializer(),
+            Area.serializer(),
+            Volume.serializer(),
+            Mass.serializer(),
+            Speed.serializer(),
+            Acceleration.serializer(),
+            Force.serializer(),
+            Pressure.serializer(),
+            Energy.serializer(),
+            Power.serializer(),
+            Temperature.serializer(),
+            RelativeTemperature.serializer(),
+            DataSize.serializer(),
+        ).forEach {
+            register(it)
+            register(it, it.descriptor.serialName.replace("com.lightningkite.services.data", "com.lightningkite"))
+        }
 
         register(Aggregate.serializer())
         register(CollectionChanges.serializer(NothingSerializer()).descriptor.serialName) {

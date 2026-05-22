@@ -20,18 +20,18 @@ import java.util.concurrent.ConcurrentHashMap
 public actual class ConcurrentMutableMap<K: Any, V: Any> actual constructor() : MutableMap<K, V> {
     private val map: ConcurrentHashMap<K, V> = ConcurrentHashMap()
 
-    override val size: Int get() = map.size
-    override fun isEmpty(): Boolean = map.isEmpty()
-    override fun containsKey(key: K): Boolean = map.containsKey(key)
-    override fun containsValue(value: V): Boolean = map.containsValue(value)
-    override fun get(key: K): V? = map[key]
-    override fun put(key: K, value: V): V? = map.put(key, value)
-    override fun remove(key: K): V? = map.remove(key)
-    override fun putAll(from: Map<out K, V>): Unit = map.putAll(from)
-    override fun clear(): Unit = map.clear()
-    override val keys: MutableSet<K> get() = map.keys
-    override val values: MutableCollection<V> get() = map.values
-    override val entries: MutableSet<MutableMap.MutableEntry<K, V>> get() = map.entries
+    actual override val size: Int get() = map.size
+    actual override fun isEmpty(): Boolean = map.isEmpty()
+    actual override fun containsKey(key: K): Boolean = map.containsKey(key)
+    actual override fun containsValue(value: V): Boolean = map.containsValue(value)
+    actual override fun get(key: K): V? = map[key]
+    actual override fun put(key: K, value: V): V? = map.put(key, value)
+    actual override fun remove(key: K): V? = map.remove(key)
+    actual override fun putAll(from: Map<out K, V>): Unit = map.putAll(from)
+    actual override fun clear(): Unit = map.clear()
+    actual override val keys: MutableSet<K> get() = map.keys
+    actual override val values: MutableCollection<V> get() = map.values
+    actual override val entries: MutableSet<MutableMap.MutableEntry<K, V>> get() = map.entries
 
     public actual fun compute(key: K, remapping: (K, V?) -> V?): V? =
         map.compute(key) { k, v -> remapping(k, v) }

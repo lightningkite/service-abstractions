@@ -20,25 +20,25 @@ public actual class ConcurrentMutableMap<K: Any, V: Any> actual constructor() : 
     private val lock = SynchronizedObject()
     private val map = HashMap<K, V>()
 
-    override val size: Int
+    actual override val size: Int
         get() = synchronized(lock) { map.size }
 
-    override fun isEmpty(): Boolean = synchronized(lock) { map.isEmpty() }
-    override fun containsKey(key: K): Boolean = synchronized(lock) { map.containsKey(key) }
-    override fun containsValue(value: V): Boolean = synchronized(lock) { map.containsValue(value) }
-    override fun get(key: K): V? = synchronized(lock) { map[key] }
-    override fun put(key: K, value: V): V? = synchronized(lock) { map.put(key, value) }
-    override fun remove(key: K): V? = synchronized(lock) { map.remove(key) }
-    override fun putAll(from: Map<out K, V>): Unit = synchronized(lock) { map.putAll(from) }
-    override fun clear(): Unit = synchronized(lock) { map.clear() }
+    actual override fun isEmpty(): Boolean = synchronized(lock) { map.isEmpty() }
+    actual override fun containsKey(key: K): Boolean = synchronized(lock) { map.containsKey(key) }
+    actual override fun containsValue(value: V): Boolean = synchronized(lock) { map.containsValue(value) }
+    actual override fun get(key: K): V? = synchronized(lock) { map[key] }
+    actual override fun put(key: K, value: V): V? = synchronized(lock) { map.put(key, value) }
+    actual override fun remove(key: K): V? = synchronized(lock) { map.remove(key) }
+    actual override fun putAll(from: Map<out K, V>): Unit = synchronized(lock) { map.putAll(from) }
+    actual override fun clear(): Unit = synchronized(lock) { map.clear() }
 
-    override val keys: MutableSet<K>
+    actual override val keys: MutableSet<K>
         get() = synchronized(lock) { map.keys.toMutableSet() }
 
-    override val values: MutableCollection<V>
+    actual override val values: MutableCollection<V>
         get() = synchronized(lock) { map.values.toMutableList() }
 
-    override val entries: MutableSet<MutableMap.MutableEntry<K, V>>
+    actual override val entries: MutableSet<MutableMap.MutableEntry<K, V>>
         get() = synchronized(lock) { map.entries.toMutableSet() }
 
     public actual fun compute(key: K, remapping: (K, V?) -> V?): V? = synchronized(lock) {

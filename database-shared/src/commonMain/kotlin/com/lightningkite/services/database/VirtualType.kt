@@ -495,7 +495,7 @@ public data class VirtualTypeReference(
         return (context[serialName] as? KSerializer<Any?>
             ?: registry[serialName, arguments.map { it.serializer(registry, context) }.toTypedArray()])
             ?.let { if (isNullable) it.nullable2 else it }
-            ?: throw Exception("$serialName is not registered in either the registeredTypes or registeredGenericTypes.  virtualTypes are ${registry.virtualTypes.keys.joinToString()}")
+            ?: throw Exception("$serialName is not registered in either the registeredTypes or registeredGenericTypes.  Options are are ${registry.registeredTypes.joinToString()}")
     }
 }
 
