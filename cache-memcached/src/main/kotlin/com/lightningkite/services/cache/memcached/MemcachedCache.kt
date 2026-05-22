@@ -186,7 +186,13 @@ public class MemcachedCache(
             timeToLive?.let { setAttribute("cache.ttl", it.inWholeSeconds) }
         }) {
             withContext(Dispatchers.IO) {
-                val result = client.incr(key, value, value)
+                // Memcached's incr/decr commands only accept non-negative deltas.
+                // Negative deltas must use decr; initValue is used when the key doesn't exist.
+                val result = if (value >= 0) {
+                    client.incr(key, value, value)
+                } else {
+                    client.decr(key, -value, -value)
+                }
                 timeToLive?.let {
                     client.touch(key, it.inWholeSeconds.toInt())
                 }
