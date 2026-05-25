@@ -2,26 +2,20 @@ package com.lightningkite.services.email.imap
 
 import com.icegreen.greenmail.util.*
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.toEmailAddress
-import com.lightningkite.services.email.ReceivedEmail
-import io.ktor.client.*
-import io.ktor.client.engine.cio.*
 import jakarta.activation.DataHandler
 import jakarta.mail.*
 import jakarta.mail.internet.*
 import jakarta.mail.util.ByteArrayDataSource
 import kotlinx.coroutines.test.runTest
-import java.util.*
 import kotlin.test.*
 
 /**
  * Integration tests for IMAP email service with GreenMail.
  *
- * These tests verify:
- * 1. Emails can be fetched from the IMAP server
- * 2. Email content is correctly parsed (plain text, HTML, attachments)
- * 3. Email headers are correctly extracted
- * 4. Messages are correctly marked as read
+ * Verifies the real pull() path end-to-end:
+ *  1. Emails can be fetched from the IMAP server
+ *  2. Plain text, HTML, attachments, and threading headers are parsed correctly
+ *  3. Messages are marked SEEN so the next pull() doesn't return them
  */
 class ImapPollingIntegrationTest {
 
@@ -52,11 +46,8 @@ class ImapPollingIntegrationTest {
         greenMail.stop()
     }
 
-    // ==================== Email Fetch and Parse Tests ====================
-
     @Test
     fun testFetchUnreadEmails() = runTest {
-        // Deliver an email
         deliverEmail(
             from = "sender@example.com",
             to = "inbox@test.local",
@@ -64,8 +55,7 @@ class ImapPollingIntegrationTest {
             body = "Hello, this is a test email!"
         )
 
-        // Fetch emails directly (simulating what the service does)
-        val emails = fetchEmailsViaImap()
+        val emails = createService().onReceived.pull()
 
         assertEquals(1, emails.size)
         val email = emails.first()
@@ -87,11 +77,9 @@ class ImapPollingIntegrationTest {
             )
         }
 
-        val emails = fetchEmailsViaImap()
+        val emails = createService().onReceived.pull()
         assertEquals(3, emails.size)
-
-        val subjects = emails.map { it.subject }.toSet()
-        assertEquals(3, subjects.size)
+        assertEquals(3, emails.map { it.subject }.toSet().size)
     }
 
     @Test
@@ -106,7 +94,7 @@ class ImapPollingIntegrationTest {
             html = htmlContent
         )
 
-        val emails = fetchEmailsViaImap()
+        val emails = createService().onReceived.pull()
         assertEquals(1, emails.size)
         val email = emails.first()
 
@@ -127,15 +115,13 @@ class ImapPollingIntegrationTest {
             attachmentContentType = "text/plain"
         )
 
-        val emails = fetchEmailsViaImap()
+        val emails = createService().onReceived.pull()
         assertEquals(1, emails.size)
         val email = emails.first()
 
         assertEquals("Email with Attachment", email.subject)
         assertTrue(email.attachments.isNotEmpty())
-
-        val attachment = email.attachments.first()
-        assertEquals("test.txt", attachment.filename)
+        assertEquals("test.txt", email.attachments.first().filename)
     }
 
     @Test
@@ -154,7 +140,7 @@ class ImapPollingIntegrationTest {
             )
         )
 
-        val emails = fetchEmailsViaImap()
+        val emails = createService().onReceived.pull()
         assertEquals(1, emails.size)
         val email = emails.first()
 
@@ -171,13 +157,9 @@ class ImapPollingIntegrationTest {
             body = "Test body"
         )
 
-        // First fetch - should get 1 email and mark as read
-        val firstFetch = fetchEmailsViaImap(markAsRead = true)
-        assertEquals(1, firstFetch.size)
-
-        // Second fetch - should get 0 emails (already read)
-        val secondFetch = fetchEmailsViaImap()
-        assertEquals(0, secondFetch.size)
+        val service = createService()
+        assertEquals(1, service.onReceived.pull().size)
+        assertEquals(0, service.onReceived.pull().size)
     }
 
     @Test
@@ -189,20 +171,14 @@ class ImapPollingIntegrationTest {
             body = "Body with special chars: é ñ ü 中文"
         )
 
-        val emails = fetchEmailsViaImap()
+        val emails = createService().onReceived.pull()
         assertEquals(1, emails.size)
-        val email = emails.first()
-
-        assertTrue(email.subject.contains("Émojis"))
+        assertTrue(emails.first().subject.contains("Émojis"))
     }
-
-    // ==================== Service Integration Tests ====================
 
     @Test
     fun testServiceConnect() = runTest {
         val service = createService()
-
-        // Should connect without error
         service.connect()
         service.disconnect()
     }
@@ -213,8 +189,6 @@ class ImapPollingIntegrationTest {
         val health = service.healthCheck()
         assertEquals(com.lightningkite.services.data.HealthStatus.Level.OK, health.level)
     }
-
-    // ==================== Helpers ====================
 
     private fun createService(): ImapEmailInboundService {
         return ImapEmailInboundService(
@@ -227,166 +201,8 @@ class ImapPollingIntegrationTest {
             folder = "INBOX",
             useSsl = false,
             requireStartTls = false,
-            httpClient = HttpClient(CIO)
         )
     }
-
-    /**
-     * Fetches emails via IMAP and converts them to ReceivedEmail.
-     * This simulates what the ImapEmailInboundService does internally.
-     */
-    private fun fetchEmailsViaImap(markAsRead: Boolean = true): List<ReceivedEmail> {
-        val session = Session.getInstance(Properties().apply {
-            put("mail.store.protocol", "imap")
-            put("mail.imap.host", "localhost")
-            put("mail.imap.port", imapPort)
-        })
-
-        val store = session.getStore("imap")
-        store.connect("localhost", imapPort, "inbox@test.local", "password")
-
-        val inbox = store.getFolder("INBOX")
-        inbox.open(Folder.READ_WRITE)
-
-        val unreadMessages = inbox.search(
-            jakarta.mail.search.FlagTerm(Flags(Flags.Flag.SEEN), false)
-        )
-
-        val results = unreadMessages.filterIsInstance<MimeMessage>().map { msg ->
-            val result = parseMessageToReceivedEmail(msg)
-
-            if (markAsRead) {
-                msg.setFlag(Flags.Flag.SEEN, true)
-            }
-
-            result
-        }
-
-        inbox.close(false)
-        store.close()
-
-        return results
-    }
-
-    private fun parseMessageToReceivedEmail(msg: MimeMessage): ReceivedEmail {
-        val from = (msg.from?.firstOrNull() as? InternetAddress)?.let {
-            com.lightningkite.services.email.EmailAddressWithName(
-                value = it.address.toEmailAddress(),
-                label = it.personal
-            )
-        } ?: com.lightningkite.services.email.EmailAddressWithName(
-            value = "unknown@unknown.com".toEmailAddress()
-        )
-
-        val to = (msg.getRecipients(Message.RecipientType.TO) ?: emptyArray())
-            .filterIsInstance<InternetAddress>()
-            .map {
-                com.lightningkite.services.email.EmailAddressWithName(
-                    value = it.address.toEmailAddress(),
-                    label = it.personal
-                )
-            }
-
-        val cc = (msg.getRecipients(Message.RecipientType.CC) ?: emptyArray())
-            .filterIsInstance<InternetAddress>()
-            .map {
-                com.lightningkite.services.email.EmailAddressWithName(
-                    value = it.address.toEmailAddress(),
-                    label = it.personal
-                )
-            }
-
-        val contentResult = parseContent(msg)
-
-        val headers = mutableMapOf<String, List<String>>()
-        msg.allHeaders.asIterator().forEach { header ->
-            headers[header.name] = (headers[header.name] ?: emptyList()) + header.value
-        }
-
-        val inReplyTo = msg.getHeader("In-Reply-To")?.firstOrNull()?.trim('<', '>')
-        val references = msg.getHeader("References")?.firstOrNull()
-            ?.split(Regex("\\s+"))
-            ?.filter { it.isNotBlank() }
-            ?.map { it.trim('<', '>') }
-            ?: emptyList()
-
-        return ReceivedEmail(
-            messageId = msg.getHeader("Message-ID")?.firstOrNull()?.trim('<', '>') ?: "unknown",
-            from = from,
-            to = to,
-            cc = cc,
-            replyTo = null,
-            subject = msg.subject ?: "",
-            html = contentResult.html,
-            plainText = contentResult.plainText,
-            receivedAt = kotlin.time.Instant.fromEpochMilliseconds(
-                (msg.sentDate ?: msg.receivedDate ?: java.util.Date()).time
-            ),
-            headers = headers,
-            attachments = contentResult.attachments,
-            envelope = null,
-            spamScore = null,
-            inReplyTo = inReplyTo,
-            references = references
-        )
-    }
-
-    private data class ContentResult(
-        val plainText: String?,
-        val html: String?,
-        val attachments: List<com.lightningkite.services.email.ReceivedAttachment>,
-    )
-
-    private fun parseContent(part: jakarta.mail.Part): ContentResult {
-        var plainText: String? = null
-        var html: String? = null
-        val attachments = mutableListOf<com.lightningkite.services.email.ReceivedAttachment>()
-
-        // Check for attachments FIRST (before text/plain check), since attachments may have text/plain content type
-        val isAttachment = jakarta.mail.Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) ||
-                jakarta.mail.Part.INLINE.equals(part.disposition, ignoreCase = true) ||
-                (part.fileName != null && !part.isMimeType("multipart/*"))
-
-        when {
-            isAttachment -> {
-                val filename = part.fileName ?: "attachment"
-                val bytes = part.inputStream.use { it.readBytes() }
-                attachments.add(
-                    com.lightningkite.services.email.ReceivedAttachment(
-                        filename = filename,
-                        contentType = com.lightningkite.services.data.MediaType.Application.OctetStream,
-                        size = bytes.size.toLong(),
-                        contentId = null,
-                        content = com.lightningkite.services.data.Data.Bytes(bytes),
-                        contentUrl = null
-                    )
-                )
-            }
-
-            part.isMimeType("multipart/*") -> {
-                val multipart = part.content as jakarta.mail.Multipart
-                for (i in 0 until multipart.count) {
-                    val bodyPart = multipart.getBodyPart(i)
-                    val result = parseContent(bodyPart)
-                    plainText = plainText ?: result.plainText
-                    html = html ?: result.html
-                    attachments.addAll(result.attachments)
-                }
-            }
-
-            part.isMimeType("text/plain") -> {
-                plainText = part.content as? String
-            }
-
-            part.isMimeType("text/html") -> {
-                html = part.content as? String
-            }
-        }
-
-        return ContentResult(plainText, html, attachments)
-    }
-
-    // ==================== Email Delivery Helpers ====================
 
     private fun deliverEmail(from: String, to: String, subject: String, body: String) {
         val message = GreenMailUtil.createTextEmail(

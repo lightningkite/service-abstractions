@@ -33,7 +33,6 @@ pluginManagement {
     }
 }
 
-//include(":cache-dynamodb-kmp")
 //include(":database-cassandra")   // EXPERIMENTAL
 //include(":database-migration")   // EXPERIMENTAL
 //include(":files-s3-kmp") // EXPERIMENTAL

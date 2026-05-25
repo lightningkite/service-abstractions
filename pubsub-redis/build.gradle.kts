@@ -10,6 +10,7 @@ plugins {
 
 dependencies {
     api(project(path = ":pubsub"))
+    api(project(path = ":otel-jvm"))
     implementation(libs.lettuce)
     implementation(libs.lettuce.otel)
     testImplementation(libs.embedded.redis)

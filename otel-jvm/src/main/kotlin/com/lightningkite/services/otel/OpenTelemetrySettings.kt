@@ -36,6 +36,7 @@ import java.util.concurrent.*
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
 /**
  * Configuration for OpenTelemetry observability (traces, metrics, logs).
@@ -445,6 +446,7 @@ public data class OpenTelemetrySettings(
                 val colorEnabled = queryParams["color"]?.lowercase() != "false"
                 val outputFile = pathPart?.let { java.io.File(it) }
                 val logDelayMs = queryParams["log_delay"]?.toLongOrNull() ?: 0
+                val metricFrequency = queryParams["metric_frequency"]?.let{ Duration.parseOrNull(it) } ?: 60.seconds
 
                 val config =
                     DevExporterConfig(color = colorEnabled, output = outputFile, logCorrelationDelayMs = logDelayMs)
@@ -463,7 +465,7 @@ public data class OpenTelemetrySettings(
                         SdkMeterProvider.builder()
                             .registerMetricReader(
                                 PeriodicMetricReader.builder(DevMetricExporter(config))
-                                    .setInterval(10, TimeUnit.SECONDS)
+                                    .setInterval(metricFrequency.toJavaDuration())
                                     .build()
                             )
                             .setResource(resource)
@@ -503,6 +505,7 @@ public data class OpenTelemetrySettings(
                 val debounceWindowMs = queryParams["debounce"]?.toLongOrNull()
                 val debounceMinCount = queryParams["debounce_min"]?.toIntOrNull() ?: 1
                 val logDelayMs = queryParams["log_delay"]?.toLongOrNull() ?: 0
+                val metricFrequency = queryParams["metric_frequency"]?.let{ Duration.parseOrNull(it) } ?: 60.seconds
 
                 val config = DevExporterConfig(
                     color = colorEnabled,
@@ -526,7 +529,7 @@ public data class OpenTelemetrySettings(
                         SdkMeterProvider.builder()
                             .registerMetricReader(
                                 PeriodicMetricReader.builder(DevMetricExporter(config))
-                                    .setInterval(10, TimeUnit.SECONDS)
+                                    .setInterval(metricFrequency.toJavaDuration())
                                     .build()
                             )
                             .setResource(resource)
@@ -615,7 +618,7 @@ private class RateLimitedSpanExporter(
 
     init {
         // Refill permits every second
-        refillScheduler.scheduleAtFixedRate({
+        refillScheduler.scheduleWithFixedDelay({
             val availablePermits = permits.availablePermits()
             if (availablePermits < maxSpansPerSecond) {
                 permits.release(maxSpansPerSecond - availablePermits)
@@ -668,7 +671,7 @@ private class RateLimitedLogRecordExporter(
 
     init {
         // Refill permits every second
-        refillScheduler.scheduleAtFixedRate({
+        refillScheduler.scheduleWithFixedDelay({
             val availablePermits = permits.availablePermits()
             if (availablePermits < maxLogsPerSecond) {
                 permits.release(maxLogsPerSecond - availablePermits)

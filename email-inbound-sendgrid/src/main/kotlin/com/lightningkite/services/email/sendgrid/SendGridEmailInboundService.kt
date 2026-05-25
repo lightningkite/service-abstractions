@@ -3,9 +3,12 @@ package com.lightningkite.services.email.sendgrid
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.*
+import io.opentelemetry.api.trace.SpanKind
 import kotlinx.serialization.json.*
 import java.security.KeyFactory
 import java.security.Signature
@@ -75,7 +78,13 @@ public class SendGridEmailInboundService(
     private val verificationKey: String,
 ) : EmailInboundService {
 
-    private val tracer: Tracer? = context.openTelemetry?.getTracer("email-inbound-sendgrid")
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-inbound-sendgrid")
+
+    // Cached per-class (KeyFactory is thread-safe)
+    private val keyFactory by lazy { KeyFactory.getInstance("EC") }
+
+    // ThreadLocal because Signature is NOT thread-safe
+    private val signatureInstance = ThreadLocal.withInitial { Signature.getInstance("SHA256withECDSA") }
 
     public companion object {
         private const val SIGNATURE_HEADER = "x-twilio-email-event-webhook-signature"
@@ -116,7 +125,7 @@ public class SendGridEmailInboundService(
         }
     }
 
-    override val onReceived: WebhookSubservice<ReceivedEmail> = object : WebhookSubservice<ReceivedEmail> {
+    override val onReceived: WebhookAdapter<ReceivedEmail> = object : WebhookAdapter<ReceivedEmail> {
         override suspend fun configureWebhook(httpUrl: String) {
             logger.info { "[$name] Webhook URL should be configured in SendGrid dashboard: $httpUrl" }
             logger.warn { "[$name] Automatic webhook configuration is not supported. Configure manually in SendGrid." }
@@ -126,74 +135,63 @@ public class SendGridEmailInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail {
-            val span = tracer?.spanBuilder("email.webhook.parse")
-                ?.setSpanKind(SpanKind.SERVER)
-                ?.setAttribute("email.webhook.operation", "inbound_parse")
-                ?.setAttribute("email.provider", "sendgrid")
-                ?.startSpan()
+        ): ReceivedEmail = otel.span("email.webhook.parse", configure = {
+            setSpanKind(SpanKind.SERVER)
+            setAttribute("email.webhook.operation", "inbound_parse")
+            setAttribute("email.provider", "sendgrid")
+            setAttribute("messaging.system", "sendgrid")
+        }) { span ->
+            logger.debug { "[$name] Parsing SendGrid webhook" }
 
-            return try {
-                val scope = span?.makeCurrent()
-                try {
-                    logger.debug { "[$name] Parsing SendGrid webhook" }
+            // Get raw body bytes BEFORE any parsing (required for signature verification)
+            val rawBodyBytes = body.data.bytes()
 
-                    // Get raw body bytes BEFORE any parsing (required for signature verification)
-                    val rawBodyBytes = body.data.bytes()
+            // Verify signature (required for all webhooks)
+            verifySignature(headers, rawBodyBytes, verificationKey)
 
-                    // Verify signature (required for all webhooks)
-                    verifySignature(headers, rawBodyBytes, verificationKey)
+            span?.setAttribute("email.webhook.signature_verified", true)
 
-                    span?.setAttribute("email.webhook.signature_verified", true)
-
-                    // Verify content type
-                    if (!body.mediaType.accepts(MediaType.MultiPart.FormData)) {
-                        throw IllegalArgumentException(
-                            "Expected multipart/form-data but got ${body.mediaType}. " +
-                                    "Ensure SendGrid Inbound Parse is configured correctly."
-                        )
-                    }
-
-                    // Parse multipart form data
-                    val boundary = body.mediaType.parameters["boundary"]
-                        ?: throw IllegalArgumentException("Missing boundary parameter in Content-Type")
-
-                    val parts = parseMultipartFormData(rawBodyBytes, boundary)
-
-                    val receivedEmail = parseReceivedEmail(parts)
-
-                    // Add email-specific attributes
-                    span?.setAttribute("email.from", receivedEmail.from.value.raw)
-                    span?.setAttribute("email.to", receivedEmail.to.joinToString(",") { it.value.raw })
-                    span?.setAttribute("email.subject", receivedEmail.subject)
-                    span?.setAttribute("email.attachments_count", receivedEmail.attachments.size.toLong())
-                    span?.setAttribute("email.message_id", receivedEmail.messageId)
-                    receivedEmail.spamScore?.let { span?.setAttribute("email.spam_score", it) }
-
-                    span?.setStatus(StatusCode.OK)
-                    receivedEmail
-                } finally {
-                    scope?.close()
-                }
-            } catch (e: Exception) {
-                span?.setStatus(StatusCode.ERROR, "Failed to parse webhook: ${e.message}")
-                span?.recordExceptionWithFingerprint(e)
-                throw e
-            } finally {
-                span?.end()
+            // Verify content type
+            if (!body.mediaType.accepts(MediaType.MultiPart.FormData)) {
+                throw IllegalArgumentException(
+                    "Expected multipart/form-data but got ${body.mediaType}. " +
+                            "Ensure SendGrid Inbound Parse is configured correctly."
+                )
             }
+
+            // Parse multipart form data
+            val boundary = body.mediaType.parameters["boundary"]
+                ?: throw IllegalArgumentException("Missing boundary parameter in Content-Type")
+
+            val parts = parseMultipartFormData(rawBodyBytes, boundary)
+
+            val receivedEmail = parseReceivedEmail(parts)
+
+            // Add email-specific attributes (PII redacted: keep only domain for from/to, drop subject)
+            span?.setAttribute("email.from", receivedEmail.from.value.raw.let { addr -> addr.substringAfter('@', addr) })
+            span?.setAttribute("email.to", receivedEmail.to.joinToString(",") { it.value.raw.let { addr -> addr.substringAfter('@', addr) } })
+            span?.setAttribute("email.attachments_count", receivedEmail.attachments.size.toLong())
+            span?.setAttribute("email.message_id", receivedEmail.messageId)
+            receivedEmail.spamScore?.let { span?.setAttribute("email.spam_score", it) }
+
+            receivedEmail
         }
 
-        override suspend fun onSchedule() {
-            // SendGrid Inbound Parse is webhook-only, no polling needed
-            logger.debug { "[$name] onSchedule called (no-op for SendGrid webhook-based service)" }
+        override suspend fun pull(): Set<ReceivedEmail> {
+            logger.debug { "[$name] pull called (no-op; SendGrid Inbound Parse delivers via webhook only)" }
+            return emptySet()
         }
     }
 
     /**
      * Parses multipart/form-data into a map of field names to parts.
+     *
+     * TODO: This parser uses findBoundary/findSequence which scan the byte array linearly for
+     * each boundary occurrence — O(n²) for large payloads with many parts. Replace with a
+     * streaming multipart parser (e.g., Apache Commons FileUpload or Jakarta Servlet multipart)
+     * if large attachments become a concern.
      */
-    private fun parseMultipartFormData(data: ByteArray, boundary: String): Map<String, List<MultipartPart>> {
+    internal fun parseMultipartFormData(data: ByteArray, boundary: String): Map<String, List<MultipartPart>> {
         val parts = mutableMapOf<String, MutableList<MultipartPart>>()
         val boundaryBytes = "--$boundary".toByteArray()
         val endBoundaryBytes = "--$boundary--".toByteArray()
@@ -305,7 +303,7 @@ public class SendGridEmailInboundService(
     /**
      * Parses SendGrid multipart parts into a ReceivedEmail.
      */
-    private fun parseReceivedEmail(parts: Map<String, List<MultipartPart>>): ReceivedEmail {
+    internal fun parseReceivedEmail(parts: Map<String, List<MultipartPart>>): ReceivedEmail {
         // Extract basic fields
         val from = parts["from"]?.firstOrNull()?.dataAsString()?.let { parseEmailAddress(it) }
             ?: throw IllegalArgumentException("Missing 'from' field in SendGrid webhook")
@@ -346,6 +344,8 @@ public class SendGridEmailInboundService(
             "charsets", "headers", "spam_score", "spam_report", "dkim", "SPF"
         )
 
+        // Anything that isn't a known standard field is treated as an attachment — this catches
+        // both `attachment1`/`attachment2` style fields and inline-image fields.
         val attachments = parts.entries
             .filter { (name, _) -> name !in standardFields }
             .flatMap { (_, partList) ->
@@ -363,23 +363,10 @@ public class SendGridEmailInboundService(
                 }
             }
 
-        // Also check for attachment* fields
-        val explicitAttachments = parts.entries
-            .filter { (name, _) -> name.startsWith("attachment") }
-            .flatMap { (_, partList) ->
-                partList.mapNotNull { part ->
-                    part.filename?.let { filename ->
-                        ReceivedAttachment(
-                            filename = filename,
-                            contentType = MediaType(part.contentType),
-                            size = part.data.size.toLong(),
-                            contentId = null,
-                            content = Data.Bytes(part.data),
-                            contentUrl = null
-                        )
-                    }
-                }
-            }
+        // Preserve all attachments — distinctBy filename silently drops duplicates with the same
+        // name (e.g. multiple inline images). Rename duplicates as `${index}_${filename}`.
+        val allAttachments = attachments
+            .mapIndexed { i, a -> a.copy(filename = if (attachments.count { it.filename == a.filename } > 1) "${i}_${a.filename}" else a.filename) }
 
         return ReceivedEmail(
             messageId = messageId.trim('<', '>'),
@@ -392,7 +379,7 @@ public class SendGridEmailInboundService(
             plainText = plainText,
             receivedAt = kotlin.time.Instant.fromEpochMilliseconds(System.currentTimeMillis()),
             headers = emailHeaders,
-            attachments = (attachments + explicitAttachments).distinctBy { it.filename },
+            attachments = allAttachments,
             envelope = envelope,
             spamScore = spamScore,
             inReplyTo = inReplyTo,
@@ -504,7 +491,7 @@ public class SendGridEmailInboundService(
         // Construct the payload to verify: timestamp + rawBody
         val payloadToSign = timestampStr.toByteArray(Charsets.UTF_8) + rawBody
 
-        // Decode the public key
+        // Decode the public key (keyFactory is cached at class-level — thread-safe)
         val publicKey = try {
             // Remove PEM headers if present
             val keyStr = publicKeyBase64
@@ -516,7 +503,6 @@ public class SendGridEmailInboundService(
 
             val keyBytes = Base64.getDecoder().decode(keyStr)
             val keySpec = X509EncodedKeySpec(keyBytes)
-            val keyFactory = KeyFactory.getInstance("EC")
             keyFactory.generatePublic(keySpec)
         } catch (e: Exception) {
             throw SecurityException("Failed to parse SendGrid public key: ${e.message}", e)
@@ -530,7 +516,8 @@ public class SendGridEmailInboundService(
         }
 
         // Verify signature using SHA256withECDSA (P-256 curve)
-        val signature = Signature.getInstance("SHA256withECDSA")
+        // signatureInstance is ThreadLocal because Signature is NOT thread-safe
+        val signature = signatureInstance.get()
         signature.initVerify(publicKey)
         signature.update(payloadToSign)
 
@@ -544,7 +531,7 @@ public class SendGridEmailInboundService(
     /**
      * Represents a part of multipart/form-data.
      */
-    private data class MultipartPart(
+    internal data class MultipartPart(
         val name: String,
         val filename: String?,
         val contentType: String,

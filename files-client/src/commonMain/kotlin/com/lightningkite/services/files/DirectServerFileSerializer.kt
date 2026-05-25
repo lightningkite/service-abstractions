@@ -35,10 +35,10 @@ public object DirectServerFileSerializer : KSerializer<ServerFile> {
 public object DeferToContextualServerFileSerializer : KSerializer<ServerFile> {
     private val c = ContextualSerializer<ServerFile>(ServerFile::class, DirectServerFileSerializer, arrayOf())
 
-    //    override val descriptor: SerialDescriptor = SerialDescriptor("com.lightningkite.services.files.ServerFile", c.descriptor)
     @OptIn(SealedSerializationApi::class)
     override val descriptor: SerialDescriptor = object : SerialDescriptor {
-        override val serialName: String get() = "com.lightningkite.services.files.ServerFile"
+//        override val serialName: String get() = "com.lightningkite.services.files.ServerFile"
+                override val serialName: String get() = "com.lightningkite.services.files.ServerFile/DeferToContextualServerFileSerializer"
         override val kind: SerialKind get() = StructureKind.CLASS
         override val elementsCount: Int = 1
         override fun getElementName(index: Int): String = "contextual"

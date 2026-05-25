@@ -11,6 +11,7 @@ dependencies {
     api(project(path = ":voiceagent"))
     api(project(path = ":phonecall"))
     api(project(path = ":pubsub"))
+    api(project(path = ":otel-jvm"))
 
     // Logging
     implementation(libs.kotlin.logging)
@@ -32,7 +33,6 @@ dependencies {
     testImplementation(project(path = ":cache"))
     testImplementation(project(path = ":database"))
     testImplementation(project(path = ":http-client"))
-    testImplementation(project(path = ":otel-jvm"))
     testImplementation(libs.lightningServer.typed) {
         exclude(group = "com.lightningkite.services")
     }

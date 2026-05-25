@@ -3,15 +3,16 @@ package com.lightningkite.services.email.imap
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.*
-import io.ktor.client.request.*
-import io.ktor.http.*
+import io.opentelemetry.api.trace.*
 import jakarta.mail.*
 import jakarta.mail.internet.InternetAddress
 import jakarta.mail.internet.MimeMessage
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.withContext
 import java.net.URLDecoder
 import java.util.*
 import kotlin.time.Instant
@@ -21,19 +22,15 @@ private val logger = KotlinLogging.logger("ImapEmailInboundService")
 /**
  * IMAP email inbound implementation using Jakarta Mail for polling email servers.
  *
- * Provides pull-based email receiving via IMAP protocol with support for:
- * - **IMAP/IMAPS protocols**: Standard IMAP (143) and secure IMAPS (993)
- * - **Scheduled polling**: Use [onSchedule] to fetch new emails periodically
- * - **Automatic read marking**: Messages are marked as read after processing
- * - **Full MIME support**: HTML, plain text, attachments, inline images
- * - **Threading support**: Extracts In-Reply-To and References headers
+ * IMAP is pull-only: there is nothing to push, so [onReceived.pull] is the entry point.
+ * It connects, fetches every unseen message in [folder], marks them SEEN, and returns
+ * them as [ReceivedEmail]. There is no webhook integration — [onReceived.configureWebhook]
+ * is a no-op and [onReceived.parse] throws.
  *
  * ## Supported URL Schemes
  *
  * - `imap://username:password@host:port/folder` - Standard IMAP with STARTTLS
  * - `imaps://username:password@host:port/folder` - IMAP over SSL
- *
- * Format: `imap[s]://[username]:[password]@[host]:[port]/[folder]`
  *
  * Default ports:
  * - `imap://` defaults to port 143 with STARTTLS
@@ -45,12 +42,6 @@ private val logger = KotlinLogging.logger("ImapEmailInboundService")
  * // Gmail IMAP (requires app password)
  * EmailInboundService.Settings("imaps://user@gmail.com:app-password@imap.gmail.com:993/INBOX")
  *
- * // Office 365
- * EmailInboundService.Settings("imaps://user@company.com:password@outlook.office365.com:993/INBOX")
- *
- * // Custom IMAP server
- * EmailInboundService.Settings("imap://user:pass@mail.example.com:143/INBOX")
- *
  * // Using helper function
  * EmailInboundService.Settings.Companion.imap(
  *     username = "user@example.com",
@@ -58,91 +49,32 @@ private val logger = KotlinLogging.logger("ImapEmailInboundService")
  *     host = "imap.example.com",
  *     port = 993,
  *     folder = "INBOX",
- *     ssl = true
+ *     ssl = true,
  * )
  * ```
  *
  * ## Polling Usage
  *
- * This is a PULL-based implementation. Configure scheduled polling:
- *
  * ```kotlin
  * val service = EmailInboundService.Settings("imaps://...").invoke("imap", context)
  *
- * // In a scheduled task (e.g., every 5 minutes)
  * launch {
  *     while (isActive) {
- *         service.onReceived.onSchedule()
+ *         service.onReceived.pull().forEach { processEmail(it) }
  *         delay(5.minutes)
  *     }
  * }
  * ```
- *
- * ## Receiving Emails
- *
- * The service uses a callback pattern to deliver emails:
- *
- * ```kotlin
- * val service = ImapEmailInboundService(
- *     name = "imap",
- *     context = context,
- *     host = "imap.gmail.com",
- *     port = 993,
- *     username = "user@gmail.com",
- *     password = "app-password",
- *     folder = "INBOX",
- *     useSsl = true,
- *     onEmail = { receivedEmail ->
- *         println("Received: ${receivedEmail.subject}")
- *         processEmail(receivedEmail)
- *     }
- * )
- *
- * // Trigger polling
- * service.onReceived.onSchedule()
- * ```
- *
- * ## Implementation Notes
- *
- * - **Connection per poll**: Opens connection, fetches emails, closes connection
- * - **Unread only**: Only fetches messages that haven't been read yet
- * - **Mark as read**: Messages are marked as read after callback returns successfully
- * - **Attachment memory**: Attachments are loaded into memory; beware of large files
- * - **MIME parsing**: Supports multipart/alternative, multipart/mixed, inline images
- * - **Threading**: Extracts In-Reply-To and References headers for conversation threading
  *
  * ## Important Gotchas
  *
  * - **Gmail requires app passwords**: Regular passwords don't work with 2FA enabled
  * - **IMAP access must be enabled**: Some providers (Gmail) disable IMAP by default
  * - **Polling frequency**: Don't poll too frequently; most servers allow ~1 req/min
- * - **Connection timeouts**: IMAP servers may timeout idle connections
- * - **Folder names**: Folder names are case-sensitive and provider-specific
- * - **Read receipts**: Marking as read may trigger read receipts to senders
+ * - **Mark as read**: pull() marks fetched messages SEEN; failures inside pull() leave
+ *   any unprocessed messages unseen so the next pull retries them
  * - **Large attachments**: All attachment data is loaded into memory
  * - **Threading**: Not all emails include proper In-Reply-To/References headers
- * - **Webhook limitations**: This is PULL-based; [parseWebhook] throws UnsupportedOperationException
- *
- * ## Common IMAP Providers
- *
- * | Provider | Host | Port | SSL | Notes |
- * |----------|------|------|-----|-------|
- * | Gmail | imap.gmail.com | 993 | Yes | Requires app password + IMAP enabled |
- * | Outlook/Office 365 | outlook.office365.com | 993 | Yes | Requires modern auth |
- * | Yahoo Mail | imap.mail.yahoo.com | 993 | Yes | Requires app password |
- * | iCloud | imap.mail.me.com | 993 | Yes | Requires app-specific password |
- * | FastMail | imap.fastmail.com | 993 | Yes | Standard auth |
- *
- * @property name Service name for logging/metrics
- * @property context Service context
- * @property host IMAP server hostname
- * @property port IMAP server port (143 for IMAP, 993 for IMAPS)
- * @property username IMAP authentication username
- * @property password IMAP authentication password
- * @property folder IMAP folder name to monitor (e.g., "INBOX")
- * @property useSsl Whether to use SSL/TLS encryption
- * @property requireStartTls Whether to require STARTTLS for non-SSL connections (default true, set to false for testing)
- * @property httpClient HTTP client for posting to configured webhooks
  */
 public class ImapEmailInboundService(
     override val name: String,
@@ -154,22 +86,11 @@ public class ImapEmailInboundService(
     public val folder: String,
     public val useSsl: Boolean,
     public val requireStartTls: Boolean = true,
-    public val httpClient: HttpClient = HttpClient(),
 ) : EmailInboundService {
 
-    public companion object {
-        private fun parseParameterString(params: String): Map<String, List<String>> = params
-            .takeIf { it.isNotBlank() }
-            ?.split("&")
-            ?.filter { it.isNotBlank() }
-            ?.map {
-                URLDecoder.decode(it.substringBefore('='), "UTF-8") to
-                        URLDecoder.decode(it.substringAfter('=', ""), "UTF-8")
-            }
-            ?.groupBy { it.first }
-            ?.mapValues { it.value.map { it.second } }
-            ?: emptyMap()
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-inbound-imap")
 
+    public companion object {
         public fun EmailInboundService.Settings.Companion.imap(
             username: String,
             password: String,
@@ -183,7 +104,6 @@ public class ImapEmailInboundService(
         }
 
         init {
-            // Register imaps:// scheme
             EmailInboundService.Settings.register("imaps") { name, url, context ->
                 Regex("""imaps://(?<username>[^:]+):(?<password>[^@]+)@(?<host>[^:@]+)(?::(?<port>[0-9]+))?(?:/(?<folder>.*))?(?:\?(?<params>.*))?""")
                     .matchEntire(url)
@@ -207,7 +127,6 @@ public class ImapEmailInboundService(
                     )
             }
 
-            // Register imap:// scheme
             EmailInboundService.Settings.register("imap") { name, url, context ->
                 Regex("""imap://(?<username>[^:]+):(?<password>[^@]+)@(?<host>[^:@]+)(?::(?<port>[0-9]+))?(?:/(?<folder>.*))?(?:\?(?<params>.*))?""")
                     .matchEntire(url)
@@ -258,139 +177,121 @@ public class ImapEmailInboundService(
     private var mailFolder: Folder? = null
 
     override suspend fun connect() {
-        try {
-            logger.info { "[$name] Connecting to IMAP server $host:$port" }
-            val newStore = session.getStore(if (useSsl) "imaps" else "imap")
-            newStore.connect(host, port, username, password)
-            store = newStore
-            logger.info { "[$name] Connected successfully" }
-        } catch (e: Exception) {
-            logger.error(e) { "[$name] Failed to connect to IMAP server" }
-            throw e
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                logger.info { "[$name] Connecting to IMAP server $host:$port" }
+                val newStore = session.getStore(if (useSsl) "imaps" else "imap")
+                newStore.connect(host, port, username, password)
+                store = newStore
+                logger.info { "[$name] Connected successfully" }
+            } catch (e: Exception) {
+                logger.error(e) { "[$name] Failed to connect to IMAP server" }
+                throw e
+            }
         }
     }
 
     override suspend fun disconnect() {
-        try {
-            mailFolder?.close(false)
-            mailFolder = null
-            store?.close()
-            store = null
-            logger.info { "[$name] Disconnected from IMAP server" }
-        } catch (e: Exception) {
-            logger.error(e) { "[$name] Error during disconnect" }
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                mailFolder?.close(false)
+                mailFolder = null
+                store?.close()
+                store = null
+                logger.info { "[$name] Disconnected from IMAP server" }
+            } catch (e: Exception) {
+                logger.error(e) { "[$name] Error during disconnect" }
+            }
         }
     }
 
     override suspend fun healthCheck(): HealthStatus {
         return try {
-            // Try to connect and list folders
-            val tempStore = session.getStore(if (useSsl) "imaps" else "imap")
-            tempStore.use {
-                it.connect(host, port, username, password)
-                val testFolder = it.getFolder(folder)
-                if (!testFolder.exists()) {
-                    return HealthStatus(
-                        HealthStatus.Level.WARNING,
-                        additionalMessage = "Folder '$folder' does not exist"
-                    )
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val tempStore = session.getStore(if (useSsl) "imaps" else "imap")
+                tempStore.use {
+                    it.connect(host, port, username, password)
+                    val testFolder = it.getFolder(folder)
+                    if (!testFolder.exists()) {
+                        return@withContext HealthStatus(
+                            HealthStatus.Level.WARNING,
+                            additionalMessage = "Folder '$folder' does not exist"
+                        )
+                    }
                 }
+                HealthStatus(HealthStatus.Level.OK)
             }
-            HealthStatus(HealthStatus.Level.OK)
         } catch (e: Exception) {
             logger.error(e) { "[$name] Health check failed" }
             HealthStatus(HealthStatus.Level.ERROR, additionalMessage = e.message)
         }
     }
 
-    private var webhookUrl: String? = null
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
-
-    override val onReceived: WebhookSubservice<ReceivedEmail> = object : WebhookSubservice<ReceivedEmail> {
+    override val onReceived: WebhookAdapter<ReceivedEmail> = object : WebhookAdapter<ReceivedEmail> {
         override suspend fun configureWebhook(httpUrl: String) {
-            logger.info { "[$name] Webhook URL configured: $httpUrl" }
-            webhookUrl = httpUrl
+            // IMAP is pull-only; no webhook to configure.
         }
 
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail {
-            throw UnsupportedOperationException(
-                "IMAP is a pull-based protocol and does not support inbound webhooks. " +
-                        "Use onSchedule() to poll for new emails instead."
-            )
-        }
+        ): ReceivedEmail = throw UnsupportedOperationException(
+            "ImapEmailInboundService is pull-only; use pull() instead of parse()."
+        )
 
-        override suspend fun onSchedule() {
-            try {
-                logger.debug { "[$name] Starting scheduled email check" }
-                pollEmails()
-            } catch (e: Exception) {
-                logger.error(e) { "[$name] Error during scheduled email polling" }
-                throw e
-            }
-        }
-    }
-
-    private suspend fun pollEmails() {
-        val targetUrl = webhookUrl
-        if (targetUrl == null) {
-            logger.warn { "[$name] No webhook URL configured. Call configureWebhook() first." }
-            return
-        }
-
-        val currentStore = store ?: run {
-            // Create temporary connection for this poll
-            val tempStore = session.getStore(if (useSsl) "imaps" else "imap")
-            tempStore.connect(host, port, username, password)
-            tempStore
-        }
-
-        try {
-            val inbox = currentStore.getFolder(folder)
-            inbox.open(Folder.READ_WRITE)
-
-            try {
-                // Fetch unread messages
-                val messages = inbox.search(
-                    jakarta.mail.search.FlagTerm(Flags(Flags.Flag.SEEN), false)
-                )
-
-                logger.info { "[$name] Found ${messages.size} unread message(s)" }
-
-                for (message in messages) {
-                    try {
-                        if (message is MimeMessage) {
-                            val receivedEmail = message.toReceivedEmail()
-
-                            // POST to configured webhook URL
-                            httpClient.post(targetUrl) {
-                                contentType(ContentType.Application.Json)
-                                setBody(json.encodeToString(receivedEmail))
-                            }
-
-                            // Mark as read after successful POST
-                            message.setFlag(Flags.Flag.SEEN, true)
-                            logger.debug { "[$name] Processed and posted to webhook: ${receivedEmail.messageId}" }
-                        }
-                    } catch (e: Exception) {
-                        logger.error(e) { "[$name] Error processing message" }
-                        // Don't mark as read if processing fails
+        override suspend fun pull(): Set<ReceivedEmail> = otel.span("email.imap.pull", configure = {
+            setSpanKind(SpanKind.CONSUMER)
+            setAttribute("messaging.system", "imap")
+        }) { pullSpan ->
+            // Open the folder once for the whole pull cycle. SEEN-flag updates after a successful
+            // ReceivedEmail materialization land on the same live IMAP session.
+            val openedStore: Store
+            val ownsStore: Boolean
+            if (store != null) {
+                openedStore = store!!
+                ownsStore = false
+            } else {
+                openedStore = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    session.getStore(if (useSsl) "imaps" else "imap").also {
+                        it.connect(host, port, username, password)
                     }
                 }
-            } finally {
-                inbox.close(false)
+                ownsStore = true
             }
-        } finally {
-            // If we created a temporary connection, close it
-            if (store == null) {
-                currentStore.close()
+            val inbox = openedStore.getFolder(folder)
+            withContext(kotlinx.coroutines.Dispatchers.IO) { inbox.open(Folder.READ_WRITE) }
+            try {
+                val rawMessages = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    inbox.search(jakarta.mail.search.FlagTerm(Flags(Flags.Flag.SEEN), false))
+                        .filterIsInstance<MimeMessage>()
+                }
+
+                pullSpan?.setAttribute("email.messages_found", rawMessages.size.toLong())
+                logger.info { "[$name] Found ${rawMessages.size} unread message(s)" }
+
+                // Materialize and mark SEEN one-by-one. A parse failure for one message must not
+                // poison the rest of the batch and must leave that message unseen for retry on
+                // the next pull.
+                val result = linkedSetOf<ReceivedEmail>()
+                for (rawMessage in rawMessages) {
+                    val received = try {
+                        rawMessage.toReceivedEmail()
+                    } catch (e: Exception) {
+                        logger.error(e) { "[$name] Failed to parse message; leaving it unseen for retry" }
+                        continue
+                    }
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        rawMessage.setFlag(Flags.Flag.SEEN, true)
+                    }
+                    result.add(received)
+                }
+                result
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable + kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { inbox.close(false) }
+                    if (ownsStore) runCatching { openedStore.close() }
+                }
             }
         }
     }
@@ -414,16 +315,13 @@ public class ImapEmailInboundService(
 
         val receivedAt = Instant.fromEpochMilliseconds((sentDate ?: receivedDate ?: java.util.Date()).time)
 
-        // Parse MIME content
         val contentResult = parseContent(this)
 
-        // Extract headers
         val headers = mutableMapOf<String, List<String>>()
         allHeaders.asIterator().forEach { header ->
             headers[header.name] = (headers[header.name] ?: emptyList()) + header.value
         }
 
-        // Extract envelope if available
         val envelope = try {
             val envelopeFrom = getHeader("X-Envelope-From")?.firstOrNull()?.toEmailAddress()
             val envelopeTo = getHeader("X-Envelope-To")?.flatMap {
@@ -436,7 +334,6 @@ public class ImapEmailInboundService(
             null
         }
 
-        // Extract threading information
         val inReplyTo = getHeader("In-Reply-To")?.firstOrNull()
         val references = getHeader("References")?.firstOrNull()
             ?.split(Regex("\\s+"))
@@ -473,7 +370,20 @@ public class ImapEmailInboundService(
         var html: String? = null
         val attachments = mutableListOf<ReceivedAttachment>()
 
+        // Check disposition / filename BEFORE matching on MIME type — a text/plain attachment must
+        // not be hoovered up into the body. multipart/* still recurses first since the disposition
+        // of a container part isn't meaningful for the contained leaves.
+        val isAttachment = !part.isMimeType("multipart/*") && (
+            Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) ||
+                Part.INLINE.equals(part.disposition, ignoreCase = true) ||
+                part.fileName != null
+        )
+
         when {
+            isAttachment -> {
+                attachments.add(parseAttachment(part))
+            }
+
             part.isMimeType("text/plain") -> {
                 plainText = part.content as? String
             }
@@ -491,18 +401,6 @@ public class ImapEmailInboundService(
                     plainText = plainText ?: result.plainText
                     html = html ?: result.html
                     attachments.addAll(result.attachments)
-                }
-            }
-
-            Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) ||
-                    Part.INLINE.equals(part.disposition, ignoreCase = true) -> {
-                attachments.add(parseAttachment(part))
-            }
-
-            else -> {
-                // Check if it has a filename (likely an attachment)
-                if (part.fileName != null) {
-                    attachments.add(parseAttachment(part))
                 }
             }
         }
@@ -523,7 +421,7 @@ public class ImapEmailInboundService(
         val contentId = (part as? BodyPart)?.getHeader("Content-ID")?.firstOrNull()
             ?.trim('<', '>')
 
-        // Read attachment data
+        // Read attachment data (blocking I/O — pull() runs this inside withContext(IO))
         val bytes = part.inputStream.use { it.readBytes() }
 
         return ReceivedAttachment(

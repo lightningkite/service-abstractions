@@ -2,7 +2,7 @@ package com.lightningkite.services.email
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import kotlinx.coroutines.flow.*
 
 /**
@@ -39,14 +39,14 @@ import kotlinx.coroutines.flow.*
  *
  * ## Webhook Simulation
  *
- * The [parseWebhook] method returns the last email passed to [setNextWebhookResult],
- * allowing you to test webhook handling logic:
+ * The [WebhookAdapter.parse] implementation returns the last email passed to
+ * [setNextWebhookResult], letting you test webhook handling logic:
  *
  * ```kotlin
  * val expectedEmail = ReceivedEmail(...)
  * testService.setNextWebhookResult(expectedEmail)
  *
- * val parsed = testService.onReceived.parseWebhook(params, headers, body)
+ * val parsed = testService.onReceived.parse(params, headers, body)
  * assertEquals(expectedEmail, parsed)
  * ```
  */
@@ -58,10 +58,11 @@ public class TestEmailInboundService(
     private val _receivedEmails = mutableListOf<ReceivedEmail>()
     private val _emailFlow = MutableSharedFlow<ReceivedEmail>(replay = 0)
     private var _nextWebhookResult: ReceivedEmail? = null
+    private val _nextPullResults = mutableListOf<ReceivedEmail>()
     private var _configuredWebhookUrl: String? = null
 
     /**
-     * All emails that have been received (via [simulateReceive] or [parseWebhook]).
+     * All emails that have been received (via [simulateReceive], [WebhookAdapter.parse], or [WebhookAdapter.pull]).
      */
     public val receivedEmails: List<ReceivedEmail>
         get() = _receivedEmails.toList()
@@ -89,7 +90,7 @@ public class TestEmailInboundService(
     }
 
     /**
-     * Sets the email that will be returned by the next [parseWebhook] call.
+     * Sets the email that will be returned by the next [WebhookAdapter.parse] call.
      *
      * This allows testing webhook parsing logic without needing real provider payloads.
      */
@@ -98,15 +99,25 @@ public class TestEmailInboundService(
     }
 
     /**
+     * Queues emails to be returned by the next [WebhookAdapter.pull] call. Lets tests
+     * exercise pull-based polling without a real mail server. The queue drains on the
+     * next pull.
+     */
+    public fun queueForPull(vararg emails: ReceivedEmail) {
+        _nextPullResults.addAll(emails)
+    }
+
+    /**
      * Clears all state for a fresh test.
      */
     public fun clear() {
         _receivedEmails.clear()
         _nextWebhookResult = null
+        _nextPullResults.clear()
         _configuredWebhookUrl = null
     }
 
-    override val onReceived: WebhookSubservice<ReceivedEmail> = object : WebhookSubservice<ReceivedEmail> {
+    override val onReceived: WebhookAdapter<ReceivedEmail> = object : WebhookAdapter<ReceivedEmail> {
         override suspend fun configureWebhook(httpUrl: String) {
             _configuredWebhookUrl = httpUrl
         }
@@ -118,7 +129,7 @@ public class TestEmailInboundService(
         ): ReceivedEmail {
             val email = _nextWebhookResult
                 ?: throw IllegalStateException(
-                    "No webhook result configured. Call setNextWebhookResult() before parseWebhook() in tests."
+                    "No webhook result configured. Call setNextWebhookResult() before parse() in tests."
                 )
             _nextWebhookResult = null
             _receivedEmails.add(email)
@@ -126,9 +137,15 @@ public class TestEmailInboundService(
             return email
         }
 
-        override suspend fun onSchedule() {
-            // No-op for test implementation
-            // Tests can use simulateReceive() to inject emails
+        override suspend fun pull(): Set<ReceivedEmail> {
+            // Drain any queued pull results
+            val drained = _nextPullResults.toSet()
+            _nextPullResults.clear()
+            for (email in drained) {
+                _receivedEmails.add(email)
+                _emailFlow.emit(email)
+            }
+            return drained
         }
     }
 }

@@ -48,14 +48,7 @@ internal data class FieldSet2<V>(
 
     fun format(value: V): Map<ExpressionWithColumnType<Any?>, Expression<Any?>> {
         return format.encode(serializer, value)
-//            .also {
-//                println("Formatted $value (${value?.let { it::class.qualifiedName }}) to ${it.entries.joinToString(", ") { (k, v) ->
-//                    "$k: $v (${v?.let { it::class.qualifiedName }})"
-//                }}")
-//            }
             .mapKeys {
-                println("Fields: $fields")
-                println("Key: ${it.key}")
                 fields[it.key]!!
             }.mapValues { sqlLiteralOfSomeKind(it.key.columnType, it.value) }
     }
@@ -64,7 +57,7 @@ internal data class FieldSet2<V>(
         return format.encode(
             serializer,
             value
-        )[""].also { println("Formatted $value (${value?.let { it::class.qualifiedName }}) to $it (${it?.let { it::class.qualifiedName }})") }
+        )[""]
     }
 
     fun formatSingleExpression(value: V): Expression<Any?> {
@@ -73,7 +66,7 @@ internal data class FieldSet2<V>(
             format.encode(
                 serializer,
                 value
-            )[""].also { println("Formatted $value (${value?.let { it::class.qualifiedName }}) to $it (${it?.let { it::class.qualifiedName }})") })
+            )[""])
     }
 }
 

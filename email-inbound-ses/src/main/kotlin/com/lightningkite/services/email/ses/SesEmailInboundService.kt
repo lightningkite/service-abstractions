@@ -3,9 +3,16 @@ package com.lightningkite.services.email.ses
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
+import com.lightningkite.services.otel.span
 import com.lightningkite.services.webhooksubservice.HttpAdapter
-import com.lightningkite.services.webhooksubservice.WebhookSubservice
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import java.net.URI
 import java.net.URL
@@ -16,6 +23,7 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toKotlinInstant
 
 private val logger = KotlinLogging.logger("SesEmailInboundService")
@@ -85,6 +93,8 @@ public class SesEmailInboundService(
             EmailInboundService.Settings("ses://")
     }
 
+    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-inbound-ses")
+
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -94,7 +104,7 @@ public class SesEmailInboundService(
      * Cache of downloaded and validated X.509 certificates keyed by URL.
      * This avoids re-downloading certificates for each message.
      */
-    private val certificateCache = ConcurrentHashMap<String, X509Certificate>()
+    internal val certificateCache: ConcurrentHashMap<String, X509Certificate> = ConcurrentHashMap()
 
     /**
      * Valid hostnames for SNS signing certificate URLs.
@@ -125,7 +135,7 @@ public class SesEmailInboundService(
         logger.info { "[$name] Disconnect called (no-op for webhook-based service)" }
     }
 
-    override val onReceived: WebhookSubservice<ReceivedEmail> = object : WebhookSubservice<ReceivedEmail> {
+    override val onReceived: WebhookAdapter<ReceivedEmail> = object : WebhookAdapter<ReceivedEmail> {
 
         override suspend fun configureWebhook(httpUrl: String) {
             logger.info { "[$name] Webhook URL configured: $httpUrl" }
@@ -139,82 +149,108 @@ public class SesEmailInboundService(
         ): ReceivedEmail {
             logger.debug { "[$name] Parsing SES webhook notification" }
 
-            // Parse SNS notification wrapper
-            val bodyString = body.text()
-            val snsNotification = try {
-                json.decodeFromString<SnsNotification>(bodyString)
-            } catch (e: Exception) {
-                logger.error(e) { "[$name] Failed to parse SNS notification" }
-                throw IllegalArgumentException("Invalid SNS notification format", e)
-            }
-
-            // Verify SNS message signature (REQUIRED for all message types)
-            verifySnsSignature(snsNotification)
-
-            // Handle subscription confirmation - auto-confirm and return success response
-            if (snsNotification.Type == "SubscriptionConfirmation") {
-                val subscribeUrl = snsNotification.SubscribeURL
-                val topicArn = snsNotification.TopicArn ?: "unknown"
-                logger.info { "[$name] Received SNS subscription confirmation for topic: $topicArn" }
-
-                if (subscribeUrl != null) {
-                    val confirmed = autoConfirmSubscription(subscribeUrl)
-                    if (confirmed) {
-                        logger.info { "[$name] Successfully auto-confirmed SNS subscription for topic: $topicArn" }
-                    } else {
-                        logger.warn { "[$name] Failed to auto-confirm SNS subscription. Manual confirmation required: $subscribeUrl" }
-                    }
+            // Outer span kept as manual builder because SpecialCaseException (used for SNS
+            // subscription/unsubscribe confirmation responses) must NOT mark the span as ERROR.
+            val webhookSpan = otel?.spanBuilder("email.ses.webhook.parse")
+                ?.setSpanKind(SpanKind.SERVER)
+                ?.setAttribute("messaging.system", "ses")
+                ?.startSpan()
+            val webhookScope = webhookSpan?.makeCurrent()
+            try {
+                // Parse SNS notification wrapper
+                val bodyString = body.text()
+                val snsNotification = try {
+                    json.decodeFromString<SnsNotification>(bodyString)
+                } catch (e: Exception) {
+                    logger.error(e) { "[$name] Failed to parse SNS notification" }
+                    throw IllegalArgumentException("Invalid SNS notification format", e)
                 }
 
-                // Return 200 OK so SNS knows we received the confirmation
-                throw HttpAdapter.SpecialCaseException(
-                    HttpAdapter.HttpResponseLike(
-                        status = 200,
-                        headers = mapOf("Content-Type" to listOf("text/plain")),
-                        body = TypedData.text("Subscription confirmed", MediaType.Text.Plain)
-                    )
-                )
-            }
+                // Verify SNS message signature (REQUIRED for all message types)
+                otel.span("email.ses.sns.verify", configure = {
+                    setAttribute("messaging.system", "ses")
+                }) { _ ->
+                    verifySnsSignature(snsNotification)
+                }
 
-            // Handle unsubscribe confirmation
-            if (snsNotification.Type == "UnsubscribeConfirmation") {
-                logger.info { "[$name] Received SNS unsubscribe confirmation" }
-                throw HttpAdapter.SpecialCaseException(
-                    HttpAdapter.HttpResponseLike(
-                        status = 200,
-                        headers = mapOf("Content-Type" to listOf("text/plain")),
-                        body = TypedData.text("Unsubscribe confirmed", MediaType.Text.Plain)
-                    )
-                )
-            }
+                // Handle subscription confirmation - auto-confirm and return success response
+                if (snsNotification.Type == "SubscriptionConfirmation") {
+                    val subscribeUrl = snsNotification.SubscribeURL
+                    val topicArn = snsNotification.TopicArn ?: "unknown"
+                    logger.info { "[$name] Received SNS subscription confirmation for topic: $topicArn" }
 
-            // Parse SES notification from Message field
-            val sesNotification = try {
-                json.decodeFromString<SesNotification>(snsNotification.Message)
+                    if (subscribeUrl != null) {
+                        val confirmed = autoConfirmSubscription(subscribeUrl)
+                        if (confirmed) {
+                            logger.info { "[$name] Successfully auto-confirmed SNS subscription for topic: $topicArn" }
+                        } else {
+                            logger.warn { "[$name] Failed to auto-confirm SNS subscription. Manual confirmation required: $subscribeUrl" }
+                        }
+                    }
+
+                    // Return 200 OK so SNS knows we received the confirmation
+                    throw HttpAdapter.SpecialCaseException(
+                        HttpAdapter.HttpResponseLike(
+                            status = 200,
+                            headers = mapOf("Content-Type" to listOf("text/plain")),
+                            body = TypedData.text("Subscription confirmed", MediaType.Text.Plain)
+                        )
+                    )
+                }
+
+                // Handle unsubscribe confirmation
+                if (snsNotification.Type == "UnsubscribeConfirmation") {
+                    logger.info { "[$name] Received SNS unsubscribe confirmation" }
+                    throw HttpAdapter.SpecialCaseException(
+                        HttpAdapter.HttpResponseLike(
+                            status = 200,
+                            headers = mapOf("Content-Type" to listOf("text/plain")),
+                            body = TypedData.text("Unsubscribe confirmed", MediaType.Text.Plain)
+                        )
+                    )
+                }
+
+                // Parse SES notification from Message field
+                val sesNotification = try {
+                    json.decodeFromString<SesNotification>(snsNotification.Message)
+                } catch (e: Exception) {
+                    logger.error(e) { "[$name] Failed to parse SES notification from SNS message" }
+                    throw IllegalArgumentException("Invalid SES notification format", e)
+                }
+
+                // Check notification type
+                if (sesNotification.notificationType != "Received") {
+                    throw UnsupportedOperationException(
+                        "Unsupported SES notification type: ${sesNotification.notificationType}"
+                    )
+                }
+
+                // Check if content is available inline
+                val rawContent = sesNotification.content
+                    ?: throw UnsupportedOperationException(
+                        "Email content not included in notification (likely stored in S3). " +
+                                "S3-based content retrieval is not yet implemented."
+                    )
+
+                return otel.span("email.ses.mime.parse", configure = {
+                    setAttribute("messaging.system", "ses")
+                }) { _ ->
+                    parseReceivedEmail(sesNotification, rawContent)
+                }
             } catch (e: Exception) {
-                logger.error(e) { "[$name] Failed to parse SES notification from SNS message" }
-                throw IllegalArgumentException("Invalid SES notification format", e)
+                if (e !is HttpAdapter.SpecialCaseException) {
+                    webhookSpan?.setStatus(StatusCode.ERROR, e.message ?: "error")
+                }
+                throw e
+            } finally {
+                webhookScope?.close()
+                webhookSpan?.end()
             }
-
-            // Check notification type
-            if (sesNotification.notificationType != "Received") {
-                throw UnsupportedOperationException(
-                    "Unsupported SES notification type: ${sesNotification.notificationType}"
-                )
-            }
-
-            // Check if content is available inline
-            val rawContent = sesNotification.content
-                ?: throw UnsupportedOperationException(
-                    "Email content not included in notification (likely stored in S3). " +
-                            "S3-based content retrieval is not yet implemented."
-                )
-
-            return parseReceivedEmail(sesNotification, rawContent)
         }
 
-        override suspend fun onSchedule() {
-            logger.debug { "[$name] onSchedule called (no-op for webhook-based service)" }
+        override suspend fun pull(): Set<ReceivedEmail> {
+            logger.debug { "[$name] pull called (no-op; SES delivers via webhook only)" }
+            return emptySet()
         }
     }
 
@@ -314,12 +350,17 @@ public class SesEmailInboundService(
      * @param notification The SNS notification to verify
      * @throws SecurityException if signature verification fails
      */
-    private fun verifySnsSignature(notification: SnsNotification) {
+    internal suspend fun verifySnsSignature(notification: SnsNotification) {
         // Validate the certificate URL
         validateCertificateUrl(notification.SigningCertURL)
 
         // Get the certificate (from cache or download)
         val certificate = getCertificate(notification.SigningCertURL)
+
+        // Verify the leaf certificate identity matches AWS's documented SNS signing identity
+        if (!certificate.subjectX500Principal.name.contains("CN=sns.amazonaws.com", ignoreCase = true)) {
+            throw SecurityException("SNS certificate does not match expected SNS signing identity")
+        }
 
         // Construct the string to sign based on message type
         val stringToSign = buildStringToSign(notification)
@@ -347,6 +388,17 @@ public class SesEmailInboundService(
             throw SecurityException("Invalid SNS message signature")
         }
 
+        // Enforce a replay window: reject messages whose timestamp is too far from now
+        val messageTimestamp = try {
+            java.time.Instant.parse(notification.Timestamp)
+        } catch (e: Exception) {
+            throw SecurityException("SNS message timestamp out of acceptable range", e)
+        }
+        val skewMillis = kotlin.math.abs(java.time.Instant.now().toEpochMilli() - messageTimestamp.toEpochMilli())
+        if (skewMillis > 1.hours.inWholeMilliseconds) {
+            throw SecurityException("SNS message timestamp out of acceptable range")
+        }
+
         logger.debug { "[$name] SNS message signature verified successfully" }
     }
 
@@ -354,7 +406,7 @@ public class SesEmailInboundService(
      * Validates that the certificate URL is from an official AWS SNS endpoint.
      * This prevents attackers from hosting their own malicious certificates.
      */
-    private fun validateCertificateUrl(certUrl: String) {
+    internal fun validateCertificateUrl(certUrl: String) {
         val uri = try {
             URI(certUrl)
         } catch (e: Exception) {
@@ -375,8 +427,8 @@ public class SesEmailInboundService(
             throw SecurityException("SigningCertURL host is not a valid SNS endpoint: $host")
         }
 
-        // Path must end with .pem
-        if (!uri.path.endsWith(".pem")) {
+        // Path must match the expected SNS signing certificate filename pattern
+        if (!Regex("^/SimpleNotificationService-[a-z0-9]+\\.pem$").matches(uri.path)) {
             throw SecurityException("SigningCertURL must point to a .pem file: $certUrl")
         }
     }
@@ -384,32 +436,41 @@ public class SesEmailInboundService(
     /**
      * Downloads and parses an X.509 certificate from the given URL.
      * Certificates are cached to avoid redundant downloads.
+     * Uses computeIfAbsent for atomic single-init, IO dispatcher for the blocking download,
+     * and a 10s timeout to avoid hanging on slow AWS endpoints.
      */
-    private fun getCertificate(certUrl: String): X509Certificate {
-        return certificateCache.getOrPut(certUrl) {
-            logger.debug { "[$name] Downloading SNS signing certificate from: $certUrl" }
+    private suspend fun getCertificate(certUrl: String): X509Certificate {
+        // Return from cache without suspension if already present
+        certificateCache[certUrl]?.let { return it }
 
-            val certBytes = try {
-                URL(certUrl).openStream().use { it.readBytes() }
-            } catch (e: Exception) {
-                throw SecurityException("Failed to download SNS certificate from $certUrl: ${e.message}", e)
+        return withTimeout(10.seconds) {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                certificateCache.computeIfAbsent(certUrl) { url ->
+                    logger.debug { "[$name] Downloading SNS signing certificate from: $url" }
+
+                    val certBytes = try {
+                        URL(url).openStream().use { it.readBytes() }
+                    } catch (e: Exception) {
+                        throw SecurityException("Failed to download SNS certificate from $url: ${e.message}", e)
+                    }
+
+                    val certificate = try {
+                        val factory = CertificateFactory.getInstance("X.509")
+                        factory.generateCertificate(certBytes.inputStream()) as X509Certificate
+                    } catch (e: Exception) {
+                        throw SecurityException("Failed to parse SNS certificate: ${e.message}", e)
+                    }
+
+                    // Verify the certificate is currently valid
+                    try {
+                        certificate.checkValidity()
+                    } catch (e: Exception) {
+                        throw SecurityException("SNS certificate is not valid (expired or not yet valid): ${e.message}", e)
+                    }
+
+                    certificate
+                }
             }
-
-            val certificate = try {
-                val factory = CertificateFactory.getInstance("X.509")
-                factory.generateCertificate(certBytes.inputStream()) as X509Certificate
-            } catch (e: Exception) {
-                throw SecurityException("Failed to parse SNS certificate: ${e.message}", e)
-            }
-
-            // Verify the certificate is currently valid
-            try {
-                certificate.checkValidity()
-            } catch (e: Exception) {
-                throw SecurityException("SNS certificate is not valid (expired or not yet valid): ${e.message}", e)
-            }
-
-            certificate
         }
     }
 
@@ -487,23 +548,25 @@ public class SesEmailInboundService(
      * @param subscribeUrl The URL to fetch to confirm the subscription
      * @return true if confirmation was successful, false otherwise
      */
-    private fun autoConfirmSubscription(subscribeUrl: String): Boolean {
+    private suspend fun autoConfirmSubscription(subscribeUrl: String): Boolean {
         return try {
             // Validate URL is from AWS
             val uri = URI(subscribeUrl)
             val host = uri.host?.lowercase() ?: return false
 
-            if (!host.endsWith(".amazonaws.com")) {
-                logger.warn { "[$name] SubscribeURL is not from amazonaws.com ($host), skipping auto-confirm for security" }
+            if (validCertHostPatterns.none { it.matches(host) }) {
+                logger.warn { "[$name] SubscribeURL is not from an SNS endpoint ($host), skipping auto-confirm for security" }
                 return false
             }
 
             logger.debug { "[$name] Auto-confirming SNS subscription via: $subscribeUrl" }
 
-            val connection = URL(subscribeUrl).openConnection()
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
-            connection.getInputStream().use { it.readBytes() }
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val connection = URL(subscribeUrl).openConnection()
+                connection.connectTimeout = 5000
+                connection.readTimeout = 10000
+                connection.getInputStream().use { it.readBytes() }
+            }
 
             true
         } catch (e: Exception) {

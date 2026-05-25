@@ -207,11 +207,13 @@ class AwsConnectionsTest {
     }
 
     @Test
-    fun `test default total is MAX_VALUE`() {
+    fun `test default total is 1000`() {
+        // 1.0.0 lowered the default from Int.MAX_VALUE to 1000 so the health computation
+        // surfaces real utilization. Consumers must tune `total` to their CRT pool settings.
         val context = TestSettingContext()
         val connections = context[AwsConnections]
 
-        assertEquals(Int.MAX_VALUE, connections.total)
+        assertEquals(1000, connections.total)
     }
 
     @Test
@@ -227,27 +229,21 @@ class AwsConnectionsTest {
         val context = TestSettingContext()
         val connections = context[AwsConnections]
 
-        // With default values (used=0, total=MAX_VALUE), utilization is ~0%
+        // With default values (used=0, total=1000), utilization is 0%
         val health = connections.health
         assertEquals(HealthStatus.Level.OK, health.level)
     }
 
     @Test
-    fun `test clientOverrideConfiguration is not null`() {
+    fun `test clientOverrideConfiguration is null without OpenTelemetry`() {
+        // 1.0.0 stopped allocating a no-op ClientOverrideConfiguration on every AWS request
+        // when no telemetry is configured; the field is now null in that case so AWS SDK
+        // builders fall back to their default behavior.
+        // TestSettingContext has openTelemetry = null.
         val context = TestSettingContext()
         val connections = context[AwsConnections]
 
-        assertNotNull(connections.clientOverrideConfiguration)
-    }
-
-    @Test
-    fun `test clientOverrideConfiguration without OpenTelemetry`() {
-        // TestSettingContext has openTelemetry = null
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        // Configuration should still be created, just without telemetry interceptor
-        assertNotNull(connections.clientOverrideConfiguration)
+        assertNull(connections.clientOverrideConfiguration)
     }
 
     @Test

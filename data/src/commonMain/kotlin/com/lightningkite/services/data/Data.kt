@@ -33,9 +33,25 @@ import kotlin.js.JsName
  */
 public sealed interface Data : AutoCloseable {
     public val size: Long? get() = null
+
+    /**
+     * Get a byte array of the data from this instance.
+     * Closes this instance.
+     */
     public fun bytes(): ByteArray
+
+    /**
+     * Closes this instance, but leaves the sink open.
+     */
     public fun write(to: kotlinx.io.Sink)
+
+    /**
+     * Get the text data from this instance.
+     * Sources and sinks presume UTF8 by default - if you're not using UTF8, you'll need to handle parsing to text yourself.
+     * Closes this instance.
+     */
     public fun text(): String
+
     public fun source(): kotlinx.io.Source
 
     /**
@@ -50,7 +66,8 @@ public sealed interface Data : AutoCloseable {
         }
 
         override fun write(to: kotlinx.io.Sink) {
-            checkNotConsumed(); to.use { emit(to) }
+            // Do not close the caller's sink — the caller manages its own lifecycle.
+            checkNotConsumed(); emit(to)
         }
 
         override fun text(): String {
@@ -112,7 +129,7 @@ public sealed interface Data : AutoCloseable {
         public override val size: Long
             get() = data.size.toLong()
 
-        public override fun write(to: kotlinx.io.Sink): Unit = to.use { to.write(data, 0, data.size) }
+        public override fun write(to: kotlinx.io.Sink): Unit = to.write(data, 0, data.size)
         public override fun bytes(): ByteArray = data
         public override fun text(): String = data.decodeToString()
         public override fun source(): kotlinx.io.Source = Buffer().also { it.write(data) }
@@ -124,10 +141,9 @@ public sealed interface Data : AutoCloseable {
         public override val size: Long
             get() = asBytes.size.toLong()
         public val encoding: String = "UTF-8"
-        public  override fun write(to: kotlinx.io.Sink) {
-            to.use {
-                to.writeString(data)
-            }
+        public override fun write(to: kotlinx.io.Sink) {
+            // Do not close the caller's sink — the caller manages its own lifecycle.
+            to.writeString(data)
         }
 
         public override fun source(): kotlinx.io.Source = Buffer().also { it.writeString(data) }

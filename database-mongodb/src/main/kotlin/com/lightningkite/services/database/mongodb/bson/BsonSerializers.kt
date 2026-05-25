@@ -68,7 +68,7 @@ public object KObjectIdSerializer : KSerializer<KObjectId> {
 
 @OptIn(ExperimentalSerializationApi::class)
 public object ObjectIdSerializer : KSerializer<ObjectId> {
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("ObjectIdSerializer", PrimitiveKind.STRING)
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("org.bson.types.ObjectId", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: ObjectId) {
         when (encoder) {
@@ -91,7 +91,7 @@ public object ObjectIdSerializer : KSerializer<ObjectId> {
 
 @ExperimentalSerializationApi
 public object BsonValueSerializer : KSerializer<BsonValue> {
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("BsonValueSerializer", PrimitiveKind.STRING)
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("org.bson.BsonValue", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: BsonValue) {
         when (encoder) {

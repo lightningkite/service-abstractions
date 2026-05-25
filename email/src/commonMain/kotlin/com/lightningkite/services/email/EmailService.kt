@@ -2,6 +2,9 @@ package com.lightningkite.services.email
 
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.html.HTML
 import kotlinx.html.html
 import kotlinx.html.stream.appendHTML
@@ -137,17 +140,23 @@ public interface EmailService : Service {
 
     /**
      * Sends multiple personalized emails based on a template.
+     *
+     * Default implementation dispatches all sends concurrently. If one fails, others are
+     * cancelled via coroutineScope's structured concurrency — override for sequential behavior.
      */
     public suspend fun sendBulk(template: Email, personalizations: List<EmailPersonalization>): Unit =
-        personalizations.forEach {
-            send(it(template))
+        coroutineScope {
+            personalizations.map { async { send(it(template)) } }.awaitAll()
         }
 
     /**
      * Sends multiple emails.
+     *
+     * Default implementation dispatches all sends concurrently. If one fails, others are
+     * cancelled via coroutineScope's structured concurrency — override for sequential behavior.
      */
-    public suspend fun sendBulk(emails: Collection<Email>): Unit = emails.forEach {
-        send(it)
+    public suspend fun sendBulk(emails: Collection<Email>): Unit = coroutineScope {
+        emails.map { async { send(it) } }.awaitAll()
     }
 
     /**

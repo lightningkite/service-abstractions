@@ -9,6 +9,7 @@ plugins {
 
 dependencies {
     api(project(path = ":notifications"))
+    api(project(path = ":otel-jvm"))
     testImplementation(libs.kotlin.test)
     implementation(libs.firebase.admin)
     testImplementation(libs.coroutines.testing)

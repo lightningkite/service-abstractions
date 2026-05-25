@@ -1,20 +1,12 @@
 package com.lightningkite.services.database.jsonfile
 
-import com.lightningkite.services.data.KFile
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.database.*
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.span
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.Span
-import io.opentelemetry.api.trace.SpanBuilder
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
-import io.opentelemetry.extension.kotlin.asContextElement
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ObsoleteCoroutinesApi
+import io.opentelemetry.api.trace.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -25,7 +17,11 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
 import java.io.Closeable
+import java.util.*
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.comparisons.then
 
 /**
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
@@ -36,7 +32,7 @@ public class JsonFileTable<Model : Any>(
     serializer: KSerializer<Model>,
     public val file: KFile,
     public val tableName: String,
-    private val tracer: Tracer?
+    private val otel: OpenTelemetrySub?,
 ) : InMemoryTable<Model>(
     data = ConcurrentHashMap<Any?, Model>(),
     serializer = serializer
@@ -48,38 +44,17 @@ public class JsonFileTable<Model : Any>(
     private suspend inline fun <R> traced(
         operation: String,
         crossinline attributes: SpanBuilder.() -> Unit = {},
-        crossinline block: suspend (Span?) -> R
-    ): R {
-        return if (tracer != null) {
-            val span = tracer.spanBuilder("jsonfile.$operation")
-                .setSpanKind(SpanKind.CLIENT)
-                .setAttribute("db.system", "jsonfile")
-                .setAttribute("db.operation", operation)
-                .setAttribute("db.collection", tableName)
-                .apply { attributes() }
-                .startSpan()
-            try {
-                withContext(span.asContextElement()) {
-                    val result = block(span)
-                    span.setStatus(StatusCode.OK)
-                    result
-                }
-            } catch (t: CancellationException) {
-                span.addEvent("Cancelled")
-                throw t
-            } catch (t: Throwable) {
-                span.setStatus(StatusCode.ERROR)
-                span.recordExceptionWithFingerprint(t)
-                throw t
-            } finally {
-                span.end()
-            }
-        } else {
-            block(null)
-        }
-    }
+        crossinline block: suspend (Span?) -> R,
+    ): R = otel.span("jsonfile.$operation", configure = {
+        setSpanKind(SpanKind.CLIENT)
+        setAttribute("db.system", "jsonfile")
+        setAttribute("db.operation", operation)
+        setAttribute("db.collection", tableName)
+        attributes()
+    }) { block(it) }
 
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val dumpLock = ReentrantLock()
 
     @OptIn(ObsoleteCoroutinesApi::class)
     private val saveScope = scope.actor<Unit>(start = CoroutineStart.LAZY) {
@@ -106,10 +81,13 @@ public class JsonFileTable<Model : Any>(
     }
 
     public fun handleCollectionDump() {
-        val temp = file.parent!!.then(file.name + ".saving")
-        temp.writeString(encoding.encodeToString(ListSerializer(serializer), data.values.toList()))
-        temp.atomicMove(file)
-        logger.debug { "Saved $file" }
+        // Mutex prevents the shutdown hook and close() from racing on concurrent writes.
+        dumpLock.withLock {
+            val temp = file.parent!!.then(file.name + ".saving")
+            temp.writeString(encoding.encodeToString(ListSerializer(serializer), data.values.toList()))
+            temp.atomicMove(file)
+            logger.debug { "Saved $file" }
+        }
     }
 
     // ===== Traced database operations =====

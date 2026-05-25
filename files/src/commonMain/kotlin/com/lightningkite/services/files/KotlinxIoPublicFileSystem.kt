@@ -258,9 +258,12 @@ public class KotlinxIoPublicFileSystem(
             context = context,
             operation = "head",
             path = relativePath,
-            storageSystem = "file"
+            storageSystem = "file",
+            attributes = mapOf("rpc.system" to "filesystem")
         ) {
             val metadata = kfile.metadataOrNull() ?: return@traceFileOperation null
+            // TODO: Cache contentTypePath reads in a small per-FileSystem LRU (max ~1000 entries)
+            //       to avoid one syscall per head() call. Invalidate on put()/delete().
             val mediaType = if (contentTypePath.exists()) {
                 contentTypePath.source().use { source ->
                     MediaType(source.buffered().readString())
@@ -269,6 +272,8 @@ public class KotlinxIoPublicFileSystem(
                 MediaType.fromExtension(path.name.substringAfterLast('.', ""))
             }
 
+            // TODO: emit file.size and file.content_type as span attributes once traceFileOperation
+            //       supports setting attributes from inside the block.
             FileInfo(
                 type = mediaType,
                 size = metadata.size,
@@ -321,22 +326,26 @@ public class KotlinxIoPublicFileSystem(
             context = context,
             operation = "get",
             path = relativePath,
-            storageSystem = "file"
+            storageSystem = "file",
+            attributes = mapOf("rpc.system" to "filesystem")
         ) {
-            if (!kfile.exists()) {
+            // Try-open avoids a redundant exists() syscall before open.
+            val source = try {
+                kfile.source().buffered()
+            } catch (e: FileNotFoundException) {
                 return@traceFileOperation null
             }
 
             val mediaType = if (contentTypePath.exists()) {
-                contentTypePath.source().buffered().use { source ->
-                    MediaType(source.readString())
+                contentTypePath.source().buffered().use { s ->
+                    MediaType(s.readString())
                 }
             } else {
                 MediaType.fromExtension(path.name.substringAfterLast('.', ""))
             }
 
             TypedData(
-                Data.Source(kfile.source().buffered(), kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1),
+                Data.Source(source, kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1),
                 mediaType
             )
         }

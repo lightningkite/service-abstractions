@@ -20,3 +20,4 @@ database-mongodb/src/test/kotlin/com/lightningkite/services/database/mongodb/exp
 /.claude/settings.local.json
 tmp
 .aider*
+.agentbridge

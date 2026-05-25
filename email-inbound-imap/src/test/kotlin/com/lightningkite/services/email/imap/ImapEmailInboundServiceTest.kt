@@ -231,10 +231,14 @@ class ImapEmailInboundServiceTest {
         assertTrue(health.additionalMessage?.contains("does not exist") == true)
     }
 
-    // ==================== Webhook Not Supported Test ====================
+    // ==================== Pull-only Contract ====================
 
+    /**
+     * IMAP is pull-only — parse() is on the WebhookAdapter interface but has no meaningful
+     * implementation here. It must throw rather than silently accepting bogus input.
+     */
     @Test
-    fun testparse_throwsUnsupportedOperation() = runTest {
+    fun testParse_throwsForPullOnlyAdapter() = runTest {
         val service = ImapEmailInboundService(
             name = "test",
             context = testContext,
@@ -251,7 +255,10 @@ class ImapEmailInboundServiceTest {
             service.onReceived.parse(
                 queryParameters = emptyList(),
                 headers = emptyMap(),
-                body = com.lightningkite.services.data.TypedData.text("test", com.lightningkite.services.data.MediaType.Text.Plain)
+                body = com.lightningkite.services.data.TypedData.text(
+                    "test",
+                    com.lightningkite.services.data.MediaType.Text.Plain
+                )
             )
         }
     }

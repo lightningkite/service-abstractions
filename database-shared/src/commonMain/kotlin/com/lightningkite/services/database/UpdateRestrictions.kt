@@ -2,6 +2,7 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.data.GenerateDataClassPaths
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
 
 /**
  * Defines restrictions on which fields can be modified in database update operations and under what conditions.
@@ -118,8 +119,8 @@ public data class UpdateRestrictions<T>(
     @Serializable
     @GenerateDataClassPaths
     public data class Part<T>(
-        val property: DataClassPathPartial<T>,
-        val requires: Condition<T>,
+        @JsonNames("path") val property: DataClassPathPartial<T>,
+        @JsonNames("limitedIf") val requires: Condition<T>,
         val limitedTo: Condition<T>,
     )
 

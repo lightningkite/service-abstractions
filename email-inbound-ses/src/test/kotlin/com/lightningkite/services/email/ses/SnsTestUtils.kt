@@ -49,13 +49,20 @@ object SnsTestUtils {
 
     /**
      * Creates a self-signed X.509 certificate for testing using Bouncy Castle.
+     *
+     * Defaults to CN=sns.amazonaws.com so the cert matches the SNS signing identity
+     * the service requires. Override [commonName] to test rejection of non-SNS certs.
      */
-    fun createSelfSignedCertificate(keyPair: KeyPair, daysValid: Int = 365): X509Certificate {
+    fun createSelfSignedCertificate(
+        keyPair: KeyPair,
+        daysValid: Int = 365,
+        commonName: String = "sns.amazonaws.com",
+    ): X509Certificate {
         val now = Date()
         val notBefore = now
         val notAfter = Date(now.time + daysValid.toLong() * 24 * 60 * 60 * 1000)
 
-        val issuer = X500Name("CN=SNS Test Certificate, O=Test, C=US")
+        val issuer = X500Name("CN=$commonName, O=Test, C=US")
         val serial = BigInteger.valueOf(System.currentTimeMillis())
 
         val certBuilder: X509v3CertificateBuilder = JcaX509v3CertificateBuilder(

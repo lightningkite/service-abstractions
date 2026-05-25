@@ -2,13 +2,19 @@ package com.lightningkite.services.voiceagent.openai
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.otel.OpenTelemetrySub
+import com.lightningkite.services.otel.get
 import com.lightningkite.services.voiceagent.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
+import io.opentelemetry.api.trace.Span
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -102,6 +108,7 @@ public class OpenAIVoiceAgentService(
             initialConfig = config,
             httpClient = getHttpClient(),
             json = json,
+            otel = context.openTelemetry?.get("voiceagent-openai"),
             serializersModule = context.internalSerializersModule,
         )
     }
@@ -144,13 +151,16 @@ internal class OpenAIVoiceAgentSession(
     private val httpClient: HttpClient,
     private val json: Json,
     private val serializersModule: kotlinx.serialization.modules.SerializersModule,
+    private val otel: OpenTelemetrySub? = null,
 ) : VoiceAgentSession {
 
     override val sessionId: String = Uuid.random().toString()
     override var config: VoiceAgentSessionConfig = initialConfig
         private set
 
-    private val eventChannel = Channel<VoiceAgentEvent>(Channel.UNLIMITED)
+    // Bounded buffer with DROP_OLDEST prevents unbounded memory growth under a slow consumer.
+    // If overflow occurs (consumer not keeping up), the oldest events are dropped and a warning is logged.
+    private val eventChannel = Channel<VoiceAgentEvent>(capacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     override val events: Flow<VoiceAgentEvent> = eventChannel.receiveAsFlow()
 
     private var webSocketSession: DefaultWebSocketSession? = null
@@ -158,6 +168,17 @@ internal class OpenAIVoiceAgentSession(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isConnected = false
     private var openaiSessionId: String? = null
+
+    // Signals when the WebSocket connection is ready; avoids busy-wait polling.
+    private val connectedSignal = CompletableDeferred<Unit>()
+
+    // Session-lifetime span: open on connect(), closed on close()/disconnect()
+    private var sessionSpan: Span? = null
+    private var sessionSpanScope: io.opentelemetry.context.Scope? = null
+
+    // Per-turn span: open on ResponseCreated, closed on ResponseDone
+    private var turnSpan: Span? = null
+    private var turnSpanScope: io.opentelemetry.context.Scope? = null
 
     // Track current function call being built (per-session, cleaned up after each call completes)
     private val functionCallArguments = mutableMapOf<String, StringBuilder>()
@@ -172,6 +193,14 @@ internal class OpenAIVoiceAgentSession(
 
     @OptIn(ExperimentalEncodingApi::class)
     private suspend fun connect() {
+        // Open session-lifetime span
+        sessionSpan = otel?.spanBuilder("voiceagent.openai.session")
+            ?.setSpanKind(SpanKind.CLIENT)
+            ?.setAttribute("ai.model", model)
+            ?.setAttribute("voiceagent.session_id", sessionId)
+            ?.startSpan()
+        sessionSpanScope = sessionSpan?.makeCurrent()
+
         try {
             val wsUrl = "wss://api.openai.com/v1/realtime?model=$model"
             logger.info { "[$serviceName] Connecting to OpenAI Realtime: $wsUrl" }
@@ -185,6 +214,7 @@ internal class OpenAIVoiceAgentSession(
             ) {
                 webSocketSession = this
                 isConnected = true
+                connectedSignal.complete(Unit)
                 logger.info { "[$serviceName] WebSocket connected" }
 
                 // Process incoming messages
@@ -213,13 +243,17 @@ internal class OpenAIVoiceAgentSession(
                 }
             }
         } catch (e: CancellationException) {
+            sessionSpan?.setStatus(StatusCode.OK, "Cancelled")
             throw e
         } catch (e: Exception) {
             logger.error(e) { "[$serviceName] Failed to connect to OpenAI Realtime" }
             eventChannel.send(VoiceAgentEvent.Error("connection_error", e.message ?: "Connection failed"))
+            sessionSpan?.setStatus(StatusCode.ERROR, e.message ?: "connection failed")
         } finally {
             isConnected = false
             eventChannel.close()
+            sessionSpanScope?.close()
+            sessionSpan?.end()
         }
     }
 
@@ -290,6 +324,14 @@ internal class OpenAIVoiceAgentSession(
 
                 is ServerEvent.ResponseCreated -> {
                     logger.info { "[$serviceName] Response started: ${event.response.id}" }
+                    // Open per-turn span
+                    turnSpanScope?.close()
+                    turnSpan?.end()
+                    turnSpan = otel?.spanBuilder("voiceagent.openai.turn")
+                        ?.setSpanKind(SpanKind.INTERNAL)
+                        ?.setAttribute("voiceagent.response_id", event.response.id)
+                        ?.startSpan()
+                    turnSpanScope = turnSpan?.makeCurrent()
                     eventChannel.send(VoiceAgentEvent.ResponseStarted(event.response.id))
                 }
 
@@ -315,10 +357,24 @@ internal class OpenAIVoiceAgentSession(
 
                     if (status == ResponseStatus.FAILED) {
                         logger.error { "[$serviceName] Response FAILED: ${event.response.id}, statusDetails=${event.response.statusDetails}" }
+                        turnSpan?.setStatus(StatusCode.ERROR, "response failed")
                     } else {
                         logger.info { "[$serviceName] Response done: ${event.response.id}, status=$status" }
                         logger.debug { "[$serviceName] Usage: input=${usage?.inputTokens} (text=${usage?.inputTextTokens}, audio=${usage?.inputAudioTokens}), output=${usage?.outputTokens} (text=${usage?.outputTextTokens}, audio=${usage?.outputAudioTokens})" }
+                        turnSpan?.setStatus(StatusCode.OK)
                     }
+                    // Record usage stats on the per-turn span
+                    usage?.let { u ->
+                        turnSpan?.setAttribute("token.input_count", u.inputTokens.toLong())
+                        turnSpan?.setAttribute("token.output_count", u.outputTokens.toLong())
+                        u.inputAudioTokens?.let { turnSpan?.setAttribute("token.input_audio_count", it.toLong()) }
+                        u.outputAudioTokens?.let { turnSpan?.setAttribute("token.output_audio_count", it.toLong()) }
+                    }
+                    // Close per-turn span
+                    turnSpanScope?.close()
+                    turnSpanScope = null
+                    turnSpan?.end()
+                    turnSpan = null
                     eventChannel.send(VoiceAgentEvent.ResponseDone(event.response.id, status, usage))
                 }
 
@@ -537,14 +593,10 @@ internal class OpenAIVoiceAgentSession(
 
     @OptIn(ExperimentalEncodingApi::class)
     override suspend fun sendAudio(audio: ByteArray) {
-        // Wait for connection if needed
-        var waited = 0
-        while (!isConnected && waited < 5000) {
-            delay(50)
-            waited += 50
-        }
-
-        if (!isConnected) {
+        // Await connection signal with a 5s timeout instead of a busy-wait loop
+        try {
+            withTimeout(5_000) { connectedSignal.await() }
+        } catch (e: TimeoutCancellationException) {
             logger.warn { "[$serviceName] Cannot send audio: not connected after 5s" }
             return
         }
@@ -606,18 +658,13 @@ internal class OpenAIVoiceAgentSession(
     }
 
     override suspend fun awaitConnection() {
-        // Wait for WebSocket connection to be established
-        var waited = 0
-        while (!isConnected && waited < 10000) {
-            delay(50)
-            waited += 50
-        }
-
-        if (!isConnected) {
+        // Await connection signal with a 10s timeout instead of a busy-wait loop
+        try {
+            withTimeout(10_000) { connectedSignal.await() }
+        } catch (e: TimeoutCancellationException) {
             throw IllegalStateException("Failed to connect to OpenAI Realtime after 10 seconds")
         }
-
-        logger.info { "[$serviceName] Connection ready after ${waited}ms" }
+        logger.info { "[$serviceName] Connection ready" }
     }
 }
 

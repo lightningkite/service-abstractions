@@ -26,6 +26,11 @@ dependencies {
     // Logging
     implementation(libs.kotlin.logging)
 
+    // OpenTelemetry for spans
+    api(project(":otel-jvm"))
+    implementation(libs.openTelemetry.api)
+    implementation(libs.openTelemetry.kotlin)
+
     // Testing
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
