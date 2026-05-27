@@ -1,14 +1,16 @@
 package com.lightningkite.services.human
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.services.HealthStatus
+import com.lightningkite.services.data.EmailAddress
+import com.lightningkite.services.data.PhoneNumber
+import com.lightningkite.services.data.toEmailAddress
+import com.lightningkite.services.data.toPhoneNumber
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
 import com.lightningkite.services.email.EmailAddressWithName
 import com.lightningkite.services.email.EmailInboundService
 import com.lightningkite.services.email.ReceivedEmail
-import com.lightningkite.toEmailAddress
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import kotlin.uuid.Uuid
 
 /**
@@ -41,7 +43,7 @@ public class HumanEmailInboundService(
         this.handler = handler
     }
 
-    override val onReceived: WebhookSubservice<ReceivedEmail> = object : WebhookSubservice<ReceivedEmail> {
+    override val onReceived: WebhookAdapter<ReceivedEmail> = object : WebhookAdapter<ReceivedEmail> {
         override suspend fun configureWebhook(httpUrl: String) {}
 
         override suspend fun parse(
@@ -61,7 +63,9 @@ public class HumanEmailInboundService(
             return email
         }
 
-        override suspend fun onSchedule() {}
+        override suspend fun pull(): Set<ReceivedEmail> {
+            return setOf()
+        }
     }
 
     override suspend fun connect() {

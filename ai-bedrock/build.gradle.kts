@@ -38,7 +38,6 @@ kotlin {
     iosX64()
     iosArm64()
     iosSimulatorArm64()
-    macosX64()
     macosArm64()
 
     sourceSets {
@@ -86,7 +85,6 @@ kotlin {
         val iosX64Main by getting { dependsOn(nonJvmMain) }
         val iosArm64Main by getting { dependsOn(nonJvmMain) }
         val iosSimulatorArm64Main by getting { dependsOn(nonJvmMain) }
-        val macosX64Main by getting { dependsOn(nonJvmMain) }
         val macosArm64Main by getting { dependsOn(nonJvmMain) }
 
         // :ai-test is JVM-only; wiring it into jvmTest (not commonTest) keeps iOS/JS test

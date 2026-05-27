@@ -1,10 +1,10 @@
 package com.lightningkite.services.human
 
-import com.lightningkite.PhoneNumber
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.data.PhoneNumber
+import com.lightningkite.services.data.toPhoneNumber
 import com.lightningkite.services.sms.SMS
-import com.lightningkite.toPhoneNumber
 
 /**
  * Outbound SMS service that records sent messages to the human services dashboard.

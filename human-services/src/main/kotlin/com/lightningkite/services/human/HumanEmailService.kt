@@ -1,11 +1,11 @@
 package com.lightningkite.services.human
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.EmailAddress
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.data.toEmailAddress
 import com.lightningkite.services.email.Email
 import com.lightningkite.services.email.EmailService
-import com.lightningkite.toEmailAddress
 
 /**
  * Outbound email service that records sent emails to the human services dashboard.

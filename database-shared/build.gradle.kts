@@ -43,7 +43,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(project(path = ":data-shared"))
-                implementation(libs.kotlinx.serialization.json)
+                implementation(libs.kotlinx.json)
             }
             kotlin {
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))

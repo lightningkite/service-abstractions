@@ -506,6 +506,8 @@ public data class SerializableAnnotation(
 ) {
     public companion object {
         private val __do_not_use_externally__parsers = HashMap<String, (Annotation) -> SerializableAnnotation>()
+        @Suppress("unused")
+        private val __defaults_loaded__ = DefaultSerializableAnnotationParsers
         public fun <T : Annotation> parser(name: String, handler: (T) -> SerializableAnnotation) {
             @Suppress("UNCHECKED_CAST")
             __do_not_use_externally__parsers[name] = handler as ((Annotation) -> SerializableAnnotation)

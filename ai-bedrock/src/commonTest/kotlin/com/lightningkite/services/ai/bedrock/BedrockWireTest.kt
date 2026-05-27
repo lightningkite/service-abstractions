@@ -192,7 +192,7 @@ class BedrockWireTest {
                     listOf(
                         LlmPart.Attachment(
                             com.lightningkite.services.ai.LlmAttachment.Url(
-                                mediaType = com.lightningkite.MediaType("image/png"),
+                                mediaType = com.lightningkite.services.data.MediaType("image/png"),
                                 url = "https://example.com/x.png",
                             ),
                         ),

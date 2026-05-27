@@ -1,13 +1,13 @@
 package com.lightningkite.services.human
 
-import com.lightningkite.PhoneNumber
-import com.lightningkite.services.HealthStatus
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.data.PhoneNumber
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.data.WebhookSubservice
+import com.lightningkite.services.data.toPhoneNumber
 import com.lightningkite.services.sms.InboundSms
 import com.lightningkite.services.sms.SmsInboundService
-import com.lightningkite.toPhoneNumber
+import com.lightningkite.services.webhooksubservice.WebhookAdapter
 
 /**
  * Inbound SMS service backed by a web form for manual testing.
@@ -39,7 +39,7 @@ public class HumanSmsInboundService(
         this.handler = handler
     }
 
-    override val onReceived: WebhookSubservice<InboundSms> = object : WebhookSubservice<InboundSms> {
+    override val onReceived: WebhookAdapter<InboundSms> = object : WebhookAdapter<InboundSms> {
         override suspend fun configureWebhook(httpUrl: String) {}
 
         override suspend fun parse(
@@ -61,7 +61,9 @@ public class HumanSmsInboundService(
             return sms
         }
 
-        override suspend fun onSchedule() {}
+        override suspend fun pull(): Set<InboundSms> {
+            return setOf()
+        }
     }
 
     override suspend fun connect() {

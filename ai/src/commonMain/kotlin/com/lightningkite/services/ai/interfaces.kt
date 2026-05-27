@@ -1,6 +1,6 @@
 package com.lightningkite.services.ai
 
-import com.lightningkite.MediaType
+import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.Service
 import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext

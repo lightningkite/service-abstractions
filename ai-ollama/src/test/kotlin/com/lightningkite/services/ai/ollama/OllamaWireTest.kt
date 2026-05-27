@@ -208,7 +208,7 @@ class OllamaWireTest {
     @Test
     fun base64ImageGoesInImagesArray() {
         val attachment = com.lightningkite.services.ai.LlmAttachment.Base64(
-            mediaType = com.lightningkite.MediaType("image/png"),
+            mediaType = com.lightningkite.services.data.MediaType("image/png"),
             base64 = "abc123",
         )
         val prompt = LlmPrompt(
@@ -230,7 +230,7 @@ class OllamaWireTest {
     @Test
     fun urlImageRejectedOnNativeWire() {
         val attachment = com.lightningkite.services.ai.LlmAttachment.Url(
-            mediaType = com.lightningkite.MediaType("image/png"),
+            mediaType = com.lightningkite.services.data.MediaType("image/png"),
             url = "https://example.com/img.png",
         )
         val prompt = LlmPrompt(

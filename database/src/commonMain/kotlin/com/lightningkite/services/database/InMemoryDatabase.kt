@@ -1,7 +1,7 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.KFile
+import com.lightningkite.services.kfile.KFile
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json

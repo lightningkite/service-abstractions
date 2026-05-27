@@ -1,6 +1,6 @@
 package com.lightningkite.services.ai.test
 
-import com.lightningkite.MediaType
+import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmPart

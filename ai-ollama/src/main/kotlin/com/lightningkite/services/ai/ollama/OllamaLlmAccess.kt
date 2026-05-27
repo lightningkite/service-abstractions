@@ -1,6 +1,6 @@
 package com.lightningkite.services.ai.ollama
 
-import com.lightningkite.services.HealthStatus
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.ai.LlmAccess
 import com.lightningkite.services.ai.LlmException

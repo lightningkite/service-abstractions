@@ -1,6 +1,6 @@
 package com.lightningkite.services.ai
 
-import com.lightningkite.services.HealthStatus
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.SettingContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow

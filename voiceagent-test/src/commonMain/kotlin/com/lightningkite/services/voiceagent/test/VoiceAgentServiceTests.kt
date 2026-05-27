@@ -207,6 +207,6 @@ public abstract class VoiceAgentServiceTests {
     @Test
     public fun healthCheck_returnsOK(): TestResult = runSuspendingTest {
         val status = service.healthCheck()
-        assertEquals(com.lightningkite.services.HealthStatus.Level.OK, status.level)
+        assertEquals(com.lightningkite.services.data.HealthStatus.Level.OK, status.level)
     }
 }

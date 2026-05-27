@@ -545,7 +545,16 @@ internal class OpenAIVoiceAgentSession(
     }
 
     private suspend fun sendSessionUpdate(config: VoiceAgentSessionConfig) {
-        val tools = config.tools.map { it.toOpenAIToolDefinition(serializersModule) }.takeIf { it.isNotEmpty() }
+        // Cast to List<Any> first to handle both LlmToolDescriptor (v2) and SerializableToolDescriptor
+        // (v1-compiled code) without a ClassCastException on element access.
+        @Suppress("UNCHECKED_CAST")
+        val tools = (config.tools as List<Any>).mapNotNull { tool ->
+            when (tool) {
+                is com.lightningkite.services.ai.LlmToolDescriptor<*> -> tool.toOpenAIToolDefinition(serializersModule)
+                is com.lightningkite.services.voiceagent.SerializableToolDescriptor -> tool.toOpenAIToolDefinition()
+                else -> null
+            }
+        }.takeIf { it.isNotEmpty() }
 
         // Log session config sizes for token analysis
         val instructionsChars = config.instructions?.length ?: 0

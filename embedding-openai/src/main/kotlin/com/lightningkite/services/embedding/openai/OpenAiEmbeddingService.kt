@@ -1,6 +1,6 @@
 package com.lightningkite.services.embedding.openai
 
-import com.lightningkite.services.HealthStatus
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.database.Embedding
 import com.lightningkite.services.embedding.EmbeddingException

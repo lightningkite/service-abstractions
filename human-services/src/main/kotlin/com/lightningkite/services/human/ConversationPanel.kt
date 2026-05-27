@@ -1,13 +1,13 @@
 package com.lightningkite.services.human
 
-import com.lightningkite.EmailAddress
-import com.lightningkite.PhoneNumber
+import com.lightningkite.services.data.EmailAddress
+import com.lightningkite.services.data.PhoneNumber
+import com.lightningkite.services.data.toEmailAddress
+import com.lightningkite.services.data.toPhoneNumber
 import com.lightningkite.services.email.Email
 import com.lightningkite.services.email.EmailAddressWithName
 import com.lightningkite.services.email.ReceivedEmail
 import com.lightningkite.services.sms.InboundSms
-import com.lightningkite.toEmailAddress
-import com.lightningkite.toPhoneNumber
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Clock
 import kotlin.time.Instant

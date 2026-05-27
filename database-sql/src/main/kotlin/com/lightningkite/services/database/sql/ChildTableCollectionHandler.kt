@@ -394,7 +394,7 @@ private class ChildTableListDecoder(
 
         if (deserializer.descriptor.kind == StructureKind.CLASS && !deserializer.descriptor.isInline) {
             val source = SimpleReadSource(row.values, emptyMap(), config.fieldSeparator)
-            return MapDecoder(config, source, deserializer.descriptor).decodeSerializableValue(deserializer)
+            return MapDecoder(config, source).decodeSerializableValue(deserializer)
         }
 
         val decoder = ChildTableElementDecoder(row.values["value"], config)
@@ -729,7 +729,7 @@ private class ChildTableMapDecoder(
         if (deserializer.descriptor.kind == StructureKind.CLASS && !deserializer.descriptor.isInline) {
             val dataMap = if (index % 2 == 0) getKeyMap(index) else getValueMap(index)
             val source = SimpleReadSource(dataMap, emptyMap(), config.fieldSeparator)
-            return MapDecoder(config, source, deserializer.descriptor).decodeSerializableValue(deserializer)
+            return MapDecoder(config, source).decodeSerializableValue(deserializer)
         }
 
         val decoder = ChildTableElementDecoder(getRawValue(index), config)
@@ -791,7 +791,7 @@ private class ChildTableElementDecoder(
         @Suppress("UNCHECKED_CAST")
         val map = element as Map<String, Any?>
         val source = SimpleReadSource(map, emptyMap(), config.fieldSeparator)
-        return MapDecoder(config, source, descriptor)
+        return MapDecoder(config, source)
     }
 }
 
