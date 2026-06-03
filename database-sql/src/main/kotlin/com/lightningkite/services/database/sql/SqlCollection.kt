@@ -108,14 +108,15 @@ public class SqlCollection<T : Any>(
             @Suppress("UNCHECKED_CAST")
             val ownerCol = childTable.ownerIdColumns[0] as Column<Any?>
 
-            childTable.selectAll()
-                .where { ownerCol inList ids }
-                .orderBy(childTable.idxColumn to SortOrder.ASC)
+            val query = childTable.selectAll().where { ownerCol inList ids }
+            // Sets have no idx column; only order rows when ordering is meaningful.
+            childTable.idxColumn?.let { query.orderBy(it to SortOrder.ASC) }
+            query
                 .toList()
                 .groupBy { it[ownerCol] }
                 .mapValues { (_, rows) ->
                     rows.map { row ->
-                        val idx = row[childTable.idxColumn]
+                        val idx = childTable.idxColumn?.let { row[it] }
                         val values = childTable.elementColumns.mapValues { (_, col) ->
                             try { row[col] } catch (_: Exception) { null }
                         }
@@ -156,7 +157,7 @@ public class SqlCollection<T : Any>(
             childTable.batchInsert(childRows) { childRow ->
                 @Suppress("UNCHECKED_CAST")
                 this[childTable.ownerIdColumns[0] as Column<Any?>] = ownerId
-                this[childTable.idxColumn] = childRow.index ?: 0
+                childTable.idxColumn?.let { this[it] = childRow.index ?: 0 }
                 if (childDef.isMap && childRow.key != null) {
                     for ((keyName, keyValue) in childRow.key) {
                         val col = childTable.keyColumns[keyName] ?: continue

@@ -1,10 +1,13 @@
 package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.files.test.FileSystemTests
 import com.lightningkite.services.test.performance
 import io.ktor.client.request.*
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import kotlin.test.Test
 
@@ -21,16 +24,30 @@ class S3PublicFileSystemTest : FileSystemTests() {
     /**
      * The S3 file system instance for testing.
      * Uses the "lk" AWS profile and a test bucket in us-west-2.
-     * Returns null if the system cannot be initialized (e.g., missing credentials).
+     * Returns null — which makes the shared suite skip — when S3 cannot actually be used:
+     * either the `../local/s3.txt` config is missing, or it is present but S3 is not
+     * reachable/authorized here (e.g. the named AWS profile or network is unavailable).
+     * The config file existing is not enough; we probe with a health check so absent
+     * credentials produce a clean skip rather than every test failing with an
+     * `SdkClientException`.
      */
     override val system: S3PublicFileSystem? by lazy {
         S3PublicFileSystem
-        PublicFileSystem.Settings(
+        val fs = PublicFileSystem.Settings(
             File("../local/s3.txt").takeIf { it.exists() }?.readText() ?: run {
                 println("Skipping; need ../local/s3.txt to run the tests")
                 return@lazy null
             }
-        ).invoke("test", TestSettingContext()) as? S3PublicFileSystem
+        ).invoke("test", TestSettingContext()) as? S3PublicFileSystem ?: return@lazy null
+
+        val reachable = runCatching {
+            runBlocking { withTimeoutOrNull(10_000) { fs.healthCheck() } }
+        }.getOrNull()
+        if (reachable == null || reachable.level == HealthStatus.Level.ERROR) {
+            println("Skipping S3 tests; S3 not reachable/authorized (credentials or network unavailable)")
+            return@lazy null
+        }
+        fs
     }
 
     /**

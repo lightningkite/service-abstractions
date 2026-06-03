@@ -63,23 +63,30 @@ public val nestedWeatherTool: LlmToolDescriptor<NestedWeatherRequest> = LlmToolD
 )
 
 /**
- * A 4x4 solid-red PNG encoded as base64. Small enough to keep tests cheap, large enough for
- * multimodal models to reliably identify the color.
+ * A 100x100 solid-red PNG encoded as base64. A solid color so vision models reliably name it.
  *
- * Generated offline with Python PIL: `Image.new("RGB", (4, 4), (255, 0, 0))`.
+ * Sized at 100x100 deliberately: Anthropic's vision endpoint rejects images below its minimum
+ * processable size with "Could not process image" (a 4x4 image fails), so this is kept well
+ * above a handful of pixels while staying tiny enough to keep tests cheap.
+ *
+ * Generated offline as a solid (255, 0, 0) 8-bit RGB PNG.
  */
 public const val TINY_RED_PNG_BASE64: String =
-    "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAF0lEQVQIW2P8z8DwnwEJMGGKjAqxIgQAYX4CHv1Q+X" +
-        "IAAAAASUVORK5CYII="
+    "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAAAkElEQVR42u3QMQ0AAAjAsPk3DRb4eJpUQZviSIEsWbJk" +
+        "yUKBLFmyZMlCgSxZsmTJQoEsWbJkyUKBLFmyZMlCgSxZsmTJQoEsWbJkyUKBLFmyZMlCgSxZsmTJQoEsWbJkyUKB" +
+        "LFmyZMlCgSxZsmTJQoEsWbJkyUKBLFmyZMlCgSxZsmTJQoEsWbJkyUKBLFnvFp4t6yugc3LNAAAAAElFTkSuQmCC"
 
 /**
- * A stable public URL pointing at a solid-blue image hosted on Wikimedia Commons.
+ * A public URL serving a 200x200 solid-blue PNG.
  *
- * Used by the URL-attachment multimodal test. Providers that only accept base64 attachments
- * can opt out via [LlmAccessTests.supportsUrlAttachments].
+ * Used by the URL-attachment multimodal test, which requires a URL the provider's image
+ * fetcher can download. The previous Wikimedia URL 404'd (it was an SVG path, not a raster
+ * file) and Wikimedia also blocks unidentified fetchers; placehold.co serves a plain
+ * raster PNG built for hotlinking. Providers that only accept base64 attachments can opt out
+ * via [LlmAccessTests.supportsUrlAttachments].
  */
 public const val STABLE_BLUE_IMAGE_URL: String =
-    "https://upload.wikimedia.org/wikipedia/commons/3/38/Solid_blue.svg.png"
+    "https://placehold.co/200x200/0000FF/0000FF.png"
 
 /**
  * Convenience constructor for a single user-text message.

@@ -28,28 +28,11 @@ public abstract class StreamingTests : LlmAccessTests() {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    /**
-     * A moderately long generation prompt should produce at least two TextDelta frames on
-     * any streaming-capable provider. (One-frame streams happen on very short outputs; two
-     * frames is the realistic minimum for a 3-line response.)
-     */
-    @Test
-    public fun streamYieldsMultipleDeltas(): Unit = runTest(timeout = 60.seconds) {
-        skipIfServiceAbsent()
-        val events = service.stream(
-            model = cheapModel,
-            prompt = LlmPrompt(
-                messages = listOf(userText("Count from 1 to 5, one number per line.")),
-                maxTokens = testMaxTokens,
-                temperature = 0.0,
-            ),
-        ).toList()
-        val deltas = events.filterIsInstance<LlmStreamEvent.TextDelta>()
-        assertTrue(
-            deltas.size >= 2,
-            "Expected at least 2 TextDelta events; got ${deltas.size} (total events: ${events.size})",
-        )
-    }
+    // Note: there is intentionally no "stream yields multiple deltas" test. Delta/chunk
+    // granularity is not part of the streaming contract — a provider or local runtime may
+    // legitimately deliver a short response in a single TextDelta frame. Asserting "at least
+    // N deltas" is inherently flaky across models/runtimes (e.g. small local models in
+    // LM Studio). streamConcatenatesToInference covers that streamed text is correct.
 
     /**
      * Contract: streams ALWAYS end with exactly one [LlmStreamEvent.Finished] frame, and

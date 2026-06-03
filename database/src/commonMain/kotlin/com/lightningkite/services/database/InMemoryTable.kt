@@ -44,6 +44,26 @@ public open class InMemoryTable<Model : Any>(
         for (item in items) data[idOf(item)] = item
     }
 
+    /**
+     * Source-compatibility constructor for callers written against the previous list-backed
+     * [InMemoryTable]. The supplied [data] list is read once to seed the table and is **not**
+     * retained or kept in sync — the table is now keyed by `_id` in a [MutableMap]. Prefer the
+     * primary constructor (pass a map) or [preload].
+     */
+    @Deprecated(
+        "InMemoryTable is now keyed by _id and backed by a MutableMap. The list is only used as " +
+            "initial contents and is not retained; use the primary constructor or preload() instead.",
+        level = DeprecationLevel.WARNING,
+    )
+    public constructor(
+        data: MutableList<Model>,
+        serializer: KSerializer<Model>,
+        tableName: String = "unknown",
+        tracer: OpenTelemetry? = null,
+    ) : this(HashMap<Any?, Model>(), serializer, tableName, tracer) {
+        preload(data)
+    }
+
     private val uniqueIndexChecks: AtomicRef<List<(List<EntryChange<Model>>) -> Unit>> = atomic(emptyList())
 
     private fun uniqueCheck(changed: EntryChange<Model>) = uniqueCheck(listOf(changed))

@@ -22,6 +22,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.comparisons.then
+import kotlin.uuid.Uuid
 
 /**
  * An InMemoryFieldCollection with the added feature of loading data from a file at creation
@@ -80,12 +81,22 @@ public class JsonFileTable<Model : Any>(
         }
     }
 
+    @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
     public fun handleCollectionDump() {
         // Mutex prevents the shutdown hook and close() from racing on concurrent writes.
         dumpLock.withLock {
-            val temp = file.parent!!.then(file.name + ".saving")
-            temp.writeString(encoding.encodeToString(ListSerializer(serializer), data.values.toList()))
-            temp.atomicMove(file)
+            // A unique temp name keeps overlapping writers (e.g. another instance pointing at the
+            // same file, or this instance's shutdown hook) from clobbering each other's temp file.
+            // Writing a fresh file then atomically renaming guarantees no leftover trailing bytes
+            // from a previously-longer serialization and is crash-safe.
+            val temp = file.parent!!.then("${file.name}.${Uuid.random()}.saving")
+            try {
+                temp.writeString(encoding.encodeToString(ListSerializer(serializer), data.values.toList()))
+                temp.atomicMove(file)
+            } catch (e: Throwable) {
+                temp.delete()
+                throw e
+            }
             logger.debug { "Saved $file" }
         }
     }

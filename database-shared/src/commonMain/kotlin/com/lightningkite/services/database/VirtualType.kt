@@ -585,6 +585,8 @@ public sealed class SerializableAnnotationValue {
                 is Double -> DoubleValue(value)
                 is Char -> CharValue(value)
                 is String -> StringValue(value)
+                // Enums render to their name, matching the JVM reflective fallback in parseOrNull.
+                is Enum<*> -> StringValue(value.name)
                 is KClass<*> -> ClassValue(value.serializerOrNull()?.descriptor?.serialName ?: "")
                 is BooleanArray -> ArrayValue(value.map { invoke(it) })
                 is ByteArray -> ArrayValue(value.map { invoke(it) })

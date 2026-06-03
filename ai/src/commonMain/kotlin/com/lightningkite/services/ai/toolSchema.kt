@@ -60,17 +60,31 @@ public fun LlmToolDescriptor<*>.toJsonSchema(
 public fun KSerializer<*>.toJsonSchema(
     module: SerializersModule = EmptySerializersModule(),
     maxDepth: Int = 4,
-): JsonObject {
+): JsonObject = toolArgSerializer().buildSchema(module, maxDepth)
+
+/**
+ * Resolve this tool-argument serializer to one whose top-level shape is a JSON object,
+ * as required by LLM function-calling APIs.
+ *
+ * Class and sealed-hierarchy serializers already describe objects and are returned
+ * unchanged. Anything else (primitive, list, map, enum, value class, …) is wrapped in a
+ * synthetic single-field `{ "value": <inner> }` object via [ValueWrappedToolArgSerializer],
+ * so both the generated schema and the decode path round-trip the same way. Use this
+ * serializer instead of the raw [LlmToolDescriptor.type] when decoding the model's
+ * `inputJson` so the `value` wrapper is unwrapped automatically.
+ */
+public fun KSerializer<*>.toolArgSerializer(): KSerializer<*> {
     val real = unwrapWrapping()
     val resolved = real.nullElement() ?: real
-    if (resolved.descriptor.kind != StructureKind.CLASS && resolved.descriptor.kind != PolymorphicKind.SEALED) {
-        throw IllegalArgumentException(
-            "Tool argument serializer must be a class or sealed hierarchy, got " +
-                    "${resolved.descriptor.kind} for ${resolved.descriptor.serialName}",
-        )
+    return if (resolved.descriptor.kind == StructureKind.CLASS || resolved.descriptor.kind == PolymorphicKind.SEALED) {
+        real
+    } else {
+        ValueWrappedToolArgSerializer(real)
     }
-    return real.buildSchema(module, maxDepth)
 }
+
+/** See [KSerializer.toolArgSerializer]. */
+public fun LlmToolDescriptor<*>.toolArgSerializer(): KSerializer<*> = type.toolArgSerializer()
 
 private fun KSerializer<*>.unwrapWrapping(): KSerializer<*> =
     if (this is WrappingSerializer<*, *> && !isConditionOrModification()) getDeferred().unwrapWrapping() else this
@@ -93,6 +107,18 @@ private fun KSerializer<*>.buildSchema(module: SerializersModule, maxDepth: Int)
     // WrappingSerializer — unwrap unless it's Condition/Modification (handled specially below)
     if (this is WrappingSerializer<*, *> && !isConditionOrModification()) {
         return getDeferred().buildSchema(module, maxDepth)
+    }
+
+    // Synthetic single-field object for a non-object argument (see ValueWrappedToolArgSerializer).
+    // The descriptor is built by hand, so serializableProperties is unavailable; emit directly.
+    if (this is ValueWrappedToolArgSerializer<*>) {
+        return buildJsonObject {
+            put("type", "object")
+            putJsonObject("properties") {
+                put("value", inner.buildSchema(module, (maxDepth - 1).coerceAtLeast(0)))
+            }
+            putJsonArray("required") { add("value") }
+        }
     }
 
     val description = descriptor.annotations.filterIsInstance<Description>().firstOrNull()?.text

@@ -18,6 +18,12 @@ internal class SqlChildTableDef(
     val isMap: Boolean,
     /** The Exposed Table object for this child table */
     val table: SqlChildExposedTable,
+    /**
+     * Whether element order is meaningful and stored via the [SqlChildExposedTable.idxColumn].
+     * True for lists and maps; false for sets, whose contract makes order irrelevant — so they
+     * get no `idx` column at all.
+     */
+    val ordered: Boolean,
 )
 
 /**
@@ -28,8 +34,8 @@ internal class SqlChildExposedTable(
     val ownerIdColumns: List<Column<Any?>>,
     val mainTableIdColumns: List<Column<Any?>>,
 ) : Table(name) {
-    // Created during init
-    lateinit var idxColumn: Column<Int>
+    // Created during init for ordered collections (lists/maps); null for sets (unordered).
+    var idxColumn: Column<Int>? = null
 
     /** Element columns (field name -> column). For primitives, key is "" */
     val elementColumns = LinkedHashMap<String, Column<Any?>>()
@@ -172,11 +178,17 @@ internal class SqlSchema(
 
                     when (elementResolved.kind) {
                         StructureKind.LIST -> {
-                            // Create child table for list/set
+                            // Create child table for list/set.
+                            // Sets are unordered by contract, so they store no idx column.
+                            // kotlinx represents both List and Set as StructureKind.LIST; the
+                            // concrete collection serializer's serialName is the only signal
+                            // (e.g. "kotlin.collections.LinkedHashSet"). Matches the convention
+                            // used in database-cassandra.
                             createChildTable(
                                 table, newFieldPath, newPrefix,
                                 elementResolved.getElementDescriptor(0),
                                 isMap = false,
+                                ordered = !elementResolved.isSetCollection(),
                             )
                         }
                         StructureKind.MAP -> {
@@ -226,6 +238,7 @@ internal class SqlSchema(
         elementDescriptor: SerialDescriptor,
         isMap: Boolean,
         keyDescriptor: SerialDescriptor? = null,
+        ordered: Boolean = true,
     ) {
         val childTableName = "${mainTable.tableName}__${prefix.joinToString("__")}"
 
@@ -244,8 +257,12 @@ internal class SqlSchema(
         val ownerIdCol = childTable.registerColumn<Any?>("owner_id", (mainIdCol.columnType as ColumnType<*>).clone() as ColumnType<Any>)
         (childTable.ownerIdColumns as MutableList).add(ownerIdCol)
 
-        // Register idx column
-        childTable.idxColumn = childTable.registerColumn("idx", IntegerColumnType())
+        // Register idx column only for ordered collections (lists/maps).
+        // Sets omit it: order is not part of a set's contract, so storing an ordinal would
+        // invite callers to depend on an ordering the type explicitly disclaims.
+        if (ordered) {
+            childTable.idxColumn = childTable.registerColumn("idx", IntegerColumnType())
+        }
 
         // Register key columns (for maps)
         if (isMap && keyDescriptor != null) {
@@ -263,8 +280,18 @@ internal class SqlSchema(
             fieldPath = fieldPath,
             isMap = isMap,
             table = childTable,
+            ordered = ordered,
         )
     }
+
+    /**
+     * Whether this descriptor is a Set collection (as opposed to a List).
+     * kotlinx serializes both as [StructureKind.LIST]; only the concrete serializer's
+     * serialName distinguishes them (e.g. "kotlin.collections.LinkedHashSet"). The
+     * `contains` check tolerates the nullable wrapper's trailing "?".
+     */
+    private fun SerialDescriptor.isSetCollection(): Boolean =
+        serialName.contains("LinkedHashSet") || serialName.contains("HashSet")
 
     /**
      * Register columns for a child table element (could be primitive or struct).

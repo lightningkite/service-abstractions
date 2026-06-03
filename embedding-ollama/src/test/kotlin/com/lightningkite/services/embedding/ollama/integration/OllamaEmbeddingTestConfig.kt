@@ -28,29 +28,43 @@ internal object OllamaEmbeddingTestConfig {
         ?: "http://localhost:11434"
 
     /**
-     * Preferred embedding model. If unset via env var and the default is not installed,
-     * falls back to the first installed model (if any).
+     * Installed models that can produce embeddings. Ollama's `/api/tags` doesn't reliably
+     * expose per-model capabilities across versions, so we identify embedding models by the
+     * convention that their name contains "embed" (e.g. `nomic-embed-text`,
+     * `mxbai-embed-large`), plus any model explicitly named via `OLLAMA_EMBED_MODEL`.
+     *
+     * A chat-only Ollama install (e.g. only `gemma`/`llama`) therefore reports no embedding
+     * models, which keeps [servicePresent] false so the suite skips rather than calling
+     * `/api/embed` on a model that can't embed (which would fail, not skip).
+     */
+    private val embeddingModelNames: List<String> by lazy {
+        val configured = System.getenv("OLLAMA_EMBED_MODEL")
+        installedModelNames.filter { name ->
+            name.contains("embed", ignoreCase = true) ||
+                (configured != null && (name.equals(configured, ignoreCase = true) || name.startsWith("$configured:")))
+        }
+    }
+
+    /**
+     * Preferred embedding model: `OLLAMA_EMBED_MODEL` if set, else `nomic-embed-text` when
+     * installed, else the first installed embedding-capable model.
      */
     val defaultModel: EmbeddingModelId by lazy {
         val configured = System.getenv("OLLAMA_EMBED_MODEL")
         val preferred = configured ?: "nomic-embed-text"
-        val installed = installedModelNames
         when {
-            installed.any { it.equals(preferred, ignoreCase = true) || it.startsWith("$preferred:") } ->
+            installedModelNames.any { it.equals(preferred, ignoreCase = true) || it.startsWith("$preferred:") } ->
                 EmbeddingModelId(preferred)
-            // User set env var but model not installed -- surface the name so failing tests
-            // point the developer at the problem.
-            configured != null -> EmbeddingModelId(configured)
-            installed.isNotEmpty() -> EmbeddingModelId(installed.first())
+            embeddingModelNames.isNotEmpty() -> EmbeddingModelId(embeddingModelNames.first())
             else -> EmbeddingModelId(preferred)
         }
     }
 
     /**
      * True when the Ollama server answers `GET /api/tags` within 1.5s AND has at least one
-     * model installed.
+     * embedding-capable model installed. A chat-only install skips the suite.
      */
-    val servicePresent: Boolean get() = installedModelNames.isNotEmpty()
+    val servicePresent: Boolean get() = embeddingModelNames.isNotEmpty()
 
     val installedModelNames: List<String> by lazy { probe() }
 

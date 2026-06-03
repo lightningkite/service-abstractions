@@ -7,7 +7,7 @@ import com.lightningkite.services.email.EmailInboundService
 import com.lightningkite.services.email.EmailService
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SmsInboundService
-import com.lightningkite.toPhoneNumber
+import com.lightningkite.services.data.toPhoneNumber
 import kotlinx.coroutines.test.runTest
 import java.net.HttpURLConnection
 import java.net.URI

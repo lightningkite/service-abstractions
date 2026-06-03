@@ -26,9 +26,13 @@ import kotlinx.coroutines.withTimeoutOrNull
  * - `LMSTUDIO_API_KEY` — fake key sent as `Authorization: Bearer`. LM Studio ignores the
  *   value but the OpenAI client refuses to construct without something here; defaults to
  *   `lm-studio` (a widely-used placeholder).
+ * - `LMSTUDIO_MODEL` — pins [cheapModel] to an exact listed id, bypassing autodetection.
  *
- * Model selection is automatic: at class-init we call `GET $baseUrl/models` and pick the
- * first listed id as [cheapModel]. If `/models` returns empty or the probe fails,
+ * Model selection is automatic: at class-init we call `GET $baseUrl/models` and choose
+ * [cheapModel]. LM Studio's `/models` ordering is arbitrary, so picking the first listed id
+ * can land on a large, slow model even when a small one is installed. We therefore prefer a
+ * known-cheap model (see [cheapModelPreferences], default `google/gemma-4-e2b`) and only fall
+ * back to the first listed id when none match. If `/models` returns empty or the probe fails,
  * [servicePresent] stays false and every test skips.
  *
  * Vision model autodetection: scans the listed model ids for names matching `(?i)(llava|
@@ -54,12 +58,33 @@ internal object LmStudioTestConfig {
     val servicePresent: Boolean by lazy { listedModelIds.isNotEmpty() }
 
     /**
-     * First model id reported by `/models`. Callers must gate on [servicePresent] before
-     * reading this; otherwise a missing server produces a placeholder id that will fail
-     * every request.
+     * Listed-model-id substrings (case-insensitive) we prefer for the suite, in priority
+     * order, because they are small and cheap to run locally. The default favors
+     * `google/gemma-4-e2b` (small and the better tool-caller of the small Gemmas), then
+     * `gemma-4-e4b`, then any other small Gemma. Edit this list to bias selection toward
+     * whatever cheap model you keep loaded.
+     */
+    private val cheapModelPreferences: List<String> = listOf("gemma-4-e2b", "gemma-4-e4b", "gemma-3", "gemma")
+
+    /**
+     * Model used by the suite. Selection order:
+     * 1. `LMSTUDIO_MODEL` env var, when set (used verbatim).
+     * 2. First listed id matching [cheapModelPreferences] — prefers the cheap model even when
+     *    LM Studio lists a larger one first.
+     * 3. First listed id, as a last resort.
+     *
+     * Callers must gate on [servicePresent] before reading this; otherwise a missing server
+     * produces a placeholder id that will fail every request.
      */
     val cheapModel: LlmModelId by lazy {
-        LlmModelId(listedModelIds.firstOrNull() ?: "no-model-loaded")
+        val ids = listedModelIds
+        val chosen = System.getenv("LMSTUDIO_MODEL")?.takeIf { it.isNotBlank() }
+            ?: cheapModelPreferences.firstNotNullOfOrNull { pref ->
+                ids.firstOrNull { it.contains(pref, ignoreCase = true) }
+            }
+            ?: ids.firstOrNull()
+            ?: "no-model-loaded"
+        LlmModelId(chosen)
     }
 
     /**

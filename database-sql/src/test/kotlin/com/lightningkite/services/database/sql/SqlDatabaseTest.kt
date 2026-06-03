@@ -11,6 +11,7 @@ import org.jetbrains.exposed.sql.Database
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 // ===== Shared test suites =====
@@ -141,6 +142,65 @@ class SqlBasicTest {
         val decoded = format.decode(LargeTestModel.serializer(), result.mainRecord, result.children)
         assertEquals(2, decoded.listEmbedded.size)
         assertEquals("Alice", decoded.listEmbedded[0].value1)
+    }
+
+    @Test
+    fun setChildTableHasNoIdxColumn() {
+        // Sets are unordered, so their child table must not carry an `idx` column,
+        // while ordered collections (lists, maps) must.
+        val schema = SqlSchema("SchemaCheck", EmptySerializersModule(), LargeTestModel.serializer().descriptor)
+
+        val setDef = schema.childTables["set"]!!
+        assertEquals(false, setDef.ordered)
+        assertNull(setDef.table.idxColumn)
+        assertTrue(setDef.table.columns.none { it.name == "idx" }, "set child table should have no idx column")
+
+        val setEmbeddedDef = schema.childTables["setEmbedded"]!!
+        assertEquals(false, setEmbeddedDef.ordered)
+        assertNull(setEmbeddedDef.table.idxColumn)
+        assertTrue(setEmbeddedDef.table.columns.none { it.name == "idx" })
+
+        val listDef = schema.childTables["list"]!!
+        assertEquals(true, listDef.ordered)
+        assertNotNull(listDef.table.idxColumn)
+        assertTrue(listDef.table.columns.any { it.name == "idx" }, "list child table should keep its idx column")
+
+        val mapDef = schema.childTables["map"]!!
+        assertEquals(true, mapDef.ordered)
+        assertNotNull(mapDef.table.idxColumn)
+    }
+
+    @Test
+    fun setFieldRoundTrip() = runTest {
+        val collection = database.collection<LargeTestModel>("setFieldRoundTrip")
+        val model = LargeTestModel(
+            set = setOf(3, 1, 2),
+            setEmbedded = setOf(
+                ClassUsedForEmbedding("Alice", 1),
+                ClassUsedForEmbedding("Bob", 2),
+            ),
+        )
+        collection.insertOne(model)
+
+        val found = collection.find(Condition.Always).firstOrNull()
+        assertNotNull(found)
+        assertEquals(setOf(1, 2, 3), found.set)
+        assertEquals(2, found.setEmbedded.size)
+        assertTrue(found.setEmbedded.any { it.value1 == "Alice" })
+        assertTrue(found.setEmbedded.any { it.value1 == "Bob" })
+    }
+
+    @Test
+    fun setMembershipQuery() = runTest {
+        // Membership queries against a set child table must still work without idx.
+        val collection = database.collection<LargeTestModel>("setMembershipQuery")
+        val match = LargeTestModel(set = setOf(10, 20))
+        val noMatch = LargeTestModel(set = setOf(30, 40))
+        collection.insertMany(listOf(match, noMatch))
+
+        val results = collection.find(condition { it.set.any { e -> e eq 20 } }).toList()
+        assertEquals(1, results.size)
+        assertEquals(match._id, results[0]._id)
     }
 
     @Test

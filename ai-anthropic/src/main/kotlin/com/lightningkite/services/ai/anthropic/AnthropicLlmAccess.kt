@@ -27,6 +27,7 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readUTF8Line
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonObject
@@ -82,6 +83,8 @@ public class AnthropicLlmAccess(
             httpClient.get("$baseUrl/v1/models")
         } catch (e: LlmException) {
             throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             throw LlmException.Transport("Network failure calling Anthropic /v1/models", e)
         }
@@ -122,6 +125,10 @@ public class AnthropicLlmAccess(
                 parseSseStream(response) { emit(it) }
             }
         } catch (e: LlmException) {
+            throw e
+        } catch (e: CancellationException) {
+            // Downstream cancellation (e.g. Flow.take throwing AbortFlowException) must propagate
+            // as cancellation, not be rewrapped as a transport failure.
             throw e
         } catch (e: Throwable) {
             throw LlmException.Transport("Network failure during Anthropic stream", e)
