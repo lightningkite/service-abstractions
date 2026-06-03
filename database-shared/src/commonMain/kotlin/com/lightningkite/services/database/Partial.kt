@@ -122,7 +122,7 @@ public fun <T> partialOf(item: T, paths: Array<DataClassPathPartial<T>>): Partia
 
 public inline fun <reified T> partialOfDifference(old: T?, new: T?): Partial<T>? = partialOfDifference(serializer(), old = old, new = new)
 public fun <T> partialOfDifference(serializer: KSerializer<T>, old: T?, new: T?): Partial<T>? {
-    if (old == new) return null
+    if (old == new) return Partial()
     // serializableProperties is only present on the non-null generated serializer, so unwrap any
     // nullable wrapper before reading it — otherwise nullable composite fields would NPE here.
     @Suppress("UNCHECKED_CAST")
