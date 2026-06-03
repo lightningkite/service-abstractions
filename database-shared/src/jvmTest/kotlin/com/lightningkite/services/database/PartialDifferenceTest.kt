@@ -14,9 +14,9 @@ class PartialDifferenceTest {
     private fun cufeProp(name: String) = cufeProps.first { it.name == name }
 
     @Test
-    fun noDifferenceIsNull() {
+    fun noDifferenceIsEmpty() {
         val m = LargeTestModel(int = 5)
-        assertNull(partialOfDifference(m, m))
+        assertEquals(0, partialOfDifference(m, m)?.parts?.size ?: -1)
     }
 
     @Test
