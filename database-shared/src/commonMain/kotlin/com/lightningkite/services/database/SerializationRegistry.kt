@@ -526,7 +526,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
         register(SerializableAnnotationValue.ArrayValue.serializer())
     }
 
-    private class GenericPlaceholderSerializer(val infoSource: String, val index: Int = 0) : KSerializer<Nothing> {
+    internal class GenericPlaceholderSerializer(val infoSource: String, val index: Int = 0) : KSerializer<Nothing> {
         var used: Boolean = false
 
         val wraps = NothingSerializer()
