@@ -24,7 +24,11 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
                 } else it.serializer
             }
         }
-            ?: if (source.descriptor.serialName == "kotlin.Nothing") listOf() else throw IllegalArgumentException("Failed to make partial serializer: ${source.descriptor.serialName} has no serializableProperties")
+            // A Partial of an unknown type carries no fields. This happens for Partial<Nothing> and, during
+            // metadata/KSchema generation, for Partial<A> where A is an unsubstituted generic placeholder. In
+            // both cases the partial is metadata-only (never actually serialized), so an empty field set is correct.
+            ?: if (source.descriptor.serialName == "kotlin.Nothing" || source is SerializationRegistry.GenericPlaceholderSerializer) listOf()
+            else throw IllegalArgumentException("Failed to make partial serializer: ${source.descriptor.serialName} has no serializableProperties")
     }
     private val innerDescriptor: SerialDescriptor by lazy {
         try {
@@ -98,25 +102,7 @@ public fun <K> DataClassPathPartial<K>.setMap(key: K, out: Partial<K>) {
     }
     run {
         @Suppress("UNCHECKED_CAST")
-        val prop = properties.last() as SerializableProperty<Any?, *>
-        val unwrapped = prop.serializer.nullElement() ?: prop.serializer
-        unwrapped.serializableProperties?.takeIf { !unwrapped.descriptor.isInline }?.let { props ->
-
-            @Suppress("UNCHECKED_CAST")
-            current.parts[properties.last() as SerializableProperty<Any?, *>] = getAny(key)?.let {
-                @Suppress("UNCHECKED_CAST")
-                (partialOf<Any>(
-                    it,
-                    props.map {
-                        DataClassPathAccess<Any, Any, Any?>(
-                            DataClassPathSelf(prop.serializer as KSerializer<Any>),
-                            it as SerializableProperty<Any, Any?>
-                        )
-                    }))
-            }
-        } ?: run {
-            @Suppress("UNCHECKED_CAST")
-            current.parts[properties.last() as SerializableProperty<Any?, *>] = getAny(key)
-        }
+        val prop = properties.last() as SerializableProperty<Any?, Any?>
+        current.parts[prop] = prop.toPartialEntry(getAny(key))
     }
 }

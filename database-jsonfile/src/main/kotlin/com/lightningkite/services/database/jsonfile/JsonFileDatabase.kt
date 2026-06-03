@@ -154,7 +154,10 @@ public class JsonFileDatabase(
                             source.transferTo(sink)
                         }
                     }
-                val json = Json { this.serializersModule = context.internalSerializersModule }
+                val json = Json {
+                    this.serializersModule = context.internalSerializersModule
+                    this.ignoreUnknownKeys = true
+                }
                 JsonFileTable(
                     json,
                     serializer,
