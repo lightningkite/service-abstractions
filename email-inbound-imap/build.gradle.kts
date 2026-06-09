@@ -15,8 +15,6 @@ dependencies {
     implementation(libs.kotlin.logging)
     implementation(libs.kotlinx.serialization.json)
 
-    // OpenTelemetry span helpers (com.lightningkite.services.otel.span)
-    compileOnly(project(path = ":otel-jvm"))
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
@@ -31,7 +29,6 @@ dependencies {
     }
     testImplementation(project(path = ":cache"))
     testImplementation(project(path = ":database"))
-    testImplementation(project(path = ":otel-jvm"))
     testImplementation(project(path = ":pubsub"))
     testImplementation(libs.lightningServer.typed) {
         exclude(group = "com.lightningkite.services")

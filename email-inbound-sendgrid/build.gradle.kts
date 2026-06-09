@@ -10,7 +10,6 @@ plugins {
 
 dependencies {
     api(project(path = ":email-inbound"))
-    api(project(path = ":otel-jvm"))
     implementation(libs.kotlin.logging)
     implementation(libs.kotlinx.serialization.json)
 

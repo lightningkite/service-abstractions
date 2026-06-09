@@ -60,7 +60,7 @@ private val logger = KotlinLogging.logger("MailgunEmailInboundService")
  * - `attachment-N`: Attachment file (multipart only, N = 1, 2, 3...)
  *
  * @property name Service instance name
- * @property context Service context containing SerializersModule, OpenTelemetry, etc.
+ * @property context Service context containing SerializersModule, metrics backend, etc.
  * @property apiKey Mailgun API key for signature verification (REQUIRED)
  * @property domain Mailgun domain (not used for inbound parsing)
  */

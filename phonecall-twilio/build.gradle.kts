@@ -24,7 +24,6 @@ dependencies {
     testImplementation(project(path = ":cache"))
     testImplementation(project(path = ":database"))
     testImplementation(project(path = ":http-client"))
-    testImplementation(project(path = ":otel-jvm"))
     testImplementation(project(path = ":pubsub"))
     testImplementation(project(path = ":kfile"))
     testImplementation(libs.lightningServer.typed) {

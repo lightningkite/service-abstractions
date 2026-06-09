@@ -10,7 +10,6 @@ plugins {
 
 dependencies {
     api(project(path = ":pubsub"))
-    api(project(path = ":otel-jvm"))
     api(libs.dynamodb)
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.reactive)

@@ -11,7 +11,6 @@ dependencies {
     api(project(path = ":voiceagent"))
     api(project(path = ":phonecall"))
     api(project(path = ":pubsub"))
-    api(project(path = ":otel-jvm"))
 
     // Logging
     implementation(libs.kotlin.logging)

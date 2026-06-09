@@ -13,7 +13,6 @@ dependencies {
 
     // Ktor dependencies for HTTP client
     implementation(project(":http-client"))
-    api(project(":otel-jvm"))
     implementation(libs.openTelemetry.api)
     implementation(libs.openTelemetry.kotlin)
     implementation(libs.kotlinx.serialization.json)

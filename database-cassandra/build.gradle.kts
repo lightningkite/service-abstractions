@@ -12,7 +12,6 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":database"))
-    api(project(path = ":otel-jvm"))
     testImplementation(project(path = ":database-test"))
     implementation(libs.kotlin.reflect)
     testImplementation(libs.kotlin.test)

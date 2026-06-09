@@ -11,7 +11,6 @@ plugins {
 dependencies {
     api(project(path = ":email-inbound"))
     api(project(path = ":webhook-subservice"))
-    api(project(path = ":otel-jvm"))
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.kotlin.test)

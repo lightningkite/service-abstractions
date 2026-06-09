@@ -17,8 +17,6 @@ dependencies {
     // Ktor dependencies for HTTP client (for webhook signature verification)
     implementation(project(":http-client"))
 
-    // OpenTelemetry span helpers (com.lightningkite.services.otel.use)
-    compileOnly(project(path = ":otel-jvm"))
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
@@ -31,7 +29,6 @@ dependencies {
     testImplementation(project(path = ":cache"))
     testImplementation(project(path = ":database"))
     testImplementation(project(path = ":database-jsonfile"))
-    testImplementation(project(path = ":otel-jvm"))
     testImplementation(project(path = ":pubsub"))
     testImplementation(libs.lightningServer.typed) {
         exclude(group = "com.lightningkite.services")

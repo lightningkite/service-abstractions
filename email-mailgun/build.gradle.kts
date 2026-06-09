@@ -9,7 +9,6 @@ plugins {
 
 dependencies {
     api(project(path = ":email"))
-    api(project(path = ":otel-jvm"))
     implementation(project(":http-client"))
 
     testImplementation(libs.kotlin.test)

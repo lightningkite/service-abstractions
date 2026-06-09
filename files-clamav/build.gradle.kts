@@ -11,7 +11,6 @@ dependencies {
     api(project(path = ":files"))
     testImplementation(project(path = ":test"))
     implementation(libs.clamAv)
-    compileOnly(project(path = ":otel-jvm"))
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
 }
