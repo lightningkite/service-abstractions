@@ -11,8 +11,6 @@ plugins {
 dependencies {
     api(project(path = ":cache"))
     implementation(libs.lettuce)
-    implementation(libs.lettuce.otel)
-    compileOnly(project(":otel-jvm"))
     implementation(libs.guava)
     implementation(libs.coroutines.reactive)
 
@@ -20,6 +18,10 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
     testImplementation(project(":cache-test"))
+    // Telemetry tests construct OtelMetricsBackend and need the OTel SDK test harness.
+    testImplementation(project(":otel-jvm"))
+    testImplementation(libs.openTelemetry.sdk)
+    testImplementation(libs.openTelemetry.sdk.testing)
 }
 
 kotlin {

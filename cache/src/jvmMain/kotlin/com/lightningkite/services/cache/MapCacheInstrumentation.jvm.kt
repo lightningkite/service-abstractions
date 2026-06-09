@@ -1,221 +1,84 @@
 package com.lightningkite.services.cache
 
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.recordExceptionWithFingerprint
-import io.opentelemetry.api.trace.*
+import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.TelemetrySanitization
 import kotlin.time.Duration
 
-/**
- * JVM implementation - creates OpenTelemetry spans for cache operations.
+/*
+ * JVM implementation - wraps each cache operation in a metricsTrace span owned by the cache, so the
+ * in-memory caches emit the same RED metrics and traces as the networked implementations. The cache
+ * key is hashed via TelemetrySanitization so a high-cardinality value never reaches telemetry.
  */
-internal actual suspend fun <T> instrumentedGet(
-    context: SettingContext,
-    key: String,
-    operation: suspend () -> T?,
-): T? {
-    val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
-    val span = tracer?.spanBuilder("cache.get")
-        ?.setSpanKind(SpanKind.CLIENT)
-        ?.setAttribute("cache.operation", "get")
-        ?.setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
-        ?.setAttribute("cache.system", "memory")
-        ?.startSpan()
 
-    return try {
-        val scope = span?.makeCurrent()
-        try {
-            val result = operation()
-            span?.setAttribute("cache.hit", result != null)
-            span?.setStatus(StatusCode.OK)
-            result
-        } finally {
-            scope?.close()
-        }
-    } catch (e: Exception) {
-        span?.setStatus(StatusCode.ERROR, "Failed to get from cache: ${e.message}")
-        span?.recordExceptionWithFingerprint(e)
-        throw e
-    } finally {
-        span?.end()
-    }
+private const val SYSTEM = "memory"
+
+private fun keyAttributes(key: String): MetricAttributes = MetricAttributes(
+    mapOf("cache.system" to SYSTEM, "cache.key" to TelemetrySanitization.hashCacheKey(key))
+)
+
+private fun keyAttributes(key: String, timeToLive: Duration?, extra: Map<String, Any?> = emptyMap()): MetricAttributes {
+    val map = mutableMapOf<String, Any?>("cache.system" to SYSTEM, "cache.key" to TelemetrySanitization.hashCacheKey(key))
+    timeToLive?.let { map["cache.ttl"] = it.inWholeSeconds }
+    map.putAll(extra)
+    return MetricAttributes(map)
 }
 
-/**
- * JVM implementation - creates OpenTelemetry spans for cache operations.
- */
+internal actual suspend fun <T> instrumentedGet(
+    owner: Cache,
+    key: String,
+    operation: suspend () -> T?,
+): T? = owner.metricsTrace("get", attributes = keyAttributes(key), dimensions = setOf("cache.hit")) { span ->
+    val result = operation()
+    span.enrich(MetricAttributes(mapOf("cache.hit" to (result != null))))
+    result
+}
+
 internal actual suspend fun <T> instrumentedSet(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     timeToLive: Duration?,
     operation: suspend () -> Unit,
 ) {
-    val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
-    val span = tracer?.spanBuilder("cache.set")
-        ?.setSpanKind(SpanKind.CLIENT)
-        ?.setAttribute("cache.operation", "set")
-        ?.setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
-        ?.setAttribute("cache.system", "memory")
-        ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
-        ?.startSpan()
-
-    try {
-        val scope = span?.makeCurrent()
-        try {
-            operation()
-            span?.setStatus(StatusCode.OK)
-        } finally {
-            scope?.close()
-        }
-    } catch (e: Exception) {
-        span?.setStatus(StatusCode.ERROR, "Failed to set cache value: ${e.message}")
-        span?.recordExceptionWithFingerprint(e)
-        throw e
-    } finally {
-        span?.end()
-    }
+    owner.metricsTrace("set", attributes = keyAttributes(key, timeToLive)) { operation() }
 }
 
-/**
- * JVM implementation - creates OpenTelemetry spans for cache operations.
- */
 internal actual suspend fun instrumentedSetIfNotExists(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     timeToLive: Duration?,
     operation: suspend () -> Boolean,
-): Boolean {
-    val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
-    val span = tracer?.spanBuilder("cache.setIfNotExists")
-        ?.setSpanKind(SpanKind.CLIENT)
-        ?.setAttribute("cache.operation", "setIfNotExists")
-        ?.setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
-        ?.setAttribute("cache.system", "memory")
-        ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
-        ?.startSpan()
-
-    return try {
-        val scope = span?.makeCurrent()
-        try {
-            val result = operation()
-            span?.setAttribute("cache.added", result)
-            span?.setStatus(StatusCode.OK)
-            result
-        } finally {
-            scope?.close()
-        }
-    } catch (e: Exception) {
-        span?.setStatus(StatusCode.ERROR, "Failed to setIfNotExists: ${e.message}")
-        span?.recordExceptionWithFingerprint(e)
-        throw e
-    } finally {
-        span?.end()
-    }
+): Boolean = owner.metricsTrace("setIfNotExists", attributes = keyAttributes(key, timeToLive)) { span ->
+    val result = operation()
+    span.enrich(MetricAttributes(mapOf("cache.added" to result)))
+    result
 }
 
-/**
- * JVM implementation - creates OpenTelemetry spans for cache operations.
- */
 internal actual suspend fun <N : Number> instrumentedAdd(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     value: Long,
     timeToLive: Duration?,
     operation: suspend () -> N,
-): N {
-    val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
-    val span = tracer?.spanBuilder("cache.add")
-        ?.setSpanKind(SpanKind.CLIENT)
-        ?.setAttribute("cache.operation", "add")
-        ?.setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
-        ?.setAttribute("cache.system", "memory")
-        ?.setAttribute("cache.value", value)
-        ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
-        ?.startSpan()
-
-    return try {
-        val scope = span?.makeCurrent()
-        scope.use { _ ->
-            val r = operation()
-            span?.setStatus(StatusCode.OK)
-            r
-        }
-    } catch (e: Exception) {
-        span?.setStatus(StatusCode.ERROR, "Failed to add to cache: ${e.message}")
-        span?.recordExceptionWithFingerprint(e)
-        throw e
-    } finally {
-        span?.end()
-    }
+): N = owner.metricsTrace("add", attributes = keyAttributes(key, timeToLive, mapOf("cache.value" to value))) {
+    operation()
 }
 
-/**
- * JVM implementation - creates OpenTelemetry spans for cache operations.
- */
 internal actual suspend fun instrumentedRemove(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     operation: suspend () -> Unit,
 ) {
-    val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
-    val span = tracer?.spanBuilder("cache.remove")
-        ?.setSpanKind(SpanKind.CLIENT)
-        ?.setAttribute("cache.operation", "remove")
-        ?.setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
-        ?.setAttribute("cache.system", "memory")
-        ?.startSpan()
-
-    try {
-        val scope = span?.makeCurrent()
-        try {
-            operation()
-            span?.setStatus(StatusCode.OK)
-        } finally {
-            scope?.close()
-        }
-    } catch (e: Exception) {
-        span?.setStatus(StatusCode.ERROR, "Failed to remove from cache: ${e.message}")
-        span?.recordExceptionWithFingerprint(e)
-        throw e
-    } finally {
-        span?.end()
-    }
+    owner.metricsTrace("remove", attributes = keyAttributes(key)) { operation() }
 }
 
-/**
- * JVM implementation - creates OpenTelemetry spans for cache operations.
- */
 internal actual suspend fun <T> instrumentedModify(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     maxTries: Int,
     timeToLive: Duration?,
     operation: suspend () -> Boolean,
-): Boolean {
-    val tracer: Tracer? = context.openTelemetry?.getTracer("cache-map")
-    val span = tracer?.spanBuilder("cache.modify")
-        ?.setSpanKind(SpanKind.CLIENT)
-        ?.setAttribute("cache.operation", "modify")
-        ?.setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
-        ?.setAttribute("cache.system", "memory")
-        ?.setAttribute("cache.maxTries", maxTries.toLong())
-        ?.also { timeToLive?.let { ttl -> it.setAttribute("cache.ttl", ttl.inWholeSeconds) } }
-        ?.startSpan()
-
-    return try {
-        val scope = span?.makeCurrent()
-        try {
-            val result = operation()
-            span?.setStatus(StatusCode.OK)
-            result
-        } finally {
-            scope?.close()
-        }
-    } catch (e: Exception) {
-        span?.setStatus(StatusCode.ERROR, "Failed to modify cache value: ${e.message}")
-        span?.recordExceptionWithFingerprint(e)
-        throw e
-    } finally {
-        span?.end()
-    }
-}
+): Boolean = owner.metricsTrace(
+    "modify",
+    attributes = keyAttributes(key, timeToLive, mapOf("cache.maxTries" to maxTries.toLong())),
+) { operation() }

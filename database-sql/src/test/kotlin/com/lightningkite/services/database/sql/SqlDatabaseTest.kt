@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 class SqlConditionTests : ConditionTests() {
     override val database: com.lightningkite.services.database.Database by lazy {
         SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
-            Database.connect("jdbc:h2:mem:conditionTests;DB_CLOSE_DELAY=-1", "org.h2.Driver")
+            PooledDatabase(Database.connect("jdbc:h2:mem:conditionTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
         }
     }
 
@@ -31,7 +31,7 @@ class SqlConditionTests : ConditionTests() {
 class SqlModificationTests : ModificationTests() {
     override val database: com.lightningkite.services.database.Database by lazy {
         SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
-            Database.connect("jdbc:h2:mem:modificationTests;DB_CLOSE_DELAY=-1", "org.h2.Driver")
+            PooledDatabase(Database.connect("jdbc:h2:mem:modificationTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
         }
     }
 
@@ -44,7 +44,7 @@ class SqlModificationTests : ModificationTests() {
 class SqlSortTest : SortTest() {
     override val database: com.lightningkite.services.database.Database by lazy {
         SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
-            Database.connect("jdbc:h2:mem:sortTests;DB_CLOSE_DELAY=-1", "org.h2.Driver")
+            PooledDatabase(Database.connect("jdbc:h2:mem:sortTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
         }
     }
 }
@@ -52,7 +52,7 @@ class SqlSortTest : SortTest() {
 class SqlAggregationsTest : AggregationsTest() {
     override val database: com.lightningkite.services.database.Database by lazy {
         SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
-            Database.connect("jdbc:h2:mem:aggregationTests;DB_CLOSE_DELAY=-1", "org.h2.Driver")
+            PooledDatabase(Database.connect("jdbc:h2:mem:aggregationTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
         }
     }
 }
@@ -60,7 +60,7 @@ class SqlAggregationsTest : AggregationsTest() {
 class SqlOperationsTests : OperationsTests() {
     override val database: com.lightningkite.services.database.Database by lazy {
         SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
-            Database.connect("jdbc:h2:mem:operationsTests;DB_CLOSE_DELAY=-1", "org.h2.Driver")
+            PooledDatabase(Database.connect("jdbc:h2:mem:operationsTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
         }
     }
 }
@@ -70,7 +70,7 @@ class SqlOperationsTests : OperationsTests() {
 class SqlBasicTest {
     private val database: com.lightningkite.services.database.Database by lazy {
         SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
-            Database.connect("jdbc:h2:mem:basicTest;DB_CLOSE_DELAY=-1", "org.h2.Driver")
+            PooledDatabase(Database.connect("jdbc:h2:mem:basicTest;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
         }
     }
 

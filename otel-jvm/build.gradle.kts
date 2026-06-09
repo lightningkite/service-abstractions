@@ -18,6 +18,8 @@ dependencies {
     api(libs.logBackClassic)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
+    testImplementation(libs.openTelemetry.sdk)
+    testImplementation(libs.openTelemetry.sdk.testing)
     testImplementation(project(path = ":test"))
 }
 

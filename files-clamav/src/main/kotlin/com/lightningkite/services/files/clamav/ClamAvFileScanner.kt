@@ -3,13 +3,10 @@ package com.lightningkite.services.files.clamav
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.MediaType
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.files.FileScanException
 import com.lightningkite.services.files.FileScanner
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get as otelGet
-import com.lightningkite.services.otel.span
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
+import com.lightningkite.services.metricsTrace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.io.Source
@@ -96,8 +93,6 @@ public class ClamAvFileScanner(
 ) : FileScanner {
     override fun requires(claimedType: MediaType): FileScanner.Requires = FileScanner.Requires.Whole
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.otelGet("files-clamav")
-
     /** Cached client instance. Recreated on ScannerException or connection error. */
     @Volatile private var cachedClient: ClamavClient? = null
 
@@ -131,10 +126,10 @@ public class ClamAvFileScanner(
         }
     }
 
-    override suspend fun scan(claimedType: MediaType, data: Source): Unit = otel.span("clamav.scan", configure = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("content_type", claimedType.toString())
-    }) { span ->
+    override suspend fun scan(claimedType: MediaType, data: Source): Unit = metricsTrace(
+        "scan",
+        attributes = MetricAttributes(mapOf("content_type" to claimedType.toString())),
+    ) { span ->
         val result = withContext(Dispatchers.IO) {
             data.use { source ->
                 try {
@@ -148,14 +143,15 @@ public class ClamAvFileScanner(
         }
         when (result) {
             ScanResult.OK -> {
-                span?.setAttribute("clamav.result", "OK")
+                span.enrich(MetricAttributes(mapOf("clamav.result" to "OK")))
             }
             is ScanResult.VirusFound -> {
                 val viruses = result.foundViruses.keys.joinToString()
-                span?.setAttribute("clamav.result", "VirusFound")
-                span?.setAttribute("clamav.viruses", viruses)
-                // Set ERROR before throwing so the helper doesn't overwrite the more specific message.
-                span?.setStatus(StatusCode.ERROR, "Virus detected: $viruses")
+                span.enrich(MetricAttributes(mapOf(
+                    "clamav.result" to "VirusFound",
+                    "clamav.viruses" to viruses,
+                )))
+                // Throwing marks the trace's outcome as an error automatically.
                 throw FileScanException("File seems to contain malicious content; $viruses")
             }
         }

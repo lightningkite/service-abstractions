@@ -5,6 +5,8 @@ import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.get
 import org.junit.Test
+import java.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.test.*
 
 /**
@@ -12,9 +14,9 @@ import kotlin.test.*
  *
  * These tests verify:
  * - Proper instantiation via SharedResources pattern
- * - Health status calculation at various utilization levels
+ * - Health status reflects real in-flight request count (no fabricated gauge)
  * - Client availability
- * - OpenTelemetry configuration handling
+ * - Timeout configuration on the default override config and on custom-budget configs
  */
 class AwsConnectionsTest {
 
@@ -55,169 +57,18 @@ class AwsConnectionsTest {
     }
 
     @Test
-    fun `test health status OK when utilization below 70 percent`() {
+    fun `test default total matches default maxConcurrency`() {
+        // total is the denominator for health and defaults to the configured maxConcurrency (50).
         val context = TestSettingContext()
         val connections = context[AwsConnections]
 
-        // Set up for 50% utilization
-        connections.total = 100
-        connections.used = 50
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.OK, health.level)
-        assertNull(health.additionalMessage)
+        assertEquals(50, connections.total)
     }
 
     @Test
-    fun `test health status OK at 0 percent utilization`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        connections.total = 100
-        connections.used = 0
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.OK, health.level)
-    }
-
-    @Test
-    fun `test health status OK at 69 percent utilization`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        connections.total = 100
-        connections.used = 69
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.OK, health.level)
-    }
-
-    @Test
-    fun `test health status WARNING when utilization between 70 and 95 percent`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        // Set up for 80% utilization
-        connections.total = 100
-        connections.used = 80
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.WARNING, health.level)
-        assertNotNull(health.additionalMessage)
-        assert(health.additionalMessage!!.contains("80%"))
-    }
-
-    @Test
-    fun `test health status WARNING at 70 percent boundary`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        connections.total = 100
-        connections.used = 70
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.WARNING, health.level)
-        assertNotNull(health.additionalMessage)
-        assert(health.additionalMessage!!.contains("70%"))
-    }
-
-    @Test
-    fun `test health status WARNING at 94 percent`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        connections.total = 100
-        connections.used = 94
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.WARNING, health.level)
-        assertNotNull(health.additionalMessage)
-        assert(health.additionalMessage!!.contains("94%"))
-    }
-
-    @Test
-    fun `test health status URGENT when utilization between 95 and 100 percent`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        // Set up for 97% utilization
-        connections.total = 100
-        connections.used = 97
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.URGENT, health.level)
-        assertNotNull(health.additionalMessage)
-        assert(health.additionalMessage!!.contains("97%"))
-    }
-
-    @Test
-    fun `test health status URGENT at 95 percent boundary`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        connections.total = 100
-        connections.used = 95
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.URGENT, health.level)
-        assertNotNull(health.additionalMessage)
-        assert(health.additionalMessage!!.contains("95%"))
-    }
-
-    @Test
-    fun `test health status URGENT at 99 percent`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        connections.total = 100
-        connections.used = 99
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.URGENT, health.level)
-    }
-
-    @Test
-    fun `test health status ERROR when utilization at or above 100 percent`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        // Set up for 100% utilization (at boundary)
-        connections.total = 100
-        connections.used = 100
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.ERROR, health.level)
-        assertNotNull(health.additionalMessage)
-        assert(health.additionalMessage!!.contains("100%"))
-    }
-
-    @Test
-    fun `test health status ERROR when over-subscribed`() {
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        // Set up for 150% utilization (over-subscribed)
-        connections.total = 100
-        connections.used = 150
-
-        val health = connections.health
-        assertEquals(HealthStatus.Level.ERROR, health.level)
-        assertNotNull(health.additionalMessage)
-        assert(health.additionalMessage!!.contains("150%"))
-    }
-
-    @Test
-    fun `test default total is 1000`() {
-        // 1.0.0 lowered the default from Int.MAX_VALUE to 1000 so the health computation
-        // surfaces real utilization. Consumers must tune `total` to their CRT pool settings.
-        val context = TestSettingContext()
-        val connections = context[AwsConnections]
-
-        assertEquals(1000, connections.total)
-    }
-
-    @Test
-    fun `test default used is 0`() {
+    fun `test used starts at zero in-flight`() {
+        // used is now a real in-flight gauge tracked by the execution interceptor, not a
+        // fabricated value. With no requests issued it must be 0.
         val context = TestSettingContext()
         val connections = context[AwsConnections]
 
@@ -225,25 +76,65 @@ class AwsConnectionsTest {
     }
 
     @Test
-    fun `test health is OK with default values`() {
+    fun `test health is OK with no in-flight requests`() {
         val context = TestSettingContext()
         val connections = context[AwsConnections]
 
-        // With default values (used=0, total=1000), utilization is 0%
+        // With used=0 the utilization is 0%, which is OK.
         val health = connections.health
         assertEquals(HealthStatus.Level.OK, health.level)
+        assertNull(health.additionalMessage)
     }
 
     @Test
-    fun `test clientOverrideConfiguration is null without OpenTelemetry`() {
-        // 1.0.0 stopped allocating a no-op ClientOverrideConfiguration on every AWS request
-        // when no telemetry is configured; the field is now null in that case so AWS SDK
-        // builders fall back to their default behavior.
-        // TestSettingContext has openTelemetry = null.
+    fun `test clientOverrideConfiguration is non-null and carries default timeouts`() {
+        // 1.0.0 always builds an override configuration so it can carry the timeout policy.
         val context = TestSettingContext()
         val connections = context[AwsConnections]
 
-        assertNull(connections.clientOverrideConfiguration)
+        val config = connections.clientOverrideConfiguration
+        assertNotNull(config)
+
+        // Default total operation budget is 30s.
+        assertEquals(Duration.ofSeconds(30), config.apiCallTimeout().orElse(null))
+        // Per-attempt budget stays short for everyone.
+        assertEquals(Duration.ofSeconds(10), config.apiCallAttemptTimeout().orElse(null))
+    }
+
+    @Test
+    fun `test buildOverrideConfiguration honors a custom total budget but keeps short attempt timeout`() {
+        // A consumer that needs a longer total budget (e.g. S3 large transfers) builds its own
+        // config; the per-attempt timeout stays short so an unreachable endpoint fails fast.
+        val context = TestSettingContext()
+        val connections = context[AwsConnections]
+
+        val config = connections.buildOverrideConfiguration(1.hours)
+        assertNotNull(config)
+
+        // Total budget is the custom one hour the caller requested.
+        assertEquals(Duration.ofHours(1), config.apiCallTimeout().orElse(null))
+        // Attempt budget is still short, identical to the default config.
+        assertEquals(Duration.ofSeconds(10), config.apiCallAttemptTimeout().orElse(null))
+    }
+
+    @Test
+    fun `test custom-budget config differs from default only in total timeout`() {
+        val context = TestSettingContext()
+        val connections = context[AwsConnections]
+
+        val default = connections.clientOverrideConfiguration
+        val custom = connections.buildOverrideConfiguration(1.hours)
+
+        // Same short attempt budget...
+        assertEquals(
+            default.apiCallAttemptTimeout().orElse(null),
+            custom.apiCallAttemptTimeout().orElse(null),
+        )
+        // ...but different total budgets.
+        assertNotEquals(
+            default.apiCallTimeout().orElse(null),
+            custom.apiCallTimeout().orElse(null),
+        )
     }
 
     @Test

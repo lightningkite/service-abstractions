@@ -20,7 +20,10 @@ dependencies {
     testImplementation(libs.testContainers.junit)
     implementation(libs.embedded.mongo)
     implementation(libs.mongo.driver)
-    implementation(libs.mongo.driver.otel)
+    // Telemetry/span-parenting tests construct OtelMetricsBackend; main code uses only the vendor-neutral MetricsBackend API.
+    testImplementation(project(":otel-jvm"))
+    testImplementation(libs.openTelemetry.sdk)
+    testImplementation(libs.openTelemetry.sdk.testing)
 }
 
 kotlin {

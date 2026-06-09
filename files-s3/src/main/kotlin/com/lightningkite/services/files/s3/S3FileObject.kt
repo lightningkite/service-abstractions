@@ -2,18 +2,18 @@ package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.files.ExternalServerFileSerializer
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.http.client
-import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.TelemetrySanitization
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.encode
 import io.ktor.utils.io.core.canRead
 import io.ktor.utils.io.core.takeWhile
-import io.opentelemetry.api.trace.SpanBuilder
-import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.io.*
@@ -78,13 +78,14 @@ public class S3FileObject(
     override val parent: FileObject?
         get() = path.parentFile?.let { S3FileObject(system, it) } ?: if (unixPath.isNotEmpty()) system.root else null
 
-    private fun s3SpanAttrs(operation: String): SpanBuilder.() -> Unit = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("file.operation", operation)
-        setAttribute("aws.s3.key", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-        setAttribute("aws.s3.bucket", system.bucket)
-        setAttribute("rpc.system", "aws.s3")
-    }
+    private fun s3SpanAttrs(operation: String): MetricAttributes = MetricAttributes(
+        mapOf(
+            "file.operation" to operation,
+            "aws.s3.key" to TelemetrySanitization.sanitizeFilePathWithDepth(unixPath),
+            "aws.s3.bucket" to system.bucket,
+            "rpc.system" to "aws.s3",
+        )
+    )
 
     /**
      * Lists all direct children of this directory.
@@ -102,7 +103,7 @@ public class S3FileObject(
      * @return A list of [S3FileObject] representing the directory contents (empty if no children)
      */
     override suspend fun list(): List<FileObject>? =
-        system.otel.span("file.list", configure = s3SpanAttrs("list")) { span ->
+        system.metricsTrace("list", attributes = s3SpanAttrs("list")) { span ->
             val result = withContext(Dispatchers.IO) {
                 val results = ArrayList<S3FileObject>()
                 var token: String? = null
@@ -120,7 +121,7 @@ public class S3FileObject(
                 }
                 results
             }
-            span?.setAttribute("file.count", result.size.toLong())
+            span.enrich(MetricAttributes(mapOf("file.count" to result.size.toLong())))
             result
         }
 
@@ -130,7 +131,7 @@ public class S3FileObject(
      * @return [FileInfo] containing media type, size, and last modified time, or null if the file doesn't exist
      */
     override suspend fun head(): FileInfo? =
-        system.otel.span("file.head", configure = s3SpanAttrs("head")) { span ->
+        system.metricsTrace("head", attributes = s3SpanAttrs("head")) { span ->
             val result = withContext(Dispatchers.IO) {
                 try {
                     system.s3Async.headObject {
@@ -148,8 +149,10 @@ public class S3FileObject(
                 }
             }
             result?.let {
-                span?.setAttribute("file.size", it.size)
-                span?.setAttribute("file.content_type", it.type.toString())
+                span.enrich(MetricAttributes(mapOf(
+                    "file.size" to it.size,
+                    "file.content_type" to it.type.toString(),
+                )))
             }
             result
         }
@@ -160,11 +163,12 @@ public class S3FileObject(
      * @param content The typed data to upload, including media type information
      */
     override suspend fun put(content: TypedData): Unit =
-        system.otel.span("file.put", configure = {
-            s3SpanAttrs("put")()
-            setAttribute("file.size", content.data.size ?: -1)
-            setAttribute("file.content_type", content.mediaType.toString())
-        }) {
+        system.metricsTrace("put", attributes = MetricAttributes(
+            s3SpanAttrs("put").raw + mapOf(
+                "file.size" to (content.data.size ?: -1),
+                "file.content_type" to content.mediaType.toString(),
+            )
+        )) {
             withContext(Dispatchers.IO) {
                 system.s3.putObject(PutObjectRequest.builder().also {
                     it.bucket(system.bucket)
@@ -185,7 +189,7 @@ public class S3FileObject(
      * @return [TypedData] containing the file contents and media type, or null if the file doesn't exist
      */
     override suspend fun get(): TypedData? =
-        system.otel.span("file.get", configure = s3SpanAttrs("get")) { span ->
+        system.metricsTrace("get", attributes = s3SpanAttrs("get")) { span ->
             val result = withContext(Dispatchers.IO) {
                 try {
                     val response = system.s3.getObject(
@@ -206,8 +210,10 @@ public class S3FileObject(
                 }
             }
             result?.let {
-                span?.setAttribute("file.size", it.data.size ?: -1)
-                span?.setAttribute("file.content_type", it.mediaType.toString())
+                span.enrich(MetricAttributes(mapOf(
+                    "file.size" to (it.data.size ?: -1),
+                    "file.content_type" to it.mediaType.toString(),
+                )))
             }
             result
         }
@@ -223,15 +229,15 @@ public class S3FileObject(
      */
     override suspend fun copyTo(other: FileObject): Unit {
         val isServerSideCopy = other is S3FileObject && other.system.bucket == system.bucket
-        system.otel.span("file.copy", configure = {
-            s3SpanAttrs("copy")()
-            setAttribute(
-                "aws.s3.destination.key",
-                if (other is S3FileObject) TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath)
-                else TelemetrySanitization.sanitizeFilePath(other.toString())
+        system.metricsTrace("copy", attributes = MetricAttributes(
+            s3SpanAttrs("copy").raw + mapOf(
+                "aws.s3.destination.key" to (
+                    if (other is S3FileObject) TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath)
+                    else TelemetrySanitization.sanitizeFilePath(other.toString())
+                ),
+                "file.copy.server_side" to isServerSideCopy,
             )
-            setAttribute("file.copy.server_side", isServerSideCopy)
-        }) {
+        )) {
             if (isServerSideCopy) {
                 withContext(Dispatchers.IO) {
                     system.s3Async.copyObject {
@@ -253,7 +259,7 @@ public class S3FileObject(
      * Note: S3 delete operations are eventually consistent and may not be immediately visible.
      */
     override suspend fun delete(): Unit =
-        system.otel.span("file.delete", configure = s3SpanAttrs("delete")) {
+        system.metricsTrace("delete", attributes = s3SpanAttrs("delete")) {
             withContext(Dispatchers.IO) {
                 system.s3Async.deleteObject {
                     it.bucket(system.bucket)
@@ -489,69 +495,106 @@ public class S3FileObject(
     /**
      * Validates the signature of an external URL's query parameters.
      *
-     * This method attempts to verify the AWS Signature V4 signature locally first.
-     * If local verification fails or throws an exception, it falls back to making
-     * an HTTP request to S3 to validate the URL.
+     * Verification is performed purely by recomputing the AWS Signature V4 signature with our own
+     * signing key (derived from [S3PublicFileSystem.credentialProvider]) over the presented URL's
+     * own query parameters, then comparing it to the supplied `X-Amz-Signature` in a constant-time
+     * manner. This is the same HMAC signing logic used by [signedUrl]; no network round-trip is
+     * required and none is performed on the default path. A signature we did not produce — whether
+     * tampered or simply foreign — is rejected.
+     *
+     * Only when [ExternalServerFileSerializer.inlineScanOnDeserialize] is enabled (the shared
+     * backward-compat flag, disabled by default) do we fall back to the legacy behavior of issuing
+     * an HTTP request to S3 to validate the URL when local recomputation does not match.
      *
      * @param queryParams The query parameters portion of the URL (after the '?')
      * @throws IllegalArgumentException if the signature is invalid
      */
     internal fun assertSignatureValid(queryParams: String) {
-        if (system.signedUrlDuration != null) {
-            try {
-                val headers = queryParams.split('&').associate {
-                    URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(
-                        it.substringAfter('=', ""), Charsets.UTF_8
-                    )
-                }
-                val secretKey = system.credentialProvider.resolveCredentials().secretAccessKey()
-                val objectPath = path.path.replace("\\", "/").aggressiveEncodeURLPath()
-                val date =
-                    headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
-                val algorithm = headers["X-Amz-Algorithm"]
-                    ?: throw IllegalArgumentException("No query parameter 'X-Amz-Algorithm' found.")
-                val credential = headers["X-Amz-Credential"]
-                    ?: throw IllegalArgumentException("No query parameter 'X-Amz-Credential' found.")
-                val scope = credential.substringAfter("/")
+        if (system.signedUrlDuration == null) return
 
-                val canonicalRequest = """
-                GET
-                ${"/" + objectPath.removePrefix("/")}
-                ${queryParams.substringBefore("&X-Amz-Signature=").split('&').sorted().joinToString("&")}
-                host:${system.bucket}.s3.${system.region.id()}.amazonaws.com
-                
-                host
-                UNSIGNED-PAYLOAD
-                """.trimIndent()
-
-                val toSignString = """
-                $algorithm
-                $date
-                $scope
-                ${canonicalRequest.sha256()}
-                """.trimIndent()
-
-                val signingKey = "AWS4$secretKey".toByteArray().let { date.substringBefore('T').toByteArray().mac(it) }
-                    .let { system.region.id().toByteArray().mac(it) }.let { "s3".toByteArray().mac(it) }
-                    .let { "aws4_request".toByteArray().mac(it) }
-
-                val regeneratedSig = toSignString.toByteArray().mac(signingKey).toHex()
-
-                if (regeneratedSig == headers["X-Amz-Signature"]!!) return
-            } catch (e: Exception) {
-                // Ignore.  It's OK if this fails; it just indicates the signature wasn't one we understand.
-                // We can validate it with a call to S3 instead.
+        val presentedSignature: String?
+        val recomputedSignature: String?
+        try {
+            val headers = queryParams.split('&').associate {
+                URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(
+                    it.substringAfter('=', ""), Charsets.UTF_8
+                )
             }
-            // Local verification failed (signature was not produced by this server); fall back to HTTP.
-            // The shared client applies a 60s engine timeout.
-            // It would be great if we could make this async, but it's used in serialization, so not possible.
-            return runBlocking {
-                val response = client.get("$url?$queryParams") {
-                    header("Range", "0-0")
-                }
-                if (!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
+            val secretKey = system.credentialProvider.resolveCredentials().secretAccessKey()
+            val objectPath = path.path.replace("\\", "/").aggressiveEncodeURLPath()
+            val date =
+                headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
+            val algorithm = headers["X-Amz-Algorithm"]
+                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Algorithm' found.")
+            val credential = headers["X-Amz-Credential"]
+                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Credential' found.")
+            val scope = credential.substringAfter("/")
+
+            val canonicalRequest = """
+            GET
+            ${"/" + objectPath.removePrefix("/")}
+            ${queryParams.substringBefore("&X-Amz-Signature=").split('&').sorted().joinToString("&")}
+            host:${system.bucket}.s3.${system.region.id()}.amazonaws.com
+
+            host
+            UNSIGNED-PAYLOAD
+            """.trimIndent()
+
+            val toSignString = """
+            $algorithm
+            $date
+            $scope
+            ${canonicalRequest.sha256()}
+            """.trimIndent()
+
+            val signingKey = "AWS4$secretKey".toByteArray().let { date.substringBefore('T').toByteArray().mac(it) }
+                .let { system.region.id().toByteArray().mac(it) }.let { "s3".toByteArray().mac(it) }
+                .let { "aws4_request".toByteArray().mac(it) }
+
+            recomputedSignature = toSignString.toByteArray().mac(signingKey).toHex()
+            presentedSignature = headers["X-Amz-Signature"]
+        } catch (e: Exception) {
+            // Recomputation could not even be set up (malformed/foreign URL). Treat as a verification
+            // failure unless the compat flag re-enables the legacy HTTP fallback below.
+            if (ExternalServerFileSerializer.inlineScanOnDeserialize) {
+                verifySignatureOverNetwork(queryParams)
+                return
             }
+            throw IllegalArgumentException("Could not verify signature", e)
         }
+
+        // Constant-time comparison so verification time does not leak how many leading bytes matched.
+        if (presentedSignature != null && constantTimeEquals(presentedSignature, recomputedSignature)) return
+
+        if (ExternalServerFileSerializer.inlineScanOnDeserialize) {
+            verifySignatureOverNetwork(queryParams)
+            return
+        }
+        throw IllegalArgumentException("Could not verify signature")
+    }
+
+    /**
+     * Legacy fallback: validates the signed URL by asking S3 directly. Performs a blocking network
+     * round-trip and is only reachable when the backward-compat flag is enabled.
+     */
+    private fun verifySignatureOverNetwork(queryParams: String) {
+        // The shared client applies a 60s engine timeout.
+        runBlocking {
+            val response = client.get("$url?$queryParams") {
+                header("Range", "0-0")
+            }
+            if (!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
+        }
+    }
+
+    /**
+     * Length-aware constant-time string comparison, used to compare HMAC signature hex digests
+     * without leaking match progress through timing.
+     */
+    private fun constantTimeEquals(a: String, b: String): Boolean {
+        val aBytes = a.toByteArray(Charsets.UTF_8)
+        val bBytes = b.toByteArray(Charsets.UTF_8)
+        return java.security.MessageDigest.isEqual(aBytes, bBytes)
     }
 
     public companion object {

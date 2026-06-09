@@ -3,12 +3,8 @@ package com.lightningkite.services.email.mailgun
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
 import kotlinx.serialization.json.*
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -76,8 +72,6 @@ public class MailgunEmailInboundService(
     private val domain: String = "",
 ) : EmailInboundService {
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-inbound-mailgun")
-
     public companion object {
         init {
             EmailInboundService.Settings.Companion.register("mailgun") { name, url, context ->
@@ -126,13 +120,12 @@ public class MailgunEmailInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail = otel.span("email.webhook.parse", configure = {
-            setSpanKind(SpanKind.SERVER)
-            setAttribute("email.operation", "webhook_parse")
-            setAttribute("email.provider", "mailgun")
-            setAttribute("messaging.system", "mailgun")
-            setAttribute("email.webhook.event_type", "inbound")
-        }) { span ->
+        ): ReceivedEmail = metricsTrace("webhook.parse", attributes = MetricAttributes(mapOf(
+            "email.operation" to "webhook_parse",
+            "email.provider" to "mailgun",
+            "messaging.system" to "mailgun",
+            "email.webhook.event_type" to "inbound",
+        ))) { span ->
             // Parse form data from body
             val formData = parseFormData(body)
 
@@ -143,15 +136,15 @@ public class MailgunEmailInboundService(
             val receivedEmail = parseMailgunEmail(formData, body.mediaType)
 
             // Add email metadata to span (PII redacted: keep only domain for from/to, drop subject)
-            span?.setAttribute("email.from", receivedEmail.from.value.toString().let { addr -> addr.substringAfter('@', addr) })
-            span?.setAttribute("email.to", receivedEmail.to.joinToString(", ") { it.value.toString().let { addr -> addr.substringAfter('@', addr) } })
-            span?.setAttribute("email.message_id", receivedEmail.messageId)
-            if (receivedEmail.attachments.isNotEmpty()) {
-                span?.setAttribute("email.attachments.count", receivedEmail.attachments.size.toLong())
-            }
-            receivedEmail.spamScore?.let { score ->
-                span?.setAttribute("email.spam_score", score)
-            }
+            span.enrich(MetricAttributes(buildMap {
+                put("email.from", receivedEmail.from.value.toString().let { addr -> addr.substringAfter('@', addr) })
+                put("email.to", receivedEmail.to.joinToString(", ") { it.value.toString().let { addr -> addr.substringAfter('@', addr) } })
+                put("email.message_id", receivedEmail.messageId)
+                if (receivedEmail.attachments.isNotEmpty()) {
+                    put("email.attachments.count", receivedEmail.attachments.size.toLong())
+                }
+                receivedEmail.spamScore?.let { score -> put("email.spam_score", score) }
+            }))
 
             receivedEmail
         }

@@ -3,15 +3,15 @@ package com.lightningkite.services.database.cassandra
 import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.cql.*
 import com.datastax.oss.driver.api.core.servererrors.InvalidQueryException
+import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.cassandra.serialization.generateFlattenedColumns
 import com.lightningkite.services.database.cassandra.serialization.FlattenedColumn
 import com.lightningkite.services.database.cassandra.serialization.expandKeyColumnNames
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.future.await
@@ -40,9 +40,11 @@ public class CassandraTable<Model : Any>(
     private val session: CqlSession,
     private val keyspace: String,
     private val tableName: String,
-    private val context: SettingContext,
+    override val context: SettingContext,
     private val useAwsKeyspaces: Boolean = false,
-) : Table<Model> {
+) : Table<Model>, Namespaced {
+
+    override val name: String get() = tableName
 
     private val schema: CassandraSchema<Model> = CassandraSchema.fromSerializer(serializer, tableName)
 
@@ -60,17 +62,18 @@ public class CassandraTable<Model : Any>(
     private var prepared = false
     private val preparedStatements = mutableMapOf<String, PreparedStatement>()
 
-    private val otel = context.openTelemetry?.get("database-cassandra")
+    private fun baseAttributes(operation: String): MetricAttributes = MetricAttributes(
+        mapOf(
+            "db.system" to "cassandra",
+            "db.operation" to operation,
+            "db.collection" to tableName,
+        )
+    )
 
     private suspend inline fun <R> traced(
         operation: String,
         crossinline block: suspend () -> R,
-    ): R = otel.span("cassandra.$operation", configure = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("db.system", "cassandra")
-        setAttribute("db.operation", operation)
-        setAttribute("db.collection", tableName)
-    }) { block() }
+    ): R = metricsTrace(operation, attributes = baseAttributes(operation)) { block() }
 
     /**
      * Ensures the table schema exists in Cassandra.
@@ -352,16 +355,9 @@ public class CassandraTable<Model : Any>(
         limit: Int,
         @Suppress("UNUSED_PARAMETER") maxQueryMs: Long,
     ): Flow<Model> {
-        // by Claude - manual span management so we can stream emissions rather than buffer.
-        // Using `traced { ... }` here forced collecting all rows into a list before emitting,
-        // making memory scale with `limit`. We start the span eagerly so flowOn can install
-        // it as a context element, and close it via onCompletion when collection ends.
-        val span = tracer?.spanBuilder("cassandra.find")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("db.system", "cassandra")
-            ?.setAttribute("db.operation", "find")
-            ?.setAttribute("db.collection", tableName)
-            ?.startSpan()
+        // The query round-trip happens while the consumer collects, so wrap the whole collection in a
+        // metricsTrace span (via channelFlow + send, which is allowed across the changed context) to
+        // measure the real query duration without buffering the result into a list first.
         val base: Flow<Model> = flow {
             ensureSchema()
 
@@ -445,18 +441,11 @@ public class CassandraTable<Model : Any>(
                 // drop+take let the upstream cancel naturally once `limit` items have flowed.
                 emitAll(filtered.drop(skip).take(limit))
             }
-        }.catch { e ->
-            span?.setStatus(StatusCode.ERROR)
-            span?.recordExceptionWithFingerprint(e)
-            throw e
-        }.onCompletion { cause ->
-            if (cause == null) span?.setStatus(StatusCode.OK)
-            span?.end()
         }
-        return if (span != null) {
-            base.flowOn(span.asContextElement())
-        } else {
-            base
+        return channelFlow {
+            metricsTrace("find", attributes = baseAttributes("find")) {
+                base.collect { send(it) }
+            }
         }
     }
 

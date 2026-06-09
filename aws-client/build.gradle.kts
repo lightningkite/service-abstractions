@@ -16,7 +16,6 @@ dependencies {
 
     api(libs.aws.cloudWatch) { excludeNetty() }
     api(libs.aws.crt.client) { excludeNetty() }
-    api(libs.aws.otel) { excludeNetty() }
     testImplementation(libs.coroutines.testing)
     testImplementation(project(":cache-test"))
 }

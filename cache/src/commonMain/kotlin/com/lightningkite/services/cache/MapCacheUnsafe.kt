@@ -36,14 +36,14 @@ public open class MapCacheUnsafe(
 
     @Suppress("UNCHECKED_CAST")
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
-        return instrumentedGet(context, key) {
+        return instrumentedGet(this, key) {
             entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }?.value as? T
         }
     }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?) {
         assertValidTtl(timeToLive)
-        instrumentedSet<T>(context, key, timeToLive) {
+        instrumentedSet<T>(this, key, timeToLive) {
             entries[key] = Entry(value, timeToLive?.let { Clock.default().now() + it })
         }
     }
@@ -65,7 +65,7 @@ public open class MapCacheUnsafe(
         timeToLive: Duration?,
     ): Boolean {
         assertValidTtl(timeToLive)
-        return instrumentedSetIfNotExists(context, key, timeToLive) {
+        return instrumentedSetIfNotExists(this, key, timeToLive) {
             val existing = entries[key]
             // Check if key doesn't exist OR if it exists but has expired
             if (existing == null || (existing.expires != null && existing.expires <= Clock.default().now())) {
@@ -80,7 +80,7 @@ public open class MapCacheUnsafe(
 
     private suspend fun add(key: String, value: Long, default: Number, timeToLive: Duration?): Number {
         assertValidTtl(timeToLive)
-        return instrumentedAdd(context, key, value, timeToLive) {
+        return instrumentedAdd(this, key, value, timeToLive) {
             val entry = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
             val new = when (val current = entry?.value) {
                 is Byte -> (current + value).toByte()
@@ -103,7 +103,7 @@ public open class MapCacheUnsafe(
         add(key, value = value.toLong(), default = value, timeToLive).toInt()
 
     override suspend fun remove(key: String): Unit {
-        instrumentedRemove(context, key) {
+        instrumentedRemove(this, key) {
             entries.remove(key)
         }
     }
@@ -116,7 +116,7 @@ public open class MapCacheUnsafe(
         modification: (T?) -> T?,
     ): Boolean {
         assertValidTtl(timeToLive)
-        return instrumentedModify<T>(context, key, maxTries, timeToLive) {
+        return instrumentedModify<T>(this, key, maxTries, timeToLive) {
             // For MapCache, we can provide a synchronized implementation
             // Note: This works for in-memory but isn't distributed-safe
             repeat(maxTries) {

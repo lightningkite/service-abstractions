@@ -1,17 +1,15 @@
 package com.lightningkite.services.email.mailgun
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.email.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.utils.io.jvm.javaio.*
-import io.opentelemetry.api.trace.SpanKind
 import kotlinx.io.asInputStream
 import kotlinx.io.buffered
 
@@ -21,8 +19,6 @@ public class MailgunEmailService(
     private val key: String,
     private val domain: String,
 ) : EmailService {
-
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-mailgun")
 
     private val client = com.lightningkite.services.http.client.config {
         install(Auth) {
@@ -86,21 +82,20 @@ public class MailgunEmailService(
     override suspend fun send(email: Email) {
         if (email.to.isEmpty() && email.cc.isEmpty() && email.bcc.isEmpty()) return
 
-        otel.span("email.send", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("email.operation", "send")
-            setAttribute("email.system", "mailgun")
-            setAttribute("messaging.system", "mailgun")
-            setAttribute("email.from", email.from?.value?.toString() ?: domain)
-            setAttribute("email.to", email.to.joinToString(", ") { it.value.toString() })
-            setAttribute("email.subject", email.subject)
+        metricsTrace("send", attributes = MetricAttributes(buildMap {
+            put("email.operation", "send")
+            put("email.system", "mailgun")
+            put("messaging.system", "mailgun")
+            put("email.from", email.from?.value?.toString() ?: domain)
+            put("email.to", email.to.joinToString(", ") { it.value.toString() })
+            put("email.subject", email.subject)
             if (email.cc.isNotEmpty()) {
-                setAttribute("email.cc", email.cc.joinToString(", ") { it.value.toString() })
+                put("email.cc", email.cc.joinToString(", ") { it.value.toString() })
             }
             if (email.attachments.isNotEmpty()) {
-                setAttribute("email.attachments.count", email.attachments.size.toLong())
+                put("email.attachments.count", email.attachments.size.toLong())
             }
-        }) { _ ->
+        })) { _ ->
             sendImpl(email)
         }
     }
@@ -108,15 +103,14 @@ public class MailgunEmailService(
     override suspend fun sendBulk(template: Email, personalizations: List<EmailPersonalization>) {
         if (personalizations.isEmpty()) return
 
-        otel.span("email.sendBulk", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("email.operation", "sendBulk")
-            setAttribute("email.system", "mailgun")
-            setAttribute("messaging.system", "mailgun")
-            setAttribute("email.from", template.from?.value?.toString() ?: domain)
-            setAttribute("email.subject", template.subject)
-            setAttribute("email.personalizations.count", personalizations.size.toLong())
-        }) { _ ->
+        metricsTrace("sendBulk", attributes = MetricAttributes(mapOf(
+            "email.operation" to "sendBulk",
+            "email.system" to "mailgun",
+            "messaging.system" to "mailgun",
+            "email.from" to (template.from?.value?.toString() ?: domain),
+            "email.subject" to template.subject,
+            "email.personalizations.count" to personalizations.size.toLong(),
+        ))) { _ ->
             personalizations
                 .asSequence()
                 .map {
@@ -135,14 +129,13 @@ public class MailgunEmailService(
         if (emails.isEmpty()) return
 
         // TODO: use Mailgun batch send API instead of individual POSTs — requires API restructure
-        otel.span("email.sendBulk", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("email.operation", "sendBulk")
-            setAttribute("email.system", "mailgun")
-            setAttribute("messaging.system", "mailgun")
-            setAttribute("email.from", domain)
-            setAttribute("email.count", emails.size.toLong())
-        }) { _ ->
+        metricsTrace("sendBulk", attributes = MetricAttributes(mapOf(
+            "email.operation" to "sendBulk",
+            "email.system" to "mailgun",
+            "messaging.system" to "mailgun",
+            "email.from" to domain,
+            "email.count" to emails.size.toLong(),
+        ))) { _ ->
             emails.forEach { email ->
                 sendImpl(email)
             }

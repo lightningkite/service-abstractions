@@ -13,8 +13,6 @@ import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.get
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get as otelGet
 import io.ktor.http.decodeURLPart
 import kotlinx.io.files.Path
 import javax.crypto.spec.SecretKeySpec
@@ -134,8 +132,6 @@ public class S3PublicFileSystem(
     public val signedUrlDuration: Duration? = null,
     override val context: SettingContext,
 ) : PublicFileSystem {
-
-    internal val otel: com.lightningkite.services.otel.OpenTelemetrySub? = context.openTelemetry?.let { com.lightningkite.services.otel.OpenTelemetrySub(it, "files-s3-kmp") }
 
     override val rootUrls: List<String> = listOf(
         "https://${bucket}.s3.${region}.amazonaws.com/",

@@ -1,13 +1,12 @@
 package com.lightningkite.services.cache
 
-import com.lightningkite.services.SettingContext
 import kotlin.time.Duration
 
 /**
  * Non-JVM implementation - no-op, directly executes the operation without instrumentation.
  */
 internal actual suspend fun <T> instrumentedGet(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     operation: suspend () -> T?,
 ): T? = operation()
@@ -16,7 +15,7 @@ internal actual suspend fun <T> instrumentedGet(
  * Non-JVM implementation - no-op, directly executes the operation without instrumentation.
  */
 internal actual suspend fun <T> instrumentedSet(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     timeToLive: Duration?,
     operation: suspend () -> Unit,
@@ -26,7 +25,7 @@ internal actual suspend fun <T> instrumentedSet(
  * Non-JVM implementation - no-op, directly executes the operation without instrumentation.
  */
 internal actual suspend fun instrumentedSetIfNotExists(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     timeToLive: Duration?,
     operation: suspend () -> Boolean,
@@ -36,7 +35,7 @@ internal actual suspend fun instrumentedSetIfNotExists(
  * Non-JVM implementation - no-op, directly executes the operation without instrumentation.
  */
 internal actual suspend fun <N : Number> instrumentedAdd(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     value: Long,
     timeToLive: Duration?,
@@ -47,7 +46,7 @@ internal actual suspend fun <N : Number> instrumentedAdd(
  * Non-JVM implementation - no-op, directly executes the operation without instrumentation.
  */
 internal actual suspend fun instrumentedRemove(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     operation: suspend () -> Unit,
 ) = operation()
@@ -56,7 +55,7 @@ internal actual suspend fun instrumentedRemove(
  * Non-JVM implementation - no-op, directly executes the operation without instrumentation.
  */
 internal actual suspend fun <T> instrumentedModify(
-    context: SettingContext,
+    owner: Cache,
     key: String,
     maxTries: Int,
     timeToLive: Duration?,

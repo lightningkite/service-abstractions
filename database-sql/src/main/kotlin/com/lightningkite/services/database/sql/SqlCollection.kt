@@ -1,12 +1,12 @@
 package com.lightningkite.services.database.sql
 
+import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricSpan
+import com.lightningkite.services.Namespaced
+import com.lightningkite.services.SettingContext
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mapformat.ChildRow
-import io.opentelemetry.api.trace.Span
-import io.opentelemetry.api.trace.SpanBuilder
-import io.opentelemetry.api.trace.StatusCode
-import io.opentelemetry.api.trace.Tracer
-import io.opentelemetry.extension.kotlin.asContextElement
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
@@ -25,11 +25,11 @@ import java.sql.Connection.TRANSACTION_SERIALIZABLE
 
 public class SqlCollection<T : Any>(
     public val db: Database,
-    public val name: String,
+    override val name: String,
     override val serializer: KSerializer<T>,
     public val serializersModule: SerializersModule,
-    private val tracer: Tracer?,
-) : com.lightningkite.services.database.Table<T> {
+    override val context: SettingContext,
+) : com.lightningkite.services.database.Table<T>, Namespaced {
 
     private val format = SqlMapFormat(serializersModule)
     internal val schema = SqlSchema(name, serializersModule, serializer.descriptor)
@@ -44,37 +44,25 @@ public class SqlCollection<T : Any>(
             action()
         })
 
+    // Per-collection default span attributes shared by every operation.
+    private fun baseAttributes(operation: String, extra: Map<String, Any?> = emptyMap()): MetricAttributes =
+        MetricAttributes(
+            buildMap {
+                put("db.system", "sql")
+                put("db.operation", operation)
+                put("db.collection", name)
+                putAll(extra)
+            }
+        )
+
+    // Thin wrapper over metricsTrace: opens the `<name>.<operation>` span (with the per-collection
+    // default attributes plus any caller-supplied [extra]), records the RED metric inside it, and
+    // hands the started span to [block] for dynamic per-result attributes.
     private suspend inline fun <R> traced(
         operation: String,
-        crossinline attributes: SpanBuilder.() -> Unit = {},
-        crossinline block: suspend (Span?) -> R,
-    ): R {
-        return if (tracer != null) {
-            val span = tracer.spanBuilder("sql.$operation")
-                .setAttribute("db.system", "sql")
-                .setAttribute("db.operation", operation)
-                .setAttribute("db.collection", name)
-                .apply { attributes() }
-                .startSpan()
-            try {
-                withContext(span.asContextElement()) {
-                    val result = block(span)
-                    span.setStatus(StatusCode.OK)
-                    result
-                }
-            } catch (t: CancellationException) {
-                span.addEvent("Cancelled")
-                throw t
-            } catch (t: Throwable) {
-                span.setStatus(StatusCode.ERROR)
-                throw t
-            } finally {
-                span.end()
-            }
-        } else {
-            block(null)
-        }
-    }
+        extra: Map<String, Any?> = emptyMap(),
+        noinline block: suspend (MetricSpan) -> R,
+    ): R = metricsTrace(operation, attributes = baseAttributes(operation, extra), action = block)
 
     @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
     private val prepare = GlobalScope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
@@ -244,10 +232,10 @@ public class SqlCollection<T : Any>(
         maxQueryMs: Long,
     ): Flow<T> = traced(
         operation = "find",
-        attributes = {
-            setAttribute("db.limit", limit.toLong())
-            setAttribute("db.skip", skip.toLong())
-        }
+        extra = mapOf(
+            "db.limit" to limit.toLong(),
+            "db.skip" to skip.toLong(),
+        )
     ) { span ->
         prepare.await()
         val items = t {
@@ -288,7 +276,7 @@ public class SqlCollection<T : Any>(
 
             result
         }
-        span?.setAttribute("db.result_count", items.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.result_count" to items.size.toLong())))
         items.asFlow()
     }
 
@@ -317,13 +305,13 @@ public class SqlCollection<T : Any>(
                 mainRows.map { decodeRow(it, allChildRows) }.count { condition(it) }
             }
         }
-        span?.setAttribute("db.count", result.toLong())
+        span.enrich(MetricAttributes(mapOf("db.count" to result.toLong())))
         result
     }
 
     override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> = traced(
         operation = "groupCount",
-        attributes = { setAttribute("db.groupBy", groupBy.colName) }
+        extra = mapOf("db.groupBy" to groupBy.colName)
     ) { span ->
         prepare.await()
         val result = t {
@@ -339,7 +327,7 @@ public class SqlCollection<T : Any>(
                 .groupBy(schema.mainTable.col[groupBy.colName]!!)
                 .associate { it[groupCol] to it[count].toInt() }
         }
-        span?.setAttribute("db.groups", result.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.groups" to result.size.toLong())))
         result
     }
 
@@ -349,10 +337,10 @@ public class SqlCollection<T : Any>(
         property: DataClassPath<T, N>,
     ): Double? = traced(
         operation = "aggregate",
-        attributes = {
-            setAttribute("db.aggregate", aggregate.toString())
-            setAttribute("db.property", property.colName)
-        }
+        extra = mapOf(
+            "db.aggregate" to aggregate.toString(),
+            "db.property" to property.colName,
+        )
     ) { span ->
         prepare.await()
         t {
@@ -381,11 +369,11 @@ public class SqlCollection<T : Any>(
         property: DataClassPath<T, N>,
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
-        attributes = {
-            setAttribute("db.aggregate", aggregate.toString())
-            setAttribute("db.groupBy", groupBy.colName)
-            setAttribute("db.property", property.colName)
-        }
+        extra = mapOf(
+            "db.aggregate" to aggregate.toString(),
+            "db.groupBy" to groupBy.colName,
+            "db.property" to property.colName,
+        )
     ) { span ->
         prepare.await()
         val result = t {
@@ -408,7 +396,7 @@ public class SqlCollection<T : Any>(
                 .groupBy(schema.mainTable.col[groupBy.colName]!!)
                 .associate { it[groupCol] to it[agg]?.toDouble() }
         }
-        span?.setAttribute("db.groups", result.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.groups" to result.size.toLong())))
         result
     }
 
@@ -419,7 +407,7 @@ public class SqlCollection<T : Any>(
     ) { span ->
         prepare.await()
         val modelsList = models.toList()
-        span?.setAttribute("db.insert_count", modelsList.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.insert_count" to modelsList.size.toLong())))
         try {
             t {
                 for (model in modelsList) {
@@ -463,9 +451,9 @@ public class SqlCollection<T : Any>(
         condition: Condition<T>,
         modification: Modification<T>,
         model: T,
-    ): EntryChange<T> {
+    ): EntryChange<T> = traced("upsertOne") {
         prepare.await()
-        return tSerial {
+        tSerial {
             val existing = findOneInTransaction(condition)
             if (existing == null) {
                 val writeResult = format.encode(serializer, model)
@@ -492,9 +480,9 @@ public class SqlCollection<T : Any>(
         condition: Condition<T>,
         modification: Modification<T>,
         model: T,
-    ): Boolean {
+    ): Boolean = traced("upsertOneIgnoringResult") {
         prepare.await()
-        return tSerial {
+        tSerial {
             val existing = findOneInTransaction(condition)
             if (existing == null) {
                 val writeResult = format.encode(serializer, model)
@@ -537,7 +525,7 @@ public class SqlCollection<T : Any>(
 
             EntryChange(old, new)
         }
-        span?.setAttribute("db.updated", if (result.old != null) 1L else 0L)
+        span.enrich(MetricAttributes(mapOf("db.updated" to if (result.old != null) 1L else 0L)))
         result
     }
 
@@ -568,7 +556,7 @@ public class SqlCollection<T : Any>(
                 true
             }
         }
-        span?.setAttribute("db.updated", if (updated) 1L else 0L)
+        span.enrich(MetricAttributes(mapOf("db.updated" to if (updated) 1L else 0L)))
         updated
     }
 
@@ -588,7 +576,7 @@ public class SqlCollection<T : Any>(
             }
             CollectionChanges(changes)
         }
-        span?.setAttribute("db.updated", result.changes.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.updated" to result.changes.size.toLong())))
         result
     }
 
@@ -618,7 +606,7 @@ public class SqlCollection<T : Any>(
                 olds.size
             }
         }
-        span?.setAttribute("db.updated", count.toLong())
+        span.enrich(MetricAttributes(mapOf("db.updated" to count.toLong())))
         count
     }
 
@@ -638,7 +626,7 @@ public class SqlCollection<T : Any>(
             }
             old
         }
-        span?.setAttribute("db.deleted", if (result != null) 1L else 0L)
+        span.enrich(MetricAttributes(mapOf("db.deleted" to if (result != null) 1L else 0L)))
         result
     }
 
@@ -655,7 +643,7 @@ public class SqlCollection<T : Any>(
             }
             true
         }
-        span?.setAttribute("db.deleted", if (deleted) 1L else 0L)
+        span.enrich(MetricAttributes(mapOf("db.deleted" to if (deleted) 1L else 0L)))
         deleted
     }
 
@@ -677,7 +665,7 @@ public class SqlCollection<T : Any>(
             }
             olds
         }
-        span?.setAttribute("db.deleted", result.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.deleted" to result.size.toLong())))
         result
     }
 
@@ -709,7 +697,7 @@ public class SqlCollection<T : Any>(
                 }
             } else 0
         }
-        span?.setAttribute("db.deleted", count.toLong())
+        span.enrich(MetricAttributes(mapOf("db.deleted" to count.toLong())))
         count
     }
 

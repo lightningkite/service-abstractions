@@ -13,7 +13,6 @@ import io.ktor.http.*
  * - **ContentNegotiation**: JSON serialization/deserialization
  * - **WebSockets**: WebSocket support
  * - **Request timeout**: 60 seconds
- * - **OpenTelemetry** (JVM only): Automatic tracing when SettingContext is in coroutine context
  *
  * ## Usage in Services
  *
@@ -23,14 +22,6 @@ import io.ktor.http.*
  *     install(Auth) { ... }
  * }
  * ```
- *
- * ## OpenTelemetry (JVM Only)
- *
- * On JVM, this client automatically instruments HTTP calls with OpenTelemetry when:
- * - A SettingContext with OpenTelemetry is in the coroutine context
- * - The SettingContext has a non-null `openTelemetry` property
- *
- * Services don't need modification - instrumentation happens automatically.
  */
 public expect val client: HttpClient
 

@@ -10,7 +10,6 @@ plugins {
 dependencies {
     api(project(path = ":sms"))
     api(project(path = ":sms-inbound"))
-    api(project(path = ":otel-jvm"))
 
     // Ktor dependencies for HTTP client
     implementation(project(":http-client"))

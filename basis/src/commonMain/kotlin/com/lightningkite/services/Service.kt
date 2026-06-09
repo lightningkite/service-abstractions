@@ -32,7 +32,7 @@ import kotlin.time.Duration.Companion.minutes
  * @see SettingContext for the context passed to all service implementations
  * @see HealthStatus for health check result representation
  */
-public interface Service {
+public interface Service: Namespaced {
     /**
      * Unique identifier for this service instance within the application.
      *
@@ -43,20 +43,20 @@ public interface Service {
      *
      * Example names: "user-database", "session-cache", "s3-uploads"
      */
-    public val name: String
+    public override val name: String
 
     /**
      * Configuration and runtime context provided when the service was instantiated.
      *
      * The context contains:
      * - [SettingContext.internalSerializersModule]: Serializers for custom types
-     * - [SettingContext.openTelemetry]: Optional telemetry for tracing/metrics
+     * - [SettingContext.metricsBackend]: Optional telemetry backend for tracing/metrics
      * - [SettingContext.clock]: Clock for time-dependent operations (mockable for tests)
      * - [SettingContext.sharedResources]: Shared connection pools and resources
      * - [SettingContext.projectName]: Application name for logging
      * - [SettingContext.publicUrl]: Base URL for generating public links
      */
-    public val context: SettingContext
+    public override val context: SettingContext
 
     /**
      * Establishes connection to the underlying service provider.

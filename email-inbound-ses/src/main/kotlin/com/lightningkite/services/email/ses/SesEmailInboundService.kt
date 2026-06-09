@@ -1,16 +1,13 @@
 package com.lightningkite.services.email.ses
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.webhooksubservice.HttpAdapter
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -93,8 +90,6 @@ public class SesEmailInboundService(
             EmailInboundService.Settings("ses://")
     }
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-inbound-ses")
-
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -149,14 +144,13 @@ public class SesEmailInboundService(
         ): ReceivedEmail {
             logger.debug { "[$name] Parsing SES webhook notification" }
 
-            // Outer span kept as manual builder because SpecialCaseException (used for SNS
-            // subscription/unsubscribe confirmation responses) must NOT mark the span as ERROR.
-            val webhookSpan = otel?.spanBuilder("email.ses.webhook.parse")
-                ?.setSpanKind(SpanKind.SERVER)
-                ?.setAttribute("messaging.system", "ses")
-                ?.startSpan()
-            val webhookScope = webhookSpan?.makeCurrent()
-            try {
+            // SNS subscription/unsubscribe confirmations produce a SpecialCaseException carrying a 200
+            // response. That is a normal outcome, not a failure, so it must be thrown OUTSIDE
+            // metricsTrace — otherwise the trace would record it as an error outcome. The trace body
+            // returns it as a value and we rethrow once the span has closed cleanly.
+            val result = metricsTrace("webhook.parse", attributes = MetricAttributes(mapOf(
+                "messaging.system" to "ses",
+            ))) { _ ->
                 // Parse SNS notification wrapper
                 val bodyString = body.text()
                 val snsNotification = try {
@@ -167,9 +161,9 @@ public class SesEmailInboundService(
                 }
 
                 // Verify SNS message signature (REQUIRED for all message types)
-                otel.span("email.ses.sns.verify", configure = {
-                    setAttribute("messaging.system", "ses")
-                }) { _ ->
+                metricsTrace("sns.verify", attributes = MetricAttributes(mapOf(
+                    "messaging.system" to "ses",
+                ))) { _ ->
                     verifySnsSignature(snsNotification)
                 }
 
@@ -189,7 +183,7 @@ public class SesEmailInboundService(
                     }
 
                     // Return 200 OK so SNS knows we received the confirmation
-                    throw HttpAdapter.SpecialCaseException(
+                    return@metricsTrace HttpAdapter.SpecialCaseException(
                         HttpAdapter.HttpResponseLike(
                             status = 200,
                             headers = mapOf("Content-Type" to listOf("text/plain")),
@@ -201,7 +195,7 @@ public class SesEmailInboundService(
                 // Handle unsubscribe confirmation
                 if (snsNotification.Type == "UnsubscribeConfirmation") {
                     logger.info { "[$name] Received SNS unsubscribe confirmation" }
-                    throw HttpAdapter.SpecialCaseException(
+                    return@metricsTrace HttpAdapter.SpecialCaseException(
                         HttpAdapter.HttpResponseLike(
                             status = 200,
                             headers = mapOf("Content-Type" to listOf("text/plain")),
@@ -232,19 +226,16 @@ public class SesEmailInboundService(
                                 "S3-based content retrieval is not yet implemented."
                     )
 
-                return otel.span("email.ses.mime.parse", configure = {
-                    setAttribute("messaging.system", "ses")
-                }) { _ ->
+                metricsTrace("mime.parse", attributes = MetricAttributes(mapOf(
+                    "messaging.system" to "ses",
+                ))) { _ ->
                     parseReceivedEmail(sesNotification, rawContent)
                 }
-            } catch (e: Exception) {
-                if (e !is HttpAdapter.SpecialCaseException) {
-                    webhookSpan?.setStatus(StatusCode.ERROR, e.message ?: "error")
-                }
-                throw e
-            } finally {
-                webhookScope?.close()
-                webhookSpan?.end()
+            }
+            when (result) {
+                is HttpAdapter.SpecialCaseException -> throw result
+                is ReceivedEmail -> return result
+                else -> error("Unreachable: metricsTrace returned ${result::class}")
             }
         }
 

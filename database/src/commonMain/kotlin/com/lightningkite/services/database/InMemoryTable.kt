@@ -1,6 +1,5 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.OpenTelemetry
 import com.lightningkite.services.data.IndexUniqueness
 import kotlinx.atomicfu.*
 import kotlinx.atomicfu.locks.ReentrantLock
@@ -28,10 +27,13 @@ public open class InMemoryTable<Model : Any>(
     public val data: MutableMap<Any?, Model> = HashMap(),
     override val serializer: KSerializer<Model>,
     private val tableName: String = "unknown",
-    private val tracer: OpenTelemetry? = null,
 ) : Table<Model> {
 
     private val lock = ReentrantLock()
+
+    // The in-memory table does no I/O, so its operations are not traced. This passes the block
+    // straight through, keeping operation bodies (which use `return@traced`) unchanged.
+    private suspend inline fun <R> traced(block: () -> R): R = block()
 
     @Suppress("UNCHECKED_CAST")
     private val idProp: SerializableProperty<Model, Any?> =
@@ -59,8 +61,7 @@ public open class InMemoryTable<Model : Any>(
         data: MutableList<Model>,
         serializer: KSerializer<Model>,
         tableName: String = "unknown",
-        tracer: OpenTelemetry? = null,
-    ) : this(HashMap<Any?, Model>(), serializer, tableName, tracer) {
+    ) : this(HashMap<Any?, Model>(), serializer, tableName) {
         preload(data)
     }
 
@@ -167,15 +168,7 @@ public open class InMemoryTable<Model : Any>(
         limit: Int,
         maxQueryMs: Long,
     ): Flow<Model> = flow {
-        val result = traced(
-            tracer = tracer,
-            operation = "find",
-            tableName = tableName,
-            attributes = mapOf(
-                "db.limit" to limit,
-                "db.skip" to skip
-            )
-        ) {
+        val result = traced {
             lock.withLock {
                 snapshotFor(condition, orderBy)
                     .asSequence()
@@ -187,11 +180,7 @@ public open class InMemoryTable<Model : Any>(
         result.forEach { emit(it) }
     }
 
-    override suspend fun count(condition: Condition<Model>): Int = traced(
-        tracer = tracer,
-        operation = "count",
-        tableName = tableName
-    ) {
+    override suspend fun count(condition: Condition<Model>): Int = traced {
         lock.withLock {
             candidatesFor(condition).count { condition(it) }
         }
@@ -201,11 +190,7 @@ public open class InMemoryTable<Model : Any>(
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
-    ): Map<Key, Int> = traced(
-        tracer = tracer,
-        operation = "groupCount",
-        tableName = tableName
-    ) {
+    ): Map<Key, Int> = traced {
         lock.withLock {
             data.values.asSequence().filter { condition(it) }
                 .groupingBy { groupBy.get(it) }.eachCount().minus(null) as Map<Key, Int>
@@ -216,12 +201,7 @@ public open class InMemoryTable<Model : Any>(
         aggregate: Aggregate,
         condition: Condition<Model>,
         property: DataClassPath<Model, N>,
-    ): Double? = traced(
-        tracer = tracer,
-        operation = "aggregate",
-        tableName = tableName,
-        attributes = mapOf("db.aggregate" to aggregate.toString())
-    ) {
+    ): Double? = traced {
         lock.withLock {
             data.values.asSequence()
                 .filter { condition(it) }
@@ -234,12 +214,7 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
         property: DataClassPath<Model, N>,
-    ): Map<Key, Double?> = traced(
-        tracer = tracer,
-        operation = "groupAggregate",
-        tableName = tableName,
-        attributes = mapOf("db.aggregate" to aggregate.toString())
-    ) {
+    ): Map<Key, Double?> = traced {
         lock.withLock {
             data.values.asSequence()
                 .filter { condition(it) }
@@ -253,11 +228,7 @@ public open class InMemoryTable<Model : Any>(
         }
     }
 
-    override suspend fun insert(models: Iterable<Model>): List<Model> = traced(
-        tracer = tracer,
-        operation = "insert",
-        tableName = tableName
-    ) {
+    override suspend fun insert(models: Iterable<Model>): List<Model> = traced {
         val list = models.toList()
         lock.withLock {
             uniqueCheck(list.map { EntryChange(null, it) })
@@ -270,11 +241,7 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         model: Model,
         orderBy: List<SortPart<Model>>,
-    ): EntryChange<Model> = traced(
-        tracer = tracer,
-        operation = "replaceOne",
-        tableName = tableName
-    ) {
+    ): EntryChange<Model> = traced {
         lock.withLock {
             for (old in snapshotFor(condition, orderBy)) {
                 val changed = EntryChange(old, model)
@@ -293,11 +260,7 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         modification: Modification<Model>,
         model: Model,
-    ): EntryChange<Model> = traced(
-        tracer = tracer,
-        operation = "upsertOne",
-        tableName = tableName
-    ) {
+    ): EntryChange<Model> = traced {
         lock.withLock {
             for (old in snapshotFor(condition, emptyList())) {
                 val new = modification(old)
@@ -319,11 +282,7 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         modification: Modification<Model>,
         orderBy: List<SortPart<Model>>,
-    ): EntryChange<Model> = traced(
-        tracer = tracer,
-        operation = "updateOne",
-        tableName = tableName
-    ) {
+    ): EntryChange<Model> = traced {
         lock.withLock {
             for (old in snapshotFor(condition, orderBy)) {
                 val new = modification(old)
@@ -342,11 +301,7 @@ public open class InMemoryTable<Model : Any>(
     override suspend fun updateMany(
         condition: Condition<Model>,
         modification: Modification<Model>,
-    ): CollectionChanges<Model> = traced(
-        tracer = tracer,
-        operation = "updateMany",
-        tableName = tableName
-    ) {
+    ): CollectionChanges<Model> = traced {
         lock.withLock {
             val matches = snapshotFor(condition, emptyList())
                 .map { old -> EntryChange(old, modification(old)) }
@@ -361,11 +316,7 @@ public open class InMemoryTable<Model : Any>(
         }
     }
 
-    override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? = traced(
-        tracer = tracer,
-        operation = "deleteOne",
-        tableName = tableName
-    ) {
+    override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? = traced {
         lock.withLock {
             for (old in snapshotFor(condition, orderBy)) {
                 data.remove(idOf(old))
@@ -375,11 +326,7 @@ public open class InMemoryTable<Model : Any>(
         }
     }
 
-    override suspend fun deleteMany(condition: Condition<Model>): List<Model> = traced(
-        tracer = tracer,
-        operation = "deleteMany",
-        tableName = tableName
-    ) {
+    override suspend fun deleteMany(condition: Condition<Model>): List<Model> = traced {
         lock.withLock {
             val removed = snapshotFor(condition, emptyList()).toList()
             for (m in removed) data.remove(idOf(m))
@@ -429,15 +376,7 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> = flow {
-        val results = traced(
-            tracer = tracer,
-            operation = "findSimilar",
-            tableName = tableName,
-            attributes = mapOf(
-                "db.limit" to params.limit,
-                "db.similarity_metric" to params.metric.toString()
-            )
-        ) {
+        val results = traced {
             val minScore = params.minScore
             lock.withLock {
                 data.values.asSequence()
@@ -462,15 +401,7 @@ public open class InMemoryTable<Model : Any>(
         condition: Condition<Model>,
         maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> = flow {
-        val results = traced(
-            tracer = tracer,
-            operation = "findSimilarSparse",
-            tableName = tableName,
-            attributes = mapOf(
-                "db.limit" to params.limit,
-                "db.similarity_metric" to params.metric.toString()
-            )
-        ) {
+        val results = traced {
             val minScore = params.minScore
             lock.withLock {
                 data.values.asSequence()

@@ -66,16 +66,11 @@ package com.lightningkite.services.cache.dynamodb
 import com.lightningkite.services.*
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.TelemetrySanitization
 import com.lightningkite.services.data.HealthStatus
-import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.builtins.serializer
 import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
@@ -93,25 +88,29 @@ public class DynamoDbCache(
     // client is thread-safe so concurrent init is harmless and avoids a global lock on every access.
     public val client: DynamoDbAsyncClient by lazy(LazyThreadSafetyMode.PUBLICATION, makeClient)
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("cache-dynamodb")
-
+    // Static, low-cardinality span attributes shared by every operation. The cache key is hashed so a
+    // high-cardinality value never reaches telemetry.
     private fun spanAttrs(
-        operation: String,
         key: String,
         timeToLive: Duration? = null,
-        extra: SpanBuilder.() -> Unit = {},
-    ): SpanBuilder.() -> Unit = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("cache.operation", operation)
-        setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
-        setAttribute("cache.system", "dynamodb")
-        setAttribute("db.system", "dynamodb")
-        setAttribute("db.name", tableName)
-        timeToLive?.let { setAttribute("cache.ttl", it.inWholeSeconds) }
-        extra()
-    }
+        extra: Map<String, Any?> = emptyMap(),
+    ): MetricAttributes = MetricAttributes(
+        buildMap {
+            put("cache.key", TelemetrySanitization.hashCacheKey(key))
+            put("cache.system", "dynamodb")
+            put("db.system", "dynamodb")
+            put("db.name", tableName)
+            timeToLive?.let { put("cache.ttl", it.inWholeSeconds) }
+            putAll(extra)
+        }
+    )
 
     public companion object {
+        // Safety cap for [add]'s live/expired retry loop. Each failed iteration means a concurrent
+        // writer flipped the row's live/expired state, so reaching this bound is effectively
+        // impossible; it exists only to guarantee termination.
+        private const val ADD_MAX_TRIES: Int = 5
+
         public fun Cache.Settings.Companion.dynamoDbLocal(): Cache.Settings = Cache.Settings("dynamodb-local")
         public fun Cache.Settings.Companion.dynamoDb(
             region: Region,
@@ -164,7 +163,17 @@ public class DynamoDbCache(
     }
 
     override suspend fun healthCheck(): HealthStatus {
-        return listOf(super.healthCheck(), context[AwsConnections].health).maxBy { it.level }
+        // Read-only credential + reachability probe. DescribeTable exercises the same credentials and
+        // network path as real traffic but never mutates data (the inherited default health check
+        // writes a key, which we deliberately avoid here).
+        val probe = try {
+            ready.await()
+            client.describeTable { it.tableName(tableName) }.await()
+            HealthStatus(HealthStatus.Level.OK)
+        } catch (e: Exception) {
+            HealthStatus(HealthStatus.Level.ERROR, additionalMessage = e.message)
+        }
+        return listOf(probe, context[AwsConnections].health).maxBy { it.level }
     }
 
     @OptIn(DelicateCoroutinesApi::class)
@@ -219,7 +228,9 @@ public class DynamoDbCache(
     private var ready = ready()
 
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
-        otel.span("cache.get", configure = spanAttrs("get", key)) { span ->
+        // `cache.hit` is resolved during the operation and promoted to the RED metric via `dimensions`;
+        // `enrich` makes it readable both on the span and as the metric dimension at completion.
+        metricsTrace("get", attributes = spanAttrs(key), dimensions = setOf("cache.hit")) { span ->
             ready.await()
             val r = client.getItem {
                 it.tableName(tableName)
@@ -233,12 +244,12 @@ public class DynamoDbCache(
                     else serializer.fromDynamo(item["value"]!!, context)
                 } ?: serializer.fromDynamo(item["value"]!!, context)
             } else null
-            span?.setAttribute("cache.hit", result != null)
+            span.enrich(MetricAttributes(mapOf("cache.hit" to (result != null))))
             result
         }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
-        otel.span("cache.set", configure = spanAttrs("set", key, timeToLive)) {
+        metricsTrace("set", attributes = spanAttrs(key, timeToLive)) {
             ready.await()
             client.putItem {
                 it.tableName(tableName)
@@ -259,7 +270,7 @@ public class DynamoDbCache(
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean = otel.span("cache.setIfNotExists", configure = spanAttrs("setIfNotExists", key, timeToLive)) { span ->
+    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf("cache.added")) { span ->
         ready.await()
         try {
             client.putItem {
@@ -275,48 +286,79 @@ public class DynamoDbCache(
                     } ?: mapOf())
                 )
             }.await()
-            span?.setAttribute("cache.added", true)
+            span.enrich(MetricAttributes(mapOf("cache.added" to true)))
             true
         } catch (e: ConditionalCheckFailedException) {
-            span?.setAttribute("cache.added", false)
+            span.enrich(MetricAttributes(mapOf("cache.added" to false)))
             false
         }
     }
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
-        otel.span("cache.add", configure = spanAttrs("add", key, timeToLive, extra = {
-            setAttribute("cache.value", value)
-        })) {
+        metricsTrace("add", attributes = spanAttrs(key, timeToLive, extra = mapOf("cache.value" to value))) {
             ready.await()
-            try {
-                val response = client.updateItem {
-                    it.tableName(tableName)
-                    it.key(mapOf("key" to AttributeValue.fromS(key)))
-                    it.conditionExpression("attribute_not_exists(#exp) OR #exp = :null OR #exp > :now")
-                    it.updateExpression("SET #exp = :exp, #v = if_not_exists(#v, :z) + :v")
-                    it.expressionAttributeNames(mapOf("#v" to "value", "#exp" to "expires"))
-                    it.expressionAttributeValues(
-                        mapOf(
-                            ":null" to AttributeValue.fromNul(true),
-                            ":now" to AttributeValue.fromN(now().epochSeconds.toString()),
-                            ":z" to AttributeValue.fromN("0"),
-                            ":v" to AttributeValue.fromN(value.toString()),
-                            ":exp" to (timeToLive?.let { AttributeValue.fromN(now().plus(it).epochSeconds.toString()) }
-                                ?: AttributeValue.fromNul(true))
+            // Both attempts are atomic conditional updates so a concurrent writer can never be
+            // overwritten (the previous blind-set fallback could lose a concurrent increment).
+            // Each failure means another writer changed the row's live/expired state, so we loop
+            // and re-evaluate; exhaustion is effectively impossible (bounded purely as a safety net).
+            repeat(ADD_MAX_TRIES) {
+                // Attempt A (live increment): increment if the row is absent, has a null TTL, or
+                // has not yet expired.
+                try {
+                    val response = client.updateItem {
+                        it.tableName(tableName)
+                        it.key(mapOf("key" to AttributeValue.fromS(key)))
+                        it.conditionExpression("attribute_not_exists(#exp) OR #exp = :null OR #exp > :now")
+                        it.updateExpression("SET #exp = :exp, #v = if_not_exists(#v, :z) + :v")
+                        it.expressionAttributeNames(mapOf("#v" to "value", "#exp" to "expires"))
+                        it.expressionAttributeValues(
+                            mapOf(
+                                ":null" to AttributeValue.fromNul(true),
+                                ":now" to AttributeValue.fromN(now().epochSeconds.toString()),
+                                ":z" to AttributeValue.fromN("0"),
+                                ":v" to AttributeValue.fromN(value.toString()),
+                                ":exp" to (timeToLive?.let { AttributeValue.fromN(now().plus(it).epochSeconds.toString()) }
+                                    ?: AttributeValue.fromNul(true))
+                            )
                         )
-                    )
-                    it.returnValues(ReturnValue.ALL_NEW)
-                }.await()
+                        it.returnValues(ReturnValue.ALL_NEW)
+                    }.await()
+                    return@metricsTrace response.attributes().getValue("value").n().toLong()
+                } catch (_: ConditionalCheckFailedException) {
+                    // Row exists and is expired (or was concurrently changed). Fall through to B.
+                }
 
-                response.attributes().getValue("value").n().toLong()
-            } catch (_: ConditionalCheckFailedException) {
-                set(key, value, Long.serializer(), timeToLive)
-                value
+                // Attempt B (expired reset): the row exists with a numeric, already-elapsed TTL,
+                // so it is logically absent and the counter must restart at `value`. The
+                // attribute_type(#exp, N) guard prevents a null-TTL row from ever matching here.
+                try {
+                    val response = client.updateItem {
+                        it.tableName(tableName)
+                        it.key(mapOf("key" to AttributeValue.fromS(key)))
+                        it.conditionExpression("attribute_exists(#exp) AND attribute_type(#exp, :nType) AND #exp <= :now")
+                        it.updateExpression("SET #v = :v, #exp = :exp")
+                        it.expressionAttributeNames(mapOf("#v" to "value", "#exp" to "expires"))
+                        it.expressionAttributeValues(
+                            mapOf(
+                                ":now" to AttributeValue.fromN(now().epochSeconds.toString()),
+                                ":nType" to AttributeValue.fromS("N"),
+                                ":v" to AttributeValue.fromN(value.toString()),
+                                ":exp" to (timeToLive?.let { AttributeValue.fromN(now().plus(it).epochSeconds.toString()) }
+                                    ?: AttributeValue.fromNul(true))
+                            )
+                        )
+                        it.returnValues(ReturnValue.ALL_NEW)
+                    }.await()
+                    return@metricsTrace response.attributes().getValue("value").n().toLong()
+                } catch (_: ConditionalCheckFailedException) {
+                    // Someone re-created the row live between A and B; loop back to A.
+                }
             }
+            throw IllegalStateException("add($key) could not complete in $ADD_MAX_TRIES attempts; another writer kept flipping the row's live/expired state")
         }
 
     override suspend fun remove(key: String): Unit =
-        otel.span("cache.remove", configure = spanAttrs("remove", key)) {
+        metricsTrace("remove", attributes = spanAttrs(key)) {
             ready.await()
             client.deleteItem {
                 it.tableName(tableName)

@@ -1,13 +1,13 @@
 package com.lightningkite.services.subscription.stripe
 
+import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricSpan
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.database.HasId
 import com.lightningkite.services.database.SecurityException
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.subscription.*
 import com.lightningkite.services.subscription.Customer
 import com.lightningkite.services.subscription.Subscription
@@ -20,7 +20,6 @@ import com.stripe.model.checkout.Session
 import com.stripe.net.Webhook
 import com.stripe.param.*
 import com.stripe.param.checkout.SessionCreateParams
-import io.opentelemetry.api.trace.*
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
@@ -83,8 +82,6 @@ public class StripeSubscriptionService(
     private val staticWebhookSecret: String,
 ) : SubscriptionService {
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("subscription-payments-stripe")
-
     init {
         // TODO: global apiKey limits multiple service instances
         Stripe.apiKey = apiKey
@@ -94,14 +91,15 @@ public class StripeSubscriptionService(
         email: String,
         name: String?,
         metadata: Map<String, String>,
-    ): SubscriptionCustomerId = otel.span(
-        "subscription.create_customer",
-        configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("subscription.operation", "create_customer")
-            setAttribute("subscription.customer_email", email)
-            setAttribute("subscription.provider", "stripe")
-        }
+    ): SubscriptionCustomerId = metricsTrace(
+        "create_customer",
+        attributes = MetricAttributes(
+            mapOf(
+                "subscription.operation" to "create_customer",
+                "subscription.customer_email" to email,
+                "subscription.provider" to "stripe",
+            )
+        )
     ) { span ->
         val params = CustomerCreateParams.builder()
             .setEmail(email)
@@ -114,28 +112,29 @@ public class StripeSubscriptionService(
         val customer = com.stripe.model.Customer.create(params)
         val customerId = SubscriptionCustomerId(customer.id)
 
-        span?.setAttribute("subscription.customer_id", customerId.value)
+        span.enrich(MetricAttributes(mapOf("subscription.customer_id" to customerId.value)))
 
         customerId
     }
 
-    override suspend fun getCustomer(customerId: SubscriptionCustomerId): Customer? = otel.span(
-        "subscription.get_customer",
-        configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("subscription.operation", "get_customer")
-            setAttribute("subscription.customer_id", customerId.value)
-            setAttribute("subscription.provider", "stripe")
-        }
+    override suspend fun getCustomer(customerId: SubscriptionCustomerId): Customer? = metricsTrace(
+        "get_customer",
+        attributes = MetricAttributes(
+            mapOf(
+                "subscription.operation" to "get_customer",
+                "subscription.customer_id" to customerId.value,
+                "subscription.provider" to "stripe",
+            )
+        )
     ) { span ->
         try {
             val stripeCustomer = com.stripe.model.Customer.retrieve(customerId.value)
             if (stripeCustomer.deleted == true) {
-                span?.setAttribute("subscription.customer_found", false)
-                return@span null
+                span.enrich(MetricAttributes(mapOf("subscription.customer_found" to false)))
+                return@metricsTrace null
             }
 
-            span?.setAttribute("subscription.customer_found", true)
+            span.enrich(MetricAttributes(mapOf("subscription.customer_found" to true)))
 
             Customer(
                 id = SubscriptionCustomerId(stripeCustomer.id),
@@ -146,7 +145,7 @@ public class StripeSubscriptionService(
             )
         } catch (e: InvalidRequestException) {
             if (e.statusCode == 404) {
-                span?.setAttribute("subscription.customer_found", false)
+                span.enrich(MetricAttributes(mapOf("subscription.customer_found" to false)))
                 null
             } else {
                 throw e
@@ -154,17 +153,18 @@ public class StripeSubscriptionService(
         }
     }
 
-    override suspend fun checkoutUrl(request: CheckoutSessionRequest): String = otel.span(
-        "subscription.create_checkout_session",
-        configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("subscription.operation", "create_checkout_session")
-            setAttribute("subscription.price_id", request.priceId.value)
-            setAttribute("subscription.quantity", request.quantity.toLong())
-            setAttribute("subscription.provider", "stripe")
-            request.customerId?.let { setAttribute("subscription.customer_id", it.value) }
-            request.trialPeriodDays?.let { setAttribute("subscription.trial_period_days", it.toLong()) }
-        }
+    override suspend fun checkoutUrl(request: CheckoutSessionRequest): String = metricsTrace(
+        "create_checkout_session",
+        attributes = MetricAttributes(
+            buildMap {
+                put("subscription.operation", "create_checkout_session")
+                put("subscription.price_id", request.priceId.value)
+                put("subscription.quantity", request.quantity.toLong())
+                put("subscription.provider", "stripe")
+                request.customerId?.let { put("subscription.customer_id", it.value) }
+                request.trialPeriodDays?.let { put("subscription.trial_period_days", it.toLong()) }
+            }
+        )
     ) { span ->
         val paramsBuilder = SessionCreateParams.builder()
             .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
@@ -206,24 +206,25 @@ public class StripeSubscriptionService(
 
         val session = Session.create(paramsBuilder.build())
 
-        span?.setAttribute("subscription.checkout_session_id", session.id)
+        span.enrich(MetricAttributes(mapOf("subscription.checkout_session_id" to session.id)))
 
         session.url
     }
 
-    override suspend fun manageSubscriptionUrl(subscriptionId: SubscriptionId, returnUrl: String): String = otel.span(
-        "subscription.create_billing_portal_session",
-        configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("subscription.operation", "create_billing_portal_session")
-            setAttribute("subscription.subscription_id", subscriptionId.value)
-            setAttribute("subscription.provider", "stripe")
-        }
+    override suspend fun manageSubscriptionUrl(subscriptionId: SubscriptionId, returnUrl: String): String = metricsTrace(
+        "create_billing_portal_session",
+        attributes = MetricAttributes(
+            mapOf(
+                "subscription.operation" to "create_billing_portal_session",
+                "subscription.subscription_id" to subscriptionId.value,
+                "subscription.provider" to "stripe",
+            )
+        )
     ) { span ->
         val sub = getSubscription(subscriptionId)
             ?: throw IllegalArgumentException("Subscription not found: ${subscriptionId.value}")
 
-        span?.setAttribute("subscription.customer_id", sub.customerId.value)
+        span.enrich(MetricAttributes(mapOf("subscription.customer_id" to sub.customerId.value)))
 
         val params = com.stripe.param.billingportal.SessionCreateParams.builder()
             .setCustomer(sub.customerId.value)
@@ -232,31 +233,38 @@ public class StripeSubscriptionService(
 
         val session = com.stripe.model.billingportal.Session.create(params)
 
-        span?.setAttribute("subscription.portal_session_id", session.id)
+        span.enrich(MetricAttributes(mapOf("subscription.portal_session_id" to session.id)))
 
         session.url
     }
 
-    override suspend fun getSubscription(subscriptionId: SubscriptionId): Subscription? = otel.span(
-        "subscription.get_subscription",
-        configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("subscription.operation", "get_subscription")
-            setAttribute("subscription.subscription_id", subscriptionId.value)
-            setAttribute("subscription.provider", "stripe")
-        }
+    override suspend fun getSubscription(subscriptionId: SubscriptionId): Subscription? = metricsTrace(
+        "get_subscription",
+        attributes = MetricAttributes(
+            mapOf(
+                "subscription.operation" to "get_subscription",
+                "subscription.subscription_id" to subscriptionId.value,
+                "subscription.provider" to "stripe",
+            )
+        )
     ) { span ->
         try {
             val stripeSub = com.stripe.model.Subscription.retrieve(subscriptionId.value)
             val subscription = stripeSub.toSubscription()
 
-            span?.setAttribute("subscription.status", subscription.status.name)
-            span?.setAttribute("subscription.customer_id", subscription.customerId.value)
+            span.enrich(
+                MetricAttributes(
+                    mapOf(
+                        "subscription.status" to subscription.status.name,
+                        "subscription.customer_id" to subscription.customerId.value,
+                    )
+                )
+            )
 
             subscription
         } catch (e: InvalidRequestException) {
             if (e.statusCode == 404) {
-                span?.setAttribute("subscription.found", false)
+                span.enrich(MetricAttributes(mapOf("subscription.found" to false)))
                 null
             } else {
                 throw e
@@ -264,14 +272,15 @@ public class StripeSubscriptionService(
         }
     }
 
-    override suspend fun getSubscriptions(customerId: SubscriptionCustomerId): List<Subscription> = otel.span(
-        "subscription.list_subscriptions",
-        configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("subscription.operation", "list_subscriptions")
-            setAttribute("subscription.customer_id", customerId.value)
-            setAttribute("subscription.provider", "stripe")
-        }
+    override suspend fun getSubscriptions(customerId: SubscriptionCustomerId): List<Subscription> = metricsTrace(
+        "list_subscriptions",
+        attributes = MetricAttributes(
+            mapOf(
+                "subscription.operation" to "list_subscriptions",
+                "subscription.customer_id" to customerId.value,
+                "subscription.provider" to "stripe",
+            )
+        )
     ) { span ->
         val params = SubscriptionListParams.builder()
             .setCustomer(customerId.value)
@@ -279,25 +288,26 @@ public class StripeSubscriptionService(
 
         val subscriptions = com.stripe.model.Subscription.list(params).data.map { it.toSubscription() }
 
-        span?.setAttribute("subscription.count", subscriptions.size.toLong())
+        span.enrich(MetricAttributes(mapOf("subscription.count" to subscriptions.size.toLong())))
 
         subscriptions
     }
 
     override suspend fun cancelSubscription(subscriptionId: SubscriptionId, immediately: Boolean): Subscription =
-        otel.span(
-            "subscription.cancel_subscription",
-            configure = {
-                setSpanKind(SpanKind.CLIENT)
-                setAttribute("subscription.operation", "cancel_subscription")
-                setAttribute("subscription.subscription_id", subscriptionId.value)
-                setAttribute("subscription.cancel_immediately", immediately)
-                setAttribute("subscription.provider", "stripe")
-            }
+        metricsTrace(
+            "cancel_subscription",
+            attributes = MetricAttributes(
+                mapOf(
+                    "subscription.operation" to "cancel_subscription",
+                    "subscription.subscription_id" to subscriptionId.value,
+                    "subscription.cancel_immediately" to immediately,
+                    "subscription.provider" to "stripe",
+                )
+            )
         ) { span ->
             val subscription = com.stripe.model.Subscription.retrieve(subscriptionId.value)
 
-            span?.setAttribute("subscription.customer_id", subscription.customer)
+            span.enrich(MetricAttributes(mapOf("subscription.customer_id" to subscription.customer)))
 
             val result = if (immediately) {
                 subscription.cancel().toSubscription()
@@ -309,7 +319,7 @@ public class StripeSubscriptionService(
                 ).toSubscription()
             }
 
-            span?.setAttribute("subscription.status", result.status.name)
+            span.enrich(MetricAttributes(mapOf("subscription.status" to result.status.name)))
 
             result
         }
@@ -331,25 +341,24 @@ public class StripeSubscriptionService(
         /**
          * Parses an incoming Stripe webhook event.
          *
-         * Uses [SpanKind.SERVER] for the span kind because this is an inbound server entry point.
-         *
          * **Note**: [body] is a single-use [TypedData] — do not call [TypedData.text] more than once.
          */
         override suspend fun parse(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): SubscriptionEvent? = otel.span(
-            "subscription.webhook.parse",
-            configure = {
-                setSpanKind(SpanKind.SERVER)
-                setAttribute("subscription.operation", "webhook_parse")
-                setAttribute("subscription.provider", "stripe")
-            }
+        ): SubscriptionEvent? = metricsTrace(
+            "webhook.parse",
+            attributes = MetricAttributes(
+                mapOf(
+                    "subscription.operation" to "webhook_parse",
+                    "subscription.provider" to "stripe",
+                )
+            )
         ) { span -> parseInternal(span, headers, body) }
 
         private suspend fun parseInternal(
-            span: Span?,
+            span: MetricSpan,
             headers: Map<String, List<String>>,
             body: TypedData,
         ): SubscriptionEvent? {
@@ -370,12 +379,18 @@ public class StripeSubscriptionService(
                 throw SecurityException("Invalid webhook signature: ${e.message}")
             }
 
-            span?.setAttribute("webhook.event_id", event.id)
-            span?.setAttribute("webhook.event_type", event.type)
+            span.enrich(
+                MetricAttributes(
+                    mapOf(
+                        "webhook.event_id" to event.id,
+                        "webhook.event_type" to event.type,
+                    )
+                )
+            )
 
             val result = parseEvent(event)
 
-            span?.setAttribute("webhook.parsed", result != null)
+            span.enrich(MetricAttributes(mapOf("webhook.parsed" to (result != null))))
 
             return result
         }

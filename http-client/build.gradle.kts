@@ -52,7 +52,7 @@ kotlin {
         val jsMain by getting {}
         val jvmMain by getting {
             dependencies {
-                compileOnly(project(":otel-jvm"))
+                implementation(project(":basis"))
                 compileOnly(libs.openTelemetry.api)
                 compileOnly(libs.openTelemetry.instrumentation.ktor)
                 implementation(libs.crac)

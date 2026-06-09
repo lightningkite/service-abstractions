@@ -6,8 +6,7 @@ import com.lightningkite.services.data.*
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.get
 import com.lightningkite.services.http.client
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get as otelGet
+import com.lightningkite.services.metricsTrace
 import io.ktor.client.request.*
 import io.ktor.http.*
 import software.amazon.awssdk.auth.credentials.*
@@ -47,8 +46,6 @@ public class S3PublicFileSystem(
     public val signedUrlDuration: Duration? = null,
     override val context: SettingContext,
 ) : PublicFileSystem {
-
-    internal val otel: OpenTelemetrySub? = context.openTelemetry?.otelGet("files-s3")
 
     override val rootUrls: List<String> = listOf(
         "https://${bucket}.s3.${region.id()}.amazonaws.com/",
@@ -129,6 +126,14 @@ public class S3PublicFileSystem(
     }
 
     /**
+     * Total operation budget for S3 API calls. Large-object transfers (uploads/downloads) are
+     * legitimately long, so this is generous. The connection and per-attempt timeouts supplied by
+     * [AwsConnections] stay short, so an unreachable S3 endpoint still fails fast despite this
+     * long total budget.
+     */
+    private val s3ApiCallTimeout: Duration = 1.hours
+
+    /**
      * The synchronous S3 client for blocking operations.
      *
      * This client uses the HTTP client from [AwsConnections] for connection pooling.
@@ -139,9 +144,7 @@ public class S3PublicFileSystem(
             .region(region)
             .credentialsProvider(credentialProvider)
             .httpClient(context[AwsConnections].client)
-            .apply {
-                context[AwsConnections].clientOverrideConfiguration?.let { overrideConfiguration(it) }
-            }
+            .overrideConfiguration(context[AwsConnections].buildOverrideConfiguration(s3ApiCallTimeout))
             .build()
     }
 
@@ -156,9 +159,7 @@ public class S3PublicFileSystem(
             .region(region)
             .credentialsProvider(credentialProvider)
             .httpClient(context[AwsConnections].asyncClient)
-            .apply {
-                context[AwsConnections].clientOverrideConfiguration?.let { overrideConfiguration(it) }
-            }
+            .overrideConfiguration(context[AwsConnections].buildOverrideConfiguration(s3ApiCallTimeout))
             .build()
     }
 
@@ -199,7 +200,7 @@ public class S3PublicFileSystem(
      *
      * @return [HealthStatus] with OK level if all operations succeed, ERROR otherwise
      */
-    override suspend fun healthCheck(): HealthStatus {
+    override suspend fun healthCheck(): HealthStatus = metricsTrace("healthCheck") {
         val results = mutableListOf<Pair<HealthStatus.Level, String?>>()
         try {
             val testFile = root.then("health-check/test-file-${Uuid.random()}.txt")
@@ -211,7 +212,7 @@ public class S3PublicFileSystem(
             // Test read
             val readContent = testFile.get()
             if (readContent == null) {
-                return HealthStatus(
+                return@metricsTrace HealthStatus(
                     level = HealthStatus.Level.ERROR,
                     additionalMessage = "Failed to read test file"
                 )
@@ -219,7 +220,7 @@ public class S3PublicFileSystem(
 
             val readText = readContent.data.text()
             if (readText != testContent) {
-                return HealthStatus(
+                return@metricsTrace HealthStatus(
                     level = HealthStatus.Level.ERROR,
                     additionalMessage = "Test content did not match: expected '$testContent', got '$readText'"
                 )
@@ -232,7 +233,7 @@ public class S3PublicFileSystem(
                             "File Signing is configured, but the test file was retrieved with an unsigned URL. Is the S3 Bucket permissions configured correctly?"
                 )
             } else if (!result.status.isSuccess() && signedUrlDuration == null) {
-                return HealthStatus(
+                return@metricsTrace HealthStatus(
                     level = HealthStatus.Level.ERROR,
                     additionalMessage = "File Signing is null, but the test failed to be retrieved with an unsigned URL. Is the S3 Bucket permissions configured correctly?"
                 )
@@ -245,7 +246,7 @@ public class S3PublicFileSystem(
             results.add(HealthStatus.Level.ERROR to "Health check failed: ${e.message}")
         }
 
-        return results.fold(HealthStatus(HealthStatus.Level.OK)) { acc, item ->
+        results.fold(HealthStatus(HealthStatus.Level.OK)) { acc, item ->
             HealthStatus(
                 maxOf(acc.level, item.first),
                 additionalMessage = if (acc.additionalMessage != null || item.second != null)

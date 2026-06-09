@@ -17,8 +17,8 @@ public interface HttpAdapter<Input, Output> {
      * Parses an incoming HTTP request into the adapter's input type.
      *
      * ## Span kind
-     * Implementations that create an OpenTelemetry span should use [io.opentelemetry.api.trace.SpanKind.SERVER],
-     * because this is the entry point of an inbound request (not an outbound client call).
+     * Implementations that create a telemetry span should mark it as a SERVER span, because this is
+     * the entry point of an inbound request (not an outbound client call).
      *
      * ## Single-use body
      * [body] is a single-use [TypedData]: calling [TypedData.text], [TypedData.write], or any

@@ -1,6 +1,6 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.services.SettingContext
+import com.lightningkite.services.Namespaced
 
 /**
  * Native implementation of file operation tracing - no-op.
@@ -8,7 +8,7 @@ import com.lightningkite.services.SettingContext
  * OpenTelemetry is not currently supported on Native platforms.
  */
 internal actual suspend fun <T> traceFileOperation(
-    context: SettingContext,
+    owner: Namespaced,
     operation: String,
     path: String,
     storageSystem: String,

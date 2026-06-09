@@ -3,6 +3,7 @@ package com.lightningkite.services.otel
 import ch.qos.logback.classic.LoggerContext
 import ch.qos.logback.core.ConsoleAppender
 import com.lightningkite.services.*
+import io.opentelemetry.api.OpenTelemetry
 import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
 import io.opentelemetry.context.propagation.ContextPropagators
@@ -554,6 +555,19 @@ public data class OpenTelemetrySettings(
         return parse(name, this, context)
     }
 }
+
+/**
+ * Builds the OpenTelemetry SDK from these settings and wraps it in an [OtelMetricsBackend], ready to
+ * assign to [SettingContext.metricsBackend]. This is the one-line wiring an app uses at startup:
+ *
+ * ```kotlin
+ * override val metricsBackend = OpenTelemetrySettings("otlp-grpc://collector:4317").metricsBackend("my-app", context)
+ * ```
+ *
+ * If you already hold the SDK handle, use the constructor directly: `OtelMetricsBackend(sdk)`.
+ */
+public fun OpenTelemetrySettings.metricsBackend(name: String, context: SettingContext): OtelMetricsBackend =
+    OtelMetricsBackend(invoke(name, context))
 
 private fun otelLoggingSetup(telemetry: OpenTelemetrySdk?, silenceConsole: Boolean = false) {
     (LoggerFactory.getILoggerFactory() as LoggerContext).apply logCtx@{

@@ -1,7 +1,8 @@
 package com.lightningkite.services.otel
 
-import com.lightningkite.services.OpenTelemetry
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.errorFingerprint
+import io.opentelemetry.api.OpenTelemetry
+import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.metrics.*
 import io.opentelemetry.api.trace.*
 import io.opentelemetry.extension.kotlin.asContextElement
@@ -11,6 +12,16 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
 import org.slf4j.spi.LoggingEventBuilder
+
+private val errorFingerprintKey: AttributeKey<String> = AttributeKey.stringKey("error.fingerprint")
+
+/**
+ * Records an exception on this span and sets an `error.fingerprint` attribute for stable error grouping.
+ */
+public fun Span.recordExceptionWithFingerprint(t: Throwable) {
+    recordException(t)
+    setAttribute(errorFingerprintKey, t.errorFingerprint())
+}
 
 
 /**

@@ -1,12 +1,11 @@
 package com.lightningkite.services.sms.twilio
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.PhoneNumber
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.TelemetrySanitization
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
 import io.ktor.client.*
@@ -18,8 +17,6 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -103,8 +100,6 @@ public class TwilioSMS(
     private val from: String,
 ) : SMS {
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("sms-twilio")
-
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
             json(Json {
@@ -129,14 +124,13 @@ public class TwilioSMS(
      * by the http-client's OpenTelemetry plugin. Retries on HTTP 429 and 5xx with exponential
      * backoff (3 attempts: 1s, 2s, 4s delays).
      */
-    override suspend fun send(to: PhoneNumber, message: String): Unit = otel.span("sms.send", configure = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("sms.operation", "send")
-        setAttribute("messaging.system", "twilio")
-        setAttribute("sms.to", TelemetrySanitization.redactPhoneNumber(to.toString()))
-        setAttribute("sms.from", TelemetrySanitization.redactPhoneNumber(from))
-        setAttribute("sms.body_length", message.length.toLong())
-    }) { span ->
+    override suspend fun send(to: PhoneNumber, message: String): Unit = metricsTrace("send", attributes = MetricAttributes(mapOf(
+        "sms.operation" to "send",
+        "messaging.system" to "twilio",
+        "sms.to" to TelemetrySanitization.redactPhoneNumber(to.toString()),
+        "sms.from" to TelemetrySanitization.redactPhoneNumber(from),
+        "sms.body_length" to message.length.toLong(),
+    ))) { span ->
         val maxAttempts = 3
         val retryDelays = listOf(1.seconds, 2.seconds, 4.seconds)
         var lastException: Exception? = null
@@ -165,13 +159,12 @@ public class TwilioSMS(
 
             if (response.status != HttpStatusCode.Created) {
                 val errorMessage = response.bodyAsText()
-                span?.setAttribute("http.status_code", statusValue.toLong())
-                span?.setStatus(StatusCode.ERROR, "Failed to send SMS: HTTP $statusValue")
+                span.enrich(MetricAttributes(mapOf("http.status_code" to statusValue.toLong())))
                 throw SMSException("Failed to send SMS: $errorMessage")
             }
 
-            span?.setAttribute("http.status_code", statusValue.toLong())
-            return@span
+            span.enrich(MetricAttributes(mapOf("http.status_code" to statusValue.toLong())))
+            return@metricsTrace
         }
 
         // All attempts exhausted

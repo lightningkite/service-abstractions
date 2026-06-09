@@ -11,7 +11,6 @@ plugins {
 dependencies {
     api(project(path = ":cache"))
     implementation(libs.memcached)
-    compileOnly(project(":otel-jvm"))
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)

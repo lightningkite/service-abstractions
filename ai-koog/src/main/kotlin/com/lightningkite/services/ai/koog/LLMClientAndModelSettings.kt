@@ -20,11 +20,7 @@ import ai.koog.prompt.streaming.StreamFrame
 import aws.sdk.kotlin.runtime.auth.credentials.*
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import com.lightningkite.services.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
 import io.ktor.client.*
-import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
@@ -489,14 +485,17 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
         }
 
         override fun invoke(name: String, context: SettingContext): LLMClientAndModel {
-            val otel: OpenTelemetrySub? = context.openTelemetry?.get("ai-koog")
-            return parse(name, url, context).withTracing(otel)
+            val owner = object : Namespaced {
+                override val name: String = name
+                override val context: SettingContext = context
+            }
+            return parse(name, url, context).withTracing(owner)
         }
     }
 }
 
 /**
- * Wraps an [LLMClient] to add OpenTelemetry CLIENT spans around every call.
+ * Wraps an [LLMClient] to record a metrics span around every call.
  *
  * Span attributes follow the OpenTelemetry semantic conventions for generative AI:
  * - `ai.provider` — value of [LLMClient.llmProvider]
@@ -508,16 +507,20 @@ public data class LLMClientAndModel(val client: LLMClient, val model: LLModel) {
  */
 internal class TracingLLMClient(
     private val delegate: LLMClient,
-    private val otel: OpenTelemetrySub,
+    private val owner: Namespaced,
     private val modelId: String,
 ) : LLMClient {
 
     private suspend inline fun <R> traced(operation: String, crossinline block: suspend () -> R): R =
-        otel.span("llm.$operation", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("ai.provider", delegate.llmProvider().id)
-            setAttribute("ai.model", modelId)
-        }) { block() }
+        owner.metricsTrace(
+            operation,
+            attributes = MetricAttributes(
+                mapOf(
+                    "ai.provider" to delegate.llmProvider().id,
+                    "ai.model" to modelId,
+                )
+            )
+        ) { block() }
 
     override suspend fun execute(
         prompt: Prompt,
@@ -547,11 +550,11 @@ internal class TracingLLMClient(
 }
 
 /**
- * Wraps this [LLMClientAndModel] with OpenTelemetry tracing if [otel] is non-null.
- * Returns the original instance unchanged when no telemetry is configured.
+ * Wraps this [LLMClientAndModel] with a metrics-span tracing layer scoped to [owner].
+ * Span/metric emission is a no-op when no metrics backend is configured.
  */
-internal fun LLMClientAndModel.withTracing(otel: OpenTelemetrySub?): LLMClientAndModel =
-    if (otel != null) LLMClientAndModel(TracingLLMClient(client, otel, model.id), model) else this
+internal fun LLMClientAndModel.withTracing(owner: Namespaced): LLMClientAndModel =
+    LLMClientAndModel(TracingLLMClient(client, owner, model.id), model)
 
 /**
  * Parses URL query parameters into a map.

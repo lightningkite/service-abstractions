@@ -61,7 +61,6 @@ public class InMemoryDatabase(
                 data = backing,
                 serializer = serializer,
                 tableName = name,
-                tracer = context.openTelemetry,
             )
             premadeData?.get(context, json, serializer, name)?.let { made.preload(it) }
             made

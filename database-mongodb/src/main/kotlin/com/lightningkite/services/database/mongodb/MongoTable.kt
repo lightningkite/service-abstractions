@@ -1,9 +1,11 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
+import com.lightningkite.services.metricsTrace
 import com.mongodb.MongoCommandException
 import com.mongodb.client.model.*
 import com.mongodb.kotlin.client.coroutine.MongoCollection
@@ -22,11 +24,12 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 public class MongoTable<Model : Any>(
+    override val name: String,
     override val serializer: KSerializer<Model>,
     public val atlasSearch: Boolean,
     private val access: MongoCollectionAccess,
-    private val context: SettingContext,
-) : Table<Model> {
+    override val context: SettingContext,
+) : Table<Model>, Namespaced {
     internal val bson: KBson = KBson(context.internalSerializersModule)
 
     public val indexedTextFields: List<DataClassPathPartial<Model>>? by lazy {
@@ -43,11 +46,13 @@ public class MongoTable<Model : Any>(
         }
     }
 
-    override suspend fun insert(models: Iterable<Model>): List<Model> = access {
-        if (models.none()) return@access emptyList()
-        val asList = models.toList()
-        insertMany(asList.map { bson.stringify(serializer, it) })
-        return@access asList
+    override suspend fun insert(models: Iterable<Model>): List<Model> = metricsTrace("insert") {
+        access {
+            if (models.none()) return@access emptyList()
+            val asList = models.toList()
+            insertMany(asList.map { bson.stringify(serializer, it) })
+            return@access asList
+        }
     }
 
     override suspend fun replaceOne(
@@ -64,11 +69,13 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         if (orderBy.isNotEmpty()) return updateOneIgnoringResult(cs, Modification.Assign(model), orderBy)
-        return access {
-            replaceOne(
-                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
-                bson.stringify(serializer, model)
-            ).matchedCount != 0L
+        return metricsTrace("replaceOneIgnoringResult") {
+            access {
+                replaceOne(
+                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
+                    bson.stringify(serializer, model)
+                ).matchedCount != 0L
+            }
         }
     }
 
@@ -82,7 +89,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
         val m = simplifiedModification.bson(serializer, bson = bson)
-        return access {
+        return metricsTrace("upsertOne") { access {
             // TODO: Ugly hack for handling weird upserts
             if (m.upsert(model, serializer, bson)) {
                 findOneAndUpdate(
@@ -118,7 +125,7 @@ public class MongoTable<Model : Any>(
                     )
                     }
             }
-        }
+        } }
     }
 
     override suspend fun upsertOneIgnoringResult(
@@ -131,7 +138,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
         val m = simplifiedModification.bson(serializer, bson = bson)
-        return access {
+        return metricsTrace("upsertOneIgnoringResult") { access {
             // TODO: Ugly hack for handling weird upserts
             if (m.upsert(model, serializer, bson = bson)) {
                 updateOne(
@@ -152,7 +159,7 @@ public class MongoTable<Model : Any>(
                     false
                 }
             }
-        }
+        } }
     }
 
     override suspend fun updateOne(
@@ -165,7 +172,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
         val m = simplifiedModification.bson(serializer, bson = bson)
-        val before = access<Model?> {
+        val before = metricsTrace("updateOne") { access<Model?> {
             findOneAndUpdate(
                 cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 m.document,
@@ -179,7 +186,7 @@ public class MongoTable<Model : Any>(
                     .hint(m.options.hint)
                     .hintString(m.options.hintString)
             )?.let { bson.parse(serializer, it) }
-        } ?: return EntryChange(null, null)
+        } } ?: return EntryChange(null, null)
         val after = modification(before)
         return EntryChange(before, after)
     }
@@ -194,13 +201,13 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
         val m = simplifiedModification.bson(serializer, bson = bson)
-        return access {
+        return metricsTrace("updateOneIgnoringResult") { access {
             updateOne(
                 cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 m.document,
                 m.options
             ).matchedCount != 0L
-        }
+        } }
     }
 
     override suspend fun updateMany(
@@ -214,7 +221,7 @@ public class MongoTable<Model : Any>(
         val m = simplifiedModification.bson(serializer, bson = bson)
         val changes = ArrayList<EntryChange<Model>>()
         // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
-        access {
+        metricsTrace("updateMany") { access {
             find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).collectChunked(1000) { list ->
                 updateMany(Filters.`in`("_id", list.map { it["_id"] }), m.document, m.options)
                 list.asSequence().map { bson.parse(serializer, it) }
@@ -222,7 +229,7 @@ public class MongoTable<Model : Any>(
                         changes.add(EntryChange(it, modification(it)))
                     }
             }
-        }
+        } }
         return CollectionChanges(changes = changes)
     }
 
@@ -235,25 +242,25 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return 0
         val m = simplifiedModification.bson(serializer, bson = bson)
-        return access {
+        return metricsTrace("updateManyIgnoringResult") { access {
             updateMany(
                 cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 m.document,
                 m.options
             ).matchedCount.toInt()
-        }
+        } }
     }
 
     override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? {
         val cs = condition.simplify()
         if (cs is Condition.Never) return null
-        return access {
+        return metricsTrace("deleteOne") { access {
             withDocumentClass<BsonDocument>().findOneAndDelete(
                 cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 FindOneAndDeleteOptions()
                     .let { if (orderBy.isEmpty()) it else it.sort(sort(orderBy)) }
             )?.let { bson.parse(serializer, it) }
-        }
+        } }
     }
 
     override suspend fun deleteOneIgnoringOld(
@@ -263,7 +270,7 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         if (orderBy.isNotEmpty()) return deleteOne(condition, orderBy) != null
-        return access { deleteOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount > 0 }
+        return metricsTrace("deleteOneIgnoringOld") { access { deleteOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount > 0 } }
     }
 
     /**
@@ -284,7 +291,7 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return listOf()
         val remove = ArrayList<Model>()
-        access {
+        metricsTrace("deleteMany") { access {
             withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
                 .collectChunked(1000) { list ->
                     deleteMany(Filters.`in`("_id", list.map { it["_id"] }))
@@ -293,14 +300,14 @@ public class MongoTable<Model : Any>(
                             remove.add(it)
                         }
                 }
-        }
+        } }
         return remove
     }
 
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int {
         val cs = condition.simplify()
         if (cs is Condition.Never) return 0
-        return access { deleteMany(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount.toInt() }
+        return metricsTrace("deleteManyIgnoringOld") { access { deleteMany(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount.toInt() } }
     }
 
 
@@ -313,7 +320,9 @@ public class MongoTable<Model : Any>(
     ): Flow<Model> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return emptyFlow()
-        return access {
+        // Wrap the cold result flow so the metric measures the actual query round-trip (driven by the
+        // consumer's collect), not just the lazy pipeline construction.
+        return recordingFlow("find") { access {
             var anyFts: Condition.FullTextSearch<*>? = null
             condition.walk { if (it is Condition.FullTextSearch) anyFts = it }
 
@@ -362,6 +371,22 @@ public class MongoTable<Model : Any>(
                 .map {
                     bson.parse(serializer, it)
                 }
+        } }
+    }
+
+    /**
+     * Records a [metricsTrace] operation that spans the full collection of a cold result [Flow].
+     * The query round-trip happens while the consumer collects, so timing the suspend setup alone
+     * would report ~0 duration; instead we time from first collect through completion.
+     *
+     * [metricsTrace] opens the operation span and makes it current via the coroutine context;
+     * collecting the inner flow under that changed context is fine, but emitting straight through it
+     * would violate Flow's context-preservation invariant. We therefore use [channelFlow] and `send`
+     * (which is allowed across contexts) to forward each element back to the collector.
+     */
+    private fun <T> recordingFlow(operation: String, build: suspend () -> Flow<T>): Flow<T> = channelFlow {
+        metricsTrace(operation) {
+            build().collect { send(it) }
         }
     }
 
@@ -371,7 +396,7 @@ public class MongoTable<Model : Any>(
     override suspend fun count(condition: Condition<Model>): Int {
         val cs = condition.simplify()
         if (cs is Condition.Never) return 0
-        return access { countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt() }
+        return metricsTrace("count") { access { countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt() } }
     }
 
     override suspend fun <Key> groupCount(
@@ -380,7 +405,7 @@ public class MongoTable<Model : Any>(
     ): Map<Key, Int> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return mapOf()
-        return access {
+        return metricsTrace("groupCount") { access {
             aggregate<BsonDocument>(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
@@ -394,7 +419,7 @@ public class MongoTable<Model : Any>(
                         it
                     )._id to it.getNumber("count").intValue()
                 }
-        }
+        } }
     }
 
     private fun Aggregate.asValueBson(propertyName: String) = when (this) {
@@ -411,7 +436,7 @@ public class MongoTable<Model : Any>(
     ): Double? {
         val cs = condition.simplify()
         if (cs is Condition.Never) return null
-        return access {
+        return metricsTrace("aggregate") { access {
             aggregate(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
@@ -424,7 +449,7 @@ public class MongoTable<Model : Any>(
                     else it.getNumber("value").doubleValue()
                 }
                 .firstOrNull()
-        }
+        } }
     }
 
     override suspend fun <N : Number?, Key> groupAggregate(
@@ -435,7 +460,7 @@ public class MongoTable<Model : Any>(
     ): Map<Key, Double?> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return mapOf()
-        return access {
+        return metricsTrace("groupAggregate") { access {
             aggregate(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
@@ -449,7 +474,7 @@ public class MongoTable<Model : Any>(
                         it
                     )._id to (if (it.isNull("value")) null else it.getNumber("value").doubleValue())
                 }
-        }
+        } }
     }
 
     private data class NeededVectorIndex(
@@ -505,12 +530,11 @@ public class MongoTable<Model : Any>(
             delay(pollIntervalMs)
         }
 
-        @Suppress("ThrowableNotThrown")
-        context.report {
+        context.reportException(
             Exception(
                 "Search index '$indexName' on ${this.namespace.fullName} did not become ready within ${timeoutMs}ms"
             )
-        }
+        )
     }
 
     @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
@@ -529,23 +553,21 @@ public class MongoTable<Model : Any>(
                             SimilarityMetric.Euclidean -> "euclidean"
                             SimilarityMetric.DotProduct -> "dotProduct"
                             SimilarityMetric.Manhattan -> {
-                                @Suppress("ThrowableNotThrown")
-                                context.report {
+                                context.reportException(
                                     Exception(
                                         "Manhattan distance is not supported for MongoDB Atlas vector indexes on ${this@prepare.namespace.fullName}.${vectorIndex.field}"
                                     )
-                                }
+                                )
                                 return@launch
                             }
                         }
 
                         if (vectorIndex.sparse) {
-                            @Suppress("ThrowableNotThrown")
-                            context.report {
+                            context.reportException(
                                 Exception(
                                     "Sparse vector indexes are not yet supported by MongoDB Atlas on ${this@prepare.namespace.fullName}.${vectorIndex.field}"
                                 )
-                            }
+                            )
                             return@launch
                         }
 
@@ -761,23 +783,21 @@ public class MongoTable<Model : Any>(
                                         options
                                     )
                                 } catch (e2: MongoCommandException) {
-                                    @Suppress("ThrowableNotThrown")
-                                    context.report {
+                                    context.reportException(
                                         Exception(
                                             "Creating text index failed on ${this@prepare.namespace.fullName}",
                                             e
                                         )
-                                    }
-                                    context.report {
-                                        @Suppress("ThrowableNotThrown")
+                                    )
+                                    context.reportException(
                                         Exception(
                                             "Creating text index failed on ${this@prepare.namespace.fullName} even after attempted removal",
                                             e2
                                         )
-                                    }
+                                    )
                                 }
                             } else {
-                                context.report { e }
+                                context.reportException(e)
                             }
                         }
                     }
@@ -796,23 +816,21 @@ public class MongoTable<Model : Any>(
                                     dropIndex(nameOrDefault)
                                     createIndex(Indexes.geo2dsphere(it.fields), IndexOptions().name(nameOrDefault))
                                 } catch (e2: MongoCommandException) {
-                                    @Suppress("ThrowableNotThrown")
-                                    context.report {
+                                    context.reportException(
                                         Exception(
                                             "Creating geo index failed on ${this@prepare.namespace.fullName}",
                                             e
                                         )
-                                    }
-                                    @Suppress("ThrowableNotThrown")
-                                    context.report {
+                                    )
+                                    context.reportException(
                                         Exception(
                                             "Creating geo index failed on ${this@prepare.namespace.fullName} even after attempted removal",
                                             e2
                                         )
-                                    }
+                                    )
                                 }
                             } else {
-                                context.report { e }
+                                context.reportException(e)
                             }
                         }
                     }
@@ -838,23 +856,21 @@ public class MongoTable<Model : Any>(
                                         IndexUniqueness.Unique -> "unique "
                                         IndexUniqueness.UniqueNullSparse -> "unique null-sparse "
                                     }
-                                    context.report {
-                                        @Suppress("ThrowableNotThrown")
+                                    context.reportException(
                                         Exception(
                                             "Creating ${unique}index failed on ${this@prepare.namespace.fullName}",
                                             e
                                         )
-                                    }
-                                    context.report {
-                                        @Suppress("ThrowableNotThrown")
+                                    )
+                                    context.reportException(
                                         Exception(
                                             "Creating ${unique}index failed on ${this@prepare.namespace.fullName} even after attempted removal",
                                             e2
                                         )
-                                    }
+                                    )
                                 }
                             } else {
-                                context.report { e }
+                                context.reportException(e)
                             }
                         }
 
@@ -958,7 +974,7 @@ public class MongoTable<Model : Any>(
         }
 
         // Build the vector search pipeline
-        return access {
+        return recordingFlow("findSimilar") { access {
             val pipeline = buildList {
                 // $vectorSearch must be the first stage
                 add(
@@ -1015,7 +1031,7 @@ public class MongoTable<Model : Any>(
                     val model = bson.parse(serializer, doc)
                     ScoredResult(model, normalizedScore)
                 }
-        }
+        } }
     }
 
     override suspend fun findSimilarSparse(

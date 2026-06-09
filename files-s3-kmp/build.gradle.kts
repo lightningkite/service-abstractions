@@ -45,7 +45,6 @@ kotlin {
             dependencies {
                 api(project(path = ":files"))
                 api(project(path = ":http-client"))
-                compileOnly(project(path = ":otel-jvm"))
             }
         }
         val commonTest by getting {

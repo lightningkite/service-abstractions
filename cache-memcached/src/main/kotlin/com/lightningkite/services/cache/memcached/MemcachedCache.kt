@@ -1,12 +1,10 @@
 package com.lightningkite.services.cache.memcached
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
-import io.opentelemetry.api.trace.*
+import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.TelemetrySanitization
 import net.rubyeye.xmemcached.exception.MemcachedException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -77,8 +75,6 @@ public class MemcachedCache(
     override val context: SettingContext,
 ) : Cache {
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("memcached-cache")
-
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
 
     public companion object {
@@ -119,20 +115,21 @@ public class MemcachedCache(
         }
     }
 
-    private inline fun spanAttrs(
-        operation: String,
+    // Static, low-cardinality span attributes shared by every operation. The cache key is hashed so a
+    // high-cardinality value never reaches telemetry.
+    private fun spanAttrs(
         key: String,
         timeToLive: Duration? = null,
-    ): SpanBuilder.() -> Unit = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("cache.operation", operation)
-        setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
-        setAttribute("cache.system", "memcached")
-        timeToLive?.let { setAttribute("cache.ttl", it.inWholeSeconds) }
-    }
+    ): MetricAttributes = MetricAttributes(
+        buildMap {
+            put("cache.key", TelemetrySanitization.hashCacheKey(key))
+            put("cache.system", "memcached")
+            timeToLive?.let { put("cache.ttl", it.inWholeSeconds) }
+        }
+    )
 
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
-        otel.span("cache.get", configure = spanAttrs("get", key)) { span ->
+        metricsTrace("get", attributes = spanAttrs(key), dimensions = setOf("cache.hit")) { span ->
             val result = withContext(Dispatchers.IO) {
                 try {
                     client.get<String>(key)?.let { json.decodeFromString(serializer, it) }
@@ -142,12 +139,12 @@ public class MemcachedCache(
                 }
                 // IOException and other connection errors propagate to the outer handler.
             }
-            span?.setAttribute("cache.hit", result != null)
+            span.enrich(MetricAttributes(mapOf("cache.hit" to (result != null))))
             result
         }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
-        otel.span("cache.set", configure = spanAttrs("set", key, timeToLive)) {
+        metricsTrace("set", attributes = spanAttrs(key, timeToLive)) {
             withContext(Dispatchers.IO) {
                 if (!client.set(
                         key,
@@ -164,7 +161,7 @@ public class MemcachedCache(
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean = otel.span("cache.setIfNotExists", configure = spanAttrs("setIfNotExists", key, timeToLive)) { span ->
+    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf("cache.added")) { span ->
         val result = withContext(Dispatchers.IO) {
             client.add(
                 key,
@@ -172,19 +169,12 @@ public class MemcachedCache(
                 json.encodeToString(serializer, value)
             )
         }
-        span?.setAttribute("cache.added", result)
+        span.enrich(MetricAttributes(mapOf("cache.added" to result)))
         result
     }
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
-        otel.span("cache.add", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("cache.operation", "add")
-            setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
-            setAttribute("cache.system", "memcached")
-            setAttribute("cache.value", value)
-            timeToLive?.let { setAttribute("cache.ttl", it.inWholeSeconds) }
-        }) {
+        metricsTrace("add", attributes = MetricAttributes(spanAttrs(key, timeToLive).raw + ("cache.value" to value))) {
             withContext(Dispatchers.IO) {
                 // Memcached's incr/decr commands only accept non-negative deltas.
                 // Negative deltas must use decr; initValue is used when the key doesn't exist.
@@ -201,7 +191,7 @@ public class MemcachedCache(
         }
 
     override suspend fun remove(key: String): Unit =
-        otel.span("cache.remove", configure = spanAttrs("remove", key)) {
+        metricsTrace("remove", attributes = spanAttrs(key)) {
             withContext(Dispatchers.IO) {
                 client.delete(key)
                 Unit
@@ -214,7 +204,7 @@ public class MemcachedCache(
         expected: T?,
         new: T?,
         timeToLive: Duration?,
-    ): Boolean = otel.span("cache.compareAndSet", configure = spanAttrs("compareAndSet", key, timeToLive)) { span ->
+    ): Boolean = metricsTrace("compareAndSet", attributes = spanAttrs(key, timeToLive), dimensions = setOf("cache.cas.success")) { span ->
         val result = withContext(Dispatchers.IO) {
             // Early return if expected equals new
             if (expected == new) return@withContext true
@@ -260,7 +250,7 @@ public class MemcachedCache(
                 }
             }
         }
-        span?.setAttribute("cache.cas.success", result)
+        span.enrich(MetricAttributes(mapOf("cache.cas.success" to result)))
         result
     }
 

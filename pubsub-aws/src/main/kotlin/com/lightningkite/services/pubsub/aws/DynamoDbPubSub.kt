@@ -1,16 +1,14 @@
 package com.lightningkite.services.pubsub.aws
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.get
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.future.await
@@ -104,8 +102,6 @@ public class DynamoDbPubSub(
 ) : PubSub {
 
     public val client: DynamoDbAsyncClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED, makeClient)
-
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.let { OpenTelemetrySub(it, "pubsub-dynamodb") }
 
     private val json = Json {
         serializersModule = context.internalSerializersModule
@@ -288,12 +284,16 @@ public class DynamoDbPubSub(
     ): PubSubChannel<T> = object : PubSubChannel<T> {
         override suspend fun emit(value: T) {
             ensureReady()
-            otel.span("pubsub.dynamodb.publish", configure = {
-                setSpanKind(SpanKind.PRODUCER)
-                setAttribute("messaging.system", "dynamodb")
-                setAttribute("messaging.destination", key)
-                setAttribute("messaging.operation", "publish")
-            }) {
+            metricsTrace(
+                "publish",
+                attributes = MetricAttributes(
+                    mapOf(
+                        "messaging.system" to "dynamodb",
+                        "messaging.destination" to key,
+                        "messaging.operation" to "publish",
+                    )
+                )
+            ) {
                 val message = encode(value)
                 val now = System.currentTimeMillis()
 
@@ -365,11 +365,15 @@ public class DynamoDbPubSub(
             logger.debug { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
 
             while (coroutineContext.isActive) {
-                otel.span("pubsub.dynamodb.poll", configure = {
-                    setSpanKind(SpanKind.CONSUMER)
-                    setAttribute("messaging.system", "dynamodb")
-                    setAttribute("messaging.destination", key)
-                }) { pollSpan ->
+                metricsTrace(
+                    "poll",
+                    attributes = MetricAttributes(
+                        mapOf(
+                            "messaging.system" to "dynamodb",
+                            "messaging.destination" to key,
+                        )
+                    )
+                ) { pollSpan ->
                     try {
                         val response = client.query {
                             it.tableName(tableName)
@@ -384,7 +388,7 @@ public class DynamoDbPubSub(
                         }.await()
 
                         consecutiveErrors = 0 // Reset on success
-                        pollSpan?.setAttribute("messaging.batch.message_count", response.count().toLong())
+                        pollSpan.enrich(MetricAttributes(mapOf("messaging.batch.message_count" to response.count().toLong())))
 
                         for (item in response.items()) {
                             val message = item["message"]?.s() ?: continue
@@ -410,7 +414,9 @@ public class DynamoDbPubSub(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        pollSpan?.setStatus(StatusCode.ERROR, e.message ?: "poll failed")
+                        // The poll loop swallows errors to back off rather than rethrow, so the span
+                        // would otherwise complete "ok"; report explicitly to keep error telemetry.
+                        context.reportException(e)
                         consecutiveErrors++
                         logger.warn(e) { "Error polling channel=$key (attempt $consecutiveErrors)" }
 

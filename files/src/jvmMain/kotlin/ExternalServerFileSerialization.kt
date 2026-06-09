@@ -32,6 +32,25 @@ import kotlin.time.*
  * @param onUse Callback invoked when a file is used
  * @param key HMAC key for signing "future:" URLs
  */
+/**
+ * Controls how [ExternalServerFileSerializer.serialize] handles a [ServerFile] whose location does
+ * not belong to any known file-system root (a "foreign" URL).
+ *
+ * Foreign URLs are a security concern: if untrusted input can set a file's location, passing the URL
+ * through verbatim lets an attacker direct users to arbitrary external content (open redirect /
+ * malware distribution).
+ */
+public enum class ForeignUrlHandling {
+    /** Log a warning and emit the original foreign URL unchanged (the legacy pass-through behavior). */
+    WARN,
+
+    /** Emit a blank string `""` in place of the foreign URL. */
+    CENSOR,
+
+    /** Throw an [IllegalArgumentException] rejecting the foreign URL. */
+    ERROR,
+}
+
 @OptIn(SealedSerializationApi::class)
 public class ExternalServerFileSerializer(
     public val clock: Clock,
@@ -44,6 +63,36 @@ public class ExternalServerFileSerializer(
 ) : KSerializer<ServerFile> {
     private val primary = fileSystems.first()
     private val logger = KotlinLogging.logger("com.lightningkite.lightningserver.files.ExternalServerFileSerializer")
+
+    public companion object {
+        /**
+         * Backward-compatibility flag for the OLD `deserialize` behavior that performed blocking
+         * I/O (scanning, copying, and uploading) inline on the deserializing thread via
+         * `runBlocking`.
+         *
+         * Default is `false`: `deserialize` ONLY parses and validates the incoming URL string. It
+         * performs no scan, copy, upload, network call, or `runBlocking`. File validation/scanning
+         * is expected to happen via a separate explicit endpoint instead.
+         *
+         * Set to `true` ONLY to restore the legacy inline-scan/upload behavior for code that has not
+         * yet migrated to the explicit-endpoint model. This re-introduces blocking I/O on whatever
+         * thread runs deserialization (often a Netty event loop) and should be avoided.
+         */
+        public var inlineScanOnDeserialize: Boolean = false
+
+        /**
+         * Controls what [serialize] does when a [ServerFile]'s location does not match any known
+         * file-system root (a foreign URL).
+         *
+         * Default is [ForeignUrlHandling.ERROR]: foreign URLs are rejected outright, because passing
+         * an attacker-controlled URL through to the client is an open-redirect / malware-distribution
+         * risk.
+         *
+         * Set to [ForeignUrlHandling.WARN] to restore the legacy pass-through behavior if a server
+         * legitimately serves external URLs. Use [ForeignUrlHandling.CENSOR] to silently blank them.
+         */
+        public var foreignUrlHandling: ForeignUrlHandling = ForeignUrlHandling.ERROR
+    }
 
     private val uploadFile: suspend (data: TypedData) -> FileObject = {
         scanners.scan(it)
@@ -72,9 +121,8 @@ public class ExternalServerFileSerializer(
      * Serializes a ServerFile to a signed URL for client consumption.
      *
      * If the file's location matches one of the known file systems, it's converted to a signed URL.
-     * Otherwise, the original URL is used with a warning (potential security risk).
+     * Otherwise, the foreign URL is handled according to [foreignUrlHandling] (default: rejected).
      */
-    // TODO: Is this dangerous? If someone could inject a foreign url, this allows them to direct users to malware
     override fun serialize(encoder: Encoder, value: ServerFile) {
         val url = value.location
         val file = fileSystems.firstNotNullOfOrNull {
@@ -82,13 +130,21 @@ public class ExternalServerFileSerializer(
             it.parseInternalUrl(url)
         }
         if (file == null) {
-            // TODO: Is this dangerous?  If someone could inject a foreign url, this allows them to direct users to malware
-            logger.warn {
-                "The given url (${value.location}) does not start with any files root. Known roots: ${
-                    fileSystems.flatMap { it.rootUrls }.joinToString()
-                }"
+            val knownRoots = { fileSystems.flatMap { it.rootUrls }.joinToString() }
+            when (foreignUrlHandling) {
+                ForeignUrlHandling.WARN -> {
+                    logger.warn {
+                        "The given url (${value.location}) does not start with any files root. Known roots: ${knownRoots()}"
+                    }
+                    encoder.encodeString(value.location)
+                }
+
+                ForeignUrlHandling.CENSOR -> encoder.encodeString("")
+
+                ForeignUrlHandling.ERROR -> throw IllegalArgumentException(
+                    "Refusing to serialize foreign url (${value.location}); it does not start with any files root. Known roots: ${knownRoots()}"
+                )
             }
-            encoder.encodeString(value.location)
         } else {
             encoder.encodeString(file.signedUrl)
         }
@@ -160,9 +216,14 @@ public class ExternalServerFileSerializer(
         when {
             raw.startsWith("future:") -> {
                 if (!verifyUrl(raw)) throw IllegalArgumentException("URL is not valid")
-                val source = jail.then(raw.substringAfter("future:").substringBefore('?'))
-                val safe = ready.then(raw.substringAfter("future:").substringBefore('?'))
-                runBlocking { scanners.copyAndScan(source, safe) }
+                val relativePath = raw.substringAfter("future:").substringBefore('?')
+                val safe = ready.then(relativePath)
+                // Default: parse/validate only. The actual scan+copy from jail to ready is performed
+                // by a separate explicit endpoint, not here on the deserializing thread.
+                if (inlineScanOnDeserialize) {
+                    val source = jail.then(relativePath)
+                    runBlocking { scanners.copyAndScan(source, safe) }
+                }
                 return ServerFile(safe.url)
             }
 
@@ -174,10 +235,15 @@ public class ExternalServerFileSerializer(
             }
 
             raw.startsWith("data:") -> {
+                // Inline base64 data cannot be stored without uploading, which is blocking I/O.
+                // The new model requires inline uploads to go through a separate explicit endpoint,
+                // so reject them here unless the backward-compat flag re-enables the old behavior.
+                if (!inlineScanOnDeserialize) throw IllegalArgumentException(
+                    "Inline 'data:' URLs are not accepted during deserialization. Upload the file via the dedicated upload endpoint and submit the resulting 'future:' URL instead."
+                )
                 val type = MediaType(raw.removePrefix("data:").substringBefore(';'))
                 val base64 = raw.substringAfter("base64,")
                 val data = Base64.decode(base64)
-                //            if(data.size < 500) return ServerFile(raw)
                 return runBlocking {
                     val typedData = TypedData.bytes(data, type)
                     scanners.scan(typedData)

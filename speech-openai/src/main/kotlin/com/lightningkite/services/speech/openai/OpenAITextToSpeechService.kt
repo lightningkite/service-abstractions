@@ -1,10 +1,9 @@
 package com.lightningkite.services.speech.openai
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.contentnegotiation.*
@@ -13,7 +12,6 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.*
-import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.SerialName
@@ -86,8 +84,6 @@ public class OpenAITextToSpeechService(
 ) : TextToSpeechService {
 
     private val baseUrl = "https://api.openai.com/v1"
-
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("speech-openai")
 
     private val requestJson = Json { ignoreUnknownKeys = true }
 
@@ -168,11 +164,15 @@ public class OpenAITextToSpeechService(
         val model = options.model ?: defaultModel
         val responseFormat = mapOutputFormat(options.outputFormat)
 
-        return otel.span("speech.synthesize", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("ai.model", model)
-            setAttribute("text.char_count", text.length.toLong())
-        }) { span ->
+        return metricsTrace(
+            "synthesize",
+            attributes = MetricAttributes(
+                mapOf(
+                    "ai.model" to model,
+                    "text.char_count" to text.length.toLong(),
+                )
+            )
+        ) { span ->
             logger.debug { "[$name] Synthesizing ${text.length} chars with voice=$voiceId, model=$model" }
 
             val response = client.post("$baseUrl/audio/speech") {
@@ -199,7 +199,7 @@ public class OpenAITextToSpeechService(
             val mediaType = mapFormatToMediaType(options.outputFormat)
 
             logger.debug { "[$name] Synthesized ${audioBytes.size} bytes of audio" }
-            span?.setAttribute("audio.size_bytes", audioBytes.size.toLong())
+            span.enrich(MetricAttributes(mapOf("audio.size_bytes" to audioBytes.size.toLong())))
             TypedData(Data.Bytes(audioBytes), mediaType)
         }
     }
@@ -213,11 +213,15 @@ public class OpenAITextToSpeechService(
         val model = options.model ?: defaultModel
         val responseFormat = mapOutputFormat(options.outputFormat)
 
-        otel.span("speech.synthesize_stream", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("ai.model", model)
-            setAttribute("text.char_count", text.length.toLong())
-        }) {
+        metricsTrace(
+            "synthesize_stream",
+            attributes = MetricAttributes(
+                mapOf(
+                    "ai.model" to model,
+                    "text.char_count" to text.length.toLong(),
+                )
+            )
+        ) {
             logger.debug { "[$name] Streaming TTS for ${text.length} chars with voice=$voiceId" }
 
             val response = client.post("$baseUrl/audio/speech") {

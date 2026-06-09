@@ -1,19 +1,24 @@
 package com.lightningkite.services.voiceagent.openai
 
+import com.lightningkite.services.Counter
+import com.lightningkite.services.Histogram
+import com.lightningkite.services.InFlight
+import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricUnit
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
+import com.lightningkite.services.metricsAttributes
+import com.lightningkite.services.metricsCounter
+import com.lightningkite.services.metricsHistogram
+import com.lightningkite.services.metricsInFlight
 import com.lightningkite.services.voiceagent.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
-import io.opentelemetry.api.trace.Span
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.*
+import kotlinx.datetime.Instant
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -66,6 +71,11 @@ public class OpenAIVoiceAgentService(
     private var httpClient: HttpClient? = null
     private val clientLock = Any()
 
+    // Shared, service-level metric instruments. These are created once and reused across every
+    // session so that aggregate concerns (active sessions, durations, token usage) report under a
+    // single instrument. The active-sessions in-flight gauge in particular MUST be shared.
+    private val metrics = VoiceAgentMetrics(this)
+
     init {
         Core.getGlobalContext().register(this)
     }
@@ -108,7 +118,8 @@ public class OpenAIVoiceAgentService(
             initialConfig = config,
             httpClient = getHttpClient(),
             json = json,
-            otel = context.openTelemetry?.get("voiceagent-openai"),
+            metrics = metrics,
+            clock = context.clock,
             serializersModule = context.internalSerializersModule,
         )
     }
@@ -141,6 +152,33 @@ public class OpenAIVoiceAgentService(
 }
 
 /**
+ * Shared metric instruments for the voice agent, created once on the [Namespaced] service and reused
+ * across every session. Replaces the previous long-lived session/turn spans, which only exported on
+ * end and were lost when a connection dropped mid-call (the common case).
+ */
+internal class VoiceAgentMetrics(owner: com.lightningkite.services.Namespaced) {
+    /** Currently-connected sessions. Leased on connect, released on close/disconnect/drop. */
+    val sessionsActive: InFlight = owner.metricsInFlight("sessions.active", defaultDimensions = emptySet())
+
+    /** Wall-clock duration of a session, recorded once at close. */
+    val sessionDuration: Histogram = owner.metricsHistogram("session.duration", MetricUnit.Seconds, emptySet())
+
+    /** Count of sessions, tagged with their terminal outcome. */
+    val sessions: Counter = owner.metricsCounter("sessions", MetricUnit.Occurrences, defaultDimensions = setOf("outcome"))
+
+    /** Wall-clock duration of a single response turn, recorded at ResponseDone. */
+    val turnDuration: Histogram = owner.metricsHistogram("turn.duration", MetricUnit.Seconds, emptySet())
+
+    /** Count of turns, tagged with their terminal outcome. */
+    val turns: Counter = owner.metricsCounter("turns", MetricUnit.Occurrences, defaultDimensions = setOf("outcome"))
+
+    val tokensInput: Counter = owner.metricsCounter("turn.tokens.input", MetricUnit.Occurrences, emptySet())
+    val tokensOutput: Counter = owner.metricsCounter("turn.tokens.output", MetricUnit.Occurrences, emptySet())
+    val tokensAudioInput: Counter = owner.metricsCounter("turn.tokens.audio_input", MetricUnit.Occurrences, emptySet())
+    val tokensAudioOutput: Counter = owner.metricsCounter("turn.tokens.audio_output", MetricUnit.Occurrences, emptySet())
+}
+
+/**
  * OpenAI Realtime API session implementation.
  */
 internal class OpenAIVoiceAgentSession(
@@ -151,7 +189,8 @@ internal class OpenAIVoiceAgentSession(
     private val httpClient: HttpClient,
     private val json: Json,
     private val serializersModule: kotlinx.serialization.modules.SerializersModule,
-    private val otel: OpenTelemetrySub? = null,
+    private val metrics: VoiceAgentMetrics,
+    private val clock: kotlinx.datetime.Clock,
 ) : VoiceAgentSession {
 
     override val sessionId: String = Uuid.random().toString()
@@ -172,13 +211,10 @@ internal class OpenAIVoiceAgentSession(
     // Signals when the WebSocket connection is ready; avoids busy-wait polling.
     private val connectedSignal = CompletableDeferred<Unit>()
 
-    // Session-lifetime span: open on connect(), closed on close()/disconnect()
-    private var sessionSpan: Span? = null
-    private var sessionSpanScope: io.opentelemetry.context.Scope? = null
-
-    // Per-turn span: open on ResponseCreated, closed on ResponseDone
-    private var turnSpan: Span? = null
-    private var turnSpanScope: io.opentelemetry.context.Scope? = null
+    // Marks captured for metric durations (replaces the old session/turn spans). Instant from the
+    // injected clock so tests can use a TestClock.
+    private var sessionStart: Instant? = null
+    private var turnStart: Instant? = null
 
     // Track current function call being built (per-session, cleaned up after each call completes)
     private val functionCallArguments = mutableMapOf<String, StringBuilder>()
@@ -193,13 +229,11 @@ internal class OpenAIVoiceAgentSession(
 
     @OptIn(ExperimentalEncodingApi::class)
     private suspend fun connect() {
-        // Open session-lifetime span
-        sessionSpan = otel?.spanBuilder("voiceagent.openai.session")
-            ?.setSpanKind(SpanKind.CLIENT)
-            ?.setAttribute("ai.model", model)
-            ?.setAttribute("voiceagent.session_id", sessionId)
-            ?.startSpan()
-        sessionSpanScope = sessionSpan?.makeCurrent()
+        sessionStart = clock.now()
+        // Lease an active-session slot; released in the finally below so it is freed even if the
+        // connection drops mid-call or fails to establish.
+        val sessionLease = metrics.sessionsActive.lease()
+        var outcome = "ok"
 
         try {
             val wsUrl = "wss://api.openai.com/v1/realtime?model=$model"
@@ -243,17 +277,20 @@ internal class OpenAIVoiceAgentSession(
                 }
             }
         } catch (e: CancellationException) {
-            sessionSpan?.setStatus(StatusCode.OK, "Cancelled")
+            outcome = "cancelled"
             throw e
         } catch (e: Exception) {
+            outcome = "error"
             logger.error(e) { "[$serviceName] Failed to connect to OpenAI Realtime" }
             eventChannel.send(VoiceAgentEvent.Error("connection_error", e.message ?: "Connection failed"))
-            sessionSpan?.setStatus(StatusCode.ERROR, e.message ?: "connection failed")
         } finally {
             isConnected = false
             eventChannel.close()
-            sessionSpanScope?.close()
-            sessionSpan?.end()
+            sessionLease.release()
+            sessionStart?.let { start ->
+                metrics.sessionDuration.record((clock.now() - start).inWholeMilliseconds / 1000.0)
+            }
+            metricsAttributes(MetricAttributes(mapOf("outcome" to outcome))) { metrics.sessions.increment() }
         }
     }
 
@@ -324,14 +361,8 @@ internal class OpenAIVoiceAgentSession(
 
                 is ServerEvent.ResponseCreated -> {
                     logger.info { "[$serviceName] Response started: ${event.response.id}" }
-                    // Open per-turn span
-                    turnSpanScope?.close()
-                    turnSpan?.end()
-                    turnSpan = otel?.spanBuilder("voiceagent.openai.turn")
-                        ?.setSpanKind(SpanKind.INTERNAL)
-                        ?.setAttribute("voiceagent.response_id", event.response.id)
-                        ?.startSpan()
-                    turnSpanScope = turnSpan?.makeCurrent()
+                    // Mark the turn start; duration recorded at ResponseDone.
+                    turnStart = clock.now()
                     eventChannel.send(VoiceAgentEvent.ResponseStarted(event.response.id))
                 }
 
@@ -357,24 +388,28 @@ internal class OpenAIVoiceAgentSession(
 
                     if (status == ResponseStatus.FAILED) {
                         logger.error { "[$serviceName] Response FAILED: ${event.response.id}, statusDetails=${event.response.statusDetails}" }
-                        turnSpan?.setStatus(StatusCode.ERROR, "response failed")
                     } else {
                         logger.info { "[$serviceName] Response done: ${event.response.id}, status=$status" }
                         logger.debug { "[$serviceName] Usage: input=${usage?.inputTokens} (text=${usage?.inputTextTokens}, audio=${usage?.inputAudioTokens}), output=${usage?.outputTokens} (text=${usage?.outputTextTokens}, audio=${usage?.outputAudioTokens})" }
-                        turnSpan?.setStatus(StatusCode.OK)
                     }
-                    // Record usage stats on the per-turn span
+
+                    // Record turn duration from the ResponseCreated mark.
+                    turnStart?.let { start ->
+                        metrics.turnDuration.record((clock.now() - start).inWholeMilliseconds / 1000.0)
+                    }
+                    turnStart = null
+
+                    // Record token usage as counters.
                     usage?.let { u ->
-                        turnSpan?.setAttribute("token.input_count", u.inputTokens.toLong())
-                        turnSpan?.setAttribute("token.output_count", u.outputTokens.toLong())
-                        u.inputAudioTokens?.let { turnSpan?.setAttribute("token.input_audio_count", it.toLong()) }
-                        u.outputAudioTokens?.let { turnSpan?.setAttribute("token.output_audio_count", it.toLong()) }
+                        metrics.tokensInput.increment(u.inputTokens.toDouble())
+                        metrics.tokensOutput.increment(u.outputTokens.toDouble())
+                        u.inputAudioTokens?.let { metrics.tokensAudioInput.increment(it.toDouble()) }
+                        u.outputAudioTokens?.let { metrics.tokensAudioOutput.increment(it.toDouble()) }
                     }
-                    // Close per-turn span
-                    turnSpanScope?.close()
-                    turnSpanScope = null
-                    turnSpan?.end()
-                    turnSpan = null
+
+                    val turnOutcome = if (status == ResponseStatus.FAILED) "failed" else "ok"
+                    metricsAttributes(MetricAttributes(mapOf("outcome" to turnOutcome))) { metrics.turns.increment() }
+
                     eventChannel.send(VoiceAgentEvent.ResponseDone(event.response.id, status, usage))
                 }
 

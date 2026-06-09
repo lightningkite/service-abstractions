@@ -69,13 +69,13 @@ kotlin {
         val jsMain by getting { dependsOn(notJvmMain) }
         val androidMain by getting { dependsOn(notJvmMain) }
 
-        val jvmMain by getting {
+        val jvmTest by getting {
             dependencies {
-                api(libs.openTelemetry.api)
-                api(libs.openTelemetry.kotlin)
+                // basis is below :test in the dependency graph, so it can't reuse :test's logging
+                // binding. Provide one directly so kotlin-logging has an slf4j backend at test runtime.
+                implementation(libs.logBackClassic)
             }
         }
-        val jvmTest by getting {}
     }
 }
 

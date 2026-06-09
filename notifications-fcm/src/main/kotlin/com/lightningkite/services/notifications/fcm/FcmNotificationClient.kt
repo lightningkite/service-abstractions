@@ -4,24 +4,26 @@ import com.google.auth.oauth2.GoogleCredentials
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.*
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.notifications.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
-import com.lightningkite.services.otel.spanBlocking
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.google.firebase.ErrorCode
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.File
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 import com.google.firebase.messaging.Notification as FCMNotification
 
 /**
@@ -75,7 +77,8 @@ import com.google.firebase.messaging.Notification as FCMNotification
  * - **iOS requires APNs**: FCM uses Apple Push Notification service for iOS
  * - **Android channels**: Android 8+ requires notification channels (set via android.channel)
  * - **Web requires VAPID**: Web push requires VAPID keys configured in Firebase console
- * - **No health check**: Health check always returns OK (no FCM connectivity test)
+ * - **Health check**: Issues a dry-run send to verify credentials; OK when FCM authenticates,
+ *   ERROR when the service account is rejected (see [healthCheck])
  * - **FirebaseApp singleton**: Multiple instances with same name share the same FirebaseApp
  *
  * ## Platform-Specific Configuration
@@ -145,7 +148,6 @@ public open class FcmNotificationClient(
 ) : NotificationService {
 
     private val log = KotlinLogging.logger("com.lightningkite.services.notifications.fcm.FcmNotificationClient")
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("notifications-fcm")
 
     // Cached FirebaseMessaging instance — avoids per-send lookup via FirebaseApp.getInstance
     private val messaging by lazy { FirebaseMessaging.getInstance(FirebaseApp.getInstance(name)) }
@@ -157,6 +159,15 @@ public open class FcmNotificationClient(
      */
     protected open fun sendMulticast(message: MulticastMessage): BatchResponse =
         messaging.sendEachForMulticast(message)
+
+    /**
+     * Test seam for the dry-run send used by [healthCheck]. A dry-run validates the message and
+     * exercises the service-account credentials against Google's servers without actually
+     * delivering a notification. Tests override this to simulate each [FirebaseMessagingException]
+     * outcome (bad credentials, rejected token, transport failure) without real Firebase access.
+     */
+    protected open fun sendDryRun(message: Message): String =
+        messaging.send(message, /* dryRun = */ true)
 
     // Caps concurrent FCM HTTPS calls across the lifetime of this client to avoid tripping
     // per-project QPS limits when fanning out large multicasts (e.g. tens of thousands of tokens).
@@ -206,23 +217,27 @@ public open class FcmNotificationClient(
     override suspend fun send(
         targets: List<String>,
         data: NotificationData,
-    ): Map<String, NotificationSendResult> = otel.span("notification.send", configure = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("notification.operation", "send")
-        setAttribute("messaging.system", "firebase_cloud_messaging")
-        setAttribute("notification.target.count", targets.size.toLong())
-        data.timeToLive?.let { ttl -> setAttribute("notification.ttl", ttl.inWholeSeconds) }
-    }) { span ->
+    ): Map<String, NotificationSendResult> =
+      metricsTrace("send", attributes = MetricAttributes(
+        buildMap {
+            put("notification.operation", "send")
+            put("messaging.system", "firebase_cloud_messaging")
+            put("notification.target.count", targets.size.toLong())
+            data.timeToLive?.let { ttl -> put("notification.ttl", ttl.inWholeSeconds) }
+        }
+      )) { span ->
         sendInternal(targets, data).also { results ->
             val successCount = results.values.count { it == NotificationSendResult.Success }
             val failureCount = results.values.count { it == NotificationSendResult.Failure }
             val deadTokenCount = results.values.count { it == NotificationSendResult.DeadToken }
 
-            span?.setAttribute("notification.success.count", successCount.toLong())
-            span?.setAttribute("notification.failure.count", failureCount.toLong())
-            span?.setAttribute("notification.dead_token.count", deadTokenCount.toLong())
+            span.enrich(MetricAttributes(mapOf(
+                "notification.success.count" to successCount.toLong(),
+                "notification.failure.count" to failureCount.toLong(),
+                "notification.dead_token.count" to deadTokenCount.toLong(),
+            )))
         }
-    }
+      }
 
     private suspend fun sendInternal(
         targets: List<String>,
@@ -310,18 +325,19 @@ public open class FcmNotificationClient(
                             mb.addAllTokens(chunk)
                         }.build()
 
-                        otel.spanBlocking("notification.fcm.batch", configure = {
-                            setSpanKind(SpanKind.CLIENT)
-                            setAttribute("messaging.system", "firebase_cloud_messaging")
-                            setAttribute("messaging.batch.message_count", chunk.size.toLong())
-                        }) { batchSpan ->
+                        metricsTrace("batch", attributes = MetricAttributes(mapOf(
+                            "messaging.system" to "firebase_cloud_messaging",
+                            "messaging.batch.message_count" to chunk.size.toLong(),
+                        ))) { batchSpan ->
                             val chunkOutcome = HashMap<String, NotificationSendResult>(chunk.size)
                             try {
                                 val result = sendMulticast(message)
                                 val successCount = result.successCount
                                 val failureCount = result.failureCount
-                                batchSpan?.setAttribute("notification.success_count", successCount.toLong())
-                                batchSpan?.setAttribute("notification.failure_count", failureCount.toLong())
+                                batchSpan.enrich(MetricAttributes(mapOf(
+                                    "notification.success_count" to successCount.toLong(),
+                                    "notification.failure_count" to failureCount.toLong(),
+                                )))
                                 result.getResponses().forEachIndexed { index: Int, sendResponse: SendResponse ->
                                     val targetToken = chunk[index]
                                     log.debug { "Send: ${sendResponse.messageId} / ${sendResponse.exception?.message} ${sendResponse.exception?.messagingErrorCode}" }
@@ -335,11 +351,10 @@ public open class FcmNotificationClient(
                                     }
                                 }
                             } catch (e: Exception) {
-                                // Transport-level failure for the entire chunk. Record on the
-                                // span and mark every token Failure so the caller can retry —
-                                // but do NOT rethrow, or sibling chunks get cancelled.
-                                batchSpan?.setStatus(StatusCode.ERROR, e.message ?: "Batch send failed")
-                                batchSpan?.recordExceptionWithFingerprint(e)
+                                // Transport-level failure for the entire chunk. Report it and mark
+                                // every token Failure so the caller can retry — but do NOT rethrow,
+                                // or sibling chunks get cancelled (which would also auto-fail the span).
+                                context.reportException(e)
                                 log.warn(e) { "FCM batch send failed for ${chunk.size} tokens; marking all as Failure" }
                                 for (token in chunk) chunkOutcome[token] = NotificationSendResult.Failure
                             }
@@ -360,19 +375,17 @@ public open class FcmNotificationClient(
         return results
     }
 
-    override suspend fun connect(): Unit = otel.span("notification.connect", configure = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("notification.operation", "connect")
-        setAttribute("notification.system", "fcm")
-    }) {
+    override suspend fun connect(): Unit = metricsTrace("connect", attributes = MetricAttributes(mapOf(
+        "notification.operation" to "connect",
+        "notification.system" to "fcm",
+    ))) {
         initializeFirebaseApp(name, options)
     }
 
-    override suspend fun disconnect(): Unit = otel.span("notification.disconnect", configure = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("notification.operation", "disconnect")
-        setAttribute("notification.system", "fcm")
-    }) {
+    override suspend fun disconnect(): Unit = metricsTrace("disconnect", attributes = MetricAttributes(mapOf(
+        "notification.operation" to "disconnect",
+        "notification.system" to "fcm",
+    ))) {
         // Important for serverless environments - clean up Firebase resources
         try {
             FirebaseApp.getInstance(name).delete()
@@ -382,11 +395,78 @@ public open class FcmNotificationClient(
         }
     }
 
+    /**
+     * Health checks issue a real (but harmless) dry-run send to FCM, so they cost a network round
+     * trip and a tiny amount of quota. Run them sparingly rather than at the 1-minute default.
+     */
+    override val healthCheckFrequency: Duration get() = 5.minutes
+
+    /**
+     * Verifies the service-account credentials by issuing a dry-run send against Google's servers.
+     *
+     * A dry-run validates the message and authenticates with FCM without delivering a notification.
+     * We send a syntactically-valid but bogus device token, which lets us distinguish the two cases
+     * that matter:
+     *
+     * - **Credentials work** — either the dry-run succeeds, or FCM rejects the bogus token with
+     *   `INVALID_ARGUMENT`/`UNREGISTERED`/`SENDER_ID_MISMATCH`. Either way authentication passed, so
+     *   the service is healthy ([HealthStatus.Level.OK]).
+     * - **Credentials are broken** — FCM returns `UNAUTHENTICATED` or `PERMISSION_DENIED` (bad or
+     *   unauthorized service account). This is a genuine outage for us ([HealthStatus.Level.ERROR]).
+     * - **Transport/timeout/quota** — network failure, timeout, or rate limiting. The credentials
+     *   may be fine but we can't confirm, so we report [HealthStatus.Level.WARNING].
+     *
+     * Provider exceptions are mapped to a [HealthStatus]; none are allowed to escape.
+     */
     override suspend fun healthCheck(): HealthStatus {
-        return HealthStatus(
-            HealthStatus.Level.OK,
-            additionalMessage = "Firebase Notification Service - No direct health checks available."
-        )
+        // Syntactically valid FCM token shape (no colon-delimited APA91 form required for a dry-run);
+        // it is guaranteed not to be registered, so a healthy backend rejects it with INVALID_ARGUMENT
+        // or UNREGISTERED rather than actually delivering anything.
+        val probe = Message.builder()
+            .setToken("health-check-token-not-registered")
+            .build()
+
+        return try {
+            withTimeout(10.seconds) {
+                withContext(Dispatchers.IO) { sendDryRun(probe) }
+            }
+            HealthStatus(HealthStatus.Level.OK, additionalMessage = "Dry-run send accepted by FCM.")
+        } catch (e: TimeoutCancellationException) {
+            HealthStatus(
+                HealthStatus.Level.WARNING,
+                additionalMessage = "FCM dry-run timed out: ${e.message}"
+            )
+        } catch (e: FirebaseMessagingException) {
+            when (e.errorCode) {
+                // Authentication/authorization failure — the credentials themselves are broken.
+                ErrorCode.UNAUTHENTICATED, ErrorCode.PERMISSION_DENIED -> HealthStatus(
+                    HealthStatus.Level.ERROR,
+                    additionalMessage = "FCM credentials rejected (${e.errorCode}): ${e.message}"
+                )
+                // The bogus token was rejected but the credentials authenticated successfully.
+                ErrorCode.INVALID_ARGUMENT, ErrorCode.NOT_FOUND -> HealthStatus(
+                    HealthStatus.Level.OK,
+                    additionalMessage = "FCM authenticated; probe token rejected as expected (${e.errorCode})."
+                )
+                // Rate limiting / transient backend unavailability — credentials likely fine but
+                // unconfirmed this round.
+                ErrorCode.RESOURCE_EXHAUSTED, ErrorCode.UNAVAILABLE, ErrorCode.DEADLINE_EXCEEDED -> HealthStatus(
+                    HealthStatus.Level.WARNING,
+                    additionalMessage = "FCM temporarily unavailable (${e.errorCode}): ${e.message}"
+                )
+                else -> HealthStatus(
+                    HealthStatus.Level.ERROR,
+                    additionalMessage = "FCM dry-run failed (${e.errorCode}): ${e.message}"
+                )
+            }
+        } catch (e: Exception) {
+            // Transport/network failure: we couldn't reach FCM at all. Credentials may be fine but
+            // we can't confirm, so warn rather than hard-error.
+            HealthStatus(
+                HealthStatus.Level.WARNING,
+                additionalMessage = "FCM dry-run could not reach the service: ${e.message}"
+            )
+        }
     }
 }
 

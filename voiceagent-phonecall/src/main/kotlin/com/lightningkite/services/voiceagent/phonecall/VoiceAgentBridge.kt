@@ -1,12 +1,11 @@
 package com.lightningkite.services.voiceagent.phonecall
 
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.phonecall.AudioStreamCommand
 import com.lightningkite.services.phonecall.AudioStreamEvent
 import com.lightningkite.services.voiceagent.*
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlin.io.encoding.Base64
@@ -78,7 +77,6 @@ public data class TranscriptEntry(
  * @param jitterBufferMs Size of the jitter buffer in milliseconds. Higher values add latency
  *   but smooth out irregular audio delivery (e.g., from DynamoDB PubSub polling). Set to 0
  *   to disable jitter buffering. Default is 300ms.
- * @param otel Optional OpenTelemetry sub-context
  */
 @OptIn(ExperimentalEncodingApi::class)
 public suspend fun handlePhoneVoiceSession(
@@ -92,16 +90,14 @@ public suspend fun handlePhoneVoiceSession(
     onTranscript: suspend (TranscriptEntry) -> Unit = {},
     onStreamConnected: suspend (VoiceAgentSession) -> Unit = {},
     jitterBufferMs: Long = 300L,
-    otel: OpenTelemetrySub? = null,
 ) {
-    otel.span("voiceagent.phone_session", configure = {
-        setSpanKind(SpanKind.SERVER)
-    }) { span ->
+    voiceAgentService.metricsTrace(
+        "phone_session",
+        attributes = MetricAttributes(mapOf("voiceagent.call_id" to callId, "voiceagent.stream_id" to streamId)),
+    ) { span ->
         val jitterBuffer = if (jitterBufferMs > 0) AudioJitterBuffer(targetBufferMs = jitterBufferMs) else null
 
         logger.info { "Phone stream ready: callId=$callId, streamId=$streamId, jitterBuffer=${jitterBufferMs}ms" }
-        span?.setAttribute("voiceagent.call_id", callId)
-        span?.setAttribute("voiceagent.stream_id", streamId)
 
         // Create voice agent session with phone-appropriate audio format
         val effectiveConfig = sessionConfig.copy(
@@ -113,7 +109,7 @@ public suspend fun handlePhoneVoiceSession(
         val session = voiceAgentService.createSession(effectiveConfig)
         session.awaitConnection()
         logger.info { "Voice agent session connected: ${session.sessionId}" }
-        span?.setAttribute("voiceagent.session_id", session.sessionId)
+        span.enrich(MetricAttributes(mapOf("voiceagent.session_id" to session.sessionId)))
 
         // Trigger greeting
         onStreamConnected(session)
@@ -168,7 +164,7 @@ public suspend fun handlePhoneVoiceSession(
                     onTranscript = onTranscript,
                     currentResponseId = currentResponseId,
                     audioSeqCounter = audioSeqCounter,
-                    otel = otel,
+                    owner = voiceAgentService,
                 )
             }
         }
@@ -187,7 +183,6 @@ public suspend fun handlePhoneVoiceSession(
  * @param toolHandler Handler for tool calls
  * @param onTranscript Callback for transcripts
  * @param onSessionReady Callback when session is ready (for triggering greeting)
- * @param otel Optional OpenTelemetry sub-context
  */
 @OptIn(ExperimentalEncodingApi::class)
 public suspend fun handleDirectVoiceSession(
@@ -199,16 +194,13 @@ public suspend fun handleDirectVoiceSession(
     toolHandler: suspend (toolName: String, arguments: String) -> String,
     onTranscript: suspend (TranscriptEntry) -> Unit = {},
     onSessionReady: suspend (VoiceAgentSession) -> Unit = {},
-    otel: OpenTelemetrySub? = null,
 ) {
-    otel.span("voiceagent.direct_session", configure = {
-        setSpanKind(SpanKind.SERVER)
-    }) { span ->
+    voiceAgentService.metricsTrace("direct_session") { span ->
         logger.info { "Creating direct voice agent session..." }
         val session = voiceAgentService.createSession(sessionConfig)
         session.awaitConnection()
         logger.info { "Voice agent session connected: ${session.sessionId}" }
-        span?.setAttribute("voiceagent.session_id", session.sessionId)
+        span.enrich(MetricAttributes(mapOf("voiceagent.session_id" to session.sessionId)))
 
         // Trigger greeting
         onSessionReady(session)
@@ -277,7 +269,7 @@ private suspend fun handleAgentEvent(
     onTranscript: suspend (TranscriptEntry) -> Unit,
     currentResponseId: java.util.concurrent.atomic.AtomicReference<String?>,
     audioSeqCounter: java.util.concurrent.atomic.AtomicInteger,
-    otel: OpenTelemetrySub? = null,
+    owner: com.lightningkite.services.Namespaced,
 ) {
     when (event) {
         is VoiceAgentEvent.AudioDelta -> {
@@ -322,11 +314,10 @@ private suspend fun handleAgentEvent(
 
         is VoiceAgentEvent.ToolCallDone -> {
             logger.info { "Tool call: ${event.toolName}(${event.arguments})" }
-            otel.span("voiceagent.tool_call", configure = {
-                setSpanKind(SpanKind.INTERNAL)
-                setAttribute("tool.name", event.toolName)
-                setAttribute("tool.call_id", event.callId)
-            }) {
+            owner.metricsTrace(
+                "tool_call",
+                attributes = MetricAttributes(mapOf("tool.name" to event.toolName, "tool.call_id" to event.callId)),
+            ) {
                 val result = toolHandler(event.toolName, event.arguments)
                 logger.info { "Tool result: $result" }
                 session.sendToolResult(event.callId, result)

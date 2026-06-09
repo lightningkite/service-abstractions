@@ -1,10 +1,9 @@
 package com.lightningkite.services.speech.openai
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.contentnegotiation.*
@@ -13,7 +12,6 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import io.opentelemetry.api.trace.SpanKind
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -93,8 +91,6 @@ public class OpenAISpeechToTextService(
 
     private val responseJson = Json { ignoreUnknownKeys = true }
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("speech-openai")
-
     private val client = com.lightningkite.services.http.client.config {
         install(ContentNegotiation) {
             json(Json {
@@ -111,11 +107,15 @@ public class OpenAISpeechToTextService(
         val model = options.model ?: defaultModel
         val audioBytes = audio.data.bytes()
 
-        return otel.span("speech.transcribe", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("ai.model", model)
-            setAttribute("audio.size_bytes", audioBytes.size.toLong())
-        }) {
+        return metricsTrace(
+            "transcribe",
+            attributes = MetricAttributes(
+                mapOf(
+                    "ai.model" to model,
+                    "audio.size_bytes" to audioBytes.size.toLong(),
+                )
+            )
+        ) {
             logger.debug { "[$name] Transcribing ${audioBytes.size} bytes with model=$model" }
 
             // Check file size limit (25MB for Whisper)

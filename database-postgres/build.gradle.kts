@@ -15,6 +15,7 @@ dependencies {
     api(libs.exposed.javaTime)
     api(libs.exposed.jdbc)
     api(libs.postgresql)
+    api(libs.hikariCP)
 
     testImplementation(project(path = ":database-test"))
     testImplementation(libs.kotlin.test)

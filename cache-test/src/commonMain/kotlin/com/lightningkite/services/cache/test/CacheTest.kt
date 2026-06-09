@@ -4,6 +4,8 @@ import com.lightningkite.services.cache.*
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.test.runTestWithClock
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.serialization.builtins.serializer
 import kotlin.test.*
@@ -207,6 +209,52 @@ abstract class CacheTest {
             assertEquals(1, cache.get<Int>(key))
             delay(waitScale * 1.5)
             assertEquals(null, cache.get<Int>(key))
+        }
+    }
+
+    /**
+     * `add` must be a true atomic increment: concurrent callers may interleave freely, but every
+     * successful `add` must contribute exactly once to the stored counter (no lost updates). This
+     * runs across all CAS backends, not just DynamoDB, to pin the contract everywhere.
+     *
+     * Two scenarios:
+     *  1. No TTL — `concurrency` concurrent `add(key, 1)` must leave the counter at exactly
+     *     `concurrency`, and the set of returned values must be exactly `1..concurrency` (each
+     *     increment observed once).
+     *  2. Around the expiry boundary — a TTL is set, the clock is advanced past it so the row is
+     *     logically expired, then `concurrency` concurrent `add(key, 1, ttl)` run. Treating the
+     *     expired row as absent, the counter must again end at exactly `concurrency` with returned
+     *     values exactly `1..concurrency`. This is the case where DynamoDB's old blind-set fallback
+     *     dropped concurrent increments.
+     */
+    @Test
+    fun concurrentAddTest() {
+        val cache = cache ?: run {
+            println("Could not test because the cache is not supported on this system.")
+            return
+        }
+        val concurrency = 50
+        runSuspendingTest {
+            // Scenario 1: no TTL.
+            val key = "concurrent-add-${Uuid.random()}"
+            val results = (1..concurrency).map { async { cache.add(key, 1L) } }.awaitAll()
+            assertEquals(concurrency.toLong(), cache.get<Long>(key), "concurrent add lost increments")
+            assertEquals((1L..concurrency).toSet(), results.toSet(),
+                "each concurrent add must observe a unique post-increment value")
+            cache.remove(key)
+        }
+        runSuspendingTest {
+            // Scenario 2: around the expiry boundary (expired row must behave as absent).
+            val key = "concurrent-add-expiry-${Uuid.random()}"
+            cache.add(key, 999L, waitScale)
+            delay(waitScale * 1.5) // advance past TTL; row is now logically expired
+            assertEquals(null, cache.get<Int>(key), "row should be expired before the concurrent burst")
+            val results = (1..concurrency).map { async { cache.add(key, 1L, waitScale) } }.awaitAll()
+            assertEquals(concurrency.toLong(), cache.get<Long>(key),
+                "expired row must reset then accumulate every concurrent increment exactly once")
+            assertEquals((1L..concurrency).toSet(), results.toSet(),
+                "each concurrent add against an expired row must observe a unique post-reset value")
+            cache.remove(key)
         }
     }
 }

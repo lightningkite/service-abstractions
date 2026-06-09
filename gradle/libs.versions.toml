@@ -20,6 +20,7 @@ freetts = "1.2.2"
 graalVmNative = "1.1.0"
 greenmail = "2.1.8"
 guava = "33.6.0-jre"
+hikariCP = "6.3.0"
 koogAgents = "0.7.2"
 kotlin = "2.3.21"
 kotlinLogging = "8.0.02"
@@ -62,6 +63,7 @@ bouncyCastle = { module = "org.bouncycastle:bcpkix-jdk18on", version = { ref = "
 clamAv = { module = "xyz.capybara:clamav-client", version = { ref = "clamAv" } }
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = { ref = "coroutines" } }
 coroutines-reactive = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-reactive", version = { ref = "coroutines" } }
+coroutines-reactor = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-reactor", version = { ref = "coroutines" } }
 coroutines-testing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version = { ref = "coroutines" } }
 crac = { module = "org.crac:crac", version = { ref = "crac" } }
 cryptography-core = { module = "dev.whyoleg.cryptography:cryptography-core", version.ref = "cryptographyCore" }
@@ -77,6 +79,7 @@ firebase-admin = { module = "com.google.firebase:firebase-admin", version = { re
 freetts = { module = "net.sf.sociaal:freetts", version.ref = "freetts" }
 greenmail = { module = "com.icegreen:greenmail", version = { ref = "greenmail" } }
 guava = { module = "com.google.guava:guava", version = { ref = "guava" } }
+hikariCP = { module = "com.zaxxer:HikariCP", version = { ref = "hikariCP" } }
 koog-agents = { module = "ai.koog.clockfix:koog-agents", version = { ref = "koogAgents" } }
 koog-vector-storage = { module = "ai.koog.clockfix:vector-storage", version = { ref = "koogAgents" } }
 kotlincrypto-hash-sha2 = { module = "org.kotlincrypto.hash:sha2", version = { ref = "kotlinCrypto" } }
@@ -109,7 +112,6 @@ lkGradleHelpers = { module = "com.lightningkite:lk-gradle-helpers", version = { 
 logBackClassic = { module = "ch.qos.logback:logback-classic", version = { ref = "logBackClassic" } }
 memcached = { module = "com.googlecode.xmemcached:xmemcached", version = { ref = "memcached" } }
 mongo-driver = { module = "org.mongodb:mongodb-driver-kotlin-coroutine", version = { ref = "mongoDriver" } }
-mongo-driver-otel = { module = "io.opentelemetry.instrumentation:opentelemetry-mongo-3.1", version = { ref = "openTelemetryInstrumentationAlpha" } }
 openSearch-aws = { module = "software.amazon.awssdk:opensearch", version = { ref = "openSearchAws" } }
 openSearch-java = { module = "org.opensearch.client:opensearch-java", version = { ref = "openSearchJava" } }
 openTelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version = { ref = "openTelemetry" } }
@@ -119,6 +121,7 @@ openTelemetry-instrumentation-ktor = { module = "io.opentelemetry.instrumentatio
 openTelemetry-instrumentation-logback = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version = "2.19.0-alpha" }
 openTelemetry-kotlin = { module = "io.opentelemetry:opentelemetry-extension-kotlin", version = { ref = "openTelemetry" } }
 openTelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version = { ref = "openTelemetry" } }
+openTelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing", version = { ref = "openTelemetry" } }
 postgresql = { module = "org.postgresql:postgresql", version = { ref = "postgresql" } }
 proguard = { module = "com.guardsquare:proguard-gradle", version = { ref = "proguard" } }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }

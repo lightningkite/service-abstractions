@@ -1,4 +1,4 @@
-package com.lightningkite.services.otel
+package com.lightningkite.services
 
 import java.security.MessageDigest
 

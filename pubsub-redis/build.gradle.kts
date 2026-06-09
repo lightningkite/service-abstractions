@@ -10,9 +10,7 @@ plugins {
 
 dependencies {
     api(project(path = ":pubsub"))
-    api(project(path = ":otel-jvm"))
     implementation(libs.lettuce)
-    implementation(libs.lettuce.otel)
     testImplementation(libs.embedded.redis)
     implementation(libs.guava)
     implementation(libs.coroutines.core)
@@ -20,6 +18,10 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
     testImplementation(project(":cache-test"))
+    // Telemetry/parenting regression tests construct OtelMetricsBackend; main code uses only the vendor-neutral MetricsBackend API.
+    testImplementation(project(path = ":otel-jvm"))
+    testImplementation(libs.openTelemetry.sdk)
+    testImplementation(libs.openTelemetry.sdk.testing)
 }
 
 kotlin {

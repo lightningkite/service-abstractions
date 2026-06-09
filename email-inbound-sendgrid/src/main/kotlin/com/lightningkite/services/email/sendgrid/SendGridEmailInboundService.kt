@@ -3,12 +3,8 @@ package com.lightningkite.services.email.sendgrid
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.SpanKind
 import kotlinx.serialization.json.*
 import java.security.KeyFactory
 import java.security.Signature
@@ -78,8 +74,6 @@ public class SendGridEmailInboundService(
     private val verificationKey: String,
 ) : EmailInboundService {
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-inbound-sendgrid")
-
     // Cached per-class (KeyFactory is thread-safe)
     private val keyFactory by lazy { KeyFactory.getInstance("EC") }
 
@@ -135,12 +129,11 @@ public class SendGridEmailInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail = otel.span("email.webhook.parse", configure = {
-            setSpanKind(SpanKind.SERVER)
-            setAttribute("email.webhook.operation", "inbound_parse")
-            setAttribute("email.provider", "sendgrid")
-            setAttribute("messaging.system", "sendgrid")
-        }) { span ->
+        ): ReceivedEmail = metricsTrace("webhook.parse", attributes = MetricAttributes(mapOf(
+            "email.webhook.operation" to "inbound_parse",
+            "email.provider" to "sendgrid",
+            "messaging.system" to "sendgrid",
+        ))) { span ->
             logger.debug { "[$name] Parsing SendGrid webhook" }
 
             // Get raw body bytes BEFORE any parsing (required for signature verification)
@@ -149,7 +142,7 @@ public class SendGridEmailInboundService(
             // Verify signature (required for all webhooks)
             verifySignature(headers, rawBodyBytes, verificationKey)
 
-            span?.setAttribute("email.webhook.signature_verified", true)
+            span.enrich(MetricAttributes(mapOf("email.webhook.signature_verified" to true)))
 
             // Verify content type
             if (!body.mediaType.accepts(MediaType.MultiPart.FormData)) {
@@ -168,11 +161,13 @@ public class SendGridEmailInboundService(
             val receivedEmail = parseReceivedEmail(parts)
 
             // Add email-specific attributes (PII redacted: keep only domain for from/to, drop subject)
-            span?.setAttribute("email.from", receivedEmail.from.value.raw.let { addr -> addr.substringAfter('@', addr) })
-            span?.setAttribute("email.to", receivedEmail.to.joinToString(",") { it.value.raw.let { addr -> addr.substringAfter('@', addr) } })
-            span?.setAttribute("email.attachments_count", receivedEmail.attachments.size.toLong())
-            span?.setAttribute("email.message_id", receivedEmail.messageId)
-            receivedEmail.spamScore?.let { span?.setAttribute("email.spam_score", it) }
+            span.enrich(MetricAttributes(buildMap {
+                put("email.from", receivedEmail.from.value.raw.let { addr -> addr.substringAfter('@', addr) })
+                put("email.to", receivedEmail.to.joinToString(",") { it.value.raw.let { addr -> addr.substringAfter('@', addr) } })
+                put("email.attachments_count", receivedEmail.attachments.size.toLong())
+                put("email.message_id", receivedEmail.messageId)
+                receivedEmail.spamScore?.let { put("email.spam_score", it) }
+            }))
 
             receivedEmail
         }

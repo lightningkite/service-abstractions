@@ -12,12 +12,16 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":database"))
+    implementation(project(path = ":otel-jvm"))
     testImplementation(project(path = ":database-test"))
     testImplementation(libs.kotlin.test)
     api(libs.exposed.core)
     api(libs.exposed.javaTime)
     api(libs.exposed.jdbc)
+    api(libs.hikariCP)
     testImplementation("com.h2database:h2:2.2.224")
+    // SQLite JDBC driver is consumer-provided at runtime; needed here to exercise the sql-sqlite scheme.
+    testImplementation("org.xerial:sqlite-jdbc:3.45.3.0")
     testImplementation(libs.coroutines.testing)
 }
 

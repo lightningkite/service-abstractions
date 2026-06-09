@@ -14,18 +14,15 @@ import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.http.client
-import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.otel.span
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.TelemetrySanitization
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.encode
 import io.ktor.utils.io.core.canRead
 import io.ktor.utils.io.core.takeWhile
-import io.opentelemetry.api.trace.SpanBuilder
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.api.trace.StatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -63,15 +60,16 @@ public class S3FileObject(
     override val parent: FileObject?
         get() = path.parent?.let { S3FileObject(system, it) } ?: if (unixPath.isNotEmpty()) system.root else null
 
-    private fun s3SpanAttrs(operation: String): SpanBuilder.() -> Unit = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("file.operation", operation)
-        setAttribute("file.path", TelemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-        setAttribute("file.bucket", system.bucket)
-        setAttribute("storage.system", "s3")
-    }
+    private fun s3SpanAttrs(operation: String): MetricAttributes = MetricAttributes(
+        mapOf(
+            "file.operation" to operation,
+            "file.path" to TelemetrySanitization.sanitizeFilePathWithDepth(unixPath),
+            "file.bucket" to system.bucket,
+            "storage.system" to "s3",
+        )
+    )
 
-    override suspend fun list(): List<FileObject>? = system.otel.span("s3.list", configure = s3SpanAttrs("list")) { span ->
+    override suspend fun list(): List<FileObject>? = system.metricsTrace("list", attributes = s3SpanAttrs("list")) { span ->
         try {
             withContext(Dispatchers.IO) {
                 val results = ArrayList<S3FileObject>()
@@ -88,26 +86,27 @@ public class S3FileObject(
                     if (r.isTruncated!!) token = r.nextContinuationToken!!
                     else break
                 }
-                span?.setAttribute("file.count", results.size.toLong())
+                span.enrich(MetricAttributes(mapOf("file.count" to results.size.toLong())))
                 results
             }
         } catch (e: Exception) {
-            // Swallow exception, return null - block must set ERROR status itself.
-            span?.setStatus(StatusCode.ERROR, "Failed to list files: ${e.message}")
-            span?.recordExceptionWithFingerprint(e)
+            // Swallow exception and return null, but record it on the active span for diagnostics.
+            system.context.reportException(e)
             null
         }
     }
 
-    override suspend fun head(): FileInfo? = system.otel.span("s3.head", configure = s3SpanAttrs("head")) { span ->
+    override suspend fun head(): FileInfo? = system.metricsTrace("head", attributes = s3SpanAttrs("head")) { span ->
         try {
             withContext(Dispatchers.IO) {
                 system.s3.headObject {
                     bucket = system.bucket
                     key = unixPath
                 }.let {
-                    span?.setAttribute("file.size", it.contentLength!!)
-                    span?.setAttribute("file.content_type", it.contentType!!)
+                    span.enrich(MetricAttributes(mapOf(
+                        "file.size" to it.contentLength!!,
+                        "file.content_type" to it.contentType!!,
+                    )))
                     FileInfo(
                         type = MediaType(it.contentType!!),
                         size = it.contentLength!!,
@@ -116,16 +115,17 @@ public class S3FileObject(
                 }
             }
         } catch (e: NoSuchKey) {
-            // Not finding a file is not an error; helper leaves status UNSET on success.
+            // Not finding a file is not an error.
             null
         }
     }
 
-    override suspend fun put(content: TypedData): Unit = system.otel.span("s3.put", configure = {
-        s3SpanAttrs("put")()
-        setAttribute("file.size", content.data.size!!) // TODO: Unknown sizes will die
-        setAttribute("file.content_type", content.mediaType.toString())
-    }) {
+    override suspend fun put(content: TypedData): Unit = system.metricsTrace("put", attributes = MetricAttributes(
+        s3SpanAttrs("put").raw + mapOf(
+            "file.size" to content.data.size!!, // TODO: Unknown sizes will die
+            "file.content_type" to content.mediaType.toString(),
+        )
+    )) {
         withContext(Dispatchers.IO) {
             system.s3.putObject {
                 bucket = system.bucket
@@ -137,7 +137,7 @@ public class S3FileObject(
         Unit
     }
 
-    override suspend fun get(): TypedData? = system.otel.span("s3.get", configure = s3SpanAttrs("get")) { span ->
+    override suspend fun get(): TypedData? = system.metricsTrace("get", attributes = s3SpanAttrs("get")) { span ->
         try {
             withContext(Dispatchers.IO) {
                 system.s3.getObject(
@@ -148,8 +148,10 @@ public class S3FileObject(
                 ) {
                     val body = it.body!!
                     val len = body.contentLength
-                    span?.setAttribute("file.size", len ?: -1L)
-                    span?.setAttribute("file.content_type", it.contentType!!)
+                    span.enrich(MetricAttributes(mapOf(
+                        "file.size" to (len ?: -1L),
+                        "file.content_type" to it.contentType!!,
+                    )))
 
                     TypedData(
                         data = Data.Bytes(body.toByteArray()),
@@ -158,19 +160,20 @@ public class S3FileObject(
                 }
             }
         } catch (e: NoSuchKey) {
-            // Not finding a file is not an error; helper leaves status UNSET on success.
+            // Not finding a file is not an error.
             null
         }
     }
 
-    override suspend fun copyTo(other: FileObject): Unit = system.otel.span("s3.copy", configure = {
-        s3SpanAttrs("copy")()
-        if (other is S3FileObject) {
-            setAttribute("file.destination.path", TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath))
-            setAttribute("file.destination.bucket", other.system.bucket)
-            setAttribute("file.same_bucket", other.system.bucket == system.bucket)
-        }
-    }) {
+    override suspend fun copyTo(other: FileObject): Unit = system.metricsTrace("copy", attributes = MetricAttributes(
+        s3SpanAttrs("copy").raw + (
+            if (other is S3FileObject) mapOf(
+                "file.destination.path" to TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath),
+                "file.destination.bucket" to other.system.bucket,
+                "file.same_bucket" to (other.system.bucket == system.bucket),
+            ) else emptyMap()
+        )
+    )) {
         if (other is S3FileObject && other.system.bucket == system.bucket) {
             withContext(Dispatchers.IO) {
                 system.s3.copyObject {
@@ -184,7 +187,7 @@ public class S3FileObject(
         }
     }
 
-    override suspend fun delete(): Unit = system.otel.span("s3.delete", configure = s3SpanAttrs("delete")) {
+    override suspend fun delete(): Unit = system.metricsTrace("delete", attributes = s3SpanAttrs("delete")) {
         withContext(Dispatchers.IO) {
             system.s3.deleteObject {
                 bucket = system.bucket

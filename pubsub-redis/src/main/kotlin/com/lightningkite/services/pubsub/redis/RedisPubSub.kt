@@ -1,19 +1,17 @@
 package com.lightningkite.services.pubsub.redis
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.lettuce.core.RedisClient
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
-import io.lettuce.core.resource.ClientResources
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.instrumentation.lettuce.v5_1.LettuceTelemetry
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.reactive.awaitFirst
+import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.reactive.collect
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -146,7 +144,6 @@ public class RedisPubSub(
     override val context: SettingContext,
     private val client: RedisClient
 ) : PubSub {
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("pubsub-redis")
     private val redisPubSubLogger = LoggerFactory.getLogger("RedisPubSub")
     private val json = Json { serializersModule = context.internalSerializersModule }
 
@@ -160,14 +157,7 @@ public class RedisPubSub(
         public fun PubSub.Settings.Companion.redis(url: String): PubSub.Settings = PubSub.Settings("redis://$url")
         init {
             PubSub.Settings.register("redis") { name, url, context ->
-                val telemetry = context.openTelemetry?.let { LettuceTelemetry.create(it) }
-                val clientResources = telemetry?.let {
-                    ClientResources.builder()
-                        .tracing(it.newTracing())
-                        .build()
-                } ?: ClientResources.create()
-
-                val client = RedisClient.create(clientResources, url)
+                val client = RedisClient.create(url)
                 RedisPubSub(name, context, client)
             }
         }
@@ -210,38 +200,36 @@ public class RedisPubSub(
         encode: (T) -> String,
         decode: (String) -> T,
     ): PubSubChannel<T> = object : PubSubChannel<T> {
-        override suspend fun collect(collector: FlowCollector<T>): Unit = otel.span("pubsub.subscribe", configure = {
-            setSpanKind(SpanKind.CONSUMER)
-            setAttribute("pubsub.operation", "subscribe")
-            setAttribute("messaging.destination", key)
-            setAttribute("messaging.system", "redis")
-        }) {
+        override suspend fun collect(collector: FlowCollector<T>): Unit = metricsTrace("subscribe", attributes = MetricAttributes(mapOf(
+            "pubsub.operation" to "subscribe",
+            "messaging.destination" to key,
+            "messaging.system" to "redis",
+        ))) {
             // Create fresh subscription - no caching for serverless compatibility
             // Per-message spans created in the coroutine context (after asFlow()) so
             // makeCurrent() works correctly and child spans get the right parent.
             createSubscription(key).asFlow().collect { message ->
-                otel.span("pubsub.receive", configure = {
-                    setSpanKind(SpanKind.CONSUMER)
-                    setAttribute("pubsub.operation", "receive")
-                    setAttribute("messaging.destination", key)
-                    setAttribute("messaging.system", "redis")
-                    setAttribute("message.size", message.length.toLong())
-                }) {
+                metricsTrace("receive", attributes = MetricAttributes(mapOf(
+                    "pubsub.operation" to "receive",
+                    "messaging.destination" to key,
+                    "messaging.system" to "redis",
+                    "message.size" to message.length.toLong(),
+                ))) {
                     collector.emit(decode(message))
                 }
             }
         }
 
-        override suspend fun emit(value: T): Unit = otel.span("pubsub.publish", configure = {
-            setSpanKind(SpanKind.PRODUCER)
-            setAttribute("pubsub.operation", "publish")
-            setAttribute("messaging.destination", key)
-            setAttribute("messaging.system", "redis")
-        }) { span ->
+        override suspend fun emit(value: T): Unit = metricsTrace("publish", attributes = MetricAttributes(mapOf(
+            "pubsub.operation" to "publish",
+            "messaging.destination" to key,
+            "messaging.system" to "redis",
+        ))) { span ->
             val message = encode(value)
-            span?.setAttribute("message.size", message.length.toLong())
+            span.enrich(MetricAttributes(mapOf("message.size" to message.length.toLong())))
             val result = publishConnection.reactive().publish(key, message).awaitFirst()
-            span?.setAttribute("pubsub.subscribers_reached", result)
+            span.enrich(MetricAttributes(mapOf("pubsub.subscribers_reached" to result)))
+            Unit
         }
     }
 
@@ -251,4 +239,22 @@ public class RedisPubSub(
     override fun string(key: String): PubSubChannel<String> =
         channelImpl(key, { it }, { it })
 
+    /**
+     * Verifies Redis connectivity and credentials with a non-mutating PING on the shared publish
+     * connection.
+     *
+     * Overrides the abstraction's default (which PUBLISHes a test message): PING exercises the full
+     * connection including AUTH on authenticated/TLS URLs without broadcasting a stray message to
+     * subscribers, and a healthy server replies `PONG`.
+     */
+    override suspend fun healthCheck(): HealthStatus =
+        try {
+            val reply = metricsTrace("ping") {
+                publishConnection.reactive().ping().awaitFirstOrNull()
+            }
+            if (reply == "PONG") HealthStatus(HealthStatus.Level.OK)
+            else HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Unexpected PING reply: $reply")
+        } catch (e: Exception) {
+            HealthStatus(HealthStatus.Level.ERROR, additionalMessage = e.message)
+        }
 }

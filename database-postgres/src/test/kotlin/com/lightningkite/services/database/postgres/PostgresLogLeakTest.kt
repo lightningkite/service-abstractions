@@ -37,7 +37,7 @@ class PostgresLogLeakTest {
         PostgresDatabase(
             "test",
             TestSettingContext(EmptySerializersModule())
-        ) { Database.connect(postgres.embeddedPostgres.postgresDatabase) }
+        ) { PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null) }
     }
 
     private lateinit var originalOut: PrintStream

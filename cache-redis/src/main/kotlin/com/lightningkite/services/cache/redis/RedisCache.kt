@@ -1,19 +1,16 @@
 package com.lightningkite.services.cache.redis
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.TelemetrySanitization
 import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisNoScriptException
 import io.lettuce.core.ScriptOutputType
 import io.lettuce.core.SetArgs
 import io.lettuce.core.api.reactive.RedisReactiveCommands
-import io.lettuce.core.resource.ClientResources
-import io.opentelemetry.api.trace.SpanKind
-import io.opentelemetry.instrumentation.lettuce.v5_1.LettuceTelemetry
 import kotlinx.coroutines.reactive.*
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -73,8 +70,6 @@ public class RedisCache(
 ) : Cache {
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("cache-redis")
-
     public companion object {
         public fun Cache.Settings.Companion.redis(url: String): Cache.Settings = Cache.Settings("redis://$url")
 
@@ -128,14 +123,7 @@ end
 
         init {
             Cache.Settings.register("redis") { name, url, context ->
-                val telemetry = context.openTelemetry?.let { LettuceTelemetry.create(it) }
-                val clientResources = telemetry?.let {
-                    ClientResources.builder()
-                        .tracing(it.newTracing())
-                        .build()
-                } ?: ClientResources.create()
-
-                val client = RedisClient.create(clientResources, url)
+                val client = RedisClient.create(url)
                 RedisCache(name, client, context)
             }
         }
@@ -172,21 +160,25 @@ end
 
     public val lettuceConnection: RedisReactiveCommands<String, String> = lettuceClient.connect().reactive()
 
-    private inline fun SpanBuilderAttrs(key: String): io.opentelemetry.api.trace.SpanBuilder.() -> Unit = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("cache.system", "redis")
-        setAttribute("cache.key", TelemetrySanitization.hashCacheKey(key))
+    // Static, low-cardinality span attributes shared by every operation. The cache key is hashed so a
+    // high-cardinality value never reaches telemetry.
+    private fun spanAttributes(key: String): MetricAttributes = MetricAttributes(
+        mapOf(
+            "cache.system" to "redis",
+            "cache.key" to TelemetrySanitization.hashCacheKey(key),
+        )
+    )
+
+    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
+        return metricsTrace("get", attributes = spanAttributes(key), dimensions = setOf("cache.hit")) { span ->
+            val raw = lettuceConnection.get(key).awaitFirstOrNull()
+            span.enrich(MetricAttributes(mapOf("cache.hit" to (raw != null))))
+            raw?.let { json.decodeFromString(serializer, it) }
+        }
     }
 
-    override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
-        otel.span("cache.get", configure = SpanBuilderAttrs(key)) { span ->
-            val result = lettuceConnection.get(key).awaitFirstOrNull()?.let { json.decodeFromString(serializer, it) }
-            span?.setAttribute("cache.hit", result != null)
-            result
-        }
-
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
-        otel.span("cache.set", configure = SpanBuilderAttrs(key)) {
+        metricsTrace("set", attributes = spanAttributes(key)) {
             lettuceConnection.set(
                 key,
                 json.encodeToString(serializer, value),
@@ -199,19 +191,19 @@ end
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean = otel.span("cache.setIfNotExists", configure = SpanBuilderAttrs(key)) { span ->
+    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttributes(key)) { span ->
         // Atomic SET key value NX PX ttl — avoids the non-atomic setnx+pexpire race.
         val args = SetArgs.Builder.nx().let { a ->
             timeToLive?.inWholeMilliseconds?.let { a.px(it) } ?: a
         }
         val result = lettuceConnection.set(key, json.encodeToString(serializer, value), args)
             .awaitFirstOrNull() != null
-        span?.setAttribute("cache.added", result)
+        span.enrich(MetricAttributes(mapOf("cache.added" to result)))
         result
     }
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
-        otel.span("cache.add", configure = SpanBuilderAttrs(key)) {
+        metricsTrace("add", attributes = spanAttributes(key)) {
             // Lua script performs INCRBY + PEXPIRE atomically to avoid the race where
             // another caller modifies TTL between our INCRBY and PEXPIRE calls.
             val ttlArg = timeToLive?.inWholeMilliseconds?.toString() ?: ""
@@ -219,7 +211,7 @@ end
         }
 
     override suspend fun remove(key: String): Unit =
-        otel.span("cache.remove", configure = SpanBuilderAttrs(key)) {
+        metricsTrace("remove", attributes = spanAttributes(key)) {
             lettuceConnection.del(key).collect { }
         }
 
@@ -233,7 +225,7 @@ end
         // Early return if expected equals new
         if (expected == new) return true
 
-        return otel.span("cache.compareAndSet", configure = SpanBuilderAttrs(key)) {
+        return metricsTrace("compareAndSet", attributes = spanAttributes(key)) {
             val expectedJson = expected?.let { json.encodeToString(serializer, it) }
             val newJson = new?.let { json.encodeToString(serializer, it) }
             val ttlArg = timeToLive?.inWholeMilliseconds?.toString() ?: ""
@@ -256,4 +248,21 @@ end
         }
     }
 
+    /**
+     * Verifies Redis connectivity and credentials with a non-mutating PING.
+     *
+     * Overrides the abstraction's write-then-read default: PING exercises the full connection
+     * (including AUTH on authenticated/TLS URLs) without leaving a stray key in the keyspace, and a
+     * healthy server replies `PONG`.
+     */
+    override suspend fun healthCheck(): HealthStatus =
+        try {
+            val reply = metricsTrace("ping") {
+                lettuceConnection.ping().awaitFirstOrNull()
+            }
+            if (reply == "PONG") HealthStatus(HealthStatus.Level.OK)
+            else HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Unexpected PING reply: $reply")
+        } catch (e: Exception) {
+            HealthStatus(HealthStatus.Level.ERROR, additionalMessage = e.message)
+        }
 }

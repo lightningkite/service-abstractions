@@ -1,12 +1,12 @@
 package com.lightningkite.services.http
 
+import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.otel.TelemetrySanitization
-import com.lightningkite.services.recordExceptionWithFingerprint
+import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.TelemetrySanitization
 import io.ktor.client.plugins.api.*
 import io.ktor.util.*
-import io.opentelemetry.api.trace.*
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlin.coroutines.CoroutineContext
 
@@ -14,7 +14,7 @@ import kotlin.coroutines.CoroutineContext
  * Coroutine context key for passing SettingContext through the coroutine context.
  *
  * Services should add this to their coroutine context when making HTTP calls
- * to enable automatic OpenTelemetry instrumentation.
+ * to enable automatic telemetry instrumentation.
  */
 private val SettingContextKey = object : CoroutineContext.Key<SettingContextElement> {}
 
@@ -26,84 +26,85 @@ public data class SettingContextElement(val settingContext: SettingContext) : Co
 }
 
 /**
- * OpenTelemetry plugin for Ktor HTTP client that automatically traces requests.
+ * Minimal [Namespaced] owner for the shared HTTP client. The base client is a shared resource with no
+ * owning service, so we synthesize a stable, low-cardinality owner from the ambient [SettingContext].
+ * Its fixed [name] (`"http-client"`) becomes the metric `system`/span prefix — never per-request.
+ */
+private class HttpClientOwner(override val context: SettingContext) : Namespaced {
+    override val name: String get() = "http-client"
+}
+
+/**
+ * Telemetry plugin for the Ktor HTTP client that automatically traces outbound requests.
  *
- * This plugin is installed in the base HTTP client and automatically creates spans
- * for HTTP requests when OpenTelemetry is available in the coroutine context via [SettingContextElement].
+ * This plugin is installed in the base HTTP client and creates a span (via the coroutine-first
+ * metrics API) for each request when a [SettingContextElement] is present in the coroutine context.
  *
- * The plugin creates a span for each HTTP request with:
- * - **Name**: `HTTP {method} {path}`
- * - **Kind**: CLIENT
- * - **Attributes**: http.method, http.url, http.status_code, http.host
+ * Each request is wrapped in [metricsTrace] with op `"request"`, producing a span named
+ * `"http-client.request"` plus the RED `{system, operation, outcome}` metrics. HTTP semantic-convention
+ * attributes are attached manually: the request method/target up front via `attributes`, and the
+ * response status code afterward via [com.lightningkite.services.MetricSpan.enrich].
  *
  * ## How It Works
  *
  * 1. Checks the coroutine context for a [SettingContextElement]
- * 2. If found and OpenTelemetry is configured, creates a span for the request
- * 3. If not found, request proceeds normally without tracing
+ * 2. If found, wraps the request in [metricsTrace] (a no-op when no metrics backend is configured)
+ * 3. If not found, the request proceeds normally without tracing
  *
- * The span lifecycle is managed entirely within the [Send] hook so that both
- * successful responses and transport-level errors (timeouts, connection refused,
- * cancellation) are correctly recorded and the span is always ended.
+ * The span lifecycle is owned by [metricsTrace]: both successful responses and transport-level errors
+ * (timeouts, connection refused, cancellation) flow through it — error outcomes are recorded and
+ * cancellation is treated as non-error, with the span always ended.
  *
- * This allows the base `client` to support OpenTelemetry without requiring
- * services to be modified - they just need to ensure their coroutine context
- * includes the SettingContextElement (which Service implementations can do automatically).
+ * This lets the base `client` support telemetry without modifying services — they only need their
+ * coroutine context to include the [SettingContextElement] (which Service implementations can do
+ * automatically).
  */
 internal val OpenTelemetryPlugin = createClientPlugin("OpenTelemetryPlugin") {
-    var tracer: Tracer? = null
-
     on(Send) { request ->
-        // Try to get OpenTelemetry from coroutine context
+        // Try to get the SettingContext from the coroutine context
         val settingContext = try {
             currentCoroutineContext()[SettingContextKey]?.settingContext
         } catch (e: Exception) {
             null
         }
 
-        val otel = settingContext?.openTelemetry
-        if (otel == null) {
-            // No telemetry configured — proceed without tracing
+        if (settingContext == null) {
+            // No SettingContext available — proceed without tracing
             proceed(request)
         } else {
-            if (tracer == null) {
-                tracer = otel.getTracer("http-client")
-            }
-
             val url = request.url
-            val path = url.pathSegments.joinToString("/", prefix = "/")
-            val span = tracer!!.spanBuilder("HTTP ${request.method.value} $path")
-                .setSpanKind(SpanKind.CLIENT)
-                .setAttribute("http.method", request.method.value)
-                .setAttribute("http.url", TelemetrySanitization.sanitizeUrl(url.toString()))
-                .setAttribute("http.host", url.host)
-                .startSpan()
-            // Manual span lifecycle: the otel-jvm `useBlocking` helper is an `inline` function
-            // built for JVM 17, and this module compiles for JVM 1.8, so we can't inline it.
-            // Semantics mirror the helper: UNSET on success (only set ERROR for 4xx+), ERROR +
-            // recordExceptionWithFingerprint on throw, "Cancelled" event for CancellationException.
-            val scope = span.makeCurrent()
-            try {
+            // HTTP semantic-convention attributes known up front (span-only; high cardinality on
+            // `url.full` is fine — these are NOT metric dimensions).
+            val upFront = mutableMapOf<String, Any?>(
+                "http.request.method" to request.method.value,
+                "url.full" to TelemetrySanitization.sanitizeUrl(url.buildString()),
+                "server.address" to url.host,
+            )
+            if (url.port > 0) upFront["server.port"] = url.port.toLong()
+
+            HttpClientOwner(settingContext).metricsTrace(
+                opName = "request",
+                attributes = MetricAttributes(upFront),
+                // Low-cardinality dimensions promoted onto the RED metrics: the method, and a
+                // status-class flag enriched after the response for error-rate-by-class.
+                dimensions = setOf("http.request.method", "http.response.status_class"),
+            ) { span ->
                 val call = proceed(request)
                 val status = call.response.status.value
-                span.setAttribute("http.status_code", status.toLong())
-                if (status >= 400) span.setStatus(StatusCode.ERROR, "HTTP $status")
+                span.enrich(
+                    MetricAttributes(
+                        mapOf(
+                            "http.response.status_code" to status.toLong(),
+                            "http.response.status_class" to "${status / 100}xx",
+                        )
+                    )
+                )
                 call
-            } catch (t: CancellationException) {
-                span.addEvent("Cancelled")
-                throw t
-            } catch (t: Throwable) {
-                span.setStatus(StatusCode.ERROR)
-                span.recordExceptionWithFingerprint(t)
-                throw t
-            } finally {
-                scope.close()
-                span.end()
             }
         }
     }
 
     onClose {
-        // Clean up any remaining spans on client close
+        // Nothing to clean up; spans are scoped per-request by metricsTrace.
     }
 }

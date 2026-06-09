@@ -56,7 +56,6 @@ kotlin {
         }
         val jvmMain by getting {
             dependencies {
-                compileOnly(project(":otel-jvm"))
                 compileOnly(libs.openTelemetry.api)
             }
         }

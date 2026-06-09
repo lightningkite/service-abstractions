@@ -1,12 +1,10 @@
 package com.lightningkite.services.email.javasmtp
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.email.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
-import io.opentelemetry.api.trace.SpanKind
+import com.lightningkite.services.metricsTrace
 import jakarta.activation.DataHandler
 import jakarta.mail.*
 import jakarta.mail.internet.*
@@ -105,8 +103,6 @@ public class JavaSmtpEmailService(
     public val from: EmailAddressWithName,
 ) : EmailService {
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-javasmtp")
-
     public companion object {
         private fun parseParameterString(params: String): Map<String, List<String>> = params
             .takeIf { it.isNotBlank() }
@@ -181,23 +177,22 @@ public class JavaSmtpEmailService(
     override suspend fun send(email: Email) {
         if (email.to.isEmpty() && email.cc.isEmpty() && email.bcc.isEmpty()) return
 
-        otel.span("email.send", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("email.operation", "send")
-            setAttribute("email.system", "smtp")
-            setAttribute("messaging.system", "smtp")
-            setAttribute("email.smtp.host", hostName)
-            setAttribute("email.smtp.port", port.toLong())
-            setAttribute("email.from", email.from?.value?.toString() ?: from.value.toString())
-            setAttribute("email.to", email.to.joinToString(", ") { it.value.toString() })
-            setAttribute("email.subject", email.subject)
+        metricsTrace("send", attributes = MetricAttributes(buildMap {
+            put("email.operation", "send")
+            put("email.system", "smtp")
+            put("messaging.system", "smtp")
+            put("email.smtp.host", hostName)
+            put("email.smtp.port", port.toLong())
+            put("email.from", email.from?.value?.toString() ?: from.value.toString())
+            put("email.to", email.to.joinToString(", ") { it.value.toString() })
+            put("email.subject", email.subject)
             if (email.cc.isNotEmpty()) {
-                setAttribute("email.cc", email.cc.joinToString(", ") { it.value.toString() })
+                put("email.cc", email.cc.joinToString(", ") { it.value.toString() })
             }
             if (email.attachments.isNotEmpty()) {
-                setAttribute("email.attachments.count", email.attachments.size.toLong())
+                put("email.attachments.count", email.attachments.size.toLong())
             }
-        }) { _ ->
+        })) { _ ->
             val message = email.copy(from = email.from ?: from).toJavaX(session)
             withContext(kotlinx.coroutines.Dispatchers.IO) {
                 Transport.send(message)
@@ -209,17 +204,16 @@ public class JavaSmtpEmailService(
     override suspend fun sendBulk(template: Email, personalizations: List<EmailPersonalization>) {
         if (personalizations.isEmpty()) return
 
-        otel.span("email.sendBulk", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("email.operation", "sendBulk")
-            setAttribute("email.system", "smtp")
-            setAttribute("messaging.system", "smtp")
-            setAttribute("email.smtp.host", hostName)
-            setAttribute("email.smtp.port", port.toLong())
-            setAttribute("email.from", template.from?.value?.toString() ?: from.value.toString())
-            setAttribute("email.subject", template.subject)
-            setAttribute("email.personalizations.count", personalizations.size.toLong())
-        }) { _ ->
+        metricsTrace("sendBulk", attributes = MetricAttributes(mapOf(
+            "email.operation" to "sendBulk",
+            "email.system" to "smtp",
+            "messaging.system" to "smtp",
+            "email.smtp.host" to hostName,
+            "email.smtp.port" to port.toLong(),
+            "email.from" to (template.from?.value?.toString() ?: from.value.toString()),
+            "email.subject" to template.subject,
+            "email.personalizations.count" to personalizations.size.toLong(),
+        ))) { _ ->
             val emails = personalizations.map { it(template).copy(from = template.from ?: from) }
             val messages = emails.map { it.toJavaX(session).also { m -> m.saveChanges() } to it }
             withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -244,16 +238,15 @@ public class JavaSmtpEmailService(
     override suspend fun sendBulk(emails: Collection<Email>) {
         if (emails.isEmpty()) return
 
-        otel.span("email.sendBulk", configure = {
-            setSpanKind(SpanKind.CLIENT)
-            setAttribute("email.operation", "sendBulk")
-            setAttribute("email.system", "smtp")
-            setAttribute("messaging.system", "smtp")
-            setAttribute("email.smtp.host", hostName)
-            setAttribute("email.smtp.port", port.toLong())
-            setAttribute("email.from", from.value.toString())
-            setAttribute("email.count", emails.size.toLong())
-        }) { _ ->
+        metricsTrace("sendBulk", attributes = MetricAttributes(mapOf(
+            "email.operation" to "sendBulk",
+            "email.system" to "smtp",
+            "messaging.system" to "smtp",
+            "email.smtp.host" to hostName,
+            "email.smtp.port" to port.toLong(),
+            "email.from" to from.value.toString(),
+            "email.count" to emails.size.toLong(),
+        ))) { _ ->
             val messages = emails.map { email ->
                 email.copy(from = from).toJavaX(session).also { it.saveChanges() } to email
             }

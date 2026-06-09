@@ -1,9 +1,9 @@
 package com.lightningkite.services.database.postgres
 
+import com.lightningkite.services.MetricUnit
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.otel.get
+import com.lightningkite.services.metricsGauge
 import kotlinx.serialization.KSerializer
-import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import java.util.concurrent.ConcurrentHashMap
 
@@ -16,12 +16,16 @@ import java.util.concurrent.ConcurrentHashMap
  * - **Array support**: Native PostgreSQL array types for List/Set fields
  * - **Full-text search**: PostgreSQL tsvector/tsquery for text search
  * - **GiST indexes**: Geospatial queries via PostGIS (when available)
- * - **Connection pooling**: Via Exposed's connection management
+ * - **Connection pooling**: A HikariCP pool backs every connection; tune it via URL query params.
  *
  * ## Supported URL Schemes
  *
  * - `postgresql://user:password@host:port/database` - Standard PostgreSQL connection
  * - `postgresql://host:port/database` - Local connection (no auth)
+ *
+ * Append `?key=value&...` to configure the pool. Supported keys: `maxPoolSize`, `minIdle`,
+ * `connectionTimeout`, `idleTimeout`, `maxLifetime`, `validationTimeout`, `poolName` (timeouts in
+ * milliseconds). Any other query params are forwarded to the PostgreSQL JDBC URL.
  *
  * ## Configuration Examples
  *
@@ -32,15 +36,15 @@ import java.util.concurrent.ConcurrentHashMap
  * // Local development
  * Database.Settings("postgresql://localhost:5432/dev")
  *
- * // Cloud provider (RDS, Cloud SQL, etc.)
- * Database.Settings("postgresql://user:pass@rds-endpoint.region.rds.amazonaws.com:5432/mydb")
+ * // Larger pool for high concurrency
+ * Database.Settings("postgresql://user:pass@host:5432/mydb?maxPoolSize=30")
  * ```
  *
  * ## Implementation Notes
  *
  * - **Schema management**: Tables created automatically on first access
  * - **Migrations**: Not handled by this library (use Flyway/Liquibase)
- * - **Transactions**: Use Exposed's transaction blocks explicitly
+ * - **Connection pool**: HikariCP; the pool is closed on [disconnect] and rebuilt on reconnect.
  * - **Serverless**: Supports disconnect/connect for AWS Lambda
  * - **Type mapping**: Kotlin types → PostgreSQL JSONB (flexible but less queryable than native types)
  *
@@ -48,26 +52,35 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * - **JSONB queries**: Slower than native column queries, but more flexible
  * - **Indexes**: Add indexes on JSONB fields you query frequently
- * - **Connection pool**: Configure via Exposed settings for high concurrency
+ * - **Connection pool**: Size via the `maxPoolSize` URL query param for high concurrency.
  *
  * @property name Service name for logging/metrics
  * @property context Service context with serializers
- * @property makeDb Lazy database connection factory (for serverless disconnect/reconnect)
+ * @property makeDb Lazy pooled-database factory (for serverless disconnect/reconnect)
  */
 public class PostgresDatabase(
     override val name: String,
     override val context: SettingContext,
-    private val makeDb: () -> Database,
+    private val makeDb: () -> PooledDatabase,
 ) : com.lightningkite.services.database.Database {
     private var _db = lazy(makeDb)
 
-    public val db: Database get() = _db.value
-    internal val otel by lazy { context.openTelemetry?.get("database-postgres") }
+    public val db: org.jetbrains.exposed.sql.Database get() = _db.value.database
+
+    // Point-in-time count of busy connections; sampled by the exporter, so guard the lazy pool.
+    private val poolActiveGauge = metricsGauge("sql.pool.active", MetricUnit.Occurrences, emptySet()) {
+        if (_db.isInitialized()) _db.value.dataSource?.hikariPoolMXBean?.activeConnections?.toLong() ?: 0L
+        else 0L
+    }
 
     override suspend fun disconnect() {
         collections.values.forEach { if (it.isInitialized()) it.value.close() }
         collections.clear()
-        if (_db.isInitialized()) TransactionManager.closeAndUnregister(_db.value)
+        if (_db.isInitialized()) {
+            val pooled = _db.value
+            TransactionManager.closeAndUnregister(pooled.database)
+            pooled.dataSource?.close()
+        }
         _db = lazy(makeDb)
     }
 
@@ -92,22 +105,15 @@ public class PostgresDatabase(
                     ?.let { match ->
                         val user = match.groups["user"]!!.value
                         val password = match.groups["password"]!!.value
-                        val destination = match.groups["destination"]!!.value
+                        val split = splitPoolQuery(match.groups["destination"]!!.value)
+                        val jdbcUrl = "jdbc:postgresql://${split.base}" + (split.jdbcQuery?.let { "?$it" } ?: "")
                         if (user.isNotBlank() && password.isNotBlank())
                             PostgresDatabase(name = name, context = context) {
-                                Database.connect(
-                                    "jdbc:postgresql://$destination",
-                                    "org.postgresql.Driver",
-                                    user,
-                                    password
-                                )
+                                makePooledDatabase(jdbcUrl, "org.postgresql.Driver", user, password, split.pool)
                             }
                         else
                             PostgresDatabase(name = name, context = context) {
-                                Database.connect(
-                                    "jdbc:postgresql://$destination",
-                                    "org.postgresql.Driver"
-                                )
+                                makePooledDatabase(jdbcUrl, "org.postgresql.Driver", pool = split.pool)
                             }
                     }
                     ?: throw IllegalStateException("Invalid Postgres Url. The URL should match the pattern: postgresql://[user]:[password]@[destination]")
@@ -126,7 +132,7 @@ public class PostgresDatabase(
                     name,
                     serializer,
                     context.internalSerializersModule,
-                    otel
+                    context,
                 )
             }
         } as Lazy<PostgresCollection<T>>).value

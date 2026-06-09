@@ -1,13 +1,14 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.MetricUnit
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.database.*
+import com.lightningkite.services.metricsGauge
 import com.mongodb.*
 import com.mongodb.event.*
 import com.mongodb.kotlin.client.coroutine.MongoClient
 import com.mongodb.kotlin.client.coroutine.MongoCollection
-import io.opentelemetry.instrumentation.mongo.v3_1.MongoTelemetry
 import kotlinx.serialization.KSerializer
 import org.bson.BsonDocument
 import org.bson.UuidRepresentation
@@ -25,7 +26,6 @@ import kotlin.math.roundToInt
  * - **Index support**: Respects @Index annotations for performance
  * - **Atlas Search**: Optional full-text search via MongoDB Atlas Search
  * - **Connection pooling**: Configurable pool sizes (serverless-aware)
- * - **OpenTelemetry**: Automatic instrumentation when available
  *
  * ## Supported URL Schemes
  *
@@ -190,27 +190,34 @@ public class MongoDatabase(
     private val active = AtomicInteger(0)
     private val poolSize by lazy { if (isServerless) 4 else 100 }
     public val listener: ConnectionPoolListener = object : ConnectionPoolListener {
-        override fun connectionCheckedIn(event: ConnectionCheckedInEvent) {
+        // connectionCheckedOut = a connection was taken from the pool for use -> now in-use.
+        override fun connectionCheckedOut(event: ConnectionCheckedOutEvent) {
             active.incrementAndGet()
         }
 
-        override fun connectionCheckedOut(event: ConnectionCheckedOutEvent) {
+        // connectionCheckedIn = a connection was returned to the pool -> no longer in-use.
+        override fun connectionCheckedIn(event: ConnectionCheckedInEvent) {
             active.decrementAndGet()
         }
     }
 
+    // Point-in-time gauge of in-use connections, sampled by the exporter from [active].
+    // Held in a field so it is not garbage-collected (the SDK keeps only a weak reference).
+    private val poolActiveGauge: AutoCloseable =
+        metricsGauge("mongodb.pool.active", MetricUnit.Occurrences, defaultDimensions = emptySet()) { active.get().toLong() }
+
     // You might be asking, "WHY?  WHY IS THIS SO COMPLICATED?"
     // Well, we have to be able to fully disconnect and reconnect existing Mongo databases in order to support AWS's
     // SnapStart feature effectively.  As such, we have to destroy and reproduce all the connections on demand.
-    private val telemetry = context.openTelemetry?.let { MongoTelemetry.builder(it).build() }
     private val makeClientWithListener = {
         active.set(0)
         MongoClient.create(
             MongoClientSettings.builder(clientSettings)
-                .also { if (telemetry != null) it.addCommandListener(telemetry.newCommandListener()) }
                 .uuidRepresentation(UuidRepresentation.STANDARD)
                 .applyToConnectionPoolSettings {
                     it.maxSize(poolSize)
+                    // Register the pool listener so [active] reflects in-use connections for the gauge/health check.
+                    it.addConnectionPoolListener(listener)
                     if (isServerless) {
                         it.maxConnectionIdleTime(15, TimeUnit.SECONDS)
                         it.maxConnectionLifeTime(1L, TimeUnit.MINUTES)
@@ -266,7 +273,7 @@ public class MongoDatabase(
     override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-                MongoTable(serializer, atlasSearch = atlasSearch, object : MongoCollectionAccess {
+                MongoTable(name = this.name, serializer, atlasSearch = atlasSearch, access = object : MongoCollectionAccess {
                     override suspend fun <T> wholeDb(action: suspend com.mongodb.kotlin.client.coroutine.MongoDatabase.() -> T): T {
                         return action(databaseLazy.value)
                     }
@@ -306,7 +313,7 @@ public class MongoDatabase(
                             throw e
                         }
                     }
-                }, context)
+                }, context = context)
             }
         } as Lazy<MongoTable<T>>).value
 }

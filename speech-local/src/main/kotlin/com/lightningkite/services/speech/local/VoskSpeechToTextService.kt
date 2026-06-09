@@ -1,10 +1,9 @@
 package com.lightningkite.services.speech.local
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
@@ -12,7 +11,6 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
-import io.opentelemetry.api.trace.SpanKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -95,8 +93,6 @@ public class VoskSpeechToTextService(
     @Volatile
     private var model: Model? = null
 
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("speech-vosk")
-
     // Dedicated HTTP client for downloading audio from URLs; 30s timeout per the audit requirement.
     private val httpClient = HttpClient(CIO) {
         install(HttpTimeout) {
@@ -126,10 +122,10 @@ public class VoskSpeechToTextService(
         val audioBytes = audio.data.bytes()
         logger.debug { "[$name] Transcribing ${audioBytes.size} bytes of audio" }
 
-        otel.span("speech.transcribe", configure = {
-            setSpanKind(SpanKind.INTERNAL)
-            setAttribute("audio.size_bytes", audioBytes.size.toLong())
-        }) {
+        metricsTrace(
+            "transcribe",
+            attributes = MetricAttributes(mapOf("audio.size_bytes" to audioBytes.size.toLong()))
+        ) {
             // Convert audio to 16kHz mono WAV if needed
             val wavBytes = convertToVoskFormat(audioBytes, audio.mediaType.toString())
             transcribeWav(wavBytes, options)

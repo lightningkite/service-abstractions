@@ -12,7 +12,6 @@ dependencies {
     api(project(path = ":cache"))
     api(libs.dynamodb)
     implementation(project(":aws-client"))
-    compileOnly(project(":otel-jvm"))
     implementation(libs.coroutines.reactive)
 
     testImplementation(libs.kotlin.test)

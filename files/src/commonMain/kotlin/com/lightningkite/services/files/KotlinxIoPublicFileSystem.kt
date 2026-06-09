@@ -226,7 +226,7 @@ public class KotlinxIoPublicFileSystem(
          * @return A list of FileObjects, null if this is a file (not a directory) or doesn't exist
          */
         override suspend fun list(): List<FileObject>? = traceFileOperation(
-            context = context,
+            owner = this@KotlinxIoPublicFileSystem,
             operation = "list",
             path = relativePath,
             storageSystem = "file"
@@ -255,7 +255,7 @@ public class KotlinxIoPublicFileSystem(
          * @return FileInfo with type and size, or null if the file doesn't exist
          */
         override suspend fun head(): FileInfo? = traceFileOperation(
-            context = context,
+            owner = this@KotlinxIoPublicFileSystem,
             operation = "head",
             path = relativePath,
             storageSystem = "file",
@@ -289,7 +289,7 @@ public class KotlinxIoPublicFileSystem(
          * @param content The typed data to write
          */
         override suspend fun put(content: TypedData): Unit = traceFileOperation(
-            context = context,
+            owner = this@KotlinxIoPublicFileSystem,
             operation = "put",
             path = relativePath,
             storageSystem = "file",
@@ -323,7 +323,7 @@ public class KotlinxIoPublicFileSystem(
          * @return The file's content as TypedData, or null if the file doesn't exist
          */
         override suspend fun get(): TypedData? = traceFileOperation(
-            context = context,
+            owner = this@KotlinxIoPublicFileSystem,
             operation = "get",
             path = relativePath,
             storageSystem = "file",
@@ -356,7 +356,7 @@ public class KotlinxIoPublicFileSystem(
          * @throws RuntimeException if deletion fails
          */
         override suspend fun delete(): Unit = traceFileOperation(
-            context = context,
+            owner = this@KotlinxIoPublicFileSystem,
             operation = "delete",
             path = relativePath,
             storageSystem = "file"

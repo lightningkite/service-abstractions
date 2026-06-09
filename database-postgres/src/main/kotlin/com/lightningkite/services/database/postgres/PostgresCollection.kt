@@ -1,10 +1,12 @@
 package com.lightningkite.services.database.postgres
 
+import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricSpan
+import com.lightningkite.services.Namespaced
+import com.lightningkite.services.SettingContext
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.Table
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.span
-import io.opentelemetry.api.trace.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -20,11 +22,11 @@ import java.sql.Connection.TRANSACTION_SERIALIZABLE
 
 public class PostgresCollection<T : Any>(
     public val db: Database,
-    public val name: String,
+    override val name: String,
     override val serializer: KSerializer<T>,
     public val serializersModule: SerializersModule,
-    private val otel: OpenTelemetrySub?,
-) : Table<T> {
+    override val context: SettingContext,
+) : Table<T>, Namespaced {
     private var format = DbMapLikeFormat(serializersModule)
 
     private val table = SerialDescriptorTable(name, serializersModule, serializer.descriptor)
@@ -45,17 +47,25 @@ public class PostgresCollection<T : Any>(
                 action()
             })
 
+    // Per-collection default span attributes shared by every operation.
+    private fun baseAttributes(operation: String, extra: Map<String, Any?> = emptyMap()): MetricAttributes =
+        MetricAttributes(
+            buildMap {
+                put("db.system", "postgresql")
+                put("db.operation", operation)
+                put("db.collection", name)
+                putAll(extra)
+            }
+        )
+
+    // Thin wrapper over metricsTrace: opens the `<name>.<operation>` span (with the postgres-specific
+    // default attributes plus any caller-supplied [extra]), records the RED metric inside it, and
+    // hands the started span to [block] for dynamic per-result attributes.
     private suspend inline fun <R> traced(
         operation: String,
-        crossinline attributes: SpanBuilder.() -> Unit = {},
-        crossinline block: suspend (Span?) -> R,
-    ): R = otel.span("postgres.$operation", configure = {
-        setSpanKind(SpanKind.CLIENT)
-        setAttribute("db.system", "postgresql")
-        setAttribute("db.operation", operation)
-        setAttribute("db.collection", name)
-        attributes()
-    }) { block(it) }
+        extra: Map<String, Any?> = emptyMap(),
+        noinline block: suspend (MetricSpan) -> R,
+    ): R = metricsTrace(operation, attributes = baseAttributes(operation, extra), action = block)
 
     @OptIn(ExperimentalSerializationApi::class)
     private val prepare = scope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
@@ -75,10 +85,10 @@ public class PostgresCollection<T : Any>(
         maxQueryMs: Long,
     ): Flow<T> = traced(
         operation = "find",
-        attributes = {
-            setAttribute("db.limit", limit.toLong())
-            setAttribute("db.skip", skip.toLong())
-        }
+        extra = mapOf(
+            "db.limit" to limit.toLong(),
+            "db.skip" to skip.toLong(),
+        )
     ) { span ->
         prepare.await()
         val items = t {
@@ -106,7 +116,7 @@ public class PostgresCollection<T : Any>(
                     format.decode(serializer, it)
                 }
         }
-        span?.setAttribute("db.result_count", items.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.result_count" to items.size.toLong())))
         items.asFlow()
     }
 
@@ -119,16 +129,14 @@ public class PostgresCollection<T : Any>(
                 .selectAll().where { condition(condition, serializer, table, format).asOp() }
                 .count().toInt()
         }
-        span?.setAttribute("db.count", result.toLong())
+        span.enrich(MetricAttributes(mapOf("db.count" to result.toLong())))
         result
     }
 
     override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> =
         traced(
             operation = "groupCount",
-            attributes = {
-                setAttribute("db.groupBy", groupBy.colName)
-            }
+            extra = mapOf("db.groupBy" to groupBy.colName)
         ) { span ->
             prepare.await()
             val result = t {
@@ -139,7 +147,7 @@ public class PostgresCollection<T : Any>(
                     .where { condition(condition, serializer, table, format).asOp() }
                     .groupBy(table.col[groupBy.colName]!!).associate { it[groupCol] to it[count].toInt() }
             }
-            span?.setAttribute("db.groups", result.size.toLong())
+            span.enrich(MetricAttributes(mapOf("db.groups" to result.size.toLong())))
             result
         }
 
@@ -149,10 +157,10 @@ public class PostgresCollection<T : Any>(
         property: DataClassPath<T, N>,
     ): Double? = traced(
         operation = "aggregate",
-        attributes = {
-            setAttribute("db.aggregate", aggregate.toString())
-            setAttribute("db.property", property.colName)
-        }
+        extra = mapOf(
+            "db.aggregate" to aggregate.toString(),
+            "db.property" to property.colName,
+        )
     ) { span ->
         prepare.await()
         t {
@@ -177,11 +185,11 @@ public class PostgresCollection<T : Any>(
         property: DataClassPath<T, N>,
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
-        attributes = {
-            setAttribute("db.aggregate", aggregate.toString())
-            setAttribute("db.groupBy", groupBy.colName)
-            setAttribute("db.property", property.colName)
-        }
+        extra = mapOf(
+            "db.aggregate" to aggregate.toString(),
+            "db.groupBy" to groupBy.colName,
+            "db.property" to property.colName,
+        )
     ) { span ->
         prepare.await()
         val result = t {
@@ -200,7 +208,7 @@ public class PostgresCollection<T : Any>(
                 .where { condition(condition, serializer, table, format).asOp() }
                 .groupBy(table.col[groupBy.colName]!!).associate { it[groupCol] to it[agg]?.toDouble() }
         }
-        span?.setAttribute("db.groups", result.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.groups" to result.size.toLong())))
         result
     }
 
@@ -209,7 +217,7 @@ public class PostgresCollection<T : Any>(
     ) { span ->
         prepare.await()
         val modelsList = models.toList()
-        span?.setAttribute("db.insert_count", modelsList.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.insert_count" to modelsList.size.toLong())))
         t {
             table.batchInsert(modelsList) {
                 format.encode(serializer, it, this)
@@ -279,7 +287,7 @@ public class PostgresCollection<T : Any>(
                 EntryChange(it, modification(it))
             } ?: EntryChange()
         }
-        span?.setAttribute("db.updated", if (result.old != null) 1L else 0L)
+        span.enrich(MetricAttributes(mapOf("db.updated" to if (result.old != null) 1L else 0L)))
         result
     }
 
@@ -300,7 +308,7 @@ public class PostgresCollection<T : Any>(
                 }
             )
         }
-        span?.setAttribute("db.updated", count.toLong())
+        span.enrich(MetricAttributes(mapOf("db.updated" to count.toLong())))
         count > 0
     }
 
@@ -320,7 +328,7 @@ public class PostgresCollection<T : Any>(
                     EntryChange(it, modification(it))
                 })
             }
-            span?.setAttribute("db.updated", result.changes.size.toLong())
+            span.enrich(MetricAttributes(mapOf("db.updated" to result.changes.size.toLong())))
             result
         }
 
@@ -336,7 +344,7 @@ public class PostgresCollection<T : Any>(
                 }
             )
         }
-        span?.setAttribute("db.updated", count.toLong())
+        span.enrich(MetricAttributes(mapOf("db.updated" to count.toLong())))
         count
     }
 
@@ -350,7 +358,7 @@ public class PostgresCollection<T : Any>(
                 where = { condition(condition, serializer, table, format).asOp() }
             ).firstOrNull()?.let { format.decode(serializer, it) }
         }
-        span?.setAttribute("db.deleted", if (result != null) 1L else 0L)
+        span.enrich(MetricAttributes(mapOf("db.deleted" to if (result != null) 1L else 0L)))
         result
     }
 
@@ -364,7 +372,7 @@ public class PostgresCollection<T : Any>(
                 op = { it.condition(condition, serializer, table, format).asOp() }
             )
         }
-        span?.setAttribute("db.deleted", count.toLong())
+        span.enrich(MetricAttributes(mapOf("db.deleted" to count.toLong())))
         count > 0
     }
 
@@ -377,7 +385,7 @@ public class PostgresCollection<T : Any>(
                 where = { condition(condition, serializer, table, format).asOp() }
             ).map { format.decode(serializer, it) }
         }
-        span?.setAttribute("db.deleted", result.size.toLong())
+        span.enrich(MetricAttributes(mapOf("db.deleted" to result.size.toLong())))
         result
     }
 
@@ -390,7 +398,7 @@ public class PostgresCollection<T : Any>(
                 op = { it.condition(condition, serializer, table, format).asOp() }
             )
         }
-        span?.setAttribute("db.deleted", count.toLong())
+        span.enrich(MetricAttributes(mapOf("db.deleted" to count.toLong())))
         count
     }
 
@@ -402,11 +410,11 @@ public class PostgresCollection<T : Any>(
     ): Flow<ScoredResult<T>> = flow {
         val results = traced(
             operation = "findSimilar",
-            attributes = {
-                setAttribute("db.vectorField", vectorField.colName)
-                setAttribute("db.metric", params.metric.toString())
-                setAttribute("db.limit", params.limit.toLong())
-                params.minScore?.let { setAttribute("db.minScore", it.toDouble()) }
+            extra = buildMap {
+                put("db.vectorField", vectorField.colName)
+                put("db.metric", params.metric.toString())
+                put("db.limit", params.limit.toLong())
+                params.minScore?.let { put("db.minScore", it.toDouble()) }
             }
         ) { span ->
             prepare.await()
@@ -473,7 +481,7 @@ public class PostgresCollection<T : Any>(
                     .filter { minScore == null || it.score >= minScore }
             }
 
-            span?.setAttribute("db.result_count", results.size.toLong())
+            span.enrich(MetricAttributes(mapOf("db.result_count" to results.size.toLong())))
             results
         }
         results.forEach { emit(it) }
@@ -487,11 +495,11 @@ public class PostgresCollection<T : Any>(
     ): Flow<ScoredResult<T>> = flow {
         val results = traced(
             operation = "findSimilarSparse",
-            attributes = {
-                setAttribute("db.vectorField", vectorField.colName)
-                setAttribute("db.metric", params.metric.toString())
-                setAttribute("db.limit", params.limit.toLong())
-                params.minScore?.let { setAttribute("db.minScore", it.toDouble()) }
+            extra = buildMap {
+                put("db.vectorField", vectorField.colName)
+                put("db.metric", params.metric.toString())
+                put("db.limit", params.limit.toLong())
+                params.minScore?.let { put("db.minScore", it.toDouble()) }
             }
         ) { span ->
             prepare.await()
@@ -549,7 +557,7 @@ public class PostgresCollection<T : Any>(
                     .filter { minScore == null || it.score >= minScore }
             }
 
-            span?.setAttribute("db.result_count", results.size.toLong())
+            span.enrich(MetricAttributes(mapOf("db.result_count" to results.size.toLong())))
             results
         }
         results.forEach { emit(it) }

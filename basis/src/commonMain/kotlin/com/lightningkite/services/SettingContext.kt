@@ -1,5 +1,6 @@
 package com.lightningkite.services
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.time.Clock
 
@@ -8,7 +9,7 @@ import kotlin.time.Clock
  *
  * `SettingContext` contains shared configuration and resources that services need:
  * - Serialization configuration for custom types
- * - Observability (OpenTelemetry) integration
+ * - Observability (the vendor-neutral [MetricsBackend]) integration
  * - Shared resource pools (database connections, HTTP clients, etc.)
  * - Application metadata (project name, public URL)
  * - Time source (mockable for testing)
@@ -31,7 +32,7 @@ import kotlin.time.Clock
  *     override val internalSerializersModule = SerializersModule {
  *         polymorphic(MyInterface::class) { subclass(MyImpl::class) }
  *     }
- *     override val openTelemetry = OpenTelemetry.get()
+ *     override val metricsBackend = OtelMetricsBackend(openTelemetrySdk)
  *     override val sharedResources = SharedResources()
  * }
  *
@@ -40,7 +41,7 @@ import kotlin.time.Clock
  * ```
  *
  * @see SharedResources for resource sharing pattern
- * @see OpenTelemetry for observability integration
+ * @see MetricsBackend for observability integration
  */
 public interface SettingContext {
     /**
@@ -96,20 +97,16 @@ public interface SettingContext {
     public val internalSerializersModule: SerializersModule
 
     /**
-     * Optional OpenTelemetry instance for distributed tracing and metrics.
+     * Backend for the coroutine-first metrics API ([metricsTrace], [metricsHistogram], etc.) and
+     * error reporting ([reportException]).
      *
-     * When provided, services will:
-     * - Create spans for operations (database queries, cache hits, etc.)
-     * - Record metrics (operation counts, latencies, error rates)
-     * - Propagate trace context across service boundaries
-     *
-     * When `null`, services operate normally but without telemetry.
-     * This is common in:
-     * - Local development environments
-     * - Testing scenarios
-     * - Applications that use alternative observability solutions
+     * Defaults to `null`, in which case those functions run with no-op instruments and error
+     * reporting only logs. The JVM OpenTelemetry-backed implementation
+     * (`com.lightningkite.services.otel.OtelMetricsBackend` in otel-jvm) is wired in here at
+     * application startup. This is the vendor-neutral telemetry abstraction; it is the only
+     * telemetry surface exposed by `SettingContext`.
      */
-    public val openTelemetry: OpenTelemetry?
+    public val metricsBackend: MetricsBackend? get() = null
 
     /**
      * Time source for all time-dependent operations.
@@ -148,19 +145,28 @@ public interface SettingContext {
     public val sharedResources: SharedResources
 
     /**
-     * Wraps an async action with potential observability/error handling.
+     * Reports an already-caught [throwable] to logging and telemetry.
      *
-     * Default implementation simply executes the action. Implementations can override to:
-     * - Wrap actions in OpenTelemetry spans
-     * - Add error logging/reporting
-     * - Implement retry logic
-     * - Track operation metrics
+     * Default behavior:
+     * - Always logs the throwable at ERROR via the standard multiplatform logger, including
+     *   the [context] entries, so failures are visible even with no telemetry backend.
+     * - Delegates to [metricsBackend]'s [MetricsBackend.reportError] when a backend is configured.
+     *   The JVM OpenTelemetry backend records the exception on the active span if one exists, or
+     *   otherwise emits an ERROR log record (the path for failures outside any span, e.g. background
+     *   index creation).
      *
-     * This is primarily used internally by service implementations to instrument operations.
+     * @param throwable The exception to report.
+     * @param context Additional key/value attributes attached to the report for diagnostics.
      */
-    public suspend fun report(action: suspend () -> Unit): Unit = action()
+    public suspend fun reportException(throwable: Throwable, context: Map<String, String> = emptyMap()) {
+        logger.error(throwable) {
+            if (context.isEmpty()) "Reported exception" else "Reported exception; context=$context"
+        }
+        metricsBackend?.reportError(throwable, MetricAttributes(context))
+    }
 
     public companion object {
+        private val logger = KotlinLogging.logger("com.lightningkite.services")
     }
 }
 

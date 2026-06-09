@@ -32,7 +32,7 @@ class PostgresDisconnectConnectTest {
     private fun newDatabase(): PostgresDatabase = PostgresDatabase(
         "test",
         TestSettingContext(EmptySerializersModule())
-    ) { Database.connect(postgres.embeddedPostgres.postgresDatabase) }
+    ) { PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null) }
 
     @Test
     fun disconnectClearsCollectionsAndReconnectWorks() = runTest {

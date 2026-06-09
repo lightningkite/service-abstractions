@@ -33,7 +33,7 @@ class BasicTest() {
     fun schema2() {
         val db = Database.connect(pg.embeddedPostgres.postgresDatabase)
         val collection =
-            PostgresCollection(db, "LargeTestModel", LargeTestModel.serializer(), EmptySerializersModule(), null)
+            PostgresCollection(db, "LargeTestModel", LargeTestModel.serializer(), EmptySerializersModule(), TestSettingContext(EmptySerializersModule()))
         runBlocking {
             // Quick test
             val t = LargeTestModel()
@@ -124,7 +124,7 @@ class PostgresRetrievalTest {
         PostgresDatabase(
             "test",
             TestSettingContext(EmptySerializersModule())
-        ) { Database.connect(postgres.embeddedPostgres.postgresDatabase) }
+        ) { PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null) }
     }
 
     @kotlin.test.Test
@@ -212,7 +212,7 @@ class PostgresAggregationsTest : AggregationsTest() {
         PostgresDatabase(
             "test",
             TestSettingContext(EmptySerializersModule())
-        ) { Database.connect(postgres.embeddedPostgres.postgresDatabase) }
+        ) { PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null) }
     }
 }
 
@@ -227,7 +227,7 @@ class PostgresConditionTests : ConditionTests() {
         PostgresDatabase(
             "test",
             TestSettingContext(EmptySerializersModule())
-        ) { Database.connect(postgres.embeddedPostgres.postgresDatabase) }
+        ) { PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null) }
     }
 
     @Test
@@ -254,7 +254,7 @@ class PostgresModificationTests : ModificationTests() {
         PostgresDatabase(
             "test",
             TestSettingContext(EmptySerializersModule())
-        ) { Database.connect(postgres.embeddedPostgres.postgresDatabase) }
+        ) { PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null) }
     }
 
     override fun test_Map_modifyField() {
@@ -281,7 +281,7 @@ class PostgresSortTest : SortTest() {
         PostgresDatabase(
             "test",
             TestSettingContext(EmptySerializersModule())
-        ) { Database.connect(postgres.embeddedPostgres.postgresDatabase) }
+        ) { PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null) }
     }
 }
 
@@ -308,18 +308,21 @@ class PostgresVectorSearchTests : VectorSearchTests() {
         if (manualUrl != null) {
             // Use manually specified URL (for CI/CD or custom setups)
             PostgresDatabase("test", TestSettingContext(EmptySerializersModule())) {
-                Database.connect(manualUrl, driver = "org.postgresql.Driver")
+                PooledDatabase(Database.connect(manualUrl, driver = "org.postgresql.Driver"), null)
             }
         } else {
             // Use Testcontainers
             val container = PostgresDockerContainer.getContainer()
                 ?: throw IllegalStateException("pgvector container not available")
             PostgresDatabase("test", TestSettingContext(EmptySerializersModule())) {
-                Database.connect(
-                    url = container.jdbcUrl,
-                    user = container.username,
-                    password = container.password,
-                    driver = "org.postgresql.Driver"
+                PooledDatabase(
+                    Database.connect(
+                        url = container.jdbcUrl,
+                        user = container.username,
+                        password = container.password,
+                        driver = "org.postgresql.Driver"
+                    ),
+                    null,
                 )
             }
         }

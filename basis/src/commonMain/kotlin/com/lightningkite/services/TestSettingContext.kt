@@ -84,12 +84,4 @@ public class TestSettingContext(
      * Defaults to "Test". Override if tests need to verify project-name-specific behavior.
      */
     override val projectName: String get() = "Test"
-
-    /**
-     * OpenTelemetry instance for testing.
-     *
-     * Defaults to null since most tests don't need telemetry instrumentation.
-     * Set a mock OpenTelemetry instance if testing tracing/metrics behavior.
-     */
-    override val openTelemetry: OpenTelemetry? get() = null
 }

@@ -28,7 +28,6 @@ class OpenAiLiveTest {
         override val projectName: String = "ai-openai-test"
         override val publicUrl: String = "http://localhost"
         override val internalSerializersModule = EmptySerializersModule()
-        override val openTelemetry = null
         override val sharedResources: SharedResources = SharedResources()
     }
 

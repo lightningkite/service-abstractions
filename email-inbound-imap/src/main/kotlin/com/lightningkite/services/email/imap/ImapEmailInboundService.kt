@@ -1,14 +1,12 @@
 package com.lightningkite.services.email.imap
 
+import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
-import com.lightningkite.services.otel.OpenTelemetrySub
-import com.lightningkite.services.otel.get
-import com.lightningkite.services.otel.span
+import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.opentelemetry.api.trace.*
 import jakarta.mail.*
 import jakarta.mail.internet.InternetAddress
 import jakarta.mail.internet.MimeMessage
@@ -87,8 +85,6 @@ public class ImapEmailInboundService(
     public val useSsl: Boolean,
     public val requireStartTls: Boolean = true,
 ) : EmailInboundService {
-
-    private val otel: OpenTelemetrySub? = context.openTelemetry?.get("email-inbound-imap")
 
     public companion object {
         public fun EmailInboundService.Settings.Companion.imap(
@@ -240,10 +236,9 @@ public class ImapEmailInboundService(
             "ImapEmailInboundService is pull-only; use pull() instead of parse()."
         )
 
-        override suspend fun pull(): Set<ReceivedEmail> = otel.span("email.imap.pull", configure = {
-            setSpanKind(SpanKind.CONSUMER)
-            setAttribute("messaging.system", "imap")
-        }) { pullSpan ->
+        override suspend fun pull(): Set<ReceivedEmail> = metricsTrace("pull", attributes = MetricAttributes(mapOf(
+            "messaging.system" to "imap",
+        ))) { pullSpan ->
             // Open the folder once for the whole pull cycle. SEEN-flag updates after a successful
             // ReceivedEmail materialization land on the same live IMAP session.
             val openedStore: Store
@@ -267,7 +262,7 @@ public class ImapEmailInboundService(
                         .filterIsInstance<MimeMessage>()
                 }
 
-                pullSpan?.setAttribute("email.messages_found", rawMessages.size.toLong())
+                pullSpan.enrich(MetricAttributes(mapOf("email.messages_found" to rawMessages.size.toLong())))
                 logger.info { "[$name] Found ${rawMessages.size} unread message(s)" }
 
                 // Materialize and mark SEEN one-by-one. A parse failure for one message must not

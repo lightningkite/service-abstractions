@@ -9,7 +9,6 @@ plugins {
 
 dependencies {
     api(project(path = ":sms"))
-    compileOnly(project(path = ":otel-jvm"))
 
     // Ktor dependencies for HTTP client
     implementation(project(":http-client"))
