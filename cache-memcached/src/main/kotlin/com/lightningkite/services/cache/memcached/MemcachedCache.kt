@@ -4,7 +4,6 @@ import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.metricsTrace
-import com.lightningkite.services.TelemetrySanitization
 import net.rubyeye.xmemcached.exception.MemcachedException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -120,16 +119,14 @@ public class MemcachedCache(
     private fun spanAttrs(
         key: String,
         timeToLive: Duration? = null,
-    ): MetricAttributes = MetricAttributes(
-        buildMap {
-            put("cache.key", TelemetrySanitization.hashCacheKey(key))
-            put("cache.system", "memcached")
-            timeToLive?.let { put("cache.ttl", it.inWholeSeconds) }
-        }
-    )
+    ): MetricAttributes = MetricAttributes {
+        put(Cache.MetricKeys.key, context.telemetrySanitization.hashCacheKey(key))
+        put(Cache.MetricKeys.system, "memcached")
+        timeToLive?.let { put(Cache.MetricKeys.ttl, it.inWholeSeconds) }
+    }
 
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
-        metricsTrace("get", attributes = spanAttrs(key), dimensions = setOf("cache.hit")) { span ->
+        metricsTrace("get", attributes = spanAttrs(key), dimensions = setOf(Cache.MetricKeys.hit)) { span ->
             val result = withContext(Dispatchers.IO) {
                 try {
                     client.get<String>(key)?.let { json.decodeFromString(serializer, it) }
@@ -139,7 +136,7 @@ public class MemcachedCache(
                 }
                 // IOException and other connection errors propagate to the outer handler.
             }
-            span.enrich(MetricAttributes(mapOf("cache.hit" to (result != null))))
+            span.enrich(MetricAttributes { put(Cache.MetricKeys.hit, result != null) })
             result
         }
 
@@ -161,7 +158,7 @@ public class MemcachedCache(
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf("cache.added")) { span ->
+    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.MetricKeys.added)) { span ->
         val result = withContext(Dispatchers.IO) {
             client.add(
                 key,
@@ -169,12 +166,12 @@ public class MemcachedCache(
                 json.encodeToString(serializer, value)
             )
         }
-        span.enrich(MetricAttributes(mapOf("cache.added" to result)))
+        span.enrich(MetricAttributes { put(Cache.MetricKeys.added, result) })
         result
     }
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
-        metricsTrace("add", attributes = MetricAttributes(spanAttrs(key, timeToLive).raw + ("cache.value" to value))) {
+        metricsTrace("add", attributes = MetricAttributes { putAll(spanAttrs(key, timeToLive)); put(Cache.MetricKeys.value, value) }) {
             withContext(Dispatchers.IO) {
                 // Memcached's incr/decr commands only accept non-negative deltas.
                 // Negative deltas must use decr; initValue is used when the key doesn't exist.
@@ -204,7 +201,7 @@ public class MemcachedCache(
         expected: T?,
         new: T?,
         timeToLive: Duration?,
-    ): Boolean = metricsTrace("compareAndSet", attributes = spanAttrs(key, timeToLive), dimensions = setOf("cache.cas.success")) { span ->
+    ): Boolean = metricsTrace("compareAndSet", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.MetricKeys.casSuccess)) { span ->
         val result = withContext(Dispatchers.IO) {
             // Early return if expected equals new
             if (expected == new) return@withContext true
@@ -250,7 +247,7 @@ public class MemcachedCache(
                 }
             }
         }
-        span.enrich(MetricAttributes(mapOf("cache.cas.success" to result)))
+        span.enrich(MetricAttributes { put(Cache.MetricKeys.casSuccess, result) })
         result
     }
 

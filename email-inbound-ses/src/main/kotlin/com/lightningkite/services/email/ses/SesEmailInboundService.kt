@@ -1,6 +1,7 @@
 package com.lightningkite.services.email.ses
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
@@ -148,9 +149,9 @@ public class SesEmailInboundService(
             // response. That is a normal outcome, not a failure, so it must be thrown OUTSIDE
             // metricsTrace — otherwise the trace would record it as an error outcome. The trace body
             // returns it as a value and we rethrow once the span has closed cleanly.
-            val result = metricsTrace("webhook.parse", attributes = MetricAttributes(mapOf(
-                "messaging.system" to "ses",
-            ))) { _ ->
+            val result = metricsTrace("webhook.parse", attributes = MetricAttributes {
+                put(MetricKeys.Messaging.system, "ses")
+            }) { _ ->
                 // Parse SNS notification wrapper
                 val bodyString = body.text()
                 val snsNotification = try {
@@ -161,9 +162,9 @@ public class SesEmailInboundService(
                 }
 
                 // Verify SNS message signature (REQUIRED for all message types)
-                metricsTrace("sns.verify", attributes = MetricAttributes(mapOf(
-                    "messaging.system" to "ses",
-                ))) { _ ->
+                metricsTrace("sns.verify", attributes = MetricAttributes {
+                    put(MetricKeys.Messaging.system, "ses")
+                }) { _ ->
                     verifySnsSignature(snsNotification)
                 }
 
@@ -226,9 +227,9 @@ public class SesEmailInboundService(
                                 "S3-based content retrieval is not yet implemented."
                     )
 
-                metricsTrace("mime.parse", attributes = MetricAttributes(mapOf(
-                    "messaging.system" to "ses",
-                ))) { _ ->
+                metricsTrace("mime.parse", attributes = MetricAttributes {
+                    put(MetricKeys.Messaging.system, "ses")
+                }) { _ ->
                     parseReceivedEmail(sesNotification, rawContent)
                 }
             }

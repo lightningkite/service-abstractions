@@ -84,7 +84,7 @@ public abstract class LlmAccessTests {
     public open val supportsReasoningContent: Boolean = false
 
     /**
-     * True when the provider honors [com.lightningkite.services.ai.LlmMessage.cacheBreak] / [LlmToolDescriptor.cacheBreak]
+     * True when the provider honors [com.lightningkite.services.ai.LlmMessage.cacheBoundary] / [LlmToolDescriptor.cacheBoundary]
      * and reports cache hits via [LlmUsage.cacheReadTokens]. When false, prompt-caching tests
      * are skipped. Anthropic and Bedrock (model-dependent) support this; OpenAI auto-caches
      * and Ollama has no cache, so both leave this false.

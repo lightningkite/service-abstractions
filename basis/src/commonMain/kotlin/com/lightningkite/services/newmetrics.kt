@@ -30,7 +30,7 @@ import kotlinx.coroutines.withContext
  * and projected metrics alike — inherits these attributes.
  */
 public suspend fun <T> metricsAttributes(attributes: MetricAttributes, action: suspend () -> T): T {
-    if (attributes.raw.isEmpty()) return action()
+    if (attributes.map.isEmpty()) return action()
     val parent = coroutineContext[MetricAttributeElement]
     return withContext(MetricAttributeElement(attributes, parent)) { action() }
 }
@@ -49,7 +49,7 @@ public suspend fun <T> metricsAttributes(attributes: MetricAttributes, action: s
 public suspend fun <T> Namespaced.metricsTrace(
     opName: String,
     attributes: MetricAttributes = MetricAttributes.empty,
-    dimensions: Set<String> = emptySet(),
+    dimensions: Set<MetricKey<*>> = emptySet(),
     action: suspend (MetricSpan) -> T,
 ): T {
     val owner = this
@@ -64,17 +64,17 @@ public suspend fun <T> Namespaced.metricsTrace(
  * keys pulled from the ambient bag at record time. `unit` follows OTel base-unit convention. Create
  * once and hold in a `val`; these are cheap no-ops when no backend is configured.
  */
-public fun Namespaced.metricsHistogram(name: String, unit: MetricUnit, defaultDimensions: Set<String>): Histogram {
+public fun Namespaced.metricsHistogram(name: String, unit: MetricUnit, defaultDimensions: Set<MetricKey<*>>): Histogram {
     val raw = context.metricsBackend?.histogram(this, name, unit) ?: return NoopHistogram
     return BackedHistogram(raw, defaultDimensions)
 }
 
-public fun Namespaced.metricsCounter(name: String, unit: MetricUnit, defaultDimensions: Set<String>): Counter {
+public fun Namespaced.metricsCounter(name: String, unit: MetricUnit, defaultDimensions: Set<MetricKey<*>>): Counter {
     val raw = context.metricsBackend?.counter(this, name, unit) ?: return NoopCounter
     return BackedCounter(raw, defaultDimensions)
 }
 
-public fun Namespaced.metricsInFlight(name: String, defaultDimensions: Set<String>): InFlight {
+public fun Namespaced.metricsInFlight(name: String, defaultDimensions: Set<MetricKey<*>>): InFlight {
     val raw = context.metricsBackend?.inFlight(this, name) ?: return NoopInFlight
     return BackedInFlight(raw, defaultDimensions)
 }
@@ -83,7 +83,7 @@ public fun Namespaced.metricsInFlight(name: String, defaultDimensions: Set<Strin
  * Registers an observable gauge sampled by the exporter. Note: [sample] runs outside any coroutine,
  * so a gauge carries no ambient attributes — only static ones derived from the owner.
  */
-public fun Namespaced.metricsGauge(name: String, unit: MetricUnit, defaultDimensions: Set<String>, sample: () -> Long): AutoCloseable =
+public fun Namespaced.metricsGauge(name: String, unit: MetricUnit, defaultDimensions: Set<MetricKey<*>>, sample: () -> Long): AutoCloseable =
     context.metricsBackend?.gauge(this, name, unit, MetricAttributes.empty, sample) ?: AutoCloseable {}
 
 /**
@@ -97,7 +97,7 @@ public interface MetricsBackend {
      *  applies [attributes] to the span, records RED `{name, operation, outcome}` plus any
      *  [dimensions] resolved at completion (from [attributes] and values `enrich`ed during the
      *  operation), and ends it. */
-    public suspend fun <T> span(owner: Namespaced, opName: String, attributes: MetricAttributes, dimensions: Set<String>, action: suspend (MetricSpan) -> T): T
+    public suspend fun <T> span(owner: Namespaced, opName: String, attributes: MetricAttributes, dimensions: Set<MetricKey<*>>, action: suspend (MetricSpan) -> T): T
     public fun histogram(owner: Namespaced, name: String, unit: MetricUnit): RawHistogram
     public fun counter(owner: Namespaced, name: String, unit: MetricUnit): RawCounter
     public fun inFlight(owner: Namespaced, name: String): RawInFlight
@@ -125,20 +125,102 @@ public enum class MetricUnit(public val ucum: String) {
     Occurrences("{occurrence}"),
 }
 
-// TODO: Make builder limiting types to those a backend accepts (String/Long/Double/Boolean + arrays).
-@JvmInline public value class MetricAttributes(public val raw: Map<String, Any?>) {
+public enum class LogLevel { Trace, Debug, Info, Warn, Error }
+
+/**
+ * An immutable bag of typed telemetry attributes. Backed by a [MetricKey]-keyed map so backends
+ * can pre-allocate their native key objects (e.g. OTel [AttributeKey]) exactly once.
+ *
+ * Build instances with the DSL:
+ * ```kotlin
+ * MetricAttributes {
+ *     put(OtelAttributes.Db.system, "mongodb")
+ *     put(OtelAttributes.Db.operationName, "find")
+ * }
+ * ```
+ */
+@JvmInline public value class MetricAttributes(public val map: Map<MetricKey<*>, Any?>) {
+    @Deprecated("Use .map (MetricKey-keyed) for typed access, or iterate map.entries directly")
+    public val raw: Map<String, Any?> get() = map.entries.associate { (k, v) -> k.name to v }
+
     public companion object {
-        public val empty: MetricAttributes = MetricAttributes(emptyMap())
+        public val empty: MetricAttributes = MetricAttributes(emptyMap<MetricKey<*>, Any?>())
+
+        public inline operator fun invoke(block: MetricAttributesBuilder.() -> Unit): MetricAttributes =
+            MetricAttributesBuilder().apply(block).run { MetricAttributes(map) }
+
+        /** Backward-compat shim: converts a string-keyed map. Prefer the DSL builder with pre-allocated [MetricKey] vals. */
+        @Deprecated(
+            "Use MetricAttributes { put(MetricKey.OfXxx(name), value) } or MetricAttributes { put(name, value) }",
+            level = DeprecationLevel.WARNING,
+        )
+        public operator fun invoke(raw: Map<String, Any?>): MetricAttributes =
+            MetricAttributes(raw.entries.associate { (k, v) ->
+                when (v) {
+                    is Long, is Int   -> MetricKey.OfLong(k)
+                    is Double, is Float -> MetricKey.OfDouble(k)
+                    is Boolean        -> MetricKey.OfBoolean(k)
+                    is List<*>        -> MetricKey.OfStringList(k)
+                    else              -> MetricKey.OfString(k)
+                } to v
+            })
     }
+}
+
+@DslMarker internal annotation class MetricAttrDsl
+
+/**
+ * Type-safe builder for [MetricAttributes]. Only accepts value types that telemetry backends can
+ * represent: String, Long, Double, Boolean, and their array forms. Int and Float are widened
+ * automatically. Use [putIfNotNull] to skip a key when the value is absent.
+ *
+ * Prefer pre-allocated [MetricKey] vals (e.g. from [OtelAttributes]) over string-key overloads.
+ */
+@MetricAttrDsl
+public class MetricAttributesBuilder {
+    @PublishedApi internal val map: LinkedHashMap<MetricKey<*>, Any?> = LinkedHashMap()
+
+    // ---- Pre-allocated MetricKey overloads (preferred) ----
+    public fun put(key: MetricKey.OfString, value: String)           { map[key] = value }
+    public fun put(key: MetricKey.OfLong, value: Long)               { map[key] = value }
+    public fun put(key: MetricKey.OfLong, value: Int)                { map[key] = value.toLong() }
+    public fun put(key: MetricKey.OfDouble, value: Double)           { map[key] = value }
+    public fun put(key: MetricKey.OfDouble, value: Float)            { map[key] = value.toDouble() }
+    public fun put(key: MetricKey.OfBoolean, value: Boolean)         { map[key] = value }
+    public fun put(key: MetricKey.OfStringList, value: List<String>) { map[key] = value }
+    public fun put(key: MetricKey.OfLongList, value: List<Long>)     { map[key] = value }
+    public fun put(key: MetricKey.OfDoubleList, value: List<Double>) { map[key] = value }
+    public fun put(key: MetricKey.OfBooleanList, value: List<Boolean>) { map[key] = value }
+
+    public fun putIfNotNull(key: MetricKey.OfString, value: String?)   { if (value != null) map[key] = value }
+    public fun putIfNotNull(key: MetricKey.OfLong, value: Long?)       { if (value != null) map[key] = value }
+    public fun putIfNotNull(key: MetricKey.OfLong, value: Int?)        { if (value != null) map[key] = value.toLong() }
+    public fun putIfNotNull(key: MetricKey.OfDouble, value: Double?)   { if (value != null) map[key] = value }
+    public fun putIfNotNull(key: MetricKey.OfDouble, value: Float?)    { if (value != null) map[key] = value.toDouble() }
+    public fun putIfNotNull(key: MetricKey.OfBoolean, value: Boolean?) { if (value != null) map[key] = value }
+
+    /** Merges all entries from [other] into this builder. */
+    public fun putAll(other: MetricAttributes) { map.putAll(other.map) }
 }
 
 /**
  * Handle to the span opened by [metricsTrace], for attaching attributes discovered while the
  * operation runs. These land on the span only (high cardinality is fine); they do not become metric
  * dimensions. For attributes that should also flow to nested work, use [metricsAttributes] instead.
+ *
+ * Use [log] (lazy overload) to emit a log record correlated to this span without paying string
+ * construction cost when the level is disabled.
  */
 public interface MetricSpan {
     public fun enrich(attributes: MetricAttributes)
+    /** Returns true if a log at [level] would actually be recorded. Use to guard expensive message construction. */
+    public fun isLoggable(level: LogLevel): Boolean
+    public fun log(level: LogLevel, message: String, attributes: MetricAttributes = MetricAttributes.empty)
+}
+
+/** Lazy overload: [message] is only called when [MetricSpan.isLoggable] returns true for [level]. */
+public inline fun MetricSpan.log(level: LogLevel, message: () -> String) {
+    if (isLoggable(level)) log(level, message())
 }
 
 public interface Histogram {
@@ -174,10 +256,10 @@ internal class MetricAttributeElement(
 
     fun flattened(): MetricAttributes {
         if (parent == null) return attributes
-        val merged = HashMap<String, Any?>()
+        val merged = LinkedHashMap<MetricKey<*>, Any?>()
         fun add(element: MetricAttributeElement) {
             element.parent?.let(::add) // root first so children override
-            merged.putAll(element.attributes.raw)
+            merged.putAll(element.attributes.map)
         }
         add(this)
         return MetricAttributes(merged)
@@ -188,21 +270,21 @@ internal class MetricAttributeElement(
 internal suspend fun currentMetricAttributes(): MetricAttributes =
     coroutineContext[MetricAttributeElement]?.flattened() ?: MetricAttributes.empty
 
-internal fun MetricAttributes.project(keys: Set<String>): MetricAttributes =
-    if (keys.isEmpty() || raw.isEmpty()) MetricAttributes.empty
-    else MetricAttributes(raw.filterKeys { it in keys })
+internal fun MetricAttributes.project(keys: Set<MetricKey<*>>): MetricAttributes =
+    if (keys.isEmpty() || map.isEmpty()) MetricAttributes.empty
+    else MetricAttributes(map.filterKeys { it in keys })
 
 // ---- Backed instruments (supply projected ambient attributes to the backend) ----
 
-private class BackedHistogram(val raw: MetricsBackend.RawHistogram, val dimensions: Set<String>) : Histogram {
+private class BackedHistogram(val raw: MetricsBackend.RawHistogram, val dimensions: Set<MetricKey<*>>) : Histogram {
     override suspend fun record(amount: Double) = raw.record(amount, currentMetricAttributes().project(dimensions))
 }
 
-private class BackedCounter(val raw: MetricsBackend.RawCounter, val dimensions: Set<String>) : Counter {
+private class BackedCounter(val raw: MetricsBackend.RawCounter, val dimensions: Set<MetricKey<*>>) : Counter {
     override suspend fun increment(amount: Double) = raw.add(amount, currentMetricAttributes().project(dimensions))
 }
 
-private class BackedInFlight(val raw: MetricsBackend.RawInFlight, val dimensions: Set<String>) : InFlight {
+private class BackedInFlight(val raw: MetricsBackend.RawInFlight, val dimensions: Set<MetricKey<*>>) : InFlight {
     override suspend fun lease(): Lease {
         val attributes = currentMetricAttributes().project(dimensions)
         raw.adjust(1, attributes)
@@ -223,6 +305,8 @@ private class BackedLease(val raw: MetricsBackend.RawInFlight, val attributes: M
 
 internal object NoopMetricSpan : MetricSpan {
     override fun enrich(attributes: MetricAttributes) {}
+    override fun isLoggable(level: LogLevel): Boolean = false
+    override fun log(level: LogLevel, message: String, attributes: MetricAttributes) {}
 }
 
 private object NoopHistogram : Histogram {

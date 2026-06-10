@@ -1,6 +1,7 @@
 package com.lightningkite.services.voiceagent.phonecall
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
 import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.phonecall.AudioStreamCommand
 import com.lightningkite.services.phonecall.AudioStreamEvent
@@ -93,7 +94,10 @@ public suspend fun handlePhoneVoiceSession(
 ) {
     voiceAgentService.metricsTrace(
         "phone_session",
-        attributes = MetricAttributes(mapOf("voiceagent.call_id" to callId, "voiceagent.stream_id" to streamId)),
+        attributes = MetricAttributes {
+            put(MetricKey.OfString("voiceagent.call_id"), callId)
+            put(MetricKey.OfString("voiceagent.stream_id"), streamId)
+        },
     ) { span ->
         val jitterBuffer = if (jitterBufferMs > 0) AudioJitterBuffer(targetBufferMs = jitterBufferMs) else null
 
@@ -109,7 +113,7 @@ public suspend fun handlePhoneVoiceSession(
         val session = voiceAgentService.createSession(effectiveConfig)
         session.awaitConnection()
         logger.info { "Voice agent session connected: ${session.sessionId}" }
-        span.enrich(MetricAttributes(mapOf("voiceagent.session_id" to session.sessionId)))
+        span.enrich(MetricAttributes { put(MetricKey.OfString("voiceagent.session_id"), session.sessionId) })
 
         // Trigger greeting
         onStreamConnected(session)
@@ -200,7 +204,7 @@ public suspend fun handleDirectVoiceSession(
         val session = voiceAgentService.createSession(sessionConfig)
         session.awaitConnection()
         logger.info { "Voice agent session connected: ${session.sessionId}" }
-        span.enrich(MetricAttributes(mapOf("voiceagent.session_id" to session.sessionId)))
+        span.enrich(MetricAttributes { put(MetricKey.OfString("voiceagent.session_id"), session.sessionId) })
 
         // Trigger greeting
         onSessionReady(session)
@@ -316,7 +320,10 @@ private suspend fun handleAgentEvent(
             logger.info { "Tool call: ${event.toolName}(${event.arguments})" }
             owner.metricsTrace(
                 "tool_call",
-                attributes = MetricAttributes(mapOf("tool.name" to event.toolName, "tool.call_id" to event.callId)),
+                attributes = MetricAttributes {
+                    put(MetricKey.OfString("tool.name"), event.toolName)
+                    put(MetricKey.OfString("tool.call_id"), event.callId)
+                },
             ) {
                 val result = toolHandler(event.toolName, event.arguments)
                 logger.info { "Tool result: $result" }

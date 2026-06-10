@@ -10,6 +10,7 @@ import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -34,7 +35,7 @@ class OtelMetricsBackendReportErrorTest {
         span.makeCurrent().use {
             backend.reportError(
                 RuntimeException("boom"),
-                MetricAttributes(mapOf("operation" to "createIndex")),
+                MetricAttributes { put(MetricKey.OfString("operation"), "createIndex") },
             )
         }
         span.end()
@@ -58,7 +59,7 @@ class OtelMetricsBackendReportErrorTest {
         // No active span: this must emit a standalone ERROR log record.
         backend.reportError(
             IllegalStateException("offline failure"),
-            MetricAttributes(mapOf("table" to "users")),
+            MetricAttributes { put(MetricKey.OfString("table"), "users") },
         )
 
         val record = logs.finishedLogRecordItems.single()

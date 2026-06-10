@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.sql
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricAttributesBuilder
 import com.lightningkite.services.MetricSpan
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
@@ -45,24 +46,23 @@ public class SqlCollection<T : Any>(
         })
 
     // Per-collection default span attributes shared by every operation.
-    private fun baseAttributes(operation: String, extra: Map<String, Any?> = emptyMap()): MetricAttributes =
-        MetricAttributes(
-            buildMap {
-                put("db.system", "sql")
-                put("db.operation", operation)
-                put("db.collection", name)
-                putAll(extra)
-            }
-        )
+    private fun baseAttributes(operation: String): MetricAttributes = MetricAttributes {
+        put(com.lightningkite.services.database.Database.MetricKeys.system, "sql")
+        put(com.lightningkite.services.database.Database.MetricKeys.operation, operation)
+        put(com.lightningkite.services.database.Database.MetricKeys.collection, name)
+    }
 
     // Thin wrapper over metricsTrace: opens the `<name>.<operation>` span (with the per-collection
-    // default attributes plus any caller-supplied [extra]), records the RED metric inside it, and
+    // default attributes plus any caller-supplied [extraBlock]), records the RED metric inside it, and
     // hands the started span to [block] for dynamic per-result attributes.
     private suspend inline fun <R> traced(
         operation: String,
-        extra: Map<String, Any?> = emptyMap(),
+        noinline extraBlock: (MetricAttributesBuilder.() -> Unit)? = null,
         noinline block: suspend (MetricSpan) -> R,
-    ): R = metricsTrace(operation, attributes = baseAttributes(operation, extra), action = block)
+    ): R {
+        val attrs = if (extraBlock != null) MetricAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
+        return metricsTrace(operation, attributes = attrs, action = block)
+    }
 
     @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
     private val prepare = GlobalScope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
@@ -232,10 +232,10 @@ public class SqlCollection<T : Any>(
         maxQueryMs: Long,
     ): Flow<T> = traced(
         operation = "find",
-        extra = mapOf(
-            "db.limit" to limit.toLong(),
-            "db.skip" to skip.toLong(),
-        )
+        extraBlock = {
+            put(com.lightningkite.services.database.Database.MetricKeys.limit, limit.toLong())
+            put(com.lightningkite.services.database.Database.MetricKeys.skip, skip.toLong())
+        }
     ) { span ->
         prepare.await()
         val items = t {
@@ -276,7 +276,7 @@ public class SqlCollection<T : Any>(
 
             result
         }
-        span.enrich(MetricAttributes(mapOf("db.result_count" to items.size.toLong())))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.resultCount, items.size.toLong()) })
         items.asFlow()
     }
 
@@ -305,13 +305,13 @@ public class SqlCollection<T : Any>(
                 mainRows.map { decodeRow(it, allChildRows) }.count { condition(it) }
             }
         }
-        span.enrich(MetricAttributes(mapOf("db.count" to result.toLong())))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.count, result.toLong()) })
         result
     }
 
     override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> = traced(
         operation = "groupCount",
-        extra = mapOf("db.groupBy" to groupBy.colName)
+        extraBlock = { put(com.lightningkite.services.database.Database.MetricKeys.groupBy, groupBy.colName) }
     ) { span ->
         prepare.await()
         val result = t {
@@ -327,7 +327,7 @@ public class SqlCollection<T : Any>(
                 .groupBy(schema.mainTable.col[groupBy.colName]!!)
                 .associate { it[groupCol] to it[count].toInt() }
         }
-        span.enrich(MetricAttributes(mapOf("db.groups" to result.size.toLong())))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.groups, result.size.toLong()) })
         result
     }
 
@@ -337,10 +337,10 @@ public class SqlCollection<T : Any>(
         property: DataClassPath<T, N>,
     ): Double? = traced(
         operation = "aggregate",
-        extra = mapOf(
-            "db.aggregate" to aggregate.toString(),
-            "db.property" to property.colName,
-        )
+        extraBlock = {
+            put(com.lightningkite.services.database.Database.MetricKeys.aggregate, aggregate.toString())
+            put(com.lightningkite.services.database.Database.MetricKeys.property, property.colName)
+        }
     ) { span ->
         prepare.await()
         t {
@@ -369,11 +369,11 @@ public class SqlCollection<T : Any>(
         property: DataClassPath<T, N>,
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
-        extra = mapOf(
-            "db.aggregate" to aggregate.toString(),
-            "db.groupBy" to groupBy.colName,
-            "db.property" to property.colName,
-        )
+        extraBlock = {
+            put(com.lightningkite.services.database.Database.MetricKeys.aggregate, aggregate.toString())
+            put(com.lightningkite.services.database.Database.MetricKeys.groupBy, groupBy.colName)
+            put(com.lightningkite.services.database.Database.MetricKeys.property, property.colName)
+        }
     ) { span ->
         prepare.await()
         val result = t {
@@ -396,7 +396,7 @@ public class SqlCollection<T : Any>(
                 .groupBy(schema.mainTable.col[groupBy.colName]!!)
                 .associate { it[groupCol] to it[agg]?.toDouble() }
         }
-        span.enrich(MetricAttributes(mapOf("db.groups" to result.size.toLong())))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.groups, result.size.toLong()) })
         result
     }
 
@@ -407,7 +407,7 @@ public class SqlCollection<T : Any>(
     ) { span ->
         prepare.await()
         val modelsList = models.toList()
-        span.enrich(MetricAttributes(mapOf("db.insert_count" to modelsList.size.toLong())))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.insertCount, modelsList.size.toLong()) })
         try {
             t {
                 for (model in modelsList) {
@@ -525,7 +525,7 @@ public class SqlCollection<T : Any>(
 
             EntryChange(old, new)
         }
-        span.enrich(MetricAttributes(mapOf("db.updated" to if (result.old != null) 1L else 0L)))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, if (result.old != null) 1L else 0L) })
         result
     }
 
@@ -556,7 +556,7 @@ public class SqlCollection<T : Any>(
                 true
             }
         }
-        span.enrich(MetricAttributes(mapOf("db.updated" to if (updated) 1L else 0L)))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, if (updated) 1L else 0L) })
         updated
     }
 
@@ -576,7 +576,7 @@ public class SqlCollection<T : Any>(
             }
             CollectionChanges(changes)
         }
-        span.enrich(MetricAttributes(mapOf("db.updated" to result.changes.size.toLong())))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, result.changes.size.toLong()) })
         result
     }
 
@@ -606,7 +606,7 @@ public class SqlCollection<T : Any>(
                 olds.size
             }
         }
-        span.enrich(MetricAttributes(mapOf("db.updated" to count.toLong())))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, count.toLong()) })
         count
     }
 
@@ -626,7 +626,7 @@ public class SqlCollection<T : Any>(
             }
             old
         }
-        span.enrich(MetricAttributes(mapOf("db.deleted" to if (result != null) 1L else 0L)))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, if (result != null) 1L else 0L) })
         result
     }
 
@@ -643,7 +643,7 @@ public class SqlCollection<T : Any>(
             }
             true
         }
-        span.enrich(MetricAttributes(mapOf("db.deleted" to if (deleted) 1L else 0L)))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, if (deleted) 1L else 0L) })
         deleted
     }
 
@@ -665,7 +665,7 @@ public class SqlCollection<T : Any>(
             }
             olds
         }
-        span.enrich(MetricAttributes(mapOf("db.deleted" to result.size.toLong())))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, result.size.toLong()) })
         result
     }
 
@@ -697,7 +697,7 @@ public class SqlCollection<T : Any>(
                 }
             } else 0
         }
-        span.enrich(MetricAttributes(mapOf("db.deleted" to count.toLong())))
+        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, count.toLong()) })
         count
     }
 

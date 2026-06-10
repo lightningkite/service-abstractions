@@ -257,12 +257,12 @@ public data class LlmToolDescriptor<T>(
     /**
      * Hint to providers that support prompt caching: if true, cache the tool definitions
      * up to and including this tool. Anthropic sends tools before messages, so a tool
-     * boundary caches only the tool list (and system prompt); use [LlmMessage.cacheBreak]
+     * boundary caches only the tool list (and system prompt); use [LlmMessage.cacheBoundary]
      * to cache conversation history.
      *
-     * Same provider support and limits as [LlmMessage.cacheBreak].
+     * Same provider support and limits as [LlmMessage.cacheBoundary].
      */
-    val cacheBreak: Boolean = false,
+    val cacheBoundary: Boolean = false,
 )
 
 
@@ -275,12 +275,12 @@ public data class LlmToolDescriptor<T>(
 @Serializable
 public sealed interface LlmMessage {
     /**
-     * Hint to providers that support prompt caching: if true, the content BEFORE this
+     * Hint to providers that support prompt caching: if true, the content UP TO AND INCLUDING this
      * message should be cached. Semantically: "new section starts here; cache the prefix."
      *
      * On the first message (index 0), this caches the system prompt (and tools, if any
-     * tool has [LlmToolDescriptor.cacheBreak] set). On subsequent messages, it caches
-     * everything up to and including the previous message.
+     * tool has [LlmToolDescriptor.cacheBoundary] set). On subsequent messages, it caches
+     * everything up to and including this message.
      *
      * Honored by: Anthropic, Bedrock (model-dependent).
      * Ignored by: OpenAI (auto-caches at >1024 tokens), Ollama, LM Studio.
@@ -294,18 +294,18 @@ public sealed interface LlmMessage {
      * Tradeoff: cache writes cost ~25% more than normal input tokens; cache reads cost
      * ~90% less. Net win when the same prefix is reused across multiple calls.
      */
-    public val cacheBreak: Boolean
+    public val cacheBoundary: Boolean
 
     @Serializable
     public data class User(
         val parts: List<LlmPart.ContentOnly>,
-        override val cacheBreak: Boolean = false,
+        override val cacheBoundary: Boolean = false,
     ) : LlmMessage
 
     @Serializable
     public data class Agent(
         val parts: List<LlmPart>,
-        override val cacheBreak: Boolean = false,
+        override val cacheBoundary: Boolean = false,
     ) : LlmMessage
 
     @Serializable
@@ -313,7 +313,7 @@ public sealed interface LlmMessage {
         val toolCallId: String,
         val parts: List<LlmPart.ContentOnly>,
         val isError: Boolean = false,
-        override val cacheBreak: Boolean = false,
+        override val cacheBoundary: Boolean = false,
     ) : LlmMessage
 }
 

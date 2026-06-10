@@ -13,7 +13,7 @@ import java.net.URLEncoder
  *
  * ## Caching notes
  *
- * OpenAI-compatible APIs generally **ignore** explicit `cacheBreak` flags.
+ * OpenAI-compatible APIs generally **ignore** explicit `cacheBoundary` flags.
  * OpenAI itself auto-caches prompts >1024 tokens; other providers vary.
  * For guaranteed prompt-caching control, use Anthropic or Bedrock directly.
  */

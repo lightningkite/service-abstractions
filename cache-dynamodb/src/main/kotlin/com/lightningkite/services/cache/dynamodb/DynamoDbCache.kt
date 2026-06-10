@@ -66,7 +66,6 @@ package com.lightningkite.services.cache.dynamodb
 import com.lightningkite.services.*
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.TelemetrySanitization
 import com.lightningkite.services.data.HealthStatus
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
@@ -93,17 +92,15 @@ public class DynamoDbCache(
     private fun spanAttrs(
         key: String,
         timeToLive: Duration? = null,
-        extra: Map<String, Any?> = emptyMap(),
-    ): MetricAttributes = MetricAttributes(
-        buildMap {
-            put("cache.key", TelemetrySanitization.hashCacheKey(key))
-            put("cache.system", "dynamodb")
-            put("db.system", "dynamodb")
-            put("db.name", tableName)
-            timeToLive?.let { put("cache.ttl", it.inWholeSeconds) }
-            putAll(extra)
-        }
-    )
+        cacheValue: Long? = null,
+    ): MetricAttributes = MetricAttributes {
+        put(Cache.MetricKeys.key, context.telemetrySanitization.hashCacheKey(key))
+        put(Cache.MetricKeys.system, "dynamodb")
+        put(MetricKeys.Db.system, "dynamodb")
+        put(MetricKeys.Db.name, tableName)
+        timeToLive?.let { put(Cache.MetricKeys.ttl, it.inWholeSeconds) }
+        cacheValue?.let { put(Cache.MetricKeys.value, it) }
+    }
 
     public companion object {
         // Safety cap for [add]'s live/expired retry loop. Each failed iteration means a concurrent
@@ -230,7 +227,7 @@ public class DynamoDbCache(
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
         // `cache.hit` is resolved during the operation and promoted to the RED metric via `dimensions`;
         // `enrich` makes it readable both on the span and as the metric dimension at completion.
-        metricsTrace("get", attributes = spanAttrs(key), dimensions = setOf("cache.hit")) { span ->
+        metricsTrace("get", attributes = spanAttrs(key), dimensions = setOf(Cache.MetricKeys.hit)) { span ->
             ready.await()
             val r = client.getItem {
                 it.tableName(tableName)
@@ -244,7 +241,7 @@ public class DynamoDbCache(
                     else serializer.fromDynamo(item["value"]!!, context)
                 } ?: serializer.fromDynamo(item["value"]!!, context)
             } else null
-            span.enrich(MetricAttributes(mapOf("cache.hit" to (result != null))))
+            span.enrich(MetricAttributes { put(Cache.MetricKeys.hit, result != null) })
             result
         }
 
@@ -270,7 +267,7 @@ public class DynamoDbCache(
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf("cache.added")) { span ->
+    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.MetricKeys.added)) { span ->
         ready.await()
         try {
             client.putItem {
@@ -286,16 +283,16 @@ public class DynamoDbCache(
                     } ?: mapOf())
                 )
             }.await()
-            span.enrich(MetricAttributes(mapOf("cache.added" to true)))
+            span.enrich(MetricAttributes { put(Cache.MetricKeys.added, true) })
             true
         } catch (e: ConditionalCheckFailedException) {
-            span.enrich(MetricAttributes(mapOf("cache.added" to false)))
+            span.enrich(MetricAttributes { put(Cache.MetricKeys.added, false) })
             false
         }
     }
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
-        metricsTrace("add", attributes = spanAttrs(key, timeToLive, extra = mapOf("cache.value" to value))) {
+        metricsTrace("add", attributes = spanAttrs(key, timeToLive, cacheValue = value)) {
             ready.await()
             // Both attempts are atomic conditional updates so a concurrent writer can never be
             // overwritten (the previous blind-set fallback could lose a concurrent increment).

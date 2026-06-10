@@ -120,12 +120,12 @@ public class MailgunEmailInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail = metricsTrace("webhook.parse", attributes = MetricAttributes(mapOf(
-            "email.operation" to "webhook_parse",
-            "email.provider" to "mailgun",
-            "messaging.system" to "mailgun",
-            "email.webhook.event_type" to "inbound",
-        ))) { span ->
+        ): ReceivedEmail = metricsTrace("webhook.parse", attributes = MetricAttributes {
+            put(MetricKey.OfString("email.operation"), "webhook_parse")
+            put(MetricKey.OfString("email.provider"), "mailgun")
+            put(MetricKeys.Messaging.system, "mailgun")
+            put(MetricKey.OfString("email.webhook.event_type"), "inbound")
+        }) { span ->
             // Parse form data from body
             val formData = parseFormData(body)
 
@@ -136,15 +136,15 @@ public class MailgunEmailInboundService(
             val receivedEmail = parseMailgunEmail(formData, body.mediaType)
 
             // Add email metadata to span (PII redacted: keep only domain for from/to, drop subject)
-            span.enrich(MetricAttributes(buildMap {
-                put("email.from", receivedEmail.from.value.toString().let { addr -> addr.substringAfter('@', addr) })
-                put("email.to", receivedEmail.to.joinToString(", ") { it.value.toString().let { addr -> addr.substringAfter('@', addr) } })
-                put("email.message_id", receivedEmail.messageId)
+            span.enrich(MetricAttributes {
+                put(MetricKey.OfString("email.from"), receivedEmail.from.value.toString().let { addr -> addr.substringAfter('@', addr) })
+                put(MetricKey.OfString("email.to"), receivedEmail.to.joinToString(", ") { it.value.toString().let { addr -> addr.substringAfter('@', addr) } })
+                put(MetricKey.OfString("email.message_id"), receivedEmail.messageId)
                 if (receivedEmail.attachments.isNotEmpty()) {
-                    put("email.attachments.count", receivedEmail.attachments.size.toLong())
+                    put(MetricKey.OfLong("email.attachments.count"), receivedEmail.attachments.size.toLong())
                 }
-                receivedEmail.spamScore?.let { score -> put("email.spam_score", score) }
-            }))
+                receivedEmail.spamScore?.let { score -> put(MetricKey.OfDouble("email.spam_score"), score) }
+            })
 
             receivedEmail
         }

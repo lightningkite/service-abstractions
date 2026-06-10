@@ -1,6 +1,8 @@
 package com.lightningkite.services.email.javasmtp
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.email.*
@@ -177,22 +179,22 @@ public class JavaSmtpEmailService(
     override suspend fun send(email: Email) {
         if (email.to.isEmpty() && email.cc.isEmpty() && email.bcc.isEmpty()) return
 
-        metricsTrace("send", attributes = MetricAttributes(buildMap {
-            put("email.operation", "send")
-            put("email.system", "smtp")
-            put("messaging.system", "smtp")
-            put("email.smtp.host", hostName)
-            put("email.smtp.port", port.toLong())
-            put("email.from", email.from?.value?.toString() ?: from.value.toString())
-            put("email.to", email.to.joinToString(", ") { it.value.toString() })
-            put("email.subject", email.subject)
+        metricsTrace("send", attributes = MetricAttributes {
+            put(MetricKey.OfString("email.operation"), "send")
+            put(MetricKey.OfString("email.system"), "smtp")
+            put(MetricKeys.Messaging.system, "smtp")
+            put(MetricKey.OfString("email.smtp.host"), hostName)
+            put(MetricKey.OfLong("email.smtp.port"), port.toLong())
+            put(MetricKey.OfString("email.from"), email.from?.value?.toString() ?: from.value.toString())
+            put(MetricKey.OfString("email.to"), email.to.joinToString(", ") { it.value.toString() })
+            put(MetricKey.OfString("email.subject"), email.subject)
             if (email.cc.isNotEmpty()) {
-                put("email.cc", email.cc.joinToString(", ") { it.value.toString() })
+                put(MetricKey.OfString("email.cc"), email.cc.joinToString(", ") { it.value.toString() })
             }
             if (email.attachments.isNotEmpty()) {
-                put("email.attachments.count", email.attachments.size.toLong())
+                put(MetricKey.OfLong("email.attachments.count"), email.attachments.size.toLong())
             }
-        })) { _ ->
+        }) { _ ->
             val message = email.copy(from = email.from ?: from).toJavaX(session)
             withContext(kotlinx.coroutines.Dispatchers.IO) {
                 Transport.send(message)
@@ -204,16 +206,16 @@ public class JavaSmtpEmailService(
     override suspend fun sendBulk(template: Email, personalizations: List<EmailPersonalization>) {
         if (personalizations.isEmpty()) return
 
-        metricsTrace("sendBulk", attributes = MetricAttributes(mapOf(
-            "email.operation" to "sendBulk",
-            "email.system" to "smtp",
-            "messaging.system" to "smtp",
-            "email.smtp.host" to hostName,
-            "email.smtp.port" to port.toLong(),
-            "email.from" to (template.from?.value?.toString() ?: from.value.toString()),
-            "email.subject" to template.subject,
-            "email.personalizations.count" to personalizations.size.toLong(),
-        ))) { _ ->
+        metricsTrace("sendBulk", attributes = MetricAttributes {
+            put(MetricKey.OfString("email.operation"), "sendBulk")
+            put(MetricKey.OfString("email.system"), "smtp")
+            put(MetricKeys.Messaging.system, "smtp")
+            put(MetricKey.OfString("email.smtp.host"), hostName)
+            put(MetricKey.OfLong("email.smtp.port"), port.toLong())
+            put(MetricKey.OfString("email.from"), template.from?.value?.toString() ?: from.value.toString())
+            put(MetricKey.OfString("email.subject"), template.subject)
+            put(MetricKey.OfLong("email.personalizations.count"), personalizations.size.toLong())
+        }) { _ ->
             val emails = personalizations.map { it(template).copy(from = template.from ?: from) }
             val messages = emails.map { it.toJavaX(session).also { m -> m.saveChanges() } to it }
             withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -238,15 +240,15 @@ public class JavaSmtpEmailService(
     override suspend fun sendBulk(emails: Collection<Email>) {
         if (emails.isEmpty()) return
 
-        metricsTrace("sendBulk", attributes = MetricAttributes(mapOf(
-            "email.operation" to "sendBulk",
-            "email.system" to "smtp",
-            "messaging.system" to "smtp",
-            "email.smtp.host" to hostName,
-            "email.smtp.port" to port.toLong(),
-            "email.from" to from.value.toString(),
-            "email.count" to emails.size.toLong(),
-        ))) { _ ->
+        metricsTrace("sendBulk", attributes = MetricAttributes {
+            put(MetricKey.OfString("email.operation"), "sendBulk")
+            put(MetricKey.OfString("email.system"), "smtp")
+            put(MetricKeys.Messaging.system, "smtp")
+            put(MetricKey.OfString("email.smtp.host"), hostName)
+            put(MetricKey.OfLong("email.smtp.port"), port.toLong())
+            put(MetricKey.OfString("email.from"), from.value.toString())
+            put(MetricKey.OfLong("email.count"), emails.size.toLong())
+        }) { _ ->
             val messages = emails.map { email ->
                 email.copy(from = from).toJavaX(session).also { it.saveChanges() } to email
             }

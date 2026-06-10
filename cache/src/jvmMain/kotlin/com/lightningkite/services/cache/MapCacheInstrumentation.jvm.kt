@@ -1,8 +1,10 @@
 package com.lightningkite.services.cache
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.Service
 import com.lightningkite.services.metricsTrace
-import com.lightningkite.services.TelemetrySanitization
 import kotlin.time.Duration
 
 /*
@@ -13,24 +15,25 @@ import kotlin.time.Duration
 
 private const val SYSTEM = "memory"
 
-private fun keyAttributes(key: String): MetricAttributes = MetricAttributes(
-    mapOf("cache.system" to SYSTEM, "cache.key" to TelemetrySanitization.hashCacheKey(key))
-)
+private fun Service.keyAttributes(key: String): MetricAttributes = MetricAttributes {
+    put(Cache.MetricKeys.system, SYSTEM)
+    put(Cache.MetricKeys.key, context.telemetrySanitization.hashCacheKey(key))
+}
 
-private fun keyAttributes(key: String, timeToLive: Duration?, extra: Map<String, Any?> = emptyMap()): MetricAttributes {
-    val map = mutableMapOf<String, Any?>("cache.system" to SYSTEM, "cache.key" to TelemetrySanitization.hashCacheKey(key))
-    timeToLive?.let { map["cache.ttl"] = it.inWholeSeconds }
-    map.putAll(extra)
-    return MetricAttributes(map)
+private fun Service.keyAttributes(key: String, timeToLive: Duration?, cacheValue: Long? = null): MetricAttributes = MetricAttributes {
+    put(Cache.MetricKeys.system, SYSTEM)
+    put(Cache.MetricKeys.key, context.telemetrySanitization.hashCacheKey(key))
+    timeToLive?.let { put(Cache.MetricKeys.ttl, it.inWholeSeconds) }
+    cacheValue?.let { put(Cache.MetricKeys.value, it) }
 }
 
 internal actual suspend fun <T> instrumentedGet(
     owner: Cache,
     key: String,
     operation: suspend () -> T?,
-): T? = owner.metricsTrace("get", attributes = keyAttributes(key), dimensions = setOf("cache.hit")) { span ->
+): T? = owner.metricsTrace("get", attributes = owner.keyAttributes(key), dimensions = setOf(Cache.MetricKeys.hit)) { span ->
     val result = operation()
-    span.enrich(MetricAttributes(mapOf("cache.hit" to (result != null))))
+    span.enrich(MetricAttributes { put(Cache.MetricKeys.hit, result != null) })
     result
 }
 
@@ -40,7 +43,7 @@ internal actual suspend fun <T> instrumentedSet(
     timeToLive: Duration?,
     operation: suspend () -> Unit,
 ) {
-    owner.metricsTrace("set", attributes = keyAttributes(key, timeToLive)) { operation() }
+    owner.metricsTrace("set", attributes = owner.keyAttributes(key, timeToLive)) { operation() }
 }
 
 internal actual suspend fun instrumentedSetIfNotExists(
@@ -48,9 +51,9 @@ internal actual suspend fun instrumentedSetIfNotExists(
     key: String,
     timeToLive: Duration?,
     operation: suspend () -> Boolean,
-): Boolean = owner.metricsTrace("setIfNotExists", attributes = keyAttributes(key, timeToLive)) { span ->
+): Boolean = owner.metricsTrace("setIfNotExists", attributes = owner.keyAttributes(key, timeToLive)) { span ->
     val result = operation()
-    span.enrich(MetricAttributes(mapOf("cache.added" to result)))
+    span.enrich(MetricAttributes { put(Cache.MetricKeys.added, result) })
     result
 }
 
@@ -60,7 +63,7 @@ internal actual suspend fun <N : Number> instrumentedAdd(
     value: Long,
     timeToLive: Duration?,
     operation: suspend () -> N,
-): N = owner.metricsTrace("add", attributes = keyAttributes(key, timeToLive, mapOf("cache.value" to value))) {
+): N = owner.metricsTrace("add", attributes = owner.keyAttributes(key, timeToLive, value)) {
     operation()
 }
 
@@ -69,7 +72,7 @@ internal actual suspend fun instrumentedRemove(
     key: String,
     operation: suspend () -> Unit,
 ) {
-    owner.metricsTrace("remove", attributes = keyAttributes(key)) { operation() }
+    owner.metricsTrace("remove", attributes = owner.keyAttributes(key)) { operation() }
 }
 
 internal actual suspend fun <T> instrumentedModify(
@@ -80,5 +83,5 @@ internal actual suspend fun <T> instrumentedModify(
     operation: suspend () -> Boolean,
 ): Boolean = owner.metricsTrace(
     "modify",
-    attributes = keyAttributes(key, timeToLive, mapOf("cache.maxTries" to maxTries.toLong())),
+    attributes = MetricAttributes { putAll(owner.keyAttributes(key, timeToLive)); put(MetricKey.OfLong("cache.maxTries"), maxTries.toLong()) },
 ) { operation() }

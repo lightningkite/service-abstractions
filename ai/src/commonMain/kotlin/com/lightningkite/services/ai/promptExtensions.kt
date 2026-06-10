@@ -43,16 +43,16 @@ public fun toolResult(
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Return a copy of this message with [LlmMessage.cacheBreak] set to [enabled].
+ * Return a copy of this message with [LlmMessage.cacheBoundary] set to [enabled].
  *
  * Because [LlmMessage] is a sealed interface, the caller would otherwise need to
  * pattern-match to the concrete type before calling `copy()`. This extension handles
  * that dispatch internally.
  */
-public fun LlmMessage.withCacheBreak(enabled: Boolean = true): LlmMessage = when (this) {
-    is LlmMessage.User -> copy(cacheBreak = enabled)
-    is LlmMessage.Agent -> copy(cacheBreak = enabled)
-    is LlmMessage.ToolResult -> copy(cacheBreak = enabled)
+public fun LlmMessage.withCacheBoundary(enabled: Boolean = true): LlmMessage = when (this) {
+    is LlmMessage.User -> copy(cacheBoundary = enabled)
+    is LlmMessage.Agent -> copy(cacheBoundary = enabled)
+    is LlmMessage.ToolResult -> copy(cacheBoundary = enabled)
 }
 
 // ──────────────────────────────────────────────────────────────────────

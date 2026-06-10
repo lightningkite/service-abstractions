@@ -5,6 +5,8 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.*
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.metricsTrace
@@ -218,24 +220,22 @@ public open class FcmNotificationClient(
         targets: List<String>,
         data: NotificationData,
     ): Map<String, NotificationSendResult> =
-      metricsTrace("send", attributes = MetricAttributes(
-        buildMap {
-            put("notification.operation", "send")
-            put("messaging.system", "firebase_cloud_messaging")
-            put("notification.target.count", targets.size.toLong())
-            data.timeToLive?.let { ttl -> put("notification.ttl", ttl.inWholeSeconds) }
-        }
-      )) { span ->
+      metricsTrace("send", attributes = MetricAttributes {
+          put(MetricKey.OfString("notification.operation"), "send")
+          put(MetricKeys.Messaging.system, "firebase_cloud_messaging")
+          put(MetricKey.OfLong("notification.target.count"), targets.size.toLong())
+          data.timeToLive?.let { ttl -> put(MetricKey.OfLong("notification.ttl"), ttl.inWholeSeconds) }
+      }) { span ->
         sendInternal(targets, data).also { results ->
             val successCount = results.values.count { it == NotificationSendResult.Success }
             val failureCount = results.values.count { it == NotificationSendResult.Failure }
             val deadTokenCount = results.values.count { it == NotificationSendResult.DeadToken }
 
-            span.enrich(MetricAttributes(mapOf(
-                "notification.success.count" to successCount.toLong(),
-                "notification.failure.count" to failureCount.toLong(),
-                "notification.dead_token.count" to deadTokenCount.toLong(),
-            )))
+            span.enrich(MetricAttributes {
+                put(MetricKey.OfLong("notification.success.count"), successCount.toLong())
+                put(MetricKey.OfLong("notification.failure.count"), failureCount.toLong())
+                put(MetricKey.OfLong("notification.dead_token.count"), deadTokenCount.toLong())
+            })
         }
       }
 
@@ -325,19 +325,19 @@ public open class FcmNotificationClient(
                             mb.addAllTokens(chunk)
                         }.build()
 
-                        metricsTrace("batch", attributes = MetricAttributes(mapOf(
-                            "messaging.system" to "firebase_cloud_messaging",
-                            "messaging.batch.message_count" to chunk.size.toLong(),
-                        ))) { batchSpan ->
+                        metricsTrace("batch", attributes = MetricAttributes {
+                            put(MetricKeys.Messaging.system, "firebase_cloud_messaging")
+                            put(MetricKeys.Messaging.batchMessageCount, chunk.size.toLong())
+                        }) { batchSpan ->
                             val chunkOutcome = HashMap<String, NotificationSendResult>(chunk.size)
                             try {
                                 val result = sendMulticast(message)
                                 val successCount = result.successCount
                                 val failureCount = result.failureCount
-                                batchSpan.enrich(MetricAttributes(mapOf(
-                                    "notification.success_count" to successCount.toLong(),
-                                    "notification.failure_count" to failureCount.toLong(),
-                                )))
+                                batchSpan.enrich(MetricAttributes {
+                                    put(MetricKey.OfLong("notification.success_count"), successCount.toLong())
+                                    put(MetricKey.OfLong("notification.failure_count"), failureCount.toLong())
+                                })
                                 result.getResponses().forEachIndexed { index: Int, sendResponse: SendResponse ->
                                     val targetToken = chunk[index]
                                     log.debug { "Send: ${sendResponse.messageId} / ${sendResponse.exception?.message} ${sendResponse.exception?.messagingErrorCode}" }
@@ -375,17 +375,17 @@ public open class FcmNotificationClient(
         return results
     }
 
-    override suspend fun connect(): Unit = metricsTrace("connect", attributes = MetricAttributes(mapOf(
-        "notification.operation" to "connect",
-        "notification.system" to "fcm",
-    ))) {
+    override suspend fun connect(): Unit = metricsTrace("connect", attributes = MetricAttributes {
+        put(MetricKey.OfString("notification.operation"), "connect")
+        put(MetricKey.OfString("notification.system"), "fcm")
+    }) {
         initializeFirebaseApp(name, options)
     }
 
-    override suspend fun disconnect(): Unit = metricsTrace("disconnect", attributes = MetricAttributes(mapOf(
-        "notification.operation" to "disconnect",
-        "notification.system" to "fcm",
-    ))) {
+    override suspend fun disconnect(): Unit = metricsTrace("disconnect", attributes = MetricAttributes {
+        put(MetricKey.OfString("notification.operation"), "disconnect")
+        put(MetricKey.OfString("notification.system"), "fcm")
+    }) {
         // Important for serverless environments - clean up Firebase resources
         try {
             FirebaseApp.getInstance(name).delete()

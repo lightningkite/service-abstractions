@@ -1,6 +1,8 @@
 package com.lightningkite.services.email.imap
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
@@ -236,9 +238,9 @@ public class ImapEmailInboundService(
             "ImapEmailInboundService is pull-only; use pull() instead of parse()."
         )
 
-        override suspend fun pull(): Set<ReceivedEmail> = metricsTrace("pull", attributes = MetricAttributes(mapOf(
-            "messaging.system" to "imap",
-        ))) { pullSpan ->
+        override suspend fun pull(): Set<ReceivedEmail> = metricsTrace("pull", attributes = MetricAttributes {
+            put(MetricKeys.Messaging.system, "imap")
+        }) { pullSpan ->
             // Open the folder once for the whole pull cycle. SEEN-flag updates after a successful
             // ReceivedEmail materialization land on the same live IMAP session.
             val openedStore: Store
@@ -262,7 +264,7 @@ public class ImapEmailInboundService(
                         .filterIsInstance<MimeMessage>()
                 }
 
-                pullSpan.enrich(MetricAttributes(mapOf("email.messages_found" to rawMessages.size.toLong())))
+                pullSpan.enrich(MetricAttributes { put(MetricKey.OfLong("email.messages_found"), rawMessages.size.toLong()) })
                 logger.info { "[$name] Found ${rawMessages.size} unread message(s)" }
 
                 // Materialize and mark SEEN one-by-one. A parse failure for one message must not

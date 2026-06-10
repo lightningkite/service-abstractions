@@ -80,13 +80,12 @@ public const val TINY_RED_PNG_BASE64: String =
  * A public URL serving a 200x200 solid-blue PNG.
  *
  * Used by the URL-attachment multimodal test, which requires a URL the provider's image
- * fetcher can download. The previous Wikimedia URL 404'd (it was an SVG path, not a raster
- * file) and Wikimedia also blocks unidentified fetchers; placehold.co serves a plain
- * raster PNG built for hotlinking. Providers that only accept base64 attachments can opt out
- * via [LlmAccessTests.supportsUrlAttachments].
+ * fetcher can download. dummyimage.com generates placeholder images and has a permissive
+ * robots.txt; Anthropic's URL fetcher accepts it. Providers that only accept base64
+ * attachments can opt out via [LlmAccessTests.supportsUrlAttachments].
  */
 public const val STABLE_BLUE_IMAGE_URL: String =
-    "https://placehold.co/200x200/0000FF/0000FF.png"
+    "https://dummyimage.com/200x200/0000ff/0000ff.png"
 
 /**
  * Convenience constructor for a single user-text message.

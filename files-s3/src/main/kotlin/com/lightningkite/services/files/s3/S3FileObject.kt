@@ -6,6 +6,8 @@ import com.lightningkite.services.files.ExternalServerFileSerializer
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.http.client
 import com.lightningkite.services.metricsTrace
 import com.lightningkite.services.TelemetrySanitization
@@ -78,14 +80,12 @@ public class S3FileObject(
     override val parent: FileObject?
         get() = path.parentFile?.let { S3FileObject(system, it) } ?: if (unixPath.isNotEmpty()) system.root else null
 
-    private fun s3SpanAttrs(operation: String): MetricAttributes = MetricAttributes(
-        mapOf(
-            "file.operation" to operation,
-            "aws.s3.key" to TelemetrySanitization.sanitizeFilePathWithDepth(unixPath),
-            "aws.s3.bucket" to system.bucket,
-            "rpc.system" to "aws.s3",
-        )
-    )
+    private fun s3SpanAttrs(operation: String): MetricAttributes = MetricAttributes {
+        put(MetricKey.OfString("file.operation"), operation)
+        put(MetricKeys.Aws.s3Key, system.context.telemetrySanitization.sanitizeFilePathWithDepth(unixPath))
+        put(MetricKeys.Aws.s3Bucket, system.bucket)
+        put(MetricKeys.Rpc.system, "aws.s3")
+    }
 
     /**
      * Lists all direct children of this directory.
@@ -121,7 +121,7 @@ public class S3FileObject(
                 }
                 results
             }
-            span.enrich(MetricAttributes(mapOf("file.count" to result.size.toLong())))
+            span.enrich(MetricAttributes { put(MetricKey.OfLong("file.count"), result.size.toLong()) })
             result
         }
 
@@ -149,10 +149,10 @@ public class S3FileObject(
                 }
             }
             result?.let {
-                span.enrich(MetricAttributes(mapOf(
-                    "file.size" to it.size,
-                    "file.content_type" to it.type.toString(),
-                )))
+                span.enrich(MetricAttributes {
+                    put(MetricKey.OfLong("file.size"), it.size)
+                    put(MetricKey.OfString("file.content_type"), it.type.toString())
+                })
             }
             result
         }
@@ -163,12 +163,11 @@ public class S3FileObject(
      * @param content The typed data to upload, including media type information
      */
     override suspend fun put(content: TypedData): Unit =
-        system.metricsTrace("put", attributes = MetricAttributes(
-            s3SpanAttrs("put").raw + mapOf(
-                "file.size" to (content.data.size ?: -1),
-                "file.content_type" to content.mediaType.toString(),
-            )
-        )) {
+        system.metricsTrace("put", attributes = MetricAttributes {
+            putAll(s3SpanAttrs("put"))
+            put(MetricKey.OfLong("file.size"), content.data.size ?: -1L)
+            put(MetricKey.OfString("file.content_type"), content.mediaType.toString())
+        }) {
             withContext(Dispatchers.IO) {
                 system.s3.putObject(PutObjectRequest.builder().also {
                     it.bucket(system.bucket)
@@ -210,10 +209,10 @@ public class S3FileObject(
                 }
             }
             result?.let {
-                span.enrich(MetricAttributes(mapOf(
-                    "file.size" to (it.data.size ?: -1),
-                    "file.content_type" to it.mediaType.toString(),
-                )))
+                span.enrich(MetricAttributes {
+                    put(MetricKey.OfLong("file.size"), it.data.size ?: -1L)
+                    put(MetricKey.OfString("file.content_type"), it.mediaType.toString())
+                })
             }
             result
         }
@@ -229,15 +228,15 @@ public class S3FileObject(
      */
     override suspend fun copyTo(other: FileObject): Unit {
         val isServerSideCopy = other is S3FileObject && other.system.bucket == system.bucket
-        system.metricsTrace("copy", attributes = MetricAttributes(
-            s3SpanAttrs("copy").raw + mapOf(
-                "aws.s3.destination.key" to (
-                    if (other is S3FileObject) TelemetrySanitization.sanitizeFilePathWithDepth(other.unixPath)
-                    else TelemetrySanitization.sanitizeFilePath(other.toString())
-                ),
-                "file.copy.server_side" to isServerSideCopy,
+        system.metricsTrace("copy", attributes = MetricAttributes {
+            putAll(s3SpanAttrs("copy"))
+            put(
+                MetricKey.OfString("aws.s3.destination.key"),
+                if (other is S3FileObject) system.context.telemetrySanitization.sanitizeFilePathWithDepth(other.unixPath)
+                else system.context.telemetrySanitization.sanitizeFilePath(other.toString())
             )
-        )) {
+            put(MetricKey.OfBoolean("file.copy.server_side"), isServerSideCopy)
+        }) {
             if (isServerSideCopy) {
                 withContext(Dispatchers.IO) {
                     system.s3Async.copyObject {

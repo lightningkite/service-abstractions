@@ -1,6 +1,8 @@
 package com.lightningkite.services.sms.twilio
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.metricsTrace
@@ -120,17 +122,17 @@ public class TwilioSmsInboundService(
     override val onReceived: WebhookAdapter<InboundSms> = object : WebhookAdapter<InboundSms> {
         var httpUrl: String? = null
 
-        override suspend fun configureWebhook(httpUrl: String): Unit = metricsTrace("webhook.configure", attributes = MetricAttributes(mapOf(
-            "sms.webhook.operation" to "configure",
-            "messaging.system" to "twilio",
-            "sms.phone_number" to phoneNumber,
-            "webhook.url" to httpUrl,
-        ))) { span ->
+        override suspend fun configureWebhook(httpUrl: String): Unit = metricsTrace("webhook.configure", attributes = MetricAttributes {
+            put(MetricKey.OfString("sms.webhook.operation"), "configure")
+            put(MetricKeys.Messaging.system, "twilio")
+            put(MetricKey.OfString("sms.phone_number"), phoneNumber)
+            put(MetricKey.OfString("webhook.url"), httpUrl)
+        }) { span ->
             this.httpUrl = httpUrl
 
             // Look up the phone number SID
             val phoneNumberSid = lookupPhoneNumberSid(phoneNumber)
-            span.enrich(MetricAttributes(mapOf("sms.phone_number_sid" to phoneNumberSid)))
+            span.enrich(MetricAttributes { put(MetricKey.OfString("sms.phone_number_sid"), phoneNumberSid) })
 
             // Update the phone number's SMS webhook URL
             val response = client.submitForm(
@@ -143,11 +145,11 @@ public class TwilioSmsInboundService(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                span.enrich(MetricAttributes(mapOf("http.status_code" to response.status.value.toLong())))
+                span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, response.status.value.toLong()) })
                 throw IllegalStateException("Failed to configure Twilio SMS webhook: $errorBody")
             }
 
-            span.enrich(MetricAttributes(mapOf("http.status_code" to response.status.value.toLong())))
+            span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, response.status.value.toLong()) })
             logger.info { "[$name] Configured Twilio SMS webhook for $phoneNumber -> $httpUrl" }
         }
 
@@ -155,10 +157,10 @@ public class TwilioSmsInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): InboundSms = metricsTrace("webhook.parse", attributes = MetricAttributes(mapOf(
-            "sms.webhook.operation" to "parse",
-            "messaging.system" to "twilio",
-        ))) { span ->
+        ): InboundSms = metricsTrace("webhook.parse", attributes = MetricAttributes {
+            put(MetricKey.OfString("sms.webhook.operation"), "parse")
+            put(MetricKeys.Messaging.system, "twilio")
+        }) { span ->
             // Parse URL-encoded form data from Twilio
             val bodyText = body.text()
             val params = parseUrlEncodedForm(bodyText)
@@ -185,13 +187,13 @@ public class TwilioSmsInboundService(
             }
 
             // Set span attributes
-            span.enrich(MetricAttributes(buildMap {
-                put("sms.from", TelemetrySanitization.redactPhoneNumber(from))
-                put("sms.to", TelemetrySanitization.redactPhoneNumber(to))
-                put("sms.body_length", messageBody.length.toLong())
-                put("sms.media_count", numMedia.toLong())
-                messageSid?.let { put("sms.message_id", it) }
-            }))
+            span.enrich(MetricAttributes {
+                put(MetricKey.OfString("sms.from"), context.telemetrySanitization.redactPhoneNumber(from))
+                put(MetricKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to))
+                put(MetricKey.OfLong("sms.body_length"), messageBody.length.toLong())
+                put(MetricKey.OfLong("sms.media_count"), numMedia.toLong())
+                messageSid?.let { put(MetricKey.OfString("sms.message_id"), it) }
+            })
 
             InboundSms(
                 from = from.toPhoneNumber(),
@@ -292,10 +294,10 @@ public class TwilioSmsInboundService(
      * @throws IllegalStateException if the phone number is not found
      */
     private suspend fun lookupPhoneNumberSid(phoneNumber: String): String =
-        metricsTrace("lookup_phone_sid", attributes = MetricAttributes(mapOf(
-            "messaging.system" to "twilio",
-            "sms.phone_number" to phoneNumber,
-        ))) { span ->
+        metricsTrace("lookup_phone_sid", attributes = MetricAttributes {
+            put(MetricKeys.Messaging.system, "twilio")
+            put(MetricKey.OfString("sms.phone_number"), phoneNumber)
+        }) { span ->
             val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
             val response = client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
 
@@ -315,7 +317,7 @@ public class TwilioSmsInboundService(
                 ?.jsonPrimitive?.content
                 ?: throw IllegalStateException("Phone number $phoneNumber not found in Twilio account $accountSid")
 
-            span.enrich(MetricAttributes(mapOf("sms.phone_number_sid" to sid)))
+            span.enrich(MetricAttributes { put(MetricKey.OfString("sms.phone_number_sid"), sid) })
             sid
         }
 

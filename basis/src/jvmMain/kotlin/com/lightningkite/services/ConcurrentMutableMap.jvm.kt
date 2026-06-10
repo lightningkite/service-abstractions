@@ -1,5 +1,6 @@
 package com.lightningkite.services
 
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**

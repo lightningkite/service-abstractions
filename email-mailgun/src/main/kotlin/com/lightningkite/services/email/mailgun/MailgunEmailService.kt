@@ -1,6 +1,8 @@
 package com.lightningkite.services.email.mailgun
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.email.*
 import com.lightningkite.services.metricsTrace
@@ -82,20 +84,20 @@ public class MailgunEmailService(
     override suspend fun send(email: Email) {
         if (email.to.isEmpty() && email.cc.isEmpty() && email.bcc.isEmpty()) return
 
-        metricsTrace("send", attributes = MetricAttributes(buildMap {
-            put("email.operation", "send")
-            put("email.system", "mailgun")
-            put("messaging.system", "mailgun")
-            put("email.from", email.from?.value?.toString() ?: domain)
-            put("email.to", email.to.joinToString(", ") { it.value.toString() })
-            put("email.subject", email.subject)
+        metricsTrace("send", attributes = MetricAttributes {
+            put(MetricKey.OfString("email.operation"), "send")
+            put(MetricKey.OfString("email.system"), "mailgun")
+            put(MetricKeys.Messaging.system, "mailgun")
+            put(MetricKey.OfString("email.from"), email.from?.value?.toString() ?: domain)
+            put(MetricKey.OfString("email.to"), email.to.joinToString(", ") { it.value.toString() })
+            put(MetricKey.OfString("email.subject"), email.subject)
             if (email.cc.isNotEmpty()) {
-                put("email.cc", email.cc.joinToString(", ") { it.value.toString() })
+                put(MetricKey.OfString("email.cc"), email.cc.joinToString(", ") { it.value.toString() })
             }
             if (email.attachments.isNotEmpty()) {
-                put("email.attachments.count", email.attachments.size.toLong())
+                put(MetricKey.OfLong("email.attachments.count"), email.attachments.size.toLong())
             }
-        })) { _ ->
+        }) { _ ->
             sendImpl(email)
         }
     }
@@ -103,14 +105,14 @@ public class MailgunEmailService(
     override suspend fun sendBulk(template: Email, personalizations: List<EmailPersonalization>) {
         if (personalizations.isEmpty()) return
 
-        metricsTrace("sendBulk", attributes = MetricAttributes(mapOf(
-            "email.operation" to "sendBulk",
-            "email.system" to "mailgun",
-            "messaging.system" to "mailgun",
-            "email.from" to (template.from?.value?.toString() ?: domain),
-            "email.subject" to template.subject,
-            "email.personalizations.count" to personalizations.size.toLong(),
-        ))) { _ ->
+        metricsTrace("sendBulk", attributes = MetricAttributes {
+            put(MetricKey.OfString("email.operation"), "sendBulk")
+            put(MetricKey.OfString("email.system"), "mailgun")
+            put(MetricKeys.Messaging.system, "mailgun")
+            put(MetricKey.OfString("email.from"), template.from?.value?.toString() ?: domain)
+            put(MetricKey.OfString("email.subject"), template.subject)
+            put(MetricKey.OfLong("email.personalizations.count"), personalizations.size.toLong())
+        }) { _ ->
             personalizations
                 .asSequence()
                 .map {
@@ -129,13 +131,13 @@ public class MailgunEmailService(
         if (emails.isEmpty()) return
 
         // TODO: use Mailgun batch send API instead of individual POSTs — requires API restructure
-        metricsTrace("sendBulk", attributes = MetricAttributes(mapOf(
-            "email.operation" to "sendBulk",
-            "email.system" to "mailgun",
-            "messaging.system" to "mailgun",
-            "email.from" to domain,
-            "email.count" to emails.size.toLong(),
-        ))) { _ ->
+        metricsTrace("sendBulk", attributes = MetricAttributes {
+            put(MetricKey.OfString("email.operation"), "sendBulk")
+            put(MetricKey.OfString("email.system"), "mailgun")
+            put(MetricKeys.Messaging.system, "mailgun")
+            put(MetricKey.OfString("email.from"), domain)
+            put(MetricKey.OfLong("email.count"), emails.size.toLong())
+        }) { _ ->
             emails.forEach { email ->
                 sendImpl(email)
             }

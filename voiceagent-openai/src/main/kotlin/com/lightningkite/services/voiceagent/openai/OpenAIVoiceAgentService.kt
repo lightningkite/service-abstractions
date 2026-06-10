@@ -4,6 +4,7 @@ import com.lightningkite.services.Counter
 import com.lightningkite.services.Histogram
 import com.lightningkite.services.InFlight
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
 import com.lightningkite.services.MetricUnit
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
@@ -163,14 +164,16 @@ internal class VoiceAgentMetrics(owner: com.lightningkite.services.Namespaced) {
     /** Wall-clock duration of a session, recorded once at close. */
     val sessionDuration: Histogram = owner.metricsHistogram("session.duration", MetricUnit.Seconds, emptySet())
 
+    private val outcomeKey = MetricKey.OfString("outcome")
+
     /** Count of sessions, tagged with their terminal outcome. */
-    val sessions: Counter = owner.metricsCounter("sessions", MetricUnit.Occurrences, defaultDimensions = setOf("outcome"))
+    val sessions: Counter = owner.metricsCounter("sessions", MetricUnit.Occurrences, defaultDimensions = setOf(outcomeKey))
 
     /** Wall-clock duration of a single response turn, recorded at ResponseDone. */
     val turnDuration: Histogram = owner.metricsHistogram("turn.duration", MetricUnit.Seconds, emptySet())
 
     /** Count of turns, tagged with their terminal outcome. */
-    val turns: Counter = owner.metricsCounter("turns", MetricUnit.Occurrences, defaultDimensions = setOf("outcome"))
+    val turns: Counter = owner.metricsCounter("turns", MetricUnit.Occurrences, defaultDimensions = setOf(outcomeKey))
 
     val tokensInput: Counter = owner.metricsCounter("turn.tokens.input", MetricUnit.Occurrences, emptySet())
     val tokensOutput: Counter = owner.metricsCounter("turn.tokens.output", MetricUnit.Occurrences, emptySet())
@@ -290,7 +293,7 @@ internal class OpenAIVoiceAgentSession(
             sessionStart?.let { start ->
                 metrics.sessionDuration.record((clock.now() - start).inWholeMilliseconds / 1000.0)
             }
-            metricsAttributes(MetricAttributes(mapOf("outcome" to outcome))) { metrics.sessions.increment() }
+            metricsAttributes(MetricAttributes { put(MetricKey.OfString("outcome"), outcome) }) { metrics.sessions.increment() }
         }
     }
 
@@ -408,7 +411,7 @@ internal class OpenAIVoiceAgentSession(
                     }
 
                     val turnOutcome = if (status == ResponseStatus.FAILED) "failed" else "ok"
-                    metricsAttributes(MetricAttributes(mapOf("outcome" to turnOutcome))) { metrics.turns.increment() }
+                    metricsAttributes(MetricAttributes { put(MetricKey.OfString("outcome"), turnOutcome) }) { metrics.turns.increment() }
 
                     eventChannel.send(VoiceAgentEvent.ResponseDone(event.response.id, status, usage))
                 }

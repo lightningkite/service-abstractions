@@ -1,6 +1,8 @@
 package com.lightningkite.services.http
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.metricsTrace
@@ -77,7 +79,7 @@ internal val OpenTelemetryPlugin = createClientPlugin("OpenTelemetryPlugin") {
             // `url.full` is fine — these are NOT metric dimensions).
             val upFront = mutableMapOf<String, Any?>(
                 "http.request.method" to request.method.value,
-                "url.full" to TelemetrySanitization.sanitizeUrl(url.buildString()),
+                "url.full" to settingContext.telemetrySanitization.sanitizeUrl(url.buildString()),
                 "server.address" to url.host,
             )
             if (url.port > 0) upFront["server.port"] = url.port.toLong()
@@ -87,7 +89,7 @@ internal val OpenTelemetryPlugin = createClientPlugin("OpenTelemetryPlugin") {
                 attributes = MetricAttributes(upFront),
                 // Low-cardinality dimensions promoted onto the RED metrics: the method, and a
                 // status-class flag enriched after the response for error-rate-by-class.
-                dimensions = setOf("http.request.method", "http.response.status_class"),
+                dimensions = setOf(MetricKeys.Http.requestMethod, MetricKeys.Http.responseStatusCode),
             ) { span ->
                 val call = proceed(request)
                 val status = call.response.status.value

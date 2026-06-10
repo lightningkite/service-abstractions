@@ -86,7 +86,10 @@ class AnthropicWireTest {
             stream = false,
             defaultMaxTokens = 1024,
         )
-        assertEquals("You are helpful.\n\nBe concise.", body["system"]!!.jsonPrimitive.content)
+        // system is always emitted as an array-of-blocks so cache_control can be attached
+        val systemBlocks = body["system"]!!.jsonArray
+        assertEquals(1, systemBlocks.size)
+        assertEquals("You are helpful.\n\nBe concise.", systemBlocks[0].jsonObject["text"]!!.jsonPrimitive.content)
         // system prompt is not duplicated into the messages array
         val messages = body["messages"]!!.jsonArray
         assertEquals(1, messages.size)

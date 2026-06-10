@@ -4,6 +4,7 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
 import com.lightningkite.services.files.FileScanException
 import com.lightningkite.services.files.FileScanner
 import com.lightningkite.services.metricsTrace
@@ -128,7 +129,7 @@ public class ClamAvFileScanner(
 
     override suspend fun scan(claimedType: MediaType, data: Source): Unit = metricsTrace(
         "scan",
-        attributes = MetricAttributes(mapOf("content_type" to claimedType.toString())),
+        attributes = MetricAttributes { put(MetricKey.OfString("content_type"), claimedType.toString()) },
     ) { span ->
         val result = withContext(Dispatchers.IO) {
             data.use { source ->
@@ -143,14 +144,14 @@ public class ClamAvFileScanner(
         }
         when (result) {
             ScanResult.OK -> {
-                span.enrich(MetricAttributes(mapOf("clamav.result" to "OK")))
+                span.enrich(MetricAttributes { put(MetricKey.OfString("clamav.result"), "OK") })
             }
             is ScanResult.VirusFound -> {
                 val viruses = result.foundViruses.keys.joinToString()
-                span.enrich(MetricAttributes(mapOf(
-                    "clamav.result" to "VirusFound",
-                    "clamav.viruses" to viruses,
-                )))
+                span.enrich(MetricAttributes {
+                    put(MetricKey.OfString("clamav.result"), "VirusFound")
+                    put(MetricKey.OfString("clamav.viruses"), viruses)
+                })
                 // Throwing marks the trace's outcome as an error automatically.
                 throw FileScanException("File seems to contain malicious content; $viruses")
             }

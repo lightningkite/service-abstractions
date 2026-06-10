@@ -1,6 +1,8 @@
 package com.lightningkite.services.pubsub.redis
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.metricsTrace
@@ -200,35 +202,35 @@ public class RedisPubSub(
         encode: (T) -> String,
         decode: (String) -> T,
     ): PubSubChannel<T> = object : PubSubChannel<T> {
-        override suspend fun collect(collector: FlowCollector<T>): Unit = metricsTrace("subscribe", attributes = MetricAttributes(mapOf(
-            "pubsub.operation" to "subscribe",
-            "messaging.destination" to key,
-            "messaging.system" to "redis",
-        ))) {
+        override suspend fun collect(collector: FlowCollector<T>): Unit = metricsTrace("subscribe", attributes = MetricAttributes {
+            put(MetricKey.OfString("pubsub.operation"), "subscribe")
+            put(MetricKey.OfString("messaging.destination"), key)
+            put(MetricKeys.Messaging.system, "redis")
+        }) {
             // Create fresh subscription - no caching for serverless compatibility
             // Per-message spans created in the coroutine context (after asFlow()) so
             // makeCurrent() works correctly and child spans get the right parent.
             createSubscription(key).asFlow().collect { message ->
-                metricsTrace("receive", attributes = MetricAttributes(mapOf(
-                    "pubsub.operation" to "receive",
-                    "messaging.destination" to key,
-                    "messaging.system" to "redis",
-                    "message.size" to message.length.toLong(),
-                ))) {
+                metricsTrace("receive", attributes = MetricAttributes {
+                    put(MetricKey.OfString("pubsub.operation"), "receive")
+                    put(MetricKey.OfString("messaging.destination"), key)
+                    put(MetricKeys.Messaging.system, "redis")
+                    put(MetricKey.OfLong("message.size"), message.length.toLong())
+                }) {
                     collector.emit(decode(message))
                 }
             }
         }
 
-        override suspend fun emit(value: T): Unit = metricsTrace("publish", attributes = MetricAttributes(mapOf(
-            "pubsub.operation" to "publish",
-            "messaging.destination" to key,
-            "messaging.system" to "redis",
-        ))) { span ->
+        override suspend fun emit(value: T): Unit = metricsTrace("publish", attributes = MetricAttributes {
+            put(MetricKey.OfString("pubsub.operation"), "publish")
+            put(MetricKey.OfString("messaging.destination"), key)
+            put(MetricKeys.Messaging.system, "redis")
+        }) { span ->
             val message = encode(value)
-            span.enrich(MetricAttributes(mapOf("message.size" to message.length.toLong())))
+            span.enrich(MetricAttributes { put(MetricKey.OfLong("message.size"), message.length.toLong()) })
             val result = publishConnection.reactive().publish(key, message).awaitFirst()
-            span.enrich(MetricAttributes(mapOf("pubsub.subscribers_reached" to result)))
+            span.enrich(MetricAttributes { put(MetricKey.OfLong("pubsub.subscribers_reached"), result) })
             Unit
         }
     }

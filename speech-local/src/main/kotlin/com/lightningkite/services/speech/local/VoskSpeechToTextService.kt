@@ -1,6 +1,7 @@
 package com.lightningkite.services.speech.local
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.metricsTrace
@@ -124,7 +125,7 @@ public class VoskSpeechToTextService(
 
         metricsTrace(
             "transcribe",
-            attributes = MetricAttributes(mapOf("audio.size_bytes" to audioBytes.size.toLong()))
+            attributes = MetricAttributes { put(MetricKey.OfLong("audio.size_bytes"), audioBytes.size.toLong()) }
         ) {
             // Convert audio to 16kHz mono WAV if needed
             val wavBytes = convertToVoskFormat(audioBytes, audio.mediaType.toString())

@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricAttributesBuilder
 import com.lightningkite.services.MetricSpan
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
@@ -46,21 +47,20 @@ public class JsonFileTable<Model : Any>(
 
     override val name: String get() = tableName
 
-    private fun baseAttributes(operation: String, extra: Map<String, Any?> = emptyMap()): MetricAttributes =
-        MetricAttributes(
-            buildMap {
-                put("db.system", "jsonfile")
-                put("db.operation", operation)
-                put("db.collection", tableName)
-                putAll(extra)
-            }
-        )
+    private fun baseAttributes(operation: String): MetricAttributes = MetricAttributes {
+        put(Database.MetricKeys.system, "jsonfile")
+        put(Database.MetricKeys.operation, operation)
+        put(Database.MetricKeys.collection, tableName)
+    }
 
     private suspend inline fun <R> traced(
         operation: String,
-        extra: Map<String, Any?> = emptyMap(),
+        noinline extraBlock: (MetricAttributesBuilder.() -> Unit)? = null,
         noinline block: suspend (MetricSpan) -> R,
-    ): R = metricsTrace(operation, attributes = baseAttributes(operation, extra), action = block)
+    ): R {
+        val attrs = if (extraBlock != null) MetricAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
+        return metricsTrace(operation, attributes = attrs, action = block)
+    }
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private val dumpLock = ReentrantLock()
@@ -120,13 +120,13 @@ public class JsonFileTable<Model : Any>(
     ): Flow<Model> = flow {
         val results = traced(
             operation = "find",
-            extra = mapOf(
-                "db.limit" to limit.toLong(),
-                "db.skip" to skip.toLong(),
-            )
+            extraBlock = {
+                put(Database.MetricKeys.limit, limit.toLong())
+                put(Database.MetricKeys.skip, skip.toLong())
+            }
         ) { span ->
             val results = super.find(condition, orderBy, skip, limit, maxQueryMs).toList()
-            span.enrich(MetricAttributes(mapOf("db.result_count" to results.size.toLong())))
+            span.enrich(MetricAttributes { put(Database.MetricKeys.resultCount, results.size.toLong()) })
             results
         }
         results.forEach { emit(it) }
@@ -136,7 +136,7 @@ public class JsonFileTable<Model : Any>(
         operation = "count"
     ) { span ->
         val result = super.count(condition)
-        span.enrich(MetricAttributes(mapOf("db.count" to result.toLong())))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.count, result.toLong()) })
         result
     }
 
@@ -145,10 +145,10 @@ public class JsonFileTable<Model : Any>(
         groupBy: DataClassPath<Model, Key>
     ): Map<Key, Int> = traced(
         operation = "groupCount",
-        extra = mapOf("db.groupBy" to groupBy.toString())
+        extraBlock = { put(Database.MetricKeys.groupBy, groupBy.toString()) }
     ) { span ->
         val result = super.groupCount(condition, groupBy)
-        span.enrich(MetricAttributes(mapOf("db.groups" to result.size.toLong())))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.groups, result.size.toLong()) })
         result
     }
 
@@ -158,10 +158,10 @@ public class JsonFileTable<Model : Any>(
         property: DataClassPath<Model, N>
     ): Double? = traced(
         operation = "aggregate",
-        extra = mapOf(
-            "db.aggregate" to aggregate.toString(),
-            "db.property" to property.toString(),
-        )
+        extraBlock = {
+            put(Database.MetricKeys.aggregate, aggregate.toString())
+            put(Database.MetricKeys.property, property.toString())
+        }
     ) { span ->
         super.aggregate(aggregate, condition, property)
     }
@@ -173,14 +173,14 @@ public class JsonFileTable<Model : Any>(
         property: DataClassPath<Model, N>
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
-        extra = mapOf(
-            "db.aggregate" to aggregate.toString(),
-            "db.groupBy" to groupBy.toString(),
-            "db.property" to property.toString(),
-        )
+        extraBlock = {
+            put(Database.MetricKeys.aggregate, aggregate.toString())
+            put(Database.MetricKeys.groupBy, groupBy.toString())
+            put(Database.MetricKeys.property, property.toString())
+        }
     ) { span ->
         val result = super.groupAggregate(aggregate, condition, groupBy, property)
-        span.enrich(MetricAttributes(mapOf("db.groups" to result.size.toLong())))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.groups, result.size.toLong()) })
         result
     }
 
@@ -188,7 +188,7 @@ public class JsonFileTable<Model : Any>(
         operation = "insert"
     ) { span ->
         val modelsList = models.toList()
-        span.enrich(MetricAttributes(mapOf("db.insert_count" to modelsList.size.toLong())))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.insertCount, modelsList.size.toLong()) })
         super.insert(modelsList)
     }
 
@@ -200,7 +200,7 @@ public class JsonFileTable<Model : Any>(
         operation = "replaceOne"
     ) { span ->
         val result = super.replaceOne(condition, model, orderBy)
-        span.enrich(MetricAttributes(mapOf("db.replaced" to if (result.old != null) 1L else 0L)))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.replaced, if (result.old != null) 1L else 0L) })
         result
     }
 
@@ -212,7 +212,7 @@ public class JsonFileTable<Model : Any>(
         operation = "replaceOneIgnoringResult"
     ) { span ->
         val result = super.replaceOneIgnoringResult(condition, model, orderBy)
-        span.enrich(MetricAttributes(mapOf("db.replaced" to if (result) 1L else 0L)))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.replaced, if (result) 1L else 0L) })
         result
     }
 
@@ -224,8 +224,8 @@ public class JsonFileTable<Model : Any>(
         operation = "upsertOne"
     ) { span ->
         val result = super.upsertOne(condition, modification, model)
-        span.enrich(MetricAttributes(mapOf("db.upserted" to if (result.new != null) 1L else 0L)))
-        span.enrich(MetricAttributes(mapOf("db.was_insert" to if (result.old == null) 1L else 0L)))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.upserted, if (result.new != null) 1L else 0L) })
+        span.enrich(MetricAttributes { put(Database.MetricKeys.wasInsert, if (result.old == null) 1L else 0L) })
         result
     }
 
@@ -237,7 +237,7 @@ public class JsonFileTable<Model : Any>(
         operation = "upsertOneIgnoringResult"
     ) { span ->
         val result = super.upsertOneIgnoringResult(condition, modification, model)
-        span.enrich(MetricAttributes(mapOf("db.was_update" to if (result) 1L else 0L)))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.wasUpdate, if (result) 1L else 0L) })
         result
     }
 
@@ -249,7 +249,7 @@ public class JsonFileTable<Model : Any>(
         operation = "updateOne"
     ) { span ->
         val result = super.updateOne(condition, modification, orderBy)
-        span.enrich(MetricAttributes(mapOf("db.updated" to if (result.old != null) 1L else 0L)))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.updated, if (result.old != null) 1L else 0L) })
         result
     }
 
@@ -261,7 +261,7 @@ public class JsonFileTable<Model : Any>(
         operation = "updateOneIgnoringResult"
     ) { span ->
         val result = super.updateOneIgnoringResult(condition, modification, orderBy)
-        span.enrich(MetricAttributes(mapOf("db.updated" to if (result) 1L else 0L)))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.updated, if (result) 1L else 0L) })
         result
     }
 
@@ -272,7 +272,7 @@ public class JsonFileTable<Model : Any>(
         operation = "updateMany"
     ) { span ->
         val result = super.updateMany(condition, modification)
-        span.enrich(MetricAttributes(mapOf("db.updated" to result.changes.size.toLong())))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.updated, result.changes.size.toLong()) })
         result
     }
 
@@ -283,7 +283,7 @@ public class JsonFileTable<Model : Any>(
         operation = "updateManyIgnoringResult"
     ) { span ->
         val count = super.updateManyIgnoringResult(condition, modification)
-        span.enrich(MetricAttributes(mapOf("db.updated" to count.toLong())))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.updated, count.toLong()) })
         count
     }
 
@@ -294,7 +294,7 @@ public class JsonFileTable<Model : Any>(
         operation = "deleteOne"
     ) { span ->
         val result = super.deleteOne(condition, orderBy)
-        span.enrich(MetricAttributes(mapOf("db.deleted" to if (result != null) 1L else 0L)))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.deleted, if (result != null) 1L else 0L) })
         result
     }
 
@@ -305,7 +305,7 @@ public class JsonFileTable<Model : Any>(
         operation = "deleteOneIgnoringOld"
     ) { span ->
         val result = super.deleteOneIgnoringOld(condition, orderBy)
-        span.enrich(MetricAttributes(mapOf("db.deleted" to if (result) 1L else 0L)))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.deleted, if (result) 1L else 0L) })
         result
     }
 
@@ -313,7 +313,7 @@ public class JsonFileTable<Model : Any>(
         operation = "deleteMany"
     ) { span ->
         val result = super.deleteMany(condition)
-        span.enrich(MetricAttributes(mapOf("db.deleted" to result.size.toLong())))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.deleted, result.size.toLong()) })
         result
     }
 
@@ -321,7 +321,7 @@ public class JsonFileTable<Model : Any>(
         operation = "deleteManyIgnoringOld"
     ) { span ->
         val count = super.deleteManyIgnoringOld(condition)
-        span.enrich(MetricAttributes(mapOf("db.deleted" to count.toLong())))
+        span.enrich(MetricAttributes { put(Database.MetricKeys.deleted, count.toLong()) })
         count
     }
 
@@ -333,15 +333,15 @@ public class JsonFileTable<Model : Any>(
     ): Flow<ScoredResult<Model>> = flow {
         val results = traced(
             operation = "findSimilar",
-            extra = buildMap {
-                put("db.vectorField", vectorField.toString())
-                put("db.metric", params.metric.toString())
-                put("db.limit", params.limit.toLong())
-                params.minScore?.let { put("db.minScore", it.toDouble()) }
+            extraBlock = {
+                put(Database.MetricKeys.vectorField, vectorField.toString())
+                put(Database.MetricKeys.metric, params.metric.toString())
+                put(Database.MetricKeys.limit, params.limit.toLong())
+                params.minScore?.let { put(Database.MetricKeys.minScore, it.toDouble()) }
             }
         ) { span ->
             val results = super.findSimilar(vectorField, params, condition, maxQueryMs).toList()
-            span.enrich(MetricAttributes(mapOf("db.result_count" to results.size.toLong())))
+            span.enrich(MetricAttributes { put(Database.MetricKeys.resultCount, results.size.toLong()) })
             results
         }
         results.forEach { emit(it) }
@@ -355,15 +355,15 @@ public class JsonFileTable<Model : Any>(
     ): Flow<ScoredResult<Model>> = flow {
         val results = traced(
             operation = "findSimilarSparse",
-            extra = buildMap {
-                put("db.vectorField", vectorField.toString())
-                put("db.metric", params.metric.toString())
-                put("db.limit", params.limit.toLong())
-                params.minScore?.let { put("db.minScore", it.toDouble()) }
+            extraBlock = {
+                put(Database.MetricKeys.vectorField, vectorField.toString())
+                put(Database.MetricKeys.metric, params.metric.toString())
+                put(Database.MetricKeys.limit, params.limit.toLong())
+                params.minScore?.let { put(Database.MetricKeys.minScore, it.toDouble()) }
             }
         ) { span ->
             val results = super.findSimilarSparse(vectorField, params, condition, maxQueryMs).toList()
-            span.enrich(MetricAttributes(mapOf("db.result_count" to results.size.toLong())))
+            span.enrich(MetricAttributes { put(Database.MetricKeys.resultCount, results.size.toLong()) })
             results
         }
         results.forEach { emit(it) }

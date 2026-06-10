@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Verifies that [LlmMessage.cacheBreak] produces observable cache hits on providers
+ * Verifies that [LlmMessage.cacheBoundary] produces observable cache hits on providers
  * that support prompt caching. Skipped on providers that don't (OpenAI auto-caches without
  * explicit boundaries; Ollama has no cache).
  *
@@ -20,7 +20,7 @@ import kotlin.time.Duration.Companion.seconds
 public abstract class CachingTests : LlmAccessTests() {
 
     /**
-     * Sends a long system message with `cacheBreak = true` on the first message twice in
+     * Sends a long system message with `cacheBoundary = true` on the first message twice in
      * quick succession. The first call writes the cache (cacheReadTokens should be 0 or
      * very small). The second call should hit the cache (cacheReadTokens > 0).
      *
@@ -28,7 +28,7 @@ public abstract class CachingTests : LlmAccessTests() {
      * threshold (~1024 tokens for Sonnet, ~2048 for Haiku — we target the lower bound).
      */
     @Test
-    public fun cacheBreakProducesCacheHitOnSecondCall(): Unit = runTest(timeout = 120.seconds) {
+    public fun cacheBoundaryProducesCacheHitOnSecondCall(): Unit = runTest(timeout = 120.seconds) {
         skipIfServiceAbsent()
         Assume.assumeTrue(
             "Provider does not support prompt caching",
@@ -49,7 +49,7 @@ public abstract class CachingTests : LlmAccessTests() {
         val prompt = LlmPrompt(
             systemPrompt = listOf(LlmPart.Text(longSystemContent)),
             messages = listOf(
-                userText("Respond with only the word PONG.").copy(cacheBreak = true),
+                userText("Respond with only the word PONG.").copy(cacheBoundary = true),
             ),
             maxTokens = testMaxTokens ?: 64,
             temperature = 0.0,

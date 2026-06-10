@@ -4,6 +4,7 @@ import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.cql.*
 import com.datastax.oss.driver.api.core.servererrors.InvalidQueryException
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.metricsTrace
@@ -62,13 +63,11 @@ public class CassandraTable<Model : Any>(
     private var prepared = false
     private val preparedStatements = mutableMapOf<String, PreparedStatement>()
 
-    private fun baseAttributes(operation: String): MetricAttributes = MetricAttributes(
-        mapOf(
-            "db.system" to "cassandra",
-            "db.operation" to operation,
-            "db.collection" to tableName,
-        )
-    )
+    private fun baseAttributes(operation: String): MetricAttributes = MetricAttributes {
+        put(MetricKeys.Db.system, "cassandra")
+        put(MetricKeys.Db.operationName, operation)
+        put(MetricKeys.Db.collectionName, tableName)
+    }
 
     private suspend inline fun <R> traced(
         operation: String,

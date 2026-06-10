@@ -514,12 +514,10 @@ internal class TracingLLMClient(
     private suspend inline fun <R> traced(operation: String, crossinline block: suspend () -> R): R =
         owner.metricsTrace(
             operation,
-            attributes = MetricAttributes(
-                mapOf(
-                    "ai.provider" to delegate.llmProvider().id,
-                    "ai.model" to modelId,
-                )
-            )
+            attributes = MetricAttributes {
+                put(MetricKeys.GenAi.system, delegate.llmProvider().id)
+                put(MetricKeys.GenAi.requestModel, modelId)
+            }
         ) { block() }
 
     override suspend fun execute(

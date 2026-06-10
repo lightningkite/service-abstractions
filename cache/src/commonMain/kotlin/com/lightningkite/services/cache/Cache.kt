@@ -24,6 +24,17 @@ import kotlin.time.Duration.Companion.seconds
  * ```
  */
 public interface Cache : Service {
+
+    public object MetricKeys {
+        public val hit: MetricKey.OfBoolean = MetricKey.OfBoolean("cache.hit")
+        public val added: MetricKey.OfBoolean = MetricKey.OfBoolean("cache.added")
+        public val casSuccess: MetricKey.OfBoolean = MetricKey.OfBoolean("cache.cas.success")
+        public val system: MetricKey.OfString = MetricKey.OfString("cache.system")
+        public val key: MetricKey.OfString = MetricKey.OfString("cache.key")
+        public val ttl: MetricKey.OfLong = MetricKey.OfLong("cache.ttl")
+        public val value: MetricKey.OfLong = MetricKey.OfLong("cache.value")
+    }
+
     /**
      * Configuration for instantiating a Cache instance.
      *

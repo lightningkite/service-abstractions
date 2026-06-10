@@ -107,7 +107,7 @@ public class OpenAiLlmAccess(
                         modelId = model,
                     )
                 }
-                val parser = OpenAiStreamParser()
+                val parser = OpenAiStreamParser(prompt.stopSequences)
                 // OpenAI SSE events are `data: {json}\n\n` with a `data: [DONE]\n\n` terminator.
                 // We only care about `data:` lines and parse one JSON object per line. Reading via
                 // the non-blocking ByteReadChannel (rather than a blocking InputStream) keeps the

@@ -1,6 +1,8 @@
 package com.lightningkite.services.sms.twilio
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.PhoneNumber
@@ -124,13 +126,13 @@ public class TwilioSMS(
      * by the http-client's OpenTelemetry plugin. Retries on HTTP 429 and 5xx with exponential
      * backoff (3 attempts: 1s, 2s, 4s delays).
      */
-    override suspend fun send(to: PhoneNumber, message: String): Unit = metricsTrace("send", attributes = MetricAttributes(mapOf(
-        "sms.operation" to "send",
-        "messaging.system" to "twilio",
-        "sms.to" to TelemetrySanitization.redactPhoneNumber(to.toString()),
-        "sms.from" to TelemetrySanitization.redactPhoneNumber(from),
-        "sms.body_length" to message.length.toLong(),
-    ))) { span ->
+    override suspend fun send(to: PhoneNumber, message: String): Unit = metricsTrace("send", attributes = MetricAttributes {
+        put(MetricKey.OfString("sms.operation"), "send")
+        put(MetricKeys.Messaging.system, "twilio")
+        put(MetricKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to.toString()))
+        put(MetricKey.OfString("sms.from"), context.telemetrySanitization.redactPhoneNumber(from))
+        put(MetricKey.OfLong("sms.body_length"), message.length.toLong())
+    }) { span ->
         val maxAttempts = 3
         val retryDelays = listOf(1.seconds, 2.seconds, 4.seconds)
         var lastException: Exception? = null
@@ -159,11 +161,11 @@ public class TwilioSMS(
 
             if (response.status != HttpStatusCode.Created) {
                 val errorMessage = response.bodyAsText()
-                span.enrich(MetricAttributes(mapOf("http.status_code" to statusValue.toLong())))
+                span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, statusValue.toLong()) })
                 throw SMSException("Failed to send SMS: $errorMessage")
             }
 
-            span.enrich(MetricAttributes(mapOf("http.status_code" to statusValue.toLong())))
+            span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, statusValue.toLong()) })
             return@metricsTrace
         }
 

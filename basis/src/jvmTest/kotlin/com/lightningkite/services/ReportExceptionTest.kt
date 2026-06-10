@@ -16,7 +16,6 @@ class ReportExceptionTest {
         val context = TestSettingContext()
         context.reportException(
             RuntimeException("something failed"),
-            mapOf("operation" to "createIndex", "table" to "users"),
         )
     }
 }

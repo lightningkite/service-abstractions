@@ -84,9 +84,7 @@ class OpenAiWireTest {
         )
         assertNull(body["stream"])
         assertEquals(256, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
-        // Legacy key emitted alongside the modern one for OpenAI-compatible servers that only
-        // recognise `max_tokens`. Both keys must carry the same value.
-        assertEquals(256, body["max_tokens"]!!.jsonPrimitive.content.toInt())
+        assertNull(body["max_tokens"])
         assertEquals("0.1", body["temperature"]!!.jsonPrimitive.content)
         assertEquals(JsonArray(listOf(JsonPrimitive("END"))), body["stop"])
         assertEquals("required", body["tool_choice"]!!.jsonPrimitive.content)

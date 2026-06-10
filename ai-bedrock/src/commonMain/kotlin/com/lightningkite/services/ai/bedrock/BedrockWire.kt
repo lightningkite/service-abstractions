@@ -44,53 +44,6 @@ internal object BedrockWire {
     }
 
     /**
-     * Pre-computed set of cache boundary locations for Bedrock's `cachePoint` blocks.
-     * Same semantics as the Anthropic adapter: [LlmMessage.cacheBreak] on message N means
-     * "cache everything before me," so the cachePoint goes on the previous element.
-     * Bedrock allows up to 4 cache points; excess are silently dropped (last 4 kept).
-     */
-    internal data class ActiveCacheBoundaries(
-        val system: Boolean,
-        val toolIndices: Set<Int>,
-        val messageIndices: Set<Int>,
-    )
-
-    /**
-     * Collect all requested cache boundaries and keep only the last 4 in wire order
-     * (system → messages → tools for Bedrock).
-     */
-    internal fun computeActiveBoundaries(prompt: LlmPrompt): ActiveCacheBoundaries {
-        data class Entry(val wireOrder: Int, val type: Char, val index: Int)
-
-        val all = mutableListOf<Entry>()
-        var order = 0
-
-        // cacheBreak on the first message → cache system prompt
-        if (prompt.messages.firstOrNull()?.cacheBreak == true) {
-            all.add(Entry(order++, 's', 0))
-        }
-
-        // Message-level: cacheBreak at index N (N>0) → cachePoint after message N-1
-        prompt.messages.forEachIndexed { i, msg ->
-            if (msg.cacheBreak && i > 0) {
-                all.add(Entry(order++, 'm', i - 1))
-            }
-        }
-
-        // Tool-level boundaries
-        prompt.tools.forEachIndexed { i, tool ->
-            if (tool.cacheBreak) all.add(Entry(order++, 't', i))
-        }
-
-        val active = all.takeLast(4)
-        return ActiveCacheBoundaries(
-            system = active.any { it.type == 's' },
-            toolIndices = active.filter { it.type == 't' }.mapTo(mutableSetOf()) { it.index },
-            messageIndices = active.filter { it.type == 'm' }.mapTo(mutableSetOf()) { it.index },
-        )
-    }
-
-    /**
      * Turn an [LlmPrompt] into the JSON body for `POST /model/{id}/converse` or
      * `…/converse-stream`.
      *
@@ -123,22 +76,18 @@ internal object BedrockWire {
             if (suppressToolsPrompt) {
                 addJsonObject { put("text", TOOL_SUPPRESSION_INSTRUCTION) }
             }
-            if (boundaries.system) {
-                add(CACHE_POINT_BLOCK)
-            }
         }
         if (systemBlocks.isNotEmpty()) put("system", systemBlocks)
 
         putJsonArray("messages") {
-            prompt.messages.forEachIndexed { msgIndex, msg ->
-                val shouldCache = msgIndex in boundaries.messageIndices
+            prompt.messages.forEach { msg ->
                 addJsonObject {
                     when (msg) {
                         is LlmMessage.User -> {
                             put("role", "user")
                             putJsonArray("content") {
                                 msg.parts.forEach { part -> add(encodeContentOnlyBlock(part)) }
-                                if (shouldCache) add(CACHE_POINT_BLOCK)
+                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
                             }
                         }
                         is LlmMessage.Agent -> {
@@ -149,7 +98,7 @@ internal object BedrockWire {
                                     // an empty content object Bedrock would reject.
                                     if (part !is LlmPart.Reasoning) add(encodeAgentPart(part))
                                 }
-                                if (shouldCache) add(CACHE_POINT_BLOCK)
+                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
                             }
                         }
                         is LlmMessage.ToolResult -> {
@@ -169,7 +118,7 @@ internal object BedrockWire {
                                         if (msg.isError) put("status", "error")
                                     }
                                 })
-                                if (shouldCache) add(CACHE_POINT_BLOCK)
+                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
                             }
                         }
                     }
@@ -194,7 +143,7 @@ internal object BedrockWire {
         if (prompt.tools.isNotEmpty()) {
             putJsonObject("toolConfig") {
                 putJsonArray("tools") {
-                    prompt.tools.forEachIndexed { i, tool ->
+                    prompt.tools.forEach { tool ->
                         addJsonObject {
                             putJsonObject("toolSpec") {
                                 put("name", tool.name)
@@ -204,7 +153,8 @@ internal object BedrockWire {
                                 }
                             }
                         }
-                        if (i in boundaries.toolIndices) add(CACHE_POINT_BLOCK)
+                        // Append a cachePoint entry after this tool when marked.
+                        if (tool.cacheBoundary) add(CACHE_POINT_BLOCK)
                     }
                 }
                 put("toolChoice", toolChoiceObject(prompt.toolChoice))

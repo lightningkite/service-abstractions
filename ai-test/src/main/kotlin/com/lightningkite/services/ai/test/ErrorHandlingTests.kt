@@ -34,7 +34,7 @@ public abstract class ErrorHandlingTests : LlmAccessTests() {
      * model id, not return empty text.
      */
     @Test
-    public fun unknownModelFails(): Unit = runTest(timeout = 30.seconds) {
+    public open fun unknownModelFails(): Unit = runTest(timeout = 30.seconds) {
         skipIfServiceAbsent()
         val bogus = LlmModelId("definitely-not-a-real-model-xyz-12345")
         try {

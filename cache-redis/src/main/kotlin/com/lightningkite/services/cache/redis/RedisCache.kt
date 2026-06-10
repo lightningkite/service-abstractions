@@ -5,7 +5,6 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.metricsTrace
-import com.lightningkite.services.TelemetrySanitization
 import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisNoScriptException
 import io.lettuce.core.ScriptOutputType
@@ -162,17 +161,15 @@ end
 
     // Static, low-cardinality span attributes shared by every operation. The cache key is hashed so a
     // high-cardinality value never reaches telemetry.
-    private fun spanAttributes(key: String): MetricAttributes = MetricAttributes(
-        mapOf(
-            "cache.system" to "redis",
-            "cache.key" to TelemetrySanitization.hashCacheKey(key),
-        )
-    )
+    private fun spanAttributes(key: String): MetricAttributes = MetricAttributes {
+        put(Cache.MetricKeys.system, "redis")
+        put(Cache.MetricKeys.key, context.telemetrySanitization.hashCacheKey(key))
+    }
 
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
-        return metricsTrace("get", attributes = spanAttributes(key), dimensions = setOf("cache.hit")) { span ->
+        return metricsTrace("get", attributes = spanAttributes(key), dimensions = setOf(Cache.MetricKeys.hit)) { span ->
             val raw = lettuceConnection.get(key).awaitFirstOrNull()
-            span.enrich(MetricAttributes(mapOf("cache.hit" to (raw != null))))
+            span.enrich(MetricAttributes { put(Cache.MetricKeys.hit, raw != null) })
             raw?.let { json.decodeFromString(serializer, it) }
         }
     }
@@ -198,7 +195,7 @@ end
         }
         val result = lettuceConnection.set(key, json.encodeToString(serializer, value), args)
             .awaitFirstOrNull() != null
-        span.enrich(MetricAttributes(mapOf("cache.added" to result)))
+        span.enrich(MetricAttributes { put(Cache.MetricKeys.added, result) })
         result
     }
 

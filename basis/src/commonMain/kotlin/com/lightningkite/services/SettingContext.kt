@@ -1,7 +1,9 @@
 package com.lightningkite.services
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.serialization.modules.SerializersModule
+import kotlin.coroutines.coroutineContext
 import kotlin.time.Clock
 
 /**
@@ -108,6 +110,8 @@ public interface SettingContext {
      */
     public val metricsBackend: MetricsBackend? get() = null
 
+    public val telemetrySanitization: TelemetrySanitization get() = TelemetrySanitization.Strict
+
     /**
      * Time source for all time-dependent operations.
      *
@@ -158,11 +162,9 @@ public interface SettingContext {
      * @param throwable The exception to report.
      * @param context Additional key/value attributes attached to the report for diagnostics.
      */
-    public suspend fun reportException(throwable: Throwable, context: Map<String, String> = emptyMap()) {
-        logger.error(throwable) {
-            if (context.isEmpty()) "Reported exception" else "Reported exception; context=$context"
-        }
-        metricsBackend?.reportError(throwable, MetricAttributes(context))
+    public suspend fun reportException(throwable: Throwable) {
+        logger.error(throwable){""}
+        metricsBackend?.reportError(throwable, currentCoroutineContext()[MetricAttributeElement]?.attributes ?: MetricAttributes.empty)
     }
 
     public companion object {

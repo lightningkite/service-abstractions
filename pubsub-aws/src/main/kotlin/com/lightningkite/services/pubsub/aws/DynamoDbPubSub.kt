@@ -1,6 +1,8 @@
 package com.lightningkite.services.pubsub.aws
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.HealthStatus
@@ -388,7 +390,7 @@ public class DynamoDbPubSub(
                         }.await()
 
                         consecutiveErrors = 0 // Reset on success
-                        pollSpan.enrich(MetricAttributes(mapOf("messaging.batch.message_count" to response.count().toLong())))
+                        pollSpan.enrich(MetricAttributes { put(MetricKeys.Messaging.batchMessageCount, response.count().toLong()) })
 
                         for (item in response.items()) {
                             val message = item["message"]?.s() ?: continue

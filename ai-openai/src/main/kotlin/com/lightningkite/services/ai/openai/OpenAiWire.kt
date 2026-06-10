@@ -170,12 +170,7 @@ internal fun buildRequestBody(
         put("tool_choice", encodeToolChoice(prompt.toolChoice))
     }
     prompt.maxTokens?.let {
-        // Emit both the modern and the legacy key so OpenAI-compatible servers that only
-        // recognise one of them (older LM Studio, vLLM, Groq, Together, llama.cpp server,
-        // Ollama's OpenAI shim) still see a token cap. OpenAI's current API silently
-        // ignores `max_tokens` when `max_completion_tokens` is present.
         put("max_completion_tokens", it)
-        put("max_tokens", it)
     }
     prompt.temperature?.let { put("temperature", it) }
     if (prompt.stopSequences.isNotEmpty()) {
@@ -361,7 +356,9 @@ private fun requireImageMediaType(mediaType: MediaType) {
  * - The optional final `usage` chunk (requested via `stream_options.include_usage`) has
  *   empty `choices` and carries `usage`.
  */
-internal class OpenAiStreamParser {
+internal class OpenAiStreamParser(
+    private val stopSequences: List<String> = emptyList(),
+) {
     private val toolCalls = HashMap<Int, ToolCallAccumulator>()
     private var finishReason: String? = null
     private var usage: LlmUsage = LlmUsage(0, 0)
@@ -427,7 +424,7 @@ internal class OpenAiStreamParser {
         finishedEmitted = true
         val out = mutableListOf<LlmStreamEvent>()
         emitFinishedToolCalls(out)
-        out.add(LlmStreamEvent.Finished(mapStopReason(finishReason), usage))
+        out.add(LlmStreamEvent.Finished(mapStopReason(finishReason, stopSequences), usage))
         return out
     }
 
@@ -449,8 +446,10 @@ internal class OpenAiStreamParser {
     }
 }
 
-internal fun mapStopReason(openAi: String?): LlmStopReason = when (openAi) {
-    "stop" -> LlmStopReason.EndTurn
+internal fun mapStopReason(openAi: String?, stopSequences: List<String> = emptyList()): LlmStopReason = when (openAi) {
+    // OpenAI returns "stop" for both natural end-of-turn and stop-sequence hits; disambiguate
+    // by checking whether the caller configured any stop sequences.
+    "stop" -> if (stopSequences.isNotEmpty()) LlmStopReason.StopSequence else LlmStopReason.EndTurn
     "tool_calls" -> LlmStopReason.ToolUse
     "function_call" -> LlmStopReason.ToolUse
     "length" -> LlmStopReason.MaxTokens

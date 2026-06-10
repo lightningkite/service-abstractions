@@ -13,4 +13,8 @@ class OpenAiToolChoiceIntegrationTest : ToolChoiceTests() {
     override val cheapModel: LlmModelId get() = OpenAiTestConfig.cheapModel
     override val visionModel: LlmModelId get() = OpenAiTestConfig.visionModel
     override val servicePresent: Boolean get() = OpenAiTestConfig.apiKeyPresent
+
+    // gpt-4o-mini does not reliably honor tool_choice: specific when the prompt is
+    // semantically unrelated to the forced tool.
+    override val supportsToolChoiceForced: Boolean = false
 }

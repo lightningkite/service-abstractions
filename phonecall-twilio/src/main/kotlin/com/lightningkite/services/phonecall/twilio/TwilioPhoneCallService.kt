@@ -1,6 +1,8 @@
 package com.lightningkite.services.phonecall.twilio
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
+import com.lightningkite.services.MetricKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.metricsTrace
@@ -305,14 +307,14 @@ public class TwilioPhoneCallService(
     override suspend fun startCall(to: PhoneNumber, options: OutboundCallOptions): String {
         val from = options.from?.raw ?: defaultFrom
 
-        return metricsTrace("start", attributes = MetricAttributes(mapOf(
-            "phonecall.operation" to "start",
-            "phonecall.to" to TelemetrySanitization.redactPhoneNumber(to.raw),
-            "phonecall.from" to TelemetrySanitization.redactPhoneNumber(from),
-            "phonecall.provider" to "twilio",
-            "phonecall.recording_enabled" to options.recordingEnabled,
-            "phonecall.machine_detection" to options.machineDetection.name,
-        ))) { span ->
+        return metricsTrace("start", attributes = MetricAttributes {
+            put(MetricKey.OfString("phonecall.operation"), "start")
+            put(MetricKey.OfString("phonecall.to"), context.telemetrySanitization.redactPhoneNumber(to.raw))
+            put(MetricKey.OfString("phonecall.from"), context.telemetrySanitization.redactPhoneNumber(from))
+            put(MetricKey.OfString("phonecall.provider"), "twilio")
+            put(MetricKey.OfBoolean("phonecall.recording_enabled"), options.recordingEnabled)
+            put(MetricKey.OfString("phonecall.machine_detection"), options.machineDetection.name)
+        }) { span ->
                 val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
                     client.submitForm(
                         url = "$baseUrl/Calls.json",
@@ -380,7 +382,7 @@ public class TwilioPhoneCallService(
                 val callId = sidMatch?.groupValues?.get(1)
                     ?: throw PhoneCallException("Could not parse call SID from response: $responseBody")
 
-                span.enrich(MetricAttributes(mapOf("phonecall.call_id" to callId)))
+                span.enrich(MetricAttributes { put(MetricKey.OfString("phonecall.call_id"), callId) })
 
                 // Wait for call to be answered using exponential backoff polling.
                 // TODO: Replace this polling loop with a webhook-driven status flow via StatusCallback
@@ -414,7 +416,7 @@ public class TwilioPhoneCallService(
                                         // This commonly happens with trial accounts after user presses key
                                         // Apply postAnswerDelay for trial accounts or other scenarios needing extra wait
                                         logger.info { "[$name] Call $callId answered (answeredBy: ${status.answeredBy})" }
-                                        status.answeredBy?.let { span.enrich(MetricAttributes(mapOf("phonecall.answered_by" to it.name))) }
+                                        status.answeredBy?.let { span.enrich(MetricAttributes { put(MetricKey.OfString("phonecall.answered_by"), it.name) }) }
                                         if (options.postAnswerDelay > Duration.ZERO) {
                                             logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
                                             delay(options.postAnswerDelay)
@@ -427,7 +429,7 @@ public class TwilioPhoneCallService(
                                         -> {
                                         // Still return the call ID, let caller decide what to do
                                         logger.info { "[$name] Call $callId answered by machine (answeredBy: ${status.answeredBy})" }
-                                        status.answeredBy?.let { span.enrich(MetricAttributes(mapOf("phonecall.answered_by" to it.name))) }
+                                        status.answeredBy?.let { span.enrich(MetricAttributes { put(MetricKey.OfString("phonecall.answered_by"), it.name) }) }
                                         if (options.postAnswerDelay > Duration.ZERO) {
                                             logger.debug { "[$name] Applying postAnswerDelay of ${options.postAnswerDelay}" }
                                             delay(options.postAnswerDelay)
@@ -437,7 +439,7 @@ public class TwilioPhoneCallService(
 
                                     AnsweredBy.FAX -> {
                                         logger.warn { "[$name] Call $callId answered by fax machine" }
-                                        span.enrich(MetricAttributes(mapOf("phonecall.answered_by" to "FAX")))
+                                        span.enrich(MetricAttributes { put(MetricKey.OfString("phonecall.answered_by"), "FAX") })
                                         throw PhoneCallException("Fax machine detected")
                                     }
 
@@ -461,7 +463,7 @@ public class TwilioPhoneCallService(
                         CallStatus.REJECTED, CallStatus.CANCELED, CallStatus.FAILED,
                             -> {
                             logger.warn { "[$name] Call $callId ended before connecting: ${status.status}" }
-                            span.enrich(MetricAttributes(mapOf("phonecall.status" to status.status.name)))
+                            span.enrich(MetricAttributes { put(MetricKey.OfString("phonecall.status"), status.status.name) })
                             throw PhoneCallException("Call ended before connecting: ${status.status}")
                         }
 
@@ -477,13 +479,13 @@ public class TwilioPhoneCallService(
         }
     }
 
-    override suspend fun speak(callId: String, text: String, voice: TtsVoice): Unit = metricsTrace("speak", attributes = MetricAttributes(mapOf(
-        "phonecall.operation" to "speak",
-        "phonecall.call_id" to callId,
-        "phonecall.text_length" to text.length.toLong(),
-        "phonecall.provider" to "twilio",
-        "phonecall.voice" to (voice.name ?: voice.gender.name),
-    ))) {
+    override suspend fun speak(callId: String, text: String, voice: TtsVoice): Unit = metricsTrace("speak", attributes = MetricAttributes {
+        put(MetricKey.OfString("phonecall.operation"), "speak")
+        put(MetricKey.OfString("phonecall.call_id"), callId)
+        put(MetricKey.OfLong("phonecall.text_length"), text.length.toLong())
+        put(MetricKey.OfString("phonecall.provider"), "twilio")
+        put(MetricKey.OfString("phonecall.voice"), voice.name ?: voice.gender.name)
+    }) {
         logger.debug { "[$name] speak() called for call $callId, text length: ${text.length} chars" }
         val twiml = buildTwimlInternal {
             say(text, voice)
@@ -507,13 +509,13 @@ public class TwilioPhoneCallService(
         logger.debug { "[$name] speak() completed for call $callId" }
     }
 
-    override suspend fun playAudioUrl(callId: String, url: String, loop: Int): Unit = metricsTrace("play_audio", attributes = MetricAttributes(mapOf(
-        "phonecall.operation" to "play_audio",
-        "phonecall.call_id" to callId,
-        "phonecall.provider" to "twilio",
-        "phonecall.audio_url" to url,
-        "phonecall.loop" to loop.toLong(),
-    ))) {
+    override suspend fun playAudioUrl(callId: String, url: String, loop: Int): Unit = metricsTrace("play_audio", attributes = MetricAttributes {
+        put(MetricKey.OfString("phonecall.operation"), "play_audio")
+        put(MetricKey.OfString("phonecall.call_id"), callId)
+        put(MetricKey.OfString("phonecall.provider"), "twilio")
+        put(MetricKey.OfString("phonecall.audio_url"), url)
+        put(MetricKey.OfLong("phonecall.loop"), loop.toLong())
+    }) {
         val twiml = buildTwimlInternal {
             appendLine("""  <Play loop="$loop">${escapeXml(url)}</Play>""")
             // Keep call alive after playing
@@ -531,11 +533,11 @@ public class TwilioPhoneCallService(
         throw PhoneCallException("playAudio requires hosting audio at a URL. Use playAudioUrl() or speak() instead.")
     }
 
-    override suspend fun sendDtmf(callId: String, digits: String): Unit = metricsTrace("send_dtmf", attributes = MetricAttributes(mapOf(
-        "phonecall.operation" to "send_dtmf",
-        "phonecall.call_id" to callId,
-        "phonecall.provider" to "twilio",
-    ))) {
+    override suspend fun sendDtmf(callId: String, digits: String): Unit = metricsTrace("send_dtmf", attributes = MetricAttributes {
+        put(MetricKey.OfString("phonecall.operation"), "send_dtmf")
+        put(MetricKey.OfString("phonecall.call_id"), callId)
+        put(MetricKey.OfString("phonecall.provider"), "twilio")
+    }) {
         val twiml = buildTwimlInternal {
             appendLine("""<Play digits="$digits"/>""")
         }
@@ -545,11 +547,11 @@ public class TwilioPhoneCallService(
         }
     }
 
-    override suspend fun hold(callId: String): Unit = metricsTrace("hold", attributes = MetricAttributes(mapOf(
-        "phonecall.operation" to "hold",
-        "phonecall.call_id" to callId,
-        "phonecall.provider" to "twilio",
-    ))) {
+    override suspend fun hold(callId: String): Unit = metricsTrace("hold", attributes = MetricAttributes {
+        put(MetricKey.OfString("phonecall.operation"), "hold")
+        put(MetricKey.OfString("phonecall.call_id"), callId)
+        put(MetricKey.OfString("phonecall.provider"), "twilio")
+    }) {
         val twiml = buildTwimlInternal {
             appendLine("""<Play loop="0">http://com.twilio.sounds.music.s3.amazonaws.com/hold-music.mp3</Play>""")
         }
@@ -559,11 +561,11 @@ public class TwilioPhoneCallService(
         }
     }
 
-    override suspend fun resume(callId: String): Unit = metricsTrace("resume", attributes = MetricAttributes(mapOf(
-        "phonecall.operation" to "resume",
-        "phonecall.call_id" to callId,
-        "phonecall.provider" to "twilio",
-    ))) {
+    override suspend fun resume(callId: String): Unit = metricsTrace("resume", attributes = MetricAttributes {
+        put(MetricKey.OfString("phonecall.operation"), "resume")
+        put(MetricKey.OfString("phonecall.call_id"), callId)
+        put(MetricKey.OfString("phonecall.provider"), "twilio")
+    }) {
         // Resume by providing new instructions
         val twiml = buildTwimlInternal {
             appendLine("""<Pause length="3600"/>""")
@@ -574,11 +576,11 @@ public class TwilioPhoneCallService(
         }
     }
 
-    override suspend fun hangup(callId: String): Unit = metricsTrace("hangup", attributes = MetricAttributes(mapOf(
-        "phonecall.operation" to "hangup",
-        "phonecall.call_id" to callId,
-        "phonecall.provider" to "twilio",
-    ))) {
+    override suspend fun hangup(callId: String): Unit = metricsTrace("hangup", attributes = MetricAttributes {
+        put(MetricKey.OfString("phonecall.operation"), "hangup")
+        put(MetricKey.OfString("phonecall.call_id"), callId)
+        put(MetricKey.OfString("phonecall.provider"), "twilio")
+    }) {
         logger.info { "[$name] Hanging up call $callId" }
         val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
             client.submitForm(
@@ -597,17 +599,17 @@ public class TwilioPhoneCallService(
         logger.debug { "[$name] Call $callId hangup successful" }
     }
 
-    override suspend fun getCallStatus(callId: String): CallInfo? = metricsTrace("get_status", attributes = MetricAttributes(mapOf(
-        "phonecall.operation" to "get_status",
-        "phonecall.call_id" to callId,
-        "phonecall.provider" to "twilio",
-    ))) { span ->
+    override suspend fun getCallStatus(callId: String): CallInfo? = metricsTrace("get_status", attributes = MetricAttributes {
+        put(MetricKey.OfString("phonecall.operation"), "get_status")
+        put(MetricKey.OfString("phonecall.call_id"), callId)
+        put(MetricKey.OfString("phonecall.provider"), "twilio")
+    }) { span ->
         val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
             client.get("$baseUrl/Calls/$callId.json")
         }
 
         if (response.status == HttpStatusCode.NotFound) {
-            span.enrich(MetricAttributes(mapOf("phonecall.found" to false)))
+            span.enrich(MetricAttributes { put(MetricKey.OfBoolean("phonecall.found"), false) })
             return@metricsTrace null
         }
 
@@ -619,19 +621,19 @@ public class TwilioPhoneCallService(
         val body = response.bodyAsText()
         val callInfo = parseTwilioCallResponse(body)
 
-        span.enrich(MetricAttributes(buildMap {
-            put("phonecall.found", true)
-            callInfo?.status?.let { put("phonecall.status", it.name) }
-        }))
+        span.enrich(MetricAttributes {
+            put(MetricKey.OfBoolean("phonecall.found"), true)
+            callInfo?.status?.let { put(MetricKey.OfString("phonecall.status"), it.name) }
+        })
 
         callInfo
     }
 
-    override suspend fun updateCall(callId: String, instructions: CallInstructions): Unit = metricsTrace("update", attributes = MetricAttributes(mapOf(
-        "phonecall.operation" to "update",
-        "phonecall.call_id" to callId,
-        "phonecall.provider" to "twilio",
-    ))) {
+    override suspend fun updateCall(callId: String, instructions: CallInstructions): Unit = metricsTrace("update", attributes = MetricAttributes {
+        put(MetricKey.OfString("phonecall.operation"), "update")
+        put(MetricKey.OfString("phonecall.call_id"), callId)
+        put(MetricKey.OfString("phonecall.provider"), "twilio")
+    }) {
         withContext(com.lightningkite.services.http.SettingContextElement(context)) {
             updateCallWithTwiml(callId, renderInstructions(instructions))
         }
@@ -643,11 +645,11 @@ public class TwilioPhoneCallService(
      * @param callId The call to update
      * @param instructions Raw TwiML XML string
      */
-    public suspend fun updateCallRaw(callId: String, instructions: String): Unit = metricsTrace("update_raw", attributes = MetricAttributes(mapOf(
-        "phonecall.operation" to "update_raw",
-        "phonecall.call_id" to callId,
-        "phonecall.provider" to "twilio",
-    ))) {
+    public suspend fun updateCallRaw(callId: String, instructions: String): Unit = metricsTrace("update_raw", attributes = MetricAttributes {
+        put(MetricKey.OfString("phonecall.operation"), "update_raw")
+        put(MetricKey.OfString("phonecall.call_id"), callId)
+        put(MetricKey.OfString("phonecall.provider"), "twilio")
+    }) {
         logger.debug { "[$name] Updating call $callId with TwiML" }
         val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
             client.submitForm(
@@ -709,10 +711,10 @@ public class TwilioPhoneCallService(
 
     private inner class TwilioIncomingCallWebhook :
         WebhookAdapterWithResponse<IncomingCallEvent, CallInstructions?> {
-        override suspend fun configureWebhook(httpUrl: String): Unit = metricsTrace("webhook.configure.incoming_call", attributes = MetricAttributes(mapOf(
-            "messaging.system" to "twilio",
-            "webhook.url" to httpUrl,
-        ))) { span ->
+        override suspend fun configureWebhook(httpUrl: String): Unit = metricsTrace("webhook.configure.incoming_call", attributes = MetricAttributes {
+            put(MetricKeys.Messaging.system, "twilio")
+            put(MetricKey.OfString("webhook.url"), httpUrl)
+        }) { span ->
             incomingCallWebhookUrl = httpUrl
 
             // Look up the phone number SID and configure the voice webhook
@@ -728,11 +730,11 @@ public class TwilioPhoneCallService(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                span.enrich(MetricAttributes(mapOf("http.status_code" to response.status.value.toLong())))
+                span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, response.status.value.toLong()) })
                 throw PhoneCallException("Failed to configure Twilio Voice webhook: $errorBody")
             }
 
-            span.enrich(MetricAttributes(mapOf("http.status_code" to response.status.value.toLong())))
+            span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, response.status.value.toLong()) })
             logger.info { "[$name] Configured Twilio Voice webhook for $defaultFrom -> $httpUrl" }
         }
 
@@ -740,13 +742,13 @@ public class TwilioPhoneCallService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): IncomingCallEvent = metricsTrace("webhook.parse.incoming_call", attributes = MetricAttributes(mapOf(
-            "messaging.system" to "twilio",
-        ))) { span ->
+        ): IncomingCallEvent = metricsTrace("webhook.parse.incoming_call", attributes = MetricAttributes {
+            put(MetricKeys.Messaging.system, "twilio")
+        }) { span ->
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, incomingCallWebhookUrl)
 
-            params["CallSid"]?.let { span.enrich(MetricAttributes(mapOf("phonecall.call_id" to it))) }
+            params["CallSid"]?.let { span.enrich(MetricAttributes { put(MetricKey.OfString("phonecall.call_id"), it) }) }
 
             IncomingCallEvent(
                 callId = params["CallSid"] ?: throw PhoneCallException("Missing CallSid"),
@@ -777,10 +779,10 @@ public class TwilioPhoneCallService(
     }
 
     private inner class TwilioCallStatusWebhook : WebhookAdapter<CallStatusEvent> {
-        override suspend fun configureWebhook(httpUrl: String): Unit = metricsTrace("webhook.configure.call_status", attributes = MetricAttributes(mapOf(
-            "messaging.system" to "twilio",
-            "webhook.url" to httpUrl,
-        ))) { span ->
+        override suspend fun configureWebhook(httpUrl: String): Unit = metricsTrace("webhook.configure.call_status", attributes = MetricAttributes {
+            put(MetricKeys.Messaging.system, "twilio")
+            put(MetricKey.OfString("webhook.url"), httpUrl)
+        }) { span ->
             statusCallbackUrl = httpUrl
 
             // Look up the phone number SID and configure the status callback
@@ -796,11 +798,11 @@ public class TwilioPhoneCallService(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                span.enrich(MetricAttributes(mapOf("http.status_code" to response.status.value.toLong())))
+                span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, response.status.value.toLong()) })
                 throw PhoneCallException("Failed to configure Twilio status callback webhook: $errorBody")
             }
 
-            span.enrich(MetricAttributes(mapOf("http.status_code" to response.status.value.toLong())))
+            span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, response.status.value.toLong()) })
             logger.info { "[$name] Configured Twilio status callback for $defaultFrom -> $httpUrl" }
         }
 
@@ -808,16 +810,16 @@ public class TwilioPhoneCallService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): CallStatusEvent = metricsTrace("webhook.parse.call_status", attributes = MetricAttributes(mapOf(
-            "messaging.system" to "twilio",
-        ))) { span ->
+        ): CallStatusEvent = metricsTrace("webhook.parse.call_status", attributes = MetricAttributes {
+            put(MetricKeys.Messaging.system, "twilio")
+        }) { span ->
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, statusCallbackUrl)
 
-            span.enrich(MetricAttributes(buildMap {
-                params["CallSid"]?.let { put("phonecall.call_id", it) }
-                params["CallStatus"]?.let { put("phonecall.status", it) }
-            }))
+            span.enrich(MetricAttributes {
+                params["CallSid"]?.let { put(MetricKey.OfString("phonecall.call_id"), it) }
+                params["CallStatus"]?.let { put(MetricKey.OfString("phonecall.status"), it) }
+            })
 
             CallStatusEvent(
                 callId = params["CallSid"] ?: throw PhoneCallException("Missing CallSid"),
@@ -855,13 +857,13 @@ public class TwilioPhoneCallService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): TranscriptionEvent = metricsTrace("webhook.parse.transcription", attributes = MetricAttributes(mapOf(
-            "messaging.system" to "twilio",
-        ))) { span ->
+        ): TranscriptionEvent = metricsTrace("webhook.parse.transcription", attributes = MetricAttributes {
+            put(MetricKeys.Messaging.system, "twilio")
+        }) { span ->
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, transcriptionCallbackUrl)
 
-            params["CallSid"]?.let { span.enrich(MetricAttributes(mapOf("phonecall.call_id" to it))) }
+            params["CallSid"]?.let { span.enrich(MetricAttributes { put(MetricKey.OfString("phonecall.call_id"), it) }) }
 
             TranscriptionEvent(
                 callId = params["CallSid"] ?: throw PhoneCallException("Missing CallSid"),
@@ -893,16 +895,16 @@ public class TwilioPhoneCallService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): DtmfEvent = metricsTrace("webhook.parse.dtmf", attributes = MetricAttributes(mapOf(
-            "messaging.system" to "twilio",
-        ))) { span ->
+        ): DtmfEvent = metricsTrace("webhook.parse.dtmf", attributes = MetricAttributes {
+            put(MetricKeys.Messaging.system, "twilio")
+        }) { span ->
             val params = parseFormUrlEncoded(body.text())
             validateWebhookSignature(headers, params, dtmfCallbackUrl)
 
-            span.enrich(MetricAttributes(buildMap {
-                params["CallSid"]?.let { put("phonecall.call_id", it) }
-                params["Digits"]?.let { put("phonecall.dtmf.digits", it) }
-            }))
+            span.enrich(MetricAttributes {
+                params["CallSid"]?.let { put(MetricKey.OfString("phonecall.call_id"), it) }
+                params["Digits"]?.let { put(MetricKey.OfString("phonecall.dtmf.digits"), it) }
+            })
 
             DtmfEvent(
                 callId = params["CallSid"] ?: throw PhoneCallException("Missing CallSid"),
@@ -1114,11 +1116,11 @@ public class TwilioPhoneCallService(
     private suspend fun lookupPhoneNumberSid(phoneNumber: String): String {
         phoneNumberSidCache[phoneNumber]?.let { return it }
 
-        return metricsTrace("lookup_number_sid", attributes = MetricAttributes(mapOf(
-            "phonecall.operation" to "lookup_number_sid",
-            "phonecall.phone_number" to TelemetrySanitization.redactPhoneNumber(phoneNumber),
-            "messaging.system" to "twilio",
-        ))) { span ->
+        return metricsTrace("lookup_number_sid", attributes = MetricAttributes {
+            put(MetricKey.OfString("phonecall.operation"), "lookup_number_sid")
+            put(MetricKey.OfString("phonecall.phone_number"), context.telemetrySanitization.redactPhoneNumber(phoneNumber))
+            put(MetricKeys.Messaging.system, "twilio")
+        }) { span ->
             val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
             val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
                 client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
@@ -1137,10 +1139,10 @@ public class TwilioPhoneCallService(
                 ?.firstOrNull()
                 ?.jsonObject?.get("sid")
                 ?.jsonPrimitive?.content
-                ?: throw PhoneCallException("Phone number ${TelemetrySanitization.redactPhoneNumber(phoneNumber)} not found in Twilio account $account")
+                ?: throw PhoneCallException("Phone number ${context.telemetrySanitization.redactPhoneNumber(phoneNumber)} not found in Twilio account $account")
 
             phoneNumberSidCache[phoneNumber] = sid
-            span.enrich(MetricAttributes(mapOf("phonecall.phone_number_sid" to sid)))
+            span.enrich(MetricAttributes { put(MetricKey.OfString("phonecall.phone_number_sid"), sid) })
             sid
         }
     }

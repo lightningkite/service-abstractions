@@ -129,11 +129,11 @@ public class SendGridEmailInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail = metricsTrace("webhook.parse", attributes = MetricAttributes(mapOf(
-            "email.webhook.operation" to "inbound_parse",
-            "email.provider" to "sendgrid",
-            "messaging.system" to "sendgrid",
-        ))) { span ->
+        ): ReceivedEmail = metricsTrace("webhook.parse", attributes = MetricAttributes {
+            put(MetricKey.OfString("email.webhook.operation"), "inbound_parse")
+            put(MetricKey.OfString("email.provider"), "sendgrid")
+            put(MetricKeys.Messaging.system, "sendgrid")
+        }) { span ->
             logger.debug { "[$name] Parsing SendGrid webhook" }
 
             // Get raw body bytes BEFORE any parsing (required for signature verification)
@@ -142,7 +142,7 @@ public class SendGridEmailInboundService(
             // Verify signature (required for all webhooks)
             verifySignature(headers, rawBodyBytes, verificationKey)
 
-            span.enrich(MetricAttributes(mapOf("email.webhook.signature_verified" to true)))
+            span.enrich(MetricAttributes { put(MetricKey.OfBoolean("email.webhook.signature_verified"), true) })
 
             // Verify content type
             if (!body.mediaType.accepts(MediaType.MultiPart.FormData)) {
@@ -161,13 +161,13 @@ public class SendGridEmailInboundService(
             val receivedEmail = parseReceivedEmail(parts)
 
             // Add email-specific attributes (PII redacted: keep only domain for from/to, drop subject)
-            span.enrich(MetricAttributes(buildMap {
-                put("email.from", receivedEmail.from.value.raw.let { addr -> addr.substringAfter('@', addr) })
-                put("email.to", receivedEmail.to.joinToString(",") { it.value.raw.let { addr -> addr.substringAfter('@', addr) } })
-                put("email.attachments_count", receivedEmail.attachments.size.toLong())
-                put("email.message_id", receivedEmail.messageId)
-                receivedEmail.spamScore?.let { put("email.spam_score", it) }
-            }))
+            span.enrich(MetricAttributes {
+                put(MetricKey.OfString("email.from"), receivedEmail.from.value.raw.let { addr -> addr.substringAfter('@', addr) })
+                put(MetricKey.OfString("email.to"), receivedEmail.to.joinToString(",") { it.value.raw.let { addr -> addr.substringAfter('@', addr) } })
+                put(MetricKey.OfLong("email.attachments_count"), receivedEmail.attachments.size.toLong())
+                put(MetricKey.OfString("email.message_id"), receivedEmail.messageId)
+                receivedEmail.spamScore?.let { put(MetricKey.OfDouble("email.spam_score"), it) }
+            })
 
             receivedEmail
         }

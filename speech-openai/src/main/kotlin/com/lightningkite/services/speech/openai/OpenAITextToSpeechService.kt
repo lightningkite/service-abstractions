@@ -1,6 +1,7 @@
 package com.lightningkite.services.speech.openai
 
 import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.MetricKey
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.metricsTrace
@@ -199,7 +200,7 @@ public class OpenAITextToSpeechService(
             val mediaType = mapFormatToMediaType(options.outputFormat)
 
             logger.debug { "[$name] Synthesized ${audioBytes.size} bytes of audio" }
-            span.enrich(MetricAttributes(mapOf("audio.size_bytes" to audioBytes.size.toLong())))
+            span.enrich(MetricAttributes { put(MetricKey.OfLong("audio.size_bytes"), audioBytes.size.toLong()) })
             TypedData(Data.Bytes(audioBytes), mediaType)
         }
     }

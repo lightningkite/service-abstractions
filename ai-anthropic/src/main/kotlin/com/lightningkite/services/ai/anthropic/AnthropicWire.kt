@@ -30,61 +30,6 @@ import kotlinx.serialization.modules.SerializersModule
 internal object AnthropicWire {
 
     /**
-     * Pre-computed set of cache boundary locations to honor in the wire output.
-     *
-     * [LlmMessage.cacheBreak] means "new section starts here; cache what came before."
-     * The adapter translates that into Anthropic's `cache_control` on the PREVIOUS element's
-     * last content block. Anthropic allows at most 4 boundaries per request; when more are
-     * requested we keep only the last 4 (most valuable for prefix caching).
-     */
-    internal data class ActiveCacheBoundaries(
-        /** Whether the system prompt should carry cache_control. */
-        val system: Boolean,
-        /** Tool indices (into [LlmPrompt.tools]) that should carry cache_control. */
-        val toolIndices: Set<Int>,
-        /** Message indices (into [LlmPrompt.messages]) whose last content block gets cache_control. */
-        val messageIndices: Set<Int>,
-    )
-
-    /**
-     * Collect all requested cache boundaries and keep only the last 4 in wire order
-     * (system → tools → messages). Returns which locations should carry `cache_control`.
-     */
-    internal fun computeActiveBoundaries(prompt: LlmPrompt): ActiveCacheBoundaries {
-        // Each entry: (wireOrder, type, index)
-        // wireOrder ensures "last 4" respects Anthropic's prefix ordering.
-        data class Entry(val wireOrder: Int, val type: Char, val index: Int)
-
-        val all = mutableListOf<Entry>()
-        var order = 0
-
-        // cacheBreak on the first message → cache system prompt
-        if (prompt.messages.firstOrNull()?.cacheBreak == true) {
-            all.add(Entry(order++, 's', 0))
-        }
-
-        // Tool-level boundaries (cacheBreak on tool = cache up to and including this tool)
-        prompt.tools.forEachIndexed { i, tool ->
-            if (tool.cacheBreak) all.add(Entry(order++, 't', i))
-        }
-
-        // Message-level boundaries: cacheBreak at index N (N>0) → mark message N-1
-        prompt.messages.forEachIndexed { i, msg ->
-            if (msg.cacheBreak && i > 0) {
-                all.add(Entry(order++, 'm', i - 1))
-            }
-        }
-
-        // Anthropic limit: 4 boundaries. Keep the last 4 (most valuable for prefix caching).
-        val active = all.takeLast(4)
-        return ActiveCacheBoundaries(
-            system = active.any { it.type == 's' },
-            toolIndices = active.filter { it.type == 't' }.mapTo(mutableSetOf()) { it.index },
-            messageIndices = active.filter { it.type == 'm' }.mapTo(mutableSetOf()) { it.index },
-        )
-    }
-
-    /**
      * Build a full POST /v1/messages body from the high-level [prompt].
      *
      * @param modelId the Anthropic model id (e.g. `claude-haiku-4-5`)
@@ -116,8 +61,6 @@ internal object AnthropicWire {
             }
         }
 
-        val boundaries = computeActiveBoundaries(prompt)
-
         // Anthropic carries system as a top-level field, not a message role.
         // When caching the system prompt we must use the array-of-blocks form
         // so we can attach cache_control; otherwise the plain string form suffices.
@@ -130,20 +73,16 @@ internal object AnthropicWire {
                 .ifEmpty { null }
         ).joinToString("\n\n")
         if (systemText.isNotEmpty()) {
-            if (boundaries.system) {
-                put("system", buildJsonArray {
-                    addJsonObject {
-                        put("type", "text")
-                        put("text", systemText)
-                        putJsonObject("cache_control") { put("type", "ephemeral") }
-                    }
-                })
-            } else {
-                put("system", systemText)
-            }
+            put("system", buildJsonArray {
+                addJsonObject {
+                    put("type", "text")
+                    put("text", systemText)
+                    putJsonObject("cache_control") { put("type", "ephemeral") }
+                }
+            })
         }
 
-        put("messages", buildMessages(prompt.messages, boundaries.messageIndices))
+        put("messages", buildMessages(prompt.messages))
 
         // Tools must stay visible whenever the prompt declares any, even when the caller
         // sets [LlmToolChoice.None]. If prior assistant/tool messages in the history contain
@@ -152,12 +91,12 @@ internal object AnthropicWire {
         // value forbids new calls without hiding the declarations.
         if (prompt.tools.isNotEmpty()) {
             putJsonArray("tools") {
-                prompt.tools.forEachIndexed { i, tool ->
+                prompt.tools.forEach { tool ->
                     addJsonObject {
                         put("name", tool.name)
                         put("description", tool.description)
                         put("input_schema", tool.toJsonSchema(module))
-                        if (i in boundaries.toolIndices) {
+                        if (tool.cacheBoundary) {
                             putJsonObject("cache_control") { put("type", "ephemeral") }
                         }
                     }
@@ -167,19 +106,9 @@ internal object AnthropicWire {
         }
     }
 
-    /**
-     * Map messages to Anthropic's `{role, content:[...]}` array form.
-     *
-     * @param cachedMessageIndices message indices whose last content block should
-     *   carry `cache_control`. These are the translated positions: when message N+1
-     *   has `cacheBreak = true`, index N appears in this set.
-     */
-    fun buildMessages(
-        messages: List<LlmMessage>,
-        cachedMessageIndices: Set<Int> = emptySet(),
-    ): JsonArray = buildJsonArray {
-        messages.forEachIndexed { msgIndex, msg ->
-            val shouldCache = msgIndex in cachedMessageIndices
+    /** Map messages to Anthropic's `{role, content:[...]}` array form. */
+    fun buildMessages(messages: List<LlmMessage>): JsonArray = buildJsonArray {
+        messages.forEach { msg ->
             when (msg) {
                 is LlmMessage.User -> addJsonObject {
                     put("role", "user")
@@ -187,7 +116,7 @@ internal object AnthropicWire {
                         val blocks = msg.parts
                         blocks.forEachIndexed { index, part ->
                             val json = contentOnlyBlock(part)
-                            if (shouldCache && index == blocks.lastIndex) {
+                            if (msg.cacheBoundary && index == blocks.lastIndex) {
                                 add(withCacheControl(json))
                             } else {
                                 add(json)
@@ -205,7 +134,9 @@ internal object AnthropicWire {
                         val blocks = msg.parts.filter { it !is LlmPart.Reasoning }
                         blocks.forEachIndexed { index, part ->
                             val json = agentPartBlock(part)
-                            if (shouldCache && index == blocks.lastIndex) {
+                            // Attach cache_control to the LAST content block when the message
+                            // is marked as a cache boundary.
+                            if (msg.cacheBoundary && index == blocks.lastIndex) {
                                 add(withCacheControl(json))
                             } else {
                                 add(json)
@@ -226,7 +157,7 @@ internal object AnthropicWire {
                             put("content", textContent)
                             if (msg.isError) put("is_error", true)
                         }
-                        if (shouldCache && msg.parts.none { it is LlmPart.Attachment }) {
+                        if (msg.cacheBoundary && msg.parts.none { it is LlmPart.Attachment }) {
                             add(withCacheControl(resultBlock))
                         } else {
                             add(resultBlock)
@@ -235,7 +166,7 @@ internal object AnthropicWire {
                         val attachments = msg.parts.filterIsInstance<LlmPart.Attachment>()
                         attachments.forEachIndexed { index, part ->
                             val json = attachmentBlock(part.attachment)
-                            if (shouldCache && index == attachments.lastIndex) {
+                            if (msg.cacheBoundary && index == attachments.lastIndex) {
                                 add(withCacheControl(json))
                             } else {
                                 add(json)
@@ -318,6 +249,9 @@ internal object AnthropicWire {
         is LlmToolChoice.Specific -> buildJsonObject {
             put("type", "tool")
             put("name", choice.name)
+            // Prevent the model from making parallel calls to other tools when a specific
+            // tool is forced; otherwise it can call additional tools alongside the named one.
+            put("disable_parallel_tool_use", true)
         }
     }
 
