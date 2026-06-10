@@ -102,13 +102,12 @@ public interface SettingContext {
      * Backend for the coroutine-first metrics API ([metricsTrace], [metricsHistogram], etc.) and
      * error reporting ([reportException]).
      *
-     * Defaults to `null`, in which case those functions run with no-op instruments and error
-     * reporting only logs. The JVM OpenTelemetry-backed implementation
-     * (`com.lightningkite.services.otel.OtelMetricsBackend` in otel-jvm) is wired in here at
-     * application startup. This is the vendor-neutral telemetry abstraction; it is the only
-     * telemetry surface exposed by `SettingContext`.
+     * Defaults to [MetricsBackend.Noop], which discards all telemetry. The JVM
+     * OpenTelemetry-backed implementation (`com.lightningkite.services.otel.OtelMetricsBackend`
+     * in otel-jvm) is wired in here at application startup. This is the vendor-neutral telemetry
+     * abstraction; it is the only telemetry surface exposed by `SettingContext`.
      */
-    public val metricsBackend: MetricsBackend? get() = null
+    public val metricsBackend: MetricsBackend get() = MetricsBackend.Noop
 
     public val telemetrySanitization: TelemetrySanitization get() = TelemetrySanitization.Strict
 
@@ -154,17 +153,16 @@ public interface SettingContext {
      * Default behavior:
      * - Always logs the throwable at ERROR via the standard multiplatform logger, including
      *   the [context] entries, so failures are visible even with no telemetry backend.
-     * - Delegates to [metricsBackend]'s [MetricsBackend.reportError] when a backend is configured.
-     *   The JVM OpenTelemetry backend records the exception on the active span if one exists, or
-     *   otherwise emits an ERROR log record (the path for failures outside any span, e.g. background
-     *   index creation).
+     * - Delegates to [metricsBackend]'s [MetricsBackend.reportError]. The JVM OpenTelemetry backend
+     *   records the exception on the active span if one exists, or otherwise emits an ERROR log
+     *   record (the path for failures outside any span, e.g. background index creation).
      *
      * @param throwable The exception to report.
      * @param context Additional key/value attributes attached to the report for diagnostics.
      */
     public suspend fun reportException(throwable: Throwable) {
         logger.error(throwable){""}
-        metricsBackend?.reportError(throwable, currentCoroutineContext()[MetricAttributeElement]?.attributes ?: MetricAttributes.empty)
+        metricsBackend.reportError(throwable, currentCoroutineContext()[MetricAttributeElement]?.attributes ?: MetricAttributes.empty)
     }
 
     public companion object {

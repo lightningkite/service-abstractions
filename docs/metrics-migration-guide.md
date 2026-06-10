@@ -2,7 +2,7 @@
 
 Migrate services off the old telemetry helpers (`OpenTelemetrySub.span(...)`, `RedMetrics`/`redMetrics`/
 `recordOperation`) onto the coroutine-first metrics API in
-`basis/src/commonMain/kotlin/com/lightningkite/services/newmetrics.kt`. Redis is the exemplar; this
+`basis/src/commonMain/kotlin/com/lightningkite/services/MetricsBackend.kt`. Redis is the exemplar; this
 guide generalizes that diff.
 
 ## The core API (what you call)

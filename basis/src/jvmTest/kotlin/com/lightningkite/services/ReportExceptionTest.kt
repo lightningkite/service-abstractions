@@ -10,7 +10,7 @@ class ReportExceptionTest {
 
     @Test
     fun reportExceptionLogsWithoutTelemetryBackend() = runTest {
-        // TestSettingContext has metricsBackend == null, so reportError is skipped and only the
+        // TestSettingContext uses MetricsBackend.Noop, so reportError is a no-op and only the
         // ERROR log happens. This must complete without throwing. The OTel-backed reportError path
         // is exercised by OtelMetricsBackendReportErrorTest in otel-jvm.
         val context = TestSettingContext()

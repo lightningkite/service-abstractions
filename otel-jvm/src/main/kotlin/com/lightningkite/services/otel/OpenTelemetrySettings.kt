@@ -87,7 +87,7 @@ import kotlin.time.toJavaDuration
  * )
  * ```
  *
- * ## Implementation Notes
+ * ## Implementation Notesg
  *
  * - **Logback integration**: Automatically attaches OpenTelemetry appender to root logger
  * - **W3C propagation**: Uses W3C Trace Context for distributed tracing

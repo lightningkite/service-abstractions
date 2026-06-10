@@ -1,5 +1,9 @@
 package com.lightningkite.services.otel
 
+import com.lightningkite.services.Counter
+import com.lightningkite.services.Histogram
+import com.lightningkite.services.InFlight
+import com.lightningkite.services.Lease
 import com.lightningkite.services.LogLevel
 import com.lightningkite.services.MetricAttributes
 import com.lightningkite.services.MetricKey
@@ -7,6 +11,7 @@ import com.lightningkite.services.MetricSpan
 import com.lightningkite.services.MetricUnit
 import com.lightningkite.services.MetricsBackend
 import com.lightningkite.services.Namespaced
+import com.lightningkite.services.currentMetricAttributes
 import com.lightningkite.services.errorFingerprint
 import org.slf4j.event.Level as Slf4jLevel
 import io.opentelemetry.api.OpenTelemetry
@@ -81,24 +86,30 @@ public class OtelMetricsBackend(private val sdk: OpenTelemetry) : MetricsBackend
         }
     }
 
-    override fun histogram(owner: Namespaced, name: String, unit: MetricUnit): MetricsBackend.RawHistogram {
+    override fun histogram(owner: Namespaced, name: String, unit: MetricUnit, dimensions: Set<MetricKey<*>>): Histogram {
         val h = subFor(owner.name).histogramBuilder(name).setUnit(unit.ucum).build()
-        return object : MetricsBackend.RawHistogram {
-            override fun record(amount: Double, attributes: MetricAttributes) = h.record(amount, attributes.toOtel())
+        return object : Histogram {
+            override suspend fun record(amount: Double) = h.record(amount, currentMetricAttributes().projectToOtel(dimensions))
         }
     }
 
-    override fun counter(owner: Namespaced, name: String, unit: MetricUnit): MetricsBackend.RawCounter {
+    override fun counter(owner: Namespaced, name: String, unit: MetricUnit, dimensions: Set<MetricKey<*>>): Counter {
         val c = subFor(owner.name).counterBuilder(name).ofDoubles().setUnit(unit.ucum).build()
-        return object : MetricsBackend.RawCounter {
-            override fun add(amount: Double, attributes: MetricAttributes) = c.add(amount, attributes.toOtel())
+        return object : Counter {
+            override suspend fun increment(amount: Double) = c.add(amount, currentMetricAttributes().projectToOtel(dimensions))
         }
     }
 
-    override fun inFlight(owner: Namespaced, name: String): MetricsBackend.RawInFlight {
+    override fun inFlight(owner: Namespaced, name: String, dimensions: Set<MetricKey<*>>): InFlight {
         val c = subFor(owner.name).upDownCounterBuilder(name).build()
-        return object : MetricsBackend.RawInFlight {
-            override fun adjust(delta: Long, attributes: MetricAttributes) = c.add(delta, attributes.toOtel())
+        return object : InFlight {
+            override suspend fun lease(): Lease {
+                val otelAttrs = currentMetricAttributes().projectToOtel(dimensions)
+                c.add(1, otelAttrs)
+                return object : Lease {
+                    override fun release() { c.add(-1, otelAttrs) }
+                }
+            }
         }
     }
 
@@ -147,8 +158,22 @@ public class OtelMetricsBackend(private val sdk: OpenTelemetry) : MetricsBackend
             .emit()
     }
 
-    private companion object {
-        private val errorFingerprintKey: AttributeKey<String> = AttributeKey.stringKey("error.fingerprint")
+    public companion object {
+        init {
+            for (scheme in OpenTelemetrySettings.options) {
+                MetricsBackend.Settings.register(scheme) { name, url, context ->
+                    OtelMetricsBackend(
+                        OpenTelemetrySettings(url = url, serviceName = context.projectName)
+                            .invoke(name, context)
+                    )
+                }
+            }
+        }
+
+        /** Call once at startup to register all OTel URL schemes with [MetricsBackend.Settings]. */
+        public fun register() {}
+
+        internal val errorFingerprintKey: AttributeKey<String> = AttributeKey.stringKey("error.fingerprint")
     }
 
     /** RED instruments for one owner, recorded together with completion-resolved dimensions. */
@@ -241,6 +266,13 @@ private fun MetricAttributes.toOtel(): Attributes {
     if (map.isEmpty()) return Attributes.empty()
     val builder = Attributes.builder()
     for ((key, value) in map) builder.put(key, value)
+    return builder.build()
+}
+
+private fun MetricAttributes.projectToOtel(dimensions: Set<MetricKey<*>>): Attributes {
+    if (dimensions.isEmpty() || map.isEmpty()) return Attributes.empty()
+    val builder = Attributes.builder()
+    for (key in dimensions) { val v = map[key]; if (v != null) builder.put(key, v) }
     return builder.build()
 }
 

@@ -17,7 +17,7 @@ class SettingContextTest {
 
         assertEquals("Test", context.projectName)
         assertEquals("http://localhost:8080", context.publicUrl)
-        assertNull(context.metricsBackend)
+        assertEquals(MetricsBackend.Noop, context.metricsBackend)
         assertNotNull(context.sharedResources)
         assertEquals(EmptySerializersModule(), context.internalSerializersModule)
     }
