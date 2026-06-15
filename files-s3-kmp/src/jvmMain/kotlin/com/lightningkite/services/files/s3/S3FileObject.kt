@@ -14,11 +14,11 @@ import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.files.FileObject
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.TelemetryAttributes
+import com.lightningkite.services.TelemetryKey
+import com.lightningkite.services.TelemetryKeys
 import com.lightningkite.services.http.client
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetryTrace
 import com.lightningkite.services.TelemetrySanitization
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -62,14 +62,14 @@ public class S3FileObject(
     override val parent: FileObject?
         get() = path.parent?.let { S3FileObject(system, it) } ?: if (unixPath.isNotEmpty()) system.root else null
 
-    private fun s3SpanAttrs(operation: String): MetricAttributes = MetricAttributes {
-        put(MetricKey.OfString("file.operation"), operation)
-        put(MetricKey.OfString("file.path"), context.telemetrySanitization.sanitizeFilePathWithDepth(unixPath))
-        put(MetricKey.OfString("file.bucket"), system.bucket)
-        put(MetricKey.OfString("storage.system"), "s3")
+    private fun s3SpanAttrs(operation: String): TelemetryAttributes = TelemetryAttributes {
+        put(TelemetryKey.OfString("file.operation"), operation)
+        put(TelemetryKey.OfString("file.path"), context.telemetrySanitization.sanitizeFilePathWithDepth(unixPath))
+        put(TelemetryKey.OfString("file.bucket"), system.bucket)
+        put(TelemetryKey.OfString("storage.system"), "s3")
     }
 
-    override suspend fun list(): List<FileObject>? = system.metricsTrace("list", attributes = s3SpanAttrs("list")) { span ->
+    override suspend fun list(): List<FileObject>? = system.telemetryTrace("list", attributes = s3SpanAttrs("list")) { span ->
         try {
             withContext(Dispatchers.IO) {
                 val results = ArrayList<S3FileObject>()
@@ -86,7 +86,7 @@ public class S3FileObject(
                     if (r.isTruncated!!) token = r.nextContinuationToken!!
                     else break
                 }
-                span.enrich(MetricAttributes { put(MetricKey.OfLong("file.count"), results.size.toLong()) })
+                span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("file.count"), results.size.toLong()) })
                 results
             }
         } catch (e: Exception) {
@@ -96,16 +96,16 @@ public class S3FileObject(
         }
     }
 
-    override suspend fun head(): FileInfo? = system.metricsTrace("head", attributes = s3SpanAttrs("head")) { span ->
+    override suspend fun head(): FileInfo? = system.telemetryTrace("head", attributes = s3SpanAttrs("head")) { span ->
         try {
             withContext(Dispatchers.IO) {
                 system.s3.headObject {
                     bucket = system.bucket
                     key = unixPath
                 }.let {
-                    span.enrich(MetricAttributes {
-                        put(MetricKey.OfLong("file.size"), it.contentLength!!)
-                        put(MetricKey.OfString("file.content_type"), it.contentType!!)
+                    span.enrich(TelemetryAttributes {
+                        put(TelemetryKey.OfLong("file.size"), it.contentLength!!)
+                        put(TelemetryKey.OfString("file.content_type"), it.contentType!!)
                     })
                     FileInfo(
                         type = MediaType(it.contentType!!),
@@ -120,10 +120,10 @@ public class S3FileObject(
         }
     }
 
-    override suspend fun put(content: TypedData): Unit = system.metricsTrace("put", attributes = MetricAttributes {
+    override suspend fun put(content: TypedData): Unit = system.telemetryTrace("put", attributes = TelemetryAttributes {
         putAll(s3SpanAttrs("put"))
-        put(MetricKey.OfLong("file.size"), content.data.size!!) // TODO: Unknown sizes will die
-        put(MetricKey.OfString("file.content_type"), content.mediaType.toString())
+        put(TelemetryKey.OfLong("file.size"), content.data.size!!) // TODO: Unknown sizes will die
+        put(TelemetryKey.OfString("file.content_type"), content.mediaType.toString())
     }) {
         withContext(Dispatchers.IO) {
             system.s3.putObject {
@@ -136,7 +136,7 @@ public class S3FileObject(
         Unit
     }
 
-    override suspend fun get(): TypedData? = system.metricsTrace("get", attributes = s3SpanAttrs("get")) { span ->
+    override suspend fun get(): TypedData? = system.telemetryTrace("get", attributes = s3SpanAttrs("get")) { span ->
         try {
             withContext(Dispatchers.IO) {
                 system.s3.getObject(
@@ -147,9 +147,9 @@ public class S3FileObject(
                 ) {
                     val body = it.body!!
                     val len = body.contentLength
-                    span.enrich(MetricAttributes {
-                        put(MetricKey.OfLong("file.size"), len ?: -1L)
-                        put(MetricKey.OfString("file.content_type"), it.contentType!!)
+                    span.enrich(TelemetryAttributes {
+                        put(TelemetryKey.OfLong("file.size"), len ?: -1L)
+                        put(TelemetryKey.OfString("file.content_type"), it.contentType!!)
                     })
 
                     TypedData(
@@ -164,12 +164,12 @@ public class S3FileObject(
         }
     }
 
-    override suspend fun copyTo(other: FileObject): Unit = system.metricsTrace("copy", attributes = MetricAttributes {
+    override suspend fun copyTo(other: FileObject): Unit = system.telemetryTrace("copy", attributes = TelemetryAttributes {
         putAll(s3SpanAttrs("copy"))
         if (other is S3FileObject) {
-            put(MetricKey.OfString("file.destination.path"), context.telemetrySanitization.sanitizeFilePathWithDepth(other.unixPath))
-            put(MetricKey.OfString("file.destination.bucket"), other.system.bucket)
-            put(MetricKey.OfBoolean("file.same_bucket"), other.system.bucket == system.bucket)
+            put(TelemetryKey.OfString("file.destination.path"), context.telemetrySanitization.sanitizeFilePathWithDepth(other.unixPath))
+            put(TelemetryKey.OfString("file.destination.bucket"), other.system.bucket)
+            put(TelemetryKey.OfBoolean("file.same_bucket"), other.system.bucket == system.bucket)
         }
     }) {
         if (other is S3FileObject && other.system.bucket == system.bucket) {
@@ -185,7 +185,7 @@ public class S3FileObject(
         }
     }
 
-    override suspend fun delete(): Unit = system.metricsTrace("delete", attributes = s3SpanAttrs("delete")) {
+    override suspend fun delete(): Unit = system.telemetryTrace("delete", attributes = s3SpanAttrs("delete")) {
         withContext(Dispatchers.IO) {
             system.s3.deleteObject {
                 bucket = system.bucket

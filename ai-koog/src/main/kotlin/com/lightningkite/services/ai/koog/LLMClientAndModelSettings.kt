@@ -20,6 +20,9 @@ import ai.koog.prompt.streaming.StreamFrame
 import aws.sdk.kotlin.runtime.auth.credentials.*
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import com.lightningkite.services.*
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.telemetryTrace
 import io.ktor.client.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -512,11 +515,11 @@ internal class TracingLLMClient(
 ) : LLMClient {
 
     private suspend inline fun <R> traced(operation: String, crossinline block: suspend () -> R): R =
-        owner.metricsTrace(
+        owner.telemetryTrace(
             operation,
-            attributes = MetricAttributes {
-                put(MetricKeys.GenAi.system, delegate.llmProvider().id)
-                put(MetricKeys.GenAi.requestModel, modelId)
+            attributes = TelemetryAttributes {
+                put(TelemetryKeys.GenAi.system, delegate.llmProvider().id)
+                put(TelemetryKeys.GenAi.requestModel, modelId)
             }
         ) { block() }
 

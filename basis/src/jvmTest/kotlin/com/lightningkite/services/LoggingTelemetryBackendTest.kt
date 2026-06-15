@@ -1,18 +1,25 @@
 package com.lightningkite.services
 
+import com.lightningkite.services.telemetry.LogLevel
+import com.lightningkite.services.telemetry.MetricUnit
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.telemetryCounter
+import com.lightningkite.services.telemetry.telemetryHistogram
+import com.lightningkite.services.telemetry.telemetryInFlight
+import com.lightningkite.services.telemetry.telemetryTrace
 import kotlinx.coroutines.test.runTest
 import java.io.PrintWriter
 import java.io.StringWriter
 import kotlin.test.Test
 import kotlin.test.assertContains
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class LoggingMetricsBackendTest {
+class LoggingTelemetryBackendTest {
 
-    private fun backend(): Pair<LoggingMetricsBackend, StringWriter> {
+    private fun backend(): Pair<LoggingTelemetryBackend, StringWriter> {
         val sw = StringWriter()
-        return LoggingMetricsBackend(color = false, out = PrintWriter(sw, true)) to sw
+        return LoggingTelemetryBackend(color = false, out = PrintWriter(sw, true)) to sw
     }
 
     @Test
@@ -21,11 +28,11 @@ class LoggingMetricsBackendTest {
         val owner = object : Namespaced {
             override val name = "svc"
             override val context = object : SettingContext by TestSettingContext() {
-                override val metricsBackend = backend
+                override val telemetryBackend = backend
             }
         }
 
-        owner.metricsTrace("fetch", MetricAttributes { put(MetricKey.OfString("db"), "main") }) { }
+        owner.telemetryTrace("fetch", TelemetryAttributes { put(TelemetryKey.OfString("db"), "main") }) { }
 
         val output = sw.toString()
         assertContains(output, "svc.fetch")
@@ -41,12 +48,12 @@ class LoggingMetricsBackendTest {
         val owner = object : Namespaced {
             override val name = "svc"
             override val context = object : SettingContext by TestSettingContext() {
-                override val metricsBackend = backend
+                override val telemetryBackend = backend
             }
         }
 
         runCatching {
-            owner.metricsTrace("boom") { throw RuntimeException("kaboom") }
+            owner.telemetryTrace("boom") { throw RuntimeException("kaboom") }
         }
 
         assertContains(sw.toString(), "✗")
@@ -59,12 +66,12 @@ class LoggingMetricsBackendTest {
         val owner = object : Namespaced {
             override val name = "svc"
             override val context = object : SettingContext by TestSettingContext() {
-                override val metricsBackend = backend
+                override val telemetryBackend = backend
             }
         }
 
-        owner.metricsTrace("outer") {
-            owner.metricsTrace("inner") { }
+        owner.telemetryTrace("outer") {
+            owner.telemetryTrace("inner") { }
         }
 
         val output = sw.toString()
@@ -80,12 +87,12 @@ class LoggingMetricsBackendTest {
         val owner = object : Namespaced {
             override val name = "svc"
             override val context = object : SettingContext by TestSettingContext() {
-                override val metricsBackend = backend
+                override val telemetryBackend = backend
             }
         }
 
-        val rows = owner.metricsHistogram("svc.rows", MetricUnit.Occurrences, emptySet())
-        owner.metricsTrace("query") { rows.record(42.0) }
+        val rows = owner.telemetryHistogram("svc.rows", MetricUnit.Occurrences, emptySet())
+        owner.telemetryTrace("query") { rows.record(42.0) }
 
         val output = sw.toString()
         // Record is folded into the span tree, printed once
@@ -99,11 +106,11 @@ class LoggingMetricsBackendTest {
         val owner = object : Namespaced {
             override val name = "svc"
             override val context = object : SettingContext by TestSettingContext() {
-                override val metricsBackend = backend
+                override val telemetryBackend = backend
             }
         }
 
-        val rows = owner.metricsHistogram("svc.rows", MetricUnit.Occurrences, emptySet())
+        val rows = owner.telemetryHistogram("svc.rows", MetricUnit.Occurrences, emptySet())
         rows.record(7.0)
 
         assertContains(sw.toString(), "svc.rows")
@@ -116,11 +123,11 @@ class LoggingMetricsBackendTest {
             override val name = "svc"
             override val context: SettingContext = TestSettingContext()
         }
-        // MetricsBackend.Noop — must not throw
-        owner.metricsTrace("op") { }
-        owner.metricsHistogram("h", MetricUnit.Bytes, emptySet()).record(1.0)
-        owner.metricsCounter("c", MetricUnit.Occurrences, emptySet()).increment()
-        owner.metricsInFlight("f", emptySet()).lease().release()
+        // TelemetryBackend.Noop — must not throw
+        owner.telemetryTrace("op") { }
+        owner.telemetryHistogram("h", MetricUnit.Bytes, emptySet()).record(1.0)
+        owner.telemetryCounter("c", MetricUnit.Occurrences, emptySet()).increment()
+        owner.telemetryInFlight("f", emptySet()).lease().release()
         assertTrue(true)
     }
 
@@ -130,11 +137,11 @@ class LoggingMetricsBackendTest {
         val owner = object : Namespaced {
             override val name = "svc"
             override val context = object : SettingContext by TestSettingContext() {
-                override val metricsBackend = backend
+                override val telemetryBackend = backend
             }
         }
 
-        owner.metricsTrace("op") { span ->
+        owner.telemetryTrace("op") { span ->
             span.log(LogLevel.Info, "hello from span")
         }
 

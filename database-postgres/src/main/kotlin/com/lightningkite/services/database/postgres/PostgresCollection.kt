@@ -1,11 +1,11 @@
 package com.lightningkite.services.database.postgres
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricAttributesBuilder
-import com.lightningkite.services.MetricSpan
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryAttributesBuilder
+import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.Table
 import kotlinx.coroutines.*
@@ -49,22 +49,22 @@ public class PostgresCollection<T : Any>(
             })
 
     // Per-collection default span attributes shared by every operation.
-    private fun baseAttributes(operation: String): MetricAttributes = MetricAttributes {
-        put(com.lightningkite.services.database.Database.MetricKeys.system, "postgresql")
-        put(com.lightningkite.services.database.Database.MetricKeys.operation, operation)
-        put(com.lightningkite.services.database.Database.MetricKeys.collection, name)
+    private fun baseAttributes(operation: String): TelemetryAttributes = TelemetryAttributes {
+        put(com.lightningkite.services.database.Database.TelemetryKeys.system, "postgresql")
+        put(com.lightningkite.services.database.Database.TelemetryKeys.operation, operation)
+        put(com.lightningkite.services.database.Database.TelemetryKeys.collection, name)
     }
 
-    // Thin wrapper over metricsTrace: opens the `<name>.<operation>` span (with the postgres-specific
+    // Thin wrapper over telemetryTrace: opens the `<name>.<operation>` span (with the postgres-specific
     // default attributes plus any caller-supplied [extra]), records the RED metric inside it, and
     // hands the started span to [block] for dynamic per-result attributes.
     private suspend inline fun <R> traced(
         operation: String,
-        noinline extraBlock: (MetricAttributesBuilder.() -> Unit)? = null,
-        noinline block: suspend (MetricSpan) -> R,
+        noinline extraBlock: (TelemetryAttributesBuilder.() -> Unit)? = null,
+        noinline block: suspend (TelemetryTrace) -> R,
     ): R {
-        val attrs = if (extraBlock != null) MetricAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
-        return metricsTrace(operation, attributes = attrs, action = block)
+        val attrs = if (extraBlock != null) TelemetryAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
+        return telemetryTrace(operation, attributes = attrs, action = block)
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -86,8 +86,8 @@ public class PostgresCollection<T : Any>(
     ): Flow<T> = traced(
         operation = "find",
         extraBlock = {
-            put(com.lightningkite.services.database.Database.MetricKeys.limit, limit.toLong())
-            put(com.lightningkite.services.database.Database.MetricKeys.skip, skip.toLong())
+            put(com.lightningkite.services.database.Database.TelemetryKeys.limit, limit.toLong())
+            put(com.lightningkite.services.database.Database.TelemetryKeys.skip, skip.toLong())
         }
     ) { span ->
         prepare.await()
@@ -116,7 +116,7 @@ public class PostgresCollection<T : Any>(
                     format.decode(serializer, it)
                 }
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.resultCount, items.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.resultCount, items.size.toLong()) })
         items.asFlow()
     }
 
@@ -129,14 +129,14 @@ public class PostgresCollection<T : Any>(
                 .selectAll().where { condition(condition, serializer, table, format).asOp() }
                 .count().toInt()
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.count, result.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.count, result.toLong()) })
         result
     }
 
     override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> =
         traced(
             operation = "groupCount",
-            extraBlock = { put(com.lightningkite.services.database.Database.MetricKeys.groupBy, groupBy.colName) }
+            extraBlock = { put(com.lightningkite.services.database.Database.TelemetryKeys.groupBy, groupBy.colName) }
         ) { span ->
             prepare.await()
             val result = t {
@@ -147,7 +147,7 @@ public class PostgresCollection<T : Any>(
                     .where { condition(condition, serializer, table, format).asOp() }
                     .groupBy(table.col[groupBy.colName]!!).associate { it[groupCol] to it[count].toInt() }
             }
-            span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.groups, result.size.toLong()) })
+            span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.groups, result.size.toLong()) })
             result
         }
 
@@ -158,8 +158,8 @@ public class PostgresCollection<T : Any>(
     ): Double? = traced(
         operation = "aggregate",
         extraBlock = {
-            put(com.lightningkite.services.database.Database.MetricKeys.aggregate, aggregate.toString())
-            put(com.lightningkite.services.database.Database.MetricKeys.property, property.colName)
+            put(com.lightningkite.services.database.Database.TelemetryKeys.aggregate, aggregate.toString())
+            put(com.lightningkite.services.database.Database.TelemetryKeys.property, property.colName)
         }
     ) { span ->
         prepare.await()
@@ -186,9 +186,9 @@ public class PostgresCollection<T : Any>(
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
         extraBlock = {
-            put(com.lightningkite.services.database.Database.MetricKeys.aggregate, aggregate.toString())
-            put(com.lightningkite.services.database.Database.MetricKeys.groupBy, groupBy.colName)
-            put(com.lightningkite.services.database.Database.MetricKeys.property, property.colName)
+            put(com.lightningkite.services.database.Database.TelemetryKeys.aggregate, aggregate.toString())
+            put(com.lightningkite.services.database.Database.TelemetryKeys.groupBy, groupBy.colName)
+            put(com.lightningkite.services.database.Database.TelemetryKeys.property, property.colName)
         }
     ) { span ->
         prepare.await()
@@ -208,7 +208,7 @@ public class PostgresCollection<T : Any>(
                 .where { condition(condition, serializer, table, format).asOp() }
                 .groupBy(table.col[groupBy.colName]!!).associate { it[groupCol] to it[agg]?.toDouble() }
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.groups, result.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.groups, result.size.toLong()) })
         result
     }
 
@@ -217,7 +217,7 @@ public class PostgresCollection<T : Any>(
     ) { span ->
         prepare.await()
         val modelsList = models.toList()
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.insertCount, modelsList.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.insertCount, modelsList.size.toLong()) })
         t {
             table.batchInsert(modelsList) {
                 format.encode(serializer, it, this)
@@ -287,7 +287,7 @@ public class PostgresCollection<T : Any>(
                 EntryChange(it, modification(it))
             } ?: EntryChange()
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, if (result.old != null) 1L else 0L) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.updated, if (result.old != null) 1L else 0L) })
         result
     }
 
@@ -308,7 +308,7 @@ public class PostgresCollection<T : Any>(
                 }
             )
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, count.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.updated, count.toLong()) })
         count > 0
     }
 
@@ -328,7 +328,7 @@ public class PostgresCollection<T : Any>(
                     EntryChange(it, modification(it))
                 })
             }
-            span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, result.changes.size.toLong()) })
+            span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.updated, result.changes.size.toLong()) })
             result
         }
 
@@ -344,7 +344,7 @@ public class PostgresCollection<T : Any>(
                 }
             )
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, count.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.updated, count.toLong()) })
         count
     }
 
@@ -358,7 +358,7 @@ public class PostgresCollection<T : Any>(
                 where = { condition(condition, serializer, table, format).asOp() }
             ).firstOrNull()?.let { format.decode(serializer, it) }
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, if (result != null) 1L else 0L) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, if (result != null) 1L else 0L) })
         result
     }
 
@@ -372,7 +372,7 @@ public class PostgresCollection<T : Any>(
                 op = { it.condition(condition, serializer, table, format).asOp() }
             )
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, count.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, count.toLong()) })
         count > 0
     }
 
@@ -385,7 +385,7 @@ public class PostgresCollection<T : Any>(
                 where = { condition(condition, serializer, table, format).asOp() }
             ).map { format.decode(serializer, it) }
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, result.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, result.size.toLong()) })
         result
     }
 
@@ -398,7 +398,7 @@ public class PostgresCollection<T : Any>(
                 op = { it.condition(condition, serializer, table, format).asOp() }
             )
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, count.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, count.toLong()) })
         count
     }
 
@@ -411,10 +411,10 @@ public class PostgresCollection<T : Any>(
         val results = traced(
             operation = "findSimilar",
             extraBlock = {
-                put(com.lightningkite.services.database.Database.MetricKeys.vectorField, vectorField.colName)
-                put(com.lightningkite.services.database.Database.MetricKeys.metric, params.metric.toString())
-                put(com.lightningkite.services.database.Database.MetricKeys.limit, params.limit.toLong())
-                params.minScore?.let { put(com.lightningkite.services.database.Database.MetricKeys.minScore, it.toDouble()) }
+                put(com.lightningkite.services.database.Database.TelemetryKeys.vectorField, vectorField.colName)
+                put(com.lightningkite.services.database.Database.TelemetryKeys.metric, params.metric.toString())
+                put(com.lightningkite.services.database.Database.TelemetryKeys.limit, params.limit.toLong())
+                params.minScore?.let { put(com.lightningkite.services.database.Database.TelemetryKeys.minScore, it.toDouble()) }
             }
         ) { span ->
             prepare.await()
@@ -481,7 +481,7 @@ public class PostgresCollection<T : Any>(
                     .filter { minScore == null || it.score >= minScore }
             }
 
-            span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.resultCount, results.size.toLong()) })
+            span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.resultCount, results.size.toLong()) })
             results
         }
         results.forEach { emit(it) }
@@ -496,10 +496,10 @@ public class PostgresCollection<T : Any>(
         val results = traced(
             operation = "findSimilarSparse",
             extraBlock = {
-                put(com.lightningkite.services.database.Database.MetricKeys.vectorField, vectorField.colName)
-                put(com.lightningkite.services.database.Database.MetricKeys.metric, params.metric.toString())
-                put(com.lightningkite.services.database.Database.MetricKeys.limit, params.limit.toLong())
-                params.minScore?.let { put(com.lightningkite.services.database.Database.MetricKeys.minScore, it.toDouble()) }
+                put(com.lightningkite.services.database.Database.TelemetryKeys.vectorField, vectorField.colName)
+                put(com.lightningkite.services.database.Database.TelemetryKeys.metric, params.metric.toString())
+                put(com.lightningkite.services.database.Database.TelemetryKeys.limit, params.limit.toLong())
+                params.minScore?.let { put(com.lightningkite.services.database.Database.TelemetryKeys.minScore, it.toDouble()) }
             }
         ) { span ->
             prepare.await()
@@ -557,7 +557,7 @@ public class PostgresCollection<T : Any>(
                     .filter { minScore == null || it.score >= minScore }
             }
 
-            span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.resultCount, results.size.toLong()) })
+            span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.resultCount, results.size.toLong()) })
             results
         }
         results.forEach { emit(it) }

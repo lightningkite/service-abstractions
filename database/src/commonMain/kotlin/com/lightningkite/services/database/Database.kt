@@ -3,6 +3,7 @@ package com.lightningkite.services.database
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.kfile.KFile
+import com.lightningkite.services.telemetry.TelemetryKey
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
@@ -70,30 +71,30 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 public interface Database : Service {
 
-    public object MetricKeys {
+    public object TelemetryKeys {
         // Standard OTel Db keys reused as typed aliases
-        public val system: MetricKey.OfString = MetricKey.OfString("db.system")
-        public val operation: MetricKey.OfString = MetricKey.OfString("db.operation")
-        public val collection: MetricKey.OfString = MetricKey.OfString("db.collection")
+        public val system: TelemetryKey.OfString = TelemetryKey.OfString("db.system")
+        public val operation: TelemetryKey.OfString = TelemetryKey.OfString("db.operation")
+        public val collection: TelemetryKey.OfString = TelemetryKey.OfString("db.collection")
         // Service-abstraction-specific result metrics
-        public val resultCount: MetricKey.OfLong = MetricKey.OfLong("db.result_count")
-        public val count: MetricKey.OfLong = MetricKey.OfLong("db.count")
-        public val groups: MetricKey.OfLong = MetricKey.OfLong("db.groups")
-        public val insertCount: MetricKey.OfLong = MetricKey.OfLong("db.insert_count")
-        public val updated: MetricKey.OfLong = MetricKey.OfLong("db.updated")
-        public val deleted: MetricKey.OfLong = MetricKey.OfLong("db.deleted")
-        public val replaced: MetricKey.OfLong = MetricKey.OfLong("db.replaced")
-        public val upserted: MetricKey.OfLong = MetricKey.OfLong("db.upserted")
-        public val wasInsert: MetricKey.OfLong = MetricKey.OfLong("db.was_insert")
-        public val wasUpdate: MetricKey.OfLong = MetricKey.OfLong("db.was_update")
-        public val limit: MetricKey.OfLong = MetricKey.OfLong("db.limit")
-        public val skip: MetricKey.OfLong = MetricKey.OfLong("db.skip")
-        public val groupBy: MetricKey.OfString = MetricKey.OfString("db.groupBy")
-        public val aggregate: MetricKey.OfString = MetricKey.OfString("db.aggregate")
-        public val property: MetricKey.OfString = MetricKey.OfString("db.property")
-        public val vectorField: MetricKey.OfString = MetricKey.OfString("db.vectorField")
-        public val metric: MetricKey.OfString = MetricKey.OfString("db.metric")
-        public val minScore: MetricKey.OfDouble = MetricKey.OfDouble("db.minScore")
+        public val resultCount: TelemetryKey.OfLong = TelemetryKey.OfLong("db.result_count")
+        public val count: TelemetryKey.OfLong = TelemetryKey.OfLong("db.count")
+        public val groups: TelemetryKey.OfLong = TelemetryKey.OfLong("db.groups")
+        public val insertCount: TelemetryKey.OfLong = TelemetryKey.OfLong("db.insert_count")
+        public val updated: TelemetryKey.OfLong = TelemetryKey.OfLong("db.updated")
+        public val deleted: TelemetryKey.OfLong = TelemetryKey.OfLong("db.deleted")
+        public val replaced: TelemetryKey.OfLong = TelemetryKey.OfLong("db.replaced")
+        public val upserted: TelemetryKey.OfLong = TelemetryKey.OfLong("db.upserted")
+        public val wasInsert: TelemetryKey.OfLong = TelemetryKey.OfLong("db.was_insert")
+        public val wasUpdate: TelemetryKey.OfLong = TelemetryKey.OfLong("db.was_update")
+        public val limit: TelemetryKey.OfLong = TelemetryKey.OfLong("db.limit")
+        public val skip: TelemetryKey.OfLong = TelemetryKey.OfLong("db.skip")
+        public val groupBy: TelemetryKey.OfString = TelemetryKey.OfString("db.groupBy")
+        public val aggregate: TelemetryKey.OfString = TelemetryKey.OfString("db.aggregate")
+        public val property: TelemetryKey.OfString = TelemetryKey.OfString("db.property")
+        public val vectorField: TelemetryKey.OfString = TelemetryKey.OfString("db.vectorField")
+        public val metric: TelemetryKey.OfString = TelemetryKey.OfString("db.metric")
+        public val minScore: TelemetryKey.OfDouble = TelemetryKey.OfDouble("db.minScore")
     }
 
     /**

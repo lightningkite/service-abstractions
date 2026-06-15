@@ -1,11 +1,11 @@
 package com.lightningkite.services.pubsub.redis
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.lettuce.core.RedisClient
@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.reactive.awaitFirst
 import kotlinx.coroutines.reactive.awaitFirstOrNull
-import kotlinx.coroutines.reactive.collect
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
@@ -202,35 +201,35 @@ public class RedisPubSub(
         encode: (T) -> String,
         decode: (String) -> T,
     ): PubSubChannel<T> = object : PubSubChannel<T> {
-        override suspend fun collect(collector: FlowCollector<T>): Unit = metricsTrace("subscribe", attributes = MetricAttributes {
-            put(MetricKey.OfString("pubsub.operation"), "subscribe")
-            put(MetricKey.OfString("messaging.destination"), key)
-            put(MetricKeys.Messaging.system, "redis")
+        override suspend fun collect(collector: FlowCollector<T>): Unit = telemetryTrace("subscribe", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("pubsub.operation"), "subscribe")
+            put(TelemetryKey.OfString("messaging.destination"), key)
+            put(TelemetryKeys.Messaging.system, "redis")
         }) {
             // Create fresh subscription - no caching for serverless compatibility
             // Per-message spans created in the coroutine context (after asFlow()) so
             // makeCurrent() works correctly and child spans get the right parent.
             createSubscription(key).asFlow().collect { message ->
-                metricsTrace("receive", attributes = MetricAttributes {
-                    put(MetricKey.OfString("pubsub.operation"), "receive")
-                    put(MetricKey.OfString("messaging.destination"), key)
-                    put(MetricKeys.Messaging.system, "redis")
-                    put(MetricKey.OfLong("message.size"), message.length.toLong())
+                telemetryTrace("receive", attributes = TelemetryAttributes {
+                    put(TelemetryKey.OfString("pubsub.operation"), "receive")
+                    put(TelemetryKey.OfString("messaging.destination"), key)
+                    put(TelemetryKeys.Messaging.system, "redis")
+                    put(TelemetryKey.OfLong("message.size"), message.length.toLong())
                 }) {
                     collector.emit(decode(message))
                 }
             }
         }
 
-        override suspend fun emit(value: T): Unit = metricsTrace("publish", attributes = MetricAttributes {
-            put(MetricKey.OfString("pubsub.operation"), "publish")
-            put(MetricKey.OfString("messaging.destination"), key)
-            put(MetricKeys.Messaging.system, "redis")
+        override suspend fun emit(value: T): Unit = telemetryTrace("publish", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("pubsub.operation"), "publish")
+            put(TelemetryKey.OfString("messaging.destination"), key)
+            put(TelemetryKeys.Messaging.system, "redis")
         }) { span ->
             val message = encode(value)
-            span.enrich(MetricAttributes { put(MetricKey.OfLong("message.size"), message.length.toLong()) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("message.size"), message.length.toLong()) })
             val result = publishConnection.reactive().publish(key, message).awaitFirst()
-            span.enrich(MetricAttributes { put(MetricKey.OfLong("pubsub.subscribers_reached"), result) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("pubsub.subscribers_reached"), result) })
             Unit
         }
     }
@@ -251,7 +250,7 @@ public class RedisPubSub(
      */
     override suspend fun healthCheck(): HealthStatus =
         try {
-            val reply = metricsTrace("ping") {
+            val reply = telemetryTrace("ping") {
                 publishConnection.reactive().ping().awaitFirstOrNull()
             }
             if (reply == "PONG") HealthStatus(HealthStatus.Level.OK)

@@ -1,11 +1,11 @@
 package com.lightningkite.services.email.ses
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.webhooksubservice.HttpAdapter
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -147,10 +147,10 @@ public class SesEmailInboundService(
 
             // SNS subscription/unsubscribe confirmations produce a SpecialCaseException carrying a 200
             // response. That is a normal outcome, not a failure, so it must be thrown OUTSIDE
-            // metricsTrace — otherwise the trace would record it as an error outcome. The trace body
+            // telemetryTrace — otherwise the trace would record it as an error outcome. The trace body
             // returns it as a value and we rethrow once the span has closed cleanly.
-            val result = metricsTrace("webhook.parse", attributes = MetricAttributes {
-                put(MetricKeys.Messaging.system, "ses")
+            val result = telemetryTrace("webhook.parse", attributes = TelemetryAttributes {
+                put(TelemetryKeys.Messaging.system, "ses")
             }) { _ ->
                 // Parse SNS notification wrapper
                 val bodyString = body.text()
@@ -162,8 +162,8 @@ public class SesEmailInboundService(
                 }
 
                 // Verify SNS message signature (REQUIRED for all message types)
-                metricsTrace("sns.verify", attributes = MetricAttributes {
-                    put(MetricKeys.Messaging.system, "ses")
+                telemetryTrace("sns.verify", attributes = TelemetryAttributes {
+                    put(TelemetryKeys.Messaging.system, "ses")
                 }) { _ ->
                     verifySnsSignature(snsNotification)
                 }
@@ -184,7 +184,7 @@ public class SesEmailInboundService(
                     }
 
                     // Return 200 OK so SNS knows we received the confirmation
-                    return@metricsTrace HttpAdapter.SpecialCaseException(
+                    return@telemetryTrace HttpAdapter.SpecialCaseException(
                         HttpAdapter.HttpResponseLike(
                             status = 200,
                             headers = mapOf("Content-Type" to listOf("text/plain")),
@@ -196,7 +196,7 @@ public class SesEmailInboundService(
                 // Handle unsubscribe confirmation
                 if (snsNotification.Type == "UnsubscribeConfirmation") {
                     logger.info { "[$name] Received SNS unsubscribe confirmation" }
-                    return@metricsTrace HttpAdapter.SpecialCaseException(
+                    return@telemetryTrace HttpAdapter.SpecialCaseException(
                         HttpAdapter.HttpResponseLike(
                             status = 200,
                             headers = mapOf("Content-Type" to listOf("text/plain")),
@@ -227,8 +227,8 @@ public class SesEmailInboundService(
                                 "S3-based content retrieval is not yet implemented."
                     )
 
-                metricsTrace("mime.parse", attributes = MetricAttributes {
-                    put(MetricKeys.Messaging.system, "ses")
+                telemetryTrace("mime.parse", attributes = TelemetryAttributes {
+                    put(TelemetryKeys.Messaging.system, "ses")
                 }) { _ ->
                     parseReceivedEmail(sesNotification, rawContent)
                 }
@@ -236,7 +236,7 @@ public class SesEmailInboundService(
             when (result) {
                 is HttpAdapter.SpecialCaseException -> throw result
                 is ReceivedEmail -> return result
-                else -> error("Unreachable: metricsTrace returned ${result::class}")
+                else -> error("Unreachable: telemetryTrace returned ${result::class}")
             }
         }
 

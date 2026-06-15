@@ -5,7 +5,7 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.mongodb.MongoCommandException
 import com.mongodb.client.model.*
 import com.mongodb.kotlin.client.coroutine.MongoCollection
@@ -46,7 +46,7 @@ public class MongoTable<Model : Any>(
         }
     }
 
-    override suspend fun insert(models: Iterable<Model>): List<Model> = metricsTrace("insert") {
+    override suspend fun insert(models: Iterable<Model>): List<Model> = telemetryTrace("insert") {
         access {
             if (models.none()) return@access emptyList()
             val asList = models.toList()
@@ -69,7 +69,7 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         if (orderBy.isNotEmpty()) return updateOneIgnoringResult(cs, Modification.Assign(model), orderBy)
-        return metricsTrace("replaceOneIgnoringResult") {
+        return telemetryTrace("replaceOneIgnoringResult") {
             access {
                 replaceOne(
                     cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
@@ -89,7 +89,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
         val m = simplifiedModification.bson(serializer, bson = bson)
-        return metricsTrace("upsertOne") { access {
+        return telemetryTrace("upsertOne") { access {
             // TODO: Ugly hack for handling weird upserts
             if (m.upsert(model, serializer, bson)) {
                 findOneAndUpdate(
@@ -138,7 +138,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
         val m = simplifiedModification.bson(serializer, bson = bson)
-        return metricsTrace("upsertOneIgnoringResult") { access {
+        return telemetryTrace("upsertOneIgnoringResult") { access {
             // TODO: Ugly hack for handling weird upserts
             if (m.upsert(model, serializer, bson = bson)) {
                 updateOne(
@@ -172,7 +172,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
         val m = simplifiedModification.bson(serializer, bson = bson)
-        val before = metricsTrace("updateOne") { access<Model?> {
+        val before = telemetryTrace("updateOne") { access<Model?> {
             findOneAndUpdate(
                 cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 m.document,
@@ -201,7 +201,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
         val m = simplifiedModification.bson(serializer, bson = bson)
-        return metricsTrace("updateOneIgnoringResult") { access {
+        return telemetryTrace("updateOneIgnoringResult") { access {
             updateOne(
                 cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 m.document,
@@ -221,7 +221,7 @@ public class MongoTable<Model : Any>(
         val m = simplifiedModification.bson(serializer, bson = bson)
         val changes = ArrayList<EntryChange<Model>>()
         // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
-        metricsTrace("updateMany") { access {
+        telemetryTrace("updateMany") { access {
             find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).collectChunked(1000) { list ->
                 updateMany(Filters.`in`("_id", list.map { it["_id"] }), m.document, m.options)
                 list.asSequence().map { bson.parse(serializer, it) }
@@ -242,7 +242,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return 0
         val m = simplifiedModification.bson(serializer, bson = bson)
-        return metricsTrace("updateManyIgnoringResult") { access {
+        return telemetryTrace("updateManyIgnoringResult") { access {
             updateMany(
                 cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 m.document,
@@ -254,7 +254,7 @@ public class MongoTable<Model : Any>(
     override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? {
         val cs = condition.simplify()
         if (cs is Condition.Never) return null
-        return metricsTrace("deleteOne") { access {
+        return telemetryTrace("deleteOne") { access {
             withDocumentClass<BsonDocument>().findOneAndDelete(
                 cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
                 FindOneAndDeleteOptions()
@@ -270,7 +270,7 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         if (orderBy.isNotEmpty()) return deleteOne(condition, orderBy) != null
-        return metricsTrace("deleteOneIgnoringOld") { access { deleteOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount > 0 } }
+        return telemetryTrace("deleteOneIgnoringOld") { access { deleteOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount > 0 } }
     }
 
     /**
@@ -291,7 +291,7 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return listOf()
         val remove = ArrayList<Model>()
-        metricsTrace("deleteMany") { access {
+        telemetryTrace("deleteMany") { access {
             withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
                 .collectChunked(1000) { list ->
                     deleteMany(Filters.`in`("_id", list.map { it["_id"] }))
@@ -307,7 +307,7 @@ public class MongoTable<Model : Any>(
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int {
         val cs = condition.simplify()
         if (cs is Condition.Never) return 0
-        return metricsTrace("deleteManyIgnoringOld") { access { deleteMany(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount.toInt() } }
+        return telemetryTrace("deleteManyIgnoringOld") { access { deleteMany(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount.toInt() } }
     }
 
 
@@ -375,17 +375,17 @@ public class MongoTable<Model : Any>(
     }
 
     /**
-     * Records a [metricsTrace] operation that spans the full collection of a cold result [Flow].
+     * Records a [telemetryTrace] operation that spans the full collection of a cold result [Flow].
      * The query round-trip happens while the consumer collects, so timing the suspend setup alone
      * would report ~0 duration; instead we time from first collect through completion.
      *
-     * [metricsTrace] opens the operation span and makes it current via the coroutine context;
+     * [telemetryTrace] opens the operation span and makes it current via the coroutine context;
      * collecting the inner flow under that changed context is fine, but emitting straight through it
      * would violate Flow's context-preservation invariant. We therefore use [channelFlow] and `send`
      * (which is allowed across contexts) to forward each element back to the collector.
      */
     private fun <T> recordingFlow(operation: String, build: suspend () -> Flow<T>): Flow<T> = channelFlow {
-        metricsTrace(operation) {
+        telemetryTrace(operation) {
             build().collect { send(it) }
         }
     }
@@ -396,7 +396,7 @@ public class MongoTable<Model : Any>(
     override suspend fun count(condition: Condition<Model>): Int {
         val cs = condition.simplify()
         if (cs is Condition.Never) return 0
-        return metricsTrace("count") { access { countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt() } }
+        return telemetryTrace("count") { access { countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt() } }
     }
 
     override suspend fun <Key> groupCount(
@@ -405,7 +405,7 @@ public class MongoTable<Model : Any>(
     ): Map<Key, Int> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return mapOf()
-        return metricsTrace("groupCount") { access {
+        return telemetryTrace("groupCount") { access {
             aggregate<BsonDocument>(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
@@ -436,7 +436,7 @@ public class MongoTable<Model : Any>(
     ): Double? {
         val cs = condition.simplify()
         if (cs is Condition.Never) return null
-        return metricsTrace("aggregate") { access {
+        return telemetryTrace("aggregate") { access {
             aggregate(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
@@ -460,7 +460,7 @@ public class MongoTable<Model : Any>(
     ): Map<Key, Double?> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return mapOf()
-        return metricsTrace("groupAggregate") { access {
+        return telemetryTrace("groupAggregate") { access {
             aggregate(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),

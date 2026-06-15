@@ -1,17 +1,20 @@
 package com.lightningkite.services.email.imap
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.mail.*
 import jakarta.mail.internet.InternetAddress
 import jakarta.mail.internet.MimeMessage
+import jakarta.mail.search.FlagTerm
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.net.URLDecoder
 import java.util.*
@@ -238,8 +241,8 @@ public class ImapEmailInboundService(
             "ImapEmailInboundService is pull-only; use pull() instead of parse()."
         )
 
-        override suspend fun pull(): Set<ReceivedEmail> = metricsTrace("pull", attributes = MetricAttributes {
-            put(MetricKeys.Messaging.system, "imap")
+        override suspend fun pull(): Set<ReceivedEmail> = telemetryTrace("pull", attributes = TelemetryAttributes {
+            put(TelemetryKeys.Messaging.system, "imap")
         }) { pullSpan ->
             // Open the folder once for the whole pull cycle. SEEN-flag updates after a successful
             // ReceivedEmail materialization land on the same live IMAP session.
@@ -249,7 +252,7 @@ public class ImapEmailInboundService(
                 openedStore = store!!
                 ownsStore = false
             } else {
-                openedStore = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                openedStore = withContext(Dispatchers.IO) {
                     session.getStore(if (useSsl) "imaps" else "imap").also {
                         it.connect(host, port, username, password)
                     }
@@ -257,14 +260,14 @@ public class ImapEmailInboundService(
                 ownsStore = true
             }
             val inbox = openedStore.getFolder(folder)
-            withContext(kotlinx.coroutines.Dispatchers.IO) { inbox.open(Folder.READ_WRITE) }
+            withContext(Dispatchers.IO) { inbox.open(Folder.READ_WRITE) }
             try {
-                val rawMessages = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    inbox.search(jakarta.mail.search.FlagTerm(Flags(Flags.Flag.SEEN), false))
+                val rawMessages = withContext(Dispatchers.IO) {
+                    inbox.search(FlagTerm(Flags(Flags.Flag.SEEN), false))
                         .filterIsInstance<MimeMessage>()
                 }
 
-                pullSpan.enrich(MetricAttributes { put(MetricKey.OfLong("email.messages_found"), rawMessages.size.toLong()) })
+                pullSpan.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("email.messages_found"), rawMessages.size.toLong()) })
                 logger.info { "[$name] Found ${rawMessages.size} unread message(s)" }
 
                 // Materialize and mark SEEN one-by-one. A parse failure for one message must not
@@ -278,14 +281,14 @@ public class ImapEmailInboundService(
                         logger.error(e) { "[$name] Failed to parse message; leaving it unseen for retry" }
                         continue
                     }
-                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    withContext(Dispatchers.IO) {
                         rawMessage.setFlag(Flags.Flag.SEEN, true)
                     }
                     result.add(received)
                 }
                 result
             } finally {
-                withContext(kotlinx.coroutines.NonCancellable + kotlinx.coroutines.Dispatchers.IO) {
+                withContext(NonCancellable + Dispatchers.IO) {
                     runCatching { inbox.close(false) }
                     if (ownsStore) runCatching { openedStore.close() }
                 }

@@ -1,10 +1,10 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.MetricUnit
+import com.lightningkite.services.telemetry.MetricUnit
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.database.*
-import com.lightningkite.services.metricsGauge
+import com.lightningkite.services.telemetry.telemetryGauge
 import com.mongodb.*
 import com.mongodb.event.*
 import com.mongodb.kotlin.client.coroutine.MongoClient
@@ -204,7 +204,7 @@ public class MongoDatabase(
     // Point-in-time gauge of in-use connections, sampled by the exporter from [active].
     // Held in a field so it is not garbage-collected (the SDK keeps only a weak reference).
     private val poolActiveGauge: AutoCloseable =
-        metricsGauge("mongodb.pool.active", MetricUnit.Occurrences, defaultDimensions = emptySet()) { active.get().toLong() }
+        telemetryGauge("mongodb.pool.active", MetricUnit.Occurrences) { active.get().toLong() }
 
     // You might be asking, "WHY?  WHY IS THIS SO COMPLICATED?"
     // Well, we have to be able to fully disconnect and reconnect existing Mongo databases in order to support AWS's

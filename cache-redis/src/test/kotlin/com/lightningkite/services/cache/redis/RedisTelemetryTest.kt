@@ -1,9 +1,9 @@
 package com.lightningkite.services.cache.redis
 
-import com.lightningkite.services.MetricsBackend
+import com.lightningkite.services.telemetry.TelemetryBackend
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.otel.OtelMetricsBackend
+import com.lightningkite.services.otel.OtelTelemetryBackend
 import com.lightningkite.services.cache.get
 import com.lightningkite.services.cache.set
 import io.lettuce.core.RedisClient
@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
  * Telemetry regression tests for [RedisCache] against an embedded Redis.
  *
  * Covers:
- * - **Span parenting**: a `metricsTrace` operation span created while a parent span is current must
+ * - **Span parenting**: a `telemetryTrace` operation span created while a parent span is current must
  *   parent to that span.
  * - **Metrics**: every public op records a RED-style count, and `get` carries the
  *   `cache.hit` dimension.
@@ -43,14 +43,14 @@ class RedisTelemetryTest {
     private val cacheHitKey = AttributeKey.booleanKey("cache.hit")
 
     /**
-     * Builds a SettingContext whose [metricsBackend] is an OTel backend wired to the given in-memory
+     * Builds a SettingContext whose [telemetryBackend] is an OTel backend wired to the given in-memory
      * exporters, so spans and metrics emitted by the service can be asserted in-process.
      */
     private fun contextWith(sdk: OpenTelemetrySdk): SettingContext {
         val base = TestSettingContext()
-        val backend = OtelMetricsBackend(sdk)
+        val backend = OtelTelemetryBackend(sdk)
         return object : SettingContext by base {
-            override val metricsBackend: MetricsBackend get() = backend
+            override val telemetryBackend: TelemetryBackend get() = backend
         }
     }
 
@@ -133,7 +133,7 @@ class RedisTelemetryTest {
         assertTrue("remove" in operations, "expected a remove operation metric, got $operations")
         assertTrue("get" in operations, "expected a get operation metric, got $operations")
 
-        // cache.hit is a promoted RED dimension again (declared via metricsTrace's `dimensions` and
+        // cache.hit is a promoted RED dimension again (declared via telemetryTrace's `dimensions` and
         // resolved at completion from the enriched span). Both a hit and a miss were issued, so the
         // get counter points must carry cache.hit=true and cache.hit=false.
         val getHits = points.filter { it.attributes.get(operationKey) == "get" }

@@ -51,6 +51,20 @@ public suspend inline fun <reified T : Any> Cache.setIfNotExists(
 
 
 /**
+ * Retrieves and removes a value with type inference.
+ *
+ * ```kotlin
+ * val token: String? = cache.getAndDelete("one-time-token:123")
+ * ```
+ *
+ * @param T The type to deserialize. Must be registered in the context's SerializersModule.
+ * @return The value that was stored under [key], or null if the key did not exist or had expired.
+ */
+public suspend inline fun <reified T : Any> Cache.getAndRemove(key: String): T? {
+    return getAndRemove(key, context.internalSerializersModule.serializer<T>())
+}
+
+/**
  * Atomically modifies a value with type inference using compare-and-swap.
  *
  * ```kotlin

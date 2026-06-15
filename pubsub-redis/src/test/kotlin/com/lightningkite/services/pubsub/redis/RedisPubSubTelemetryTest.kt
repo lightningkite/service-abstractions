@@ -1,9 +1,9 @@
 package com.lightningkite.services.pubsub.redis
 
-import com.lightningkite.services.MetricsBackend
+import com.lightningkite.services.telemetry.TelemetryBackend
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.otel.OtelMetricsBackend
+import com.lightningkite.services.otel.OtelTelemetryBackend
 import io.lettuce.core.RedisClient
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.extension.kotlin.asContextElement
@@ -35,9 +35,9 @@ class RedisPubSubTelemetryTest {
 
     private fun contextWith(sdk: OpenTelemetrySdk): SettingContext {
         val base = TestSettingContext()
-        val backend = OtelMetricsBackend(sdk)
+        val backend = OtelTelemetryBackend(sdk)
         return object : SettingContext by base {
-            override val metricsBackend: MetricsBackend get() = backend
+            override val telemetryBackend: TelemetryBackend get() = backend
         }
     }
 

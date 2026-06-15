@@ -1,9 +1,9 @@
 package com.lightningkite.services.cache.memcached
 
-import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import net.rubyeye.xmemcached.exception.MemcachedException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -119,14 +119,14 @@ public class MemcachedCache(
     private fun spanAttrs(
         key: String,
         timeToLive: Duration? = null,
-    ): MetricAttributes = MetricAttributes {
-        put(Cache.MetricKeys.key, context.telemetrySanitization.hashCacheKey(key))
-        put(Cache.MetricKeys.system, "memcached")
-        timeToLive?.let { put(Cache.MetricKeys.ttl, it.inWholeSeconds) }
+    ): TelemetryAttributes = TelemetryAttributes {
+        put(Cache.TelemetryKeys.key, context.telemetrySanitization.hashCacheKey(key))
+        put(Cache.TelemetryKeys.system, "memcached")
+        timeToLive?.let { put(Cache.TelemetryKeys.ttl, it.inWholeSeconds) }
     }
 
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
-        metricsTrace("get", attributes = spanAttrs(key), dimensions = setOf(Cache.MetricKeys.hit)) { span ->
+        telemetryTrace("get", attributes = spanAttrs(key), dimensions = setOf(Cache.TelemetryKeys.hit)) { span ->
             val result = withContext(Dispatchers.IO) {
                 try {
                     client.get<String>(key)?.let { json.decodeFromString(serializer, it) }
@@ -136,12 +136,12 @@ public class MemcachedCache(
                 }
                 // IOException and other connection errors propagate to the outer handler.
             }
-            span.enrich(MetricAttributes { put(Cache.MetricKeys.hit, result != null) })
+            span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.hit, result != null) })
             result
         }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
-        metricsTrace("set", attributes = spanAttrs(key, timeToLive)) {
+        telemetryTrace("set", attributes = spanAttrs(key, timeToLive)) {
             withContext(Dispatchers.IO) {
                 if (!client.set(
                         key,
@@ -158,7 +158,7 @@ public class MemcachedCache(
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.MetricKeys.added)) { span ->
+    ): Boolean = telemetryTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.TelemetryKeys.added)) { span ->
         val result = withContext(Dispatchers.IO) {
             client.add(
                 key,
@@ -166,12 +166,12 @@ public class MemcachedCache(
                 json.encodeToString(serializer, value)
             )
         }
-        span.enrich(MetricAttributes { put(Cache.MetricKeys.added, result) })
+        span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.added, result) })
         result
     }
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
-        metricsTrace("add", attributes = MetricAttributes { putAll(spanAttrs(key, timeToLive)); put(Cache.MetricKeys.value, value) }) {
+        telemetryTrace("add", attributes = TelemetryAttributes { putAll(spanAttrs(key, timeToLive)); put(Cache.TelemetryKeys.value, value) }) {
             withContext(Dispatchers.IO) {
                 // Memcached's incr/decr commands only accept non-negative deltas.
                 // Negative deltas must use decr; initValue is used when the key doesn't exist.
@@ -188,7 +188,7 @@ public class MemcachedCache(
         }
 
     override suspend fun remove(key: String): Unit =
-        metricsTrace("remove", attributes = spanAttrs(key)) {
+        telemetryTrace("remove", attributes = spanAttrs(key)) {
             withContext(Dispatchers.IO) {
                 client.delete(key)
                 Unit
@@ -201,7 +201,7 @@ public class MemcachedCache(
         expected: T?,
         new: T?,
         timeToLive: Duration?,
-    ): Boolean = metricsTrace("compareAndSet", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.MetricKeys.casSuccess)) { span ->
+    ): Boolean = telemetryTrace("compareAndSet", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.TelemetryKeys.casSuccess)) { span ->
         val result = withContext(Dispatchers.IO) {
             // Early return if expected equals new
             if (expected == new) return@withContext true
@@ -247,7 +247,7 @@ public class MemcachedCache(
                 }
             }
         }
-        span.enrich(MetricAttributes { put(Cache.MetricKeys.casSuccess, result) })
+        span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.casSuccess, result) })
         result
     }
 

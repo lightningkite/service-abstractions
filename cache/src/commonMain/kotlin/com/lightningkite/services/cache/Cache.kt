@@ -2,6 +2,7 @@ package com.lightningkite.services.cache
 
 import com.lightningkite.services.*
 import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.telemetry.TelemetryKey
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
@@ -25,14 +26,14 @@ import kotlin.time.Duration.Companion.seconds
  */
 public interface Cache : Service {
 
-    public object MetricKeys {
-        public val hit: MetricKey.OfBoolean = MetricKey.OfBoolean("cache.hit")
-        public val added: MetricKey.OfBoolean = MetricKey.OfBoolean("cache.added")
-        public val casSuccess: MetricKey.OfBoolean = MetricKey.OfBoolean("cache.cas.success")
-        public val system: MetricKey.OfString = MetricKey.OfString("cache.system")
-        public val key: MetricKey.OfString = MetricKey.OfString("cache.key")
-        public val ttl: MetricKey.OfLong = MetricKey.OfLong("cache.ttl")
-        public val value: MetricKey.OfLong = MetricKey.OfLong("cache.value")
+    public object TelemetryKeys {
+        public val hit: TelemetryKey.OfBoolean = TelemetryKey.OfBoolean("cache.hit")
+        public val added: TelemetryKey.OfBoolean = TelemetryKey.OfBoolean("cache.added")
+        public val casSuccess: TelemetryKey.OfBoolean = TelemetryKey.OfBoolean("cache.cas.success")
+        public val system: TelemetryKey.OfString = TelemetryKey.OfString("cache.system")
+        public val key: TelemetryKey.OfString = TelemetryKey.OfString("cache.key")
+        public val ttl: TelemetryKey.OfLong = TelemetryKey.OfLong("cache.ttl")
+        public val value: TelemetryKey.OfLong = TelemetryKey.OfLong("cache.value")
     }
 
     /**
@@ -219,6 +220,26 @@ public interface Cache : Service {
      * @param key The cache key to remove.
      */
     public suspend fun remove(key: String)
+
+    /**
+     * Retrieves a value and removes it from the cache in a single operation.
+     *
+     * If the key does not exist (or has expired), returns null without any side effects.
+     * After this call, the key is absent from the cache.
+     *
+     * **Atomicity:** Implementations provide atomic get-and-delete where the backing store supports
+     * it (Redis GETDEL, DynamoDB DeleteItem with ALL_OLD). The default implementation is non-atomic:
+     * it reads the value and then removes the key in two separate operations.
+     *
+     * @param key The cache key.
+     * @param serializer Serializer for deserializing the cached value.
+     * @return The value that was stored under [key], or null if the key did not exist or had expired.
+     */
+    public suspend fun <T> getAndRemove(key: String, serializer: KSerializer<T>): T? {
+        val value = get(key, serializer)
+        if (value != null) remove(key)
+        return value
+    }
 
     /**
      * Verifies cache connectivity and basic operations.

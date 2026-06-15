@@ -3,6 +3,10 @@ package com.lightningkite.services.email.mailgun
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.*
@@ -120,11 +124,11 @@ public class MailgunEmailInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail = metricsTrace("webhook.parse", attributes = MetricAttributes {
-            put(MetricKey.OfString("email.operation"), "webhook_parse")
-            put(MetricKey.OfString("email.provider"), "mailgun")
-            put(MetricKeys.Messaging.system, "mailgun")
-            put(MetricKey.OfString("email.webhook.event_type"), "inbound")
+        ): ReceivedEmail = telemetryTrace("webhook.parse", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("email.operation"), "webhook_parse")
+            put(TelemetryKey.OfString("email.provider"), "mailgun")
+            put(TelemetryKeys.Messaging.system, "mailgun")
+            put(TelemetryKey.OfString("email.webhook.event_type"), "inbound")
         }) { span ->
             // Parse form data from body
             val formData = parseFormData(body)
@@ -136,14 +140,20 @@ public class MailgunEmailInboundService(
             val receivedEmail = parseMailgunEmail(formData, body.mediaType)
 
             // Add email metadata to span (PII redacted: keep only domain for from/to, drop subject)
-            span.enrich(MetricAttributes {
-                put(MetricKey.OfString("email.from"), receivedEmail.from.value.toString().let { addr -> addr.substringAfter('@', addr) })
-                put(MetricKey.OfString("email.to"), receivedEmail.to.joinToString(", ") { it.value.toString().let { addr -> addr.substringAfter('@', addr) } })
-                put(MetricKey.OfString("email.message_id"), receivedEmail.messageId)
+            span.enrich(TelemetryAttributes {
+                put(
+                    TelemetryKey.OfString("email.from"),
+                    receivedEmail.from.value.toString().let { addr -> addr.substringAfter('@', addr) })
+                put(
+                    TelemetryKey.OfString("email.to"),
+                    receivedEmail.to.joinToString(", ") {
+                        it.value.toString().let { addr -> addr.substringAfter('@', addr) }
+                    })
+                put(TelemetryKey.OfString("email.message_id"), receivedEmail.messageId)
                 if (receivedEmail.attachments.isNotEmpty()) {
-                    put(MetricKey.OfLong("email.attachments.count"), receivedEmail.attachments.size.toLong())
+                    put(TelemetryKey.OfLong("email.attachments.count"), receivedEmail.attachments.size.toLong())
                 }
-                receivedEmail.spamScore?.let { score -> put(MetricKey.OfDouble("email.spam_score"), score) }
+                receivedEmail.spamScore?.let { score -> put(TelemetryKey.OfDouble("email.spam_score"), score) }
             })
 
             receivedEmail

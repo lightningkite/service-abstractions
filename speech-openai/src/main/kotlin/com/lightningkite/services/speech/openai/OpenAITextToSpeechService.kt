@@ -1,10 +1,10 @@
 package com.lightningkite.services.speech.openai
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.contentnegotiation.*
@@ -165,9 +165,9 @@ public class OpenAITextToSpeechService(
         val model = options.model ?: defaultModel
         val responseFormat = mapOutputFormat(options.outputFormat)
 
-        return metricsTrace(
+        return telemetryTrace(
             "synthesize",
-            attributes = MetricAttributes(
+            attributes = TelemetryAttributes(
                 mapOf(
                     "ai.model" to model,
                     "text.char_count" to text.length.toLong(),
@@ -200,7 +200,7 @@ public class OpenAITextToSpeechService(
             val mediaType = mapFormatToMediaType(options.outputFormat)
 
             logger.debug { "[$name] Synthesized ${audioBytes.size} bytes of audio" }
-            span.enrich(MetricAttributes { put(MetricKey.OfLong("audio.size_bytes"), audioBytes.size.toLong()) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("audio.size_bytes"), audioBytes.size.toLong()) })
             TypedData(Data.Bytes(audioBytes), mediaType)
         }
     }
@@ -214,9 +214,9 @@ public class OpenAITextToSpeechService(
         val model = options.model ?: defaultModel
         val responseFormat = mapOutputFormat(options.outputFormat)
 
-        metricsTrace(
+        telemetryTrace(
             "synthesize_stream",
-            attributes = MetricAttributes(
+            attributes = TelemetryAttributes(
                 mapOf(
                     "ai.model" to model,
                     "text.char_count" to text.length.toLong(),

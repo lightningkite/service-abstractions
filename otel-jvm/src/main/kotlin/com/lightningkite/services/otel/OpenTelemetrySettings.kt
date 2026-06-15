@@ -127,6 +127,11 @@ import kotlin.time.toJavaDuration
  * @property maxSpansPerSecond Rate limit for span export (null = unlimited)
  * @property maxLogsPerSecond Rate limit for log export (null = unlimited)
  */
+@Deprecated(
+    message = "Use TelemetryBackend.Settings with OtelTelemetryBackend.register() instead. " +
+        "TelemetryBackend.Settings supports the same URL schemes and configuration, and wires directly into SettingContext.telemetryBackend.",
+    replaceWith = ReplaceWith("TelemetryBackend.Settings", "com.lightningkite.services.TelemetryBackend"),
+)
 @Serializable
 public data class OpenTelemetrySettings(
     override val url: String = "log",
@@ -557,19 +562,26 @@ public data class OpenTelemetrySettings(
 }
 
 /**
- * Builds the OpenTelemetry SDK from these settings and wraps it in an [OtelMetricsBackend], ready to
- * assign to [SettingContext.metricsBackend]. This is the one-line wiring an app uses at startup:
+ * Builds the OpenTelemetry SDK from these settings and wraps it in an [OtelTelemetryBackend], ready to
+ * assign to [SettingContext.telemetryBackend].
  *
+ * Prefer using [com.lightningkite.services.telemetry.TelemetryBackend.Settings] with [OtelTelemetryBackend.register] instead:
  * ```kotlin
- * override val metricsBackend = OpenTelemetrySettings("otlp-grpc://collector:4317").metricsBackend("my-app", context)
+ * OtelTelemetryBackend.register()
+ * override val telemetryBackend = TelemetryBackend.Settings("otlp-grpc://collector:4317")("my-app", context)
  * ```
- *
- * If you already hold the SDK handle, use the constructor directly: `OtelMetricsBackend(sdk)`.
  */
-public fun OpenTelemetrySettings.metricsBackend(name: String, context: SettingContext): OtelMetricsBackend =
-    OtelMetricsBackend(invoke(name, context))
+@Deprecated(
+    message = "Use TelemetryBackend.Settings with OtelTelemetryBackend.register() instead.",
+    replaceWith = ReplaceWith(
+        "TelemetryBackend.Settings(url).invoke(name, context)",
+        "com.lightningkite.services.TelemetryBackend",
+    ),
+)
+public fun OpenTelemetrySettings.telemetryBackend(name: String, context: SettingContext): OtelTelemetryBackend =
+    OtelTelemetryBackend(invoke(name, context))
 
-private fun otelLoggingSetup(telemetry: OpenTelemetrySdk?, silenceConsole: Boolean = false) {
+internal fun otelLoggingSetup(telemetry: OpenTelemetrySdk?, silenceConsole: Boolean = false) {
     (LoggerFactory.getILoggerFactory() as LoggerContext).apply logCtx@{
         getLogger(Logger.ROOT_LOGGER_NAME).apply {
             // Optionally silence console output so logs only appear in span trees
@@ -592,7 +604,7 @@ private fun otelLoggingSetup(telemetry: OpenTelemetrySdk?, silenceConsole: Boole
  * Wraps a LogRecordExporter to truncate oversized log bodies and stack traces.
  * Prevents massive log payloads from inflating infrastructure costs.
  */
-private class SafeLogRecordExporter(
+internal class SafeLogRecordExporter(
     private val delegate: LogRecordExporter,
     private val maxBodyLength: Int,
     @Suppress("UNUSED_PARAMETER") private val maxStackTraceDepth: Int,
@@ -623,7 +635,7 @@ private class SafeLogRecordExporter(
  * Rate limiter for spans using a token bucket algorithm.
  * Prevents cost spikes during high-traffic or error burst scenarios.
  */
-private class RateLimitedSpanExporter(
+internal class RateLimitedSpanExporter(
     private val delegate: SpanExporter,
     private val maxSpansPerSecond: Int,
 ) : SpanExporter {
@@ -676,7 +688,7 @@ private class RateLimitedSpanExporter(
  * Rate limiter for log records using a token bucket algorithm.
  * Prevents cost spikes during high-traffic or error burst scenarios.
  */
-private class RateLimitedLogRecordExporter(
+internal class RateLimitedLogRecordExporter(
     private val delegate: LogRecordExporter,
     private val maxLogsPerSecond: Int,
 ) : LogRecordExporter {

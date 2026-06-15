@@ -242,20 +242,27 @@ internal class SqlSchema(
     ) {
         val childTableName = "${mainTable.tableName}__${prefix.joinToString("__")}"
 
-        // Find the _id column(s) from the main table to reference
-        val mainIdCol = mainTable.col["_id"]
-            ?: throw IllegalStateException("Main table must have an _id column")
+        val mainIdCols = mainTable.idColumns
+        if (mainIdCols.isEmpty()) error("Main table ${mainTable.tableName} has no _id columns")
 
+        val ownerIdMutableList = mutableListOf<Column<Any?>>()
         val childTable = SqlChildExposedTable(
             name = childTableName,
-            ownerIdColumns = mutableListOf(),  // will be populated below
-            mainTableIdColumns = listOf(mainIdCol),
+            ownerIdColumns = ownerIdMutableList,
+            mainTableIdColumns = mainIdCols,
         )
 
-        // Register owner_id column (same type as parent _id)
-        @Suppress("UNCHECKED_CAST")
-        val ownerIdCol = childTable.registerColumn<Any?>("owner_id", (mainIdCol.columnType as ColumnType<*>).clone() as ColumnType<Any>)
-        (childTable.ownerIdColumns as MutableList).add(ownerIdCol)
+        // For a single _id column, use "owner_id"; for compound, strip "_id" prefix and prepend "owner_id".
+        for (mainIdCol in mainIdCols) {
+            val ownerColName = if (mainIdCols.size == 1) {
+                "owner_id"
+            } else {
+                "owner_id" + mainIdCol.name.removePrefix("_id")
+            }
+            @Suppress("UNCHECKED_CAST")
+            val ownerIdCol = childTable.registerColumn<Any?>(ownerColName, (mainIdCol.columnType as ColumnType<*>).clone() as ColumnType<Any>)
+            ownerIdMutableList.add(ownerIdCol)
+        }
 
         // Register idx column only for ordered collections (lists/maps).
         // Sets omit it: order is not part of a set's contract, so storing an ordinal would
@@ -273,8 +280,14 @@ internal class SqlSchema(
         val resolvedElement = resolveDescriptor(elementDescriptor, serializersModule)
         registerChildColumns(childTable, resolvedElement, if (isMap) "value" else "", childTable.elementColumns)
 
-        // Foreign key
-        childTable.foreignKey(ownerIdCol to mainIdCol)
+        // Foreign key: single or composite
+        if (mainIdCols.size == 1) {
+            childTable.foreignKey(ownerIdMutableList[0] to mainIdCols[0])
+        } else {
+            childTable.foreignKey(
+                *ownerIdMutableList.zip(mainIdCols).map { (o, m) -> o to m }.toTypedArray()
+            )
+        }
 
         childTables[fieldPath] = SqlChildTableDef(
             fieldPath = fieldPath,

@@ -1,10 +1,10 @@
 package com.lightningkite.services.cache.redis
 
-import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.data.HealthStatus
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisNoScriptException
 import io.lettuce.core.ScriptOutputType
@@ -161,21 +161,21 @@ end
 
     // Static, low-cardinality span attributes shared by every operation. The cache key is hashed so a
     // high-cardinality value never reaches telemetry.
-    private fun spanAttributes(key: String): MetricAttributes = MetricAttributes {
-        put(Cache.MetricKeys.system, "redis")
-        put(Cache.MetricKeys.key, context.telemetrySanitization.hashCacheKey(key))
+    private fun spanAttributes(key: String): TelemetryAttributes = TelemetryAttributes {
+        put(Cache.TelemetryKeys.system, "redis")
+        put(Cache.TelemetryKeys.key, context.telemetrySanitization.hashCacheKey(key))
     }
 
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? {
-        return metricsTrace("get", attributes = spanAttributes(key), dimensions = setOf(Cache.MetricKeys.hit)) { span ->
+        return telemetryTrace("get", attributes = spanAttributes(key), dimensions = setOf(Cache.TelemetryKeys.hit)) { span ->
             val raw = lettuceConnection.get(key).awaitFirstOrNull()
-            span.enrich(MetricAttributes { put(Cache.MetricKeys.hit, raw != null) })
+            span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.hit, raw != null) })
             raw?.let { json.decodeFromString(serializer, it) }
         }
     }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
-        metricsTrace("set", attributes = spanAttributes(key)) {
+        telemetryTrace("set", attributes = spanAttributes(key)) {
             lettuceConnection.set(
                 key,
                 json.encodeToString(serializer, value),
@@ -188,19 +188,19 @@ end
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttributes(key)) { span ->
+    ): Boolean = telemetryTrace("setIfNotExists", attributes = spanAttributes(key)) { span ->
         // Atomic SET key value NX PX ttl — avoids the non-atomic setnx+pexpire race.
         val args = SetArgs.Builder.nx().let { a ->
             timeToLive?.inWholeMilliseconds?.let { a.px(it) } ?: a
         }
         val result = lettuceConnection.set(key, json.encodeToString(serializer, value), args)
             .awaitFirstOrNull() != null
-        span.enrich(MetricAttributes { put(Cache.MetricKeys.added, result) })
+        span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.added, result) })
         result
     }
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
-        metricsTrace("add", attributes = spanAttributes(key)) {
+        telemetryTrace("add", attributes = spanAttributes(key)) {
             // Lua script performs INCRBY + PEXPIRE atomically to avoid the race where
             // another caller modifies TTL between our INCRBY and PEXPIRE calls.
             val ttlArg = timeToLive?.inWholeMilliseconds?.toString() ?: ""
@@ -208,8 +208,15 @@ end
         }
 
     override suspend fun remove(key: String): Unit =
-        metricsTrace("remove", attributes = spanAttributes(key)) {
+        telemetryTrace("remove", attributes = spanAttributes(key)) {
             lettuceConnection.del(key).collect { }
+        }
+
+    override suspend fun <T> getAndRemove(key: String, serializer: KSerializer<T>): T? =
+        telemetryTrace("getAndDelete", attributes = spanAttributes(key), dimensions = setOf(Cache.TelemetryKeys.hit)) { span ->
+            val raw = lettuceConnection.getdel(key).awaitFirstOrNull()
+            span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.hit, raw != null) })
+            raw?.let { json.decodeFromString(serializer, it) }
         }
 
     override suspend fun <T> compareAndSet(
@@ -222,7 +229,7 @@ end
         // Early return if expected equals new
         if (expected == new) return true
 
-        return metricsTrace("compareAndSet", attributes = spanAttributes(key)) {
+        return telemetryTrace("compareAndSet", attributes = spanAttributes(key)) {
             val expectedJson = expected?.let { json.encodeToString(serializer, it) }
             val newJson = new?.let { json.encodeToString(serializer, it) }
             val ttlArg = timeToLive?.inWholeMilliseconds?.toString() ?: ""
@@ -254,7 +261,7 @@ end
      */
     override suspend fun healthCheck(): HealthStatus =
         try {
-            val reply = metricsTrace("ping") {
+            val reply = telemetryTrace("ping") {
                 lettuceConnection.ping().awaitFirstOrNull()
             }
             if (reply == "PONG") HealthStatus(HealthStatus.Level.OK)

@@ -117,6 +117,16 @@ public class MapCache(
     }
 
     @Suppress("UNCHECKED_CAST")
+    override suspend fun <T> getAndRemove(key: String, serializer: KSerializer<T>): T? {
+        return instrumentedGetAndDelete(this, key) {
+            val clock = Clock.default()
+            var removed: Entry? = null
+            entries.compute(key) { _, existing -> removed = existing; null }
+            removed?.takeIf { it.expires == null || it.expires > clock.now() }?.value as? T
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
     override suspend fun <T> modify(
         key: String,
         serializer: KSerializer<T>,

@@ -1,17 +1,16 @@
 package com.lightningkite.services.database.sql
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricAttributesBuilder
-import com.lightningkite.services.MetricSpan
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryAttributesBuilder
+import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mapformat.ChildRow
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -46,22 +45,22 @@ public class SqlCollection<T : Any>(
         })
 
     // Per-collection default span attributes shared by every operation.
-    private fun baseAttributes(operation: String): MetricAttributes = MetricAttributes {
-        put(com.lightningkite.services.database.Database.MetricKeys.system, "sql")
-        put(com.lightningkite.services.database.Database.MetricKeys.operation, operation)
-        put(com.lightningkite.services.database.Database.MetricKeys.collection, name)
+    private fun baseAttributes(operation: String): TelemetryAttributes = TelemetryAttributes {
+        put(com.lightningkite.services.database.Database.TelemetryKeys.system, "sql")
+        put(com.lightningkite.services.database.Database.TelemetryKeys.operation, operation)
+        put(com.lightningkite.services.database.Database.TelemetryKeys.collection, name)
     }
 
-    // Thin wrapper over metricsTrace: opens the `<name>.<operation>` span (with the per-collection
+    // Thin wrapper over telemetryTrace: opens the `<name>.<operation>` span (with the per-collection
     // default attributes plus any caller-supplied [extraBlock]), records the RED metric inside it, and
     // hands the started span to [block] for dynamic per-result attributes.
     private suspend inline fun <R> traced(
         operation: String,
-        noinline extraBlock: (MetricAttributesBuilder.() -> Unit)? = null,
-        noinline block: suspend (MetricSpan) -> R,
+        noinline extraBlock: (TelemetryAttributesBuilder.() -> Unit)? = null,
+        noinline block: suspend (TelemetryTrace) -> R,
     ): R {
-        val attrs = if (extraBlock != null) MetricAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
-        return metricsTrace(operation, attributes = attrs, action = block)
+        val attrs = if (extraBlock != null) TelemetryAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
+        return telemetryTrace(operation, attributes = attrs, action = block)
     }
 
     @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
@@ -86,6 +85,7 @@ public class SqlCollection<T : Any>(
     /**
      * Read child rows for a set of owner IDs, grouped by child table path and owner ID.
      */
+    @Suppress("UNCHECKED_CAST")
     private fun Transaction.fetchChildRows(
         ids: List<Any?>,
     ): Map<String, Map<Any?, List<ChildRow>>> {
@@ -93,15 +93,41 @@ public class SqlCollection<T : Any>(
 
         return schema.childTables.mapValues { (_, childDef) ->
             val childTable = childDef.table
-            @Suppress("UNCHECKED_CAST")
-            val ownerCol = childTable.ownerIdColumns[0] as Column<Any?>
 
-            val query = childTable.selectAll().where { ownerCol inList ids }
+            val query = if (childTable.ownerIdColumns.size == 1) {
+                val ownerCol = childTable.ownerIdColumns[0] as Column<Any?>
+                childTable.selectAll().where { ownerCol inList ids }
+            } else {
+                // Compound owner key: build OR of AND-clauses, one per parent ID.
+                childTable.selectAll().where {
+                    OrOp(ids.map { id ->
+                        val idMap = id as Map<String, Any?>
+                        AndOp(childTable.ownerIdColumns.map { ownerCol ->
+                            val c = ownerCol as ExpressionWithColumnType<Any?>
+                            EqOp(c, sqlLiteralOfSomeKind(c.columnType, idMap[ownerCol.name.removePrefix("owner_id").let { suffix -> "_id$suffix" }]))
+                        })
+                    })
+                }
+            }
             // Sets have no idx column; only order rows when ordering is meaningful.
             childTable.idxColumn?.let { query.orderBy(it to SortOrder.ASC) }
+
+            val ownerKeyOf: (ResultRow) -> Any? = if (childTable.ownerIdColumns.size == 1) {
+                val ownerCol = childTable.ownerIdColumns[0] as Column<Any?>
+                { row -> row[ownerCol] }
+            } else {
+                // Reconstruct the compound id map matching the main table key shape (_id__a, _id__b, ...).
+                { row ->
+                    childTable.ownerIdColumns.associate { ownerCol ->
+                        val mainColName = "_id" + ownerCol.name.removePrefix("owner_id")
+                        mainColName to row[ownerCol as Column<Any?>]
+                    }
+                }
+            }
+
             query
                 .toList()
-                .groupBy { it[ownerCol] }
+                .groupBy { ownerKeyOf(it) }
                 .mapValues { (_, rows) ->
                     rows.map { row ->
                         val idx = childTable.idxColumn?.let { row[it] }
@@ -143,8 +169,18 @@ public class SqlCollection<T : Any>(
             if (childRows.isEmpty()) continue
 
             childTable.batchInsert(childRows) { childRow ->
-                @Suppress("UNCHECKED_CAST")
-                this[childTable.ownerIdColumns[0] as Column<Any?>] = ownerId
+                if (childTable.ownerIdColumns.size == 1) {
+                    @Suppress("UNCHECKED_CAST")
+                    this[childTable.ownerIdColumns[0] as Column<Any?>] = ownerId
+                } else {
+                    @Suppress("UNCHECKED_CAST")
+                    val ownerIdMap = ownerId as Map<String, Any?>
+                    for (ownerCol in childTable.ownerIdColumns) {
+                        val mainColName = "_id" + ownerCol.name.removePrefix("owner_id")
+                        @Suppress("UNCHECKED_CAST")
+                        this[ownerCol as Column<Any?>] = ownerIdMap[mainColName]
+                    }
+                }
                 childTable.idxColumn?.let { this[it] = childRow.index ?: 0 }
                 if (childDef.isMap && childRow.key != null) {
                     for ((keyName, keyValue) in childRow.key) {
@@ -168,9 +204,21 @@ public class SqlCollection<T : Any>(
     private fun Transaction.deleteChildren(ownerId: Any?) {
         for ((_, childDef) in schema.childTables) {
             val childTable = childDef.table
-            @Suppress("UNCHECKED_CAST")
-            val ownerCol = childTable.ownerIdColumns[0] as ExpressionWithColumnType<Any?>
-            childTable.deleteWhere { EqOp(ownerCol, sqlLiteralOfSomeKind(ownerCol.columnType, ownerId)) }
+            if (childTable.ownerIdColumns.size == 1) {
+                @Suppress("UNCHECKED_CAST")
+                val ownerCol = childTable.ownerIdColumns[0] as ExpressionWithColumnType<Any?>
+                childTable.deleteWhere { EqOp(ownerCol, sqlLiteralOfSomeKind(ownerCol.columnType, ownerId)) }
+            } else {
+                @Suppress("UNCHECKED_CAST")
+                val ownerIdMap = ownerId as Map<String, Any?>
+                childTable.deleteWhere {
+                    AndOp(childTable.ownerIdColumns.map { ownerCol ->
+                        val c = ownerCol as ExpressionWithColumnType<Any?>
+                        val mainColName = "_id" + ownerCol.name.removePrefix("owner_id")
+                        EqOp(c, sqlLiteralOfSomeKind(c.columnType, ownerIdMap[mainColName]))
+                    })
+                }
+            }
         }
     }
 
@@ -233,8 +281,8 @@ public class SqlCollection<T : Any>(
     ): Flow<T> = traced(
         operation = "find",
         extraBlock = {
-            put(com.lightningkite.services.database.Database.MetricKeys.limit, limit.toLong())
-            put(com.lightningkite.services.database.Database.MetricKeys.skip, skip.toLong())
+            put(com.lightningkite.services.database.Database.TelemetryKeys.limit, limit.toLong())
+            put(com.lightningkite.services.database.Database.TelemetryKeys.skip, skip.toLong())
         }
     ) { span ->
         prepare.await()
@@ -276,7 +324,7 @@ public class SqlCollection<T : Any>(
 
             result
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.resultCount, items.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.resultCount, items.size.toLong()) })
         items.asFlow()
     }
 
@@ -305,13 +353,13 @@ public class SqlCollection<T : Any>(
                 mainRows.map { decodeRow(it, allChildRows) }.count { condition(it) }
             }
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.count, result.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.count, result.toLong()) })
         result
     }
 
     override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> = traced(
         operation = "groupCount",
-        extraBlock = { put(com.lightningkite.services.database.Database.MetricKeys.groupBy, groupBy.colName) }
+        extraBlock = { put(com.lightningkite.services.database.Database.TelemetryKeys.groupBy, groupBy.colName) }
     ) { span ->
         prepare.await()
         val result = t {
@@ -327,7 +375,7 @@ public class SqlCollection<T : Any>(
                 .groupBy(schema.mainTable.col[groupBy.colName]!!)
                 .associate { it[groupCol] to it[count].toInt() }
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.groups, result.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.groups, result.size.toLong()) })
         result
     }
 
@@ -338,8 +386,8 @@ public class SqlCollection<T : Any>(
     ): Double? = traced(
         operation = "aggregate",
         extraBlock = {
-            put(com.lightningkite.services.database.Database.MetricKeys.aggregate, aggregate.toString())
-            put(com.lightningkite.services.database.Database.MetricKeys.property, property.colName)
+            put(com.lightningkite.services.database.Database.TelemetryKeys.aggregate, aggregate.toString())
+            put(com.lightningkite.services.database.Database.TelemetryKeys.property, property.colName)
         }
     ) { span ->
         prepare.await()
@@ -370,9 +418,9 @@ public class SqlCollection<T : Any>(
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
         extraBlock = {
-            put(com.lightningkite.services.database.Database.MetricKeys.aggregate, aggregate.toString())
-            put(com.lightningkite.services.database.Database.MetricKeys.groupBy, groupBy.colName)
-            put(com.lightningkite.services.database.Database.MetricKeys.property, property.colName)
+            put(com.lightningkite.services.database.Database.TelemetryKeys.aggregate, aggregate.toString())
+            put(com.lightningkite.services.database.Database.TelemetryKeys.groupBy, groupBy.colName)
+            put(com.lightningkite.services.database.Database.TelemetryKeys.property, property.colName)
         }
     ) { span ->
         prepare.await()
@@ -396,7 +444,7 @@ public class SqlCollection<T : Any>(
                 .groupBy(schema.mainTable.col[groupBy.colName]!!)
                 .associate { it[groupCol] to it[agg]?.toDouble() }
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.groups, result.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.groups, result.size.toLong()) })
         result
     }
 
@@ -407,12 +455,12 @@ public class SqlCollection<T : Any>(
     ) { span ->
         prepare.await()
         val modelsList = models.toList()
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.insertCount, modelsList.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.insertCount, modelsList.size.toLong()) })
         try {
             t {
                 for (model in modelsList) {
                     val writeResult = format.encode(serializer, model)
-                    val ownerId = writeResult.mainRecord["_id"]
+                    val ownerId = schema.mainTable.extractId(writeResult.mainRecord)
 
                     // Insert main row
                     schema.mainTable.insert { builder ->
@@ -457,7 +505,7 @@ public class SqlCollection<T : Any>(
             val existing = findOneInTransaction(condition)
             if (existing == null) {
                 val writeResult = format.encode(serializer, model)
-                val ownerId = writeResult.mainRecord["_id"]
+                val ownerId = schema.mainTable.extractId(writeResult.mainRecord)
                 schema.mainTable.insert { builder ->
                     for ((key, value) in writeResult.mainRecord) {
                         val col = schema.mainTable.col[key] ?: continue
@@ -486,7 +534,7 @@ public class SqlCollection<T : Any>(
             val existing = findOneInTransaction(condition)
             if (existing == null) {
                 val writeResult = format.encode(serializer, model)
-                val ownerId = writeResult.mainRecord["_id"]
+                val ownerId = schema.mainTable.extractId(writeResult.mainRecord)
                 schema.mainTable.insert { builder ->
                     for ((key, value) in writeResult.mainRecord) {
                         val col = schema.mainTable.col[key] ?: continue
@@ -525,7 +573,7 @@ public class SqlCollection<T : Any>(
 
             EntryChange(old, new)
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, if (result.old != null) 1L else 0L) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.updated, if (result.old != null) 1L else 0L) })
         result
     }
 
@@ -556,7 +604,7 @@ public class SqlCollection<T : Any>(
                 true
             }
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, if (updated) 1L else 0L) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.updated, if (updated) 1L else 0L) })
         updated
     }
 
@@ -576,7 +624,7 @@ public class SqlCollection<T : Any>(
             }
             CollectionChanges(changes)
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, result.changes.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.updated, result.changes.size.toLong()) })
         result
     }
 
@@ -606,7 +654,7 @@ public class SqlCollection<T : Any>(
                 olds.size
             }
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.updated, count.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.updated, count.toLong()) })
         count
     }
 
@@ -626,7 +674,7 @@ public class SqlCollection<T : Any>(
             }
             old
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, if (result != null) 1L else 0L) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, if (result != null) 1L else 0L) })
         result
     }
 
@@ -643,7 +691,7 @@ public class SqlCollection<T : Any>(
             }
             true
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, if (deleted) 1L else 0L) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, if (deleted) 1L else 0L) })
         deleted
     }
 
@@ -665,7 +713,7 @@ public class SqlCollection<T : Any>(
             }
             olds
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, result.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, result.size.toLong()) })
         result
     }
 
@@ -686,10 +734,24 @@ public class SqlCollection<T : Any>(
 
             if (ids.isNotEmpty()) {
                 for ((_, childDef) in schema.childTables) {
-                    @Suppress("UNCHECKED_CAST")
-                    val ownerCol = childDef.table.ownerIdColumns[0] as ExpressionWithColumnType<Any?>
-                    childDef.table.deleteWhere {
-                        SingleValueInListOp(ownerCol, ids)
+                    val childTable = childDef.table
+                    if (childTable.ownerIdColumns.size == 1) {
+                        @Suppress("UNCHECKED_CAST")
+                        val ownerCol = childTable.ownerIdColumns[0] as ExpressionWithColumnType<Any?>
+                        childTable.deleteWhere { SingleValueInListOp(ownerCol, ids) }
+                    } else {
+                        // Compound: delete rows matching any of the compound IDs
+                        childTable.deleteWhere {
+                            OrOp(ids.map { id ->
+                                @Suppress("UNCHECKED_CAST")
+                                val idMap = id as Map<String, Any?>
+                                AndOp(childTable.ownerIdColumns.map { ownerCol ->
+                                    val c = ownerCol as ExpressionWithColumnType<Any?>
+                                    val mainColName = "_id" + ownerCol.name.removePrefix("owner_id")
+                                    EqOp(c, sqlLiteralOfSomeKind(c.columnType, idMap[mainColName]))
+                                })
+                            })
+                        }
                     }
                 }
                 schema.mainTable.deleteWhere {
@@ -697,7 +759,7 @@ public class SqlCollection<T : Any>(
                 }
             } else 0
         }
-        span.enrich(MetricAttributes { put(com.lightningkite.services.database.Database.MetricKeys.deleted, count.toLong()) })
+        span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, count.toLong()) })
         count
     }
 

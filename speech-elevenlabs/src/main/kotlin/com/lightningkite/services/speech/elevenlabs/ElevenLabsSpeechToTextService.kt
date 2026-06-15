@@ -1,9 +1,9 @@
 package com.lightningkite.services.speech.elevenlabs
 
-import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.contentnegotiation.*
@@ -137,9 +137,9 @@ public class ElevenLabsSpeechToTextService(
         val model = options.model ?: defaultModel
         val audioBytes = audio.data.bytes()
 
-        return metricsTrace(
+        return telemetryTrace(
             "transcribe",
-            attributes = MetricAttributes(
+            attributes = TelemetryAttributes(
                 mapOf(
                     "ai.provider" to "elevenlabs",
                     "ai.model" to model,
@@ -189,9 +189,9 @@ public class ElevenLabsSpeechToTextService(
     ): TranscriptionResult {
         val model = options.model ?: defaultModel
 
-        return metricsTrace(
+        return telemetryTrace(
             "transcribe_url",
-            attributes = MetricAttributes(
+            attributes = TelemetryAttributes(
                 mapOf(
                     "ai.provider" to "elevenlabs",
                     "ai.model" to model,

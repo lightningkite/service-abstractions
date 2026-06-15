@@ -1,12 +1,11 @@
 package com.lightningkite.services.sms.twilio
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.metricsTrace
-import com.lightningkite.services.TelemetrySanitization
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.sms.InboundSms
 import com.lightningkite.services.sms.SmsInboundService
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
@@ -23,6 +22,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.URLDecoder
+import java.net.URLEncoder
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
@@ -122,22 +122,22 @@ public class TwilioSmsInboundService(
     override val onReceived: WebhookAdapter<InboundSms> = object : WebhookAdapter<InboundSms> {
         var httpUrl: String? = null
 
-        override suspend fun configureWebhook(httpUrl: String): Unit = metricsTrace("webhook.configure", attributes = MetricAttributes {
-            put(MetricKey.OfString("sms.webhook.operation"), "configure")
-            put(MetricKeys.Messaging.system, "twilio")
-            put(MetricKey.OfString("sms.phone_number"), phoneNumber)
-            put(MetricKey.OfString("webhook.url"), httpUrl)
+        override suspend fun configureWebhook(httpUrl: String): Unit = telemetryTrace("webhook.configure", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("sms.webhook.operation"), "configure")
+            put(TelemetryKeys.Messaging.system, "twilio")
+            put(TelemetryKey.OfString("sms.phone_number"), phoneNumber)
+            put(TelemetryKey.OfString("webhook.url"), httpUrl)
         }) { span ->
             this.httpUrl = httpUrl
 
             // Look up the phone number SID
             val phoneNumberSid = lookupPhoneNumberSid(phoneNumber)
-            span.enrich(MetricAttributes { put(MetricKey.OfString("sms.phone_number_sid"), phoneNumberSid) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("sms.phone_number_sid"), phoneNumberSid) })
 
             // Update the phone number's SMS webhook URL
             val response = client.submitForm(
                 url = "$baseUrl/IncomingPhoneNumbers/$phoneNumberSid.json",
-                formParameters = io.ktor.http.Parameters.build {
+                formParameters = Parameters.build {
                     append("SmsUrl", httpUrl)
                     append("SmsMethod", "POST")
                 }
@@ -145,11 +145,11 @@ public class TwilioSmsInboundService(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, response.status.value.toLong()) })
+                span.enrich(TelemetryAttributes { put(TelemetryKeys.Http.statusCode, response.status.value.toLong()) })
                 throw IllegalStateException("Failed to configure Twilio SMS webhook: $errorBody")
             }
 
-            span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, response.status.value.toLong()) })
+            span.enrich(TelemetryAttributes { put(TelemetryKeys.Http.statusCode, response.status.value.toLong()) })
             logger.info { "[$name] Configured Twilio SMS webhook for $phoneNumber -> $httpUrl" }
         }
 
@@ -157,9 +157,9 @@ public class TwilioSmsInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): InboundSms = metricsTrace("webhook.parse", attributes = MetricAttributes {
-            put(MetricKey.OfString("sms.webhook.operation"), "parse")
-            put(MetricKeys.Messaging.system, "twilio")
+        ): InboundSms = telemetryTrace("webhook.parse", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("sms.webhook.operation"), "parse")
+            put(TelemetryKeys.Messaging.system, "twilio")
         }) { span ->
             // Parse URL-encoded form data from Twilio
             val bodyText = body.text()
@@ -187,12 +187,12 @@ public class TwilioSmsInboundService(
             }
 
             // Set span attributes
-            span.enrich(MetricAttributes {
-                put(MetricKey.OfString("sms.from"), context.telemetrySanitization.redactPhoneNumber(from))
-                put(MetricKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to))
-                put(MetricKey.OfLong("sms.body_length"), messageBody.length.toLong())
-                put(MetricKey.OfLong("sms.media_count"), numMedia.toLong())
-                messageSid?.let { put(MetricKey.OfString("sms.message_id"), it) }
+            span.enrich(TelemetryAttributes {
+                put(TelemetryKey.OfString("sms.from"), context.telemetrySanitization.redactPhoneNumber(from))
+                put(TelemetryKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to))
+                put(TelemetryKey.OfLong("sms.body_length"), messageBody.length.toLong())
+                put(TelemetryKey.OfLong("sms.media_count"), numMedia.toLong())
+                messageSid?.let { put(TelemetryKey.OfString("sms.message_id"), it) }
             })
 
             InboundSms(
@@ -294,11 +294,11 @@ public class TwilioSmsInboundService(
      * @throws IllegalStateException if the phone number is not found
      */
     private suspend fun lookupPhoneNumberSid(phoneNumber: String): String =
-        metricsTrace("lookup_phone_sid", attributes = MetricAttributes {
-            put(MetricKeys.Messaging.system, "twilio")
-            put(MetricKey.OfString("sms.phone_number"), phoneNumber)
+        telemetryTrace("lookup_phone_sid", attributes = TelemetryAttributes {
+            put(TelemetryKeys.Messaging.system, "twilio")
+            put(TelemetryKey.OfString("sms.phone_number"), phoneNumber)
         }) { span ->
-            val encodedNumber = java.net.URLEncoder.encode(phoneNumber, Charsets.UTF_8)
+            val encodedNumber = URLEncoder.encode(phoneNumber, Charsets.UTF_8)
             val response = client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
 
             if (!response.status.isSuccess()) {
@@ -317,7 +317,7 @@ public class TwilioSmsInboundService(
                 ?.jsonPrimitive?.content
                 ?: throw IllegalStateException("Phone number $phoneNumber not found in Twilio account $accountSid")
 
-            span.enrich(MetricAttributes { put(MetricKey.OfString("sms.phone_number_sid"), sid) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("sms.phone_number_sid"), sid) })
             sid
         }
 

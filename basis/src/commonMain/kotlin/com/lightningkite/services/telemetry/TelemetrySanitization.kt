@@ -1,4 +1,4 @@
-package com.lightningkite.services
+package com.lightningkite.services.telemetry
 
 /**
  * Utilities for sanitizing sensitive data before logging to OpenTelemetry spans.
@@ -64,7 +64,9 @@ public interface TelemetrySanitization {
         }
 
         override fun hashCacheKey(key: String): String {
-            return key.split(':').joinToString(":") { it.take(1) + "-".repeat(it.length - 1) }
+            return key.split(':').joinToString(":") { part ->
+                if (part.isEmpty()) part else part.take(1) + "-".repeat(part.length - 1)
+            }
         }
 
 

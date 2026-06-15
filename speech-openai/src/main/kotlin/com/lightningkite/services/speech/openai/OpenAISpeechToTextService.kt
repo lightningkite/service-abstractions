@@ -1,9 +1,9 @@
 package com.lightningkite.services.speech.openai
 
-import com.lightningkite.services.MetricAttributes
+import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.plugins.contentnegotiation.*
@@ -12,7 +12,6 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.milliseconds
@@ -107,9 +106,9 @@ public class OpenAISpeechToTextService(
         val model = options.model ?: defaultModel
         val audioBytes = audio.data.bytes()
 
-        return metricsTrace(
+        return telemetryTrace(
             "transcribe",
-            attributes = MetricAttributes(
+            attributes = TelemetryAttributes(
                 mapOf(
                     "ai.model" to model,
                     "audio.size_bytes" to audioBytes.size.toLong(),

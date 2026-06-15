@@ -108,6 +108,15 @@ public open class MapCacheUnsafe(
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
+    override suspend fun <T> getAndRemove(key: String, serializer: KSerializer<T>): T? {
+        return instrumentedGetAndDelete(this, key) {
+            val entry = entries.remove(key) ?: return@instrumentedGetAndDelete null
+            if (entry.expires != null && entry.expires <= Clock.default().now()) return@instrumentedGetAndDelete null
+            entry.value as? T
+        }
+    }
+
     override suspend fun <T> modify(
         key: String,
         serializer: KSerializer<T>,

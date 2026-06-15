@@ -1,5 +1,6 @@
 package com.lightningkite.services
 
+import com.lightningkite.services.telemetry.TelemetryBackend
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.test.*
@@ -17,7 +18,7 @@ class SettingContextTest {
 
         assertEquals("Test", context.projectName)
         assertEquals("http://localhost:8080", context.publicUrl)
-        assertEquals(MetricsBackend.Noop, context.metricsBackend)
+        assertEquals(TelemetryBackend.Noop, context.telemetryBackend)
         assertNotNull(context.sharedResources)
         assertEquals(EmptySerializersModule(), context.internalSerializersModule)
     }

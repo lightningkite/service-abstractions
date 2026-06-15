@@ -1,11 +1,11 @@
 package com.lightningkite.services.email.mailgun
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.email.*
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.request.forms.*
@@ -84,18 +84,18 @@ public class MailgunEmailService(
     override suspend fun send(email: Email) {
         if (email.to.isEmpty() && email.cc.isEmpty() && email.bcc.isEmpty()) return
 
-        metricsTrace("send", attributes = MetricAttributes {
-            put(MetricKey.OfString("email.operation"), "send")
-            put(MetricKey.OfString("email.system"), "mailgun")
-            put(MetricKeys.Messaging.system, "mailgun")
-            put(MetricKey.OfString("email.from"), email.from?.value?.toString() ?: domain)
-            put(MetricKey.OfString("email.to"), email.to.joinToString(", ") { it.value.toString() })
-            put(MetricKey.OfString("email.subject"), email.subject)
+        telemetryTrace("send", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("email.operation"), "send")
+            put(TelemetryKey.OfString("email.system"), "mailgun")
+            put(TelemetryKeys.Messaging.system, "mailgun")
+            put(TelemetryKey.OfString("email.from"), email.from?.value?.toString() ?: domain)
+            put(TelemetryKey.OfString("email.to"), email.to.joinToString(", ") { it.value.toString() })
+            put(TelemetryKey.OfString("email.subject"), email.subject)
             if (email.cc.isNotEmpty()) {
-                put(MetricKey.OfString("email.cc"), email.cc.joinToString(", ") { it.value.toString() })
+                put(TelemetryKey.OfString("email.cc"), email.cc.joinToString(", ") { it.value.toString() })
             }
             if (email.attachments.isNotEmpty()) {
-                put(MetricKey.OfLong("email.attachments.count"), email.attachments.size.toLong())
+                put(TelemetryKey.OfLong("email.attachments.count"), email.attachments.size.toLong())
             }
         }) { _ ->
             sendImpl(email)
@@ -105,13 +105,13 @@ public class MailgunEmailService(
     override suspend fun sendBulk(template: Email, personalizations: List<EmailPersonalization>) {
         if (personalizations.isEmpty()) return
 
-        metricsTrace("sendBulk", attributes = MetricAttributes {
-            put(MetricKey.OfString("email.operation"), "sendBulk")
-            put(MetricKey.OfString("email.system"), "mailgun")
-            put(MetricKeys.Messaging.system, "mailgun")
-            put(MetricKey.OfString("email.from"), template.from?.value?.toString() ?: domain)
-            put(MetricKey.OfString("email.subject"), template.subject)
-            put(MetricKey.OfLong("email.personalizations.count"), personalizations.size.toLong())
+        telemetryTrace("sendBulk", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("email.operation"), "sendBulk")
+            put(TelemetryKey.OfString("email.system"), "mailgun")
+            put(TelemetryKeys.Messaging.system, "mailgun")
+            put(TelemetryKey.OfString("email.from"), template.from?.value?.toString() ?: domain)
+            put(TelemetryKey.OfString("email.subject"), template.subject)
+            put(TelemetryKey.OfLong("email.personalizations.count"), personalizations.size.toLong())
         }) { _ ->
             personalizations
                 .asSequence()
@@ -131,12 +131,12 @@ public class MailgunEmailService(
         if (emails.isEmpty()) return
 
         // TODO: use Mailgun batch send API instead of individual POSTs — requires API restructure
-        metricsTrace("sendBulk", attributes = MetricAttributes {
-            put(MetricKey.OfString("email.operation"), "sendBulk")
-            put(MetricKey.OfString("email.system"), "mailgun")
-            put(MetricKeys.Messaging.system, "mailgun")
-            put(MetricKey.OfString("email.from"), domain)
-            put(MetricKey.OfLong("email.count"), emails.size.toLong())
+        telemetryTrace("sendBulk", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("email.operation"), "sendBulk")
+            put(TelemetryKey.OfString("email.system"), "mailgun")
+            put(TelemetryKeys.Messaging.system, "mailgun")
+            put(TelemetryKey.OfString("email.from"), domain)
+            put(TelemetryKey.OfLong("email.count"), emails.size.toLong())
         }) { _ ->
             emails.forEach { email ->
                 sendImpl(email)

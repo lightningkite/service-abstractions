@@ -64,3 +64,12 @@ internal actual suspend fun <T> instrumentedModify(
     timeToLive: Duration?,
     operation: suspend () -> Boolean,
 ): Boolean = operation()
+
+/**
+ * Android implementation - no-op, directly executes the operation without instrumentation.
+ */
+internal actual suspend fun <T> instrumentedGetAndDelete(
+    owner: Cache,
+    key: String,
+    operation: suspend () -> T?,
+): T? = operation()

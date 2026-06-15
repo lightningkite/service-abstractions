@@ -1,8 +1,8 @@
 package com.lightningkite.services.database.postgres
 
-import com.lightningkite.services.MetricUnit
+import com.lightningkite.services.telemetry.MetricUnit
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.metricsGauge
+import com.lightningkite.services.telemetry.telemetryGauge
 import kotlinx.serialization.KSerializer
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import java.util.concurrent.ConcurrentHashMap
@@ -68,7 +68,7 @@ public class PostgresDatabase(
     public val db: org.jetbrains.exposed.sql.Database get() = _db.value.database
 
     // Point-in-time count of busy connections; sampled by the exporter, so guard the lazy pool.
-    private val poolActiveGauge = metricsGauge("sql.pool.active", MetricUnit.Occurrences, emptySet()) {
+    private val poolActiveGauge = telemetryGauge("sql.pool.active", MetricUnit.Occurrences) {
         if (_db.isInitialized()) _db.value.dataSource?.hikariPoolMXBean?.activeConnections?.toLong() ?: 0L
         else 0L
     }

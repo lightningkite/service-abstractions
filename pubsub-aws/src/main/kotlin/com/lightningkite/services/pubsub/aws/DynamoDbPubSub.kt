@@ -1,13 +1,12 @@
 package com.lightningkite.services.pubsub.aws
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.get
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -286,9 +285,9 @@ public class DynamoDbPubSub(
     ): PubSubChannel<T> = object : PubSubChannel<T> {
         override suspend fun emit(value: T) {
             ensureReady()
-            metricsTrace(
+            telemetryTrace(
                 "publish",
-                attributes = MetricAttributes(
+                attributes = TelemetryAttributes(
                     mapOf(
                         "messaging.system" to "dynamodb",
                         "messaging.destination" to key,
@@ -367,9 +366,9 @@ public class DynamoDbPubSub(
             logger.debug { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
 
             while (coroutineContext.isActive) {
-                metricsTrace(
+                telemetryTrace(
                     "poll",
-                    attributes = MetricAttributes(
+                    attributes = TelemetryAttributes(
                         mapOf(
                             "messaging.system" to "dynamodb",
                             "messaging.destination" to key,
@@ -390,7 +389,7 @@ public class DynamoDbPubSub(
                         }.await()
 
                         consecutiveErrors = 0 // Reset on success
-                        pollSpan.enrich(MetricAttributes { put(MetricKeys.Messaging.batchMessageCount, response.count().toLong()) })
+                        pollSpan.enrich(TelemetryAttributes { put(TelemetryKeys.Messaging.batchMessageCount, response.count().toLong()) })
 
                         for (item in response.items()) {
                             val message = item["message"]?.s() ?: continue

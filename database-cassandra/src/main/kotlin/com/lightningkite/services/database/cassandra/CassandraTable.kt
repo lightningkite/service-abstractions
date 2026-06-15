@@ -3,11 +3,11 @@ package com.lightningkite.services.database.cassandra
 import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.cql.*
 import com.datastax.oss.driver.api.core.servererrors.InvalidQueryException
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.TelemetryAttributes
+import com.lightningkite.services.TelemetryKeys
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetryTrace
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.cassandra.serialization.generateFlattenedColumns
 import com.lightningkite.services.database.cassandra.serialization.FlattenedColumn
@@ -63,16 +63,16 @@ public class CassandraTable<Model : Any>(
     private var prepared = false
     private val preparedStatements = mutableMapOf<String, PreparedStatement>()
 
-    private fun baseAttributes(operation: String): MetricAttributes = MetricAttributes {
-        put(MetricKeys.Db.system, "cassandra")
-        put(MetricKeys.Db.operationName, operation)
-        put(MetricKeys.Db.collectionName, tableName)
+    private fun baseAttributes(operation: String): TelemetryAttributes = TelemetryAttributes {
+        put(TelemetryKeys.Db.system, "cassandra")
+        put(TelemetryKeys.Db.operationName, operation)
+        put(TelemetryKeys.Db.collectionName, tableName)
     }
 
     private suspend inline fun <R> traced(
         operation: String,
         crossinline block: suspend () -> R,
-    ): R = metricsTrace(operation, attributes = baseAttributes(operation)) { block() }
+    ): R = telemetryTrace(operation, attributes = baseAttributes(operation)) { block() }
 
     /**
      * Ensures the table schema exists in Cassandra.
@@ -355,7 +355,7 @@ public class CassandraTable<Model : Any>(
         @Suppress("UNUSED_PARAMETER") maxQueryMs: Long,
     ): Flow<Model> {
         // The query round-trip happens while the consumer collects, so wrap the whole collection in a
-        // metricsTrace span (via channelFlow + send, which is allowed across the changed context) to
+        // telemetryTrace span (via channelFlow + send, which is allowed across the changed context) to
         // measure the real query duration without buffering the result into a list first.
         val base: Flow<Model> = flow {
             ensureSchema()
@@ -442,7 +442,7 @@ public class CassandraTable<Model : Any>(
             }
         }
         return channelFlow {
-            metricsTrace("find", attributes = baseAttributes("find")) {
+            telemetryTrace("find", attributes = baseAttributes("find")) {
                 base.collect { send(it) }
             }
         }

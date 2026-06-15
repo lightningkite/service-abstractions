@@ -6,6 +6,7 @@ import com.lightningkite.services.database.test.*
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.EmptySerializersModule
 import org.jetbrains.exposed.sql.Database
 import kotlin.test.Test
@@ -13,6 +14,23 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+
+// ===== Models for compound key test (no KSP path generation needed) =====
+
+@Serializable
+data class CompoundId(val a: String = "", val b: Int = 0) : Comparable<CompoundId> {
+    override fun compareTo(other: CompoundId): Int =
+        compareValuesBy(this, other, { it.a }, { it.b })
+}
+
+@Serializable
+data class CompoundKeyModel(
+    override val _id: CompoundId = CompoundId(),
+    val name: String = "",
+    val tags: List<String> = emptyList(),
+) : HasId<CompoundId> {
+    companion object
+}
 
 // ===== Shared test suites =====
 
@@ -217,5 +235,77 @@ class SqlBasicTest {
         assertEquals(2, found.listEmbedded.size)
         assertEquals("Alice", found.listEmbedded[0].value1)
         assertEquals("Bob", found.listEmbedded[1].value1)
+    }
+}
+
+// ===== Compound primary key + child tables test =====
+
+class SqlCompoundKeyTest {
+    private val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:compoundKeyTest;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+
+    @Test
+    fun insertAndReadListField() = runTest {
+        val collection = database.collection<CompoundKeyModel>("insertAndReadListField")
+        val model = CompoundKeyModel(
+            _id = CompoundId("x", 1),
+            name = "test",
+            tags = listOf("alpha", "beta", "gamma"),
+        )
+        collection.insertOne(model)
+
+        val found = collection.find(Condition.Always).firstOrNull()
+        assertNotNull(found)
+        assertEquals(CompoundId("x", 1), found._id)
+        assertEquals("test", found.name)
+        assertEquals(listOf("alpha", "beta", "gamma"), found.tags)
+    }
+
+    @Test
+    fun updateListField() = runTest {
+        val collection = database.collection<CompoundKeyModel>("updateListField")
+        val model = CompoundKeyModel(
+            _id = CompoundId("y", 2),
+            name = "update-test",
+            tags = listOf("one", "two"),
+        )
+        collection.insertOne(model)
+
+        val updated = collection.updateOne(
+            Condition.Always,
+            Modification.Assign(model.copy(tags = listOf("three", "four", "five"))),
+        )
+        assertNotNull(updated.new)
+        assertEquals(listOf("three", "four", "five"), updated.new!!.tags)
+
+        val found = collection.find(Condition.Always).firstOrNull()
+        assertNotNull(found)
+        assertEquals(listOf("three", "four", "five"), found.tags)
+    }
+
+    @Test
+    fun deleteRemovesChildRows() = runTest {
+        val collection = database.collection<CompoundKeyModel>("deleteRemovesChildRows")
+        val model = CompoundKeyModel(
+            _id = CompoundId("z", 3),
+            name = "delete-test",
+            tags = listOf("a", "b", "c"),
+        )
+        collection.insertOne(model)
+        assertEquals(1, collection.count(Condition.Always))
+
+        val deleted = collection.deleteOne(Condition.Always)
+        assertNotNull(deleted)
+        assertEquals(CompoundId("z", 3), deleted._id)
+        assertEquals(0, collection.count(Condition.Always))
+
+        // Re-insert to confirm child rows were cleaned up (no FK violation or stale data)
+        collection.insertOne(model)
+        val reFound = collection.find(Condition.Always).firstOrNull()
+        assertNotNull(reFound)
+        assertEquals(listOf("a", "b", "c"), reFound.tags)
     }
 }

@@ -3,6 +3,10 @@ package com.lightningkite.services.email.sendgrid
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.*
@@ -129,10 +133,10 @@ public class SendGridEmailInboundService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): ReceivedEmail = metricsTrace("webhook.parse", attributes = MetricAttributes {
-            put(MetricKey.OfString("email.webhook.operation"), "inbound_parse")
-            put(MetricKey.OfString("email.provider"), "sendgrid")
-            put(MetricKeys.Messaging.system, "sendgrid")
+        ): ReceivedEmail = telemetryTrace("webhook.parse", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("email.webhook.operation"), "inbound_parse")
+            put(TelemetryKey.OfString("email.provider"), "sendgrid")
+            put(TelemetryKeys.Messaging.system, "sendgrid")
         }) { span ->
             logger.debug { "[$name] Parsing SendGrid webhook" }
 
@@ -142,7 +146,7 @@ public class SendGridEmailInboundService(
             // Verify signature (required for all webhooks)
             verifySignature(headers, rawBodyBytes, verificationKey)
 
-            span.enrich(MetricAttributes { put(MetricKey.OfBoolean("email.webhook.signature_verified"), true) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfBoolean("email.webhook.signature_verified"), true) })
 
             // Verify content type
             if (!body.mediaType.accepts(MediaType.MultiPart.FormData)) {
@@ -161,12 +165,16 @@ public class SendGridEmailInboundService(
             val receivedEmail = parseReceivedEmail(parts)
 
             // Add email-specific attributes (PII redacted: keep only domain for from/to, drop subject)
-            span.enrich(MetricAttributes {
-                put(MetricKey.OfString("email.from"), receivedEmail.from.value.raw.let { addr -> addr.substringAfter('@', addr) })
-                put(MetricKey.OfString("email.to"), receivedEmail.to.joinToString(",") { it.value.raw.let { addr -> addr.substringAfter('@', addr) } })
-                put(MetricKey.OfLong("email.attachments_count"), receivedEmail.attachments.size.toLong())
-                put(MetricKey.OfString("email.message_id"), receivedEmail.messageId)
-                receivedEmail.spamScore?.let { put(MetricKey.OfDouble("email.spam_score"), it) }
+            span.enrich(TelemetryAttributes {
+                put(
+                    TelemetryKey.OfString("email.from"),
+                    receivedEmail.from.value.raw.let { addr -> addr.substringAfter('@', addr) })
+                put(
+                    TelemetryKey.OfString("email.to"),
+                    receivedEmail.to.joinToString(",") { it.value.raw.let { addr -> addr.substringAfter('@', addr) } })
+                put(TelemetryKey.OfLong("email.attachments_count"), receivedEmail.attachments.size.toLong())
+                put(TelemetryKey.OfString("email.message_id"), receivedEmail.messageId)
+                receivedEmail.spamScore?.let { put(TelemetryKey.OfDouble("email.spam_score"), it) }
             })
 
             receivedEmail

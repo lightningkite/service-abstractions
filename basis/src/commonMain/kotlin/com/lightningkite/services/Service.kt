@@ -50,7 +50,7 @@ public interface Service: Namespaced {
      *
      * The context contains:
      * - [SettingContext.internalSerializersModule]: Serializers for custom types
-     * - [SettingContext.metricsBackend]: Optional telemetry backend for tracing/metrics
+     * - [SettingContext.telemetryBackend]: Optional telemetry backend for tracing/metrics
      * - [SettingContext.clock]: Clock for time-dependent operations (mockable for tests)
      * - [SettingContext.sharedResources]: Shared connection pools and resources
      * - [SettingContext.projectName]: Application name for logging

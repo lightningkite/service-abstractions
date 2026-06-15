@@ -1,5 +1,15 @@
 package com.lightningkite.services
 
+import com.lightningkite.services.telemetry.Counter
+import com.lightningkite.services.telemetry.Histogram
+import com.lightningkite.services.telemetry.InFlight
+import com.lightningkite.services.telemetry.Lease
+import com.lightningkite.services.telemetry.LogLevel
+import com.lightningkite.services.telemetry.MetricUnit
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryBackend
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryTrace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import java.io.PrintWriter
@@ -12,7 +22,7 @@ import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 
 /**
- * [MetricsBackend] that prints human-readable, ANSI-colored output to the console (or a [PrintWriter]).
+ * [com.lightningkite.services.telemetry.TelemetryBackend] that prints human-readable, ANSI-colored output to the console (or a [PrintWriter]).
  * Intended for local development; not suitable for production.
  *
  * Spans are buffered until the root span completes, then printed as an indented tree:
@@ -28,15 +38,15 @@ import kotlin.coroutines.coroutineContext
  * Histogram and counter records are folded into the span they were recorded within.
  * Outside any span they print as standalone lines. InFlight and gauge produce no output.
  */
-public class LoggingMetricsBackend(
+public class LoggingTelemetryBackend(
     public val color: Boolean = true,
     public val out: PrintWriter = PrintWriter(System.out, true),
-) : MetricsBackend {
+) : TelemetryBackend {
 
     public companion object {
         init {
-            MetricsBackend.Settings.register("logging") { _, _, _ -> LoggingMetricsBackend() }
-            MetricsBackend.Settings.register("logging-nocolor") { _, _, _ -> LoggingMetricsBackend(color = false) }
+            TelemetryBackend.Settings.register("logging") { _, _, _ -> LoggingTelemetryBackend() }
+            TelemetryBackend.Settings.register("logging-nocolor") { _, _, _ -> LoggingTelemetryBackend(color = false) }
         }
         /** Call once at startup to register the `logging` and `logging-nocolor` URL schemes. */
         public fun register() {}
@@ -62,7 +72,7 @@ public class LoggingMetricsBackend(
         else                    -> "${nanos}ns"
     }
 
-    private fun MetricAttributes.fmtInline(limit: Int = 6): String =
+    private fun TelemetryAttributes.fmtInline(limit: Int = 6): String =
         map.entries.take(limit).joinToString(" ") { (k, v) ->
             val vs = v.toString().let { if (it.length > 40) it.take(37) + "…" else it }
             "$CYAN${k.name}$RESET=$vs"
@@ -73,24 +83,24 @@ public class LoggingMetricsBackend(
     override suspend fun <T> span(
         owner: Namespaced,
         opName: String,
-        attributes: MetricAttributes,
-        dimensions: Set<MetricKey<*>>,
-        action: suspend (MetricSpan) -> T,
+        attributes: TelemetryAttributes,
+        dimensions: Set<TelemetryKey<*>>,
+        action: suspend (TelemetryTrace) -> T,
     ): T {
         val parent = coroutineContext[LogSpanNode]
         val node = LogSpanNode("${owner.name}.$opName", System.nanoTime(), parent)
-        val metricSpan = object : MetricSpan {
-            val enriched = LinkedHashMap<MetricKey<*>, Any?>()
-            override fun enrich(attributes: MetricAttributes) { enriched.putAll(attributes.map) }
+        val telemetryTrace = object : TelemetryTrace {
+            val enriched = LinkedHashMap<TelemetryKey<*>, Any?>()
+            override fun enrich(attributes: TelemetryAttributes) { enriched.putAll(attributes.map) }
             override fun isLoggable(level: LogLevel): Boolean = true
-            override fun log(level: LogLevel, message: String, attributes: MetricAttributes) {
+            override fun log(level: LogLevel, message: String, attributes: TelemetryAttributes) {
                 node.logs.add(level to message)
             }
         }
 
         var ok = true
         return try {
-            withContext(node) { action(metricSpan) }
+            withContext(node) { action(telemetryTrace) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -98,8 +108,8 @@ public class LoggingMetricsBackend(
             throw e
         } finally {
             val durationNanos = System.nanoTime() - node.startNanos
-            val allAttrs = if (metricSpan.enriched.isEmpty()) attributes
-                else MetricAttributes(attributes.map + metricSpan.enriched)
+            val allAttrs = if (telemetryTrace.enriched.isEmpty()) attributes
+                else TelemetryAttributes(attributes.map + telemetryTrace.enriched)
             val result = LogSpanResult(node.name, durationNanos, ok, allAttrs,
                 node.logs.toList(), node.records.toList(), node.children.toList())
             if (parent != null) {
@@ -151,7 +161,7 @@ public class LoggingMetricsBackend(
 
     // ── Instruments ───────────────────────────────────────────────────────────
 
-    override fun histogram(owner: Namespaced, name: String, unit: MetricUnit, dimensions: Set<MetricKey<*>>): Histogram =
+    override fun histogram(owner: Namespaced, name: String, unit: MetricUnit, dimensions: Set<TelemetryKey<*>>): Histogram =
         object : Histogram {
             override suspend fun record(amount: Double) {
                 val node = coroutineContext[LogSpanNode]
@@ -166,7 +176,7 @@ public class LoggingMetricsBackend(
             }
         }
 
-    override fun counter(owner: Namespaced, name: String, unit: MetricUnit, dimensions: Set<MetricKey<*>>): Counter =
+    override fun counter(owner: Namespaced, name: String, unit: MetricUnit, dimensions: Set<TelemetryKey<*>>): Counter =
         object : Counter {
             override suspend fun increment(amount: Double) {
                 val node = coroutineContext[LogSpanNode]
@@ -184,17 +194,17 @@ public class LoggingMetricsBackend(
     // InFlight and gauge produce no output — per-acquire/release pairs are too noisy,
     // and gauge values are sampled by exporters rather than pushed per-change.
 
-    override fun inFlight(owner: Namespaced, name: String, dimensions: Set<MetricKey<*>>): InFlight =
+    override fun inFlight(owner: Namespaced, name: String, dimensions: Set<TelemetryKey<*>>): InFlight =
         object : InFlight {
             override suspend fun lease(): Lease = object : Lease { override fun release() {} }
         }
 
-    override fun gauge(owner: Namespaced, name: String, unit: MetricUnit, attributes: MetricAttributes, sample: () -> Long): AutoCloseable =
+    override fun gauge(owner: Namespaced, name: String, unit: MetricUnit, attributes: TelemetryAttributes, sample: () -> Long): AutoCloseable =
         AutoCloseable {}
 
     // ── Error reporting ───────────────────────────────────────────────────────
 
-    override fun reportError(throwable: Throwable, attributes: MetricAttributes) {
+    override fun reportError(throwable: Throwable, attributes: TelemetryAttributes) {
         val timestamp = timeFormatter.format(Instant.now())
         synchronized(out) {
             out.println("$DIM$timestamp$RESET $RED$BOLD${throwable::class.simpleName}$RESET $RED${throwable.message}$RESET")
@@ -223,7 +233,7 @@ private data class LogSpanResult(
     val name: String,
     val durationNanos: Long,
     val ok: Boolean,
-    val attrs: MetricAttributes,
+    val attrs: TelemetryAttributes,
     val logs: List<Pair<LogLevel, String>>,
     val records: List<Triple<String, Double, String>>,
     val children: List<LogSpanResult>,

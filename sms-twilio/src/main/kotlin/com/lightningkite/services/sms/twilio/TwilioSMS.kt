@@ -1,16 +1,15 @@
 package com.lightningkite.services.sms.twilio
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.MetricKeys
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.PhoneNumber
-import com.lightningkite.services.metricsTrace
-import com.lightningkite.services.TelemetrySanitization
+import com.lightningkite.services.http.SettingContextElement
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
-import io.ktor.client.*
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -126,12 +125,12 @@ public class TwilioSMS(
      * by the http-client's OpenTelemetry plugin. Retries on HTTP 429 and 5xx with exponential
      * backoff (3 attempts: 1s, 2s, 4s delays).
      */
-    override suspend fun send(to: PhoneNumber, message: String): Unit = metricsTrace("send", attributes = MetricAttributes {
-        put(MetricKey.OfString("sms.operation"), "send")
-        put(MetricKeys.Messaging.system, "twilio")
-        put(MetricKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to.toString()))
-        put(MetricKey.OfString("sms.from"), context.telemetrySanitization.redactPhoneNumber(from))
-        put(MetricKey.OfLong("sms.body_length"), message.length.toLong())
+    override suspend fun send(to: PhoneNumber, message: String): Unit = telemetryTrace("send", attributes = TelemetryAttributes {
+        put(TelemetryKey.OfString("sms.operation"), "send")
+        put(TelemetryKeys.Messaging.system, "twilio")
+        put(TelemetryKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to.toString()))
+        put(TelemetryKey.OfString("sms.from"), context.telemetrySanitization.redactPhoneNumber(from))
+        put(TelemetryKey.OfLong("sms.body_length"), message.length.toLong())
     }) { span ->
         val maxAttempts = 3
         val retryDelays = listOf(1.seconds, 2.seconds, 4.seconds)
@@ -140,7 +139,7 @@ public class TwilioSMS(
         for (attempt in 0 until maxAttempts) {
             if (attempt > 0) delay(retryDelays[attempt - 1])
 
-            val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
+            val response = withContext(SettingContextElement(context)) {
                 client.submitForm(
                     url = "https://api.twilio.com/2010-04-01/Accounts/${account}/Messages.json",
                     formParameters = Parameters.build {
@@ -161,12 +160,12 @@ public class TwilioSMS(
 
             if (response.status != HttpStatusCode.Created) {
                 val errorMessage = response.bodyAsText()
-                span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, statusValue.toLong()) })
+                span.enrich(TelemetryAttributes { put(TelemetryKeys.Http.statusCode, statusValue.toLong()) })
                 throw SMSException("Failed to send SMS: $errorMessage")
             }
 
-            span.enrich(MetricAttributes { put(MetricKeys.Http.statusCode, statusValue.toLong()) })
-            return@metricsTrace
+            span.enrich(TelemetryAttributes { put(TelemetryKeys.Http.statusCode, statusValue.toLong()) })
+            return@telemetryTrace
         }
 
         // All attempts exhausted

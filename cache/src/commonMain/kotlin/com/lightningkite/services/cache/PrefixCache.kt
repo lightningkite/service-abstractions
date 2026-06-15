@@ -33,5 +33,7 @@ public class PrefixCache(public val cache: Cache, public val prefix: String) : C
         cache.add(prefix + key, value, timeToLive)
 
     override suspend fun remove(key: String): Unit = cache.remove(prefix + key)
+    override suspend fun <T> getAndRemove(key: String, serializer: KSerializer<T>): T? =
+        cache.getAndRemove(prefix + key, serializer)
     override suspend fun healthCheck(): HealthStatus = cache.healthCheck()
 }

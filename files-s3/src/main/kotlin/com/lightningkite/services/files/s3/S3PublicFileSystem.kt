@@ -6,7 +6,7 @@ import com.lightningkite.services.data.*
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.get
 import com.lightningkite.services.http.client
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import io.ktor.client.request.*
 import io.ktor.http.*
 import software.amazon.awssdk.auth.credentials.*
@@ -200,7 +200,7 @@ public class S3PublicFileSystem(
      *
      * @return [HealthStatus] with OK level if all operations succeed, ERROR otherwise
      */
-    override suspend fun healthCheck(): HealthStatus = metricsTrace("healthCheck") {
+    override suspend fun healthCheck(): HealthStatus = telemetryTrace("healthCheck") {
         val results = mutableListOf<Pair<HealthStatus.Level, String?>>()
         try {
             val testFile = root.then("health-check/test-file-${Uuid.random()}.txt")
@@ -212,7 +212,7 @@ public class S3PublicFileSystem(
             // Test read
             val readContent = testFile.get()
             if (readContent == null) {
-                return@metricsTrace HealthStatus(
+                return@telemetryTrace HealthStatus(
                     level = HealthStatus.Level.ERROR,
                     additionalMessage = "Failed to read test file"
                 )
@@ -220,7 +220,7 @@ public class S3PublicFileSystem(
 
             val readText = readContent.data.text()
             if (readText != testContent) {
-                return@metricsTrace HealthStatus(
+                return@telemetryTrace HealthStatus(
                     level = HealthStatus.Level.ERROR,
                     additionalMessage = "Test content did not match: expected '$testContent', got '$readText'"
                 )
@@ -233,7 +233,7 @@ public class S3PublicFileSystem(
                             "File Signing is configured, but the test file was retrieved with an unsigned URL. Is the S3 Bucket permissions configured correctly?"
                 )
             } else if (!result.status.isSuccess() && signedUrlDuration == null) {
-                return@metricsTrace HealthStatus(
+                return@telemetryTrace HealthStatus(
                     level = HealthStatus.Level.ERROR,
                     additionalMessage = "File Signing is null, but the test failed to be retrieved with an unsigned URL. Is the S3 Bucket permissions configured correctly?"
                 )

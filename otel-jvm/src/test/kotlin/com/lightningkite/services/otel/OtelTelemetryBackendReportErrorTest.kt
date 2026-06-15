@@ -9,18 +9,18 @@ import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 /**
- * Exercises [OtelMetricsBackend.reportError] directly (the JVM telemetry path that used to live in
+ * Exercises [OtelTelemetryBackend.reportError] directly (the JVM telemetry path that used to live in
  * basis as `reportExceptionToTelemetry`). Covers both branches: recording onto an active span, and
  * emitting a standalone ERROR log record when no span is current.
  */
-class OtelMetricsBackendReportErrorTest {
+class OtelTelemetryBackendReportErrorTest {
 
     @Test
     fun recordsOnActiveSpan() {
@@ -29,13 +29,13 @@ class OtelMetricsBackendReportErrorTest {
             .addSpanProcessor(SimpleSpanProcessor.create(spans))
             .build()
         val sdk = OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build()
-        val backend = OtelMetricsBackend(sdk)
+        val backend = OtelTelemetryBackend(sdk)
 
         val span = sdk.getTracer("test").spanBuilder("op").startSpan()
         span.makeCurrent().use {
             backend.reportError(
                 RuntimeException("boom"),
-                MetricAttributes { put(MetricKey.OfString("operation"), "createIndex") },
+                TelemetryAttributes { put(TelemetryKey.OfString("operation"), "createIndex") },
             )
         }
         span.end()
@@ -54,12 +54,12 @@ class OtelMetricsBackendReportErrorTest {
             .addLogRecordProcessor(SimpleLogRecordProcessor.create(logs))
             .build()
         val sdk = OpenTelemetrySdk.builder().setLoggerProvider(loggerProvider).build()
-        val backend = OtelMetricsBackend(sdk)
+        val backend = OtelTelemetryBackend(sdk)
 
         // No active span: this must emit a standalone ERROR log record.
         backend.reportError(
             IllegalStateException("offline failure"),
-            MetricAttributes { put(MetricKey.OfString("table"), "users") },
+            TelemetryAttributes { put(TelemetryKey.OfString("table"), "users") },
         )
 
         val record = logs.finishedLogRecordItems.single()

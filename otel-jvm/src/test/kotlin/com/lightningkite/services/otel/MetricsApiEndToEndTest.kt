@@ -1,18 +1,18 @@
 package com.lightningkite.services.otel
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.MetricUnit
-import com.lightningkite.services.MetricsBackend
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.MetricUnit
+import com.lightningkite.services.telemetry.TelemetryBackend
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.metricsAttributes
-import com.lightningkite.services.metricsCounter
-import com.lightningkite.services.metricsGauge
-import com.lightningkite.services.metricsHistogram
-import com.lightningkite.services.metricsInFlight
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryAttributes
+import com.lightningkite.services.telemetry.telemetryCounter
+import com.lightningkite.services.telemetry.telemetryGauge
+import com.lightningkite.services.telemetry.telemetryHistogram
+import com.lightningkite.services.telemetry.telemetryInFlight
+import com.lightningkite.services.telemetry.telemetryTrace
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.sdk.OpenTelemetrySdk
@@ -31,9 +31,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * End-to-end confirmation that the public metrics API (`metricsTrace`, `metricsAttributes`, and the
+ * End-to-end confirmation that the public metrics API (`telemetryTrace`, `telemetryAttributes`, and the
  * `metrics{Histogram,Counter,InFlight,Gauge}` instruments) actually produces correct OpenTelemetry
- * output via [OtelMetricsBackend] — inspected through in-memory exporters, not mocks.
+ * output via [OtelTelemetryBackend] — inspected through in-memory exporters, not mocks.
  */
 class MetricsApiEndToEndTest {
     private val systemKey = AttributeKey.stringKey("system")
@@ -53,9 +53,9 @@ class MetricsApiEndToEndTest {
             .build()
 
     private fun owner(sdk: OpenTelemetrySdk): Namespaced {
-        val backend = OtelMetricsBackend(sdk)
+        val backend = OtelTelemetryBackend(sdk)
         val ctx = object : SettingContext by TestSettingContext() {
-            override val metricsBackend: MetricsBackend get() = backend
+            override val telemetryBackend: TelemetryBackend get() = backend
         }
         return object : Namespaced {
             override val name: String = "demo"
@@ -72,17 +72,17 @@ class MetricsApiEndToEndTest {
         val sdk = sdk(metrics, spans)
         val owner = owner(sdk)
 
-        val cacheHitKey = MetricKey.OfBoolean("cache.hit")
-        owner.metricsTrace(
+        val cacheHitKey = TelemetryKey.OfBoolean("cache.hit")
+        owner.telemetryTrace(
             "fetch",
             // db.key is high-cardinality (an actual key) — must reach the span but NOT a metric dimension.
-            attributes = MetricAttributes {
-                put(MetricKey.OfString("db.key"), "user:42:secret")
-                put(MetricKey.OfString("cache.system"), "redis")
+            attributes = TelemetryAttributes {
+                put(TelemetryKey.OfString("db.key"), "user:42:secret")
+                put(TelemetryKey.OfString("cache.system"), "redis")
             },
             dimensions = setOf(cacheHitKey),
         ) { span ->
-            span.enrich(MetricAttributes { put(cacheHitKey, true) }) // discovered mid-operation
+            span.enrich(TelemetryAttributes { put(cacheHitKey, true) }) // discovered mid-operation
         }
 
         // --- span carries the full bag (high cardinality is fine on a trace) ---
@@ -120,7 +120,7 @@ class MetricsApiEndToEndTest {
         val owner = owner(sdk)
 
         assertFailsWith<IllegalStateException> {
-            owner.metricsTrace("boom") { throw IllegalStateException("kaboom") }
+            owner.telemetryTrace("boom") { throw IllegalStateException("kaboom") }
         }
 
         val span = spans.finishedSpanItems.single { it.name == "demo.boom" }
@@ -138,15 +138,15 @@ class MetricsApiEndToEndTest {
         val sdk = sdk(metrics, spans)
         val owner = owner(sdk)
 
-        val tenantKey = MetricKey.OfString("tenant")
-        val rows = owner.metricsHistogram("demo.rows", MetricUnit.Occurrences, setOf(tenantKey))
-        val calls = owner.metricsCounter("demo.calls", MetricUnit.Occurrences, setOf(tenantKey))
-        val inflight = owner.metricsInFlight("demo.inflight", setOf(tenantKey))
+        val tenantKey = TelemetryKey.OfString("tenant")
+        val rows = owner.telemetryHistogram("demo.rows", MetricUnit.Occurrences, setOf(tenantKey))
+        val calls = owner.telemetryCounter("demo.calls", MetricUnit.Occurrences, setOf(tenantKey))
+        val inflight = owner.telemetryInFlight("demo.inflight", setOf(tenantKey))
 
         // Ambient bag: tenant is low-card (declared as a dimension); request_id is high-card (not).
-        metricsAttributes(MetricAttributes {
+        telemetryAttributes(TelemetryAttributes {
             put(tenantKey, "acme")
-            put(MetricKey.OfString("request_id"), "req-xyz")
+            put(TelemetryKey.OfString("request_id"), "req-xyz")
         }) {
             rows.record(7.0)
             calls.increment(3.0)
@@ -181,7 +181,7 @@ class MetricsApiEndToEndTest {
         val owner = owner(sdk)
 
         var poolSize = 5L
-        val handle = owner.metricsGauge("demo.pool", MetricUnit.Occurrences, emptySet()) { poolSize }
+        val handle = owner.telemetryGauge("demo.pool", MetricUnit.Occurrences) { poolSize }
 
         assertEquals(5L, metrics.collectAllMetrics().byName().getValue("demo.pool").longGaugeData.points.single().value)
         poolSize = 9L
@@ -198,11 +198,11 @@ class MetricsApiEndToEndTest {
             override val name: String = "demo"
             override val context: SettingContext = TestSettingContext()
         }
-        val result = owner.metricsTrace("op") { 42 }
+        val result = owner.telemetryTrace("op") { 42 }
         assertEquals(42, result)
-        owner.metricsHistogram("h", MetricUnit.Bytes, emptySet()).record(1.0)
-        owner.metricsCounter("c", MetricUnit.Occurrences, emptySet()).increment()
-        owner.metricsInFlight("f", emptySet()).lease().release()
+        owner.telemetryHistogram("h", MetricUnit.Bytes, emptySet()).record(1.0)
+        owner.telemetryCounter("c", MetricUnit.Occurrences, emptySet()).increment()
+        owner.telemetryInFlight("f", emptySet()).lease().release()
         assertTrue(true) // reached here without a backend → no-op path works
     }
 }

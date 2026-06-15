@@ -1,14 +1,14 @@
 package com.lightningkite.services.subscription.stripe
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.MetricSpan
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.database.HasId
 import com.lightningkite.services.database.SecurityException
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.subscription.*
 import com.lightningkite.services.subscription.Customer
 import com.lightningkite.services.subscription.Subscription
@@ -92,12 +92,12 @@ public class StripeSubscriptionService(
         email: String,
         name: String?,
         metadata: Map<String, String>,
-    ): SubscriptionCustomerId = metricsTrace(
+    ): SubscriptionCustomerId = telemetryTrace(
         "create_customer",
-        attributes = MetricAttributes {
-            put(MetricKey.OfString("subscription.operation"), "create_customer")
-            put(MetricKey.OfString("subscription.customer_email"), email)
-            put(MetricKey.OfString("subscription.provider"), "stripe")
+        attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("subscription.operation"), "create_customer")
+            put(TelemetryKey.OfString("subscription.customer_email"), email)
+            put(TelemetryKey.OfString("subscription.provider"), "stripe")
         }
     ) { span ->
         val params = CustomerCreateParams.builder()
@@ -111,27 +111,27 @@ public class StripeSubscriptionService(
         val customer = com.stripe.model.Customer.create(params)
         val customerId = SubscriptionCustomerId(customer.id)
 
-        span.enrich(MetricAttributes { put(MetricKey.OfString("subscription.customer_id"), customerId.value) })
+        span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("subscription.customer_id"), customerId.value) })
 
         customerId
     }
 
-    override suspend fun getCustomer(customerId: SubscriptionCustomerId): Customer? = metricsTrace(
+    override suspend fun getCustomer(customerId: SubscriptionCustomerId): Customer? = telemetryTrace(
         "get_customer",
-        attributes = MetricAttributes {
-            put(MetricKey.OfString("subscription.operation"), "get_customer")
-            put(MetricKey.OfString("subscription.customer_id"), customerId.value)
-            put(MetricKey.OfString("subscription.provider"), "stripe")
+        attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("subscription.operation"), "get_customer")
+            put(TelemetryKey.OfString("subscription.customer_id"), customerId.value)
+            put(TelemetryKey.OfString("subscription.provider"), "stripe")
         }
     ) { span ->
         try {
             val stripeCustomer = com.stripe.model.Customer.retrieve(customerId.value)
             if (stripeCustomer.deleted == true) {
-                span.enrich(MetricAttributes { put(MetricKey.OfBoolean("subscription.customer_found"), false) })
-                return@metricsTrace null
+                span.enrich(TelemetryAttributes { put(TelemetryKey.OfBoolean("subscription.customer_found"), false) })
+                return@telemetryTrace null
             }
 
-            span.enrich(MetricAttributes { put(MetricKey.OfBoolean("subscription.customer_found"), true) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfBoolean("subscription.customer_found"), true) })
 
             Customer(
                 id = SubscriptionCustomerId(stripeCustomer.id),
@@ -142,7 +142,7 @@ public class StripeSubscriptionService(
             )
         } catch (e: InvalidRequestException) {
             if (e.statusCode == 404) {
-                span.enrich(MetricAttributes { put(MetricKey.OfBoolean("subscription.customer_found"), false) })
+                span.enrich(TelemetryAttributes { put(TelemetryKey.OfBoolean("subscription.customer_found"), false) })
                 null
             } else {
                 throw e
@@ -150,15 +150,15 @@ public class StripeSubscriptionService(
         }
     }
 
-    override suspend fun checkoutUrl(request: CheckoutSessionRequest): String = metricsTrace(
+    override suspend fun checkoutUrl(request: CheckoutSessionRequest): String = telemetryTrace(
         "create_checkout_session",
-        attributes = MetricAttributes {
-            put(MetricKey.OfString("subscription.operation"), "create_checkout_session")
-            put(MetricKey.OfString("subscription.price_id"), request.priceId.value)
-            put(MetricKey.OfLong("subscription.quantity"), request.quantity.toLong())
-            put(MetricKey.OfString("subscription.provider"), "stripe")
-            request.customerId?.let { put(MetricKey.OfString("subscription.customer_id"), it.value) }
-            request.trialPeriodDays?.let { put(MetricKey.OfLong("subscription.trial_period_days"), it.toLong()) }
+        attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("subscription.operation"), "create_checkout_session")
+            put(TelemetryKey.OfString("subscription.price_id"), request.priceId.value)
+            put(TelemetryKey.OfLong("subscription.quantity"), request.quantity.toLong())
+            put(TelemetryKey.OfString("subscription.provider"), "stripe")
+            request.customerId?.let { put(TelemetryKey.OfString("subscription.customer_id"), it.value) }
+            request.trialPeriodDays?.let { put(TelemetryKey.OfLong("subscription.trial_period_days"), it.toLong()) }
         }
     ) { span ->
         val paramsBuilder = SessionCreateParams.builder()
@@ -201,23 +201,23 @@ public class StripeSubscriptionService(
 
         val session = Session.create(paramsBuilder.build())
 
-        span.enrich(MetricAttributes { put(MetricKey.OfString("subscription.checkout_session_id"), session.id) })
+        span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("subscription.checkout_session_id"), session.id) })
 
         session.url
     }
 
-    override suspend fun manageSubscriptionUrl(subscriptionId: SubscriptionId, returnUrl: String): String = metricsTrace(
+    override suspend fun manageSubscriptionUrl(subscriptionId: SubscriptionId, returnUrl: String): String = telemetryTrace(
         "create_billing_portal_session",
-        attributes = MetricAttributes {
-            put(MetricKey.OfString("subscription.operation"), "create_billing_portal_session")
-            put(MetricKey.OfString("subscription.subscription_id"), subscriptionId.value)
-            put(MetricKey.OfString("subscription.provider"), "stripe")
+        attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("subscription.operation"), "create_billing_portal_session")
+            put(TelemetryKey.OfString("subscription.subscription_id"), subscriptionId.value)
+            put(TelemetryKey.OfString("subscription.provider"), "stripe")
         }
     ) { span ->
         val sub = getSubscription(subscriptionId)
             ?: throw IllegalArgumentException("Subscription not found: ${subscriptionId.value}")
 
-        span.enrich(MetricAttributes { put(MetricKey.OfString("subscription.customer_id"), sub.customerId.value) })
+        span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("subscription.customer_id"), sub.customerId.value) })
 
         val params = com.stripe.param.billingportal.SessionCreateParams.builder()
             .setCustomer(sub.customerId.value)
@@ -226,32 +226,32 @@ public class StripeSubscriptionService(
 
         val session = com.stripe.model.billingportal.Session.create(params)
 
-        span.enrich(MetricAttributes { put(MetricKey.OfString("subscription.portal_session_id"), session.id) })
+        span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("subscription.portal_session_id"), session.id) })
 
         session.url
     }
 
-    override suspend fun getSubscription(subscriptionId: SubscriptionId): Subscription? = metricsTrace(
+    override suspend fun getSubscription(subscriptionId: SubscriptionId): Subscription? = telemetryTrace(
         "get_subscription",
-        attributes = MetricAttributes {
-            put(MetricKey.OfString("subscription.operation"), "get_subscription")
-            put(MetricKey.OfString("subscription.subscription_id"), subscriptionId.value)
-            put(MetricKey.OfString("subscription.provider"), "stripe")
+        attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("subscription.operation"), "get_subscription")
+            put(TelemetryKey.OfString("subscription.subscription_id"), subscriptionId.value)
+            put(TelemetryKey.OfString("subscription.provider"), "stripe")
         }
     ) { span ->
         try {
             val stripeSub = com.stripe.model.Subscription.retrieve(subscriptionId.value)
             val subscription = stripeSub.toSubscription()
 
-            span.enrich(MetricAttributes {
-                put(MetricKey.OfString("subscription.status"), subscription.status.name)
-                put(MetricKey.OfString("subscription.customer_id"), subscription.customerId.value)
+            span.enrich(TelemetryAttributes {
+                put(TelemetryKey.OfString("subscription.status"), subscription.status.name)
+                put(TelemetryKey.OfString("subscription.customer_id"), subscription.customerId.value)
             })
 
             subscription
         } catch (e: InvalidRequestException) {
             if (e.statusCode == 404) {
-                span.enrich(MetricAttributes { put(MetricKey.OfBoolean("subscription.found"), false) })
+                span.enrich(TelemetryAttributes { put(TelemetryKey.OfBoolean("subscription.found"), false) })
                 null
             } else {
                 throw e
@@ -259,12 +259,12 @@ public class StripeSubscriptionService(
         }
     }
 
-    override suspend fun getSubscriptions(customerId: SubscriptionCustomerId): List<Subscription> = metricsTrace(
+    override suspend fun getSubscriptions(customerId: SubscriptionCustomerId): List<Subscription> = telemetryTrace(
         "list_subscriptions",
-        attributes = MetricAttributes {
-            put(MetricKey.OfString("subscription.operation"), "list_subscriptions")
-            put(MetricKey.OfString("subscription.customer_id"), customerId.value)
-            put(MetricKey.OfString("subscription.provider"), "stripe")
+        attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("subscription.operation"), "list_subscriptions")
+            put(TelemetryKey.OfString("subscription.customer_id"), customerId.value)
+            put(TelemetryKey.OfString("subscription.provider"), "stripe")
         }
     ) { span ->
         val params = SubscriptionListParams.builder()
@@ -273,24 +273,24 @@ public class StripeSubscriptionService(
 
         val subscriptions = com.stripe.model.Subscription.list(params).data.map { it.toSubscription() }
 
-        span.enrich(MetricAttributes { put(MetricKey.OfLong("subscription.count"), subscriptions.size.toLong()) })
+        span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("subscription.count"), subscriptions.size.toLong()) })
 
         subscriptions
     }
 
     override suspend fun cancelSubscription(subscriptionId: SubscriptionId, immediately: Boolean): Subscription =
-        metricsTrace(
+        telemetryTrace(
             "cancel_subscription",
-            attributes = MetricAttributes {
-                put(MetricKey.OfString("subscription.operation"), "cancel_subscription")
-                put(MetricKey.OfString("subscription.subscription_id"), subscriptionId.value)
-                put(MetricKey.OfBoolean("subscription.cancel_immediately"), immediately)
-                put(MetricKey.OfString("subscription.provider"), "stripe")
+            attributes = TelemetryAttributes {
+                put(TelemetryKey.OfString("subscription.operation"), "cancel_subscription")
+                put(TelemetryKey.OfString("subscription.subscription_id"), subscriptionId.value)
+                put(TelemetryKey.OfBoolean("subscription.cancel_immediately"), immediately)
+                put(TelemetryKey.OfString("subscription.provider"), "stripe")
             }
         ) { span ->
             val subscription = com.stripe.model.Subscription.retrieve(subscriptionId.value)
 
-            span.enrich(MetricAttributes { put(MetricKey.OfString("subscription.customer_id"), subscription.customer) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("subscription.customer_id"), subscription.customer) })
 
             val result = if (immediately) {
                 subscription.cancel().toSubscription()
@@ -302,7 +302,7 @@ public class StripeSubscriptionService(
                 ).toSubscription()
             }
 
-            span.enrich(MetricAttributes { put(MetricKey.OfString("subscription.status"), result.status.name) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("subscription.status"), result.status.name) })
 
             result
         }
@@ -330,16 +330,16 @@ public class StripeSubscriptionService(
             queryParameters: List<Pair<String, String>>,
             headers: Map<String, List<String>>,
             body: TypedData,
-        ): SubscriptionEvent? = metricsTrace(
+        ): SubscriptionEvent? = telemetryTrace(
             "webhook.parse",
-            attributes = MetricAttributes {
-                put(MetricKey.OfString("subscription.operation"), "webhook_parse")
-                put(MetricKey.OfString("subscription.provider"), "stripe")
+            attributes = TelemetryAttributes {
+                put(TelemetryKey.OfString("subscription.operation"), "webhook_parse")
+                put(TelemetryKey.OfString("subscription.provider"), "stripe")
             }
         ) { span -> parseInternal(span, headers, body) }
 
         private suspend fun parseInternal(
-            span: MetricSpan,
+            span: TelemetryTrace,
             headers: Map<String, List<String>>,
             body: TypedData,
         ): SubscriptionEvent? {
@@ -360,14 +360,14 @@ public class StripeSubscriptionService(
                 throw SecurityException("Invalid webhook signature: ${e.message}")
             }
 
-            span.enrich(MetricAttributes {
-                put(MetricKey.OfString("webhook.event_id"), event.id)
-                put(MetricKey.OfString("webhook.event_type"), event.type)
+            span.enrich(TelemetryAttributes {
+                put(TelemetryKey.OfString("webhook.event_id"), event.id)
+                put(TelemetryKey.OfString("webhook.event_type"), event.type)
             })
 
             val result = parseEvent(event)
 
-            span.enrich(MetricAttributes { put(MetricKey.OfBoolean("webhook.parsed"), result != null) })
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfBoolean("webhook.parsed"), result != null) })
 
             return result
         }

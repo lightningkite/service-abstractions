@@ -1,14 +1,16 @@
 package com.lightningkite.services.voiceagent.phonecall
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.phonecall.AudioStreamCommand
 import com.lightningkite.services.phonecall.AudioStreamEvent
 import com.lightningkite.services.voiceagent.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -92,11 +94,11 @@ public suspend fun handlePhoneVoiceSession(
     onStreamConnected: suspend (VoiceAgentSession) -> Unit = {},
     jitterBufferMs: Long = 300L,
 ) {
-    voiceAgentService.metricsTrace(
+    voiceAgentService.telemetryTrace(
         "phone_session",
-        attributes = MetricAttributes {
-            put(MetricKey.OfString("voiceagent.call_id"), callId)
-            put(MetricKey.OfString("voiceagent.stream_id"), streamId)
+        attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("voiceagent.call_id"), callId)
+            put(TelemetryKey.OfString("voiceagent.stream_id"), streamId)
         },
     ) { span ->
         val jitterBuffer = if (jitterBufferMs > 0) AudioJitterBuffer(targetBufferMs = jitterBufferMs) else null
@@ -113,15 +115,15 @@ public suspend fun handlePhoneVoiceSession(
         val session = voiceAgentService.createSession(effectiveConfig)
         session.awaitConnection()
         logger.info { "Voice agent session connected: ${session.sessionId}" }
-        span.enrich(MetricAttributes { put(MetricKey.OfString("voiceagent.session_id"), session.sessionId) })
+        span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("voiceagent.session_id"), session.sessionId) })
 
         // Trigger greeting
         onStreamConnected(session)
 
         // Track current response ID for interleaving detection
-        val currentResponseId = java.util.concurrent.atomic.AtomicReference<String?>(null)
+        val currentResponseId = AtomicReference<String?>(null)
         // Our own sequence counter since OpenAI doesn't provide one
-        val audioSeqCounter = java.util.concurrent.atomic.AtomicInteger(0)
+        val audioSeqCounter = AtomicInteger(0)
 
         // Process events
         coroutineScope {
@@ -199,12 +201,12 @@ public suspend fun handleDirectVoiceSession(
     onTranscript: suspend (TranscriptEntry) -> Unit = {},
     onSessionReady: suspend (VoiceAgentSession) -> Unit = {},
 ) {
-    voiceAgentService.metricsTrace("direct_session") { span ->
+    voiceAgentService.telemetryTrace("direct_session") { span ->
         logger.info { "Creating direct voice agent session..." }
         val session = voiceAgentService.createSession(sessionConfig)
         session.awaitConnection()
         logger.info { "Voice agent session connected: ${session.sessionId}" }
-        span.enrich(MetricAttributes { put(MetricKey.OfString("voiceagent.session_id"), session.sessionId) })
+        span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("voiceagent.session_id"), session.sessionId) })
 
         // Trigger greeting
         onSessionReady(session)
@@ -318,11 +320,11 @@ private suspend fun handleAgentEvent(
 
         is VoiceAgentEvent.ToolCallDone -> {
             logger.info { "Tool call: ${event.toolName}(${event.arguments})" }
-            owner.metricsTrace(
+            owner.telemetryTrace(
                 "tool_call",
-                attributes = MetricAttributes {
-                    put(MetricKey.OfString("tool.name"), event.toolName)
-                    put(MetricKey.OfString("tool.call_id"), event.callId)
+                attributes = TelemetryAttributes {
+                    put(TelemetryKey.OfString("tool.name"), event.toolName)
+                    put(TelemetryKey.OfString("tool.call_id"), event.callId)
                 },
             ) {
                 val result = toolHandler(event.toolName, event.arguments)

@@ -61,7 +61,6 @@ internal object BedrockWire {
         // toolChoice back to "auto", and inject a system-message instruction forbidding new
         // tool calls this turn. See interfaces.kt doc for LlmToolChoice.None.
         val suppressToolsPrompt = prompt.tools.isNotEmpty() && prompt.toolChoice == LlmToolChoice.None
-        val boundaries = computeActiveBoundaries(prompt)
         val sharedContext = prompt.collectSharedContext()
         val systemBlocks = buildJsonArray {
             if (sharedContext != null) {

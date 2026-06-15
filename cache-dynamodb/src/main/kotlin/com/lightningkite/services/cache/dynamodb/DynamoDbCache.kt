@@ -67,6 +67,9 @@ import com.lightningkite.services.*
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.telemetryTrace
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.KSerializer
@@ -93,13 +96,13 @@ public class DynamoDbCache(
         key: String,
         timeToLive: Duration? = null,
         cacheValue: Long? = null,
-    ): MetricAttributes = MetricAttributes {
-        put(Cache.MetricKeys.key, context.telemetrySanitization.hashCacheKey(key))
-        put(Cache.MetricKeys.system, "dynamodb")
-        put(MetricKeys.Db.system, "dynamodb")
-        put(MetricKeys.Db.name, tableName)
-        timeToLive?.let { put(Cache.MetricKeys.ttl, it.inWholeSeconds) }
-        cacheValue?.let { put(Cache.MetricKeys.value, it) }
+    ): TelemetryAttributes = TelemetryAttributes {
+        put(Cache.TelemetryKeys.key, context.telemetrySanitization.hashCacheKey(key))
+        put(Cache.TelemetryKeys.system, "dynamodb")
+        put(TelemetryKeys.Db.system, "dynamodb")
+        put(TelemetryKeys.Db.name, tableName)
+        timeToLive?.let { put(Cache.TelemetryKeys.ttl, it.inWholeSeconds) }
+        cacheValue?.let { put(Cache.TelemetryKeys.value, it) }
     }
 
     public companion object {
@@ -227,7 +230,7 @@ public class DynamoDbCache(
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
         // `cache.hit` is resolved during the operation and promoted to the RED metric via `dimensions`;
         // `enrich` makes it readable both on the span and as the metric dimension at completion.
-        metricsTrace("get", attributes = spanAttrs(key), dimensions = setOf(Cache.MetricKeys.hit)) { span ->
+        telemetryTrace("get", attributes = spanAttrs(key), dimensions = setOf(Cache.TelemetryKeys.hit)) { span ->
             ready.await()
             val r = client.getItem {
                 it.tableName(tableName)
@@ -241,12 +244,12 @@ public class DynamoDbCache(
                     else serializer.fromDynamo(item["value"]!!, context)
                 } ?: serializer.fromDynamo(item["value"]!!, context)
             } else null
-            span.enrich(MetricAttributes { put(Cache.MetricKeys.hit, result != null) })
+            span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.hit, result != null) })
             result
         }
 
     override suspend fun <T> set(key: String, value: T, serializer: KSerializer<T>, timeToLive: Duration?): Unit =
-        metricsTrace("set", attributes = spanAttrs(key, timeToLive)) {
+        telemetryTrace("set", attributes = spanAttrs(key, timeToLive)) {
             ready.await()
             client.putItem {
                 it.tableName(tableName)
@@ -267,7 +270,7 @@ public class DynamoDbCache(
         value: T,
         serializer: KSerializer<T>,
         timeToLive: Duration?,
-    ): Boolean = metricsTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.MetricKeys.added)) { span ->
+    ): Boolean = telemetryTrace("setIfNotExists", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.TelemetryKeys.added)) { span ->
         ready.await()
         try {
             client.putItem {
@@ -283,16 +286,16 @@ public class DynamoDbCache(
                     } ?: mapOf())
                 )
             }.await()
-            span.enrich(MetricAttributes { put(Cache.MetricKeys.added, true) })
+            span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.added, true) })
             true
         } catch (e: ConditionalCheckFailedException) {
-            span.enrich(MetricAttributes { put(Cache.MetricKeys.added, false) })
+            span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.added, false) })
             false
         }
     }
 
     override suspend fun add(key: String, value: Long, timeToLive: Duration?): Long =
-        metricsTrace("add", attributes = spanAttrs(key, timeToLive, cacheValue = value)) {
+        telemetryTrace("add", attributes = spanAttrs(key, timeToLive, cacheValue = value)) {
             ready.await()
             // Both attempts are atomic conditional updates so a concurrent writer can never be
             // overwritten (the previous blind-set fallback could lose a concurrent increment).
@@ -320,7 +323,7 @@ public class DynamoDbCache(
                         )
                         it.returnValues(ReturnValue.ALL_NEW)
                     }.await()
-                    return@metricsTrace response.attributes().getValue("value").n().toLong()
+                    return@telemetryTrace response.attributes().getValue("value").n().toLong()
                 } catch (_: ConditionalCheckFailedException) {
                     // Row exists and is expired (or was concurrently changed). Fall through to B.
                 }
@@ -346,7 +349,7 @@ public class DynamoDbCache(
                         )
                         it.returnValues(ReturnValue.ALL_NEW)
                     }.await()
-                    return@metricsTrace response.attributes().getValue("value").n().toLong()
+                    return@telemetryTrace response.attributes().getValue("value").n().toLong()
                 } catch (_: ConditionalCheckFailedException) {
                     // Someone re-created the row live between A and B; loop back to A.
                 }
@@ -355,13 +358,32 @@ public class DynamoDbCache(
         }
 
     override suspend fun remove(key: String): Unit =
-        metricsTrace("remove", attributes = spanAttrs(key)) {
+        telemetryTrace("remove", attributes = spanAttrs(key)) {
             ready.await()
             client.deleteItem {
                 it.tableName(tableName)
                 it.key(mapOf("key" to AttributeValue.fromS(key)))
             }.await()
             Unit
+        }
+
+    override suspend fun <T> getAndRemove(key: String, serializer: KSerializer<T>): T? =
+        telemetryTrace("getAndDelete", attributes = spanAttrs(key), dimensions = setOf(Cache.TelemetryKeys.hit)) { span ->
+            ready.await()
+            val response = client.deleteItem {
+                it.tableName(tableName)
+                it.key(mapOf("key" to AttributeValue.fromS(key)))
+                it.returnValues(ReturnValue.ALL_OLD)
+            }.await()
+            val result = if (response.hasAttributes()) {
+                val item = response.attributes()
+                item["expires"]?.n()?.toLongOrNull()?.let {
+                    if (System.currentTimeMillis().div(1000L) > it) return@let null
+                    else serializer.fromDynamo(item["value"]!!, context)
+                } ?: serializer.fromDynamo(item["value"]!!, context)
+            } else null
+            span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.hit, result != null) })
+            result
         }
 
 }

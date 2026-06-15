@@ -3,11 +3,11 @@ package com.lightningkite.services.files.clamav
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.MediaType
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.files.FileScanException
 import com.lightningkite.services.files.FileScanner
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.io.Source
@@ -127,9 +127,9 @@ public class ClamAvFileScanner(
         }
     }
 
-    override suspend fun scan(claimedType: MediaType, data: Source): Unit = metricsTrace(
+    override suspend fun scan(claimedType: MediaType, data: Source): Unit = telemetryTrace(
         "scan",
-        attributes = MetricAttributes { put(MetricKey.OfString("content_type"), claimedType.toString()) },
+        attributes = TelemetryAttributes { put(TelemetryKey.OfString("content_type"), claimedType.toString()) },
     ) { span ->
         val result = withContext(Dispatchers.IO) {
             data.use { source ->
@@ -144,13 +144,13 @@ public class ClamAvFileScanner(
         }
         when (result) {
             ScanResult.OK -> {
-                span.enrich(MetricAttributes { put(MetricKey.OfString("clamav.result"), "OK") })
+                span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("clamav.result"), "OK") })
             }
             is ScanResult.VirusFound -> {
                 val viruses = result.foundViruses.keys.joinToString()
-                span.enrich(MetricAttributes {
-                    put(MetricKey.OfString("clamav.result"), "VirusFound")
-                    put(MetricKey.OfString("clamav.viruses"), viruses)
+                span.enrich(TelemetryAttributes {
+                    put(TelemetryKey.OfString("clamav.result"), "VirusFound")
+                    put(TelemetryKey.OfString("clamav.viruses"), viruses)
                 })
                 // Throwing marks the trace's outcome as an error automatically.
                 throw FileScanException("File seems to contain malicious content; $viruses")

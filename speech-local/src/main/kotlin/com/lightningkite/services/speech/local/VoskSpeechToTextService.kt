@@ -1,10 +1,10 @@
 package com.lightningkite.services.speech.local
 
-import com.lightningkite.services.MetricAttributes
-import com.lightningkite.services.MetricKey
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.metricsTrace
+import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
@@ -123,9 +123,9 @@ public class VoskSpeechToTextService(
         val audioBytes = audio.data.bytes()
         logger.debug { "[$name] Transcribing ${audioBytes.size} bytes of audio" }
 
-        metricsTrace(
+        telemetryTrace(
             "transcribe",
-            attributes = MetricAttributes { put(MetricKey.OfLong("audio.size_bytes"), audioBytes.size.toLong()) }
+            attributes = TelemetryAttributes { put(TelemetryKey.OfLong("audio.size_bytes"), audioBytes.size.toLong()) }
         ) {
             // Convert audio to 16kHz mono WAV if needed
             val wavBytes = convertToVoskFormat(audioBytes, audio.mediaType.toString())

@@ -212,6 +212,28 @@ abstract class CacheTest {
         }
     }
 
+    @Test
+    fun getAndRemoveTest() {
+        val cache = cache ?: run {
+            println("Could not test because the cache is not supported on this system.")
+            return
+        }
+        runSuspendingTest {
+            val key = "get-and-delete-${Uuid.random()}"
+
+            // Non-existent key returns null without error
+            assertNull(cache.getAndRemove<String>(key))
+
+            // Returns the value and removes the key
+            cache.set(key, "hello")
+            assertEquals("hello", cache.getAndRemove<String>(key))
+            assertNull(cache.get<String>(key), "Key must be absent after getAndDelete")
+
+            // Subsequent call on the now-missing key returns null
+            assertNull(cache.getAndRemove<String>(key))
+        }
+    }
+
     /**
      * `add` must be a true atomic increment: concurrent callers may interleave freely, but every
      * successful `add` must contribute exactly once to the stored counter (no lost updates). This

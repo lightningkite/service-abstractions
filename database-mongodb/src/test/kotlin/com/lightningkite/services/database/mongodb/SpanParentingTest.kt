@@ -1,11 +1,11 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.MetricsBackend
+import com.lightningkite.services.telemetry.TelemetryBackend
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.SharedResources
 import com.lightningkite.services.database.HasId
 import com.lightningkite.services.database.Table
-import com.lightningkite.services.otel.OtelMetricsBackend
+import com.lightningkite.services.otel.OtelTelemetryBackend
 import io.opentelemetry.context.Context
 import io.opentelemetry.extension.kotlin.asContextElement
 import io.opentelemetry.sdk.OpenTelemetrySdk
@@ -25,10 +25,10 @@ import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
 /**
- * Parenting regression for the `metricsTrace` operation spans.
+ * Parenting regression for the `telemetryTrace` operation spans.
  *
  * Driver-level command spans were removed (Phase C of the metrics migration), so the only spans the
- * database emits now are the `metricsTrace` operation spans. This test starts a parent span, runs a
+ * database emits now are the `telemetryTrace` operation spans. This test starts a parent span, runs a
  * Mongo operation inside `withContext(parentSpan.asContextElement())`, and asserts that the
  * resulting operation span re-parents under the caller's request span.
  */
@@ -61,8 +61,8 @@ class SpanParentingTest {
         override val projectName: String = "Test"
         override var clock: Clock = Clock.System
 
-        // The operation span comes from metricsTrace, which requires a metricsBackend to be wired.
-        override val metricsBackend: MetricsBackend = OtelMetricsBackend(sdk)
+        // The operation span comes from telemetryTrace, which requires a telemetryBackend to be wired.
+        override val telemetryBackend: TelemetryBackend = OtelTelemetryBackend(sdk)
     }
 
     @Test
@@ -89,10 +89,10 @@ class SpanParentingTest {
         val spans: List<SpanData> = spanExporter.finishedSpanItems
         val parentData = spans.single { it.name == "request" }
 
-        // metricsTrace names operation spans "<owner.name>.<opName>"; the owner is the database name.
+        // telemetryTrace names operation spans "<owner.name>.<opName>"; the owner is the database name.
         val operationSpans = spans.filter { it.name.startsWith("parenting-test.") }
         check(operationSpans.isNotEmpty()) {
-            "Expected at least one metricsTrace operation span; found: " + spans.map { it.name }.distinct()
+            "Expected at least one telemetryTrace operation span; found: " + spans.map { it.name }.distinct()
         }
 
         // Each operation span's root ancestor within this trace must be the caller's request span.
@@ -108,7 +108,7 @@ class SpanParentingTest {
         val orphaned = operationSpans.filter { rootOf(it) != parentData.spanId }
         assertTrue(
             orphaned.isEmpty(),
-            "metricsTrace operation spans must re-parent under the caller request span " +
+            "telemetryTrace operation spans must re-parent under the caller request span " +
                 "(${parentData.spanId}). Orphaned spans: " +
                 orphaned.joinToString { "${it.name}[parent=${it.parentSpanId}]" }
         )

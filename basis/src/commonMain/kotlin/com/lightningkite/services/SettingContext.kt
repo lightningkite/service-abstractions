@@ -1,9 +1,12 @@
 package com.lightningkite.services
 
+import com.lightningkite.services.telemetry.TelemetryAttributeElement
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryBackend
+import com.lightningkite.services.telemetry.TelemetrySanitization
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.serialization.modules.SerializersModule
-import kotlin.coroutines.coroutineContext
 import kotlin.time.Clock
 
 /**
@@ -11,7 +14,7 @@ import kotlin.time.Clock
  *
  * `SettingContext` contains shared configuration and resources that services need:
  * - Serialization configuration for custom types
- * - Observability (the vendor-neutral [MetricsBackend]) integration
+ * - Observability (the vendor-neutral [com.lightningkite.services.telemetry.TelemetryBackend]) integration
  * - Shared resource pools (database connections, HTTP clients, etc.)
  * - Application metadata (project name, public URL)
  * - Time source (mockable for testing)
@@ -34,7 +37,7 @@ import kotlin.time.Clock
  *     override val internalSerializersModule = SerializersModule {
  *         polymorphic(MyInterface::class) { subclass(MyImpl::class) }
  *     }
- *     override val metricsBackend = OtelMetricsBackend(openTelemetrySdk)
+ *     override val telemetryBackend = OtelTelemetryBackend(openTelemetrySdk)
  *     override val sharedResources = SharedResources()
  * }
  *
@@ -43,7 +46,7 @@ import kotlin.time.Clock
  * ```
  *
  * @see SharedResources for resource sharing pattern
- * @see MetricsBackend for observability integration
+ * @see com.lightningkite.services.telemetry.TelemetryBackend for observability integration
  */
 public interface SettingContext {
     /**
@@ -99,15 +102,15 @@ public interface SettingContext {
     public val internalSerializersModule: SerializersModule
 
     /**
-     * Backend for the coroutine-first metrics API ([metricsTrace], [metricsHistogram], etc.) and
+     * Backend for the coroutine-first metrics API ([com.lightningkite.services.telemetry.telemetryTrace], [com.lightningkite.services.telemetry.telemetryHistogram], etc.) and
      * error reporting ([reportException]).
      *
-     * Defaults to [MetricsBackend.Noop], which discards all telemetry. The JVM
-     * OpenTelemetry-backed implementation (`com.lightningkite.services.otel.OtelMetricsBackend`
+     * Defaults to [com.lightningkite.services.telemetry.TelemetryBackend.Noop], which discards all telemetry. The JVM
+     * OpenTelemetry-backed implementation (`com.lightningkite.services.otel.OtelTelemetryBackend`
      * in otel-jvm) is wired in here at application startup. This is the vendor-neutral telemetry
      * abstraction; it is the only telemetry surface exposed by `SettingContext`.
      */
-    public val metricsBackend: MetricsBackend get() = MetricsBackend.Noop
+    public val telemetryBackend: TelemetryBackend get() = TelemetryBackend.Noop
 
     public val telemetrySanitization: TelemetrySanitization get() = TelemetrySanitization.Strict
 
@@ -153,7 +156,7 @@ public interface SettingContext {
      * Default behavior:
      * - Always logs the throwable at ERROR via the standard multiplatform logger, including
      *   the [context] entries, so failures are visible even with no telemetry backend.
-     * - Delegates to [metricsBackend]'s [MetricsBackend.reportError]. The JVM OpenTelemetry backend
+     * - Delegates to [telemetryBackend]'s [TelemetryBackend.reportError]. The JVM OpenTelemetry backend
      *   records the exception on the active span if one exists, or otherwise emits an ERROR log
      *   record (the path for failures outside any span, e.g. background index creation).
      *
@@ -162,7 +165,7 @@ public interface SettingContext {
      */
     public suspend fun reportException(throwable: Throwable) {
         logger.error(throwable){""}
-        metricsBackend.reportError(throwable, currentCoroutineContext()[MetricAttributeElement]?.attributes ?: MetricAttributes.empty)
+        telemetryBackend.reportError(throwable, currentCoroutineContext()[TelemetryAttributeElement]?.attributes ?: TelemetryAttributes.empty)
     }
 
     public companion object {
