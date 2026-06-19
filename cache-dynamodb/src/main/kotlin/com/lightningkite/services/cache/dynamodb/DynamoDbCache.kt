@@ -196,7 +196,7 @@ public class DynamoDbCache(
             }
             Unit
         } catch (e: ResourceNotFoundException) {
-            // Table does not exist; create it. Any other exception is unexpected and re-thrown above.
+            // Table doesn't exist yet — create it. Any other exception propagates uncaught, which is intended.
             client.createTable {
                 it.tableName(tableName)
                 it.billingMode(BillingMode.PAY_PER_REQUEST)
