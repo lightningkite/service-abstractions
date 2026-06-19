@@ -1,5 +1,6 @@
 package com.lightningkite.services.terraform
 
+import com.lightningkite.services.terraform.TerraformJsonObject.Companion.expression
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.json.*
 
@@ -38,28 +39,66 @@ public interface TerraformEmitter {
     public fun variable(need: TerraformNeed<*>)
 }
 
-public class TerraformAwsVpcInfo(
-    public val id: String,
-    public val securityGroup: String,
-    public val privateSubnets: String,
-    public val publicSubnets: String,
-    public val applicationSubnets: String,
-    public val natGatewayIps: String,
-    public val cidr: String,
-)
+
+public sealed interface AwsVpc {
+
+    public sealed interface EC2Safe : AwsVpc
+    public sealed interface LabmdaSafe : AwsVpc
+
+    public sealed interface VpcInfo : AwsVpc, LabmdaSafe, EC2Safe {
+        public val id: String
+        public val securityGroup: String
+        public val privateSubnets: String
+        public val publicSubnets: String
+        public val applicationSubnet: String
+        public val natGatewayIps: String
+        public val cidr: String
+    }
+
+    public data object None : AwsVpc, LabmdaSafe
+    public data object Default : AwsVpc, EC2Safe
+
+    public enum class NatGateway{
+        None,
+        Single,
+        PerAvailabilityZone,
+        PerSubnet
+    }
+
+    public class TFManaged(
+        public val ipPrefix: String,
+        public val availabilityZones: List<String>,
+        public val natGateway: NatGateway,
+    ) : VpcInfo {
+        override val id: String = expression("module.vpc.vpc_id")
+        override val securityGroup: String = expression("aws_security_group.internal.id")
+        override val privateSubnets: String = expression("module.vpc.private_subnets")
+        override val publicSubnets: String = expression("module.vpc.public_subnets")
+        override val applicationSubnet: String = expression("module.vpc.public_subnets[0]")
+        override val natGatewayIps: String = expression("module.vpc.nat_public_ips")
+        override val cidr: String = "$ipPrefix.0.0/16"
+    }
+
+    public class Existing(
+        override val id: String,
+        override val securityGroup: String,
+        override val privateSubnets: String,
+        override val publicSubnets: String,
+        override val applicationSubnet: String,
+        override val natGatewayIps: String,
+        override val cidr: String,
+    ) : VpcInfo
+}
+
 
 public interface TerraformEmitterAws : TerraformEmitter {
     public val applicationRegion: String
+    public val applicationVpc: AwsVpc
     public val policyStatements: MutableCollection<AwsPolicyStatement>
 }
 
 public interface TerraformEmitterKnownIpAddresses : TerraformEmitterAws {
     public val applicationIpAddresses: String
-}
-
-public interface TerraformEmitterAwsVpc : TerraformEmitterAws, TerraformEmitterKnownIpAddresses {
-    public val applicationVpc: TerraformAwsVpcInfo
-    override val applicationIpAddresses: String get() = applicationVpc.natGatewayIps
 }
 
 public interface TerraformEmitterAwsDomain : TerraformEmitterAws {
