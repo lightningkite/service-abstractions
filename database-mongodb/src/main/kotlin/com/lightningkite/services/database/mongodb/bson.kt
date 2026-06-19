@@ -18,6 +18,8 @@ import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
 import kotlin.uuid.Uuid
+import kotlinx.serialization.KSerializer
+import java.util.Date
 
 internal fun documentOf(): Document {
     return Document()
@@ -94,13 +96,19 @@ private fun <T> Condition<T>.dump(
                 (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
         }
 
-        is Condition.ListAllElements<*> -> (condition as Condition<Any?>).dump(
-            serializer.listElement()!! as KSerializer<Any?>,
-            into.sub(key).sub("\$not").sub("\$elemMatch"),
-            key = "\$not",
-            atlasSearch = atlasSearch,
-            bson = bson
-        )
+        is Condition.ListAllElements<*> -> {
+            val innerSerializer = serializer.listElement()!! as KSerializer<Any?>
+            val matchDoc = Document()
+            (Condition.Not(condition as Condition<Any?>)).dump(
+                innerSerializer,
+                into = matchDoc,
+                key = null,
+                atlasSearch = atlasSearch,
+                bson = bson
+            )
+            into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
+        }
+
 
         is Condition.ListAnyElements<*> -> if (atlasSearch) {
             (condition as Condition<Any?>).dump(
@@ -139,9 +147,21 @@ private fun <T> Condition<T>.dump(
         is Condition.IntBitsClear -> into.sub(key)["\$bitsAnyClear"] = mask
         is Condition.IntBitsSet -> into.sub(key)["\$bitsAnySet"] = mask
         is Condition.Not -> {
-            into["\$nor"] = listOf(condition.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson))
+            val inner = condition.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson)
+            val isOperatorDocument =
+                inner.keys.all {
+                    it.startsWith("$") &&
+                            !it.contains("\$and") &&
+                            !it.contains("\$or") &&
+                            !it.contains("\$not")
+                }
+            if (isOperatorDocument) { // i.e. { "$not": { "$lt": 4 } }
+                into["\$not"] = inner
+            } else {
+                into["\$nor"] = listOf(inner)
+            }
         }
-//        is Condition.Not -> condition.dump(serializer, into.sub(key)["\$not"], key)
+
         is Condition.OnKey<*> -> (condition as Condition<Any?>).dump(
             serializer.mapValueElement() as KSerializer<Any?>,
             into,
