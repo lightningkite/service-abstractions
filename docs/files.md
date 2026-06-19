@@ -300,7 +300,7 @@ try {
 ## Limitations and Gotchas
 
 1. **`moveTo()` is not atomic** - If copy succeeds but delete fails, file exists in both locations
-2. **`copyTo()` silently ignores missing source** - Returns without error if source doesn't exist
+2. **`copyTo()` throws on missing source** - Throws `IllegalArgumentException` if the source file doesn't exist
 3. **List order is unspecified** - Directory listings have no guaranteed sort order
 4. **Small files break CheckMimeFileScanner** - Files < 16 bytes cause exceptions
 5. **lastModified is always null** - The local filesystem implementation doesn't populate this field
