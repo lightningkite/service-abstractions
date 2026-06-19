@@ -49,5 +49,5 @@ package com.lightningkite.services
  *
  * @see RequiresOptIn for the underlying mechanism
  */
-@RequiresOptIn("We haven't tested this yet. Use at your own risk.", RequiresOptIn.Level.WARNING)
+@RequiresOptIn("We haven't tested this yet in any kind of serious system. Use at your own risk.", RequiresOptIn.Level.WARNING)
 public annotation class Untested
