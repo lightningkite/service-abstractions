@@ -705,7 +705,7 @@ implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive")
 
 ## See Also
 
-- [Files Module](files-module.md) - PublicFileSystem interface
+- [Files Module](files.md) - PublicFileSystem interface
 - [Basis Module](basis-module.md) - Core abstractions
 - [AWS SDK Documentation](https://docs.aws.amazon.com/sdk-for-java/)
 - [S3 Documentation](https://docs.aws.amazon.com/s3/)

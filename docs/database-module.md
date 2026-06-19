@@ -588,4 +588,3 @@ userTable.find(
 
 - [database-query-dsl.md](./database-query-dsl.md) - Complete Condition/Modification reference
 - [cache-module.md](./cache-module.md) - Caching to reduce database load
-- [CODE_REVIEW_PRIORITIES.md](./CODE_REVIEW_PRIORITIES.md) - Known issues and enhancements
