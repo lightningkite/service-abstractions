@@ -367,14 +367,14 @@ For testing MapCache specifically (including expiration):
 ```kotlin
 @Test
 fun testExpiration() = runTest {
-    val testClock = TestClock(Instant.parse("2025-01-01T00:00:00Z"))
-    val context = TestSettingContext(clock = testClock)
-    val cache = MapCache("test", ConcurrentMutableMap(), context)
+    var now = Instant.parse("2025-01-01T00:00:00Z")
+    val context = TestSettingContext(clock = object : Clock { override fun now() = now })
+    val cache = MapCache("test", context)
 
     cache.set("key", "value", timeToLive = 1.hours)
     assertNotNull(cache.get<String>("key"))
 
-    testClock.advance(2.hours)
+    now += 2.hours
     assertNull(cache.get<String>("key"))
 }
 ```
@@ -460,7 +460,6 @@ Benefits:
 ```kotlin
 class MapCache(
     override val name: String,
-    val entries: MutableMap<String, Entry>,
     override val context: SettingContext
 ) : Cache
 ```
