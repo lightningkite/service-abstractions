@@ -505,7 +505,7 @@ public class MongoTable<Model : Any>(
         return result
     }
 
-    private var preparedAlready = false
+    @Volatile private var preparedAlready = false
 
     /**
      * Wait for a search index to become queryable.
