@@ -83,7 +83,7 @@ interface SettingContext {
     val projectName: String                            // Application name
     val publicUrl: String                              // Public-facing URL
     val internalSerializersModule: SerializersModule   // Custom serializers
-    val openTelemetry: OpenTelemetry?                  // Optional telemetry
+    val telemetryBackend: TelemetryBackend             // Telemetry backend (default: Noop)
     val clock: Clock                                    // Time source (mockable)
     val sharedResources: SharedResources               // Resource pool
 }
@@ -100,7 +100,7 @@ val context = object : SettingContext {
             subclass(MyImpl::class)
         }
     }
-    override val openTelemetry = OpenTelemetry.get()
+    // telemetryBackend defaults to TelemetryBackend.Noop; override to wire in OtelTelemetryBackend
     override val sharedResources = SharedResources()
 }
 ```
@@ -223,20 +223,40 @@ fun testTimeDependent() = runTest {
 
 ### Clock Testing
 
-Test time-dependent code with custom clocks:
+Test time-dependent code with custom clocks via `withClock`, which injects a clock into the
+coroutine context for the duration of a block. Services read it via `Clock.default()`.
 
 ```kotlin
 @Test
 fun testExpiration() = runTest {
-    val testClock = TestClock(Instant.parse("2025-01-01T00:00:00Z"))
+    val fixedInstant = Instant.parse("2025-01-01T00:00:00Z")
+    val fixedClock = object : Clock {
+        override fun now() = fixedInstant
+    }
 
-    withClock(testClock) {
+    withClock(fixedClock) {
         val token = createToken(expiresIn = 1.hours)
         assertFalse(token.isExpired())
+    }
 
-        testClock.advance(2.hours)
+    val laterInstant = fixedInstant + 2.hours
+    val laterClock = object : Clock {
+        override fun now() = laterInstant
+    }
+
+    withClock(laterClock) {
+        val token = createToken(expiresIn = 1.hours)
         assertTrue(token.isExpired())
     }
+}
+```
+
+When using `TestSettingContext`, override the `clock` property directly:
+
+```kotlin
+val context = TestSettingContext()
+context.clock = object : Clock {
+    override fun now() = Instant.parse("2025-06-01T00:00:00Z")
 }
 ```
 
