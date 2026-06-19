@@ -40,8 +40,10 @@ fun main() {
         }
     """.trimIndent()
     val context = object: SettingContext {
-        override val metricSink: MetricSink = MetricSink.None
-        override val serializersModule: SerializersModule = EmptySerializersModule()
+        override val projectName = "my-app"
+        override val publicUrl = "http://localhost:8941"
+        override val internalSerializersModule: SerializersModule = EmptySerializersModule()
+        override val sharedResources = SharedResources()
     }
     val settings = Json.decodeFromString<MyServerSettings>(settingsFileVirtual)
 
@@ -111,7 +113,7 @@ Comprehensive user guides are available for all major modules:
   implementations
     - [Query DSL Reference](docs/database-query-dsl.md) - Complete guide to Condition and Modification syntax
 - **[Cache](docs/cache-module.md)** - Unified caching interface for Redis, Memcached, DynamoDB, and in-memory
-- **[Files](docs/files-module.md)** - File storage abstraction for local filesystem and AWS S3
+- **[Files](docs/files.md)** - File storage abstraction for local filesystem and AWS S3
 
 ### Communication Services
 
@@ -123,8 +125,8 @@ Comprehensive user guides are available for all major modules:
 
 ### Additional Resources
 
-- [Code Review Priorities](plans/CODE_REVIEW_PRIORITIES.md) - Known issues and enhancement opportunities
-- [Code Review Summary](plans/CODE_REVIEW_SUMMARY.md) - Detailed code review findings
+- [Database Pipeline Queries](plans/database-pipeline-queries.md) - Pipeline query design notes
+- [DB Map Format Architecture](plans/db-map-format-architecture.md) - Database map format design
 
 ## Status
 
