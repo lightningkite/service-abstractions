@@ -197,10 +197,13 @@ public class JavaSmtpEmailService(
             }
         }) { _ ->
             val message = email.copy(from = email.from ?: from).toJavaX(session)
-            withContext(Dispatchers.IO) {
-                Transport.send(message)
+            try {
+                withContext(Dispatchers.IO) {
+                    Transport.send(message)
+                }
+            } finally {
+                email.attachments.forEach { it.typedData.data.close() }
             }
-            email.attachments.forEach { it.typedData.data.close() }
         }
     }
 
