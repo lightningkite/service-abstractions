@@ -43,9 +43,9 @@ public interface TerraformEmitter {
 public sealed interface AwsVpc {
 
     public sealed interface EC2Safe : AwsVpc
-    public sealed interface LabmdaSafe : AwsVpc
+    public sealed interface LambdaSafe : AwsVpc
 
-    public sealed interface VpcInfo : AwsVpc, LabmdaSafe, EC2Safe {
+    public interface VpcInfo : AwsVpc, LambdaSafe, EC2Safe {
         public val id: String
         public val securityGroup: String
         public val privateSubnets: String
@@ -55,7 +55,7 @@ public sealed interface AwsVpc {
         public val cidr: String
     }
 
-    public data object None : AwsVpc, LabmdaSafe
+    public data object None : AwsVpc, LambdaSafe
     public data object Default : AwsVpc, EC2Safe
 
     public enum class NatGateway{
@@ -64,30 +64,6 @@ public sealed interface AwsVpc {
         PerAvailabilityZone,
         PerSubnet
     }
-
-    public class TFManaged(
-        public val ipPrefix: String,
-        public val availabilityZones: List<String>,
-        public val natGateway: NatGateway,
-    ) : VpcInfo {
-        override val id: String = expression("module.vpc.vpc_id")
-        override val securityGroup: String = expression("aws_security_group.internal.id")
-        override val privateSubnets: String = expression("module.vpc.private_subnets")
-        override val publicSubnets: String = expression("module.vpc.public_subnets")
-        override val applicationSubnet: String = expression("module.vpc.public_subnets[0]")
-        override val natGatewayIps: String = expression("module.vpc.nat_public_ips")
-        override val cidr: String = "$ipPrefix.0.0/16"
-    }
-
-    public class Existing(
-        override val id: String,
-        override val securityGroup: String,
-        override val privateSubnets: String,
-        override val publicSubnets: String,
-        override val applicationSubnet: String,
-        override val natGatewayIps: String,
-        override val cidr: String,
-    ) : VpcInfo
 }
 
 

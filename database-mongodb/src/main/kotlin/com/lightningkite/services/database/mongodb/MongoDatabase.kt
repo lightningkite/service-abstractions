@@ -68,6 +68,7 @@ public class MongoDatabase(
     override val name: String,
     public val databaseName: String,
     public val atlasSearch: Boolean = false,
+    public val supportsCollation: Boolean = true,
     public val clientSettings: MongoClientSettings,
     override val context: SettingContext,
 ) : Database {
@@ -115,6 +116,9 @@ public class MongoDatabase(
                             name = name,
                             databaseName = match.groups["databaseName"]!!.value,
                             clientSettings = MongoClientSettings.builder()
+                                // Default retryWrites=false for DocumentDB compatibility; the connection
+                                // string can override this with retryWrites=true for real MongoDB.
+                                .retryWrites(false)
                                 .applyConnectionString(ConnectionString(withoutAtlasSearch))
                                 .build(),
                             atlasSearch = atlasSearch,
@@ -127,7 +131,6 @@ public class MongoDatabase(
                 Regex("""mongodb\+srv://.*/(?<databaseName>[^?]+)(?:\?.*)?""")
                     .matchEntire(url)
                     ?.let { match ->
-                        val poolMax = if (isServerless) 4 else 100
                         val atlasSearch = url.contains("atlasSearch=true")
                         val withoutAtlasSearch =
                             url.replace("?atlasSearch=true", "").replace("&atlasSearch=true", "")
@@ -135,6 +138,9 @@ public class MongoDatabase(
                             name = name,
                             databaseName = match.groups["databaseName"]!!.value,
                             clientSettings = MongoClientSettings.builder()
+                                // Default retryWrites=false for DocumentDB compatibility; the connection
+                                // string can override this with retryWrites=true for real MongoDB.
+                                .retryWrites(false)
                                 .applyConnectionString(ConnectionString(withoutAtlasSearch))
                                 .build(),
                             atlasSearch = atlasSearch,
@@ -266,47 +272,53 @@ public class MongoDatabase(
     override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-                MongoTable(serializer, atlasSearch = atlasSearch, object : MongoCollectionAccess {
-                    override suspend fun <T> wholeDb(action: suspend com.mongodb.kotlin.client.coroutine.MongoDatabase.() -> T): T {
-                        return action(databaseLazy.value)
-                    }
-
-                    override suspend fun <T> run(action: suspend MongoCollection<BsonDocument>.() -> T): T =
-                        run2(action, 0)
-
-                    suspend fun <T> run2(action: suspend MongoCollection<BsonDocument>.() -> T, tries: Int = 0): T {
-                        val it = (coroutineCollections.getOrPut(serializer to name) {
-                            lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-                                databaseLazy.value.getCollection(name, BsonDocument::class.java)
-                            }
-                        } as Lazy<MongoCollection<BsonDocument>>).value
-                        try {
-                            return action(it)
-                        } catch (e: MongoBulkWriteException) {
-                            if (e.writeErrors.all { ErrorCategory.fromErrorCode(it.code) == ErrorCategory.DUPLICATE_KEY })
-                                throw UniqueViolationException(
-                                    cause = e,
-                                    table = it.namespace.collectionName
-                                )
-                            else throw e
-                        } catch (e: MongoSocketException) {
-                            if (tries >= 2) throw e
-                            else {
-                                disconnect()
-                                return run2(action, tries + 1)
-                            }
-                        } catch (e: MongoException) {
-                            if (ErrorCategory.fromErrorCode(e.code) == ErrorCategory.DUPLICATE_KEY)
-                                throw UniqueViolationException(
-                                    cause = e,
-                                    table = it.namespace.collectionName
-                                )
-                            else throw e
-                        } catch (e: Exception) {
-                            throw e
+                MongoTable(
+                    serializer = serializer,
+                    atlasSearch = atlasSearch,
+                    supportsCollation = supportsCollation,
+                    access = object : MongoCollectionAccess {
+                        override suspend fun <T> wholeDb(action: suspend com.mongodb.kotlin.client.coroutine.MongoDatabase.() -> T): T {
+                            return action(databaseLazy.value)
                         }
-                    }
-                }, context)
+
+                        override suspend fun <T> run(action: suspend MongoCollection<BsonDocument>.() -> T): T =
+                            run2(action, 0)
+
+                        suspend fun <T> run2(action: suspend MongoCollection<BsonDocument>.() -> T, tries: Int = 0): T {
+                            val it = (coroutineCollections.getOrPut(serializer to name) {
+                                lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+                                    databaseLazy.value.getCollection(name, BsonDocument::class.java)
+                                }
+                            } as Lazy<MongoCollection<BsonDocument>>).value
+                            try {
+                                return action(it)
+                            } catch (e: MongoBulkWriteException) {
+                                if (e.writeErrors.all { ErrorCategory.fromErrorCode(it.code) == ErrorCategory.DUPLICATE_KEY })
+                                    throw UniqueViolationException(
+                                        cause = e,
+                                        table = it.namespace.collectionName
+                                    )
+                                else throw e
+                            } catch (e: MongoSocketException) {
+                                if (tries >= 2) throw e
+                                else {
+                                    disconnect()
+                                    return run2(action, tries + 1)
+                                }
+                            } catch (e: MongoException) {
+                                if (ErrorCategory.fromErrorCode(e.code) == ErrorCategory.DUPLICATE_KEY)
+                                    throw UniqueViolationException(
+                                        cause = e,
+                                        table = it.namespace.collectionName
+                                    )
+                                else throw e
+                            } catch (e: Exception) {
+                                throw e
+                            }
+                        }
+                    },
+                    context = context
+                )
             }
         } as Lazy<MongoTable<T>>).value
 }
