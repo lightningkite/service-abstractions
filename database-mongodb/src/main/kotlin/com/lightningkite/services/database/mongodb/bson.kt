@@ -150,36 +150,30 @@ private fun <T> Condition<T>.dump(
             bson = bson
         )
 
-        is Condition.GeoDistance -> into.sub(key)["\$geoWithin"] = documentOf(
-            "\$centerSphere" to listOf(
-                listOf(this.value.longitude, this.value.latitude),
-                this.lessThanKilometers / 6378.1
+        is Condition.GeoDistance -> {
+            // $nearSphere with GeoJSON geometry works on both MongoDB and DocumentDB.
+            // $geoWithin/$centerSphere was the old form but $centerSphere is not supported by DocumentDB.
+            val geoDoc = documentOf(
+                "\$geometry" to documentOf(
+                    "type" to "Point",
+                    "coordinates" to listOf(this.value.longitude, this.value.latitude)
+                ),
+                "\$maxDistance" to this.lessThanKilometers * 1000.0  // km → meters
             )
-//            "\$maxDistance" to this.lessThanKilometers * 1000,
-//            "\$minDistance" to this.greaterThanKilometers * 1000,
-//            "\$geometry" to Serialization.Internal.bson.stringifyAny(GeoCoordinateGeoJsonSerializer, this.value),
-        )
-
-        is Condition.StringContains -> {
-            into.sub(key).also {
-                it["\$regex"] = Regex.escape(this.value)
-                it["\$options"] = if (this.ignoreCase) "i" else ""
-            }
+            if (this.greaterThanKilometers > 0.0) geoDoc["\$minDistance"] = this.greaterThanKilometers * 1000.0
+            into.sub(key)["\$nearSphere"] = geoDoc
         }
 
-        is Condition.RawStringContains -> {
-            into.sub(key).also {
-                it["\$regex"] = Regex.escape(this.value)
-                it["\$options"] = if (this.ignoreCase) "i" else ""
-            }
-        }
+        // Use BsonRegularExpression to embed options in the BSON regex type rather than a
+        // separate $options field. DocumentDB 5.0+ rejects {$regex: "str", $options: "i"}.
+        is Condition.StringContains ->
+            into.sub(key)["\$regex"] = BsonRegularExpression(Regex.escape(this.value), if (this.ignoreCase) "i" else "")
 
-        is Condition.RegexMatches -> {
-            into.sub(key).also {
-                it["\$regex"] = this.pattern
-                it["\$options"] = if (this.ignoreCase) "i" else ""
-            }
-        }
+        is Condition.RawStringContains ->
+            into.sub(key)["\$regex"] = BsonRegularExpression(Regex.escape(this.value), if (this.ignoreCase) "i" else "")
+
+        is Condition.RegexMatches ->
+            into.sub(key)["\$regex"] = BsonRegularExpression(this.pattern, if (this.ignoreCase) "i" else "")
 
         is Condition.FullTextSearch -> {
             if (atlasSearch) {

@@ -1,4 +1,5 @@
 import com.lightningkite.deployhelpers.lkLibrary
+import java.io.File
 
 
 plugins {
@@ -34,6 +35,27 @@ kotlin {
 
 tasks.withType<JavaCompile>().configureEach {
     this.targetCompatibility = "17"
+}
+
+tasks.withType<Test>().configureEach {
+    // On macOS with Docker Desktop, /var/run/docker.sock is a broken symlink from the JVM's
+    // perspective. Use the raw socket for API calls and tell Testcontainers to use the standard
+    // symlink for Ryuk's socket mount (Docker Desktop handles that mount correctly inside the VM).
+    if (System.getenv("DOCKER_HOST") == null) {
+        val home = System.getProperty("user.home")
+        val rawSocket = "$home/Library/Containers/com.docker.docker/Data/docker.raw.sock"
+        if (File(rawSocket).exists()) {
+            environment("DOCKER_HOST", "unix://$rawSocket")
+            environment("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", "/var/run/docker.sock")
+        } else {
+            listOf(
+                "$home/.docker/run/docker.sock",
+                "/var/run/docker.sock",
+                "$home/.colima/default/docker.sock",
+            ).firstOrNull { File(it).exists() }
+                ?.let { environment("DOCKER_HOST", "unix://$it") }
+        }
+    }
 }
 
 

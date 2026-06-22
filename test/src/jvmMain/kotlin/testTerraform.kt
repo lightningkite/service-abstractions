@@ -1,6 +1,8 @@
 package com.lightningkite.services.test
 
 import com.lightningkite.services.terraform.*
+import com.lightningkite.services.terraform.AwsVpc.NatGateway
+import com.lightningkite.services.terraform.AwsVpc.VpcInfo
 import com.lightningkite.services.terraform.TerraformJsonObject.Companion.expression
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
@@ -221,7 +223,7 @@ private fun TerraformEmitterAws.vpc(ipPrefix: String = "10.0"): AwsVpc.VpcInfo {
             "ip_protocol" - -1
         }
     }
-    return AwsVpc.TFManaged(ipPrefix, listOf("${applicationRegion}a"), AwsVpc.NatGateway.Single)
+    return TFManaged(ipPrefix, listOf("${applicationRegion}a"), AwsVpc.NatGateway.Single)
 }
 
 private fun TerraformEmitterAws.domain(): String {
@@ -421,12 +423,12 @@ class TerraformEmitterAwsTestWithDomainVpc<S>(root: File, targetSetting: String,
     TerraformEmitterAwsTest<S>(root, targetSetting, serializer), TerraformEmitterAwsDomain, TerraformEmitterAws {
     override val domainZoneId: String = domain()
     override val domain: String get() = "test.cs.lightningkite.com"
-    override val applicationVpc:AwsVpc = AwsVpc.TFManaged("10.0", listOf("${applicationRegion}a"), AwsVpc.NatGateway.Single)
+    override val applicationVpc:AwsVpc = TFManaged("10.0", listOf("${applicationRegion}a"), AwsVpc.NatGateway.Single)
 }
 
 class TerraformEmitterAwsTestWithVpc<S>(root: File, targetSetting: String, serializer: KSerializer<S>) :
     TerraformEmitterAwsTest<S>(root, targetSetting, serializer), TerraformEmitterAws {
-    override val applicationVpc:AwsVpc = AwsVpc.TFManaged("10.0", listOf("${applicationRegion}a"), AwsVpc.NatGateway.Single)
+    override val applicationVpc:AwsVpc = TFManaged("10.0", listOf("${applicationRegion}a"), AwsVpc.NatGateway.Single)
 }
 
 private fun File.runTerraform(vararg args: String): String {
@@ -522,4 +524,18 @@ inline fun expensive(run: () -> Unit) {
     // Check for environment variable
     if (System.getenv("RUN_EXPENSIVE_TESTS") == "true") run()
     else println("Skipped.")
+}
+
+internal class TFManaged(
+    val ipPrefix: String,
+    val availabilityZones: List<String>,
+    val natGateway: NatGateway,
+) : VpcInfo {
+    override val id: String = expression("module.vpc.vpc_id")
+    override val securityGroup: String = expression("aws_security_group.internal.id")
+    override val privateSubnets: String = expression("module.vpc.private_subnets")
+    override val publicSubnets: String = expression("module.vpc.public_subnets")
+    override val applicationSubnet: String = expression("module.vpc.public_subnets[0]")
+    override val natGatewayIps: String = expression("module.vpc.nat_public_ips")
+    override val cidr: String = "$ipPrefix.0.0/16"
 }

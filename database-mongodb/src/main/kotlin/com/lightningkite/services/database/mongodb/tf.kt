@@ -277,6 +277,84 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
     }
 }
 
+/**
+ * Creates an AWS DocumentDB cluster as a MongoDB-compatible alternative to MongoDB Atlas.
+ *
+ * DocumentDB is an AWS-native service with MongoDB 5.0 API compatibility. It runs entirely
+ * within your VPC — a VPC with subnet information ([AwsVpc.VpcInfo]) is required.
+ *
+ * ## Compatibility notes
+ * - Atlas Search and $vectorSearch are not supported; `atlasSearch` is forced false.
+ * - DocumentDB handles TLS internally; the generated connection string includes `tls=true`
+ *   when [tls] is enabled. Your application must trust the Amazon root CA, which is bundled
+ *   in the Amazon DocumentDB CA certificate (global-bundle.pem). Download it once and embed
+ *   it in your container image or Lambda layer, then set `tlsCAFile` in your connection URL
+ *   at runtime if needed.
+ *
+ * @param instanceClass EC2 instance class for cluster nodes (e.g. "db.t3.medium", "db.r6g.large").
+ * @param instanceCount Number of instances in the cluster. Use ≥ 2 for production HA.
+ * @param engineVersion DocumentDB engine version ("5.0", "4.0", or "3.6").
+ * @param backupRetentionPeriod Number of days to retain automated backups (1–35).
+ * @param tls Whether to require TLS for connections (DocumentDB default is enabled).
+ */
+context(emitter: TerraformEmitterAws)
+public fun TerraformNeed<Database.Settings>.awsDocumentDb(
+    instanceClass: String = "db.t3.medium",
+    instanceCount: Int = 1,
+    engineVersion: String = "5.0",
+    backupRetentionPeriod: Int = 1,
+    tls: Boolean = true,
+): Unit {
+    if (!Database.Settings.supports("mongodb")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+        ?: throw IllegalArgumentException("awsDocumentDb requires a VPC with subnet information (AwsVpc.VpcInfo). DocumentDB cannot run outside a VPC.")
+    emitter.fulfillSetting(
+        name, JsonPrimitive(
+            value = $$"mongodb://master:${random_password.$$name.result}@${aws_docdb_cluster.$$name.endpoint}:${aws_docdb_cluster.$$name.port}/default?replicaSet=rs0&retryWrites=false" +
+                    if (tls) "&tls=true" else ""
+        )
+    )
+    setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+    emitter.emit(name) {
+        "resource.random_password.${name}" {
+            "length" - 32
+            "special" - true
+            "override_special" - "-_"
+        }
+        "resource.aws_docdb_subnet_group.${name}" {
+            "name" - "${emitter.projectPrefix}-${name}"
+            "subnet_ids" - vpcInfo.privateSubnets
+        }
+        "resource.aws_docdb_cluster.${name}" {
+            "cluster_identifier" - "${emitter.projectPrefix}-${name}"
+            "engine" - "docdb"
+            "engine_version" - engineVersion
+            "master_username" - "master"
+            "master_password" - expression("random_password.${name}.result")
+            "db_subnet_group_name" - expression("aws_docdb_subnet_group.${name}.name")
+            "vpc_security_group_ids" - listOf<String>(vpcInfo.securityGroup)
+            "storage_encrypted" - true
+            "backup_retention_period" - backupRetentionPeriod
+            "skip_final_snapshot" - true
+        }
+        for (i in 0 until instanceCount) {
+            "resource.aws_docdb_cluster_instance.${name}_$i" {
+                "identifier" - "${emitter.projectPrefix}-${name}-$i"
+                "cluster_identifier" - expression("aws_docdb_cluster.${name}.id")
+                "instance_class" - instanceClass
+                "auto_minor_version_upgrade" - true
+            }
+        }
+        "resource.aws_vpc_security_group_ingress_rule.${name}_docdb" {
+            "security_group_id" - vpcInfo.securityGroup
+            "referenced_security_group_id" - vpcInfo.securityGroup
+            "ip_protocol" - "tcp"
+            "from_port" - 27017
+            "to_port" - 27017
+        }
+    }
+}
+
 context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
     orgId: String,

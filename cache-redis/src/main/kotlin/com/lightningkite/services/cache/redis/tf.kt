@@ -6,6 +6,10 @@ import com.lightningkite.services.terraform.*
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.json.JsonPrimitive
 
+public class ReusableRedisSetting(
+    public val connectionStringExpression: String
+)
+
 /**
  * Creates an AWS ElastiCache Redis cluster for caching.
  *
@@ -15,21 +19,18 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * The generated settings URL connects to the first cache node on the default database (0).
  *
+ * @param name The base name of the terraform resources
  * @param type The EC2 instance type for cache nodes (e.g., "cache.t2.micro", "cache.m5.large")
  * @param parameterGroupName The Redis parameter group (default: "default.redis7")
  * @param count The number of cache nodes to create (1 for non-cluster mode)
  */
-@Untested
-context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedis(
+context(emitter: TerraformEmitterAws) public fun awsElasticacheRedis(
+    name: String,
     type: String = "cache.t2.micro",
     parameterGroupName: String = "default.redis7",
     count: Int = 1,
-): Unit {
+): ReusableRedisSetting {
     if (!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
-    emitter.fulfillSetting(
-        name,
-        JsonPrimitive(value = $$"redis://${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).address}:${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).port}/0")
-    )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
@@ -55,6 +56,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.a
             }
         }
     }
+    return ReusableRedisSetting($$"redis://${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).address}:${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).port}/0")
 }
 
 
@@ -67,25 +69,22 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.a
  * Emits Terraform resources for:
  * - `aws_elasticache_serverless_cache`: The serverless Redis cache
  *
+ * @param name The base name of the terraform resources
  * @param version The Redis major engine version (e.g., "7" for Redis 7.x)
  * @param dailySnapshotTime Time of day for automatic snapshots (UTC)
  * @param maxEcpuPerSecond Maximum ECPU per second (controls performance ceiling)
  * @param maxStorageGb Maximum storage in gigabytes
  * @param snapshotRetentionLimit Number of daily snapshots to retain
  */
-@Untested
-context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedisServerless(
+context(emitter: TerraformEmitterAws) public fun awsElasticacheRedisServerless(
+    name: String,
     version: String = "1.6",
     dailySnapshotTime: LocalTime = LocalTime(9, 0),
     maxEcpuPerSecond: Int = 5000,
     maxStorageGb: Int = 10,
     snapshotRetentionLimit: Int = 1,
-): Unit {
+): ReusableRedisSetting {
     if (!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
-    emitter.fulfillSetting(
-        name,
-        JsonPrimitive(value = $$"redis://${aws_elasticache_serverless_cache.$${name}.endpoint[0].address}:${aws_elasticache_serverless_cache.$${name}.endpoint[0].port}/0")
-    )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
@@ -113,4 +112,60 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.a
             }
         }
     }
+    return ReusableRedisSetting($$"redis://${aws_elasticache_serverless_cache.$${name}.endpoint[0].address}:${aws_elasticache_serverless_cache.$${name}.endpoint[0].port}/0")
 }
+
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.redis(
+    reusableRedisSetting: ReusableRedisSetting
+): ReusableRedisSetting {
+    val c = reusableRedisSetting
+    emitter.fulfillSetting(
+        name,
+        JsonPrimitive(value = c.connectionStringExpression)
+    )
+    return c
+}
+
+
+/**
+ * Creates an AWS ElastiCache Redis cluster for caching.
+ *
+ * Emits Terraform resources for:
+ * - `aws_elasticache_subnet_group`: Subnet group for the cluster
+ * - `aws_elasticache_cluster`: The Redis cluster itself
+ *
+ * The generated settings URL connects to the first cache node on the default database (0).
+ *
+ * @param type The EC2 instance type for cache nodes (e.g., "cache.t2.micro", "cache.m5.large")
+ * @param parameterGroupName The Redis parameter group (default: "default.redis7")
+ * @param count The number of cache nodes to create (1 for non-cluster mode)
+ */
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedis(
+    type: String = "cache.t2.micro",
+    parameterGroupName: String = "default.redis7",
+    count: Int = 1,
+): ReusableRedisSetting = redis(awsElasticacheRedis(name, type, parameterGroupName, count))
+
+
+/**
+ * Creates an AWS ElastiCache Serverless Redis cache.
+ *
+ * Serverless caches automatically scale based on demand without managing nodes.
+ * Uses ECPU (ElastiCache Processing Units) for pricing.
+ *
+ * Emits Terraform resources for:
+ * - `aws_elasticache_serverless_cache`: The serverless Redis cache
+ *
+ * @param version The Redis major engine version (e.g., "7" for Redis 7.x)
+ * @param dailySnapshotTime Time of day for automatic snapshots (UTC)
+ * @param maxEcpuPerSecond Maximum ECPU per second (controls performance ceiling)
+ * @param maxStorageGb Maximum storage in gigabytes
+ * @param snapshotRetentionLimit Number of daily snapshots to retain
+ */
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedisServerless(
+    version: String = "1.6",
+    dailySnapshotTime: LocalTime = LocalTime(9, 0),
+    maxEcpuPerSecond: Int = 5000,
+    maxStorageGb: Int = 10,
+    snapshotRetentionLimit: Int = 1,
+): ReusableRedisSetting = redis(awsElasticacheRedisServerless(name, version, dailySnapshotTime, maxEcpuPerSecond, maxStorageGb, snapshotRetentionLimit))
