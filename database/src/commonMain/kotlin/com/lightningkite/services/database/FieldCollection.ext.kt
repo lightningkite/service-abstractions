@@ -21,10 +21,11 @@ public suspend fun <Model : Any>
 /**
  * Inserts and then returns a single instance of *Model* into the database.
  * @param model The instance of *Model* that will be inserted into the collection.
- * @return The instance of *Model* that was inserted into the collection.
+ * @return The instance of *Model* that was inserted into the collection. A successful single
+ * insert always yields exactly one element, so this throws if the insert unexpectedly produced nothing.
  */
 public suspend fun <Model : Any>
-        Table<Model>.insertOne(model: Model): Model? = insert(listOf(model)).firstOrNull()
+        Table<Model>.insertOne(model: Model): Model = insert(listOf(model)).first()
 
 /**
  * Inserts and then returns the given Iterable of *Model* into the collection.
