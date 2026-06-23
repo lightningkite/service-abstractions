@@ -57,6 +57,7 @@ import kotlinx.serialization.json.JsonPrimitive
  *   Required for emails larger than 150KB. Default is false.
  * @param s3BucketPrefix Prefix for the S3 bucket name when [storeInS3] is true.
  * @param tlsPolicy TLS policy for receiving email. "Require" enforces TLS, "Optional" allows unencrypted.
+ *   Defaults to "Require"; senders that support STARTTLS (effectively all major providers) are unaffected.
  * @param scanEnabled Whether to enable spam and virus scanning. Default is true.
  */
 context(emitter: TerraformEmitterAwsDomain)
@@ -65,7 +66,7 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
     webhookUrl: String? = null,
     storeInS3: Boolean = false,
     s3BucketPrefix: String = "ses-inbound",
-    tlsPolicy: String = "Optional",
+    tlsPolicy: String = "Require",
     scanEnabled: Boolean = true,
 ): Unit {
     if (!EmailInboundService.Settings.supports("ses")) {

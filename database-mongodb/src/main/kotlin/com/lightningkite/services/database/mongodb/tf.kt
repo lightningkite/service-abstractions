@@ -291,23 +291,34 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
  *   it in your container image or Lambda layer, then set `tlsCAFile` in your connection URL
  *   at runtime if needed.
  *
+ * @param kmsKey How the cluster's storage-encryption key is chosen. Required (no default) because the key is
+ *   fixed at creation — changing it later replaces the cluster — so it must be a deliberate choice and is
+ *   intentionally NOT taken from the emitter's shared default. Use [KmsKeySource.AwsManaged] for the AWS-managed
+ *   key (still encrypted at rest) or [KmsKeySource.CreateDedicated] for a dedicated customer-managed key.
  * @param instanceClass EC2 instance class for cluster nodes (e.g. "db.t3.medium", "db.r6g.large").
  * @param instanceCount Number of instances in the cluster. Use ≥ 2 for production HA.
  * @param engineVersion DocumentDB engine version ("5.0", "4.0", or "3.6").
  * @param backupRetentionPeriod Number of days to retain automated backups (1–35).
  * @param tls Whether to require TLS for connections (DocumentDB default is enabled).
+ * @param skipFinalSnapshot Whether to skip the final snapshot on destroy. `true` eases teardown but loses data
+ *   on destroy; production should leave this `false`.
+ * @param deletionProtection Whether to block deletion of the cluster until manually disabled.
  */
 context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.awsDocumentDb(
+    kmsKey: KmsKeySource,
     instanceClass: String = "db.t3.medium",
     instanceCount: Int = 1,
     engineVersion: String = "5.0",
     backupRetentionPeriod: Int = 1,
     tls: Boolean = true,
+    skipFinalSnapshot: Boolean = false,
+    deletionProtection: Boolean = false,
 ): Unit {
     if (!Database.Settings.supports("mongodb")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
     val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
         ?: throw IllegalArgumentException("awsDocumentDb requires a VPC with subnet information (AwsVpc.VpcInfo). DocumentDB cannot run outside a VPC.")
+    val kmsKeyArn = kmsKey.resolveKeyArn(name)
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = $$"mongodb://master:${random_password.$$name.result}@${aws_docdb_cluster.$$name.endpoint}:${aws_docdb_cluster.$$name.port}/default?replicaSet=rs0&retryWrites=false" +
@@ -315,6 +326,8 @@ public fun TerraformNeed<Database.Settings>.awsDocumentDb(
         )
     )
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+    // DocumentDB/RDS identifiers must be lowercase alphanumeric/hyphen, so normalize the project prefix.
+    val identifier = "${emitter.projectPrefix}-${name}".lowercase()
     emitter.emit(name) {
         "resource.random_password.${name}" {
             "length" - 32
@@ -322,11 +335,11 @@ public fun TerraformNeed<Database.Settings>.awsDocumentDb(
             "override_special" - "-_"
         }
         "resource.aws_docdb_subnet_group.${name}" {
-            "name" - "${emitter.projectPrefix}-${name}"
+            "name" - identifier
             "subnet_ids" - vpcInfo.privateSubnets
         }
         "resource.aws_docdb_cluster.${name}" {
-            "cluster_identifier" - "${emitter.projectPrefix}-${name}"
+            "cluster_identifier" - identifier
             "engine" - "docdb"
             "engine_version" - engineVersion
             "master_username" - "master"
@@ -334,12 +347,15 @@ public fun TerraformNeed<Database.Settings>.awsDocumentDb(
             "db_subnet_group_name" - expression("aws_docdb_subnet_group.${name}.name")
             "vpc_security_group_ids" - listOf<String>(vpcInfo.securityGroup)
             "storage_encrypted" - true
+            if (kmsKeyArn != null) "kms_key_id" - kmsKeyArn
             "backup_retention_period" - backupRetentionPeriod
-            "skip_final_snapshot" - true
+            "skip_final_snapshot" - skipFinalSnapshot
+            if (!skipFinalSnapshot) "final_snapshot_identifier" - "$identifier-final"
+            "deletion_protection" - deletionProtection
         }
         for (i in 0 until instanceCount) {
             "resource.aws_docdb_cluster_instance.${name}_$i" {
-                "identifier" - "${emitter.projectPrefix}-${name}-$i"
+                "identifier" - "$identifier-$i"
                 "cluster_identifier" - expression("aws_docdb_cluster.${name}.id")
                 "instance_class" - instanceClass
                 "auto_minor_version_upgrade" - true

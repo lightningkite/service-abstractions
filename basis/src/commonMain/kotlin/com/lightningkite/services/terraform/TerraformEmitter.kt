@@ -71,6 +71,14 @@ public interface TerraformEmitterAws : TerraformEmitter {
     public val applicationRegion: String
     public val applicationVpc: AwsVpc
     public val policyStatements: MutableCollection<AwsPolicyStatement>
+
+    /**
+     * Default KMS key for AWS resources that encrypt at rest and don't override it (S3, cache, logs, SNS…).
+     * Defaults to [KmsKeySource.AwsManaged] so existing emitters are unaffected; a builder enabling a
+     * customer-managed key sets this to a [KmsKeySource.Existing] shared key. Resources whose key is
+     * immutable at creation (DocumentDB) deliberately ignore this and require an explicit choice instead.
+     */
+    public val encryptionKey: KmsKeySource get() = KmsKeySource.AwsManaged
 }
 
 public interface TerraformEmitterKnownIpAddresses : TerraformEmitterAws {

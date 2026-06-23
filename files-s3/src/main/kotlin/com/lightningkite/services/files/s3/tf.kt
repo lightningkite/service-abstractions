@@ -31,8 +31,11 @@ public fun TerraformNeed<PublicFileSystem.Settings>.awsS3Bucket(
     signedUrlDuration: Duration? = null,
     forceDestroy: Boolean = true,
     corsOrigins: Set<String> = setOf("*"),
+    kmsKey: KmsKeySource? = null,
 ): Unit {
     if (!PublicFileSystem.Settings.supports("s3")) throw IllegalArgumentException("You need to reference S3PublicFileSystem in your server definition to use this.")
+    // null falls back to the deployment-wide default; objects stay private (signed URLs), so KMS is transparent.
+    val kmsKeyArn = (kmsKey ?: emitter.encryptionKey).resolveKeyArn(name)
     emitter.fulfillSetting(
         name, JsonPrimitive(
             value = if (signedUrlDuration == null) {
@@ -82,6 +85,32 @@ public fun TerraformNeed<PublicFileSystem.Settings>.awsS3Bucket(
                 }
                 """
             }
+        } else {
+            // Private bucket: access is brokered exclusively through signed URLs, so block all public
+            // access and encrypt objects at rest.
+            "resource.aws_s3_bucket_public_access_block.${name}" {
+                "bucket" - expression("aws_s3_bucket.${name}.id")
+
+                "block_public_acls" - true
+                "block_public_policy" - true
+                "ignore_public_acls" - true
+                "restrict_public_buckets" - true
+            }
+            "resource.aws_s3_bucket_server_side_encryption_configuration.${name}" {
+                "bucket" - expression("aws_s3_bucket.${name}.id")
+                "rule" {
+                    "apply_server_side_encryption_by_default" {
+                        if (kmsKeyArn != null) {
+                            "sse_algorithm" - "aws:kms"
+                            "kms_master_key_id" - kmsKeyArn
+                        } else {
+                            "sse_algorithm" - "AES256"
+                        }
+                    }
+                    // With a CMK, cache one data key per bucket to cut KMS request cost ~99% on object ops.
+                    if (kmsKeyArn != null) "bucket_key_enabled" - true
+                }
+            }
         }
         "resource.aws_s3_bucket_cors_configuration.$name" {
             "bucket" - expression("aws_s3_bucket.$name.bucket")
@@ -102,13 +131,16 @@ public fun TerraformNeed<PublicFileSystem.Settings>.awsS3Bucket(
             )
         }
     }
-    // TODO: Consider using more granular S3 permissions instead of s3:* for better security (e.g., s3:GetObject, s3:PutObject, s3:DeleteObject)
+    // Least-privilege: the application only lists the bucket and reads/writes/deletes objects (signed-URL
+    // generation needs only the underlying Get/Put). Bucket-level actions are scoped to the bucket arn,
+    // object-level actions to its contents.
     emitter.policyStatements += AwsPolicyStatement(
-        action = listOf("s3:*"),
-        resource = listOf(
-            $$"${aws_s3_bucket.$${name}.arn}",
-            $$"${aws_s3_bucket.$${name}.arn}/*",
-        )
+        action = listOf("s3:ListBucket", "s3:GetBucketLocation"),
+        resource = listOf($$"${aws_s3_bucket.$${name}.arn}")
+    )
+    emitter.policyStatements += AwsPolicyStatement(
+        action = listOf("s3:GetObject", "s3:PutObject", "s3:DeleteObject"),
+        resource = listOf($$"${aws_s3_bucket.$${name}.arn}/*")
     )
 
 }

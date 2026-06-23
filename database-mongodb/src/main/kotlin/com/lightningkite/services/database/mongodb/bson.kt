@@ -349,8 +349,24 @@ internal data class UpdateWithOptions(
 internal fun <T> Condition<T>.bson(serializer: KSerializer<T>, atlasSearch: Boolean = false, bson: KBson): Document =
     Document().also { dump(serializer, it, null, atlasSearch, bson) }
 
+/**
+ * Removes top-level update modifiers whose operand is empty (e.g. `{ "$set": {} }`). MongoDB silently treats
+ * these as no-ops, but DocumentDB rejects them with error 9 "Modifiers operate on fields" — which happens for
+ * an upsert of a model that has no fields beyond `_id` (the health-check model, for instance).
+ */
+internal fun Document.pruneEmptyModifiers(): Document {
+    entries.filter { (key, value) ->
+        key.startsWith("\$") && when (value) {
+            is Document -> value.isEmpty()
+            is BsonDocument -> value.isEmpty()
+            else -> false
+        }
+    }.map { it.key }.forEach { remove(it) }
+    return this
+}
+
 internal fun <T> Modification<T>.bson(serializer: KSerializer<T>, bson: KBson): UpdateWithOptions =
-    UpdateWithOptions().also { dump(serializer, it, null, bson) }
+    UpdateWithOptions().also { dump(serializer, it, null, bson); it.document.pruneEmptyModifiers() }
 
 internal fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, bson: KBson): Boolean {
     val set: Document? = (document["\$set"] as? Document) ?: (document["\$set"] as? BsonDocument)?.toDocument()
@@ -378,6 +394,9 @@ internal fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, 
             if (it.containsKey(k)) return false
         }
     }
+    // Deduping above can empty out $setOnInsert (e.g. upserting an id-only model); drop any modifier that
+    // became empty so DocumentDB doesn't reject the command with "Modifiers operate on fields".
+    document.pruneEmptyModifiers()
     options = options.upsert(true)
     return true
 }

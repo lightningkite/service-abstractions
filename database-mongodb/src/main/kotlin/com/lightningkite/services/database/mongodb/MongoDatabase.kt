@@ -12,9 +12,13 @@ import kotlinx.serialization.KSerializer
 import org.bson.BsonDocument
 import org.bson.UuidRepresentation
 import java.io.File
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
 import kotlin.math.roundToInt
 
 /**
@@ -102,6 +106,39 @@ public class MongoDatabase(
         ): Database.Settings =
             Database.Settings("mongodb-file://$folder?port=$port&databaseName=$databaseName")
 
+        /**
+         * Builds client settings from a connection string, transparently trusting the Amazon RDS CA when the
+         * target is Amazon DocumentDB with TLS. DocumentDB's server certificate is signed by a private Amazon
+         * RDS CA that is not in the JVM default truststore, so `tls=true` would otherwise fail the handshake.
+         * Scoped to `*.docdb.amazonaws.com` hosts so real MongoDB / Atlas TLS (which use public CAs) is untouched.
+         */
+        private fun clientSettingsForConnection(connectionString: String): MongoClientSettings {
+            val cs = ConnectionString(connectionString)
+            val builder = MongoClientSettings.builder()
+                // Default retryWrites=false for DocumentDB compatibility; the connection string can override
+                // this with retryWrites=true for real MongoDB.
+                .retryWrites(false)
+                .applyConnectionString(cs)
+            if (cs.sslEnabled == true && cs.hosts.any { it.contains(".docdb.amazonaws.com") }) {
+                builder.applyToSslSettings { it.context(documentDbSslContext) }
+            }
+            return builder.build()
+        }
+
+        /** TLS context that trusts the embedded Amazon RDS CA bundle, for connecting to DocumentDB. */
+        private val documentDbSslContext: SSLContext by lazy {
+            val certs = MongoDatabase::class.java.getResourceAsStream("/rds-global-bundle.pem")
+                ?.use { CertificateFactory.getInstance("X.509").generateCertificates(it) }
+                ?: error("rds-global-bundle.pem resource is missing from the database-mongodb jar")
+            val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+                load(null, null)
+                certs.forEachIndexed { i, cert -> setCertificateEntry("rds-ca-$i", cert) }
+            }
+            val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                .apply { init(keyStore) }
+            SSLContext.getInstance("TLS").apply { init(null, tmf.trustManagers, null) }
+        }
+
         init {
             Database.Settings.register("mongodb") { name, url, context ->
                 Regex("""mongodb://.*/(?<databaseName>[^?]+)(?:\?.*)?""")
@@ -115,12 +152,7 @@ public class MongoDatabase(
                         MongoDatabase(
                             name = name,
                             databaseName = match.groups["databaseName"]!!.value,
-                            clientSettings = MongoClientSettings.builder()
-                                // Default retryWrites=false for DocumentDB compatibility; the connection
-                                // string can override this with retryWrites=true for real MongoDB.
-                                .retryWrites(false)
-                                .applyConnectionString(ConnectionString(withoutAtlasSearch))
-                                .build(),
+                            clientSettings = clientSettingsForConnection(withoutAtlasSearch),
                             atlasSearch = atlasSearch,
                             context = context
                         )
@@ -137,12 +169,7 @@ public class MongoDatabase(
                         MongoDatabase(
                             name = name,
                             databaseName = match.groups["databaseName"]!!.value,
-                            clientSettings = MongoClientSettings.builder()
-                                // Default retryWrites=false for DocumentDB compatibility; the connection
-                                // string can override this with retryWrites=true for real MongoDB.
-                                .retryWrites(false)
-                                .applyConnectionString(ConnectionString(withoutAtlasSearch))
-                                .build(),
+                            clientSettings = clientSettingsForConnection(withoutAtlasSearch),
                             atlasSearch = atlasSearch,
                             context = context
                         )

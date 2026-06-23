@@ -79,6 +79,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.a
     maxEcpuPerSecond: Int = 5000,
     maxStorageGb: Int = 10,
     snapshotRetentionLimit: Int = 1,
+    kmsKey: KmsKeySource? = null,
 ): Unit {
     if (!Cache.Settings.supports("memcached-aws")) throw IllegalArgumentException("You need to reference 'MemcachedCache' in your server definition to use this.")
     emitter.fulfillSetting(
@@ -89,6 +90,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.a
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
     val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+    val kmsKeyArn = (kmsKey ?: emitter.encryptionKey).resolveKeyArn(name)
 
     emitter.emit(name) {
         "resource.aws_elasticache_serverless_cache.${name}" {
@@ -106,6 +108,7 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.a
             "daily_snapshot_time" - dailySnapshotTime.toString()
             "major_engine_version" - version
             "snapshot_retention_limit" - snapshotRetentionLimit
+            if (kmsKeyArn != null) "kms_key_id" - kmsKeyArn
             if (vpcInfo != null) {
                 "security_group_ids" - listOf<String>(vpcInfo.securityGroup)
                 "subnet_ids" - vpcInfo.privateSubnets

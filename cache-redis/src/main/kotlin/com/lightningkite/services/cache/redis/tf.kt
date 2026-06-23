@@ -20,13 +20,13 @@ public class ReusableRedisSetting(
  * The generated settings URL connects to the first cache node on the default database (0).
  *
  * @param name The base name of the terraform resources
- * @param type The EC2 instance type for cache nodes (e.g., "cache.t2.micro", "cache.m5.large")
+ * @param type The EC2 instance type for cache nodes (e.g., "cache.t4g.micro", "cache.m5.large")
  * @param parameterGroupName The Redis parameter group (default: "default.redis7")
  * @param count The number of cache nodes to create (1 for non-cluster mode)
  */
 context(emitter: TerraformEmitterAws) public fun awsElasticacheRedis(
     name: String,
-    type: String = "cache.t2.micro",
+    type: String = "cache.t4g.micro",
     parameterGroupName: String = "default.redis7",
     count: Int = 1,
 ): ReusableRedisSetting {
@@ -44,7 +44,7 @@ context(emitter: TerraformEmitterAws) public fun awsElasticacheRedis(
             }
         }
         "resource.aws_elasticache_cluster.${name}" {
-            "cluster_id" - "${emitter.projectPrefix}-${name}"
+            "cluster_id" - "${emitter.projectPrefix}-${name}".lowercase()
             "engine" - "redis"
             "node_type" - type
             "num_cache_nodes" - count
@@ -78,17 +78,20 @@ context(emitter: TerraformEmitterAws) public fun awsElasticacheRedis(
  */
 context(emitter: TerraformEmitterAws) public fun awsElasticacheRedisServerless(
     name: String,
-    version: String = "1.6",
+    // ElastiCache Serverless Redis only accepts the major version "7" (Redis OSS 7.x); "1.6" is a Memcached version.
+    version: String = "7",
     dailySnapshotTime: LocalTime = LocalTime(9, 0),
     maxEcpuPerSecond: Int = 5000,
     maxStorageGb: Int = 10,
     snapshotRetentionLimit: Int = 1,
+    kmsKey: KmsKeySource? = null,
 ): ReusableRedisSetting {
     if (!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
     val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+    val kmsKeyArn = (kmsKey ?: emitter.encryptionKey).resolveKeyArn(name)
 
     emitter.emit(name) {
         "resource.aws_elasticache_serverless_cache.${name}" {
@@ -106,6 +109,7 @@ context(emitter: TerraformEmitterAws) public fun awsElasticacheRedisServerless(
             "daily_snapshot_time" - dailySnapshotTime.toString()
             "major_engine_version" - version
             "snapshot_retention_limit" - snapshotRetentionLimit
+            if (kmsKeyArn != null) "kms_key_id" - kmsKeyArn
             if (vpcInfo != null) {
                 "security_group_ids" - listOf<String>(vpcInfo.securityGroup)
                 "subnet_ids" - vpcInfo.privateSubnets
@@ -136,12 +140,12 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.r
  *
  * The generated settings URL connects to the first cache node on the default database (0).
  *
- * @param type The EC2 instance type for cache nodes (e.g., "cache.t2.micro", "cache.m5.large")
+ * @param type The EC2 instance type for cache nodes (e.g., "cache.t4g.micro", "cache.m5.large")
  * @param parameterGroupName The Redis parameter group (default: "default.redis7")
  * @param count The number of cache nodes to create (1 for non-cluster mode)
  */
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedis(
-    type: String = "cache.t2.micro",
+    type: String = "cache.t4g.micro",
     parameterGroupName: String = "default.redis7",
     count: Int = 1,
 ): ReusableRedisSetting = redis(awsElasticacheRedis(name, type, parameterGroupName, count))
@@ -163,9 +167,10 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.a
  * @param snapshotRetentionLimit Number of daily snapshots to retain
  */
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedisServerless(
-    version: String = "1.6",
+    version: String = "7",
     dailySnapshotTime: LocalTime = LocalTime(9, 0),
     maxEcpuPerSecond: Int = 5000,
     maxStorageGb: Int = 10,
     snapshotRetentionLimit: Int = 1,
-): ReusableRedisSetting = redis(awsElasticacheRedisServerless(name, version, dailySnapshotTime, maxEcpuPerSecond, maxStorageGb, snapshotRetentionLimit))
+    kmsKey: KmsKeySource? = null,
+): ReusableRedisSetting = redis(awsElasticacheRedisServerless(name, version, dailySnapshotTime, maxEcpuPerSecond, maxStorageGb, snapshotRetentionLimit, kmsKey))

@@ -248,13 +248,18 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
                 "from_port" - 587
                 "to_port" - 587
                 "ip_protocol" - "tcp"
-                "cidr_ipv4" - "0.0.0.0/0"
+                // Only instances inside the VPC ever reach this endpoint; don't expose it to the world.
+                "cidr_ipv4" - vpcInfo.cidr
             }
             "resource.aws_vpc_endpoint.$name" {
                 "vpc_id" - vpcInfo.id
                 "service_name" - "com.amazonaws.${emitter.applicationRegion}.email-smtp"
                 "security_group_ids" - listOf(expression("aws_security_group.$name.id"))
                 "vpc_endpoint_type" - "Interface"
+                // Place ENIs in the private subnets and enable private DNS so the standard SMTP hostname
+                // resolves to the endpoint instead of egressing via the NAT gateway.
+                "subnet_ids" - vpcInfo.privateSubnets
+                "private_dns_enabled" - true
             }
         }
 

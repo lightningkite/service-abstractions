@@ -69,6 +69,21 @@ private fun skipIfUnavailable() {
         throw org.junit.AssumptionViolatedException("Skipping: DocumentDB local container unavailable and DOCUMENTDB_TEST_URL not set")
 }
 
+class DocumentDbHealthCheckTest {
+    @BeforeTest fun checkAvailable() = skipIfUnavailable()
+
+    // The framework health check does upsertOneById of a model whose only field is _id. That produced an
+    // empty $setOnInsert, which DocumentDB rejects with "Modifiers operate on fields" — this guards the fix.
+    @kotlin.test.Test fun healthCheckUpsertsIdOnlyModel() = kotlinx.coroutines.runBlocking {
+        val status = docDb().healthCheck()
+        kotlin.test.assertEquals(
+            com.lightningkite.services.data.HealthStatus.Level.OK,
+            status.level,
+            status.additionalMessage,
+        )
+    }
+}
+
 class DocumentDbConditionTests : ConditionTests() {
     override val database: Database get() = docDb()
     @BeforeTest fun checkAvailable() = skipIfUnavailable()
