@@ -10,6 +10,11 @@ public data class MongoAutoScale(
     val maxSize: String = "M40",
 )
 
+public enum class ElectableNodeCount(internal val count: Int){
+    `3`(3),
+    `5`(5),
+    `7`(7)
+}
 
 context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.mongodbAtlas(
@@ -19,7 +24,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     zoneName: String? = null,
     instanceSize: String = "M10",
     autoScale: MongoAutoScale? = null,
-    electableNodeCount: Int = 3,
+    electableNodeCount: ElectableNodeCount = ElectableNodeCount.`3`,
     analyticNodeCount: Int = 1,
     existingProjectId: String? = null,
 ): Unit {
@@ -84,7 +89,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                             }
                             "electable_specs" {
                                 "instance_size" - instanceSize
-                                "node_count" - electableNodeCount
+                                "node_count" - electableNodeCount.count
                             }
                             if (analyticNodeCount > 0)
                                 "analytics_specs" {
@@ -118,7 +123,6 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
         }
 
         (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
-            val atlasCidr = "192.168.248.0/21"
             val cidr = vpcInfo.cidr
             // MongoDB ATLAS VPC Peer Conf
             "data.aws_caller_identity.${this@mongodbAtlas.name}_current" {}
@@ -149,12 +153,12 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
             // VPC Peer Device to ATLAS Route Table Association on AWS
             "resource.aws_route.aws_peer_to_atlas_route_1" {
                 "route_table_id" - expression("data.aws_route_table.application_subnets_route_table.id")
-                "destination_cidr_block" - atlasCidr
+                "destination_cidr_block" - expression("mongodbatlas_network_peering.atlas_network_peering.atlas_cidr_block")
                 "vpc_peering_connection_id" - expression("aws_vpc_peering_connection_accepter.peer.id")
             }
             "resource.aws_vpc_security_group_egress_rule" {
                 "atlas" {
-                    "cidr_ipv4" - "192.168.248.0/21"
+                    "cidr_ipv4" - expression("mongodbatlas_network_peering.atlas_network_peering.atlas_cidr_block")
                     "security_group_id" - vpcInfo.securityGroup
                     "ip_protocol" - "tcp"
                     "from_port" - 27015
