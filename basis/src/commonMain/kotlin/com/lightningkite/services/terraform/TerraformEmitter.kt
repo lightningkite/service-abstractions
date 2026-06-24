@@ -1,5 +1,6 @@
 package com.lightningkite.services.terraform
 
+import com.lightningkite.services.terraform.TerraformJsonObject.Companion.expression
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.json.*
 
@@ -38,28 +39,50 @@ public interface TerraformEmitter {
     public fun variable(need: TerraformNeed<*>)
 }
 
-public class TerraformAwsVpcInfo(
-    public val id: String,
-    public val securityGroup: String,
-    public val privateSubnets: String,
-    public val publicSubnets: String,
-    public val applicationSubnets: String,
-    public val natGatewayIps: String,
-    public val cidr: String,
-)
+
+public sealed interface AwsVpc {
+
+    public sealed interface EC2Safe : AwsVpc
+    public sealed interface LambdaSafe : AwsVpc
+
+    public interface VpcInfo : AwsVpc, LambdaSafe, EC2Safe {
+        public val id: String
+        public val securityGroup: String
+        public val privateSubnets: String
+        public val publicSubnets: String
+        public val applicationSubnet: String
+        public val natGatewayIps: String
+        public val cidr: String
+    }
+
+    public data object None : AwsVpc, LambdaSafe
+    public data object Default : AwsVpc, EC2Safe
+
+    public enum class NatGateway{
+        None,
+        Single,
+        PerAvailabilityZone,
+        PerSubnet
+    }
+}
+
 
 public interface TerraformEmitterAws : TerraformEmitter {
     public val applicationRegion: String
+    public val applicationVpc: AwsVpc
     public val policyStatements: MutableCollection<AwsPolicyStatement>
+
+    /**
+     * Default KMS key for AWS resources that encrypt at rest and don't override it (S3, cache, logs, SNS…).
+     * Defaults to [KmsKeySource.AwsManaged] so existing emitters are unaffected; a builder enabling a
+     * customer-managed key sets this to a [KmsKeySource.Existing] shared key. Resources whose key is
+     * immutable at creation (DocumentDB) deliberately ignore this and require an explicit choice instead.
+     */
+    public val encryptionKey: KmsKeySource get() = KmsKeySource.AwsManaged
 }
 
 public interface TerraformEmitterKnownIpAddresses : TerraformEmitterAws {
     public val applicationIpAddresses: String
-}
-
-public interface TerraformEmitterAwsVpc : TerraformEmitterAws, TerraformEmitterKnownIpAddresses {
-    public val applicationVpc: TerraformAwsVpcInfo
-    override val applicationIpAddresses: String get() = applicationVpc.natGatewayIps
 }
 
 public interface TerraformEmitterAwsDomain : TerraformEmitterAws {

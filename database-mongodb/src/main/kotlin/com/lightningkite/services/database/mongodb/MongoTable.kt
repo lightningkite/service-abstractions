@@ -29,6 +29,7 @@ public class MongoTable<Model : Any>(
     public val atlasSearch: Boolean,
     private val access: MongoCollectionAccess,
     override val context: SettingContext,
+    public val supportsCollation: Boolean = true,
 ) : Table<Model>, Namespaced {
     internal val bson: KBson = KBson(context.internalSerializersModule)
 
@@ -324,31 +325,49 @@ public class MongoTable<Model : Any>(
         // consumer's collect), not just the lazy pipeline construction.
         return recordingFlow("find") { access {
             var anyFts: Condition.FullTextSearch<*>? = null
-            condition.walk { if (it is Condition.FullTextSearch) anyFts = it }
+            var hasGeo = false
+            condition.walk {
+                if (it is Condition.FullTextSearch) anyFts = it
+                if (it is Condition.GeoDistance) hasGeo = true
+            }
 
-            aggregate<BsonDocument>(
-                buildList {
-                    if (anyFts != null && atlasSearch) {
-                        add(
-                            documentOf(
-                                "\$search" to documentOf(
-                                    "index" to "default",
-                                    "text" to documentOf(
-                                        "query" to anyFts.value,
-                                        "fuzzy" to documentOf(),
-                                        "path" to documentOf("wildcard" to "*"),
-                                        "matchCriteria" to if (anyFts.requireAllTermsPresent) "all" else "any"
+            // $nearSphere (used for GeoDistance) is banned inside aggregate().$match in MongoDB 5+.
+            // Use collection.find() directly when the query contains a geo distance condition.
+            if (hasGeo && anyFts == null) {
+                val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
+                val hasCiSort = orderBy.any { s -> s.ignoreCase }
+                withDocumentClass<BsonDocument>().find(filter)
+                    .let { if (orderBy.isNotEmpty()) it.sort(sort(orderBy)) else it }
+                    .let { if (hasCiSort && supportsCollation) it.collation(Collation.builder().locale("en").build()) else it }
+                    .skip(skip)
+                    .limit(limit)
+                    .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
+                    .map { bson.parse(serializer, it) }
+            } else {
+                val hasCiSort = orderBy.any { it.ignoreCase }
+                aggregate<BsonDocument>(
+                    buildList {
+                        if (anyFts != null && atlasSearch) {
+                            add(
+                                documentOf(
+                                    "\$search" to documentOf(
+                                        "index" to "default",
+                                        "text" to documentOf(
+                                            "query" to anyFts.value,
+                                            "fuzzy" to documentOf(),
+                                            "path" to documentOf("wildcard" to "*"),
+                                            "matchCriteria" to if (anyFts.requireAllTermsPresent) "all" else "any"
+                                        )
                                     )
                                 )
                             )
-                        )
-                        add(Aggregates.project(Projections.metaSearchScore("search_score").toBsonDocument().apply {
-                            for (field in serializer.descriptor.elementNames) put(field, BsonBoolean(true))
-                        }))
-                        add(Aggregates.match(cs.bson(serializer, atlasSearch = true, bson = bson)))
-                    } else {
-                        add(Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)))
-                    }
+                            add(Aggregates.project(Projections.metaSearchScore("search_score").toBsonDocument().apply {
+                                for (field in serializer.descriptor.elementNames) put(field, BsonBoolean(true))
+                            }))
+                            add(Aggregates.match(cs.bson(serializer, atlasSearch = true, bson = bson)))
+                        } else {
+                            add(Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)))
+                        }
 
                     if (anyFts != null && !atlasSearch) {
                         add(Aggregates.project(Projections.metaSearchScore("text_search_score").toBsonDocument().apply {
@@ -356,7 +375,12 @@ public class MongoTable<Model : Any>(
                         }))
                         add(Aggregates.sort(sort(orderBy, Sorts.metaTextScore("text_search_score"))))
                     } else if (orderBy.isNotEmpty()) {
-                        add(Aggregates.sort(sort(orderBy)))
+                        if (hasCiSort && !supportsCollation) {
+                            add(addCiFields(orderBy))
+                            add(Aggregates.sort(sortCi(orderBy)))
+                        } else {
+                            add(Aggregates.sort(sort(orderBy)))
+                        }
                     }
                     add(Aggregates.skip(skip))
                     add(Aggregates.limit(limit))
@@ -371,7 +395,7 @@ public class MongoTable<Model : Any>(
                 .map {
                     bson.parse(serializer, it)
                 }
-        } }
+        }
     }
 
     /**
@@ -396,7 +420,19 @@ public class MongoTable<Model : Any>(
     override suspend fun count(condition: Condition<Model>): Int {
         val cs = condition.simplify()
         if (cs is Condition.Never) return 0
-        return telemetryTrace("count") { access { countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt() } }
+        var hasGeo = false
+        cs.walk { if (it is Condition.GeoDistance) hasGeo = true }
+        return telemetryTrace("count") {
+            if (hasGeo) {
+                // countDocuments uses aggregate internally; $nearSphere in $match is disallowed in MongoDB 5+.
+                // Fall back to find() which supports geo operators, then count the results.
+                withDocumentClass<BsonDocument>()
+                    .find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
+                    .toList().size
+            } else {
+                countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt()
+            }
+        }
     }
 
     override suspend fun <Key> groupCount(
@@ -944,6 +980,20 @@ public class MongoTable<Model : Any>(
             Sorts.ascending(it.field.mongo)
         else
             Sorts.descending(it.field.mongo)
+    } + listOfNotNull(lastly))
+
+    // DocumentDB and some other engines don't support MongoDB collation. Instead, for case-insensitive
+    // sorts we add computed $toLower fields and sort by those.
+    private fun ciFieldName(sortPart: SortPart<Model>) = "__sort_ci_${sortPart.field.mongo.replace(".", "_")}"
+
+    private fun addCiFields(orderBy: List<SortPart<Model>>): Bson =
+        Aggregates.addFields(orderBy.filter { it.ignoreCase }.map { s ->
+            Field(ciFieldName(s), documentOf("\$toLower" to "\$${s.field.mongo}"))
+        })
+
+    private fun sortCi(orderBy: List<SortPart<Model>>, lastly: Bson? = null): Bson = Sorts.orderBy(orderBy.map {
+        val fieldName = if (it.ignoreCase) ciFieldName(it) else it.field.mongo
+        if (it.ascending) Sorts.ascending(fieldName) else Sorts.descending(fieldName)
     } + listOfNotNull(lastly))
 
     override suspend fun findSimilar(

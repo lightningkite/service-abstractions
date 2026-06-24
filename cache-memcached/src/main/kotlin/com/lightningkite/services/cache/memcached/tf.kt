@@ -20,7 +20,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * @param count The number of cache nodes to create (1-40)
  */
 @Untested
-context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings>.awsElasticacheMemcached(
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheMemcached(
     type: String = "cache.t2.micro",
     parameterGroupName: String = "default.memcached1.6",
     count: Int = 1,
@@ -32,10 +32,15 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
     )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+
     emitter.emit(name) {
-        "resource.aws_elasticache_subnet_group.${name}" {
-            "name" - "${emitter.projectPrefix}-${name}"
-            "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
+        if (vpcInfo != null) {
+            "resource.aws_elasticache_subnet_group.${name}" {
+                "name" - "${emitter.projectPrefix}-${name}"
+                "subnet_ids" - vpcInfo.privateSubnets
+            }
         }
         "resource.aws_elasticache_cluster.${name}" {
             "cluster_id" - "${emitter.projectPrefix}-${name}"
@@ -44,8 +49,10 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
             "num_cache_nodes" - count
             "parameter_group_name" - parameterGroupName
             "port" - 11211
-            "security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
-            "subnet_group_name" - "\${aws_elasticache_subnet_group.${name}.name}"
+            if (vpcInfo != null) {
+                "security_group_ids" - listOf<String>(vpcInfo.securityGroup)
+                "subnet_group_name" - "\${aws_elasticache_subnet_group.${name}.name}"
+            }
         }
     }
 }
@@ -66,12 +73,13 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
  * @param snapshotRetentionLimit Number of daily snapshots to retain
  */
 @Untested
-context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings>.awsElasticacheMemcachedServerless(
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheMemcachedServerless(
     version: String = "1.6",
     dailySnapshotTime: LocalTime = LocalTime(9, 0),
     maxEcpuPerSecond: Int = 5000,
     maxStorageGb: Int = 10,
     snapshotRetentionLimit: Int = 1,
+    kmsKey: KmsKeySource? = null,
 ): Unit {
     if (!Cache.Settings.supports("memcached-aws")) throw IllegalArgumentException("You need to reference 'MemcachedCache' in your server definition to use this.")
     emitter.fulfillSetting(
@@ -80,6 +88,10 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
     )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+    val kmsKeyArn = (kmsKey ?: emitter.encryptionKey).resolveKeyArn(name)
+
     emitter.emit(name) {
         "resource.aws_elasticache_serverless_cache.${name}" {
             "name" - "${emitter.projectPrefix}-${name}"
@@ -96,8 +108,11 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
             "daily_snapshot_time" - dailySnapshotTime.toString()
             "major_engine_version" - version
             "snapshot_retention_limit" - snapshotRetentionLimit
-            "security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
-            "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
+            if (kmsKeyArn != null) "kms_key_id" - kmsKeyArn
+            if (vpcInfo != null) {
+                "security_group_ids" - listOf<String>(vpcInfo.securityGroup)
+                "subnet_ids" - vpcInfo.privateSubnets
+            }
         }
     }
 }

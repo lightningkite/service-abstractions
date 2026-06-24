@@ -13,9 +13,13 @@ import kotlinx.serialization.KSerializer
 import org.bson.BsonDocument
 import org.bson.UuidRepresentation
 import java.io.File
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
 import kotlin.math.roundToInt
 
 /**
@@ -68,6 +72,7 @@ public class MongoDatabase(
     override val name: String,
     public val databaseName: String,
     public val atlasSearch: Boolean = false,
+    public val supportsCollation: Boolean = true,
     public val clientSettings: MongoClientSettings,
     override val context: SettingContext,
 ) : Database {
@@ -101,6 +106,39 @@ public class MongoDatabase(
         ): Database.Settings =
             Database.Settings("mongodb-file://$folder?port=$port&databaseName=$databaseName")
 
+        /**
+         * Builds client settings from a connection string, transparently trusting the Amazon RDS CA when the
+         * target is Amazon DocumentDB with TLS. DocumentDB's server certificate is signed by a private Amazon
+         * RDS CA that is not in the JVM default truststore, so `tls=true` would otherwise fail the handshake.
+         * Scoped to `*.docdb.amazonaws.com` hosts so real MongoDB / Atlas TLS (which use public CAs) is untouched.
+         */
+        private fun clientSettingsForConnection(connectionString: String): MongoClientSettings {
+            val cs = ConnectionString(connectionString)
+            val builder = MongoClientSettings.builder()
+                // Default retryWrites=false for DocumentDB compatibility; the connection string can override
+                // this with retryWrites=true for real MongoDB.
+                .retryWrites(false)
+                .applyConnectionString(cs)
+            if (cs.sslEnabled == true && cs.hosts.any { it.contains(".docdb.amazonaws.com") }) {
+                builder.applyToSslSettings { it.context(documentDbSslContext) }
+            }
+            return builder.build()
+        }
+
+        /** TLS context that trusts the embedded Amazon RDS CA bundle, for connecting to DocumentDB. */
+        private val documentDbSslContext: SSLContext by lazy {
+            val certs = MongoDatabase::class.java.getResourceAsStream("/rds-global-bundle.pem")
+                ?.use { CertificateFactory.getInstance("X.509").generateCertificates(it) }
+                ?: error("rds-global-bundle.pem resource is missing from the database-mongodb jar")
+            val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+                load(null, null)
+                certs.forEachIndexed { i, cert -> setCertificateEntry("rds-ca-$i", cert) }
+            }
+            val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                .apply { init(keyStore) }
+            SSLContext.getInstance("TLS").apply { init(null, tmf.trustManagers, null) }
+        }
+
         init {
             Database.Settings.register("mongodb") { name, url, context ->
                 Regex("""mongodb://.*/(?<databaseName>[^?]+)(?:\?.*)?""")
@@ -114,9 +152,7 @@ public class MongoDatabase(
                         MongoDatabase(
                             name = name,
                             databaseName = match.groups["databaseName"]!!.value,
-                            clientSettings = MongoClientSettings.builder()
-                                .applyConnectionString(ConnectionString(withoutAtlasSearch))
-                                .build(),
+                            clientSettings = clientSettingsForConnection(withoutAtlasSearch),
                             atlasSearch = atlasSearch,
                             context = context
                         )
@@ -127,16 +163,13 @@ public class MongoDatabase(
                 Regex("""mongodb\+srv://.*/(?<databaseName>[^?]+)(?:\?.*)?""")
                     .matchEntire(url)
                     ?.let { match ->
-                        val poolMax = if (isServerless) 4 else 100
                         val atlasSearch = url.contains("atlasSearch=true")
                         val withoutAtlasSearch =
                             url.replace("?atlasSearch=true", "").replace("&atlasSearch=true", "")
                         MongoDatabase(
                             name = name,
                             databaseName = match.groups["databaseName"]!!.value,
-                            clientSettings = MongoClientSettings.builder()
-                                .applyConnectionString(ConnectionString(withoutAtlasSearch))
-                                .build(),
+                            clientSettings = clientSettingsForConnection(withoutAtlasSearch),
                             atlasSearch = atlasSearch,
                             context = context
                         )
@@ -273,47 +306,54 @@ public class MongoDatabase(
     override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
         (collections.getOrPut(serializer to name) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-                MongoTable(name = this.name, serializer, atlasSearch = atlasSearch, access = object : MongoCollectionAccess {
-                    override suspend fun <T> wholeDb(action: suspend com.mongodb.kotlin.client.coroutine.MongoDatabase.() -> T): T {
-                        return action(databaseLazy.value)
-                    }
-
-                    override suspend fun <T> run(action: suspend MongoCollection<BsonDocument>.() -> T): T =
-                        run2(action, 0)
-
-                    suspend fun <T> run2(action: suspend MongoCollection<BsonDocument>.() -> T, tries: Int = 0): T {
-                        val it = (coroutineCollections.getOrPut(serializer to name) {
-                            lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-                                databaseLazy.value.getCollection(name, BsonDocument::class.java)
-                            }
-                        } as Lazy<MongoCollection<BsonDocument>>).value
-                        try {
-                            return action(it)
-                        } catch (e: MongoBulkWriteException) {
-                            if (e.writeErrors.all { ErrorCategory.fromErrorCode(it.code) == ErrorCategory.DUPLICATE_KEY })
-                                throw UniqueViolationException(
-                                    cause = e,
-                                    table = it.namespace.collectionName
-                                )
-                            else throw e
-                        } catch (e: MongoSocketException) {
-                            if (tries >= 2) throw e
-                            else {
-                                disconnect()
-                                return run2(action, tries + 1)
-                            }
-                        } catch (e: MongoException) {
-                            if (ErrorCategory.fromErrorCode(e.code) == ErrorCategory.DUPLICATE_KEY)
-                                throw UniqueViolationException(
-                                    cause = e,
-                                    table = it.namespace.collectionName
-                                )
-                            else throw e
-                        } catch (e: Exception) {
-                            throw e
+                MongoTable(
+                    name = this.name,
+                    serializer = serializer,
+                    atlasSearch = atlasSearch,
+                    supportsCollation = supportsCollation,
+                    access = object : MongoCollectionAccess {
+                        override suspend fun <T> wholeDb(action: suspend com.mongodb.kotlin.client.coroutine.MongoDatabase.() -> T): T {
+                            return action(databaseLazy.value)
                         }
-                    }
-                }, context = context)
+
+                        override suspend fun <T> run(action: suspend MongoCollection<BsonDocument>.() -> T): T =
+                            run2(action, 0)
+
+                        suspend fun <T> run2(action: suspend MongoCollection<BsonDocument>.() -> T, tries: Int = 0): T {
+                            val it = (coroutineCollections.getOrPut(serializer to name) {
+                                lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+                                    databaseLazy.value.getCollection(name, BsonDocument::class.java)
+                                }
+                            } as Lazy<MongoCollection<BsonDocument>>).value
+                            try {
+                                return action(it)
+                            } catch (e: MongoBulkWriteException) {
+                                if (e.writeErrors.all { ErrorCategory.fromErrorCode(it.code) == ErrorCategory.DUPLICATE_KEY })
+                                    throw UniqueViolationException(
+                                        cause = e,
+                                        table = it.namespace.collectionName
+                                    )
+                                else throw e
+                            } catch (e: MongoSocketException) {
+                                if (tries >= 2) throw e
+                                else {
+                                    disconnect()
+                                    return run2(action, tries + 1)
+                                }
+                            } catch (e: MongoException) {
+                                if (ErrorCategory.fromErrorCode(e.code) == ErrorCategory.DUPLICATE_KEY)
+                                    throw UniqueViolationException(
+                                        cause = e,
+                                        table = it.namespace.collectionName
+                                    )
+                                else throw e
+                            } catch (e: Exception) {
+                                throw e
+                            }
+                        }
+                    },
+                    context = context
+                )
             }
         } as Lazy<MongoTable<T>>).value
 }

@@ -170,36 +170,30 @@ private fun <T> Condition<T>.dump(
             bson = bson
         )
 
-        is Condition.GeoDistance -> into.sub(key)["\$geoWithin"] = documentOf(
-            "\$centerSphere" to listOf(
-                listOf(this.value.longitude, this.value.latitude),
-                this.lessThanKilometers / 6378.1
+        is Condition.GeoDistance -> {
+            // $nearSphere with GeoJSON geometry works on both MongoDB and DocumentDB.
+            // $geoWithin/$centerSphere was the old form but $centerSphere is not supported by DocumentDB.
+            val geoDoc = documentOf(
+                "\$geometry" to documentOf(
+                    "type" to "Point",
+                    "coordinates" to listOf(this.value.longitude, this.value.latitude)
+                ),
+                "\$maxDistance" to this.lessThanKilometers * 1000.0  // km → meters
             )
-//            "\$maxDistance" to this.lessThanKilometers * 1000,
-//            "\$minDistance" to this.greaterThanKilometers * 1000,
-//            "\$geometry" to Serialization.Internal.bson.stringifyAny(GeoCoordinateGeoJsonSerializer, this.value),
-        )
-
-        is Condition.StringContains -> {
-            into.sub(key).also {
-                it["\$regex"] = Regex.escape(this.value)
-                it["\$options"] = if (this.ignoreCase) "i" else ""
-            }
+            if (this.greaterThanKilometers > 0.0) geoDoc["\$minDistance"] = this.greaterThanKilometers * 1000.0
+            into.sub(key)["\$nearSphere"] = geoDoc
         }
 
-        is Condition.RawStringContains -> {
-            into.sub(key).also {
-                it["\$regex"] = Regex.escape(this.value)
-                it["\$options"] = if (this.ignoreCase) "i" else ""
-            }
-        }
+        // Use BsonRegularExpression to embed options in the BSON regex type rather than a
+        // separate $options field. DocumentDB 5.0+ rejects {$regex: "str", $options: "i"}.
+        is Condition.StringContains ->
+            into.sub(key)["\$regex"] = BsonRegularExpression(Regex.escape(this.value), if (this.ignoreCase) "i" else "")
 
-        is Condition.RegexMatches -> {
-            into.sub(key).also {
-                it["\$regex"] = this.pattern
-                it["\$options"] = if (this.ignoreCase) "i" else ""
-            }
-        }
+        is Condition.RawStringContains ->
+            into.sub(key)["\$regex"] = BsonRegularExpression(Regex.escape(this.value), if (this.ignoreCase) "i" else "")
+
+        is Condition.RegexMatches ->
+            into.sub(key)["\$regex"] = BsonRegularExpression(this.pattern, if (this.ignoreCase) "i" else "")
 
         is Condition.FullTextSearch -> {
             if (atlasSearch) {
@@ -375,8 +369,24 @@ internal data class UpdateWithOptions(
 internal fun <T> Condition<T>.bson(serializer: KSerializer<T>, atlasSearch: Boolean = false, bson: KBson): Document =
     Document().also { dump(serializer, it, null, atlasSearch, bson) }
 
+/**
+ * Removes top-level update modifiers whose operand is empty (e.g. `{ "$set": {} }`). MongoDB silently treats
+ * these as no-ops, but DocumentDB rejects them with error 9 "Modifiers operate on fields" — which happens for
+ * an upsert of a model that has no fields beyond `_id` (the health-check model, for instance).
+ */
+internal fun Document.pruneEmptyModifiers(): Document {
+    entries.filter { (key, value) ->
+        key.startsWith("\$") && when (value) {
+            is Document -> value.isEmpty()
+            is BsonDocument -> value.isEmpty()
+            else -> false
+        }
+    }.map { it.key }.forEach { remove(it) }
+    return this
+}
+
 internal fun <T> Modification<T>.bson(serializer: KSerializer<T>, bson: KBson): UpdateWithOptions =
-    UpdateWithOptions().also { dump(serializer, it, null, bson) }
+    UpdateWithOptions().also { dump(serializer, it, null, bson); it.document.pruneEmptyModifiers() }
 
 internal fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, bson: KBson): Boolean {
     val set: Document? = (document["\$set"] as? Document) ?: (document["\$set"] as? BsonDocument)?.toDocument()
@@ -404,6 +414,9 @@ internal fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, 
             if (it.containsKey(k)) return false
         }
     }
+    // Deduping above can empty out $setOnInsert (e.g. upserting an id-only model); drop any modifier that
+    // became empty so DocumentDB doesn't reject the command with "Modifiers operate on fields".
+    document.pruneEmptyModifiers()
     options = options.upsert(true)
     return true
 }

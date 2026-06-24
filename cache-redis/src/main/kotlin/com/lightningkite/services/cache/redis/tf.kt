@@ -6,6 +6,10 @@ import com.lightningkite.services.terraform.*
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.json.JsonPrimitive
 
+public class ReusableRedisSetting(
+    public val connectionStringExpression: String
+)
+
 /**
  * Creates an AWS ElastiCache Redis cluster for caching.
  *
@@ -15,40 +19,136 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * The generated settings URL connects to the first cache node on the default database (0).
  *
- * @param type The EC2 instance type for cache nodes (e.g., "cache.t2.micro", "cache.m5.large")
+ * @param name The base name of the terraform resources
+ * @param type The EC2 instance type for cache nodes (e.g., "cache.t4g.micro", "cache.m5.large")
  * @param parameterGroupName The Redis parameter group (default: "default.redis7")
  * @param count The number of cache nodes to create (1 for non-cluster mode)
  */
-@Untested
-context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedis(
-    type: String = "cache.t2.micro",
+context(emitter: TerraformEmitterAws) public fun awsElasticacheRedis(
+    name: String,
+    type: String = "cache.t4g.micro",
     parameterGroupName: String = "default.redis7",
     count: Int = 1,
-): Unit {
+): ReusableRedisSetting {
     if (!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
-    emitter.fulfillSetting(
-        name,
-        JsonPrimitive(value = $$"redis://${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).address}:${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).port}/0")
-    )
     emptyList<TerraformProvider>().forEach { emitter.require(it) }
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+
     emitter.emit(name) {
-        "resource.aws_elasticache_subnet_group.${name}" {
-            "name" - "${emitter.projectPrefix}-${name}"
-            "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
+        if (vpcInfo != null) {
+            "resource.aws_elasticache_subnet_group.${name}" {
+                "name" - "${emitter.projectPrefix}-${name}"
+                "subnet_ids" - vpcInfo.privateSubnets
+            }
         }
         "resource.aws_elasticache_cluster.${name}" {
-            "cluster_id" - "${emitter.projectPrefix}-${name}"
+            "cluster_id" - "${emitter.projectPrefix}-${name}".lowercase()
             "engine" - "redis"
             "node_type" - type
             "num_cache_nodes" - count
             "parameter_group_name" - parameterGroupName
             "port" - 6379
-            "security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
-            "subnet_group_name" - expression("aws_elasticache_subnet_group.${name}.name")
+            if (vpcInfo != null) {
+                "security_group_ids" - listOf<String>(vpcInfo.securityGroup)
+                "subnet_group_name" - expression("aws_elasticache_subnet_group.${name}.name")
+            }
         }
     }
+    return ReusableRedisSetting($$"redis://${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).address}:${element(aws_elasticache_cluster.$${name}.cache_nodes, 0).port}/0")
 }
+
+
+/**
+ * Creates an AWS ElastiCache Serverless Redis cache.
+ *
+ * Serverless caches automatically scale based on demand without managing nodes.
+ * Uses ECPU (ElastiCache Processing Units) for pricing.
+ *
+ * Emits Terraform resources for:
+ * - `aws_elasticache_serverless_cache`: The serverless Redis cache
+ *
+ * @param name The base name of the terraform resources
+ * @param version The Redis major engine version (e.g., "7" for Redis 7.x)
+ * @param dailySnapshotTime Time of day for automatic snapshots (UTC)
+ * @param maxEcpuPerSecond Maximum ECPU per second (controls performance ceiling)
+ * @param maxStorageGb Maximum storage in gigabytes
+ * @param snapshotRetentionLimit Number of daily snapshots to retain
+ */
+context(emitter: TerraformEmitterAws) public fun awsElasticacheRedisServerless(
+    name: String,
+    // ElastiCache Serverless Redis only accepts the major version "7" (Redis OSS 7.x); "1.6" is a Memcached version.
+    version: String = "7",
+    dailySnapshotTime: LocalTime = LocalTime(9, 0),
+    maxEcpuPerSecond: Int = 5000,
+    maxStorageGb: Int = 10,
+    snapshotRetentionLimit: Int = 1,
+    kmsKey: KmsKeySource? = null,
+): ReusableRedisSetting {
+    if (!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
+    emptyList<TerraformProvider>().forEach { emitter.require(it) }
+    setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
+
+    val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+    val kmsKeyArn = (kmsKey ?: emitter.encryptionKey).resolveKeyArn(name)
+
+    emitter.emit(name) {
+        "resource.aws_elasticache_serverless_cache.${name}" {
+            "name" - "${emitter.projectPrefix}-${name}"
+            "engine" - "redis"
+            "cache_usage_limits" {
+                "data_storage" {
+                    "maximum" - maxStorageGb
+                    "unit" - "GB"
+                }
+                "ecpu_per_second" {
+                    "maximum" - maxEcpuPerSecond
+                }
+            }
+            "daily_snapshot_time" - dailySnapshotTime.toString()
+            "major_engine_version" - version
+            "snapshot_retention_limit" - snapshotRetentionLimit
+            if (kmsKeyArn != null) "kms_key_id" - kmsKeyArn
+            if (vpcInfo != null) {
+                "security_group_ids" - listOf<String>(vpcInfo.securityGroup)
+                "subnet_ids" - vpcInfo.privateSubnets
+            }
+        }
+    }
+    return ReusableRedisSetting($$"redis://${aws_elasticache_serverless_cache.$${name}.endpoint[0].address}:${aws_elasticache_serverless_cache.$${name}.endpoint[0].port}/0")
+}
+
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.redis(
+    reusableRedisSetting: ReusableRedisSetting
+): ReusableRedisSetting {
+    val c = reusableRedisSetting
+    emitter.fulfillSetting(
+        name,
+        JsonPrimitive(value = c.connectionStringExpression)
+    )
+    return c
+}
+
+
+/**
+ * Creates an AWS ElastiCache Redis cluster for caching.
+ *
+ * Emits Terraform resources for:
+ * - `aws_elasticache_subnet_group`: Subnet group for the cluster
+ * - `aws_elasticache_cluster`: The Redis cluster itself
+ *
+ * The generated settings URL connects to the first cache node on the default database (0).
+ *
+ * @param type The EC2 instance type for cache nodes (e.g., "cache.t4g.micro", "cache.m5.large")
+ * @param parameterGroupName The Redis parameter group (default: "default.redis7")
+ * @param count The number of cache nodes to create (1 for non-cluster mode)
+ */
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedis(
+    type: String = "cache.t4g.micro",
+    parameterGroupName: String = "default.redis7",
+    count: Int = 1,
+): ReusableRedisSetting = redis(awsElasticacheRedis(name, type, parameterGroupName, count))
 
 
 /**
@@ -66,39 +166,11 @@ context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings
  * @param maxStorageGb Maximum storage in gigabytes
  * @param snapshotRetentionLimit Number of daily snapshots to retain
  */
-@Untested
-context(emitter: TerraformEmitterAwsVpc) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedisServerless(
-    version: String = "1.6",
+context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedisServerless(
+    version: String = "7",
     dailySnapshotTime: LocalTime = LocalTime(9, 0),
     maxEcpuPerSecond: Int = 5000,
     maxStorageGb: Int = 10,
     snapshotRetentionLimit: Int = 1,
-): Unit {
-    if (!Cache.Settings.supports("redis")) throw IllegalArgumentException("You need to reference 'RedisCache' in your server definition to use this.")
-    emitter.fulfillSetting(
-        name,
-        JsonPrimitive(value = $$"redis://${aws_elasticache_serverless_cache.$${name}.endpoint[0].address}:${aws_elasticache_serverless_cache.$${name}.endpoint[0].port}/0")
-    )
-    emptyList<TerraformProvider>().forEach { emitter.require(it) }
-    setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
-    emitter.emit(name) {
-        "resource.aws_elasticache_serverless_cache.${name}" {
-            "name" - "${emitter.projectPrefix}-${name}"
-            "engine" - "redis"
-            "cache_usage_limits" {
-                "data_storage" {
-                    "maximum" - maxStorageGb
-                    "unit" - "GB"
-                }
-                "ecpu_per_second" {
-                    "maximum" - maxEcpuPerSecond
-                }
-            }
-            "daily_snapshot_time" - dailySnapshotTime.toString()
-            "major_engine_version" - version
-            "snapshot_retention_limit" - snapshotRetentionLimit
-            "security_group_ids" - listOf<String>(expression(emitter.applicationVpc.securityGroup))
-            "subnet_ids" - expression(emitter.applicationVpc.privateSubnets)
-        }
-    }
-}
+    kmsKey: KmsKeySource? = null,
+): ReusableRedisSetting = redis(awsElasticacheRedisServerless(name, version, dailySnapshotTime, maxEcpuPerSecond, maxStorageGb, snapshotRetentionLimit, kmsKey))
