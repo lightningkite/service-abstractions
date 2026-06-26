@@ -21,8 +21,7 @@ public fun awsSesDomainConfiguration(
     dmarcPercent: Int = 75,
     /**
      * The domain used in outgoing email addresses (e.g. "mydomain.com" to send as noreply@mydomain.com).
-     * Defaults to the application domain. Must be a parent of the application domain so both reside
-     * in the same Route53 zone.
+     * Defaults to the application domain. Both domains must be in the same Route53 zone.
      */
     emailDomain: String = emitter.domain,
 ): AwsSesDomainConfiguration {
@@ -116,8 +115,13 @@ public fun awsSesDomainConfiguration(
         }
 
         // If emails should come from a different domain than the app domain, verify it separately.
-        // Both domains must reside in the same Route53 zone (enforced above).
+        // Both domains must reside in the same Route53 zone (domainZoneId).
         if (emailDomain != emitter.domain) {
+            require(emitter.domain.endsWith(".$emailDomain")) {
+                "emailDomain '$emailDomain' must be a parent of the application domain '${emitter.domain}' " +
+                "so both reside in the same Route53 zone. " +
+                "To use an unrelated domain, create a separate TerraformEmitterAwsDomain for it."
+            }
             val emailName = "${name}_email"
 
             "resource.aws_ses_domain_identity.$emailName" {

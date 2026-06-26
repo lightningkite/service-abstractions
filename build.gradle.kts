@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.shadow) apply false
     alias(libs.plugins.versionCatalogUpdate)
     id("org.jetbrains.kotlinx.atomicfu") version "0.32.1"
+    id("pl.allegro.tech.build.axion-release") version "1.21.2"
 }
 
 buildscript {
@@ -22,8 +23,19 @@ buildscript {
     }
 }
 
+// Versioning is git-tag-driven via axion-release: on a tag -> that exact version; between tags ->
+// <nextPatch>-g<shortSha> (immutable, pins to the commit); dirty working tree -> ...-local.
+scmVersion {
+    tag { prefix.set("") }                       // tags are 1.2.0, not v1.2.0
+    snapshotCreator { _, position ->
+        "g${position.shortRevision}" + if (position.isClean) "" else "-local"
+    }
+}
+version = scmVersion.version
+
 allprojects {
     group = "com.lightningkite.services"
+    version = rootProject.version
 
     repositories {
         mavenLocal()

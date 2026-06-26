@@ -395,7 +395,8 @@ public class MongoTable<Model : Any>(
                 .map {
                     bson.parse(serializer, it)
                 }
-        }
+            }
+        } }
     }
 
     /**
@@ -423,14 +424,16 @@ public class MongoTable<Model : Any>(
         var hasGeo = false
         cs.walk { if (it is Condition.GeoDistance) hasGeo = true }
         return telemetryTrace("count") {
-            if (hasGeo) {
-                // countDocuments uses aggregate internally; $nearSphere in $match is disallowed in MongoDB 5+.
-                // Fall back to find() which supports geo operators, then count the results.
-                withDocumentClass<BsonDocument>()
-                    .find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
-                    .toList().size
-            } else {
-                countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt()
+            access {
+                if (hasGeo) {
+                    // countDocuments uses aggregate internally; $nearSphere in $match is disallowed in MongoDB 5+.
+                    // Fall back to find() which supports geo operators, then count the results.
+                    withDocumentClass<BsonDocument>()
+                        .find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
+                        .toList().size
+                } else {
+                    countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt()
+                }
             }
         }
     }
