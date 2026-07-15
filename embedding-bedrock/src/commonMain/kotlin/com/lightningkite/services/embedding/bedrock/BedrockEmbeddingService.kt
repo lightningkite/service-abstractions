@@ -139,13 +139,19 @@ public class BedrockEmbeddingService(
      */
     private suspend fun invokeModel(modelId: String, jsonBody: String): String {
         val bodyBytes = jsonBody.encodeToByteArray()
-        val path = "/model/${encodePathSegment(modelId)}/invoke"
+        // Wire path keeps the model id's literal ':'; the signing path percent-encodes it to
+        // %3A to match AWS's canonical request (Bedrock is a non-S3 SigV4 service, so AWS
+        // URI-encodes each path segment before signing). Encoding the wire path too would risk
+        // AWS double-encoding the '%'. See encodePathSegment / BedrockLlmAccess for the full
+        // reasoning.
+        val wirePath = "/model/$modelId/invoke"
+        val signingPath = "/model/${encodePathSegment(modelId)}/invoke"
         val amzDate = nowAmzDate()
 
         val signed = SigV4.signHeaders(
             method = "POST",
             host = host,
-            path = path,
+            path = signingPath,
             query = "",
             headers = mapOf("content-type" to "application/json"),
             body = bodyBytes,
@@ -156,7 +162,7 @@ public class BedrockEmbeddingService(
             includeContentSha256Header = true,
         )
 
-        val response = httpClient.preparePost("https://$host$path") {
+        val response = httpClient.preparePost("https://$host$wirePath") {
             contentType(ContentType.Application.Json)
             accept(ContentType.Application.Json)
             addSigned(signed)
@@ -246,8 +252,12 @@ public class BedrockEmbeddingService(
 }
 
 /**
- * URL-encode a single path segment per AWS canonical URI rules.
- * Unreserved chars plus `:` pass through (Bedrock model IDs contain `:`).
+ * URL-encode a single path segment per AWS canonical URI rules: only RFC 3986 unreserved
+ * chars (`A-Z a-z 0-9 - . _ ~`) pass through; everything else — including `:`, present in
+ * every Bedrock model id's `:0` version suffix — is %-encoded. The `:` MUST be encoded: AWS
+ * rebuilds its canonical request by URI-encoding each segment (`v2:0` → `v2%3A0`), so signing
+ * the literal `:` yields a mismatched signature. Used for signing only; the wire URL keeps the
+ * literal `:`.
  */
 internal fun encodePathSegment(segment: String): String {
     val sb = StringBuilder(segment.length)
@@ -255,7 +265,7 @@ internal fun encodePathSegment(segment: String): String {
         val c = b.toInt().toChar()
         when {
             c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' ||
-                    c == '-' || c == '.' || c == '_' || c == '~' || c == ':' -> sb.append(c)
+                    c == '-' || c == '.' || c == '_' || c == '~' -> sb.append(c)
             else -> {
                 sb.append('%')
                 sb.append(HEX_UP[(b.toInt() ushr 4) and 0x0f])

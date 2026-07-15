@@ -55,6 +55,7 @@ kotlinCrypto = "0.8.0"
 androidDesugaring = { module = "com.android.tools:desugar_jdk_libs", version = { ref = "androidDesugaring" } }
 angusMail = { module = "org.eclipse.angus:angus-mail", version = { ref = "angusMail" } }
 atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version = { ref = "atomicfu" } }
+aws-auth = { module = "software.amazon.awssdk:auth", version = { ref = "awsVersion" } }
 aws-cloudWatch = { module = "software.amazon.awssdk:cloudwatch", version = { ref = "awsVersion" } }
 aws-crt-client = { module = "software.amazon.awssdk:aws-crt-client", version = { ref = "awsVersion" } }
 aws-otel = { module = "io.opentelemetry.instrumentation:opentelemetry-aws-sdk-2.2", version = { ref = "openTelemetryInstrumentationAlpha" } }

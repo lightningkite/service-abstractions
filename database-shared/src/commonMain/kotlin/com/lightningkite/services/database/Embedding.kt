@@ -40,18 +40,8 @@ public class Embedding(public val values: FloatArray) {
 public class EmbeddingSerializer : GeneratedSerializer<Embedding> {
     private val defer = FloatArraySerializer()
 
-    @OptIn(SealedSerializationApi::class)
-    override val descriptor: SerialDescriptor = object : SerialDescriptor {
-        override val serialName: String get() = "com.lightningkite.services.database.Embedding"
-        override val kind: SerialKind get() = StructureKind.CLASS
-        override val elementsCount: Int = 1
-        override fun getElementName(index: Int): String = "values"
-        override fun getElementIndex(name: String): Int = if (name == "values") 0 else -1
-        override fun getElementAnnotations(index: Int): List<Annotation> = listOf()
-        override fun getElementDescriptor(index: Int): SerialDescriptor = defer.descriptor
-        override fun isElementOptional(index: Int): Boolean = false
-        override val isInline: Boolean get() = true
-    }
+    override val descriptor: SerialDescriptor =
+        InliningSerialDescriptor("com.lightningkite.services.database.Embedding", defer.descriptor)
 
     override fun serialize(
         encoder: Encoder,

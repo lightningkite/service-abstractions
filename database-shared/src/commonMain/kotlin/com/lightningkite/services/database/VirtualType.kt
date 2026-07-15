@@ -95,7 +95,7 @@ public data class VirtualStruct(
             // then this placeholder will be returned, which holds dummy information until the full descriptor is built
             object : KSerializer<Any?> {
                 private val placeholderDescriptor = buildClassSerialDescriptor("$serialName.placeholder").nullable
-                override val descriptor: SerialDescriptor = LazyRenamedSerialDescriptor(serialName) {
+                override val descriptor: SerialDescriptor = LazySerialDescriptor(serialName, StructureKind.CLASS) {
                     if (instantiated) this@Concrete.descriptor else placeholderDescriptor
                 }
 
@@ -382,8 +382,7 @@ public data class VirtualEnum(
     override fun toString(): String = "Virtual $serialName { ${options.joinToString()} }"
 
     @OptIn(SealedSerializationApi::class)
-    @Transient
-    override val descriptor: SerialDescriptor = object : SerialDescriptor {
+    private inner class VirtualEnumDescriptor : SerialDescriptor {
         @ExperimentalSerializationApi
         override val elementsCount: Int get() = options.size
 
@@ -407,7 +406,12 @@ public data class VirtualEnum(
 
         @ExperimentalSerializationApi
         override fun isElementOptional(index: Int): Boolean = false
+
+        override fun equals(other: Any?): Boolean = other is VirtualEnumDescriptor && other.serialName == serialName
+        override fun hashCode(): Int = serialName.hashCode()
     }
+    @Transient
+    override val descriptor: SerialDescriptor = VirtualEnumDescriptor()
 
     override fun deserialize(decoder: Decoder): VirtualEnumValue {
         return entries[decoder.decodeEnum(descriptor)]

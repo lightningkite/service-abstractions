@@ -43,6 +43,13 @@ internal class EventStreamParser(private val validateCrc: Boolean = true) {
     }
 
     /**
+     * Bytes held back awaiting more input — i.e. a partial frame. Non-zero at end-of-stream means
+     * the connection was cut mid-frame (a hard truncation), as opposed to a clean close between
+     * frames. Used only for diagnostics.
+     */
+    val pending: Int get() = buffer.size
+
+    /**
      * Extract as many complete messages as the current buffer allows. After this returns,
      * [buffer] holds at most a partial frame awaiting more bytes.
      */

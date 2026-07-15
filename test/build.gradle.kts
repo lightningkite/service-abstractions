@@ -46,12 +46,12 @@ kotlin {
                 api(libs.coroutines.core)
                 api(libs.kotlin.test)
                 api(libs.coroutines.testing)
-                api(libs.logBackClassic)
             }
         }
         val commonTest by getting {}
         val androidMain by getting {
             dependencies {
+                api(libs.logBackClassic)
                 api(libs.kotlin.test.junit)
             }
         }
@@ -62,6 +62,7 @@ kotlin {
         }
         val jvmMain by getting {
             dependencies {
+                api(libs.logBackClassic)
                 api(libs.kotlin.test.junit)
             }
         }

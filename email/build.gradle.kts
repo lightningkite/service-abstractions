@@ -1,4 +1,5 @@
 import com.lightningkite.deployhelpers.lkLibrary
+import org.gradle.kotlin.dsl.project
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -41,6 +42,7 @@ kotlin {
             dependencies {
                 api(project(path = ":basis"))
                 implementation(libs.kotlinx.html)
+                implementation(libs.logBackClassic)
             }
         }
         val commonTest by getting {
@@ -50,7 +52,11 @@ kotlin {
             }
         }
         val jvmMain by getting {}
-        val jvmTest by getting {}
+        val jvmTest by getting {
+            dependencies {
+                implementation(project(":test"))
+            }
+        }
     }
 }
 

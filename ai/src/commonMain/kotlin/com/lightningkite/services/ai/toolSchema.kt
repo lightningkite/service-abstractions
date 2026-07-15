@@ -76,10 +76,13 @@ public fun KSerializer<*>.toJsonSchema(
 public fun KSerializer<*>.toolArgSerializer(): KSerializer<*> {
     val real = unwrapWrapping()
     val resolved = real.nullElement() ?: real
-    return if (resolved.descriptor.kind == StructureKind.CLASS || resolved.descriptor.kind == PolymorphicKind.SEALED) {
-        real
-    } else {
-        ValueWrappedToolArgSerializer(real)
+    return when (resolved.descriptor.kind) {
+        StructureKind.CLASS, StructureKind.OBJECT, PolymorphicKind.SEALED -> {
+            real
+        }
+        else -> {
+            ValueWrappedToolArgSerializer(real)
+        }
     }
 }
 

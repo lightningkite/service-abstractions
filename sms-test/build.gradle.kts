@@ -41,6 +41,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(project(path = ":sms"))
+                api(project(path = ":test"))
             }
         }
         val commonTest by getting {

@@ -42,17 +42,31 @@ import kotlin.time.Clock
  *
  * @property region AWS region the Bedrock endpoint lives in. Determines the URL host and the
  *   signing scope; must match the region where your model access has been granted.
- * @property credentials credentials used to sign requests. Caller is responsible for
- *   refreshing session credentials; the instance holds them for the service lifetime.
+ * @property credentialsProvider supplies credentials for signing, consulted once per request
+ *   so refreshable (STS / SSO / assume-role / IMDS) sources can rotate expiring credentials.
+ *   Use the [AwsCredentials] secondary constructor for a fixed key pair.
  * @property clock Source of "now" for signatures. Exposed primarily for deterministic tests.
  */
 public class BedrockLlmAccess(
     override val name: String,
     override val context: SettingContext,
     public val region: String,
-    private val credentials: AwsCredentials,
+    private val credentialsProvider: AwsCredentialsProvider,
     private val clock: AmzDateClock = AmzDateClock.Default,
 ) : LlmAccess {
+
+    /**
+     * Convenience constructor for a fixed key pair. Equivalent to passing
+     * `AwsCredentialsProvider.static(credentials)`. Existing callers that supplied static
+     * credentials keep compiling unchanged.
+     */
+    public constructor(
+        name: String,
+        context: SettingContext,
+        region: String,
+        credentials: AwsCredentials,
+        clock: AmzDateClock = AmzDateClock.Default,
+    ) : this(name, context, region, AwsCredentialsProvider.static(credentials), clock)
 
     private val httpClient: HttpClient = client.config { /* no extra config needed */ }
 
@@ -65,13 +79,23 @@ public class BedrockLlmAccess(
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         try {
             val body = BedrockWire.buildRequestBody(model.id, prompt, module).toString().encodeToByteArray()
-            val path = "/model/${encodePathSegment(model.id)}/converse-stream"
+            // Two forms of the path: the wire path keeps the model id's literal ':' (what we
+            // actually PUT on the socket), while the signing path percent-encodes it to %3A.
+            // AWS recomputes its canonical request by URI-encoding each segment of the path it
+            // receives, so a literal ':' on the wire becomes %3A in AWS's canonical request —
+            // that is the value we must sign. Encoding the wire path too would risk AWS double-
+            // encoding the '%' to %253A, so we deliberately keep the two separate.
+            val wirePath = "/model/${model.id}/converse-stream"
+            val signingPath = "/model/${encodePathSegment(model.id)}/converse-stream"
             val amzDate = clock.nowAmzDate()
+            // Resolved per-request so refreshable providers (STS/SSO/assume-role) can rotate
+            // expiring credentials between calls.
+            val credentials = credentialsProvider.resolve()
 
             val signed = SigV4.signHeaders(
                 method = "POST",
                 host = host,
-                path = path,
+                path = signingPath,
                 query = "",
                 headers = mapOf("content-type" to "application/json"),
                 body = body,
@@ -82,7 +106,7 @@ public class BedrockLlmAccess(
                 includeContentSha256Header = true,
             )
 
-            httpClient.preparePost("https://$host$path") {
+            httpClient.preparePost("https://$host$wirePath") {
                 contentType(ContentType.Application.Json)
                 accept(ContentType("application", "vnd.amazon.eventstream"))
                 addSigned(signed)
@@ -98,16 +122,14 @@ public class BedrockLlmAccess(
                         modelId = model,
                     )
                 }
-                val state = BedrockStreamState()
-                consumeEventStream(response.bodyAsChannel(), state, model) { emit(it) }
-                if (!state.finished) {
-                    emit(
-                        LlmStreamEvent.Finished(
-                            stopReason = state.stopReason,
-                            usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
-                        ),
-                    )
-                }
+                // Captured so a truncation error can name the HTTP framing (chunked vs fixed
+                // length distinguishes a dropped connection from an intentional server close) and
+                // the AWS request id (lets the failure be correlated in CloudTrail/Bedrock logs).
+                val responseInfo = "status=${response.status.value}, " +
+                    "transferEncoding=${response.headers["Transfer-Encoding"]}, " +
+                    "contentLength=${response.headers["Content-Length"]}, " +
+                    "amznRequestId=${response.headers["x-amzn-RequestId"]}"
+                collectBedrockStream(response.bodyAsChannel(), model, responseInfo) { emit(it) }
             }
         } catch (e: CancellationException) {
             throw e
@@ -124,35 +146,6 @@ public class BedrockLlmAccess(
         for ((k, v) in signed) headers.append(k, v)
     }
 
-    /**
-     * Pull bytes off the response channel, feed them through [EventStreamParser], and
-     * dispatch each decoded frame to [handleBedrockEvent]. Split from [stream] so tests can
-     * reuse the same state machine against a canned byte source.
-     */
-    private suspend fun consumeEventStream(
-        channel: ByteReadChannel,
-        state: BedrockStreamState,
-        model: LlmModelId,
-        emit: suspend (LlmStreamEvent) -> Unit,
-    ) {
-        val parser = EventStreamParser()
-        val chunk = ByteArray(CHUNK_SIZE)
-        while (!channel.isClosedForRead) {
-            val n = channel.readAvailable(chunk, 0, chunk.size)
-            if (n <= 0) continue
-            parser.feed(chunk.copyOfRange(0, n))
-            for (msg in parser.drain()) {
-                if (handleBedrockEvent(msg, state, model, emit)) return
-            }
-        }
-        // Channel closed without emitting its own terminator — dispatch anything still in
-        // the buffer (useful when the server flushes a final metadata message just before
-        // closing the connection).
-        for (msg in parser.drain()) {
-            if (handleBedrockEvent(msg, state, model, emit)) return
-        }
-    }
-
     override suspend fun healthCheck(): HealthStatus {
         // No cheap read-only Bedrock endpoint is reachable via our SigV4 code without extra
         // IAM permissions the caller may not have. Return OK so the service starts; real
@@ -163,8 +156,6 @@ public class BedrockLlmAccess(
 
     public companion object {
         public const val SERVICE_NAME: String = "bedrock"
-
-        private const val CHUNK_SIZE = 8192
 
         init {
             // Idempotent: registering the same scheme twice throws, which would be fatal if
@@ -352,6 +343,87 @@ public class BedrockLlmAccess(
 
 private val bedrockStreamLogger = KotlinLogging.logger("BedrockStream")
 
+private const val BEDROCK_STREAM_CHUNK_SIZE = 8192
+
+/**
+ * Read a Bedrock ConverseStream response to completion and — critically — **fail if it was
+ * truncated**. A well-formed ConverseStream always ends with a `messageStop` frame followed by a
+ * `metadata` frame (the latter sets [BedrockStreamState.finished] and carries token usage).
+ * Reaching end-of-stream without it means the connection was cut mid-response (commonly the HTTP
+ * request timeout firing on a long generation). We throw [LlmException.Transport] rather than
+ * fabricating a clean `Finished` over truncated content, which would silently hand callers a
+ * partial answer with a bogus EndTurn/zero-usage result.
+ *
+ * Top-level and internal so the offline test suite can drive it against a canned
+ * [ByteReadChannel] — including deliberately truncated byte sequences — with no network.
+ */
+internal suspend fun collectBedrockStream(
+    channel: ByteReadChannel,
+    model: LlmModelId?,
+    responseInfo: String? = null,
+    emit: suspend (LlmStreamEvent) -> Unit,
+) {
+    val state = BedrockStreamState()
+    consumeBedrockEventStream(channel, state, model, emit)
+    if (!state.finished) {
+        // Two shapes to distinguish, both reported below:
+        //  - trailingBytesBuffered > 0 → the connection was cut *inside* a frame (a hard mid-frame
+        //    TCP truncation: dropped connection, proxy, or a socket/idle timeout).
+        //  - trailingBytesBuffered == 0 → the body ended *cleanly between* frames without the
+        //    terminal metadata frame (server closed early / sent no usage — not a client timeout).
+        val cutShape =
+            if (state.trailingBytesBuffered > 0) "cut mid-frame (${state.trailingBytesBuffered} trailing bytes buffered)"
+            else "clean EOF between frames (no partial frame buffered)"
+        throw LlmException.Transport(
+            "Bedrock stream ended before its terminal metadata frame — the response was " +
+                "truncated. Diagnostics: framesSeen=${state.framesSeen}, " +
+                "lastEventType=${state.lastEventType}, bytesRead=${state.bytesRead}, $cutShape; " +
+                "last stopReason=${state.stopReason}, partial usage " +
+                "in=${state.inputTokens}/out=${state.outputTokens}" +
+                (responseInfo?.let { "; response: $it" } ?: "") + ".",
+        )
+    }
+}
+
+/**
+ * Pull bytes off [channel], feed them through [EventStreamParser], and dispatch each decoded
+ * frame to [handleBedrockEvent]. Returns when the channel is exhausted or a terminal frame is
+ * seen; completeness is enforced by the caller ([collectBedrockStream]).
+ */
+internal suspend fun consumeBedrockEventStream(
+    channel: ByteReadChannel,
+    state: BedrockStreamState,
+    model: LlmModelId?,
+    emit: suspend (LlmStreamEvent) -> Unit,
+) {
+    val parser = EventStreamParser()
+    val chunk = ByteArray(BEDROCK_STREAM_CHUNK_SIZE)
+    while (!channel.isClosedForRead) {
+        val n = channel.readAvailable(chunk, 0, chunk.size)
+        if (n <= 0) continue
+        state.bytesRead += n
+        parser.feed(chunk.copyOfRange(0, n))
+        for (msg in parser.drain()) {
+            state.framesSeen++
+            state.lastEventType = msg.headers[":event-type"] ?: state.lastEventType
+            bedrockStreamLogger.debug {
+                "frame ${state.framesSeen} type=${state.lastEventType} " +
+                    "msgType=${msg.headers[":message-type"]} payload=${msg.payload.decodeToString().take(180)}"
+            }
+            if (handleBedrockEvent(msg, state, model, emit)) return
+        }
+    }
+    // Channel closed — dispatch anything still buffered (a final metadata frame flushed just
+    // before the connection closed).
+    for (msg in parser.drain()) {
+        state.framesSeen++
+        state.lastEventType = msg.headers[":event-type"] ?: state.lastEventType
+        if (handleBedrockEvent(msg, state, model, emit)) return
+    }
+    // Anything still buffered here is an incomplete frame the connection was cut in the middle of.
+    state.trailingBytesBuffered = parser.pending
+}
+
 /**
  * Dispatch a single decoded ConverseStream frame. Returns true once the stream has produced
  * its [LlmStreamEvent.Finished] frame and the caller should stop reading.
@@ -473,9 +545,15 @@ internal suspend fun handleBedrockEvent(
 }
 
 /**
- * URL-encode a single path segment per AWS's canonical URI rules (RFC 3986 unreserved chars
- * pass through, plus `:` which appears in Bedrock model ids and is safe unescaped).
- * Everything else is %-encoded in uppercase hex.
+ * URL-encode a single path segment per AWS's canonical URI rules: only RFC 3986 unreserved
+ * characters (`A-Z a-z 0-9 - . _ ~`) pass through; everything else — including `:`, which
+ * appears in every Bedrock model id's `:0` version suffix — is %-encoded in uppercase hex.
+ *
+ * The `:` MUST be encoded here: Bedrock is a normal (non-S3) SigV4 service, so AWS rebuilds
+ * its canonical request by URI-encoding each path segment, turning `amazon.nova-lite-v1:0`
+ * into `amazon.nova-lite-v1%3A0`. Signing the literal `:` produces a canonical request that
+ * disagrees with AWS's and the signature is rejected. This value is used for signing only;
+ * the wire URL keeps the literal `:` (see [BedrockLlmAccess.stream]).
  *
  * Uppercase hex digits are required by RFC 3986 percent-encoding (§2.1 recommends uppercase
  * for normalization); this is intentionally different from [sha256Hex], which uses lowercase
@@ -494,7 +572,7 @@ internal fun encodePathSegment(segment: String): String {
         val c = b.toInt().toChar()
         when {
             c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' ||
-                    c == '-' || c == '.' || c == '_' || c == '~' || c == ':' -> sb.append(c)
+                    c == '-' || c == '.' || c == '_' || c == '~' -> sb.append(c)
             else -> {
                 sb.append('%')
                 sb.append(HEX_UP[(b.toInt() ushr 4) and 0x0f])

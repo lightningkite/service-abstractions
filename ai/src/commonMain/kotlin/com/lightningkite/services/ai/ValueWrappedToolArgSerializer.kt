@@ -5,8 +5,11 @@ package com.lightningkite.services.ai
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SealedSerializationApi
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.StructureKind
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.descriptors.buildSerialDescriptor
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
@@ -31,9 +34,9 @@ public class ValueWrappedToolArgSerializer<T>(
     public val inner: KSerializer<T>,
 ) : KSerializer<T> {
     override val descriptor: SerialDescriptor =
-        buildSerialDescriptor(
-            "com.lightningkite.services.ai.ValueWrapped<${inner.descriptor.serialName}>",
-            StructureKind.CLASS,
+        buildClassSerialDescriptor(
+            "com.lightningkite.services.ai.ValueWrapped",
+            inner.descriptor
         ) {
             element("value", inner.descriptor)
         }

@@ -20,7 +20,8 @@ import kotlin.test.assertTrue
  * still goes green. Run locally by exporting `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
  * and `AWS_REGION` (plus `AWS_SESSION_TOKEN` if using temporary credentials) before the test.
  *
- * Uses `anthropic.claude-3-5-haiku-20241022-v1:0` — cheapest Claude on Bedrock as of writing.
+ * Uses `amazon.nova-lite-v1:0` — a current, cheap, on-demand-invocable model (no inference
+ * profile needed). The former Claude 3.5 Haiku choice was retired by AWS.
  */
 class BedrockLiveTest {
 
@@ -52,7 +53,7 @@ class BedrockLiveTest {
             maxTokens = 20,
         )
         val events = access.stream(
-            LlmModelId("anthropic.claude-3-5-haiku-20241022-v1:0"),
+            LlmModelId("amazon.nova-lite-v1:0"),
             prompt,
         ).toList()
         assertTrue(events.isNotEmpty(), "Bedrock should produce at least one stream event")
@@ -76,7 +77,7 @@ class BedrockLiveTest {
             ),
         )
         val result = access.inference(
-            LlmModelId("anthropic.claude-3-5-haiku-20241022-v1:0"),
+            LlmModelId("amazon.nova-lite-v1:0"),
             LlmPrompt(
                 messages = listOf(
                     LlmMessage.User(listOf(LlmPart.Text("Respond with the word pong."))),

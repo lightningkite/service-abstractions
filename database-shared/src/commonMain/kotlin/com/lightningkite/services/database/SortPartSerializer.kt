@@ -13,21 +13,13 @@ public class SortPartSerializer<T>(public val inner: KSerializer<T>) : KSerializ
         get() = SortPart(DataClassPathAccess(DataClassPathSelf(inner), inner.serializableProperties!!.first()))
 
     @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
-    override val descriptor: SerialDescriptor = object : SerialDescriptor {
-        override val kind: SerialKind = PrimitiveKind.STRING
-        override val serialName: String = "com.lightningkite.services.database.SortPart"
-        override val elementsCount: Int get() = 0
-        override fun getElementName(index: Int): String = error()
-        override fun getElementIndex(name: String): Int = error()
-        override fun isElementOptional(index: Int): Boolean = error()
-        override fun getElementDescriptor(index: Int): SerialDescriptor = error()
-        override fun getElementAnnotations(index: Int): List<Annotation> = error()
-        override fun toString(): String = "PrimitiveDescriptor($serialName)"
-        private fun error(): Nothing = throw IllegalStateException("Primitive descriptor does not have elements")
-        override val annotations: List<Annotation> = listOf(
+    override val descriptor: SerialDescriptor = PrimitiveDescriptorWithAnnotations(
+        serialName = "com.lightningkite.services.database.SortPart",
+        kind = PrimitiveKind.STRING,
+        annotations = listOf(
             Description("The name of the property to sort by.  Prepend a '-' if you wish to sort descending.  Prepend '~' if you wish to ignore case.")
         )
-    }
+    )
 
     private val sub = DataClassPathSerializer(inner)
 

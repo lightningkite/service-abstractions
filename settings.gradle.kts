@@ -37,6 +37,7 @@ pluginManagement {
 include(":ai")
 include(":ai-anthropic")
 include(":ai-bedrock")
+include(":ai-bedrock-aws-sdk")
 include(":ai-embedded")
 include(":ai-koog")
 include(":ai-ollama")

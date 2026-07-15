@@ -2,6 +2,7 @@ package com.lightningkite.services.ai
 
 import com.lightningkite.services.data.Description
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -132,5 +133,25 @@ class ToolSchemaTest {
         val schema = descriptor.toJsonSchema()
         dump("LlmToolDescriptor.toJsonSchema", schema)
         assertEquals("object", (schema["type"] as JsonPrimitive).content)
+    }
+
+    @Test fun unitType() {
+        val descriptor = LlmToolDescriptor(
+            name = "get_weather",
+            description = "Fetch current weather locally",
+            type = Unit.serializer(),
+        )
+        val schema = descriptor.toJsonSchema()
+        dump("LlmToolDescriptor.toJsonSchema", schema)
+    }
+
+    @Test fun primitiveType() {
+        val descriptor = LlmToolDescriptor(
+            name = "get_doubled_value",
+            description = "Double a number",
+            type = Double.serializer(),
+        )
+        val schema = descriptor.toJsonSchema()
+        dump("LlmToolDescriptor.toJsonSchema", schema)
     }
 }

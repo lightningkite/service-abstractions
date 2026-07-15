@@ -40,6 +40,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(project(path = ":test"))
                 api(project(path = ":phonecall"))
             }
         }

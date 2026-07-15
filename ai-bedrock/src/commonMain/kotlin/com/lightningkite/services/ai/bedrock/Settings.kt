@@ -93,7 +93,7 @@ internal fun registerBedrockUrlScheme() {
             ?: "us-east-1"
 
         val authority = url.substringAfter("://", "").substringBefore("?")
-        val (credentials, modelId) = parseAuthority(authority)
+        val (credentialsProvider, modelId) = parseAuthority(authority)
 
         if (modelId.isEmpty()) {
             throw IllegalArgumentException(
@@ -106,27 +106,32 @@ internal fun registerBedrockUrlScheme() {
             name = name,
             context = context,
             region = region,
-            credentials = credentials,
+            credentialsProvider = credentialsProvider,
         )
     }
 }
 
 /**
- * Split the URL authority ("userinfo@model-id" or just "model-id") into credentials and the
- * model id part. Unknown shapes resolve through the default credential chain.
+ * Split the URL authority ("userinfo@model-id" or just "model-id") into a credentials provider
+ * and the model id part. Unknown shapes resolve through the default credential chain.
+ *
+ * Credentials for the static/env/profile shapes are resolved eagerly here (so a bad URL fails
+ * fast at settings-instantiation) and wrapped as a non-refreshing static provider. Refreshable
+ * providers are the domain of the JVM-only `ai-bedrock-aws-sdk` module.
  */
-private fun parseAuthority(authority: String): Pair<AwsCredentials, String> {
-    return if (authority.contains("@")) {
+private fun parseAuthority(authority: String): Pair<AwsCredentialsProvider, String> {
+    val (credentials, modelId) = if (authority.contains("@")) {
         val userInfo = authority.substringBefore("@")
-        val modelId = authority.substringAfter("@")
+        val id = authority.substringAfter("@")
         if (userInfo.contains(":")) {
             val accessKey = resolveEnvVars(userInfo.substringBefore(":"))
             val secretKey = resolveEnvVars(userInfo.substringAfter(":"))
-            AwsCredentials(accessKey, secretKey) to modelId
+            AwsCredentials(accessKey, secretKey) to id
         } else {
-            loadProfileCredentials(userInfo) to modelId
+            loadProfileCredentials(userInfo) to id
         }
     } else {
         resolveDefaultChain() to authority
     }
+    return AwsCredentialsProvider.static(credentials) to modelId
 }

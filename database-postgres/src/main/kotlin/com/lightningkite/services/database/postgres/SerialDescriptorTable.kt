@@ -262,28 +262,3 @@ private fun SerialDescriptor.nullElement(): SerialDescriptor? {
         return null
     }
 }
-
-@OptIn(SealedSerializationApi::class)
-internal class SerialDescriptorForNullable(
-    internal val original: SerialDescriptor,
-) : SerialDescriptor by original {
-
-    override val serialName: String = original.serialName + "?"
-    override val isNullable: Boolean
-        get() = true
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is SerialDescriptorForNullable) return false
-        if (original != other.original) return false
-        return true
-    }
-
-    override fun toString(): String {
-        return "$original?"
-    }
-
-    override fun hashCode(): Int {
-        return original.hashCode() * 31
-    }
-}

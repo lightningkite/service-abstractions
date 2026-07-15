@@ -61,7 +61,7 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
         }
     }
     override val descriptor: SerialDescriptor =
-        LazyRenamedSerialDescriptor("com.lightningkite.services.database.Partial") { innerDescriptor }
+        LazySerialDescriptor("com.lightningkite.services.database.Partial", StructureKind.CLASS) { innerDescriptor }
 
     override fun deserialize(decoder: Decoder): Partial<T> = decoder.decodeStructure(descriptor) {
         val out = HashMap<SerializableProperty<T, *>, Any?>()

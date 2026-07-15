@@ -37,6 +37,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(libs.kotlinx.serialization.core)
+                api(project(":database-shared"))
             }
         }
         val commonTest by getting {

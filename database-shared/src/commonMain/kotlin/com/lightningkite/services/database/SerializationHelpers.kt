@@ -2,6 +2,7 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.data.ExperimentalLightningServer
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.*
@@ -17,43 +18,82 @@ public abstract class WrappingSerializer<OUTER, INNER>(public val name: String) 
     public abstract fun inner(it: OUTER): INNER
     public abstract fun outer(it: INNER): OUTER
     public val to: KSerializer<INNER> by lazy { getDeferred() }
-    override val descriptor: SerialDescriptor = LazyRenamedSerialDescriptor(name) { to.descriptor }
+    // No eager kind: touching `to` here would force getDeferred() from the base constructor, before the
+    // subclass has assigned its own fields (e.g. `inner`), yielding a null and an NPE.  Let the kind defer too.
+    override val descriptor: SerialDescriptor = LazySerialDescriptor(name) { to.descriptor }
     override fun deserialize(decoder: Decoder): OUTER = outer(decoder.decodeSerializableValue(to))
     override fun serialize(encoder: Encoder, value: OUTER): Unit =
         encoder.encodeSerializableValue(to, inner(value))
 }
 
 @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
-internal fun defer(serialName: String, kind: SerialKind, deferred: () -> SerialDescriptor): SerialDescriptor =
-    object : SerialDescriptor {
+@ExperimentalLightningServer("This is highly likely to change, given that it's using unstable KotlinX serialization stuff.")
+public class LazySerialDescriptor(override val serialName: String, kind: SerialKind? = null, private val additionalAnnotations: List<Annotation> = listOf(), deferred: () -> SerialDescriptor) : SerialDescriptor {
 
-        private val original: SerialDescriptor by lazy(deferred)
+    private val original: SerialDescriptor by lazy(deferred)
 
-        override val serialName: String
-            get() = serialName
-        override val kind: SerialKind
-            get() = kind
-        override val elementsCount: Int
-            get() = original.elementsCount
+    // When no kind is given, fall back to the deferred descriptor's kind lazily rather than forcing it eagerly.
+    private val explicitKind: SerialKind? = kind
+    override val kind: SerialKind get() = explicitKind ?: original.kind
 
-        override fun getElementName(index: Int): String = original.getElementName(index)
-        override fun getElementIndex(name: String): Int = original.getElementIndex(name)
-        override fun getElementAnnotations(index: Int): List<Annotation> = original.getElementAnnotations(index)
-        override fun getElementDescriptor(index: Int): SerialDescriptor = original.getElementDescriptor(index)
-        override fun isElementOptional(index: Int): Boolean = original.isElementOptional(index)
+    override val elementsCount: Int
+        get() = original.elementsCount
 
-        @ExperimentalSerializationApi
-        override val annotations: List<Annotation>
-            get() = original.annotations
+    override fun getElementName(index: Int): String = original.getElementName(index)
+    override fun getElementIndex(name: String): Int = original.getElementIndex(name)
+    override fun getElementAnnotations(index: Int): List<Annotation> = original.getElementAnnotations(index)
+    override fun getElementDescriptor(index: Int): SerialDescriptor = original.getElementDescriptor(index)
+    override fun isElementOptional(index: Int): Boolean = original.isElementOptional(index)
 
-        @ExperimentalSerializationApi
-        override val isInline: Boolean
-            get() = original.isInline
-
-        @ExperimentalSerializationApi
-        override val isNullable: Boolean
-            get() = original.isNullable
+    @ExperimentalSerializationApi
+    override val annotations: List<Annotation> by lazy {
+        original.annotations + additionalAnnotations
     }
+
+    @ExperimentalSerializationApi
+    override val isInline: Boolean
+        get() = original.isInline
+
+    @ExperimentalSerializationApi
+    override val isNullable: Boolean
+        get() = original.isNullable
+
+    override fun equals(other: Any?): Boolean = other is LazySerialDescriptor && other.original == original
+    override fun hashCode(): Int = original.hashCode()
+}
+
+@OptIn(SealedSerializationApi::class)
+@ExperimentalLightningServer("This is highly likely to change, given that it's using unstable KotlinX serialization stuff.")
+public class InliningSerialDescriptor(override val serialName: String, private val inner: SerialDescriptor): SerialDescriptor {
+    override val kind: SerialKind get() = StructureKind.CLASS
+    override val elementsCount: Int = 1
+    override fun getElementName(index: Int): String = "value"
+    override fun getElementIndex(name: String): Int = if (name == "value") 0 else -1
+    override fun getElementAnnotations(index: Int): List<Annotation> = listOf()
+    override fun getElementDescriptor(index: Int): SerialDescriptor = inner
+    override fun isElementOptional(index: Int): Boolean = false
+    override val isInline: Boolean get() = true
+
+    override fun equals(other: Any?): Boolean = other is InliningSerialDescriptor && other.serialName == serialName && other.inner == inner
+    override fun hashCode(): Int = serialName.hashCode() * 31 + inner.hashCode()
+}
+
+
+@OptIn(SealedSerializationApi::class)
+@ExperimentalLightningServer("This is highly likely to change, given that it's using unstable KotlinX serialization stuff.")
+public class PrimitiveDescriptorWithAnnotations(override val serialName: String, override val kind: SerialKind, override val annotations: List<Annotation>) : SerialDescriptor {
+    override val elementsCount: Int get() = 0
+    override fun getElementName(index: Int): String = error()
+    override fun getElementIndex(name: String): Int = error()
+    override fun isElementOptional(index: Int): Boolean = error()
+    override fun getElementDescriptor(index: Int): SerialDescriptor = error()
+    override fun getElementAnnotations(index: Int): List<Annotation> = error()
+    override fun toString(): String = "PrimitiveDescriptor($serialName)"
+    private fun error(): Nothing = throw IllegalStateException("Primitive descriptor does not have elements")
+
+    override fun equals(other: Any?): Boolean = other is PrimitiveDescriptorWithAnnotations && other.serialName == serialName && other.kind == kind && other.annotations == annotations
+    override fun hashCode(): Int = serialName.hashCode() * 31 + kind.hashCode() * 31 + annotations.hashCode()
+}
 
 public class KSerializerKey(private val kSerializer: KSerializer<*>, private val nullable: Boolean) {
     public constructor(kSerializer: KSerializer<*>) : this(

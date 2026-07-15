@@ -1,7 +1,14 @@
 package com.lightningkite.services.data
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlin.jvm.JvmInline
+import kotlin.math.abs
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
@@ -47,6 +54,66 @@ import kotlin.time.DurationUnit
  *
  * The deprecated properties (kilobytes, megabytes, etc.) map to binary units for backwards compatibility.
  */
+
+
+/**
+ * A rational fraction, e.g. 1/3 of a tenancy-in-common. Normalized on creation
+ * (so 2/6 == 1/3) and serialized as the string "num/den"
+ */
+@Serializable(with = RatioSerializer::class)
+public class Ratio private constructor(public val numerator: Long, public val denominator: Long) : Comparable<Ratio> {
+
+    public companion object {
+        public val ZERO: Ratio = Ratio(0, 1)
+        public val ONE: Ratio = Ratio(1, 1)
+
+        /** The only way to build one. Reduces and forces a positive denominator. */
+        public fun of(num: Long, den: Long): Ratio {
+            require(den != 0L) { "denominator cannot be zero" }
+            val sign = if (den < 0) -1L else 1L
+            val n = num * sign
+            val d = den * sign
+            val g = gcd(abs(n), d).coerceAtLeast(1)
+            return Ratio(n / g, d / g)
+        }
+
+        private tailrec fun gcd(a: Long, b: Long): Long = if (b == 0L) a else gcd(b, a % b)
+
+        public infix fun Int.ratioDiv(other: Int): Ratio = of(this.toLong(), other.toLong())
+        public infix fun Long.ratioDiv(other: Long): Ratio = of(this, other)
+    }
+
+    public operator fun plus(o: Ratio): Ratio = of(numerator * o.denominator + o.numerator * denominator, denominator * o.denominator)
+    public operator fun minus(o: Ratio): Ratio = of(numerator * o.denominator - o.numerator * denominator, denominator * o.denominator)
+    public operator fun times(o: Ratio): Ratio = of(numerator * o.numerator, denominator * o.denominator)
+    public operator fun div(o: Ratio): Ratio = of(numerator * o.denominator, denominator * o.numerator)
+
+    public operator fun plus(o: Int): Ratio = Ratio(numerator + o * denominator, denominator)
+    public operator fun minus(o: Int): Ratio = Ratio(numerator - o * denominator, denominator)
+    public operator fun times(o: Int): Ratio = of(numerator * o, denominator)
+    public operator fun div(o: Int): Ratio = of(numerator, denominator * o)
+
+    public val remainder: Long get() = numerator % denominator
+    public val whole: Long get() = numerator / denominator
+    public fun toInt(): Int = whole.toInt()
+    public fun toLong(): Long = whole
+    public fun toDouble(): Double = numerator.toDouble() / denominator
+    public fun toFloat(): Float = numerator.toFloat() / denominator
+
+    public override fun compareTo(other: Ratio): Int = (numerator * other.denominator).compareTo(other.numerator * denominator)
+    public override fun equals(other: Any?): Boolean = other is Ratio && numerator == other.numerator && denominator == other.denominator
+    public override fun hashCode(): Int = 31 * numerator.hashCode() + denominator.hashCode()
+    public override fun toString(): String = if (denominator == 1L) "$numerator" else "$numerator/$denominator"
+}
+
+public object RatioSerializer : KSerializer<Ratio> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("com.lightningkite.services.data.Ratio", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: Ratio): Unit = encoder.encodeString("${value.numerator}/${value.denominator}")
+    override fun deserialize(decoder: Decoder): Ratio {
+        val (n, d) = decoder.decodeString().split("/")
+        return Ratio.of(n.toLong(), d.toLong())
+    }
+}
 
 @JvmInline
 @Serializable

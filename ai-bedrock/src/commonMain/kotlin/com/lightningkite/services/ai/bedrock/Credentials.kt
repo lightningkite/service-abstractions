@@ -15,6 +15,25 @@ public data class AwsCredentials(
 )
 
 /**
+ * Supplies [AwsCredentials] for signing. Consulted once per request so that refreshable
+ * sources (STS / SSO / assume-role / IMDS) can rotate expiring temporary credentials.
+ *
+ * For a fixed key pair use [AwsCredentialsProvider.static]. For full AWS profile support
+ * (SSO, `credential_process`, assume-role chains, IMDS, auto-refresh) depend on the JVM-only
+ * `ai-bedrock-aws-sdk` module, which adapts the real AWS SDK credential providers to this
+ * interface.
+ */
+public fun interface AwsCredentialsProvider {
+    public suspend fun resolve(): AwsCredentials
+
+    public companion object {
+        /** Wrap a fixed, already-resolved credential set — no refresh. */
+        public fun static(credentials: AwsCredentials): AwsCredentialsProvider =
+            AwsCredentialsProvider { credentials }
+    }
+}
+
+/**
  * Platform-specific environment-variable lookup.
  *
  * Returns null if the variable is unset. JVM/Android read from [System.getenv]; JS reads

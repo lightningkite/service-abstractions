@@ -5,15 +5,22 @@ import com.lightningkite.services.ai.LlmModelId
 import com.lightningkite.services.ai.test.GetModelsTests
 
 /**
- * Live-API getModels suite against Bedrock.
+ * Live-API getModels suite against Bedrock. Runs once (not per matrix model) because
+ * `BedrockLlmAccess.getModels` returns the locally-curated `KNOWN_MODELS` catalogue regardless of
+ * which model the service was configured with — AWS exposes no cheap SigV4 "list models" endpoint.
  *
- * `BedrockLlmAccess.getModels` returns the locally-curated `KNOWN_MODELS` list (AWS does not
- * expose a cheap Bedrock "list models" endpoint through SigV4 without IAM permissions that
- * callers often lack), so this is effectively an in-process test — but it runs through the
- * real `LlmAccess.Settings` URL parser and confirms the cheapModel id is in the catalogue.
+ * [cheapModelExpectedInList] is false: the matrix invokes Claude via its cross-region
+ * inference-profile id (`us.anthropic.claude-haiku-4-5-…`), while `KNOWN_MODELS` lists the
+ * canonical foundation-model id (`anthropic.claude-haiku-4-5-…`). Those legitimately differ.
+ *
+ * TODO(inference-profiles): `KNOWN_MODELS` currently ships bare Anthropic/Meta ids that are NOT
+ * invocable on-demand in most regions (they require an inference profile). getModels() should
+ * eventually emit region-appropriate inference-profile ids so a caller can invoke what it lists.
  */
 class BedrockGetModelsIntegrationTest : GetModelsTests() {
-    override val service: LlmAccess get() = BedrockTestConfig.service
-    override val cheapModel: LlmModelId get() = BedrockTestConfig.cheapModel
-    override val servicePresent: Boolean get() = BedrockTestConfig.servicePresent
+    private val profile = BedrockModelProfile(id = "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+    override val service: LlmAccess get() = profile.service
+    override val cheapModel: LlmModelId get() = profile.model
+    override val servicePresent: Boolean get() = profile.servicePresent
+    override val cheapModelExpectedInList: Boolean = false
 }

@@ -1,26 +1,20 @@
 package com.lightningkite.services.files
 
+import com.lightningkite.services.data.Description
+import com.lightningkite.services.data.ExperimentalLightningServer
+import com.lightningkite.services.database.InliningSerialDescriptor
+import com.lightningkite.services.database.PrimitiveDescriptorWithAnnotations
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.internal.InlinePrimitiveDescriptor
 
 public object DirectServerFileSerializer : KSerializer<ServerFile> {
-    //Description("A URL referencing a file that the server owns.")
-    @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
-    override val descriptor: SerialDescriptor = object : SerialDescriptor {
-        override val kind: SerialKind = PrimitiveKind.STRING
-        override val serialName: String = "com.lightningkite.services.files.ServerFile"
-        override val elementsCount: Int get() = 0
-        override fun getElementName(index: Int): String = error()
-        override fun getElementIndex(name: String): Int = error()
-        override fun isElementOptional(index: Int): Boolean = error()
-        override fun getElementDescriptor(index: Int): SerialDescriptor = error()
-        override fun getElementAnnotations(index: Int): List<Annotation> = error()
-        override fun toString(): String = "PrimitiveDescriptor($serialName)"
-        private fun error(): Nothing = throw IllegalStateException("Primitive descriptor does not have elements")
-        override val annotations: List<Annotation> = listOf()
-    }
+    @OptIn(ExperimentalLightningServer::class)
+    override val descriptor: SerialDescriptor = PrimitiveDescriptorWithAnnotations("com.lightningkite.services.files.ServerFile", PrimitiveKind.STRING, listOf(
+        Description("A URL referencing a file that the server owns.")
+    ))
 
     override fun serialize(encoder: Encoder, value: ServerFile) {
         encoder.encodeString(value.location)
@@ -35,19 +29,8 @@ public object DirectServerFileSerializer : KSerializer<ServerFile> {
 public object DeferToContextualServerFileSerializer : KSerializer<ServerFile> {
     private val c = ContextualSerializer<ServerFile>(ServerFile::class, DirectServerFileSerializer, arrayOf())
 
-    @OptIn(SealedSerializationApi::class)
-    override val descriptor: SerialDescriptor = object : SerialDescriptor {
-//        override val serialName: String get() = "com.lightningkite.services.files.ServerFile"
-                override val serialName: String get() = "com.lightningkite.services.files.ServerFile/DeferToContextualServerFileSerializer"
-        override val kind: SerialKind get() = StructureKind.CLASS
-        override val elementsCount: Int = 1
-        override fun getElementName(index: Int): String = "contextual"
-        override fun getElementIndex(name: String): Int = if (name == "contextual") 0 else -1
-        override fun getElementAnnotations(index: Int): List<Annotation> = listOf()
-        override fun getElementDescriptor(index: Int): SerialDescriptor = c.descriptor
-        override fun isElementOptional(index: Int): Boolean = false
-        override val isInline: Boolean get() = true
-    }
+    @OptIn(ExperimentalLightningServer::class)
+    override val descriptor: SerialDescriptor = InliningSerialDescriptor("com.lightningkite.services.files.ServerFile", c.descriptor)
 
     override fun deserialize(decoder: Decoder): ServerFile = decoder.decodeInline(descriptor).decodeSerializableValue(c)
     override fun serialize(

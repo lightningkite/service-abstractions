@@ -2,6 +2,7 @@ package com.lightningkite.services.http
 
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.serialization.kotlinx.json.*
@@ -60,8 +61,17 @@ private object HttpClientHolder : Resource {
         }
         install(WebSockets)
         install(OpenTelemetryPlugin)
+        // Streaming responses (LLM/SSE) can legitimately run for minutes; a total-request
+        // timeout silently truncates them (and previously produced butchered LLM responses).
+        // Use an idle/socket timeout instead — fail only when NO bytes flow for the window,
+        // which still catches dead connections without capping healthy long streams.
+        install(HttpTimeout) {
+            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+            socketTimeoutMillis = 60_000
+            connectTimeoutMillis = 30_000
+        }
         engine {
-            this.requestTimeout = 60000
+            this.requestTimeout = 0  // disable CIO's own total-request cap; HttpTimeout governs
         }
     }
 }

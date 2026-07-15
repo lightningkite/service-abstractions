@@ -1,7 +1,11 @@
 package com.lightningkite.services.files
 
+import com.lightningkite.services.data.Description
+import com.lightningkite.services.data.ExperimentalLightningServer
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.database.InliningSerialDescriptor
+import com.lightningkite.services.database.PrimitiveDescriptorWithAnnotations
 import dev.whyoleg.cryptography.algorithms.HMAC
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
@@ -101,21 +105,14 @@ public class ExternalServerFileSerializer(
         d
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
-    override val descriptor: SerialDescriptor = object : SerialDescriptor {
-        override val kind: SerialKind = PrimitiveKind.STRING
-//        override val serialName: String = "com.lightningkite.services.files.ServerFile"
-        override val serialName: String = "com.lightningkite.services.files.ServerFile/ExternalServerFileSerializer"
-        override val elementsCount: Int get() = 0
-        override fun getElementName(index: Int): String = error()
-        override fun getElementIndex(name: String): Int = error()
-        override fun isElementOptional(index: Int): Boolean = error()
-        override fun getElementDescriptor(index: Int): SerialDescriptor = error()
-        override fun getElementAnnotations(index: Int): List<Annotation> = error()
-        override fun toString(): String = "PrimitiveDescriptor($serialName)"
-        private fun error(): Nothing = throw IllegalStateException("Primitive descriptor does not have elements")
-        override val annotations: List<Annotation> = listOf()
-    }
+    @OptIn(ExperimentalSerializationApi::class, ExperimentalLightningServer::class)
+    override val descriptor: SerialDescriptor = PrimitiveDescriptorWithAnnotations(
+        serialName = "com.lightningkite.services.files.ServerFile/ExternalServerFileSerializer",
+        kind = PrimitiveKind.STRING,
+        annotations = listOf(
+            Description("A URL for a remote URL, signed.")
+        )
+    )
 
     /**
      * Serializes a ServerFile to a signed URL for client consumption.

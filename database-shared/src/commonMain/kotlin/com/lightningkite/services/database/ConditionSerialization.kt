@@ -234,18 +234,6 @@ internal class ConditionOnFieldSerializer<K : Any, V>(
     override fun outer(it: Condition<V>): Condition.OnField<K, V> = Condition.OnField(field, it)
 }
 
-@OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
-internal class LazyRenamedSerialDescriptor(override val serialName: String, val getter: () -> SerialDescriptor) :
-    SerialDescriptor {
-    override val elementsCount: Int get() = getter().elementsCount
-    override val kind: SerialKind get() = getter().kind
-    override fun getElementAnnotations(index: Int): List<Annotation> = getter().getElementAnnotations(index)
-    override fun getElementDescriptor(index: Int): SerialDescriptor = getter().getElementDescriptor(index)
-    override fun getElementIndex(name: String): Int = getter().getElementIndex(name)
-    override fun getElementName(index: Int): String = getter().getElementName(index)
-    override fun isElementOptional(index: Int): Boolean = getter().isElementOptional(index)
-}
-
 internal class ConditionAndSerializer<T>(private val inner: KSerializer<T>) :
     WrappingSerializer<Condition.And<T>, List<Condition<T>>>("com.lightningkite.services.database.Condition.And") {
     override fun getDeferred(): KSerializer<List<Condition<T>>> = ListSerializer(Condition.serializer(inner))

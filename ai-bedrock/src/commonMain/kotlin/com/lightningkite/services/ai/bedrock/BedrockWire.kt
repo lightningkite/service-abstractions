@@ -355,6 +355,12 @@ internal class BedrockStreamState {
     var stopReason: LlmStopReason = LlmStopReason.EndTurn
     var finished: Boolean = false
     val toolsInFlight: HashMap<Int, ToolCallInProgress> = HashMap()
+
+    // Diagnostics for pinpointing a truncated stream (populated as bytes are consumed):
+    var framesSeen: Int = 0
+    var lastEventType: String? = null
+    var bytesRead: Long = 0
+    var trailingBytesBuffered: Int = 0
 }
 
 /**

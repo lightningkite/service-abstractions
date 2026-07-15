@@ -77,11 +77,36 @@ public abstract class LlmAccessTests {
     public open val supportsToolChoiceForced: Boolean = true
 
     /**
+     * True when, under [com.lightningkite.services.ai.LlmToolChoice.Auto], the model exercises
+     * judgment and does NOT call a tool for a prompt unrelated to the available tools. Frontier
+     * models do; smaller/cheaper ones (e.g. Amazon Nova) tend to over-trigger tools. When false,
+     * `autoWithUnrelatedPromptDoesNotCall` is skipped rather than failed.
+     */
+    public open val respectsToolChoiceAutoRestraint: Boolean = true
+
+    /**
+     * True when the model produces the same output prefix for the same prompt at temperature 0,
+     * which the streaming suite relies on to compare a streamed call against a separate
+     * non-streamed call. Some models (e.g. Amazon Nova) are not deterministic even at
+     * temperature 0; set false to skip `streamConcatenatesToInference` for them. Streaming
+     * correctness is still covered by the other streaming tests.
+     */
+    public open val deterministicAtTemperatureZero: Boolean = true
+
+    /**
      * True if the model returns chain-of-thought / reasoning content as a separate
      * LlmPart.Reasoning block alongside the final answer. Most models don't.
      * Reasoning-capable: Claude extended thinking, OpenAI o-series, DeepSeek R1, Gemma reasoning variants.
      */
     public open val supportsReasoningContent: Boolean = false
+
+    /**
+     * True when the provider reports token usage (input/output counts) on a completed response,
+     * including at the end of a stream. Used by the streaming suite to reject a zero-usage
+     * terminal frame — the fingerprint of a provider fabricating a clean finish over a truncated
+     * stream. Set false only for providers/runtimes that genuinely never report usage.
+     */
+    public open val reportsUsage: Boolean = true
 
     /**
      * True when the provider honors [com.lightningkite.services.ai.LlmMessage.cacheBoundary] / [LlmToolDescriptor.cacheBoundary]

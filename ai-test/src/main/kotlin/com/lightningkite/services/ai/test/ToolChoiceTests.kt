@@ -28,6 +28,10 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
     @Test
     public fun autoWithUnrelatedPromptDoesNotCall(): Unit = runTest(timeout = 60.seconds) {
         skipIfServiceAbsent()
+        Assume.assumeTrue(
+            "Provider over-triggers tools under Auto; skipping restraint check",
+            respectsToolChoiceAutoRestraint,
+        )
         val result = service.inference(
             model = cheapModel,
             prompt = LlmPrompt(
