@@ -1,5 +1,6 @@
 package com.lightningkite.services.data
 
+import kotlinx.coroutines.test.runTest
 import kotlinx.io.Buffer
 import kotlinx.io.readString
 import kotlinx.io.writeString
@@ -19,7 +20,7 @@ import kotlin.test.assertEquals
 class DataWriteSinkLifecycleTest {
 
     @Test
-    fun bytesWriteLeavesSinkOpen() {
+    fun bytesWriteLeavesSinkOpen() = runTest {
         val buffer = Buffer()
         Data.Bytes("hello".encodeToByteArray()).write(buffer)
         // If write() closed the buffer, this would throw IllegalStateException.
@@ -28,7 +29,7 @@ class DataWriteSinkLifecycleTest {
     }
 
     @Test
-    fun textWriteLeavesSinkOpen() {
+    fun textWriteLeavesSinkOpen() = runTest {
         val buffer = Buffer()
         Data.Text("hello").write(buffer)
         buffer.writeString(" world")
@@ -36,7 +37,7 @@ class DataWriteSinkLifecycleTest {
     }
 
     @Test
-    fun sinkWriteLeavesSinkOpen() {
+    fun sinkWriteLeavesSinkOpen() = runTest {
         val buffer = Buffer()
         Data.Sink { it.writeString("hello") }.write(buffer)
         buffer.writeString(" world")
@@ -44,7 +45,7 @@ class DataWriteSinkLifecycleTest {
     }
 
     @Test
-    fun sourceWriteLeavesSinkOpen() {
+    fun sourceWriteLeavesSinkOpen() = runTest {
         // Source.write was already implemented this way before the change — verify it stays correct.
         val payload = Buffer().also { it.writeString("hello") }
         val buffer = Buffer()

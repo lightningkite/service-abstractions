@@ -52,10 +52,12 @@ public class MailgunEmailService(
 
     private suspend fun sendImpl(email: Email) {
         val parts = email.attachments.map {
+            // Read the attachment bytes here (suspend context); the ChannelProvider block itself is not suspend.
+            val bytes = it.typedData.data.bytes()
             FormPart(
                 if (it.inline) "inline" else "attachment", ChannelProvider(
-                    size = it.typedData.data.size,
-                    block = { it.typedData.data.source().buffered().asInputStream().toByteReadChannel() }
+                    size = bytes.size.toLong(),
+                    block = { bytes.inputStream().toByteReadChannel() }
                 ))
         }
 

@@ -176,7 +176,7 @@ public class MailgunEmailInboundService(
     /**
      * Parses form-urlencoded data from the request body.
      */
-    private fun parseFormData(body: TypedData): Map<String, List<String>> {
+    private suspend fun parseFormData(body: TypedData): Map<String, List<String>> {
         val contentType = body.mediaType.toString()
 
         return when {
@@ -224,7 +224,7 @@ public class MailgunEmailInboundService(
      *
      * TODO: replace with Jakarta Mail — current parser corrupts binary attachments
      */
-    private fun parseMultipartFormData(body: TypedData): Map<String, List<String>> {
+    private suspend fun parseMultipartFormData(body: TypedData): Map<String, List<String>> {
         // For now, we'll parse the text fields only
         // A full implementation would parse attachments as well
         val result = mutableMapOf<String, MutableList<String>>()

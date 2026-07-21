@@ -36,11 +36,13 @@ kotlin {
             dependencies {
                 api(project(path = ":data-shared"))
                 api(libs.kotlinx.io)
+                api(libs.coroutines.core)
             }
         }
         val commonTest by getting {
             dependencies {
                 implementation(libs.kotlin.test)
+                implementation(libs.coroutines.testing)
             }
         }
         val androidMain by getting {}
