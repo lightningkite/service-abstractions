@@ -31,13 +31,17 @@ public interface LlmAccess : Service {
      * URL-based configuration for an [LlmAccess] implementation.
      *
      * Provider modules register their URL schemes via this parser's companion object.
+     * These URLs configure *access* only (provider, credentials, endpoint) — they are not
+     * bound to a model. Which model to use for a given call is a [LlmModelId] passed to
+     * [stream]/[inference], not part of this URL.
+     *
      * Example URLs:
      * ```
-     * anthropic://claude-haiku-4-5?apiKey=${ANTHROPIC_API_KEY}
-     * openai://gpt-4o?apiKey=${OPENAI_API_KEY}
+     * anthropic://?apiKey=${ANTHROPIC_API_KEY}
+     * openai://?apiKey=${OPENAI_API_KEY}
      * ```
      *
-     * @property url Connection string defining provider, model, and options.
+     * @property url Connection string defining the provider and its access options.
      */
     @Serializable
     @JvmInline

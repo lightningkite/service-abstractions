@@ -436,12 +436,14 @@ class AnthropicWireTest {
 
     @Test
     fun companionHelperBuildsCorrectUrl() {
+        // The builder configures access only (no model bound to the URL) — modelId is
+        // accepted for backward compatibility but has no effect on the built URL.
         val settings = com.lightningkite.services.ai.LlmAccess.Settings.Companion.anthropic(
             modelId = "claude-haiku-4-5",
             apiKey = "key-123",
             baseUrl = "https://proxy.example.com",
         )
-        assertTrue(settings.url.startsWith("anthropic://claude-haiku-4-5?"))
+        assertTrue(settings.url.startsWith("anthropic://?"))
         assertTrue("apiKey=key-123" in settings.url)
         assertTrue("baseUrl=https://proxy.example.com" in settings.url)
     }

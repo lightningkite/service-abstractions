@@ -9,8 +9,14 @@ import java.net.URLDecoder
  *
  * URL format:
  * ```
- * openai://<model-id>?apiKey=<key>&baseUrl=<url>&organization=<org>
+ * openai://?apiKey=<key>&baseUrl=<url>&organization=<org>
  * ```
+ *
+ * This scheme configures *access* only (credentials, endpoint) — it is not tied to any one
+ * model. Which model to use for a given call is a [com.lightningkite.services.ai.LlmModelId]
+ * passed to [com.lightningkite.services.ai.LlmAccess.stream], not part of this URL. A legacy
+ * `openai://<model-id>?...` URL (with a model id in the authority) is still accepted for
+ * backward compatibility — the authority is simply ignored.
  *
  * Parameters:
  * - `apiKey` — API key. Supports `${ENV_VAR}` substitution. If omitted, falls back to the
@@ -24,22 +30,21 @@ import java.net.URLDecoder
  *
  * Examples:
  * ```
- * openai://gpt-5?apiKey=${OPENAI_API_KEY}
- * openai://gpt-4o-mini?apiKey=${OPENAI_API_KEY}
- * openai://qwen2.5-coder?apiKey=not-needed&baseUrl=http://localhost:1234/v1   # LM Studio
- * openai://meta-llama/Llama-3-8B-Instruct?apiKey=xxx&baseUrl=http://vllm:8000/v1
+ * openai://?apiKey=${OPENAI_API_KEY}
+ * openai://?apiKey=not-needed&baseUrl=http://localhost:1234/v1   # LM Studio
+ * openai://?apiKey=xxx&baseUrl=http://vllm:8000/v1
  * ```
  *
  * ### LM Studio compatibility
  *
  * LM Studio exposes an OpenAI-compatible API. Point this scheme at your LM Studio server:
  * ```
- * openai://<model-id>?apiKey=lm-studio&baseUrl=http://localhost:1234/v1
+ * openai://?apiKey=lm-studio&baseUrl=http://localhost:1234/v1
  * ```
- * `apiKey` can be any non-empty string — LM Studio does not validate it. The model must be
- * **LOADED** in LM Studio (not merely installed); use the UI to load before sending requests.
- * The same advice applies to vLLM, Ollama's OpenAI-compat shim at port 11434/v1, and any
- * other OpenAI-compat server.
+ * `apiKey` can be any non-empty string — LM Studio does not validate it. The model you pass
+ * to `stream`/`inference` must be **LOADED** in LM Studio (not merely installed); use the UI
+ * to load before sending requests. The same advice applies to vLLM, Ollama's OpenAI-compat
+ * shim at port 11434/v1, and any other OpenAI-compat server.
  *
  * ### Registration
  *
@@ -59,10 +64,6 @@ public object OpenAiLlmSettings {
     init {
         LlmAccess.Settings.register("openai") { name, url, context ->
             val params = parseUrlParams(url)
-            val modelName = url.substringAfter("://", "").substringBefore("?")
-            require(modelName.isNotBlank()) {
-                "openai:// URL must include a model id: openai://<model>?apiKey=..."
-            }
             val apiKey = params["apiKey"]?.let(::resolveEnvVars)
                 ?: System.getenv("OPENAI_API_KEY")
                 ?: throw IllegalArgumentException(

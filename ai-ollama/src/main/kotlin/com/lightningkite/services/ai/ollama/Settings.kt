@@ -7,7 +7,12 @@ import kotlinx.coroutines.runBlocking
  * Registers the `ollama://` URL scheme on [LlmAccess.Settings].
  *
  * URL format:
- * - `ollama://<model>?baseUrl=http://localhost:11434&autoStart=false&autoPull=false`
+ * - `ollama://?baseUrl=http://localhost:11434` — access only; no model bound to the URL.
+ * - `ollama://<model>?baseUrl=...&autoStart=true&autoPull=true` — a model id is required
+ *   only when `autoStart` and/or `autoPull` is set, since that model is what gets started
+ *   and/or pulled during settings instantiation. It is otherwise unused: which model to run
+ *   inference against is a [com.lightningkite.services.ai.LlmModelId] passed to
+ *   [com.lightningkite.services.ai.LlmAccess.stream] per call.
  *
  * Resolving env-var refs: values of the form `${VAR}` are replaced with `System.getenv("VAR")`
  * if present, otherwise left unchanged.
@@ -20,14 +25,17 @@ public object OllamaSchemeRegistrar {
         LlmAccess.Settings.register("ollama") { name, url, context ->
             val params = parseUrlParams(url)
             val model = url.substringAfter("://", "").substringBefore("?").trim()
-            if (model.isEmpty()) {
-                throw IllegalArgumentException("Ollama URL is missing a model: $url")
-            }
             val baseUrl = params["baseUrl"]?.let(::resolveEnvVars) ?: "http://localhost:11434"
             val autoStart = params["autoStart"]?.toBooleanStrictOrNull() ?: false
             val autoPull = params["autoPull"]?.toBooleanStrictOrNull() ?: false
 
             if (autoStart || autoPull) {
+                if (model.isEmpty()) {
+                    throw IllegalArgumentException(
+                        "Ollama URL must include a model id when autoStart/autoPull is set: " +
+                            "ollama://<model>?autoStart=true",
+                    )
+                }
                 val manager = OllamaManager(baseUrl)
                 // ensureReady blocks briefly (server start-up) and potentially for a long time
                 // (model download). We're in a factory so runBlocking is acceptable, but we

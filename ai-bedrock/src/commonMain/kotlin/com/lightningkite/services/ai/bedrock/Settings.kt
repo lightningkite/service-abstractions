@@ -22,18 +22,23 @@ public object BedrockLlmSettings {
  * is registered on the [LlmAccess.Settings] companion as soon as [BedrockLlmAccess] is
  * loaded, so touching this function implicitly wires it up.
  *
+ * This builds an access-only [LlmAccess.Settings] — no model is bound to the URL. Select a
+ * model per-call via [com.lightningkite.services.ai.LlmModelId].
+ *
  * Supported URL formats (the first is most common):
  *
- * - `bedrock://<model-id>?region=us-west-2` — credentials come from the default chain
+ * - `bedrock://?region=us-west-2` — credentials come from the default chain
  *   (env vars `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN`).
- * - `bedrock://<accessKeyId>:<secretKey>@<model-id>?region=us-west-2` — static credentials
+ * - `bedrock://<accessKeyId>:<secretKey>@?region=us-west-2` — static credentials
  *   baked into the URL. Both fields support `${ENV_VAR}` expansion.
- * - `bedrock://<profileName>@<model-id>?region=us-west-2` — reads `~/.aws/credentials` for
+ * - `bedrock://<profileName>@?region=us-west-2` — reads `~/.aws/credentials` for
  *   the named profile (JVM only; other targets throw).
  *
  * If `region` is not given, `AWS_REGION` is consulted, then `us-east-1` as a last resort.
  *
- * @param modelId Bedrock model id (e.g. `anthropic.claude-sonnet-4-5-20250929-v1:0`).
+ * @param modelId ignored; kept only so existing call sites that pass a model id (e.g. for
+ *   IAM-scoping in terraform) keep compiling. Pass the model as an
+ *   [com.lightningkite.services.ai.LlmModelId] to `stream`/`inference` instead.
  * @param region AWS region to send requests to; must be where your model access is granted.
  * @param accessKeyId when non-null, embedded in the URL as static credentials. Use the
  *   `${VAR_NAME}` syntax inside to pull from the environment.
@@ -42,7 +47,7 @@ public object BedrockLlmSettings {
  *   (JVM only).
  */
 public fun LlmAccess.Settings.Companion.bedrock(
-    modelId: String,
+    modelId: String? = null,
     region: String? = null,
     accessKeyId: String? = null,
     secretAccessKey: String? = null,
@@ -57,9 +62,9 @@ public fun LlmAccess.Settings.Companion.bedrock(
         "accessKeyId and secretAccessKey must be provided together."
     }
     val authority = when {
-        accessKeyId != null -> "$accessKeyId:$secretAccessKey@$modelId"
-        profile != null -> "$profile@$modelId"
-        else -> modelId
+        accessKeyId != null -> "$accessKeyId:$secretAccessKey@"
+        profile != null -> "$profile@"
+        else -> ""
     }
     val query = region?.let { "?region=$it" } ?: ""
     return LlmAccess.Settings("bedrock://$authority$query")
@@ -84,6 +89,10 @@ internal fun parseUrlParams(url: String): Map<String, String> {
  * Register the `bedrock://` URL scheme on [LlmAccess.Settings.Companion]. Called lazily from
  * [BedrockLlmAccess]'s class-init block, which runs the first time any Bedrock type is
  * referenced from caller code (including the [bedrock] builder above).
+ *
+ * The URL configures access only (credentials, region) — no model is bound to it. A legacy
+ * `bedrock://<model-id>?...` URL (with a model id in the authority, optionally prefixed with
+ * credentials) is still accepted for backward compatibility; the model id portion is ignored.
  */
 internal fun registerBedrockUrlScheme() {
     LlmAccess.Settings.register("bedrock") { name, url, context ->
@@ -93,14 +102,7 @@ internal fun registerBedrockUrlScheme() {
             ?: "us-east-1"
 
         val authority = url.substringAfter("://", "").substringBefore("?")
-        val (credentialsProvider, modelId) = parseAuthority(authority)
-
-        if (modelId.isEmpty()) {
-            throw IllegalArgumentException(
-                "Bedrock URL must include a model id: bedrock://<model-id>[?region=...] " +
-                        "or bedrock://<key>:<secret>@<model-id> or bedrock://<profile>@<model-id>",
-            )
-        }
+        val credentialsProvider = parseAuthority(authority)
 
         BedrockLlmAccess(
             name = name,
@@ -112,26 +114,26 @@ internal fun registerBedrockUrlScheme() {
 }
 
 /**
- * Split the URL authority ("userinfo@model-id" or just "model-id") into a credentials provider
- * and the model id part. Unknown shapes resolve through the default credential chain.
+ * Split the URL authority ("userinfo@model-id", "userinfo@" or just "model-id"/"") into a
+ * credentials provider. The model id portion, if present, is ignored — it exists only for
+ * backward compatibility with URLs minted before access settings stopped binding to a model.
  *
  * Credentials for the static/env/profile shapes are resolved eagerly here (so a bad URL fails
  * fast at settings-instantiation) and wrapped as a non-refreshing static provider. Refreshable
  * providers are the domain of the JVM-only `ai-bedrock-aws-sdk` module.
  */
-private fun parseAuthority(authority: String): Pair<AwsCredentialsProvider, String> {
-    val (credentials, modelId) = if (authority.contains("@")) {
+private fun parseAuthority(authority: String): AwsCredentialsProvider {
+    val credentials = if (authority.contains("@")) {
         val userInfo = authority.substringBefore("@")
-        val id = authority.substringAfter("@")
         if (userInfo.contains(":")) {
             val accessKey = resolveEnvVars(userInfo.substringBefore(":"))
             val secretKey = resolveEnvVars(userInfo.substringAfter(":"))
-            AwsCredentials(accessKey, secretKey) to id
+            AwsCredentials(accessKey, secretKey)
         } else {
-            loadProfileCredentials(userInfo) to id
+            loadProfileCredentials(userInfo)
         }
     } else {
-        resolveDefaultChain() to authority
+        resolveDefaultChain()
     }
-    return AwsCredentialsProvider.static(credentials) to modelId
+    return AwsCredentialsProvider.static(credentials)
 }

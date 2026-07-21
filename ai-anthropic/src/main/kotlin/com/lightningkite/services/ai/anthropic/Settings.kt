@@ -16,8 +16,15 @@ import com.lightningkite.services.ai.LlmAccess
  *
  * URL format parsed at runtime:
  * ```
- * anthropic://<model-id>?apiKey=<key>&baseUrl=<url>&version=<header>&maxTokens=<int>
+ * anthropic://?apiKey=<key>&baseUrl=<url>&version=<header>&maxTokens=<int>
  * ```
+ *
+ * This scheme configures *access* only (credentials, endpoint) — it is not tied to any one
+ * model. Which model to use for a given call is a [com.lightningkite.services.ai.LlmModelId]
+ * passed to [com.lightningkite.services.ai.LlmAccess.stream], not part of this URL.
+ *
+ * For backward compatibility, a legacy `anthropic://<model-id>?...` URL (with a model id in
+ * the authority) is still accepted — the authority is simply ignored.
  *
  * When `apiKey` is absent, the `ANTHROPIC_API_KEY` environment variable is used;
  * `${ENV_VAR}` syntax inside the value is expanded too.
@@ -30,12 +37,6 @@ public object AnthropicLlmSettings {
         if (!LlmAccess.Settings.supports("anthropic")) {
             LlmAccess.Settings.register("anthropic") { name, url, context ->
                 val params = parseUrlParams(url)
-                val modelId = url.substringAfter("://", "").substringBefore("?")
-                if (modelId.isEmpty()) {
-                    throw IllegalArgumentException(
-                        "Anthropic URL must include a model id: anthropic://<model-id>",
-                    )
-                }
                 val apiKey = params["apiKey"]?.let(::resolveEnvVars)
                     ?: System.getenv("ANTHROPIC_API_KEY")
                     ?: throw IllegalArgumentException(
@@ -69,14 +70,20 @@ private val registerOnClassLoad: Unit = AnthropicLlmSettings.ensureRegistered()
  *
  * Accessing this extension forces the `anthropic://` URL scheme to be registered.
  *
- * @param modelId the Anthropic model id (e.g. `claude-haiku-4-5`)
+ * The resulting [LlmAccess.Settings] configures access only (credentials, endpoint) — it is
+ * not bound to any one model. Select a model per-call via
+ * [com.lightningkite.services.ai.LlmModelId].
+ *
+ * @param modelId ignored; kept only so existing call sites that pass a model id keep
+ *   compiling. Pass the model as an [com.lightningkite.services.ai.LlmModelId] to
+ *   `stream`/`inference` instead.
  * @param apiKey when non-null, embedded as the `apiKey` query parameter. When null, the
  *   `ANTHROPIC_API_KEY` environment variable is consulted at instantiation time. Use
  *   `"\${VAR_NAME}"` to reference any env var by name.
  * @param baseUrl optional override for the API root (for proxies/gateways).
  */
 public fun LlmAccess.Settings.Companion.anthropic(
-    modelId: String,
+    modelId: String? = null,
     apiKey: String? = null,
     baseUrl: String? = null,
 ): LlmAccess.Settings {
@@ -86,7 +93,7 @@ public fun LlmAccess.Settings.Companion.anthropic(
         baseUrl?.let { add("baseUrl=$it") }
     }
     val query = if (parts.isEmpty()) "" else "?" + parts.joinToString("&")
-    return LlmAccess.Settings("anthropic://$modelId$query")
+    return LlmAccess.Settings("anthropic://$query")
 }
 
 /**
