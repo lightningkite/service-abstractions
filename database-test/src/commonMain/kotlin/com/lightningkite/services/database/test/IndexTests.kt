@@ -151,7 +151,7 @@ abstract class IndexTests {
             )
         )
 
-        println("unique value violations")
+        //  unique value violations
 
         assertUniqueViolation {
             table.insertMany(
@@ -166,7 +166,7 @@ abstract class IndexTests {
             )
         }
 
-        println("unique set violations")
+        // unique set violations
 
         assertUniqueViolation {
             table.insertMany(

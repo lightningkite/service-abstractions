@@ -107,6 +107,7 @@ public fun TerraformNeed<PublicFileSystem.Settings>.awsS3Bucket(
                             "sse_algorithm" - "AES256"
                         }
                     }
+                    "blocked_encryption_types" - listOf("SSE-C")
                     // With a CMK, cache one data key per bucket to cut KMS request cost ~99% on object ops.
                     if (kmsKeyArn != null) "bucket_key_enabled" - true
                 }
