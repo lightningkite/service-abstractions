@@ -8,7 +8,6 @@ import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response
-import java.io.File
 import java.util.concurrent.CompletableFuture
 import java.util.function.Consumer
 import kotlin.test.Test
@@ -16,7 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 /**
- * Verifies that [S3FileObject.list] propagates exceptions from the underlying S3 client
+ * Verifies that [S3PublicFileSystem.list] propagates exceptions from the underlying S3 client
  * rather than swallowing them and returning null (the prior behaviour).
  */
 class S3ListErrorTest {
@@ -27,7 +26,7 @@ class S3ListErrorTest {
 
     /**
      * A minimal [S3AsyncClient] stub whose `listObjectsV2` always fails with the supplied error.
-     * Only the overloads exercised by [S3FileObject.list] are overridden.
+     * Only the overloads exercised by [S3PublicFileSystem.list] are overridden.
      */
     private class FailingS3AsyncClient(private val error: RuntimeException) : S3AsyncClient {
         override fun serviceName(): String = "s3"
@@ -45,7 +44,7 @@ class S3ListErrorTest {
     }
 
     /**
-     * Replaces the lazy-delegate of [S3PublicFileSystem.s3Async] so [S3FileObject.list]
+     * Replaces the lazy-delegate of [S3PublicFileSystem.s3Async] so [S3PublicFileSystem.list]
      * routes its call through the supplied stub without touching the network.
      */
     private fun injectS3Async(system: S3PublicFileSystem, client: S3AsyncClient) {
@@ -69,7 +68,7 @@ class S3ListErrorTest {
         val boom = RuntimeException("simulated S3 failure")
         injectS3Async(system, FailingS3AsyncClient(boom))
 
-        val file = S3FileObject(system, File("some/prefix"))
+        val file = system.root.then("some/prefix")
         val thrown = assertFailsWith<RuntimeException> { file.list() }
         // S3AsyncClient wraps the cause in a CompletionException via .await();
         // either the original is re-thrown or it appears as the cause.

@@ -208,6 +208,7 @@ public class ExternalServerFileSerializer(
      * @return A ServerFile with an internal URL
      * @throws IllegalArgumentException if URL validation fails or URL doesn't match known file systems
      */
+    @Suppress("DEPRECATION")
     override fun deserialize(decoder: Decoder): ServerFile {
         val raw = decoder.decodeString()
         when {

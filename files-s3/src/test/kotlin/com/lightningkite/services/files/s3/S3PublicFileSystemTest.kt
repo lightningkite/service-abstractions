@@ -73,7 +73,7 @@ class S3PublicFileSystemTest : FileSystemTests() {
             file.signedUrl
         }
         val theirs = performance(10_000) {
-            file.signedUrlOfficial
+            system.signedUrlOfficial(file.path)
         }
         println("Mine: $mine")
         println("Theirs: $theirs")

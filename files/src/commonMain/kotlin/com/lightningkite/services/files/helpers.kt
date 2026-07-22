@@ -57,6 +57,7 @@ public fun FileObject.thenRandom(prefix: String, extension: String): FileObject 
  *
  * ServerFile is typically used for serialization and client communication.
  */
+@Suppress("DEPRECATION")
 public val FileObject.serverFile: ServerFile get() = ServerFile(url)
 
 /*

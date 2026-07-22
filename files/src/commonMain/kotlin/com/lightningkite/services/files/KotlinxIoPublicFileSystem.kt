@@ -13,7 +13,7 @@ import kotlin.time.Duration
 import kotlin.time.Instant
 
 /**
- * A FileSystem implementation that uses kotlinx.io for local file system access.
+ * A [PublicFileSystem] implementation that uses kotlinx.io for local file system access.
  *
  * This implementation stores files on the local file system and provides:
  * - HMAC-based signed URLs for secure file access
@@ -60,8 +60,6 @@ public class KotlinxIoPublicFileSystem(
         }
     }
 
-    override val root: KotlinxIoFile = KotlinxIoFile(Path(""))
-
     override val rootUrls: List<String> = listOf(serveUrl)
 
     /**
@@ -106,29 +104,39 @@ public class KotlinxIoPublicFileSystem(
      */
     internal fun DataToSign.signed() = toString() + "&signature=" + sign(this)
 
+    override fun url(path: ExternalPath): String =
+        serveUrl.removeSuffix("/") + '/' + path.parts.joinToString("/")
+
+    override fun signUrl(path: ExternalPath, timeout: Duration?): String {
+        val u = url(path)
+        return (timeout ?: signedUrlDuration)?.let { expiration ->
+            DataToSign(u, context.clock.now().plus(expiration), false).signed()
+        } ?: u
+    }
+
+    override fun uploadUrl(path: ExternalPath, timeout: Duration): String =
+        DataToSign(url(path), context.clock.now().plus(timeout), true).signed()
+
     /**
-     * Parses an internal (unsigned) URL into a FileObject.
+     * Parses an internal (unsigned) URL into an [ExternalFile].
      *
-     * @param url The URL to parse
-     * @return A KotlinxIoFile if the URL starts with this file system's serveUrl, null otherwise
+     * @return An ExternalFile if the URL starts with this file system's serveUrl, null otherwise
      */
-    override fun parseInternalUrl(url: String): KotlinxIoFile? {
+    override fun parseInternalUrl(url: String): ExternalFile? {
         if (!url.startsWith(serveUrl)) return null
-        return KotlinxIoFile(Path(url.substringAfter(serveUrl)))
+        return ExternalFile(this, parsePath(url.substringAfter(serveUrl)))
     }
 
     /**
-     * Parses an external (signed) URL into a FileObject.
+     * Parses an external (signed) URL into an [ExternalFile].
      *
      * For file systems with signing enabled, this validates the signature and expiration.
      * For unsigned file systems, this simply parses the URL path.
      *
-     * @param url The signed URL to parse
-     * @return A KotlinxIoFile if the URL is valid
      * @throws IllegalArgumentException if signature verification fails, URL has expired,
      *         URL doesn't match this file system, or URL is for upload (not read)
      */
-    override fun parseExternalUrl(url: String): KotlinxIoFile? {
+    override fun parseExternalUrl(url: String): ExternalFile? {
         if (!url.startsWith(serveUrl)) return null
         return if (signedUrlDuration != null) {
             val data = DataToSign(url.substringBeforeLast("&"))
@@ -137,22 +145,21 @@ public class KotlinxIoPublicFileSystem(
             if (context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
             if (!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
             if (data.upload) throw IllegalArgumentException("URL is for upload, not read")
-            KotlinxIoFile(Path(data.url.substringAfter(serveUrl)))
+            ExternalFile(this, parsePath(data.url.substringAfter(serveUrl)))
         } else
-            KotlinxIoFile(Path(url.substringBefore('?').substringAfter(serveUrl)))
+            ExternalFile(this, parsePath(url.substringBefore('?').substringAfter(serveUrl)))
     }
 
     /**
-     * Parses a signed upload URL into a FileObject.
+     * Parses a signed upload URL into an [ExternalFile].
      *
      * This validates that the URL is specifically marked for uploads and hasn't expired.
      *
-     * @param url The signed upload URL to parse
-     * @return A KotlinxIoFile if the URL is valid, null if it doesn't start with serveUrl
+     * @return An ExternalFile if the URL is valid, null if it doesn't start with serveUrl
      * @throws IllegalArgumentException if signature verification fails, URL has expired,
      *         URL doesn't match this file system, or URL is for read (not upload)
      */
-    public fun parseUploadUrl(url: String): KotlinxIoFile? {
+    public fun parseUploadUrl(url: String): ExternalFile? {
         if (!url.startsWith(serveUrl)) return null
         val data = DataToSign(url.substringBeforeLast("&"))
         val signature = url.substringAfterLast("&", "").substringAfter('=')
@@ -160,242 +167,192 @@ public class KotlinxIoPublicFileSystem(
         if (context.clock.now() > data.expires) throw IllegalArgumentException("URL has expired for $url")
         if (!data.url.startsWith(serveUrl)) throw IllegalArgumentException("URL does not match this file system")
         if (!data.upload) throw IllegalArgumentException("URL is for read, not upload")
-        return KotlinxIoFile(Path(data.url.substringAfter(serveUrl)))
+        return ExternalFile(this, parsePath(data.url.substringAfter(serveUrl)))
+    }
+
+    private fun parsePath(relative: String): ExternalPath =
+        ExternalPath(relative.replace('\\', '/').split("/").filter { it.isNotEmpty() })
+
+    /**
+     * Rejects operations directly against the `.signingKey` file, which backs URL signing and
+     * must never be readable/writable through the public file API. Traversal (`.`/`..`) is
+     * already rejected by [ExternalPath]'s constructor.
+     */
+    private fun guard(path: ExternalPath) {
+        if (path.parts.size == 1 && path.parts[0] == signingKeyFile)
+            throw IllegalArgumentException("Invalid file path.")
+    }
+
+    private fun kfileFor(path: ExternalPath): KFile =
+        KFile(rootKFile.fileSystem, Path(rootKFile.path, path.parts.joinToString("/")))
+
+    private val KFile.localPath: Path get() = Path(this.path.toString().removePrefix(rootKFile.path.toString()))
+
+    /**
+     * Path to the sidecar file that stores a file's content type.
+     *
+     * For a file named `photo.jpg`, the content type is stored in `photo.jpg.contenttype`.
+     */
+    private fun contentTypePath(kfile: KFile): KFile = kfile.parent!!.then("${kfile.name}.contenttype")
+
+    /**
+     * Lists the contents of the directory at [path].
+     *
+     * Filters out `.contenttype` sidecar files and the `.signingKey` file.
+     *
+     * @return A list of child paths, null if this is a file (not a directory) or doesn't exist
+     */
+    override suspend fun list(path: ExternalPath): List<ExternalPath>? = traceFileOperation(
+        owner = this,
+        operation = "list",
+        path = path.parts.joinToString("/"),
+        storageSystem = "file"
+    ) {
+        guard(path)
+        val kfile = kfileFor(path)
+        try {
+            kfile.list()
+                .filter { !it.name.endsWith(".contenttype") && it.name != signingKeyFile }
+                .map { parsePath(it.localPath.toString()) }
+        } catch (e: FileNotFoundException) {
+            null
+        } catch (e: IOException) {
+            if (contentTypePath(kfile).exists()) null
+            else throw e
+        }
     }
 
     /**
-     * A file object implementation for the kotlinx.io file system.
+     * Gets metadata about the file at [path].
      *
-     * This inner class represents a file or directory within the KotlinxIoPublicFileSystem.
-     * It stores content type information in sidecar `.contenttype` files alongside the actual files.
+     * The media type is determined from:
+     * 1. The `.contenttype` sidecar file if it exists
+     * 2. The file extension otherwise
      *
-     * @param kfile The underlying KFile representing this file's location
+     * Note: lastModified is always null in this implementation.
      */
-    public inner class KotlinxIoFile(
-        public val path: Path,
-    ) : FileObject {
-        internal val relativePath = path.toString().replace('\\', '/')
-
-        init {
-            if (relativePath.split("/").any { it == ".." || it == "." } || relativePath == signingKeyFile)
-                throw IllegalArgumentException("Invalid file path.")
+    override suspend fun head(path: ExternalPath): FileInfo? = traceFileOperation(
+        owner = this,
+        operation = "head",
+        path = path.parts.joinToString("/"),
+        storageSystem = "file",
+        attributes = mapOf("rpc.system" to "filesystem")
+    ) {
+        guard(path)
+        val kfile = kfileFor(path)
+        val metadata = kfile.metadataOrNull() ?: return@traceFileOperation null
+        val contentTypePath = contentTypePath(kfile)
+        val mediaType = if (contentTypePath.exists()) {
+            contentTypePath.source().use { source ->
+                MediaType(source.buffered().readString())
+            }
+        } else {
+            MediaType.fromExtension(path.extension)
         }
 
-        public val kfile: KFile = KFile(rootKFile.fileSystem, Path(rootKFile.path, relativePath))
-        private val KFile.localPath get() = Path(path.toString().removePrefix(rootKFile.path.toString()))
+        FileInfo(
+            type = mediaType,
+            size = metadata.size,
+            lastModified = null,
+        )
+    }
 
-        override fun toString(): String = relativePath
-        override fun equals(other: Any?): Boolean = other is KotlinxIoFile && this.kfile == other.kfile
+    /**
+     * Writes content to the file at [path].
+     *
+     * Creates parent directories if needed and stores the media type in a `.contenttype` sidecar file.
+     */
+    override suspend fun put(path: ExternalPath, content: TypedData): Unit = traceFileOperation(
+        owner = this,
+        operation = "put",
+        path = path.parts.joinToString("/"),
+        storageSystem = "file",
+        attributes = mapOf(
+            "file.size" to (content.data.size ?: -1L),
+            "file.content_type" to content.mediaType.toString()
+        )
+    ) {
+        guard(path)
+        val kfile = kfileFor(path)
 
-        override val name: String = path.name
-
-        override fun then(path: String): FileObject = KotlinxIoFile(Path(this.path, path))
-
-        override val parent: FileObject? =
-            if (kfile == rootKFile) null else kfile.parent?.let { KotlinxIoFile(it.localPath) }
-
-        override val url: String = serveUrl.removeSuffix("/") + '/' + relativePath.removePrefix("/")
-
-        override val signedUrl: String
-            get() = signedUrlDuration?.let { expiration ->
-                DataToSign(url, context.clock.now().plus(expiration), false)
-                    .signed()
-            }
-                ?: url
-
-        override fun uploadUrl(timeout: Duration): String {
-            return DataToSign(url, context.clock.now().plus(timeout), true)
-                .signed()
+        // Create parent directories if they don't exist
+        val parent = kfile.parent
+        if (parent != null && !parent.exists()) {
+            parent.createDirectories()
         }
 
-        /**
-         * Path to the sidecar file that stores this file's content type.
-         *
-         * For a file named `photo.jpg`, the content type is stored in `photo.jpg.contenttype`.
-         */
-        private val contentTypePath: KFile
-            get() = kfile.parent!!.then("${kfile.name}.contenttype")
-
-        /**
-         * Lists the contents of this directory.
-         *
-         * Filters out:
-         * - `.contenttype` sidecar files
-         * - `.signingKey` file
-         *
-         * @return A list of FileObjects, null if this is a file (not a directory) or doesn't exist
-         */
-        override suspend fun list(): List<FileObject>? = traceFileOperation(
-            owner = this@KotlinxIoPublicFileSystem,
-            operation = "list",
-            path = relativePath,
-            storageSystem = "file"
-        ) {
-            try {
-                kfile.list()
-                    .filter { !it.name.endsWith(".contenttype") && it.name != ".signingKey" }
-                    .map { KotlinxIoFile(it.localPath) }
-            } catch (e: FileNotFoundException) {
-                null
-            } catch (e: IOException) {
-                if (contentTypePath.exists()) null
-                else throw e
-            }
+        // Write content type to content type file
+        contentTypePath(kfile).sink().buffered().use {
+            it.writeString(content.mediaType.toString())
         }
 
-        /**
-         * Gets metadata about this file.
-         *
-         * The media type is determined from:
-         * 1. The `.contenttype` sidecar file if it exists
-         * 2. The file extension otherwise
-         *
-         * Note: lastModified is always null in this implementation.
-         *
-         * @return FileInfo with type and size, or null if the file doesn't exist
-         */
-        override suspend fun head(): FileInfo? = traceFileOperation(
-            owner = this@KotlinxIoPublicFileSystem,
-            operation = "head",
-            path = relativePath,
-            storageSystem = "file",
-            attributes = mapOf("rpc.system" to "filesystem")
-        ) {
-            val metadata = kfile.metadataOrNull() ?: return@traceFileOperation null
-            // TODO: Cache contentTypePath reads in a small per-FileSystem LRU (max ~1000 entries)
-            //       to avoid one syscall per head() call. Invalidate on put()/delete().
-            val mediaType = if (contentTypePath.exists()) {
-                contentTypePath.source().use { source ->
-                    MediaType(source.buffered().readString())
-                }
-            } else {
-                MediaType.fromExtension(path.name.substringAfterLast('.', ""))
-            }
+        // Write content to file
+        kfile.sink().buffered().use {
+            content.data.write(it)
+        }
+    }
 
-            // TODO: emit file.size and file.content_type as span attributes once traceFileOperation
-            //       supports setting attributes from inside the block.
-            FileInfo(
-                type = mediaType,
-                size = metadata.size,
-                lastModified = null,
-            )
+    /**
+     * Reads the content from the file at [path].
+     *
+     * The media type is determined from the `.contenttype` sidecar file or file extension.
+     */
+    override suspend fun get(path: ExternalPath): TypedData? = traceFileOperation(
+        owner = this,
+        operation = "get",
+        path = path.parts.joinToString("/"),
+        storageSystem = "file",
+        attributes = mapOf("rpc.system" to "filesystem")
+    ) {
+        guard(path)
+        val kfile = kfileFor(path)
+
+        // Try-open avoids a redundant exists() syscall before open.
+        val source = try {
+            kfile.source().buffered()
+        } catch (e: FileNotFoundException) {
+            return@traceFileOperation null
         }
 
-        /**
-         * Writes content to this file.
-         *
-         * Creates parent directories if needed and stores the media type in a `.contenttype` sidecar file.
-         *
-         * @param content The typed data to write
-         */
-        override suspend fun put(content: TypedData): Unit = traceFileOperation(
-            owner = this@KotlinxIoPublicFileSystem,
-            operation = "put",
-            path = relativePath,
-            storageSystem = "file",
-            attributes = mapOf(
-                "file.size" to (content.data.size ?: -1L),
-                "file.content_type" to content.mediaType.toString()
-            )
-        ) {
-            // Create parent directories if they don't exist
-            val parent = kfile.parent
-            if (parent != null && !parent.exists()) {
-                parent.createDirectories()
+        val contentTypePath = contentTypePath(kfile)
+        val mediaType = if (contentTypePath.exists()) {
+            contentTypePath.source().buffered().use { s ->
+                MediaType(s.readString())
             }
-
-            // Write content type to content type file
-            contentTypePath.sink().buffered().use {
-                it.writeString(content.mediaType.toString())
-            }
-
-            // Write content to file
-            kfile.sink().buffered().use {
-                content.data.write(it)
-            }
+        } else {
+            MediaType.fromExtension(path.extension)
         }
 
-        /**
-         * Reads the content from this file.
-         *
-         * The media type is determined from the `.contenttype` sidecar file or file extension.
-         *
-         * @return The file's content as TypedData, or null if the file doesn't exist
-         */
-        override suspend fun get(): TypedData? = traceFileOperation(
-            owner = this@KotlinxIoPublicFileSystem,
-            operation = "get",
-            path = relativePath,
-            storageSystem = "file",
-            attributes = mapOf("rpc.system" to "filesystem")
-        ) {
-            // Try-open avoids a redundant exists() syscall before open.
-            val source = try {
-                kfile.source().buffered()
-            } catch (e: FileNotFoundException) {
-                return@traceFileOperation null
+        TypedData(
+            Data.Source(source, kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1),
+            mediaType
+        )
+    }
+
+    /**
+     * Deletes the file at [path] and its `.contenttype` sidecar file.
+     *
+     * @throws RuntimeException if deletion fails
+     */
+    override suspend fun delete(path: ExternalPath): Unit = traceFileOperation(
+        owner = this,
+        operation = "delete",
+        path = path.parts.joinToString("/"),
+        storageSystem = "file"
+    ) {
+        guard(path)
+        val kfile = kfileFor(path)
+        try {
+            val contentTypePath = contentTypePath(kfile)
+            if (contentTypePath.exists()) {
+                contentTypePath.delete()
             }
 
-            val mediaType = if (contentTypePath.exists()) {
-                contentTypePath.source().buffered().use { s ->
-                    MediaType(s.readString())
-                }
-            } else {
-                MediaType.fromExtension(path.name.substringAfterLast('.', ""))
+            if (kfile.exists()) {
+                kfile.delete()
             }
-
-            TypedData(
-                Data.Source(source, kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1),
-                mediaType
-            )
+        } catch (e: Exception) {
+            throw RuntimeException("Failed to delete file: $kfile", e)
         }
-
-        /**
-         * Deletes this file and its `.contenttype` sidecar file.
-         *
-         * @throws RuntimeException if deletion fails
-         */
-        override suspend fun delete(): Unit = traceFileOperation(
-            owner = this@KotlinxIoPublicFileSystem,
-            operation = "delete",
-            path = relativePath,
-            storageSystem = "file"
-        ) {
-            try {
-                if (contentTypePath.exists()) {
-                    contentTypePath.delete()
-                }
-
-                if (kfile.exists()) {
-                    kfile.delete()
-                }
-            } catch (e: Exception) {
-                throw RuntimeException("Failed to delete file: $kfile", e)
-            }
-        }
-
-        override fun hashCode(): Int = kfile.hashCode() + 47
     }
 }
-
-/*
- * TODO: API Recommendations
- *
- * 1. The sidecar `.contenttype` file approach creates filesystem clutter. Consider:
- *    - Using extended attributes (xattr) where supported
- *    - Storing a single index file with all metadata
- *    - Making the storage strategy configurable
- *
- * 2. The signing key is stored unencrypted in `.signingKey`. For production use, consider:
- *    - Warning in docs about file permissions
- *    - Supporting external key management (env vars, key vaults)
- *    - Encrypting the key at rest
- *
- * 3. head() always returns null for lastModified. Consider populating it from file metadata.
- *
- * 4. list() filters out internal files but doesn't handle other hidden/system files.
- *    Consider adding a parameter to control visibility of hidden files.
- *
- * 5. The URL parsing splits on '/' without handling URL encoding. Filenames with special
- *    characters may not work correctly. Consider proper URL encoding/decoding.
- */

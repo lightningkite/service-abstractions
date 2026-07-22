@@ -12,7 +12,7 @@ import kotlin.test.assertFailsWith
 import kotlin.time.Duration.Companion.hours
 
 /**
- * Verifies that [S3FileObject.assertSignatureValid] (reached via
+ * Verifies that [S3PublicFileSystem.assertSignatureValid] (reached via
  * [S3PublicFileSystem.parseExternalUrl]) validates signed URLs by PURE local HMAC recomputation —
  * no network round-trip — and rejects tampered signatures.
  *
