@@ -345,6 +345,8 @@ public fun <T> Condition<T>.guaranteedAfter(modification: Modification<T>): Bool
     guaranteedAfterUntyped(modification)
 
 private fun Condition<*>.guaranteedAfterUntyped(modification: Modification<*>): Boolean {
+    if (this is Condition.And) return conditions.all { it.guaranteedAfterUntyped(modification) }
+    if (this is Condition.Or) return conditions.any { it.guaranteedAfterUntyped(modification) }
     return when (modification) {
         is Modification.Assign ->
             @Suppress("UNCHECKED_CAST")

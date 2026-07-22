@@ -2,8 +2,16 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.data.GenerateDataClassPaths
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.NothingSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -25,6 +33,21 @@ enum class Role {
     Moderator,
     Admin
 }
+
+@Serializable
+@GenerateDataClassPaths
+data class TestAddress(
+    val city: String = "Springfield",
+    val zip: String = "00000",
+)
+
+@Serializable
+@GenerateDataClassPaths
+data class TestProfile(
+    val _id: Uuid = Uuid.random(),
+    val name: String = "name",
+    val address: TestAddress = TestAddress(),
+)
 
 class UpdateRestrictionsTest {
 
@@ -246,7 +269,9 @@ class UpdateRestrictionsTest {
 
         val creditsMod = modification<TestUser> { it.credits assign 100 }
         val emailMod = modification<TestUser> { it.email assign "new@example.com" }
-        val expected = condition<TestUser> { (it.role eq Role.Moderator) or (it.role eq Role.Admin) }
+        // v2's invoke() runs the result through Condition.simplify() (needed to collapse the root-Assign
+        // expansion elsewhere), which normalizes this particular Or-of-equals into a single `role inside [...]`.
+        val expected = condition<TestUser> { (it.role eq Role.Moderator) or (it.role eq Role.Admin) }.simplify()
 
         assertEquals(expected, restrictions(creditsMod))
         assertEquals(Condition.Never, restrictions(emailMod)) // Not whitelisted
@@ -563,5 +588,242 @@ class UpdateRestrictionsTest {
 
         val creditsMod = modification<TestUser> { it.credits assign 500 }
         assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(creditsMod))
+    }
+
+    // ==================== V2: anyOf (multi-option OR) ====================
+
+    @Test
+    fun `anyOf declares alternative rules that are OR'd together`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            user.role.anyOf(
+                // Admins may change the role to anything
+                UpdateRestrictions.RestrictionOption(
+                    ifCurrentValue = user.role eq Role.Admin,
+                    newValueMustBe = Condition.Always
+                ),
+                // Anyone may set their own role down to plain User
+                UpdateRestrictions.RestrictionOption(
+                    ifCurrentValue = Condition.Always,
+                    newValueMustBe = user.role eq Role.User
+                ),
+            )
+        }
+
+        val toAdminMod = modification<TestUser> { it.role assign Role.Admin }
+        val toUserMod = modification<TestUser> { it.role assign Role.User }
+
+        // Only the "must already be admin" alternative can satisfy setting the role to Admin
+        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(toAdminMod))
+        // Setting the role to User matches the second, unconditional alternative
+        assertEquals(Condition.Always, restrictions(toUserMod))
+    }
+
+    // ==================== V2: nested longest-prefix + descendant matching ====================
+
+    @Test
+    fun `restriction on a child field also applies when the parent is overwritten wholesale`() {
+        val restrictions = updateRestrictions<TestProfile> { profile ->
+            profile.address.zip requires (profile.name eq "admin")
+        }
+
+        // Modifying the child field directly hits the restriction via exact match
+        val zipMod = modification<TestProfile> { it.address.zip assign "99999" }
+        assertEquals(condition<TestProfile> { it.name eq "admin" }, restrictions(zipMod))
+
+        // Overwriting the whole parent object also triggers the child's restriction (descendant matching)
+        val addressMod = modification<TestProfile> { it.address assign TestAddress(zip = "11111") }
+        assertEquals(condition<TestProfile> { it.name eq "admin" }, restrictions(addressMod))
+    }
+
+    @Test
+    fun `restriction on a parent field governs a child field modification via longest-prefix match`() {
+        val restrictions = updateRestrictions<TestProfile> { profile ->
+            profile.address.cannotBeModified()
+        }
+
+        val zipMod = modification<TestProfile> { it.address.zip assign "99999" }
+        assertEquals(Condition.Never, restrictions(zipMod))
+    }
+
+    // ==================== V2: repeated declarations AND-merge across DSL calls ====================
+
+    @Test
+    fun `repeated declarations across different DSL calls AND-merge`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            user.credits requires (user.role eq Role.Admin)
+            user.credits.mustBe { it gte 0 }
+        }
+
+        val goodMod = modification<TestUser> { it.credits assign 100 }
+        val badMod = modification<TestUser> { it.credits assign -5 }
+
+        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(goodMod))
+        assertEquals(Condition.Never, restrictions(badMod))
+    }
+
+    // ==================== V2: root-expansion edge cases ====================
+
+    @Test
+    fun `empty chain modification is a no-op and is always allowed`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            user.role.cannotBeModified()
+        }
+
+        val noOp = Modification.Chain<TestUser>(emptyList())
+        assertEquals(Condition.Always, restrictions(noOp))
+    }
+
+    // ==================== V1-compat wire format (UpdateRestrictionsSerializer) ====================
+    //
+    // UpdateRestrictions now serializes OUTBOUND in the v1 `{mode, fields}` shape (via a hand-written
+    // UpdateRestrictionsSerializer) so clients released against v1, like the admin UI, keep working unchanged.
+    // Inbound reading tolerates both the v1 shape and the real v2 `{perField, default}` shape.
+
+    @Test
+    fun `serialize emits the v1 mode-fields wire shape with property-requires-limitedTo keys`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            user.role.cannotBeModified()
+            user.credits requires (user.role eq Role.Admin)
+        }
+
+        val serializer = UpdateRestrictions.serializer(TestUser.serializer())
+        // encodeDefaults = true so `mode` (which equals its default, Blacklist) is still present to assert on --
+        // the default Json instance omits default-valued fields, same as v1 did.
+        val json = Json { encodeDefaults = true }.encodeToJsonElement(serializer, restrictions).jsonObject
+        val conditionSerializer = Condition.serializer(TestUser.serializer())
+
+        assertEquals("Blacklist", json.getValue("mode").jsonPrimitive.content)
+        val fields = json.getValue("fields").jsonArray
+        assertEquals(2, fields.size)
+
+        val roleField = fields.first { it.jsonObject.getValue("property").jsonPrimitive.content == "role" }.jsonObject
+        assertEquals(Condition.Never, Json.decodeFromJsonElement(conditionSerializer, roleField.getValue("requires")))
+        assertEquals(Condition.Always, Json.decodeFromJsonElement(conditionSerializer, roleField.getValue("limitedTo")))
+
+        val creditsField =
+            fields.first { it.jsonObject.getValue("property").jsonPrimitive.content == "credits" }.jsonObject
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            Json.decodeFromJsonElement(conditionSerializer, creditsField.getValue("requires"))
+        )
+        assertEquals(
+            Condition.Always,
+            Json.decodeFromJsonElement(conditionSerializer, creditsField.getValue("limitedTo"))
+        )
+    }
+
+    @Test
+    fun `a hand-built v1 JSON literal deserializes into the equivalent restriction`() {
+        val conditionSerializer = Condition.serializer(TestUser.serializer())
+        val neverJson = Json.encodeToString(conditionSerializer, Condition.Never)
+        val alwaysJson = Json.encodeToString(conditionSerializer, Condition.Always)
+
+        // Exactly what a v1 client (e.g. the released admin UI) would have sent/parsed.
+        val literalV1Json =
+            """{"mode":"Blacklist","fields":[{"property":"role","requires":$neverJson,"limitedTo":$alwaysJson}]}"""
+
+        val serializer = UpdateRestrictions.serializer(TestUser.serializer())
+        val decoded = Json.decodeFromString(serializer, literalV1Json)
+
+        val expected = updateRestrictions<TestUser> { user -> user.role.cannotBeModified() }
+        assertEquals(expected, decoded)
+    }
+
+    @Test
+    fun `v1 JSON survives a deserialize-then-serialize round trip unchanged`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            user.role.cannotBeModified()
+            user.credits requires (user.role eq Role.Admin)
+            user.isActive.mustBe { it eq true }
+        }
+
+        val serializer = UpdateRestrictions.serializer(TestUser.serializer())
+        val v1Json = Json.encodeToString(serializer, restrictions)
+        assertTrue(v1Json.contains("\"fields\""), "Expected the v1 `fields` key in $v1Json")
+
+        val decoded = Json.decodeFromString(serializer, v1Json)
+        assertEquals(restrictions, decoded)
+
+        val reEncoded = Json.encodeToString(serializer, decoded)
+        assertEquals(v1Json, reEncoded)
+    }
+
+    @Test
+    fun `v2 perField-default JSON still deserializes tolerantly`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            user.credits requires (user.role eq Role.Admin)
+        }
+
+        val conditionSerializer = Condition.serializer(TestUser.serializer())
+        val roleAdminJson = Json.encodeToString(conditionSerializer, condition<TestUser> { it.role eq Role.Admin })
+        val alwaysJson = Json.encodeToString(conditionSerializer, Condition.Always)
+
+        // What the raw v2 perField/default data shape looks like on the wire -- not something this serializer
+        // emits anymore, but still accepted on read.
+        val v2Json = """{"perField":{"credits":[{"ifCurrentValue":$roleAdminJson,"newValueMustBe":$alwaysJson}]},""" +
+            """"default":[{"ifCurrentValue":$alwaysJson,"newValueMustBe":$alwaysJson}]}"""
+
+        val serializer = UpdateRestrictions.serializer(TestUser.serializer())
+        val decoded = Json.decodeFromString(serializer, v2Json)
+        assertEquals(restrictions, decoded)
+    }
+
+    @Test
+    fun `anyOf multi-option collapses into a single lossy v1 Part on serialize`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            user.role.anyOf(
+                UpdateRestrictions.RestrictionOption(
+                    ifCurrentValue = user.role eq Role.Admin,
+                    newValueMustBe = Condition.Always
+                ),
+                UpdateRestrictions.RestrictionOption(
+                    ifCurrentValue = Condition.Always,
+                    newValueMustBe = user.role eq Role.User
+                ),
+            )
+        }
+
+        val serializer = UpdateRestrictions.serializer(TestUser.serializer())
+        val json = Json.encodeToJsonElement(serializer, restrictions).jsonObject
+        val fields = json.getValue("fields").jsonArray
+        assertEquals(1, fields.size, "The two alternatives collapse into a single v1 Part")
+
+        val roleField = fields.first().jsonObject
+        assertEquals("role", roleField.getValue("property").jsonPrimitive.content)
+
+        val conditionSerializer = Condition.serializer(TestUser.serializer())
+        assertEquals(
+            condition<TestUser> { (it.role eq Role.Admin) or Condition.Always },
+            Json.decodeFromJsonElement(conditionSerializer, roleField.getValue("requires")),
+            "Lossy: independent alternatives collapse into a single OR'd `requires`"
+        )
+        assertEquals(
+            condition<TestUser> { Condition.Always or (it.role eq Role.User) },
+            Json.decodeFromJsonElement(conditionSerializer, roleField.getValue("limitedTo")),
+            "Lossy: independent alternatives collapse into a single OR'd `limitedTo`"
+        )
+
+        // Still valid v1-shaped JSON that round-trips to *some* v1-compatible restriction, just not the original.
+        val roundTripped = Json.decodeFromString(serializer, Json.encodeToString(serializer, restrictions))
+        assertEquals(1, roundTripped.perField.values.single().size)
+    }
+
+    @Test
+    fun `UpdateRestrictions round-trips through the SerializationRegistry in the v1 shape`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            user.credits requires (user.role eq Role.Admin)
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val serializer = SerializationRegistry.master[
+            UpdateRestrictions.serializer(NothingSerializer()).descriptor.serialName,
+            arrayOf(TestUser.serializer())
+        ] as kotlinx.serialization.KSerializer<UpdateRestrictions<TestUser>>
+
+        val json = Json.encodeToString(serializer, restrictions)
+        assertTrue(json.contains("\"fields\""), "Expected the v1 `fields` key in $json")
+
+        val decoded = Json.decodeFromString(serializer, json)
+        assertEquals(restrictions, decoded)
     }
 }
