@@ -90,8 +90,8 @@ public class LoggingTelemetryBackend(
         val parent = coroutineContext[LogSpanNode]
         val node = LogSpanNode("${owner.name}.$opName", System.nanoTime(), parent)
         val telemetryTrace = object : TelemetryTrace {
-            val enriched = LinkedHashMap<TelemetryKey<*>, Any?>()
-            override fun enrich(attributes: TelemetryAttributes) { enriched.putAll(attributes.map) }
+            val enriched = TelemetryAttributes.Builder()
+            override fun enrich(attributes: TelemetryAttributes) { enriched.putAll(attributes) }
             override fun isLoggable(level: LogLevel): Boolean = true
             override fun log(level: LogLevel, message: String, attributes: TelemetryAttributes) {
                 node.logs.add(level to message)
@@ -108,8 +108,7 @@ public class LoggingTelemetryBackend(
             throw e
         } finally {
             val durationNanos = System.nanoTime() - node.startNanos
-            val allAttrs = if (telemetryTrace.enriched.isEmpty()) attributes
-                else TelemetryAttributes(attributes.map + telemetryTrace.enriched)
+            val allAttrs = attributes + telemetryTrace.enriched.build()
             val result = LogSpanResult(node.name, durationNanos, ok, allAttrs,
                 node.logs.toList(), node.records.toList(), node.children.toList())
             if (parent != null) {

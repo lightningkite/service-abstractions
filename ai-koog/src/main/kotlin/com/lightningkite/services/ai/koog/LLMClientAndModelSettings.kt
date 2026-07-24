@@ -22,6 +22,7 @@ import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import com.lightningkite.services.*
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.telemetryAttributesOf
 import com.lightningkite.services.telemetry.telemetryTrace
 import io.ktor.client.*
 import kotlinx.coroutines.flow.Flow
@@ -517,10 +518,10 @@ internal class TracingLLMClient(
     private suspend inline fun <R> traced(operation: String, crossinline block: suspend () -> R): R =
         owner.telemetryTrace(
             operation,
-            attributes = TelemetryAttributes {
-                put(TelemetryKeys.GenAi.system, delegate.llmProvider().id)
-                put(TelemetryKeys.GenAi.requestModel, modelId)
-            }
+            attributes = telemetryAttributesOf(
+                TelemetryKeys.GenAi.system to delegate.llmProvider().id,
+                TelemetryKeys.GenAi.requestModel to modelId
+            )
         ) { block() }
 
     override suspend fun execute(

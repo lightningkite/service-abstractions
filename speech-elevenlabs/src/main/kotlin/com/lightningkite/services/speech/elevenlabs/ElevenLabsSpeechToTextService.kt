@@ -1,6 +1,7 @@
 package com.lightningkite.services.speech.elevenlabs
 
-import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.telemetryAttributesOf
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.telemetry.telemetryTrace
@@ -139,12 +140,10 @@ public class ElevenLabsSpeechToTextService(
 
         return telemetryTrace(
             "transcribe",
-            attributes = TelemetryAttributes(
-                mapOf(
-                    "ai.provider" to "elevenlabs",
-                    "ai.model" to model,
-                    "audio.size_bytes" to audioBytes.size.toLong(),
-                )
+            attributes = telemetryAttributesOf(
+                TelemetryKeys.Ai.provider to "elevenlabs",
+                TelemetryKeys.Ai.model to model,
+                TelemetryKeys.Audio.sizeBytes to audioBytes.size.toLong(),
             )
         ) {
             logger.debug { "[$name] Transcribing ${audioBytes.size} bytes with model=$model" }
@@ -191,11 +190,9 @@ public class ElevenLabsSpeechToTextService(
 
         return telemetryTrace(
             "transcribe_url",
-            attributes = TelemetryAttributes(
-                mapOf(
-                    "ai.provider" to "elevenlabs",
-                    "ai.model" to model,
-                )
+            attributes = telemetryAttributesOf(
+                TelemetryKeys.Ai.provider to "elevenlabs",
+                TelemetryKeys.Ai.model to model,
             )
         ) {
             logger.debug { "[$name] Transcribing from URL: $audioUrl with model=$model" }
