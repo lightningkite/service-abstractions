@@ -99,21 +99,23 @@ public class S3PublicFileSystem(
 
     @Volatile private var lastSigningKey: SecretKeySpec? = null
     @Volatile private var lastSigningKeyDate: String = ""
+    @Volatile private var lastSigningKeyAccessKey: String = ""
 
     /**
-     * Gets a signing key for the given date, caching it for reuse within the same day.
+     * Gets a signing key for the given date and credentials, caching it for reuse.
      *
      * The signing key is derived from AWS credentials following AWS Signature Version 4 specification.
-     * It is cached per date to avoid expensive key derivation operations on every signature.
+     * It is cached per (date, access key) pair so that it is correctly invalidated when IAM
+     * credentials rotate (as happens on EC2 instance profiles approximately every hour).
      *
      * @param date The date string in YYYYMMDD format
+     * @param currentCreds The current credentials, used both for key derivation and cache invalidation
      * @return A [SecretKeySpec] for signing requests
      */
-    public fun signingKey(date: String): SecretKeySpec {
+    public fun signingKey(date: String, currentCreds: DirectAwsCredentials): SecretKeySpec {
         val lastSigningKey = lastSigningKey
-        if (lastSigningKey == null || lastSigningKeyDate != date) {
-            val secretKey = creds().secret
-            val newKey = "AWS4$secretKey".toByteArray()
+        if (lastSigningKey == null || lastSigningKeyDate != date || lastSigningKeyAccessKey != currentCreds.access) {
+            val newKey = "AWS4${currentCreds.secret}".toByteArray()
                 .let { date.toByteArray().mac(it) }
                 .let { region.id().toByteArray().mac(it) }
                 .let { "s3".toByteArray().mac(it) }
@@ -121,6 +123,7 @@ public class S3PublicFileSystem(
                 .let { SecretKeySpec(it, "HmacSHA256") }
             this.lastSigningKey = newKey
             lastSigningKeyDate = date
+            lastSigningKeyAccessKey = currentCreds.access
             return newKey
         } else return lastSigningKey
     }
