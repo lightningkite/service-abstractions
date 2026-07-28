@@ -55,48 +55,43 @@ public enum class ForeignUrlHandling {
     ERROR,
 }
 
-@OptIn(SealedSerializationApi::class)
 public class ExternalServerFileSerializer(
     public val clock: Clock,
     public val scanners: List<FileScanner>,
     public val fileSystems: List<PublicFileSystem>,
-    public val jail: FileObject = fileSystems.first().root.then("upload-jail"),
-    public val ready: FileObject = fileSystems.first().root.then("uploaded"),
-    public val onUse: (FileObject) -> Unit,
+    /**
+     * Backward-compatibility flag for the OLD `deserialize` behavior that performed blocking
+     * I/O (scanning, copying, and uploading) inline on the deserializing thread via
+     * `runBlocking`.
+     *
+     * Default is `false`: `deserialize` ONLY parses and validates the incoming URL string. It
+     * performs no scan, copy, upload, network call, or `runBlocking`. File validation/scanning
+     * is expected to happen via a separate explicit endpoint instead.
+     *
+     * Set to `true` ONLY to restore the legacy inline-scan/upload behavior for code that has not
+     * yet migrated to the explicit-endpoint model. This re-introduces blocking I/O on whatever
+     * thread runs deserialization (often a Netty event loop) and should be avoided.
+     */
+    public val inlineScanOnDeserialize: Boolean = false,
+    /**
+     * Controls what [serialize] does when a [ServerFile]'s location does not match any known
+     * file-system root (a foreign URL).
+     *
+     * Default is [ForeignUrlHandling.ERROR]: foreign URLs are rejected outright, because passing
+     * an attacker-controlled URL through to the client is an open-redirect / malware-distribution
+     * risk.
+     *
+     * Set to [ForeignUrlHandling.WARN] to restore the legacy pass-through behavior if a server
+     * legitimately serves external URLs. Use [ForeignUrlHandling.CENSOR] to silently blank them.
+     */
+    public val foreignUrlHandling: ForeignUrlHandling = ForeignUrlHandling.ERROR,
+    public val jail: ExternalFile = fileSystems.first().root.then("upload-jail"),
+    public val ready: ExternalFile = fileSystems.first().root.then("uploaded"),
+    public val onUse: (ExternalFile) -> Unit,
     public val key: HMAC.Key,
 ) : KSerializer<ServerFile> {
     private val primary = fileSystems.first()
     private val logger = KotlinLogging.logger("com.lightningkite.lightningserver.files.ExternalServerFileSerializer")
-
-    public companion object {
-        /**
-         * Backward-compatibility flag for the OLD `deserialize` behavior that performed blocking
-         * I/O (scanning, copying, and uploading) inline on the deserializing thread via
-         * `runBlocking`.
-         *
-         * Default is `false`: `deserialize` ONLY parses and validates the incoming URL string. It
-         * performs no scan, copy, upload, network call, or `runBlocking`. File validation/scanning
-         * is expected to happen via a separate explicit endpoint instead.
-         *
-         * Set to `true` ONLY to restore the legacy inline-scan/upload behavior for code that has not
-         * yet migrated to the explicit-endpoint model. This re-introduces blocking I/O on whatever
-         * thread runs deserialization (often a Netty event loop) and should be avoided.
-         */
-        public var inlineScanOnDeserialize: Boolean = false
-
-        /**
-         * Controls what [serialize] does when a [ServerFile]'s location does not match any known
-         * file-system root (a foreign URL).
-         *
-         * Default is [ForeignUrlHandling.ERROR]: foreign URLs are rejected outright, because passing
-         * an attacker-controlled URL through to the client is an open-redirect / malware-distribution
-         * risk.
-         *
-         * Set to [ForeignUrlHandling.WARN] to restore the legacy pass-through behavior if a server
-         * legitimately serves external URLs. Use [ForeignUrlHandling.CENSOR] to silently blank them.
-         */
-        public var foreignUrlHandling: ForeignUrlHandling = ForeignUrlHandling.ERROR
-    }
 
     private val uploadFile: suspend (data: TypedData) -> FileObject = {
         scanners.scan(it)
@@ -222,14 +217,14 @@ public class ExternalServerFileSerializer(
                     val source = jail.then(relativePath)
                     runBlocking { scanners.copyAndScan(source, safe) }
                 }
-                return ServerFile(safe.url)
+                return safe.serverFile
             }
 
             raw.startsWith("future-prescanned:") -> {
                 if (!verifyUrl(raw)) throw IllegalArgumentException("URL is not valid")
                 val safe = ready.then(raw.substringAfter("future-prescanned:").substringBefore('?'))
                 onUse(safe)
-                return ServerFile(safe.url)
+                return safe.serverFile
             }
 
             raw.startsWith("data:") -> {
@@ -246,7 +241,7 @@ public class ExternalServerFileSerializer(
                     val typedData = TypedData.bytes(data, type)
                     scanners.scan(typedData)
                     uploadFile(typedData)
-                }.let { ServerFile(it.url) }
+                }.serverFile
             }
 
             else -> {
@@ -257,7 +252,7 @@ public class ExternalServerFileSerializer(
                         fileSystems.flatMap { it.rootUrls }.joinToString()
                     }"
                 )
-                return ServerFile(file.url)
+                return file.serverFile
             }
         }
     }

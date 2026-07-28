@@ -11,7 +11,6 @@ plugins {
 dependencies {
     api(project(path = ":cache"))
     implementation(libs.lettuce)
-    implementation(libs.guava)
     implementation(libs.coroutines.reactive)
 
     testImplementation(libs.embedded.redis)

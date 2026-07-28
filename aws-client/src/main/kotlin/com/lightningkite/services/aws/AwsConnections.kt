@@ -7,8 +7,10 @@ import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
 import software.amazon.awssdk.core.interceptor.Context
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor
-import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient
-import software.amazon.awssdk.http.crt.AwsCrtHttpClient
+import software.amazon.awssdk.http.SdkHttpClient
+import software.amazon.awssdk.http.async.SdkAsyncHttpClient
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 import kotlin.time.Duration
@@ -20,7 +22,8 @@ import kotlin.time.toJavaDuration
  *
  * Provides centralized HTTP client management for AWS SDK operations with:
  * - **Connection pooling**: Reuses HTTP connections across AWS service clients
- * - **Performance**: Uses AWS CRT (Common Runtime) HTTP clients for optimal performance
+ * - **Lean footprint**: A JDK-based sync client and a Netty-based async client, chosen over the
+ *   AWS CRT client whose native runtime added ~19MB to deployed artifacts
  * - **Timeouts**: Lambda-safe defaults so a stuck/unreachable endpoint fails fast instead of
  *   hanging for the lifetime of a serverless invocation
  * - **Health monitoring**: Tracks real in-flight request count for observability
@@ -66,9 +69,10 @@ import kotlin.time.toJavaDuration
  * ## Health
  *
  * [health] reflects the number of currently in-flight AWS SDK requests (tracked via an execution
- * interceptor) against [maxConcurrency]. Note this is in-flight request count, **not** CRT socket
- * pool occupancy — the CRT client does not expose its internal pool gauges — but it is a real
- * signal of how close we are to saturating the configured concurrency.
+ * interceptor) against [maxConcurrency]. Note this is in-flight request count, **not** socket pool
+ * occupancy — the HTTP clients do not expose their internal pool gauges — but it is a real signal
+ * of how close we are to saturating the configured concurrency. [maxConcurrency] is enforced by the
+ * async (Netty) client; the sync client relies on the JVM's connection management.
  *
  * @property context Service context
  * @property client Synchronous HTTP client for AWS SDK (blocking operations)
@@ -90,16 +94,20 @@ public class AwsConnections(
         override fun setup(context: SettingContext): AwsConnections = AwsConnections(context)
     }
 
-    public val client: AwsCrtHttpClient = AwsCrtHttpClient.builder()
+    // Sync path: JDK-based url-connection-client. It has no transitive dependencies and the fastest
+    // cold start (no native library to load), at the cost of no pool-level concurrency ceiling —
+    // sync connections are managed by the JVM. Only connection/socket timeouts are configurable.
+    public val client: SdkHttpClient = UrlConnectionHttpClient.builder()
+        .connectionTimeout(connectionTimeout.toJavaDuration())
+        .socketTimeout(apiCallAttemptTimeout.toJavaDuration())
+        .build()
+    // Async path: netty-nio-client. Netty is already present in typical deployments (server engine,
+    // Lettuce), so its marginal size is small, and it supports pooled concurrency and HTTP/2.
+    public val asyncClient: SdkAsyncHttpClient = NettyNioAsyncHttpClient.builder()
         .connectionTimeout(connectionTimeout.toJavaDuration())
         .connectionMaxIdleTime(connectionMaxIdleTime.toJavaDuration())
         .maxConcurrency(maxConcurrency)
-        .build() as AwsCrtHttpClient
-    public val asyncClient: AwsCrtAsyncHttpClient = AwsCrtAsyncHttpClient.builder()
-        .connectionTimeout(connectionTimeout.toJavaDuration())
-        .connectionMaxIdleTime(connectionMaxIdleTime.toJavaDuration())
-        .maxConcurrency(maxConcurrency)
-        .build() as AwsCrtAsyncHttpClient
+        .build()
 
     /**
      * Concurrency ceiling, used as the denominator for [health]. Defaults to [maxConcurrency]

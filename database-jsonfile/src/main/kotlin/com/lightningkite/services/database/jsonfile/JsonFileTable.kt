@@ -10,6 +10,7 @@ import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.database.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -66,6 +67,9 @@ public class JsonFileTable<Model : Any>(
     private val saveScope = scope.actor<Unit>(start = CoroutineStart.LAZY) {
         handleCollectionDump()
     }
+    private val shutdownHook = Thread {
+        handleCollectionDump()
+    }
 
     init {
         preload(
@@ -74,14 +78,12 @@ public class JsonFileTable<Model : Any>(
                 file.readStringOrNull() ?: "[]"
             )
         )
-        val shutdownHook = Thread {
-            handleCollectionDump()
-        }
         Runtime.getRuntime().addShutdownHook(shutdownHook)
     }
 
     override fun close() {
         scope.launch {
+            Runtime.getRuntime().removeShutdownHook(shutdownHook)
             saveScope.send(Unit)
         }
     }

@@ -25,11 +25,6 @@ class S3SignatureVerificationTest {
         S3PublicFileSystem
     }
 
-    @AfterTest
-    fun resetFlag() {
-        ExternalServerFileSerializer.inlineScanOnDeserialize = false
-    }
-
     private fun system(): S3PublicFileSystem = S3PublicFileSystem(
         name = "test",
         region = Region.US_WEST_2,
@@ -90,6 +85,26 @@ class S3SignatureVerificationTest {
         val tampered = signed.replace("AKIAEXAMPLEKEYID0000", "AKIADIFFERENTKEYID00")
         assertFailsWith<IllegalArgumentException> {
             system.parseExternalUrl(tampered)
+        }
+    }
+
+    /**
+     * A genuinely-signed URL that has passed its X-Amz-Date + X-Amz-Expires window must be rejected.
+     * Local signature recomputation is not enough: without an expiry check, an expired-but-once-valid
+     * URL would be accepted here and laundered into a permanent reference by the serializer.
+     */
+    @Test
+    fun expiredSignatureRejected() {
+        val system = system()
+        val file = system.root.then("folder/test.txt")
+        val params = file.signedUrl.substringAfter('?')
+
+        // Freshly signed with a 1h window: valid right now.
+        system.assertSignatureValid(file.path, params, now = java.time.Instant.now())
+
+        // The exact same validly-signed URL, evaluated just past its 1h window: must be rejected.
+        assertFailsWith<IllegalArgumentException> {
+            system.assertSignatureValid(file.path, params, now = java.time.Instant.now().plusSeconds(3600 + 60))
         }
     }
 }

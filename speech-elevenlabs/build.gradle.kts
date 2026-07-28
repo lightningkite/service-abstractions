@@ -21,7 +21,7 @@ dependencies {
     testImplementation(libs.coroutines.testing)
     testImplementation(project(path = ":test"))
     testImplementation(project(path = ":speech-test"))
-    testImplementation(libs.logBackClassic)
+    testImplementation(libs.slf4j.simple)
 }
 
 kotlin {

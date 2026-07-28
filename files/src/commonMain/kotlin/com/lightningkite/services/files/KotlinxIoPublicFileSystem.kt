@@ -123,6 +123,9 @@ public class KotlinxIoPublicFileSystem(
      * @return An ExternalFile if the URL starts with this file system's serveUrl, null otherwise
      */
     override fun parseInternalUrl(url: String): ExternalFile? {
+        // New canonical form: sf://<name>/<key>. Kept first so new rows resolve regardless of backend.
+        parseBackendInternalUrl(url)?.let { return it }
+        // Legacy form: a serveUrl-based absolute URL stored by the pre-canonical version.
         if (!url.startsWith(serveUrl)) return null
         return ExternalFile(this, parsePath(url.substringAfter(serveUrl)))
     }
@@ -137,6 +140,9 @@ public class KotlinxIoPublicFileSystem(
      *         URL doesn't match this file system, or URL is for upload (not read)
      */
     override fun parseExternalUrl(url: String): ExternalFile? {
+        // Canonical sf:// references are server-internal and must never be accepted from untrusted
+        // client input. (A serveUrl is always http(s), so this is also covered below, but be explicit.)
+        if (url.startsWith("sf://")) return null
         if (!url.startsWith(serveUrl)) return null
         return if (signedUrlDuration != null) {
             val data = DataToSign(url.substringBeforeLast("&"))

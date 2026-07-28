@@ -3,6 +3,7 @@ package com.lightningkite.services.files.test
 import com.lightningkite.services.data.*
 import com.lightningkite.services.default
 import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.files.serverFile
 import com.lightningkite.services.http.client
 import com.lightningkite.services.test.runTestWithClock
 import io.ktor.client.request.*
@@ -56,6 +57,24 @@ abstract class FileSystemTests {
         val file = system.root.then("test.txt")
         println(file)
         assertEquals(file, system.parseInternalUrl(file.url.also { println(it) }))
+    }
+
+    /**
+     * The canonical `sf://<name>/<path>` form is what gets persisted to a database, and it must
+     * round-trip back to the same file through [PublicFileSystem.parseInternalUrl] (the path the
+     * file serializer takes when reading a stored value).
+     */
+    @Test
+    fun testCanonicalRestoration() = runSuspendingTest {
+        val system = system ?: run {
+            println("Could not test because the file system isn't supported here.")
+            return@runSuspendingTest
+        }
+        val file = system.root.then("folder/test.txt")
+        val canonical = file.serverFile.location
+        println(canonical)
+        assertTrue(canonical.startsWith("sf://"), "Persisted reference should be canonical, was '$canonical'")
+        assertEquals(file, system.parseInternalUrl(canonical))
     }
 
     @Test

@@ -3,7 +3,7 @@ package com.lightningkite.services.database.postgres
 import com.lightningkite.services.telemetry.MetricUnit
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.telemetry.telemetryGauge
-import kotlinx.serialization.KSerializer
+import com.lightningkite.services.database.DatabaseTableDefinition
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import java.util.concurrent.ConcurrentHashMap
 
@@ -121,20 +121,23 @@ public class PostgresDatabase(
         }
     }
 
-    private val collections = ConcurrentHashMap<Pair<KSerializer<*>, String>, Lazy<PostgresCollection<*>>>()
+    private val collections = ConcurrentHashMap<DatabaseTableDefinition<*>, Lazy<PostgresCollection<*>>>()
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> table(serializer: KSerializer<T>, name: String): PostgresCollection<T> =
-        (collections.getOrPut(serializer to name) {
+    override fun <T : Any> table(tableDef: DatabaseTableDefinition<T>): PostgresCollection<T> =
+        (collections.getOrPut(tableDef) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
                 PostgresCollection(
                     db,
-                    name,
-                    serializer,
+                    tableDef.name,
+                    tableDef.serializer,
                     context.internalSerializersModule,
                     context,
                 )
             }
         } as Lazy<PostgresCollection<T>>).value
+
+    override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): PostgresCollection<T> =
+        table(tableDef).also { it.prepare.await() }
 
 }

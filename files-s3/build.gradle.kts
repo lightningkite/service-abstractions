@@ -13,13 +13,12 @@ dependencies {
     api(project(path = ":aws-client"))
     testImplementation(project(path = ":files-test"))
 
-    // AWS S3 dependencies
-    fun ModuleDependency.excludeNetty() {
-        exclude("software.amazon.awssdk:netty-nio-client")
-        exclude("software.amazon.awssdk:apache-client")
+    // Exclude S3's bundled default HTTP clients; the shared client pair comes from :aws-client.
+    fun ModuleDependency.excludeDefaultHttpClients() {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
     }
-    api(libs.aws.s3) { excludeNetty() }
-    api(libs.aws.crt.client) { excludeNetty() }
+    api(libs.aws.s3) { excludeDefaultHttpClients() }
     implementation(libs.coroutines.reactive)
 
     testImplementation(libs.kotlin.test)

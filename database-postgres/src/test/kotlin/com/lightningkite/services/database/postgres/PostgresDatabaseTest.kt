@@ -35,6 +35,7 @@ class BasicTest() {
         val collection =
             PostgresCollection(db, "LargeTestModel", LargeTestModel.serializer(), EmptySerializersModule(), TestSettingContext(EmptySerializersModule()))
         runBlocking {
+            collection.prepare.await()
             // Quick test
             val t = LargeTestModel()
             collection.insertOne(t)

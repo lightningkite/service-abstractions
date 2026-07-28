@@ -84,7 +84,7 @@ kotlin {
 }
 
 dependencies {
-    configurations.filter { it.name.startsWith("ksp") }.forEach {
+    configurations.filter { it.name.startsWith("ksp") && it.name != "ksp" }.forEach {
         add(it.name, project(":database-processor"))
     }
 }

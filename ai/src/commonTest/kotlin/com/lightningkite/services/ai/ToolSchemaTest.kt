@@ -1,6 +1,7 @@
 package com.lightningkite.services.ai
 
 import com.lightningkite.services.data.Description
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -50,6 +51,18 @@ class ToolSchemaTest {
         val visible: String,
         @HideFromLlm val internal: String = "",
         @LlmReadOnly val computed: Int = 0,
+    )
+
+    @Serializable
+    data class Money(val cents: Long)
+
+    @Serializable
+    data class PurchaseArgs(
+        val item: String,
+        // No SerializersModule registration for Money below — this relies on the compiler-generated
+        // fallback that kotlinx.serialization's ContextualSerializer carries for @Serializable types
+        // (the same mechanism ServerFile's contextual serializer uses to work without app registration).
+        @Contextual val price: Money,
     )
 
     private val pretty = Json { prettyPrint = true }
@@ -143,6 +156,18 @@ class ToolSchemaTest {
         )
         val schema = descriptor.toJsonSchema()
         dump("LlmToolDescriptor.toJsonSchema", schema)
+    }
+
+    @Test fun contextualWithoutModuleRegistrationFallsBack() {
+        // Regression test: a @Contextual property whose type isn't registered in the module must
+        // still build a schema by falling back to the type's own serializer, instead of throwing.
+        val schema = serializer<PurchaseArgs>().toJsonSchema()
+        dump("PurchaseArgs", schema)
+        val props = schema["properties"] as JsonObject
+        val price = props["price"] as JsonObject
+        assertEquals("object", (price["type"] as JsonPrimitive).content)
+        val priceProps = price["properties"] as JsonObject
+        assertEquals("integer", ((priceProps["cents"] as JsonObject)["type"] as JsonPrimitive).content)
     }
 
     @Test fun primitiveType() {

@@ -71,9 +71,12 @@ public class S3PublicFileSystem(
         "https://s3-${region.id()}.amazonaws.com/${bucket}/",
     )
 
-    @Volatile private var credsOnHand: AwsCredentials? = null
-    @Volatile private var credsOnHandMs: Long = 0
-    @Volatile private var credsDirect: DirectAwsCredentials? = null
+    @Volatile
+    private var credsOnHand: AwsCredentials? = null
+    @Volatile
+    private var credsOnHandMs: Long = 0
+    @Volatile
+    private var credsDirect: DirectAwsCredentials? = null
 
     /**
      * Direct AWS credentials with pre-encoded session token for efficient URL generation.
@@ -116,9 +119,12 @@ public class S3PublicFileSystem(
         } else onHand
     }
 
-    @Volatile private var lastSigningKey: SecretKeySpec? = null
-    @Volatile private var lastSigningKeyDate: String = ""
-    @Volatile private var lastSigningKeyAccessKey: String = ""
+    @Volatile
+    private var lastSigningKey: SecretKeySpec? = null
+    @Volatile
+    private var lastSigningKeyDate: String = ""
+    @Volatile
+    private var lastSigningKeyAccessKey: String = ""
 
     /**
      * Gets a signing key for the given date and credentials, caching it for reuse.
@@ -453,7 +459,7 @@ public class S3PublicFileSystem(
         canonicalRequestHasher.digest(hashHolder, 0, 32)
         val canonicalRequestHash = hashHolder.toHex()
         val finalHasher = javax.crypto.Mac.getInstance("HmacSHA256")
-        finalHasher.init(signingKey(dateOnly))
+        finalHasher.init(signingKey(dateOnly, creds))
         finalHasher.update(CONSTANT_BYTES_F)
         finalHasher.update(date.toByteArray())
         finalHasher.update(CONSTANT_BYTE_NEWLINE)
@@ -524,7 +530,7 @@ public class S3PublicFileSystem(
         canonicalRequestHasher.digest(hashHolder, 0, 32)
         val canonicalRequestHash = hashHolder.toHex()
         val finalHasher = javax.crypto.Mac.getInstance("HmacSHA256")
-        finalHasher.init(signingKey(dateOnly))
+        finalHasher.init(signingKey(dateOnly, creds))
         finalHasher.update(CONSTANT_BYTES_F)
         finalHasher.update(date.toByteArray())
         finalHasher.update(CONSTANT_BYTE_NEWLINE)
@@ -556,13 +562,26 @@ public class S3PublicFileSystem(
     }
 
     override fun parseInternalUrl(url: String): ExternalFile? {
+        // New canonical form: sf://<name>/<key>. Kept first so new rows resolve regardless of backend.
+        parseBackendInternalUrl(url)?.let { return it }
+        // Legacy form: a backend-specific absolute URL stored by the pre-canonical version.
         val matchingPrefix = rootUrls.firstOrNull { prefix -> url.startsWith(prefix) } ?: return null
-        val relative = url.substringAfter(matchingPrefix).decodeURLPart()
+        // Internal URLs come from url(path), which writes the object key literally (un-encoded).
+        // Do NOT percent-decode here, or a stored key that literally contains '%xx' would be
+        // decoded to a different object (or throw on an invalid escape). Decoding of signed,
+        // encoded URLs happens in parseExternalUrl instead.
+        val relative = url.substringAfter(matchingPrefix)
         return ExternalFile(this, pathFromUnix(relative))
     }
 
     override fun parseExternalUrl(url: String): ExternalFile? {
-        return parseInternalUrl(url.substringBefore('?'))
+        // Signed URLs are percent-encoded by signUrl/encodedUrl, so decode the path before matching.
+        val decodedPath = url.substringBefore('?').decodeURLPart()
+        // Canonical sf:// references are server-internal (unsigned) and must never be accepted from
+        // untrusted client input; otherwise a client could reference arbitrary keys with no signature.
+        // Guard the DECODED value so an encoded "sf%3A//..." can't slip past into parseInternalUrl.
+        if (decodedPath.startsWith("sf://")) return null
+        return parseInternalUrl(decodedPath)
             ?.also { assertSignatureValid(it.path, url.substringAfter('?')) }
     }
 
@@ -582,12 +601,17 @@ public class S3PublicFileSystem(
      *
      * @throws IllegalArgumentException if the signature is invalid
      */
-    internal fun assertSignatureValid(path: ExternalPath, queryParams: String) {
+    internal fun assertSignatureValid(
+        path: ExternalPath,
+        queryParams: String,
+        now: java.time.Instant = java.time.Instant.now(),
+    ) {
         if (signedUrlDuration == null) return
         val unixPath = unixPathOf(path)
 
         val presentedSignature: String?
         val recomputedSignature: String?
+        val expiresAt: java.time.Instant
         try {
             val headers = queryParams.split('&').associate {
                 URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(
@@ -598,6 +622,9 @@ public class S3PublicFileSystem(
             val objectPath = unixPath.aggressiveEncodeURLPath()
             val date =
                 headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
+            val expiresSeconds = headers["X-Amz-Expires"]?.toLongOrNull()
+                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Expires' found.")
+            expiresAt = parseAmzDate(date).plusSeconds(expiresSeconds)
             val algorithm = headers["X-Amz-Algorithm"]
                 ?: throw IllegalArgumentException("No query parameter 'X-Amz-Algorithm' found.")
             val credential = headers["X-Amz-Credential"]
@@ -630,21 +657,23 @@ public class S3PublicFileSystem(
         } catch (e: Exception) {
             // Recomputation could not even be set up (malformed/foreign URL). Treat as a verification
             // failure unless the compat flag re-enables the legacy HTTP fallback below.
-            if (ExternalServerFileSerializer.inlineScanOnDeserialize) {
-                verifySignatureOverNetwork(path, queryParams)
-                return
-            }
-            throw IllegalArgumentException("Could not verify signature", e)
-        }
-
-        // Constant-time comparison so verification time does not leak how many leading bytes matched.
-        if (presentedSignature != null && constantTimeEquals(presentedSignature, recomputedSignature)) return
-
-        if (ExternalServerFileSerializer.inlineScanOnDeserialize) {
             verifySignatureOverNetwork(path, queryParams)
             return
         }
-        throw IllegalArgumentException("Could not verify signature")
+
+        // Constant-time comparison so verification time does not leak how many leading bytes matched.
+        if (presentedSignature != null && constantTimeEquals(presentedSignature, recomputedSignature)) {
+            // A matching signature only proves authenticity; the URL must also be within its
+            // X-Amz-Date + X-Amz-Expires validity window. AWS S3 enforces this server-side when the
+            // URL is used against it, but local recomputation must enforce it too - otherwise an
+            // expired-but-once-valid URL is accepted here and laundered into a permanent,
+            // auto-renewing reference by the serializer. (The local backend and future: path both
+            // already check expiry; this keeps S3 consistent.)
+            if (now.isAfter(expiresAt)) throw IllegalArgumentException("Signed URL has expired")
+            return
+        }
+
+        verifySignatureOverNetwork(path, queryParams)
     }
 
     /**
@@ -670,6 +699,13 @@ public class S3PublicFileSystem(
         val bBytes = b.toByteArray(Charsets.UTF_8)
         return java.security.MessageDigest.isEqual(aBytes, bBytes)
     }
+
+    /**
+     * Parses an AWS `X-Amz-Date` value (e.g. `20260722T101054Z`) into a UTC [java.time.Instant].
+     * This is the signing timestamp; adding `X-Amz-Expires` seconds gives the URL's expiry.
+     */
+    private fun parseAmzDate(amzDate: String): java.time.Instant =
+        java.time.LocalDateTime.parse(amzDate, AMZ_DATE_FORMATTER).toInstant(ZoneOffset.UTC)
 
     /**
      * Checks the health of the S3 connection by performing a test write, read, and delete.
@@ -854,6 +890,8 @@ public class S3PublicFileSystem(
         }
     }
 }
+
+private val AMZ_DATE_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
 
 private val URL_ALPHABET_CHARS = ((('a'..'z') + ('A'..'Z') + ('0'..'9'))).toSet()
 private val VALID_PATH_PART = setOf('-', '.', '_', '/')

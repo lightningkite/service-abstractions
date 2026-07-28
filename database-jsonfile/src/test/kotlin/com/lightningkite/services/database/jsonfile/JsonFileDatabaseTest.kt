@@ -6,10 +6,18 @@ import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.test.*
 import kotlin.test.Test
 
-private fun db() = JsonFileDatabase("test", KFile("build/testrun").also {
-    it.deleteRecursively()
-    it.createDirectories()
-}, TestSettingContext())
+// Each database gets its own directory. Tables now persist asynchronously, so a shared directory
+// wiped by the next test's setup would race with a prior test's in-flight background save
+// (manifesting as "Deletion failed"). Unique dirs keep every test's file I/O fully isolated.
+// The root is wiped once at class-load - before any database (and thus any background save)
+// exists - so leftover files from a previous run can't leak into this run's databases.
+private val testRoot = KFile("build/testrun").also { it.deleteRecursively() }
+private val dbCounter = java.util.concurrent.atomic.AtomicInteger(0)
+private fun db() = JsonFileDatabase(
+    "test",
+    testRoot.then("${dbCounter.incrementAndGet()}"),
+    TestSettingContext()
+)
 
 class JsonFileAggregationsTest : AggregationsTest() {
     override val database: Database = db()

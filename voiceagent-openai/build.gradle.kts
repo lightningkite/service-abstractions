@@ -31,9 +31,7 @@ dependencies {
     implementation(libs.openTelemetry.kotlin)
 
     // Testing
-    testImplementation(libs.kotlin.test)
-    testImplementation(libs.coroutines.testing)
-    testImplementation(libs.slf4j.simple)
+    testImplementation(project(":test"))
 }
 
 kotlin {

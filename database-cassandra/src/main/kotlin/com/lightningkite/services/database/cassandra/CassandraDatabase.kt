@@ -8,6 +8,7 @@ import com.datastax.oss.driver.api.core.config.DriverConfigLoader
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.database.Database
+import com.lightningkite.services.database.DatabaseTableDefinition
 import com.lightningkite.services.database.Table
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -176,7 +177,7 @@ public class CassandraDatabase(
     private var sessionLazy: Lazy<CqlSession> = lazy { createSession() }
     private val session: CqlSession get() = sessionLazy.value
 
-    private val tables = ConcurrentHashMap<Pair<KSerializer<*>, String>, Lazy<CassandraTable<*>>>()
+    private val tables = ConcurrentHashMap<DatabaseTableDefinition<*>, Lazy<CassandraTable<*>>>()
 
     private fun createSession(): CqlSession {
         val configBuilder = DriverConfigLoader.programmaticBuilder()
@@ -274,14 +275,14 @@ public class CassandraDatabase(
     }
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> {
-        return (tables.getOrPut(serializer to name) {
+    override fun <T : Any> table(tableDef: DatabaseTableDefinition<T>): CassandraTable<T> {
+        return (tables.getOrPut(tableDef) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
                 CassandraTable(
-                    serializer = serializer,
+                    serializer = tableDef.serializer,
                     session = session,
                     keyspace = keyspace,
-                    tableName = name,
+                    tableName = tableDef.name,
                     context = context,
                     // by Claude - pass Keyspaces flag for compatibility handling
                     useAwsKeyspaces = useAwsKeyspaces
@@ -289,6 +290,9 @@ public class CassandraDatabase(
             }
         } as Lazy<CassandraTable<T>>).value
     }
+
+    override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): CassandraTable<T> =
+        table(tableDef).also { it.ensureSchema() }
 }
 
 // Placeholder for test database - will be implemented with TestContainers

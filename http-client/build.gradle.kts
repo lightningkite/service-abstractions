@@ -53,6 +53,9 @@ kotlin {
         val jvmMain by getting {
             dependencies {
                 implementation(project(":basis"))
+                // OkHttp engine: gives the shared JVM client HTTP/2 (multiplexing), which CIO lacks.
+                // High-fanout services (FCM push) and connection reuse across all services benefit.
+                implementation(libs.ktor.client.okhttp)
                 compileOnly(libs.openTelemetry.api)
                 compileOnly(libs.openTelemetry.instrumentation.ktor)
                 implementation(libs.crac)

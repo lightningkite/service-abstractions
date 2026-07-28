@@ -42,11 +42,11 @@ kotlin {
             dependencies {
                 api(project(path = ":basis"))
                 implementation(libs.kotlinx.html)
-                implementation(libs.logBackClassic)
             }
         }
         val commonTest by getting {
             dependencies {
+                implementation(project(":test"))
                 implementation(libs.kotlin.test)
                 implementation(libs.coroutines.testing)
             }
@@ -54,7 +54,9 @@ kotlin {
         val jvmMain by getting {}
         val jvmTest by getting {
             dependencies {
-                implementation(project(":test"))
+                // kotlin-logging 8 ships no slf4j binding; provide one so KotlinLogging has an
+                // slf4j-api backend (org.slf4j.LoggerFactory) at JVM test runtime.
+                implementation(libs.slf4j.simple)
             }
         }
     }

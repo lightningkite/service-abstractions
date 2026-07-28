@@ -12,7 +12,7 @@ import kotlin.uuid.Uuid
  * @param file Optional KFile to download to. If null, a temporary file will be created.
  * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
  */
-public suspend fun FileObject.download(
+public suspend fun ExternalFile.download(
     file: KFile?,
 ): KFile? = get()?.let { download(file ?: SystemFileSystem.temporary(extension = it.mediaType.extension)) }
 
@@ -30,10 +30,10 @@ public suspend fun TypedData.download(
 }
 
 @Deprecated("Use then", ReplaceWith("then(path)"))
-public fun FileObject.resolve(path: String): FileObject = then(path)
+public fun ExternalFile.resolve(path: String): FileObject = then(path)
 
 @Deprecated("Use thenRandom", ReplaceWith("thenRandom(prefix, extension)"))
-public fun FileObject.resolveRandom(prefix: String, extension: String): FileObject = thenRandom(prefix, extension)
+public fun ExternalFile.resolveRandom(prefix: String, extension: String): FileObject = thenRandom(prefix, extension)
 
 /**
  * Creates a FileObject with a random UUID-based filename.
@@ -48,17 +48,19 @@ public fun FileObject.resolveRandom(prefix: String, extension: String): FileObje
  * // Results in something like: upload_550e8400-e29b-41d4-a716-446655440000.jpg
  * ```
  */
-public fun FileObject.thenRandom(prefix: String, extension: String): FileObject {
+public fun ExternalFile.thenRandom(prefix: String, extension: String): FileObject {
     return then("${prefix}_${Uuid.random()}.${extension}")
 }
 
 /**
- * Converts a FileObject to a ServerFile reference containing its URL.
+ * Converts a FileObject to a persistable [ServerFile] reference.
  *
- * ServerFile is typically used for serialization and client communication.
+ * This wraps the backend-agnostic canonical `sf://<name>/<path>` form (see
+ * [PublicFileSystem.backendInternalUrl]), which is what should be stored in a database - not a
+ * backend-specific absolute URL. Clients receive a real signed URL only when the [ServerFile]
+ * is serialized out through the file serializer.
  */
-@Suppress("DEPRECATION")
-public val FileObject.serverFile: ServerFile get() = ServerFile(url)
+public val ExternalFile.serverFile: ServerFile get() = ServerFile(fileSystem.backendInternalUrl(path))
 
 /*
  * TODO: API Recommendations

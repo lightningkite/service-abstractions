@@ -68,7 +68,7 @@ public class PostgresCollection<T : Any>(
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    private val prepare = scope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
+    internal val prepare = scope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
         t {
 //            MigrationUtils.statementsRequiredForDatabaseMigration
             statementsRequiredToActualizeScheme(table).forEach {
@@ -90,7 +90,7 @@ public class PostgresCollection<T : Any>(
             put(com.lightningkite.services.database.Database.TelemetryKeys.skip, skip.toLong())
         }
     ) { span ->
-        prepare.await()
+        
         val items = t {
             table
                 .selectAll()
@@ -106,7 +106,9 @@ public class PostgresCollection<T : Any>(
                                 if (it.ignoreCase) (table.col[it.field.colName]!! as Column<String>).lowerCase()
                                 else AsciiValue(table.col[it.field.colName]!! as Column<String>)
                             } else table.col[it.field.colName]!!
-                            ) to if (it.ascending) SortOrder.ASC else SortOrder.DESC
+                            // Postgres defaults to NULLS LAST ascending; SortPart requires nulls to
+                            // sort below every non-null value, so ask for the ordering explicitly.
+                            ) to if (it.ascending) SortOrder.ASC_NULLS_FIRST else SortOrder.DESC_NULLS_LAST
                 }
                     .toTypedArray())
                 .limit(limit).offset(skip.toLong())
@@ -123,7 +125,7 @@ public class PostgresCollection<T : Any>(
     override suspend fun count(condition: Condition<T>): Int = traced(
         operation = "count"
     ) { span ->
-        prepare.await()
+        
         val result = t {
             table
                 .selectAll().where { condition(condition, serializer, table, format).asOp() }
@@ -138,7 +140,7 @@ public class PostgresCollection<T : Any>(
             operation = "groupCount",
             extraBlock = { put(com.lightningkite.services.database.Database.TelemetryKeys.groupBy, groupBy.colName) }
         ) { span ->
-            prepare.await()
+            
             val result = t {
                 @Suppress("UNCHECKED_CAST")
                 val groupCol = table.col[groupBy.colName] as Column<Key>
@@ -162,7 +164,7 @@ public class PostgresCollection<T : Any>(
             put(com.lightningkite.services.database.Database.TelemetryKeys.property, property.colName)
         }
     ) { span ->
-        prepare.await()
+        
         t {
             @Suppress("UNCHECKED_CAST")
             val valueCol = table.col[property.colName] as Column<Double>
@@ -191,7 +193,7 @@ public class PostgresCollection<T : Any>(
             put(com.lightningkite.services.database.Database.TelemetryKeys.property, property.colName)
         }
     ) { span ->
-        prepare.await()
+        
         val result = t {
             @Suppress("UNCHECKED_CAST")
             val groupCol = table.col[groupBy.colName] as Column<Key>
@@ -215,7 +217,7 @@ public class PostgresCollection<T : Any>(
     override suspend fun insert(models: Iterable<T>): List<T> = traced(
         operation = "insert"
     ) { span ->
-        prepare.await()
+        
         val modelsList = models.toList()
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.insertCount, modelsList.size.toLong()) })
         t {
@@ -379,7 +381,7 @@ public class PostgresCollection<T : Any>(
     override suspend fun deleteMany(condition: Condition<T>): List<T> = traced(
         operation = "deleteMany"
     ) { span ->
-        prepare.await()
+        
         val result = t {
             table.deleteReturningWhere(
                 where = { condition(condition, serializer, table, format).asOp() }
@@ -392,7 +394,7 @@ public class PostgresCollection<T : Any>(
     override suspend fun deleteManyIgnoringOld(condition: Condition<T>): Int = traced(
         operation = "deleteManyIgnoringOld"
     ) { span ->
-        prepare.await()
+        
         val count = t {
             table.deleteWhere(
                 op = { it.condition(condition, serializer, table, format).asOp() }
@@ -417,7 +419,7 @@ public class PostgresCollection<T : Any>(
                 params.minScore?.let { put(com.lightningkite.services.database.Database.TelemetryKeys.minScore, it.toDouble()) }
             }
         ) { span ->
-            prepare.await()
+            
 
             // Get the column for the vector field
             @Suppress("UNCHECKED_CAST")
@@ -502,7 +504,7 @@ public class PostgresCollection<T : Any>(
                 params.minScore?.let { put(com.lightningkite.services.database.Database.TelemetryKeys.minScore, it.toDouble()) }
             }
         ) { span ->
-            prepare.await()
+            
 
             // Get the column for the sparse vector field
             // Note: SparseEmbedding is stored as JSON or custom type in PostgreSQL

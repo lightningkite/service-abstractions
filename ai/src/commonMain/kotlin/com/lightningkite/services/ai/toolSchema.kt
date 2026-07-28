@@ -6,17 +6,18 @@ import com.lightningkite.services.data.Description
 import com.lightningkite.services.data.DisplayName
 import com.lightningkite.services.database.MySealedClassSerializerInterface
 import com.lightningkite.services.database.WrappingSerializer
+import com.lightningkite.services.database.getContextual
 import com.lightningkite.services.database.innerElement
 import com.lightningkite.services.database.innerElement2
 import com.lightningkite.services.database.nullElement
 import com.lightningkite.services.database.serializableProperties
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.descriptors.capturedKClass
 import kotlinx.serialization.descriptors.elementNames
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -30,7 +31,6 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
-import kotlin.reflect.KClass
 
 /**
  * Produce the JSON Schema input object for this tool.
@@ -142,16 +142,19 @@ private fun KSerializer<*>.buildSchema(module: SerializersModule, maxDepth: Int)
         }
 
         SerialKind.CONTEXTUAL -> {
-            val kclass = descriptor.capturedKClass
-                ?: throw IllegalArgumentException(
-                    "Contextual serializer ${descriptor.serialName} has no capturedKClass",
-                )
-            @Suppress("UNCHECKED_CAST")
-            val resolved = module.getContextual(kclass as KClass<Any>)
-                ?: throw IllegalArgumentException(
-                    "No contextual serializer registered for ${descriptor.serialName}; " +
-                            "pass a SerializersModule that registers it.",
-                )
+            // Resolve the same way real (de)serialization would: prefer a module registration,
+            // but fall back to the serializer's own built-in fallback (e.g. ServerFile's contextual
+            // serializer defaults to a plain-string encoding when the module doesn't override it).
+            // Without this, any contextual type relying on its fallback — instead of requiring a
+            // module registration — would fail to build a schema even though it serializes fine.
+            val resolved = try {
+                module.getContextual(this).takeUnless { it === this }
+            } catch (e: SerializationException) {
+                null
+            } ?: throw IllegalArgumentException(
+                "No contextual serializer registered for ${descriptor.serialName}; " +
+                        "pass a SerializersModule that registers it.",
+            )
             resolved.buildSchema(module, maxDepth)
         }
 
