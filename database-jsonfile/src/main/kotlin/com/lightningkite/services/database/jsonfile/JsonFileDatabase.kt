@@ -4,9 +4,9 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.kfile.workingDirectory
 import com.lightningkite.services.database.Database
+import com.lightningkite.services.database.DatabaseTableDefinition
 import com.lightningkite.services.database.Table
 import kotlinx.io.buffered
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 
 /**
@@ -108,10 +108,16 @@ public class JsonFileDatabase(
     public val folder: KFile,
     override val context: SettingContext,
 ) :
-    Database {
+    Database, java.io.Closeable {
 
     init {
         folder.createDirectories()
+    }
+
+    /** Closes every open table, flushing each to disk and stopping its background save actor. */
+    override fun close(): Unit = synchronized(collections) {
+        collections.values.forEach { (it as? java.io.Closeable)?.close() }
+        collections.clear()
     }
 
     public companion object {
@@ -137,13 +143,13 @@ public class JsonFileDatabase(
         }
     }
 
-    public val collections: HashMap<Pair<KSerializer<*>, String>, Table<*>> = HashMap()
+    public val collections: HashMap<DatabaseTableDefinition<*>, Table<*>> = HashMap()
 
-    override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
+    override fun <T : Any> table(tableDef: DatabaseTableDefinition<T>): Table<T> =
         synchronized(collections) {
             @Suppress("UNCHECKED_CAST")
-            collections.getOrPut(serializer to name) {
-                val fileName = name.filter { it.isLetterOrDigit() }
+            collections.getOrPut(tableDef) {
+                val fileName = tableDef.name.filter { it.isLetterOrDigit() }
                 val oldStyle = folder.then(fileName)
                 val storage = folder.then("$fileName.json")
                 if (oldStyle.exists() && !storage.exists())
@@ -158,11 +164,14 @@ public class JsonFileDatabase(
                 }
                 JsonFileTable(
                     json,
-                    serializer,
+                    tableDef.serializer,
                     storage,
-                    name,
+                    tableDef.name,
                     context
                 )
             } as Table<T>
         }
+
+    // JsonFileTable loads its file synchronously in its constructor, so preparation is just retrieval.
+    override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): Table<T> = table(tableDef)
 }

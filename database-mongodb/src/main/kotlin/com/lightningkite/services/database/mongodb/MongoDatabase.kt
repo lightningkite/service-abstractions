@@ -300,11 +300,19 @@ public class MongoDatabase(
         return listOf(super.healthCheck(), poolHealth).maxBy { it.level }
     }
 
-    private val collections = ConcurrentHashMap<Pair<KSerializer<*>, String>, Lazy<MongoTable<*>>>()
+    private val collections = ConcurrentHashMap<DatabaseTableDefinition<*>, Lazy<MongoTable<*>>>()
+
+    override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): Table<T> {
+        val table = table(tableDef)
+        table.prepare()
+        return table
+    }
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
-        (collections.getOrPut(serializer to name) {
+    override fun <T : Any> table(tableDef: DatabaseTableDefinition<T>): MongoTable<T> {
+        val serializer = tableDef.serializer
+        val name = tableDef.name
+        return (collections.getOrPut(tableDef) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
                 MongoTable(
                     name = this.name,
@@ -356,4 +364,5 @@ public class MongoDatabase(
                 )
             }
         } as Lazy<MongoTable<T>>).value
+    }
 }

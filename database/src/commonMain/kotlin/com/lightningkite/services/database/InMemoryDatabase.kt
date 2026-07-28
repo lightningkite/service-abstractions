@@ -26,7 +26,7 @@ public class InMemoryDatabase(
     override val context: SettingContext,
     private val mapFactory: () -> MutableMap<Any?, Any> = { HashMap() },
 ) : Database {
-    public val collections: HashMap<Pair<KSerializer<*>, String>, InMemoryTable<*>> = HashMap()
+    public val collections: HashMap<DatabaseTableDefinition<*>, InMemoryTable<*>> = HashMap()
 
     private val json = Json {
         serializersModule = context.internalSerializersModule
@@ -54,15 +54,18 @@ public class InMemoryDatabase(
     }
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> =
-        (collections.getOrPut(serializer to name) {
+    override fun <T : Any> table(tableDef: DatabaseTableDefinition<T>): Table<T> =
+        (collections.getOrPut(tableDef) {
             val backing = mapFactory() as MutableMap<Any?, T>
             val made = InMemoryTable(
                 data = backing,
-                serializer = serializer,
-                tableName = name,
+                serializer = tableDef.serializer,
+                tableName = tableDef.name,
             )
-            premadeData?.get(context, json, serializer, name)?.let { made.preload(it) }
+            premadeData?.get(context, json, tableDef.serializer, tableDef.name)?.let { made.preload(it) }
             made
         } as Table<T>)
+
+    // In-memory tables need no asynchronous setup, so preparation is just retrieval.
+    override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): Table<T> = table(tableDef)
 }

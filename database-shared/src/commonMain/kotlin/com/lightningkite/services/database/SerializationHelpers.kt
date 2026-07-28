@@ -410,8 +410,20 @@ public fun serializerOrContextual(type: KType): KSerializer<*> {
     }
 }
 
+/**
+ * Resolve [serializer] the same way real (de)serialization would: if it's a
+ * [kotlinx.serialization.ContextualSerializer] (or wraps one), this returns whichever serializer
+ * it would actually delegate to at runtime — a module registration if [this] has one, otherwise the
+ * serializer's own built-in fallback (see [kotlinx.serialization.ContextualSerializer]'s "fallback
+ * serializer" behavior). That fallback is a private implementation detail of `ContextualSerializer`,
+ * so it can't be read directly; this recovers it by feeding the serializer a decoder that captures
+ * whichever serializer it asks to decode with, same trick as [innerElement].
+ *
+ * Throws [SerializationException] if the type is truly unregistered and has no fallback, matching
+ * what would happen if you tried to actually decode with [serializer].
+ */
 @Suppress("UNCHECKED_CAST")
-internal fun <T> SerializersModule.getContextual(serializer: KSerializer<T>): KSerializer<T> {
+public fun <T> SerializersModule.getContextual(serializer: KSerializer<T>): KSerializer<T> {
     return try {
         serializer.deserialize(CheatingBastardDecoder(0, this))
         serializer

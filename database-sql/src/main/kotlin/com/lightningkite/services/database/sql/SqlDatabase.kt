@@ -3,6 +3,7 @@ package com.lightningkite.services.database.sql
 import com.lightningkite.services.telemetry.MetricUnit
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.telemetry.telemetryGauge
+import com.lightningkite.services.database.DatabaseTableDefinition
 import kotlinx.serialization.KSerializer
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import java.util.concurrent.ConcurrentHashMap
@@ -141,19 +142,22 @@ public class SqlDatabase(
         }
     }
 
-    private val collections = ConcurrentHashMap<Pair<KSerializer<*>, String>, Lazy<SqlCollection<*>>>()
+    private val collections = ConcurrentHashMap<DatabaseTableDefinition<*>, Lazy<SqlCollection<*>>>()
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any> table(serializer: KSerializer<T>, name: String): SqlCollection<T> =
-        (collections.getOrPut(serializer to name) {
+    override fun <T : Any> table(tableDef: DatabaseTableDefinition<T>): SqlCollection<T> =
+        (collections.getOrPut(tableDef) {
             lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
                 SqlCollection(
                     db,
-                    name,
-                    serializer,
+                    tableDef.name,
+                    tableDef.serializer,
                     context.internalSerializersModule,
                     context,
                 )
             }
         } as Lazy<SqlCollection<T>>).value
+
+    override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): SqlCollection<T> =
+        table(tableDef).also { it.prepare.await() }
 }

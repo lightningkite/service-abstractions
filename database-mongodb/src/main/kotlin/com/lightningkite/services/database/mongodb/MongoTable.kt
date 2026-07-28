@@ -42,8 +42,415 @@ public class MongoTable<Model : Any>(
 
     private suspend inline fun <T> access(crossinline action: suspend MongoCollection<BsonDocument>.() -> T): T {
         return access.run {
-            prepare()
             action()
+        }
+    }
+
+    /**
+     * Eagerly runs the collection/index setup that would otherwise happen lazily on first access.
+     * Idempotent (guarded by [preparedAlready]), so callers who prepare up-front don't pay for lazy
+     * setup on their first real operation. The per-access lazy prepare remains as a safety net.
+     */
+    public suspend fun prepare() {
+        if (preparedAlready) return
+        access {
+            coroutineScope {
+                val requireCompletion = ArrayList<Job>()
+
+                // Create vector search indexes for Atlas
+                if (atlasSearch) {
+                    getVectorIndexes().forEach { vectorIndex ->
+                        requireCompletion += launch {
+                            val indexName = "${vectorIndex.field}_vector_index"
+                            val similarity = when (vectorIndex.metric) {
+                                SimilarityMetric.Cosine -> "cosine"
+                                SimilarityMetric.Euclidean -> "euclidean"
+                                SimilarityMetric.DotProduct -> "dotProduct"
+                                SimilarityMetric.Manhattan -> {
+                                    context.reportException(
+                                        Exception(
+                                            "Manhattan distance is not supported for MongoDB Atlas vector indexes on ${this@access.namespace.fullName}.${vectorIndex.field}"
+                                        )
+                                    )
+                                    return@launch
+                                }
+                            }
+
+                            if (vectorIndex.sparse) {
+                                context.reportException(
+                                    Exception(
+                                        "Sparse vector indexes are not yet supported by MongoDB Atlas on ${this@access.namespace.fullName}.${vectorIndex.field}"
+                                    )
+                                )
+                                return@launch
+                            }
+
+                            // Collect filter fields from @Index annotations
+                            val filterFields = serializer.descriptor.indexes()
+                                .filter { it.fields.size == 1 } // Only single-field indexes can be filters
+                                .map { it.fields.first() }
+                                .filter { it != vectorIndex.field } // Don't include the vector field itself
+
+                            val existing = listSearchIndexes().name(indexName).toList().firstOrNull()
+                            if (existing == null) {
+                                // Build fields list with vector field and filter fields
+                                val fieldsDefinition = buildList {
+                                    add(
+                                        documentOf(
+                                            "type" to "vector",
+                                            "path" to vectorIndex.field,
+                                            "numDimensions" to vectorIndex.dimensions,
+                                            "similarity" to similarity
+                                        )
+                                    )
+                                    // Add filter fields for @Index annotated fields
+                                    filterFields.forEach { filterField ->
+                                        add(
+                                            documentOf(
+                                                "type" to "filter",
+                                                "path" to filterField
+                                            )
+                                        )
+                                    }
+                                }
+
+                                // Use SearchIndexModel with type="vectorSearch" for vector indexes
+                                val searchIndexModel = SearchIndexModel(
+                                    indexName,
+                                    documentOf("fields" to fieldsDefinition),
+                                    SearchIndexType.vectorSearch()
+                                )
+                                try {
+                                    createSearchIndexes(listOf(searchIndexModel)).toList()
+                                    // Wait for the index to become queryable (mongot builds it asynchronously)
+                                    waitForSearchIndexReady(indexName)
+                                } catch (e: MongoCommandException) {
+                                    if (e.errorCode == 26) {
+                                        access.wholeDb {
+                                            createCollection(this@access.namespace.collectionName)
+                                        }
+                                        createSearchIndexes(listOf(searchIndexModel)).toList()
+                                        // Wait for the index to become queryable (mongot builds it asynchronously)
+                                        waitForSearchIndexReady(indexName)
+                                    } else throw e
+                                }
+                            } else {
+                                // Check if index needs updating - by Claude
+                                val existingFields =
+                                    existing.getEmbedded(listOf("latestDefinition", "fields"), List::class.java)
+                                val existingVectorField = existingFields?.firstOrNull { field ->
+                                    (field as? org.bson.Document)?.getString("type") == "vector"
+                                } as? org.bson.Document
+
+                                // Check if filter fields match
+                                val existingFilterPaths = existingFields
+                                    ?.filterIsInstance<org.bson.Document>()
+                                    ?.filter { it.getString("type") == "filter" }
+                                    ?.map { it.getString("path") }
+                                    ?.toSet() ?: emptySet()
+
+                                val vectorFieldChanged = existingVectorField?.let { field ->
+                                    field.getString("path") != vectorIndex.field ||
+                                            field.getInteger("numDimensions") != vectorIndex.dimensions ||
+                                            field.getString("similarity") != similarity
+                                } ?: true
+                                val filterFieldsChanged = existingFilterPaths != filterFields.toSet()
+                                val needsUpdate = vectorFieldChanged || filterFieldsChanged
+
+                                if (needsUpdate) {
+                                    // Build updated fields list with vector field and filter fields
+                                    val updatedFieldsDefinition = buildList {
+                                        add(
+                                            documentOf(
+                                                "type" to "vector",
+                                                "path" to vectorIndex.field,
+                                                "numDimensions" to vectorIndex.dimensions,
+                                                "similarity" to similarity
+                                            )
+                                        )
+                                        filterFields.forEach { filterField ->
+                                            add(
+                                                documentOf(
+                                                    "type" to "filter",
+                                                    "path" to filterField
+                                                )
+                                            )
+                                        }
+                                    }
+                                    try {
+                                        updateSearchIndex(
+                                            indexName,
+                                            documentOf("fields" to updatedFieldsDefinition)
+                                        )
+                                    } catch (_: NoSuchElementException) {
+                                        // suppress dumb issue in library
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.let {
+                    requireCompletion += launch {
+                        if (atlasSearch) {
+                            val name = "default"
+                            val keys = documentOf()
+                            val ser = DataClassPathSerializer(serializer)
+                            for (key in it.fields) {
+                                val path = ser.fromString(key)
+
+                                @Suppress("UNCHECKED_CAST")
+                                fun KSerializer<*>.unwrap(): KSerializer<*> {
+                                    return when {
+                                        this.descriptor.isNullable -> this.innerElement()
+                                        this.descriptor.kind == StructureKind.LIST -> this.innerElement()
+                                        this.descriptor.kind == SerialKind.CONTEXTUAL -> context.internalSerializersModule.getContextual<Any>(
+                                            this.descriptor.capturedKClass as KClass<Any>
+                                        ) as KSerializer<*>
+
+                                        else -> this
+                                    }
+                                }
+
+                                val type = path.serializerAny.unwrap()
+                                val mongoType = when (type.descriptor.serialName) {
+                                    "kotlin.Boolean" -> "boolean"
+                                    "kotlinx.datetime.Instant" -> "date"
+                                    "kotlin.Byte",
+                                    "kotlin.Short",
+                                    "kotlin.Int",
+                                    "kotlin.Long",
+                                    "kotlin.UByte",
+                                    "kotlin.UShort",
+                                    "kotlin.UInt",
+                                    "kotlin.ULong",
+                                    "kotlin.Float",
+                                    "kotlin.Double",
+                                        -> "number"
+
+                                    "kotlin.String" -> "string"
+                                    "com.lightningkite.UUID" -> "uuid"
+                                    else -> continue
+                                }
+                                keys[key] = listOf(documentOf("type" to mongoType))
+                            }
+                            val existing = listSearchIndexes().name(name).toList().firstOrNull()
+                            if (existing == null) {
+                                try {
+                                    createSearchIndex(
+                                        name, documentOf(
+                                            "mappings" to documentOf(
+                                                "dynamic" to false,
+                                                "fields" to keys
+                                            )
+                                        )
+                                    )
+                                } catch (e: MongoCommandException) {
+                                    if (e.errorCode == 26) {
+                                        access.wholeDb {
+                                            createCollection(this@access.namespace.collectionName)
+                                        }
+                                        createSearchIndex(
+                                            name, documentOf(
+                                                "mappings" to documentOf(
+                                                    "dynamic" to false,
+                                                    "fields" to keys
+                                                )
+                                            )
+                                        )
+                                    } else throw e
+                                }
+                            } else if (it.fields.any {
+                                    existing.getEmbedded(
+                                        listOf("latestDefinition", "mappings", "fields", it),
+                                        Any::class.java
+                                    ) == null
+                                }) {
+                                try {
+                                    updateSearchIndex(
+                                        name, documentOf(
+                                            "mappings" to documentOf(
+                                                "dynamic" to false,
+                                                "fields" to keys
+                                            )
+                                        )
+                                    )
+                                } catch (_: NoSuchElementException) {
+                                    // suppress dumb issue in library
+                                }
+                            }
+                        } else {
+                            val name = "${namespace.fullName}TextIndex"
+                            val options = IndexOptions().name(name)
+                            val keys = documentOf(*it.fields.map { it.replace("?", "") to "text" }.toTypedArray())
+                            try {
+                                createIndex(keys, options)
+                            } catch (e: MongoCommandException) {
+                                if (e.errorCode == 85) {
+                                    //there is an exception if the parameters of an existing index are changed.
+                                    //then drop the index and create a new one
+                                    try {
+                                        dropIndex(name)
+                                        createIndex(
+                                            keys,
+                                            options
+                                        )
+                                    } catch (e2: MongoCommandException) {
+                                        context.reportException(
+                                            Exception(
+                                                "Creating text index failed on ${this@access.namespace.fullName}",
+                                                e
+                                            )
+                                        )
+                                        context.reportException(
+                                            Exception(
+                                                "Creating text index failed on ${this@access.namespace.fullName} even after attempted removal",
+                                                e2
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    context.reportException(e)
+                                }
+                            }
+                        }
+                    }
+                }
+                serializer.descriptor.indexes().forEach {
+                    if (it.type == GeoCoordinateGeoJsonSerializer.descriptor.serialName) {
+                        requireCompletion += launch {
+                            val nameOrDefault = it.name ?: it.fields[0].plus("_geo")
+                            try {
+                                createIndex(Indexes.geo2dsphere(it.fields), IndexOptions().name(nameOrDefault))
+                            } catch (e: MongoCommandException) {
+                                // Reform index if it already exists but with some difference in options
+                                if (e.errorCode == 85) {
+                                    try {
+                                        dropIndex(nameOrDefault)
+                                        createIndex(Indexes.geo2dsphere(it.fields), IndexOptions().name(nameOrDefault))
+                                    } catch (e2: MongoCommandException) {
+                                        context.reportException(
+                                            Exception(
+                                                "Creating geo index failed on ${this@access.namespace.fullName}",
+                                                e
+                                            )
+                                        )
+                                        context.reportException(
+                                            Exception(
+                                                "Creating geo index failed on ${this@access.namespace.fullName} even after attempted removal",
+                                                e2
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    context.reportException(e)
+                                }
+                            }
+                        }
+                    } else {
+                        requireCompletion += launch {
+                            val keys = Sorts.orderBy(it.fields.map { field ->
+                                if (field.startsWith('-')) Sorts.descending(
+                                    field.drop(1)
+                                ) else Sorts.ascending(field)
+                            })
+
+                            suspend fun makeIndex(options: IndexOptions) = try {
+                                createIndex(keys, options)
+                            } catch (e: MongoCommandException) {
+                                // Reform index if it already exists but with some difference in options
+                                if (e.errorCode == 85) {
+                                    try {
+                                        dropIndex(keys)
+                                        createIndex(keys, options)
+                                    } catch (e2: MongoCommandException) {
+                                        val unique = when (it.unique) {
+                                            IndexUniqueness.NotUnique -> ""
+                                            IndexUniqueness.Unique -> "unique "
+                                            IndexUniqueness.UniqueNullSparse -> "unique null-sparse "
+                                        }
+                                        context.reportException(
+                                            Exception(
+                                                "Creating ${unique}index failed on ${this@access.namespace.fullName}",
+                                                e
+                                            )
+                                        )
+                                        context.reportException(
+                                            Exception(
+                                                "Creating ${unique}index failed on ${this@access.namespace.fullName} even after attempted removal",
+                                                e2
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    context.reportException(e)
+                                }
+                            }
+
+                            when (it.unique) {
+                                IndexUniqueness.NotUnique -> makeIndex(
+                                    IndexOptions().name(it.name)
+                                )
+
+                                IndexUniqueness.Unique -> makeIndex(
+                                    IndexOptions()
+                                        .name(it.name)
+                                        .unique(true)
+                                        .background(false)
+                                )
+
+                                IndexUniqueness.UniqueNullSparse -> {
+                                    val nullableFields = it.fields
+                                        .associateWith { field ->
+                                            val idx = serializer.descriptor.getElementIndex(field)
+
+                                            if (idx == CompositeDecoder.UNKNOWN_NAME)
+                                                throw IllegalArgumentException("Field $field is unrecognized for ${serializer.descriptor.serialName}")
+
+                                            serializer.descriptor.getElementDescriptor(idx)
+                                        }
+                                        .filter { it.value.isNullable }
+
+                                    if (nullableFields.isEmpty()) makeIndex(    // No need for sparse index, just use regular unique index
+                                        IndexOptions()
+                                            .name(it.name)
+                                            .unique(true)
+                                            .background(false)
+                                    )
+                                    else {
+                                        makeIndex(
+                                            IndexOptions().name(it.name)
+                                        )
+                                        makeIndex(IndexOptions().apply {
+                                            val name = it.name ?: if (it.fields.size == 1) {
+                                                val field = it.fields.first()
+                                                if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
+                                            } else
+                                                it.fields.joinToString("_") { field ->
+                                                    if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
+                                                }
+
+                                            name("${name}_sparse")
+                                            unique(true)
+                                            partialFilterExpression(
+                                                nullableFields.map { (field, descriptor) ->
+                                                    field to documentOf(    // Mongo partial indexes don't support the $ne operator, if they did this would say `$ne to null`
+                                                        "\$type" to descriptor.bsonType(context.internalSerializersModule).value
+                                                    )
+                                                }.toDocument()
+                                            )
+                                        })
+                                    }
+                                }
+                            }
+
+                        }
+                    }
+                }
+                requireCompletion.joinAll()
+            }
+            preparedAlready = true
         }
     }
 
@@ -574,408 +981,6 @@ public class MongoTable<Model : Any>(
                 "Search index '$indexName' on ${this.namespace.fullName} did not become ready within ${timeoutMs}ms"
             )
         )
-    }
-
-    @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
-    private suspend fun MongoCollection<BsonDocument>.prepare() {
-        if (preparedAlready) return
-        coroutineScope {
-            val requireCompletion = ArrayList<Job>()
-
-            // Create vector search indexes for Atlas
-            if (atlasSearch) {
-                getVectorIndexes().forEach { vectorIndex ->
-                    requireCompletion += launch {
-                        val indexName = "${vectorIndex.field}_vector_index"
-                        val similarity = when (vectorIndex.metric) {
-                            SimilarityMetric.Cosine -> "cosine"
-                            SimilarityMetric.Euclidean -> "euclidean"
-                            SimilarityMetric.DotProduct -> "dotProduct"
-                            SimilarityMetric.Manhattan -> {
-                                context.reportException(
-                                    Exception(
-                                        "Manhattan distance is not supported for MongoDB Atlas vector indexes on ${this@prepare.namespace.fullName}.${vectorIndex.field}"
-                                    )
-                                )
-                                return@launch
-                            }
-                        }
-
-                        if (vectorIndex.sparse) {
-                            context.reportException(
-                                Exception(
-                                    "Sparse vector indexes are not yet supported by MongoDB Atlas on ${this@prepare.namespace.fullName}.${vectorIndex.field}"
-                                )
-                            )
-                            return@launch
-                        }
-
-                        // Collect filter fields from @Index annotations
-                        val filterFields = serializer.descriptor.indexes()
-                            .filter { it.fields.size == 1 } // Only single-field indexes can be filters
-                            .map { it.fields.first() }
-                            .filter { it != vectorIndex.field } // Don't include the vector field itself
-
-                        val existing = listSearchIndexes().name(indexName).toList().firstOrNull()
-                        if (existing == null) {
-                            // Build fields list with vector field and filter fields
-                            val fieldsDefinition = buildList {
-                                add(
-                                    documentOf(
-                                        "type" to "vector",
-                                        "path" to vectorIndex.field,
-                                        "numDimensions" to vectorIndex.dimensions,
-                                        "similarity" to similarity
-                                    )
-                                )
-                                // Add filter fields for @Index annotated fields
-                                filterFields.forEach { filterField ->
-                                    add(
-                                        documentOf(
-                                            "type" to "filter",
-                                            "path" to filterField
-                                        )
-                                    )
-                                }
-                            }
-
-                            // Use SearchIndexModel with type="vectorSearch" for vector indexes
-                            val searchIndexModel = SearchIndexModel(
-                                indexName,
-                                documentOf("fields" to fieldsDefinition),
-                                SearchIndexType.vectorSearch()
-                            )
-                            try {
-                                createSearchIndexes(listOf(searchIndexModel)).toList()
-                                // Wait for the index to become queryable (mongot builds it asynchronously)
-                                waitForSearchIndexReady(indexName)
-                            } catch (e: MongoCommandException) {
-                                if (e.errorCode == 26) {
-                                    access.wholeDb {
-                                        createCollection(this@prepare.namespace.collectionName)
-                                    }
-                                    createSearchIndexes(listOf(searchIndexModel)).toList()
-                                    // Wait for the index to become queryable (mongot builds it asynchronously)
-                                    waitForSearchIndexReady(indexName)
-                                } else throw e
-                            }
-                        } else {
-                            // Check if index needs updating - by Claude
-                            val existingFields =
-                                existing.getEmbedded(listOf("latestDefinition", "fields"), List::class.java)
-                            val existingVectorField = existingFields?.firstOrNull { field ->
-                                (field as? org.bson.Document)?.getString("type") == "vector"
-                            } as? org.bson.Document
-
-                            // Check if filter fields match
-                            val existingFilterPaths = existingFields
-                                ?.filterIsInstance<org.bson.Document>()
-                                ?.filter { it.getString("type") == "filter" }
-                                ?.map { it.getString("path") }
-                                ?.toSet() ?: emptySet()
-
-                            val vectorFieldChanged = existingVectorField?.let { field ->
-                                field.getString("path") != vectorIndex.field ||
-                                        field.getInteger("numDimensions") != vectorIndex.dimensions ||
-                                        field.getString("similarity") != similarity
-                            } ?: true
-                            val filterFieldsChanged = existingFilterPaths != filterFields.toSet()
-                            val needsUpdate = vectorFieldChanged || filterFieldsChanged
-
-                            if (needsUpdate) {
-                                // Build updated fields list with vector field and filter fields
-                                val updatedFieldsDefinition = buildList {
-                                    add(
-                                        documentOf(
-                                            "type" to "vector",
-                                            "path" to vectorIndex.field,
-                                            "numDimensions" to vectorIndex.dimensions,
-                                            "similarity" to similarity
-                                        )
-                                    )
-                                    filterFields.forEach { filterField ->
-                                        add(
-                                            documentOf(
-                                                "type" to "filter",
-                                                "path" to filterField
-                                            )
-                                        )
-                                    }
-                                }
-                                try {
-                                    updateSearchIndex(
-                                        indexName,
-                                        documentOf("fields" to updatedFieldsDefinition)
-                                    )
-                                } catch (_: NoSuchElementException) {
-                                    // suppress dumb issue in library
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.let {
-                requireCompletion += launch {
-                    if (atlasSearch) {
-                        val name = "default"
-                        val keys = documentOf()
-                        val ser = DataClassPathSerializer(serializer)
-                        for (key in it.fields) {
-                            val path = ser.fromString(key)
-
-                            @Suppress("UNCHECKED_CAST")
-                            fun KSerializer<*>.unwrap(): KSerializer<*> {
-                                return when {
-                                    this.descriptor.isNullable -> this.innerElement()
-                                    this.descriptor.kind == StructureKind.LIST -> this.innerElement()
-                                    this.descriptor.kind == SerialKind.CONTEXTUAL -> context.internalSerializersModule.getContextual<Any>(
-                                        this.descriptor.capturedKClass as KClass<Any>
-                                    ) as KSerializer<*>
-
-                                    else -> this
-                                }
-                            }
-
-                            val type = path.serializerAny.unwrap()
-                            val mongoType = when (type.descriptor.serialName) {
-                                "kotlin.Boolean" -> "boolean"
-                                "kotlinx.datetime.Instant" -> "date"
-                                "kotlin.Byte",
-                                "kotlin.Short",
-                                "kotlin.Int",
-                                "kotlin.Long",
-                                "kotlin.UByte",
-                                "kotlin.UShort",
-                                "kotlin.UInt",
-                                "kotlin.ULong",
-                                "kotlin.Float",
-                                "kotlin.Double",
-                                    -> "number"
-
-                                "kotlin.String" -> "string"
-                                "com.lightningkite.UUID" -> "uuid"
-                                else -> continue
-                            }
-                            keys[key] = listOf(documentOf("type" to mongoType))
-                        }
-                        val existing = listSearchIndexes().name(name).toList().firstOrNull()
-                        if (existing == null) {
-                            try {
-                                createSearchIndex(
-                                    name, documentOf(
-                                        "mappings" to documentOf(
-                                            "dynamic" to false,
-                                            "fields" to keys
-                                        )
-                                    )
-                                )
-                            } catch (e: MongoCommandException) {
-                                if (e.errorCode == 26) {
-                                    access.wholeDb {
-                                        createCollection(this@prepare.namespace.collectionName)
-                                    }
-                                    createSearchIndex(
-                                        name, documentOf(
-                                            "mappings" to documentOf(
-                                                "dynamic" to false,
-                                                "fields" to keys
-                                            )
-                                        )
-                                    )
-                                } else throw e
-                            }
-                        } else if (it.fields.any {
-                                existing.getEmbedded(
-                                    listOf("latestDefinition", "mappings", "fields", it),
-                                    Any::class.java
-                                ) == null
-                            }) {
-                            try {
-                                updateSearchIndex(
-                                    name, documentOf(
-                                        "mappings" to documentOf(
-                                            "dynamic" to false,
-                                            "fields" to keys
-                                        )
-                                    )
-                                )
-                            } catch (_: NoSuchElementException) {
-                                // suppress dumb issue in library
-                            }
-                        }
-                    } else {
-                        val name = "${namespace.fullName}TextIndex"
-                        val options = IndexOptions().name(name)
-                        val keys = documentOf(*it.fields.map { it.replace("?", "") to "text" }.toTypedArray())
-                        try {
-                            createIndex(keys, options)
-                        } catch (e: MongoCommandException) {
-                            if (e.errorCode == 85) {
-                                //there is an exception if the parameters of an existing index are changed.
-                                //then drop the index and create a new one
-                                try {
-                                    dropIndex(name)
-                                    createIndex(
-                                        keys,
-                                        options
-                                    )
-                                } catch (e2: MongoCommandException) {
-                                    context.reportException(
-                                        Exception(
-                                            "Creating text index failed on ${this@prepare.namespace.fullName}",
-                                            e
-                                        )
-                                    )
-                                    context.reportException(
-                                        Exception(
-                                            "Creating text index failed on ${this@prepare.namespace.fullName} even after attempted removal",
-                                            e2
-                                        )
-                                    )
-                                }
-                            } else {
-                                context.reportException(e)
-                            }
-                        }
-                    }
-                }
-            }
-            serializer.descriptor.indexes().forEach {
-                if (it.type == GeoCoordinateGeoJsonSerializer.descriptor.serialName) {
-                    requireCompletion += launch {
-                        val nameOrDefault = it.name ?: it.fields[0].plus("_geo")
-                        try {
-                            createIndex(Indexes.geo2dsphere(it.fields), IndexOptions().name(nameOrDefault))
-                        } catch (e: MongoCommandException) {
-                            // Reform index if it already exists but with some difference in options
-                            if (e.errorCode == 85) {
-                                try {
-                                    dropIndex(nameOrDefault)
-                                    createIndex(Indexes.geo2dsphere(it.fields), IndexOptions().name(nameOrDefault))
-                                } catch (e2: MongoCommandException) {
-                                    context.reportException(
-                                        Exception(
-                                            "Creating geo index failed on ${this@prepare.namespace.fullName}",
-                                            e
-                                        )
-                                    )
-                                    context.reportException(
-                                        Exception(
-                                            "Creating geo index failed on ${this@prepare.namespace.fullName} even after attempted removal",
-                                            e2
-                                        )
-                                    )
-                                }
-                            } else {
-                                context.reportException(e)
-                            }
-                        }
-                    }
-                } else {
-                    requireCompletion += launch {
-                        val keys = Sorts.orderBy(it.fields.map { field ->
-                            if (field.startsWith('-')) Sorts.descending(
-                                field.drop(1)
-                            ) else Sorts.ascending(field)
-                        })
-
-                        suspend fun makeIndex(options: IndexOptions) = try {
-                            createIndex(keys, options)
-                        } catch (e: MongoCommandException) {
-                            // Reform index if it already exists but with some difference in options
-                            if (e.errorCode == 85) {
-                                try {
-                                    dropIndex(keys)
-                                    createIndex(keys, options)
-                                } catch (e2: MongoCommandException) {
-                                    val unique = when (it.unique) {
-                                        IndexUniqueness.NotUnique -> ""
-                                        IndexUniqueness.Unique -> "unique "
-                                        IndexUniqueness.UniqueNullSparse -> "unique null-sparse "
-                                    }
-                                    context.reportException(
-                                        Exception(
-                                            "Creating ${unique}index failed on ${this@prepare.namespace.fullName}",
-                                            e
-                                        )
-                                    )
-                                    context.reportException(
-                                        Exception(
-                                            "Creating ${unique}index failed on ${this@prepare.namespace.fullName} even after attempted removal",
-                                            e2
-                                        )
-                                    )
-                                }
-                            } else {
-                                context.reportException(e)
-                            }
-                        }
-
-                        when (it.unique) {
-                            IndexUniqueness.NotUnique -> makeIndex(
-                                IndexOptions().name(it.name)
-                            )
-
-                            IndexUniqueness.Unique -> makeIndex(
-                                IndexOptions()
-                                    .name(it.name)
-                                    .unique(true)
-                                    .background(false)
-                            )
-
-                            IndexUniqueness.UniqueNullSparse -> {
-                                val nullableFields = it.fields
-                                    .associateWith { field ->
-                                        val idx = serializer.descriptor.getElementIndex(field)
-
-                                        if (idx == CompositeDecoder.UNKNOWN_NAME)
-                                            throw IllegalArgumentException("Field $field is unrecognized for ${serializer.descriptor.serialName}")
-
-                                        serializer.descriptor.getElementDescriptor(idx)
-                                    }
-                                    .filter { it.value.isNullable }
-
-                                if (nullableFields.isEmpty()) makeIndex(    // No need for sparse index, just use regular unique index
-                                    IndexOptions()
-                                        .name(it.name)
-                                        .unique(true)
-                                        .background(false)
-                                )
-                                else {
-                                    makeIndex(
-                                        IndexOptions().name(it.name)
-                                    )
-                                    makeIndex(IndexOptions().apply {
-                                        val name = it.name ?: if (it.fields.size == 1) {
-                                            val field = it.fields.first()
-                                            if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
-                                        } else
-                                            it.fields.joinToString("_") { field ->
-                                                if (field.startsWith('-')) "${field.drop(1)}_-1" else "${field}_1"
-                                            }
-
-                                        name("${name}_sparse")
-                                        unique(true)
-                                        partialFilterExpression(
-                                            nullableFields.map { (field, descriptor) ->
-                                                field to documentOf(    // Mongo partial indexes don't support the $ne operator, if they did this would say `$ne to null`
-                                                    "\$type" to descriptor.bsonType(context.internalSerializersModule).value
-                                                )
-                                            }.toDocument()
-                                        )
-                                    })
-                                }
-                            }
-                        }
-
-                    }
-                }
-            }
-            requireCompletion.joinAll()
-        }
-        preparedAlready = true
     }
 
     private fun sort(orderBy: List<SortPart<Model>>, lastly: Bson? = null): Bson = Sorts.orderBy(orderBy.map {

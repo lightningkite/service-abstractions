@@ -20,6 +20,8 @@ import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.ops.SingleValueInListOp
 import org.jetbrains.exposed.sql.SchemaUtils.statementsRequiredToActualizeScheme
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
+import org.jetbrains.exposed.sql.vendors.PostgreSQLDialect
+import org.jetbrains.exposed.sql.vendors.currentDialect
 import java.sql.Connection.TRANSACTION_READ_COMMITTED
 import java.sql.Connection.TRANSACTION_SERIALIZABLE
 
@@ -64,14 +66,13 @@ public class SqlCollection<T : Any>(
     }
 
     @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
-    private val prepare = GlobalScope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
+    internal val prepare = GlobalScope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
         t {
             val allTables = listOf(schema.mainTable) + schema.childTables.values.map { it.table }
-            allTables.forEach { table ->
-                statementsRequiredToActualizeScheme(table).forEach {
-                    try { exec(it) } catch (_: Exception) { /* index/constraint may already exist */ }
-                }
-            }
+            // Single combined call: per-table calls re-emit statements for FK-referenced tables,
+            // producing duplicate CREATE INDEX errors that abort the whole transaction on Postgres.
+            // Any failure here is a real schema problem, so let it propagate.
+            statementsRequiredToActualizeScheme(*allTables.toTypedArray()).forEach { exec(it) }
         }
     }
 
@@ -144,6 +145,33 @@ public class SqlCollection<T : Any>(
                 }
         }
     }
+
+    // Renders `<expr> COLLATE "C"` so Postgres sorts strings by code point like other backends.
+    private class BinaryCollated(private val expr: Expression<String>) : Expression<String>() {
+        override fun toQueryBuilder(queryBuilder: QueryBuilder) {
+            queryBuilder.append(expr)
+            queryBuilder.append(" COLLATE \"C\"")
+        }
+    }
+
+    /**
+     * Maps [orderBy] to ORDER BY arguments honoring the SortPart contract: nulls sort below every
+     * non-null value (SQL defaults to NULLS LAST ascending), and strings compare by code point
+     * unless ignoreCase. Postgres collates text by locale, so force the C collation there;
+     * H2 and SQLite already compare binary.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun sortArguments(orderBy: List<SortPart<T>>): Array<Pair<Expression<*>, SortOrder>> =
+        orderBy.map {
+            val base = schema.mainTable.col[it.field.colName]!!
+            val expr: Expression<*> =
+                if (it.field.serializerAny.descriptor.kind == PrimitiveKind.STRING && serializationOverride(it.field.serializerAny.descriptor) == null) {
+                    if (it.ignoreCase) (base as Column<String>).lowerCase()
+                    else if (currentDialect is PostgreSQLDialect) BinaryCollated(base as Column<String>)
+                    else base
+                } else base
+            expr to if (it.ascending) SortOrder.ASC_NULLS_FIRST else SortOrder.DESC_NULLS_LAST
+        }.toTypedArray()
 
     /**
      * Decode a main table row + its child rows into a T.
@@ -285,7 +313,7 @@ public class SqlCollection<T : Any>(
             put(com.lightningkite.services.database.Database.TelemetryKeys.skip, skip.toLong())
         }
     ) { span ->
-        prepare.await()
+        
         val items = t {
             val ctx = SqlConditionContext(schema, format)
             val condExpr = SqlExpressionBuilder.run {
@@ -296,14 +324,7 @@ public class SqlCollection<T : Any>(
             val mainRows = schema.mainTable
                 .selectAll()
                 .where { condExpr.asOp() }
-                .orderBy(*orderBy.map {
-                    @Suppress("UNCHECKED_CAST")
-                    val col = if (it.field.serializerAny.descriptor.kind == PrimitiveKind.STRING && serializationOverride(it.field.serializerAny.descriptor) == null) {
-                        if (it.ignoreCase) (schema.mainTable.col[it.field.colName]!! as Column<String>).lowerCase()
-                        else schema.mainTable.col[it.field.colName]!!
-                    } else schema.mainTable.col[it.field.colName]!!
-                    col to if (it.ascending) SortOrder.ASC else SortOrder.DESC
-                }.toTypedArray())
+                .orderBy(*sortArguments(orderBy))
                 .limit(limit).offset(skip.toLong())
                 .toList()
 
@@ -331,7 +352,7 @@ public class SqlCollection<T : Any>(
     override suspend fun count(condition: Condition<T>): Int = traced(
         operation = "count"
     ) { span ->
-        prepare.await()
+        
         val result = t {
             val ctx = SqlConditionContext(schema, format)
             val condExpr = SqlExpressionBuilder.run {
@@ -361,7 +382,7 @@ public class SqlCollection<T : Any>(
         operation = "groupCount",
         extraBlock = { put(com.lightningkite.services.database.Database.TelemetryKeys.groupBy, groupBy.colName) }
     ) { span ->
-        prepare.await()
+        
         val result = t {
             val ctx = SqlConditionContext(schema, format)
             val condExpr = SqlExpressionBuilder.run {
@@ -390,7 +411,7 @@ public class SqlCollection<T : Any>(
             put(com.lightningkite.services.database.Database.TelemetryKeys.property, property.colName)
         }
     ) { span ->
-        prepare.await()
+        
         t {
             val ctx = SqlConditionContext(schema, format)
             val condExpr = SqlExpressionBuilder.run {
@@ -423,7 +444,7 @@ public class SqlCollection<T : Any>(
             put(com.lightningkite.services.database.Database.TelemetryKeys.property, property.colName)
         }
     ) { span ->
-        prepare.await()
+        
         val result = t {
             val ctx = SqlConditionContext(schema, format)
             val condExpr = SqlExpressionBuilder.run {
@@ -453,7 +474,7 @@ public class SqlCollection<T : Any>(
     override suspend fun insert(models: Iterable<T>): List<T> = traced(
         operation = "insert"
     ) { span ->
-        prepare.await()
+        
         val modelsList = models.toList()
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.insertCount, modelsList.size.toLong()) })
         try {
@@ -500,7 +521,7 @@ public class SqlCollection<T : Any>(
         modification: Modification<T>,
         model: T,
     ): EntryChange<T> = traced("upsertOne") {
-        prepare.await()
+        
         tSerial {
             val existing = findOneInTransaction(condition)
             if (existing == null) {
@@ -529,7 +550,7 @@ public class SqlCollection<T : Any>(
         modification: Modification<T>,
         model: T,
     ): Boolean = traced("upsertOneIgnoringResult") {
-        prepare.await()
+        
         tSerial {
             val existing = findOneInTransaction(condition)
             if (existing == null) {
@@ -559,7 +580,7 @@ public class SqlCollection<T : Any>(
     ): EntryChange<T> = traced(
         operation = "updateOne"
     ) { span ->
-        prepare.await()
+        
         val result = t {
             // Find the matching row
             val old = findOneInTransaction(condition, orderBy) ?: return@t EntryChange<T>()
@@ -584,7 +605,7 @@ public class SqlCollection<T : Any>(
     ): Boolean = traced(
         operation = "updateOneIgnoringResult"
     ) { span ->
-        prepare.await()
+        
         val updated = t {
             if (modification.isScalarOnly(schema) && schema.childTables.isEmpty()) {
                 // Efficient: single SQL UPDATE
@@ -614,7 +635,7 @@ public class SqlCollection<T : Any>(
     ): CollectionChanges<T> = traced(
         operation = "updateMany"
     ) { span ->
-        prepare.await()
+        
         val result = t {
             val olds = findManyInTransaction(condition)
             val changes = olds.map { old ->
@@ -634,7 +655,7 @@ public class SqlCollection<T : Any>(
     ): Int = traced(
         operation = "updateManyIgnoringResult"
     ) { span ->
-        prepare.await()
+        
         val count = t {
             if (modification.isScalarOnly(schema) && schema.childTables.isEmpty()) {
                 val ctx = SqlConditionContext(schema, format)
@@ -663,7 +684,7 @@ public class SqlCollection<T : Any>(
     override suspend fun deleteOne(condition: Condition<T>, orderBy: List<SortPart<T>>): T? = traced(
         operation = "deleteOne"
     ) { span ->
-        prepare.await()
+        
         val result = t {
             val old = findOneInTransaction(condition, orderBy) ?: return@t null
             val oldId = getId(old)
@@ -681,7 +702,7 @@ public class SqlCollection<T : Any>(
     override suspend fun deleteOneIgnoringOld(condition: Condition<T>, orderBy: List<SortPart<T>>): Boolean = traced(
         operation = "deleteOneIgnoringOld"
     ) { span ->
-        prepare.await()
+        
         val deleted = t {
             val old = findOneInTransaction(condition, orderBy) ?: return@t false
             val oldId = getId(old)
@@ -698,7 +719,7 @@ public class SqlCollection<T : Any>(
     override suspend fun deleteMany(condition: Condition<T>): List<T> = traced(
         operation = "deleteMany"
     ) { span ->
-        prepare.await()
+        
         val result = t {
             val olds = findManyInTransaction(condition)
             for (old in olds) {
@@ -720,7 +741,7 @@ public class SqlCollection<T : Any>(
     override suspend fun deleteManyIgnoringOld(condition: Condition<T>): Int = traced(
         operation = "deleteManyIgnoringOld"
     ) { span ->
-        prepare.await()
+        
         val count = t {
             // Delete children for matching rows first
             val ctx = SqlConditionContext(schema, format)
@@ -798,10 +819,7 @@ public class SqlCollection<T : Any>(
             .where { condExpr.asOp() }
             .apply {
                 if (orderBy.isNotEmpty()) {
-                    orderBy(*orderBy.map {
-                        schema.mainTable.col[it.field.colName]!! to
-                                if (it.ascending) SortOrder.ASC else SortOrder.DESC
-                    }.toTypedArray())
+                    orderBy(*sortArguments(orderBy))
                 }
             }
             .limit(1)

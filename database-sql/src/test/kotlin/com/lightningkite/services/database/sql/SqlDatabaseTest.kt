@@ -8,7 +8,9 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.EmptySerializersModule
+import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules
 import org.jetbrains.exposed.sql.Database
+import org.junit.ClassRule
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -63,6 +65,22 @@ class SqlSortTest : SortTest() {
     override val database: com.lightningkite.services.database.Database by lazy {
         SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
             PooledDatabase(Database.connect("jdbc:h2:mem:sortTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+// Postgres sorts nulls last on plain ASC (H2/SQLite sort them first), so only this suite can
+// catch a regression of the ASC_NULLS_FIRST/DESC_NULLS_LAST ordering in SqlCollection.
+class SqlPostgresSortTest : SortTest() {
+    companion object {
+        @ClassRule
+        @JvmField
+        val postgres = EmbeddedPostgresRules.singleInstance()
+    }
+
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null)
         }
     }
 }

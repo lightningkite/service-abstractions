@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.database.DatabaseTableDefinition
 import com.lightningkite.services.database.test.User
 import com.lightningkite.services.kfile.KFile
 import kotlinx.coroutines.runBlocking
@@ -41,7 +42,7 @@ class JsonFileConcurrentDumpTest {
         // JsonFileDatabase always constructs a JsonFileTable; cast so we can call
         // the dump method directly.
         @Suppress("UNCHECKED_CAST")
-        val table = database.table(serializer<User>(), "User") as JsonFileTable<User>
+        val table = database.table(DatabaseTableDefinition(serializer<User>(), "User")) as JsonFileTable<User>
 
         val seed = List(50) { i ->
             User(

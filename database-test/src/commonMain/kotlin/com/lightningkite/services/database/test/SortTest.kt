@@ -157,6 +157,38 @@ abstract class SortTest {
     }
 
 
+    /**
+     * The null ordering contract from [SortPart]: a null sorts below every non-null value, so
+     * ascending puts nulls first and descending puts them last, on every backend.
+     *
+     * SQL backends default to the opposite for ascending and must ask for it explicitly.  Only the
+     * null-ness pattern and the order of the non-null values are asserted, since ties among the
+     * nulls are not specified.
+     */
+    @Test
+    fun testSortNullsBelowEverything() = runTest {
+        val collection = database.table<LargeTestModel>("SortTest_testSortNullsBelowEverything")
+        collection.insertMany(
+            listOf(
+                LargeTestModel(intNullable = 2),
+                LargeTestModel(intNullable = null),
+                LargeTestModel(intNullable = 3),
+                LargeTestModel(intNullable = null),
+                LargeTestModel(intNullable = 1),
+            )
+        )
+
+        val ascending =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().intNullable, true)))
+                .toList()
+        val descending =
+            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().intNullable, false)))
+                .toList()
+
+        assertEquals(listOf(null, null, 1, 2, 3), ascending.map { it.intNullable })
+        assertEquals(listOf(3, 2, 1, null, null), descending.map { it.intNullable })
+    }
+
     @Test
     fun testSortCaseInsensitiveCrash() = runTest {
         val collection = database.table<LargeTestModel>("testSortCaseInsensitiveCrash")
