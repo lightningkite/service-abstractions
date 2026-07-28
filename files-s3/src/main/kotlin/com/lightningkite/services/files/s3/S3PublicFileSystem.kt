@@ -3,23 +3,41 @@ package com.lightningkite.services.files.s3
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.*
+import com.lightningkite.services.files.ExternalFile
 import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.files.ExternalPath
+import com.lightningkite.services.files.ExternalServerFileSerializer
+import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.get
 import com.lightningkite.services.http.client
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.telemetry.telemetryTrace
 import io.ktor.client.request.*
 import io.ktor.http.*
+import io.ktor.utils.io.charsets.encode
+import io.ktor.utils.io.core.canRead
+import io.ktor.utils.io.core.takeWhile
+import kotlinx.coroutines.*
+import kotlinx.coroutines.future.await
+import kotlinx.io.*
 import software.amazon.awssdk.auth.credentials.*
+import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.*
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
-import java.io.File
+import java.net.URLDecoder
+import java.time.ZoneOffset
 import javax.crypto.spec.SecretKeySpec
 import kotlin.jvm.optionals.getOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
+import kotlin.time.toKotlinInstant
 import kotlin.uuid.Uuid
 
 /**
@@ -29,6 +47,7 @@ import kotlin.uuid.Uuid
  * - Signed URLs for secure access control
  * - Multiple credential providers (static keys, profiles, default chain)
  * - Optimized URL signing using custom implementation
+ * - Server-side copies within the same bucket
  * - Connection pooling via [AwsConnections]
  *
  * @property name The service name for logging and identification
@@ -52,9 +71,12 @@ public class S3PublicFileSystem(
         "https://s3-${region.id()}.amazonaws.com/${bucket}/",
     )
 
-    @Volatile private var credsOnHand: AwsCredentials? = null
-    @Volatile private var credsOnHandMs: Long = 0
-    @Volatile private var credsDirect: DirectAwsCredentials? = null
+    @Volatile
+    private var credsOnHand: AwsCredentials? = null
+    @Volatile
+    private var credsOnHandMs: Long = 0
+    @Volatile
+    private var credsDirect: DirectAwsCredentials? = null
 
     /**
      * Direct AWS credentials with pre-encoded session token for efficient URL generation.
@@ -97,9 +119,12 @@ public class S3PublicFileSystem(
         } else onHand
     }
 
-    @Volatile private var lastSigningKey: SecretKeySpec? = null
-    @Volatile private var lastSigningKeyDate: String = ""
-    @Volatile private var lastSigningKeyAccessKey: String = ""
+    @Volatile
+    private var lastSigningKey: SecretKeySpec? = null
+    @Volatile
+    private var lastSigningKeyDate: String = ""
+    @Volatile
+    private var lastSigningKeyAccessKey: String = ""
 
     /**
      * Gets a signing key for the given date and credentials, caching it for reuse.
@@ -179,18 +204,508 @@ public class S3PublicFileSystem(
             .build()
     }
 
-    override val root: S3FileObject = S3FileObject(this, File(""))
+    private fun unixPathOf(path: ExternalPath): String = path.parts.joinToString("/")
 
-    override fun parseInternalUrl(url: String): S3FileObject? {
+    private fun pathFromUnix(unixPath: String): ExternalPath =
+        ExternalPath(unixPath.split("/").filter { it.isNotEmpty() })
+
+    private fun s3SpanAttrs(operation: String, unixPath: String): TelemetryAttributes = TelemetryAttributes {
+        put(TelemetryKey.OfString("file.operation"), operation)
+        put(TelemetryKeys.Aws.s3Key, context.telemetrySanitization.sanitizeFilePathWithDepth(unixPath))
+        put(TelemetryKeys.Aws.s3Bucket, bucket)
+        put(TelemetryKeys.Rpc.system, "aws.s3")
+    }
+
+    /**
+     * Lists all direct children of the directory at [path].
+     *
+     * This method uses pagination to handle directories with many files efficiently.
+     * It filters results to only include direct children (not nested subdirectories).
+     *
+     * S3 has no concept of directories - "directory" is just a naming convention on object keys.
+     * `listObjectsV2` returns an empty result set for a non-existent prefix rather than throwing,
+     * so this method never returns null in practice. Use [head] to distinguish "exists and empty"
+     * from "doesn't exist" if that distinction matters to the caller. Operational failures
+     * (NoSuchBucket, AccessDenied, throttling, network) propagate so the surrounding telemetry
+     * span records them as errors.
+     */
+    override suspend fun list(path: ExternalPath): List<ExternalPath>? {
+        val unixPath = unixPathOf(path)
+        return telemetryTrace("list", attributes = s3SpanAttrs("list", unixPath)) { span ->
+            val result = withContext(Dispatchers.IO) {
+                val results = ArrayList<ExternalPath>()
+                var token: String? = null
+                while (true) {
+                    val r = s3Async.listObjectsV2 {
+                        it.bucket(bucket)
+                        it.prefix(unixPath)
+                        it.delimiter("/")
+                        token?.let { t -> it.continuationToken(t) }
+                    }.await()
+                    results += r.contents().filter { !it.key().substringAfter(unixPath).contains('/') }
+                        .map { pathFromUnix(it.key()) }
+                    if (r.isTruncated) token = r.nextContinuationToken()
+                    else break
+                }
+                results
+            }
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("file.count"), result.size.toLong()) })
+            result
+        }
+    }
+
+    /**
+     * Gets metadata about the file at [path] without downloading its contents.
+     */
+    override suspend fun head(path: ExternalPath): FileInfo? {
+        val unixPath = unixPathOf(path)
+        return telemetryTrace("head", attributes = s3SpanAttrs("head", unixPath)) { span ->
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    s3Async.headObject {
+                        it.bucket(bucket)
+                        it.key(unixPath)
+                    }.await().let {
+                        FileInfo(
+                            type = MediaType(it.contentType()),
+                            size = it.contentLength(),
+                            lastModified = it.lastModified().toKotlinInstant()
+                        )
+                    }
+                } catch (e: NoSuchKeyException) {
+                    null
+                }
+            }
+            result?.let {
+                span.enrich(TelemetryAttributes {
+                    put(TelemetryKey.OfLong("file.size"), it.size)
+                    put(TelemetryKey.OfString("file.content_type"), it.type.toString())
+                })
+            }
+            result
+        }
+    }
+
+    /**
+     * Uploads content to the file at [path] in S3.
+     */
+    override suspend fun put(path: ExternalPath, content: TypedData): Unit {
+        val unixPath = unixPathOf(path)
+        telemetryTrace("put", attributes = TelemetryAttributes {
+            putAll(s3SpanAttrs("put", unixPath))
+            put(TelemetryKey.OfLong("file.size"), content.data.size ?: -1L)
+            put(TelemetryKey.OfString("file.content_type"), content.mediaType.toString())
+        }) {
+            withContext(Dispatchers.IO) {
+                s3.putObject(PutObjectRequest.builder().also {
+                    it.bucket(bucket)
+                    it.key(unixPath)
+                    it.contentType(content.mediaType.toString())
+                }.build(), content.data.size?.let { size ->
+                    RequestBody.fromInputStream(content.data.source().asInputStream(), size)
+                } ?: run {
+                    RequestBody.fromBytes(content.data.bytes())
+                })
+            }
+            Unit
+        }
+    }
+
+    /**
+     * Downloads the contents of the file at [path] from S3.
+     */
+    override suspend fun get(path: ExternalPath): TypedData? {
+        val unixPath = unixPathOf(path)
+        return telemetryTrace("get", attributes = s3SpanAttrs("get", unixPath)) { span ->
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val response = s3.getObject(
+                        GetObjectRequest.builder().also {
+                            it.bucket(bucket)
+                            it.key(unixPath)
+                        }.build()
+                    )
+
+                    val rr = response.response()
+                    TypedData.source(
+                        source = response.asSource().buffered(),
+                        mediaType = MediaType(rr.contentType() ?: "application/octet-stream"),
+                        size = rr.contentLength()
+                    )
+                } catch (e: NoSuchKeyException) {
+                    null
+                }
+            }
+            result?.let {
+                span.enrich(TelemetryAttributes {
+                    put(TelemetryKey.OfLong("file.size"), it.data.size ?: -1L)
+                    put(TelemetryKey.OfString("file.content_type"), it.mediaType.toString())
+                })
+            }
+            result
+        }
+    }
+
+    /**
+     * Copies the file at [path] to [other].
+     *
+     * If the destination is also an S3 file in the same bucket, this performs a server-side copy
+     * which is faster and doesn't require downloading/uploading the file contents.
+     * Otherwise, it falls back to the default download/re-upload implementation.
+     */
+    override suspend fun copyTo(path: ExternalPath, other: ExternalFile) {
+        val unixPath = unixPathOf(path)
+        val otherSystem = other.fileSystem as? S3PublicFileSystem
+        val isServerSideCopy = otherSystem != null && otherSystem.bucket == bucket
+        telemetryTrace("copy", attributes = TelemetryAttributes {
+            putAll(s3SpanAttrs("copy", unixPath))
+            put(
+                TelemetryKey.OfString("aws.s3.destination.key"),
+                if (otherSystem != null) context.telemetrySanitization.sanitizeFilePathWithDepth(unixPathOf(other.path))
+                else context.telemetrySanitization.sanitizeFilePath(other.toString())
+            )
+            put(TelemetryKey.OfBoolean("file.copy.server_side"), isServerSideCopy)
+        }) {
+            if (isServerSideCopy) {
+                withContext(Dispatchers.IO) {
+                    s3Async.copyObject {
+                        it.sourceBucket(bucket)
+                        it.destinationBucket(bucket)
+                        it.sourceKey(unixPath)
+                        it.destinationKey(unixPathOf(other.path))
+                    }.await()
+                }
+            } else {
+                super.copyTo(path, other)
+            }
+        }
+    }
+
+    /**
+     * Deletes the file at [path] from S3.
+     *
+     * Note: S3 delete operations are eventually consistent and may not be immediately visible.
+     */
+    override suspend fun delete(path: ExternalPath): Unit {
+        val unixPath = unixPathOf(path)
+        telemetryTrace("delete", attributes = s3SpanAttrs("delete", unixPath)) {
+            withContext(Dispatchers.IO) {
+                s3Async.deleteObject {
+                    it.bucket(bucket)
+                    it.key(unixPath)
+                }.await()
+            }
+            Unit
+        }
+    }
+
+    /**
+     * The unsigned URL for the file at [path].
+     * This URL will only work if the bucket has public read access configured.
+     */
+    override fun url(path: ExternalPath): String =
+        "https://${bucket}.s3.${region.id()}.amazonaws.com/${unixPathOf(path)}"
+
+    private fun encodedUrl(unixPath: String): String =
+        "https://${bucket}.s3.${region.id()}.amazonaws.com/${unixPath.aggressiveEncodeURLPath()}"
+
+    /**
+     * A signed URL for secure, time-limited access to the file at [path].
+     *
+     * This implementation uses a custom AWS Signature V4 signing process that is significantly
+     * faster than the AWS SDK's built-in presigner.
+     *
+     * @param timeout How long the URL should remain valid. Defaults to [signedUrlDuration]; if
+     * that is also unset, the unsigned [url] is returned instead.
+     */
+    override fun signUrl(path: ExternalPath, timeout: Duration?): String {
+        val unixPath = unixPathOf(path)
+        val duration = timeout ?: signedUrlDuration ?: return encodedUrl(unixPath)
+
+        val creds = creds()
+        val accessKey = creds.access
+        val tokenPreEncoded = creds.tokenPreEncoded
+        var dateOnly: String
+        val date = java.time.ZonedDateTime.now(ZoneOffset.UTC).run {
+            buildString {
+                append(year.toString().padStart(4, '0'))
+                append(monthValue.toString().padStart(2, '0'))
+                append(dayOfMonth.toString().padStart(2, '0'))
+                dateOnly = toString()
+                append("T")
+                append(hour.toString().padStart(2, '0'))
+                append(minute.toString().padStart(2, '0'))
+                append(second.toString().padStart(2, '0'))
+                append("Z")
+            }
+        }
+        val regionId = region.id()
+        val preHeaders = tokenPreEncoded?.let {
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKey}%2F$dateOnly%2F$regionId%2Fs3%2Faws4_request&X-Amz-Date=$date&X-Amz-Expires=${duration.inWholeSeconds}&X-Amz-Security-Token=${it}&X-Amz-SignedHeaders=host"
+        } ?: run {
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKey}%2F$dateOnly%2F$regionId%2Fs3%2Faws4_request&X-Amz-Date=$date&X-Amz-Expires=${duration.inWholeSeconds}&X-Amz-SignedHeaders=host"
+        }
+        val hashHolder = ByteArray(32)
+        val canonicalRequestHasher = java.security.MessageDigest.getInstance("SHA-256")
+        canonicalRequestHasher.update(CONSTANT_BYTES_GET)
+        canonicalRequestHasher.update(unixPath.removePrefix("/").aggressiveEncodeURLPath().toByteArray())
+        canonicalRequestHasher.update(CONSTANT_BYTE_NEWLINE)
+        canonicalRequestHasher.update(preHeaders.toByteArray())
+        canonicalRequestHasher.update(CONSTANT_BYTES_C)
+        canonicalRequestHasher.update(bucket.toByteArray())
+        canonicalRequestHasher.update(CONSTANT_BYTES_D)
+        canonicalRequestHasher.update(regionId.toByteArray())
+        canonicalRequestHasher.update(CONSTANT_BYTES_E)
+        canonicalRequestHasher.digest(hashHolder, 0, 32)
+        val canonicalRequestHash = hashHolder.toHex()
+        val finalHasher = javax.crypto.Mac.getInstance("HmacSHA256")
+        finalHasher.init(signingKey(dateOnly, creds))
+        finalHasher.update(CONSTANT_BYTES_F)
+        finalHasher.update(date.toByteArray())
+        finalHasher.update(CONSTANT_BYTE_NEWLINE)
+        finalHasher.update(dateOnly.toByteArray())
+        finalHasher.update(CONSTANT_BYTE_SLASH)
+        finalHasher.update(regionId.toByteArray())
+        finalHasher.update(CONSTANT_BYTES_H)
+        finalHasher.update(canonicalRequestHash.toByteArray())
+        finalHasher.doFinal(hashHolder, 0)
+        val regeneratedSig = hashHolder.toHex()
+        return "${encodedUrl(unixPath)}?$preHeaders&X-Amz-Signature=$regeneratedSig"
+    }
+
+    /**
+     * Generates a signed URL for uploading content to the file at [path].
+     *
+     * This uses the custom signing implementation when [signedUrlDuration] is set,
+     * otherwise falls back to the AWS SDK presigner.
+     */
+    override fun uploadUrl(path: ExternalPath, timeout: Duration): String {
+        val unixPath = unixPathOf(path)
+        if (signedUrlDuration == null) {
+            return signer.presignPutObject {
+                it.signatureDuration(timeout.toJavaDuration())
+                it.putObjectRequest {
+                    it.bucket(bucket)
+                    it.key(unixPath)
+                }
+            }.url().toString()
+        }
+
+        val creds = creds()
+        val accessKey = creds.access
+        val tokenPreEncoded = creds.tokenPreEncoded
+        var dateOnly: String
+        val date = java.time.ZonedDateTime.now(ZoneOffset.UTC).run {
+            buildString {
+                append(year.toString().padStart(4, '0'))
+                append(monthValue.toString().padStart(2, '0'))
+                append(dayOfMonth.toString().padStart(2, '0'))
+                dateOnly = toString()
+                append("T")
+                append(hour.toString().padStart(2, '0'))
+                append(minute.toString().padStart(2, '0'))
+                append(second.toString().padStart(2, '0'))
+                append("Z")
+            }
+        }
+        val regionId = region.id()
+        val preHeaders = tokenPreEncoded?.let {
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKey}%2F$dateOnly%2F$regionId%2Fs3%2Faws4_request&X-Amz-Date=$date&X-Amz-Expires=${timeout.inWholeSeconds}&X-Amz-Security-Token=${it}&X-Amz-SignedHeaders=host"
+        } ?: run {
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKey}%2F$dateOnly%2F$regionId%2Fs3%2Faws4_request&X-Amz-Date=$date&X-Amz-Expires=${timeout.inWholeSeconds}&X-Amz-SignedHeaders=host"
+        }
+
+        // For PUT requests, we need to modify the canonical request
+        val hashHolder = ByteArray(32)
+        val canonicalRequestHasher = java.security.MessageDigest.getInstance("SHA-256")
+        canonicalRequestHasher.update(CONSTANT_BYTES_PUT)
+        canonicalRequestHasher.update(unixPath.removePrefix("/").aggressiveEncodeURLPath().toByteArray())
+        canonicalRequestHasher.update(CONSTANT_BYTE_NEWLINE)
+        canonicalRequestHasher.update(preHeaders.toByteArray())
+        canonicalRequestHasher.update(CONSTANT_BYTES_C)
+        canonicalRequestHasher.update(bucket.toByteArray())
+        canonicalRequestHasher.update(CONSTANT_BYTES_D)
+        canonicalRequestHasher.update(regionId.toByteArray())
+        canonicalRequestHasher.update(CONSTANT_BYTES_E)
+        canonicalRequestHasher.digest(hashHolder, 0, 32)
+        val canonicalRequestHash = hashHolder.toHex()
+        val finalHasher = javax.crypto.Mac.getInstance("HmacSHA256")
+        finalHasher.init(signingKey(dateOnly, creds))
+        finalHasher.update(CONSTANT_BYTES_F)
+        finalHasher.update(date.toByteArray())
+        finalHasher.update(CONSTANT_BYTE_NEWLINE)
+        finalHasher.update(dateOnly.toByteArray())
+        finalHasher.update(CONSTANT_BYTE_SLASH)
+        finalHasher.update(regionId.toByteArray())
+        finalHasher.update(CONSTANT_BYTES_H)
+        finalHasher.update(canonicalRequestHash.toByteArray())
+        finalHasher.doFinal(hashHolder, 0)
+        val regeneratedSig = hashHolder.toHex()
+        return "${encodedUrl(unixPath)}?$preHeaders&X-Amz-Signature=$regeneratedSig"
+    }
+
+    /**
+     * Alternative signed URL using AWS SDK's official presigner.
+     * Used for performance comparison testing.
+     */
+    internal fun signedUrlOfficial(path: ExternalPath): String {
+        val unixPath = unixPathOf(path)
+        return signedUrlDuration?.let { duration ->
+            signer.presignGetObject {
+                it.signatureDuration(duration.toJavaDuration())
+                it.getObjectRequest {
+                    it.bucket(bucket)
+                    it.key(unixPath)
+                }
+            }.url().toString()
+        } ?: url(path)
+    }
+
+    override fun parseInternalUrl(url: String): ExternalFile? {
+        // New canonical form: sf://<name>/<key>. Kept first so new rows resolve regardless of backend.
+        parseBackendInternalUrl(url)?.let { return it }
+        // Legacy form: a backend-specific absolute URL stored by the pre-canonical version.
         val matchingPrefix = rootUrls.firstOrNull { prefix -> url.startsWith(prefix) } ?: return null
-        val path = url.substringAfter(matchingPrefix)
-        return S3FileObject(this, File(path))
+        // Internal URLs come from url(path), which writes the object key literally (un-encoded).
+        // Do NOT percent-decode here, or a stored key that literally contains '%xx' would be
+        // decoded to a different object (or throw on an invalid escape). Decoding of signed,
+        // encoded URLs happens in parseExternalUrl instead.
+        val relative = url.substringAfter(matchingPrefix)
+        return ExternalFile(this, pathFromUnix(relative))
     }
 
-    override fun parseExternalUrl(url: String): S3FileObject? {
-        return parseInternalUrl(url.substringBefore('?').decodeURLPart())
-            ?.also { it.assertSignatureValid(url.substringAfter('?')) }
+    override fun parseExternalUrl(url: String): ExternalFile? {
+        // Signed URLs are percent-encoded by signUrl/encodedUrl, so decode the path before matching.
+        val decodedPath = url.substringBefore('?').decodeURLPart()
+        // Canonical sf:// references are server-internal (unsigned) and must never be accepted from
+        // untrusted client input; otherwise a client could reference arbitrary keys with no signature.
+        // Guard the DECODED value so an encoded "sf%3A//..." can't slip past into parseInternalUrl.
+        if (decodedPath.startsWith("sf://")) return null
+        return parseInternalUrl(decodedPath)
+            ?.also { assertSignatureValid(it.path, url.substringAfter('?')) }
     }
+
+    /**
+     * Validates the signature of an external URL's query parameters.
+     *
+     * Verification is performed purely by recomputing the AWS Signature V4 signature with our own
+     * signing key (derived from [credentialProvider]) over the presented URL's own query
+     * parameters, then comparing it to the supplied `X-Amz-Signature` in a constant-time manner.
+     * This is the same HMAC signing logic used by [signUrl]; no network round-trip is required and
+     * none is performed on the default path. A signature we did not produce - whether tampered or
+     * simply foreign - is rejected.
+     *
+     * Only when [ExternalServerFileSerializer.inlineScanOnDeserialize] is enabled (the shared
+     * backward-compat flag, disabled by default) do we fall back to the legacy behavior of issuing
+     * an HTTP request to S3 to validate the URL when local recomputation does not match.
+     *
+     * @throws IllegalArgumentException if the signature is invalid
+     */
+    internal fun assertSignatureValid(
+        path: ExternalPath,
+        queryParams: String,
+        now: java.time.Instant = java.time.Instant.now(),
+    ) {
+        if (signedUrlDuration == null) return
+        val unixPath = unixPathOf(path)
+
+        val presentedSignature: String?
+        val recomputedSignature: String?
+        val expiresAt: java.time.Instant
+        try {
+            val headers = queryParams.split('&').associate {
+                URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(
+                    it.substringAfter('=', ""), Charsets.UTF_8
+                )
+            }
+            val secretKey = credentialProvider.resolveCredentials().secretAccessKey()
+            val objectPath = unixPath.aggressiveEncodeURLPath()
+            val date =
+                headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
+            val expiresSeconds = headers["X-Amz-Expires"]?.toLongOrNull()
+                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Expires' found.")
+            expiresAt = parseAmzDate(date).plusSeconds(expiresSeconds)
+            val algorithm = headers["X-Amz-Algorithm"]
+                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Algorithm' found.")
+            val credential = headers["X-Amz-Credential"]
+                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Credential' found.")
+            val scope = credential.substringAfter("/")
+
+            val canonicalRequest = """
+            GET
+            ${"/" + objectPath.removePrefix("/")}
+            ${queryParams.substringBefore("&X-Amz-Signature=").split('&').sorted().joinToString("&")}
+            host:${bucket}.s3.${region.id()}.amazonaws.com
+
+            host
+            UNSIGNED-PAYLOAD
+            """.trimIndent()
+
+            val toSignString = """
+            $algorithm
+            $date
+            $scope
+            ${canonicalRequest.sha256()}
+            """.trimIndent()
+
+            val signingKeyBytes = "AWS4$secretKey".toByteArray().let { date.substringBefore('T').toByteArray().mac(it) }
+                .let { region.id().toByteArray().mac(it) }.let { "s3".toByteArray().mac(it) }
+                .let { "aws4_request".toByteArray().mac(it) }
+
+            recomputedSignature = toSignString.toByteArray().mac(signingKeyBytes).toHex()
+            presentedSignature = headers["X-Amz-Signature"]
+        } catch (e: Exception) {
+            // Recomputation could not even be set up (malformed/foreign URL). Treat as a verification
+            // failure unless the compat flag re-enables the legacy HTTP fallback below.
+            verifySignatureOverNetwork(path, queryParams)
+            return
+        }
+
+        // Constant-time comparison so verification time does not leak how many leading bytes matched.
+        if (presentedSignature != null && constantTimeEquals(presentedSignature, recomputedSignature)) {
+            // A matching signature only proves authenticity; the URL must also be within its
+            // X-Amz-Date + X-Amz-Expires validity window. AWS S3 enforces this server-side when the
+            // URL is used against it, but local recomputation must enforce it too - otherwise an
+            // expired-but-once-valid URL is accepted here and laundered into a permanent,
+            // auto-renewing reference by the serializer. (The local backend and future: path both
+            // already check expiry; this keeps S3 consistent.)
+            if (now.isAfter(expiresAt)) throw IllegalArgumentException("Signed URL has expired")
+            return
+        }
+
+        verifySignatureOverNetwork(path, queryParams)
+    }
+
+    /**
+     * Legacy fallback: validates the signed URL by asking S3 directly. Performs a blocking network
+     * round-trip and is only reachable when the backward-compat flag is enabled.
+     */
+    private fun verifySignatureOverNetwork(path: ExternalPath, queryParams: String) {
+        // The shared client applies a 60s engine timeout.
+        runBlocking {
+            val response = client.get("${url(path)}?$queryParams") {
+                header("Range", "0-0")
+            }
+            if (!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
+        }
+    }
+
+    /**
+     * Length-aware constant-time string comparison, used to compare HMAC signature hex digests
+     * without leaking match progress through timing.
+     */
+    private fun constantTimeEquals(a: String, b: String): Boolean {
+        val aBytes = a.toByteArray(Charsets.UTF_8)
+        val bBytes = b.toByteArray(Charsets.UTF_8)
+        return java.security.MessageDigest.isEqual(aBytes, bBytes)
+    }
+
+    /**
+     * Parses an AWS `X-Amz-Date` value (e.g. `20260722T101054Z`) into a UTC [java.time.Instant].
+     * This is the signing timestamp; adding `X-Amz-Expires` seconds gives the URL's expiry.
+     */
+    private fun parseAmzDate(amzDate: String): java.time.Instant =
+        java.time.LocalDateTime.parse(amzDate, AMZ_DATE_FORMATTER).toInstant(ZoneOffset.UTC)
 
     /**
      * Checks the health of the S3 connection by performing a test write, read, and delete.
@@ -229,7 +744,7 @@ public class S3PublicFileSystem(
                 )
             }
 
-            val result = client.get(testFile.url)
+            val result = client.get(url(testFile.path))
             if (result.status.isSuccess() && signedUrlDuration != null) {
                 results.add(
                     HealthStatus.Level.WARNING to
@@ -376,6 +891,69 @@ public class S3PublicFileSystem(
     }
 }
 
+private val AMZ_DATE_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
+
+private val URL_ALPHABET_CHARS = ((('a'..'z') + ('A'..'Z') + ('0'..'9'))).toSet()
+private val VALID_PATH_PART = setOf('-', '.', '_', '/')
+
+private fun Source.forEach(block: (Byte) -> Unit) {
+    takeWhile { buffer ->
+        while (buffer.canRead()) {
+            block(buffer.readByte())
+        }
+        true
+    }
+}
+
+private fun hexDigitToChar(digit: Int): Char = when (digit) {
+    in 0..9 -> '0' + digit
+    else -> 'A' + digit - 10
+}
+
+private fun Byte.percentEncode(): String {
+    val code = toInt() and 0xff
+    val array = CharArray(3)
+    array[0] = '%'
+    array[1] = hexDigitToChar(code shr 4)
+    array[2] = hexDigitToChar(code and 0xf)
+    return array.concatToString()
+}
+
+/**
+ * Percent-encodes a unix-style S3 object key for use in a URL path, leaving path separators
+ * and the usual "safe" punctuation untouched.
+ */
+private fun String.aggressiveEncodeURLPath(): String = buildString {
+    val charset = io.ktor.utils.io.charsets.Charsets.UTF_8
+
+    var index = 0
+    while (index < this@aggressiveEncodeURLPath.length) {
+        val current = this@aggressiveEncodeURLPath[index]
+        if (current in URL_ALPHABET_CHARS || current in VALID_PATH_PART) {
+            append(current)
+            index++
+            continue
+        }
+
+        val symbolSize = if (current.isSurrogate()) 2 else 1
+        // we need to call newEncoder() for every symbol, otherwise it won't work
+        charset.newEncoder().encode(this@aggressiveEncodeURLPath, index, index + symbolSize).forEach {
+            append(it.percentEncode())
+        }
+        index += symbolSize
+    }
+}
+
+private val CONSTANT_BYTES_GET = "GET\n/".toByteArray()
+private val CONSTANT_BYTES_PUT = "PUT\n/".toByteArray()
+private val CONSTANT_BYTES_C = "\nhost:".toByteArray()
+private val CONSTANT_BYTES_D = ".s3.".toByteArray()
+private val CONSTANT_BYTES_E = (".amazonaws.com\n\nhost\nUNSIGNED-PAYLOAD").toByteArray()
+private val CONSTANT_BYTES_F = "AWS4-HMAC-SHA256\n".toByteArray()
+private val CONSTANT_BYTE_NEWLINE = '\n'.code.toByte()
+private val CONSTANT_BYTE_SLASH = '/'.code.toByte()
+private val CONSTANT_BYTES_H = "/s3/aws4_request\n".toByteArray()
+
 /**
  * Applies a MAC operation to this byte array using the given key.
  */
@@ -396,35 +974,3 @@ internal fun ByteArray.toHex(): String = buildString {
         append(item.toUByte().toString(16).padStart(2, '0'))
     }
 }
-
-/*
- * TODO: API Recommendations for S3PublicFileSystem
- *
- * 1. Connection Lifecycle: Consider implementing connect() and disconnect() methods from the Service interface
- *    to properly manage S3 client resources in serverless environments (AWS Lambda, SnapStart).
- *
- * 2. Thread Safety: The credential caching mechanism (credsDirect, credsOnHandMs) and signing key cache
- *    (lastSigningKey, lastSigningKeyDate) are not thread-safe. Consider using @Volatile or atomic operations
- *    if this class will be accessed from multiple threads concurrently.
- *
- * 3. Credential Refresh: The credential expiration check uses > instead of >=, which could lead to using
- *    expired credentials for a brief moment. Consider using >= for safer behavior.
- *
- * 4. URL Parsing: The parseInternalUrl method now correctly handles multiple root URL patterns, but consider
- *    adding URL decoding for paths that contain encoded characters.
- *
- * 5. Health Check: Consider making the health check path configurable or using a more unique path to avoid
- *    potential conflicts with user data (e.g., a UUID-based path).
- *
- * 6. Logging: Replace the println statement in the profile credential provider with proper logging using
- *    kotlin-logging for consistency with the rest of the library.
- *
- * 7. Settings Builder: Consider adding a fluent builder API in addition to the URL-based configuration for
- *    improved type safety and IDE support.
- *
- * 8. Multipart Upload: For large files, consider exposing multipart upload capabilities through the API
- *    to improve upload performance and reliability.
- *
- * 9. Bucket Validation: Consider adding an optional bucket existence check during initialization to fail
- *    fast if the bucket doesn't exist or is inaccessible.
- */

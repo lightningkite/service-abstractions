@@ -38,12 +38,6 @@ private class RecordingScanner(override val context: SettingContext) : FileScann
 
 class ExternalServerFileSerializerTest {
 
-    @AfterTest
-    fun resetFlag() {
-        // The compat flags are global static state; keep tests isolated.
-        ExternalServerFileSerializer.inlineScanOnDeserialize = false
-        ExternalServerFileSerializer.foreignUrlHandling = ForeignUrlHandling.ERROR
-    }
     @Test
     fun testDirectVerify() {
         val context = TestSettingContext()
@@ -91,12 +85,19 @@ class ExternalServerFileSerializerTest {
         }
     }
 
-    private fun serializer(context: SettingContext, scanner: RecordingScanner): ExternalServerFileSerializer {
+    private fun serializer(
+        context: SettingContext,
+        scanner: RecordingScanner,
+        inlineScanOnDeserialize: Boolean = false,
+        foreignUrlHandling: ForeignUrlHandling = ForeignUrlHandling.ERROR,
+    ): ExternalServerFileSerializer {
         val fs = KotlinxIoPublicFileSystem("test", context, workingDirectory.then("build/test-files"))
         return ExternalServerFileSerializer(
             clock = Clock.System,
             scanners = listOf(scanner),
             fileSystems = listOf(fs),
+            inlineScanOnDeserialize = inlineScanOnDeserialize,
+            foreignUrlHandling = foreignUrlHandling,
             onUse = {},
             key = CryptographyProvider.Default.get(HMAC).keyGenerator().generateKeyBlocking()
         )
@@ -144,10 +145,9 @@ class ExternalServerFileSerializerTest {
      */
     @Test
     fun futureDeserializeWithFlagScansInline() {
-        ExternalServerFileSerializer.inlineScanOnDeserialize = true
         val context = TestSettingContext()
         val scanner = RecordingScanner(context)
-        val ser = serializer(context, scanner)
+        val ser = serializer(context, scanner, inlineScanOnDeserialize = true)
         val json = Json { serializersModule = serializersModuleOf(ser) }
         val key = "with-flag.txt"
         runBlocking {
@@ -165,10 +165,9 @@ class ExternalServerFileSerializerTest {
      */
     @Test
     fun dataUrlWithFlagUploadsInline() {
-        ExternalServerFileSerializer.inlineScanOnDeserialize = true
         val context = TestSettingContext()
         val scanner = RecordingScanner(context)
-        val ser = serializer(context, scanner)
+        val ser = serializer(context, scanner, inlineScanOnDeserialize = true)
         val json = Json { serializersModule = serializersModuleOf(ser) }
         val dataUrl = "data:text/plain;base64,VEVTVA=="
         val result = json.decodeFromJsonElement(ser, JsonPrimitive(dataUrl))
@@ -184,9 +183,8 @@ class ExternalServerFileSerializerTest {
 
     @Test
     fun foreignUrlWarnPassesThrough() {
-        ExternalServerFileSerializer.foreignUrlHandling = ForeignUrlHandling.WARN
         val context = TestSettingContext()
-        val ser = serializer(context, RecordingScanner(context))
+        val ser = serializer(context, RecordingScanner(context), foreignUrlHandling = ForeignUrlHandling.WARN)
         val json = Json { serializersModule = serializersModuleOf(ser) }
         val encoded = json.encodeToJsonElement(ser, ServerFile(foreignUrl))
         assertEquals(foreignUrl, encoded.jsonPrimitive.content, "WARN mode should pass the foreign url through")
@@ -194,9 +192,8 @@ class ExternalServerFileSerializerTest {
 
     @Test
     fun foreignUrlCensorYieldsBlank() {
-        ExternalServerFileSerializer.foreignUrlHandling = ForeignUrlHandling.CENSOR
         val context = TestSettingContext()
-        val ser = serializer(context, RecordingScanner(context))
+        val ser = serializer(context, RecordingScanner(context), foreignUrlHandling = ForeignUrlHandling.CENSOR)
         val json = Json { serializersModule = serializersModuleOf(ser) }
         val encoded = json.encodeToJsonElement(ser, ServerFile(foreignUrl))
         assertEquals("", encoded.jsonPrimitive.content, "CENSOR mode should blank the foreign url")
@@ -205,9 +202,8 @@ class ExternalServerFileSerializerTest {
     @Test
     fun foreignUrlErrorThrows() {
         // ERROR is the default, but set it explicitly for clarity.
-        ExternalServerFileSerializer.foreignUrlHandling = ForeignUrlHandling.ERROR
         val context = TestSettingContext()
-        val ser = serializer(context, RecordingScanner(context))
+        val ser = serializer(context, RecordingScanner(context), foreignUrlHandling = ForeignUrlHandling.ERROR)
         val json = Json { serializersModule = serializersModuleOf(ser) }
         assertFailsWith<IllegalArgumentException> {
             json.encodeToJsonElement(ser, ServerFile(foreignUrl))
@@ -228,10 +224,9 @@ class ExternalServerFileSerializerTest {
     @Test
     fun knownRootFileUnaffectedInEveryMode() {
         val context = TestSettingContext()
-        val ser = serializer(context, RecordingScanner(context))
-        val json = Json { serializersModule = serializersModuleOf(ser) }
-        for (mode in ForeignUrlHandling.entries) {
-            ExternalServerFileSerializer.foreignUrlHandling = mode
+        ForeignUrlHandling.entries.forEach { entry ->
+            val ser = serializer(context, RecordingScanner(context), foreignUrlHandling = entry)
+            val json = Json { serializersModule = serializersModuleOf(ser) }
             val encoded = json.encodeToJsonElement(ser, knownRootFile(ser)).jsonPrimitive.content
             // Known-root files always produce a non-blank, non-foreign signed url regardless of mode.
             assertTrue(encoded.isNotBlank(), "Known-root file should serialize to a url in mode $mode")

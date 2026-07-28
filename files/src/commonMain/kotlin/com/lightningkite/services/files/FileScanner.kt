@@ -144,7 +144,7 @@ public suspend fun List<FileScanner>.scan(item: TypedData) {
 public suspend fun List<FileScanner>.copyAndScan(source: FileObject, destination: FileObject) {
     try {
         source.copyTo(destination)
-        scan(source.get() ?: throw IllegalArgumentException("Source file ${source.url} does not exist."))
+        scan(source.get() ?: throw IllegalArgumentException("Source file $source does not exist."))
     } catch (e: Exception) {
         destination.delete()
         throw e

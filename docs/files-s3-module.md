@@ -689,9 +689,8 @@ The module is JVM-only due to AWS SDK dependencies.
 ## Dependencies
 
 ```kotlin
-// AWS SDK
+// AWS SDK (default HTTP clients excluded; the shared client pair comes from :aws-client)
 api("software.amazon.awssdk:s3")
-api("software.amazon.awssdk:aws-crt-client")
 
 // Core modules
 api(project(":basis"))
