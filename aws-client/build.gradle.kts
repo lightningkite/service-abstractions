@@ -9,13 +9,19 @@ plugins {
 
 dependencies {
     api(project(path = ":basis"))
-    fun ModuleDependency.excludeNetty() {
-        exclude("software.amazon.awssdk:netty-nio-client")
-        exclude("software.amazon.awssdk:apache-client")
+    // AWS service SDKs each transitively bundle both default HTTP clients (netty-nio + apache).
+    // Exclude them so we control exactly which client is on the classpath, then add a single
+    // shared pair below. This replaces aws-crt-client, whose native runtime (aws-crt) added ~19MB.
+    fun ModuleDependency.excludeDefaultHttpClients() {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
     }
 
-    api(libs.aws.cloudWatch) { excludeNetty() }
-    api(libs.aws.crt.client) { excludeNetty() }
+    api(libs.aws.cloudWatch) { excludeDefaultHttpClients() }
+    // Sync path uses the JDK-based url-connection-client (no transitive deps); async path uses
+    // netty-nio-client (Netty is already present in typical deployments via the server engine).
+    api(libs.aws.urlConnectionClient)
+    api(libs.aws.nettyNioClient)
     testImplementation(libs.coroutines.testing)
     testImplementation(project(":cache-test"))
 }
