@@ -1,41 +1,63 @@
 package com.lightningkite.services.notifications.fcm
 
-import com.google.auth.oauth2.GoogleCredentials
-import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
-import com.google.firebase.messaging.*
+import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.http.HttpResponseException
+import com.lightningkite.services.http.SettingContextElement
+import com.lightningkite.services.http.client
+import com.lightningkite.services.http.statusFailing
+import com.lightningkite.services.notifications.*
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryKeys
-import com.lightningkite.services.SettingContext
-import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.telemetry.telemetryTrace
-import com.lightningkite.services.notifications.*
-import com.google.firebase.ErrorCode
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.Dispatchers
+import io.ktor.client.HttpClient
+import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.Parameters
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.io.File
+import java.util.Collections
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
-import com.google.firebase.messaging.Notification as FCMNotification
 
 /**
  * Firebase Cloud Messaging (FCM) implementation for sending push notifications.
  *
+ * This talks to the FCM HTTP v1 API directly over the shared Ktor [client] (the `http-client` module)
+ * rather than depending on the Firebase Admin SDK. Authentication is a hand-rolled OAuth2 flow: the
+ * service account's private key signs a JWT ([FcmServiceAccount.signedAssertion]) which is exchanged
+ * for a short-lived access token that is cached and reused across sends.
+ *
  * Provides cross-platform push notification delivery with:
  * - **Multi-platform support**: Android, iOS, and Web push notifications
- * - **Rich notifications**: Images, actions, badges, sounds, and custom data
- * - **Platform-specific options**: Android channels, iOS critical alerts, Web actions
- * - **Batch sending**: Efficiently sends up to 500 notifications per request
+ * - **Rich notifications**: Images, links, sounds, and custom data
+ * - **Platform-specific options**: Android channels, iOS critical alerts, Web push
+ * - **Parallel sending**: Fans out per-token requests with a concurrency cap
  * - **Token management**: Identifies and reports dead/unregistered tokens
  * - **TTL control**: Message expiration for offline devices
  *
@@ -52,130 +74,74 @@ import com.google.firebase.messaging.Notification as FCMNotification
  * // Using file path
  * NotificationService.Settings("fcm:///etc/secrets/firebase-adminsdk.json")
  *
- * // Using inline JSON (not recommended for production - use secrets management)
- * NotificationService.Settings("fcm://{\"type\":\"service_account\",...}")
- *
  * // Using helper functions
  * NotificationService.Settings.Companion.fcm(File("/path/to/credentials.json"))
- * NotificationService.Settings.Companion.fcm(jsonString)
  * ```
  *
  * ## Implementation Notes
  *
- * - **Firebase SDK**: Uses Firebase Admin SDK for sending messages
- * - **Batch size**: Chunks notifications into groups of 500 (FCM limit)
- * - **Token validation**: Reports DeadToken result for unregistered device tokens
- * - **Platform detection**: Automatically configures platform-specific options (Android, iOS, Web)
- * - **Serverless support**: Implements connect() and disconnect() for AWS Lambda compatibility
- * - **Lazy initialization**: FirebaseApp initialized on first use
+ * - **Transport**: FCM HTTP v1 API (`https://fcm.googleapis.com/v1/projects/{id}/messages:send`)
+ * - **One request per token**: The v1 API sends to a single token per request; large audiences are
+ *   fanned out in parallel under a concurrency cap ([sendConcurrency]) to respect FCM's QPS limits.
+ * - **Token validation**: An `UNREGISTERED` error maps to [NotificationSendResult.DeadToken]
+ * - **Serverless support**: No long-lived connection; the shared HTTP client is CRaC-aware and the
+ *   access token is refreshed on demand
+ * - **Health check**: Issues a `validate_only` send to verify credentials (see [healthCheck])
  *
  * ## Important Gotchas
  *
  * - **Service account required**: Needs Firebase service account JSON (not client credentials)
- * - **Token management**: Your app must collect and update device tokens
  * - **Dead tokens**: Unregistered tokens return DeadToken - remove them from your database
- * - **Rate limiting**: FCM has quota limits (free tier: unlimited, but throttled)
  * - **Payload size**: Total message payload limited to 4KB
  * - **iOS requires APNs**: FCM uses Apple Push Notification service for iOS
  * - **Android channels**: Android 8+ requires notification channels (set via android.channel)
- * - **Web requires VAPID**: Web push requires VAPID keys configured in Firebase console
- * - **Health check**: Issues a dry-run send to verify credentials; OK when FCM authenticates,
- *   ERROR when the service account is rejected (see [healthCheck])
- * - **FirebaseApp singleton**: Multiple instances with same name share the same FirebaseApp
  *
- * ## Platform-Specific Configuration
- *
- * ### Android
- * - **Priority**: HIGH for urgent notifications, NORMAL for background
- * - **Channel**: Required for Android 8+, defines notification behavior
- * - **Sound**: Custom sound files must be in app's res/raw folder
- * - **TTL**: How long FCM stores message if device is offline
- *
- * ### iOS
- * - **Critical alerts**: Requires special entitlement from Apple
- * - **Sound**: Custom sounds must be in app bundle
- * - **Badge**: App icon badge number
- * - **Mutable content**: Enables notification service extensions
- *
- * ### Web
- * - **Image**: Full image URL (not local file)
- * - **Actions**: Buttons/actions in notification
- * - **VAPID**: Requires VAPID keys configured in Firebase console
- *
- * ## Firebase Setup
- *
- * 1. Create a Firebase project at https://console.firebase.google.com
- * 2. Add your app (Android, iOS, or Web) to the project
- * 3. Download the service account JSON:
- *    - Go to Project Settings → Service Accounts
- *    - Click "Generate new private key"
- *    - Save the JSON file securely
- * 4. For iOS: Upload APNs authentication key or certificate
- * 5. For Web: Generate VAPID keys in Cloud Messaging settings
- *
- * ## Example Usage
- *
- * ```kotlin
- * val fcm = NotificationService.Settings.Companion.fcm(File("firebase-adminsdk.json"))
- *     .invoke("fcm-service", context)
- *
- * val results = fcm.send(
- *     targets = listOf("device-token-1", "device-token-2"),
- *     data = NotificationData(
- *         notification = NotificationData.Notification(
- *             title = "New Message",
- *             body = "You have a new message!",
- *             imageUrl = "https://example.com/image.png"
- *         ),
- *         android = NotificationData.Android(
- *             channel = "messages",
- *             priority = NotificationPriority.HIGH
- *         ),
- *         timeToLive = Duration.hours(24)
- *     )
- * )
- *
- * // Remove dead tokens from database
- * results.filterValues { it == NotificationSendResult.DeadToken }
- *     .keys.forEach { token -> database.removeToken(token) }
- * ```
- *
- * @property name Service name for logging/metrics (also used as FirebaseApp name)
+ * @property name Service name for logging/metrics
  * @property context Service context
+ * @property credentials Parsed service-account credentials used to authenticate with FCM
  */
 public open class FcmNotificationClient(
     override val name: String,
     override val context: SettingContext,
-    private val options: FirebaseOptions,
+    private val credentials: FcmServiceAccount,
+    baseClient: HttpClient = client,
 ) : NotificationService {
 
     private val log = KotlinLogging.logger("com.lightningkite.services.notifications.fcm.FcmNotificationClient")
 
-    // Cached FirebaseMessaging instance — avoids per-send lookup via FirebaseApp.getInstance
-    private val messaging by lazy { FirebaseMessaging.getInstance(FirebaseApp.getInstance(name)) }
+    private val sendUrl = "https://fcm.googleapis.com/v1/projects/${credentials.projectId}/messages:send"
 
-    /**
-     * Test seam for the underlying FCM batch call. Production sends via the cached
-     * [FirebaseMessaging] instance; tests override this to inject controlled responses
-     * or transport failures without needing real Firebase credentials.
-     */
-    protected open fun sendMulticast(message: MulticastMessage): BatchResponse =
-        messaging.sendEachForMulticast(message)
+    // `explicitNulls`/`encodeDefaults` off so unset options are omitted from the request body;
+    // `ignoreUnknownKeys` so parsing token/error responses tolerates fields we don't model.
+    private val json = Json {
+        encodeDefaults = false
+        explicitNulls = false
+        ignoreUnknownKeys = true
+    }
 
-    /**
-     * Test seam for the dry-run send used by [healthCheck]. A dry-run validates the message and
-     * exercises the service-account credentials against Google's servers without actually
-     * delivering a notification. Tests override this to simulate each [FirebaseMessagingException]
-     * outcome (bad credentials, rejected token, transport failure) without real Firebase access.
-     */
-    protected open fun sendDryRun(message: Message): String =
-        messaging.send(message, /* dryRun = */ true)
+    // Own instance so a caller-supplied engine (e.g. a test MockEngine) is honored; production
+    // passes the shared, OpenTelemetry-instrumented client.
+    private val http: HttpClient = baseClient
 
-    // Caps concurrent FCM HTTPS calls across the lifetime of this client to avoid tripping
-    // per-project QPS limits when fanning out large multicasts (e.g. tens of thousands of tokens).
-    private val sendConcurrency = Semaphore(permits = 8)
+    // FCM's batch endpoint was retired (June 2024), so the v1 API takes one token per request. We
+    // fan out those requests concurrently and rely on the shared client's HTTP/2 engine to multiplex
+    // them over a few connections. This semaphore bounds in-flight requests per send() so a huge
+    // audience doesn't launch unbounded work; 500 concurrent multiplexed streams keeps throughput
+    // high while staying within the engine's per-host dispatcher cap.
+    private val sendConcurrency = Semaphore(permits = 500)
+
+    // ---- OAuth2 access-token cache -------------------------------------------------------------
+    private val tokenMutex = Mutex()
+    @Volatile private var cachedToken: String? = null
+    @Volatile private var tokenExpiresAtEpochSeconds: Long = 0L
 
     public companion object {
+        // Refresh a little before actual expiry so an in-flight batch never uses a just-expired token.
+        private const val TOKEN_REFRESH_BUFFER_SECONDS = 60L
+
+        // Syntactically valid but guaranteed-unregistered token used by the health check's dry run.
+        private const val HEALTH_PROBE_TOKEN = "health-check-token-not-registered"
+
         public fun NotificationService.Settings.Companion.fcm(jsonString: String): NotificationService.Settings =
             NotificationService.Settings("fcm://$jsonString")
 
@@ -188,28 +154,13 @@ public open class FcmNotificationClient(
 
                 if (!creds.startsWith('{')) {
                     val file = File(creds)
-                    assert(file.exists()) { "FCM credentials file not found at '$file'" }
+                    require(file.exists()) { "FCM credentials file not found at '$file'" }
                     creds = file.readText()
                 }
 
-                val options = FirebaseOptions.builder()
-                    .setCredentials(GoogleCredentials.fromStream(creds.byteInputStream()))
-                    .build()
-
-                FcmNotificationClient(name, context, options)
+                FcmNotificationClient(name, context, FcmServiceAccount.fromJson(creds))
             }
         }
-    }
-
-    private fun initializeFirebaseApp(name: String, options: FirebaseOptions) {
-        // Prevent duplicate initialization by checking if a FirebaseApp with this name already exists
-        val existingApp = FirebaseApp.getApps().firstOrNull { it.name == name }
-        if (existingApp == null)
-            FirebaseApp.initializeApp(options, name)
-    }
-
-    init {
-        initializeFirebaseApp(name, options)
     }
 
     /**
@@ -220,258 +171,270 @@ public open class FcmNotificationClient(
         targets: List<String>,
         data: NotificationData,
     ): Map<String, NotificationSendResult> =
-      telemetryTrace("send", attributes = TelemetryAttributes {
-          put(TelemetryKey.OfString("notification.operation"), "send")
-          put(TelemetryKeys.Messaging.system, "firebase_cloud_messaging")
-          put(TelemetryKey.OfLong("notification.target.count"), targets.size.toLong())
-          data.timeToLive?.let { ttl -> put(TelemetryKey.OfLong("notification.ttl"), ttl.inWholeSeconds) }
-      }) { span ->
-        sendInternal(targets, data).also { results ->
-            val successCount = results.values.count { it == NotificationSendResult.Success }
-            val failureCount = results.values.count { it == NotificationSendResult.Failure }
-            val deadTokenCount = results.values.count { it == NotificationSendResult.DeadToken }
-
-            span.enrich(TelemetryAttributes {
-                put(TelemetryKey.OfLong("notification.success.count"), successCount.toLong())
-                put(TelemetryKey.OfLong("notification.failure.count"), failureCount.toLong())
-                put(TelemetryKey.OfLong("notification.dead_token.count"), deadTokenCount.toLong())
-            })
+        telemetryTrace("send", attributes = TelemetryAttributes {
+            put(TelemetryKey.OfString("notification.operation"), "send")
+            put(TelemetryKeys.Messaging.system, "firebase_cloud_messaging")
+            put(TelemetryKey.OfLong("notification.target.count"), targets.size.toLong())
+            data.timeToLive?.let { ttl -> put(TelemetryKey.OfLong("notification.ttl"), ttl.inWholeSeconds) }
+        }) { span ->
+            sendInternal(targets, data).also { results ->
+                span.enrich(TelemetryAttributes {
+                    put(TelemetryKey.OfLong("notification.success.count"), results.values.count { it == NotificationSendResult.Success }.toLong())
+                    put(TelemetryKey.OfLong("notification.failure.count"), results.values.count { it == NotificationSendResult.Failure }.toLong())
+                    put(TelemetryKey.OfLong("notification.dead_token.count"), results.values.count { it == NotificationSendResult.DeadToken }.toLong())
+                })
+            }
         }
-      }
 
     private suspend fun sendInternal(
         targets: List<String>,
         data: NotificationData,
     ): Map<String, NotificationSendResult> {
-        val notification = data.notification
-        val android = data.android
-        val ios = data.ios
-        val web = data.web
-        val programmaticData = data.data
+        if (targets.isEmpty()) return emptyMap()
 
-        // Build shared platform config once; only the token list varies per chunk
-        val apnsConfig = ApnsConfig.builder().also { apns ->
-            data.timeToLive?.let {
-                val expirationTime = (System.currentTimeMillis() / 1000) + it.inWholeSeconds
-                apns.putHeader("apns-expiration", expirationTime.toString())
-            }
-            if (notification != null) {
-                apns.setFcmOptions(ApnsFcmOptions.builder().setImage(notification.imageUrl).build())
-            }
-            apns.setAps(Aps.builder().also { aps ->
-                if (ios != null) {
-                    if (ios.critical && ios.sound != null)
-                        aps.setSound(CriticalSound.builder().setCritical(true).setName(ios.sound).setVolume(1.0).build())
-                    else
-                        aps.setSound(ios.sound)
-                } else {
-                    aps.setSound("default")
-                }
-            }.build())
-        }.build()
+        // Fetch the token once and reuse it across every per-token request. If auth is broken there is
+        // nothing to retry per token, so mark them all Failure rather than throwing — matching the
+        // resilient contract callers rely on (every input token appears in the result map).
+        val token = try {
+            accessToken()
+        } catch (e: Exception) {
+            context.reportException(e)
+            log.warn(e) { "FCM auth failed; marking all ${targets.size} tokens Failure" }
+            return targets.associateWith { NotificationSendResult.Failure }
+        }
 
-        val androidConfig = if (android != null) AndroidConfig.builder().also { ac ->
-            ac.setPriority(android.priority.toAndroid())
-            data.timeToLive?.let { ac.setTtl(it.inWholeMilliseconds) }
-            ac.setNotification(
-                AndroidNotification.builder()
-                    .setChannelId(android.channel)
-                    .setSound(android.sound)
-                    .setClickAction(notification?.link)
-                    .build()
-            )
-        }.build() else null
+        // Everything except the token is identical across messages, so build it once.
+        val template = data.toMessageTemplate()
 
-        val webpushConfig = WebpushConfig.builder().also { wp ->
-            web?.let { wp.putAllData(it.data) }
-            if (notification != null) {
-                notification.link?.let { wp.setFcmOptions(WebpushFcmOptions.withLink(it)) }
-                wp.setNotification(
-                    WebpushNotification.builder()
-                        .setTitle(notification.title)
-                        .setBody(notification.body)
-                        .setImage(notification.imageUrl)
-                        .build()
-                )
-            }
-        }.build()
+        // Aggregate the distinct provider error codes seen this send, for a single summary log line.
+        val errorCodes = Collections.synchronizedSet(HashSet<String>())
 
-        val fcmNotification = if (notification != null) FCMNotification.builder()
-            .setTitle(notification.title)
-            .setBody(notification.body)
-            .setImage(notification.imageUrl)
-            .build() else null
-
-        val results = HashMap<String, NotificationSendResult>()
-        val errorCodes = HashSet<MessagingErrorCode>()
-        val chunks = targets.chunked(500)
-
-        // Dispatch all chunks in parallel, each with its own OTel sub-span.
-        // Each async returns the per-token results for its chunk. On transport failure
-        // (the entire sendEachForMulticast call throws) we map every token in the chunk
-        // to Failure rather than rethrowing — otherwise awaitAll would cancel sibling
-        // chunks and discard their already-completed results.
-        val chunkResults: List<Map<String, NotificationSendResult>> = coroutineScope {
-            chunks.map { chunk ->
-                async(Dispatchers.IO) {
+        val results = coroutineScope {
+            targets.map { deviceToken ->
+                async {
                     sendConcurrency.withPermit {
-                        val message = MulticastMessage.builder().also { mb ->
-                            programmaticData?.let { mb.putAllData(it) }
-                            notification?.link?.let { mb.putData("link", it) }
-                            mb.setApnsConfig(apnsConfig)
-                            androidConfig?.let { mb.setAndroidConfig(it) }
-                            mb.setWebpushConfig(webpushConfig)
-                            fcmNotification?.let { mb.setNotification(it) }
-                            mb.addAllTokens(chunk)
-                        }.build()
-
-                        telemetryTrace("batch", attributes = TelemetryAttributes {
-                            put(TelemetryKeys.Messaging.system, "firebase_cloud_messaging")
-                            put(TelemetryKeys.Messaging.batchMessageCount, chunk.size.toLong())
-                        }) { batchSpan ->
-                            val chunkOutcome = HashMap<String, NotificationSendResult>(chunk.size)
-                            try {
-                                val result = sendMulticast(message)
-                                val successCount = result.successCount
-                                val failureCount = result.failureCount
-                                batchSpan.enrich(TelemetryAttributes {
-                                    put(TelemetryKey.OfLong("notification.success_count"), successCount.toLong())
-                                    put(TelemetryKey.OfLong("notification.failure_count"), failureCount.toLong())
-                                })
-                                result.getResponses().forEachIndexed { index: Int, sendResponse: SendResponse ->
-                                    val targetToken = chunk[index]
-                                    log.debug { "Send: ${sendResponse.messageId} / ${sendResponse.exception?.message} ${sendResponse.exception?.messagingErrorCode}" }
-                                    chunkOutcome[targetToken] = when (val errorCode = sendResponse.exception?.messagingErrorCode) {
-                                        null -> NotificationSendResult.Success
-                                        MessagingErrorCode.UNREGISTERED -> NotificationSendResult.DeadToken
-                                        else -> {
-                                            synchronized(errorCodes) { errorCodes.add(errorCode) }
-                                            NotificationSendResult.Failure
-                                        }
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                // Transport-level failure for the entire chunk. Report it and mark
-                                // every token Failure so the caller can retry — but do NOT rethrow,
-                                // or sibling chunks get cancelled (which would also auto-fail the span).
-                                context.reportException(e)
-                                log.warn(e) { "FCM batch send failed for ${chunk.size} tokens; marking all as Failure" }
-                                for (token in chunk) chunkOutcome[token] = NotificationSendResult.Failure
-                            }
-                            chunkOutcome
-                        }
+                        deviceToken to sendOne(token, template.copy(token = deviceToken), errorCodes)
                     }
                 }
             }.awaitAll()
-        }
-
-        for (chunkOutcome in chunkResults) {
-            results.putAll(chunkOutcome)
-        }
+        }.toMap()
 
         if (errorCodes.isNotEmpty()) {
-            log.warn { "Some notifications failed to send.  Error codes received: ${errorCodes.joinToString()}" }
+            log.warn { "Some notifications failed to send. Error codes received: ${errorCodes.joinToString()}" }
         }
         return results
     }
 
-    override suspend fun connect(): Unit = telemetryTrace("connect", attributes = TelemetryAttributes {
-        put(TelemetryKey.OfString("notification.operation"), "connect")
-        put(TelemetryKey.OfString("notification.system"), "fcm")
-    }) {
-        initializeFirebaseApp(name, options)
-    }
-
-    override suspend fun disconnect(): Unit = telemetryTrace("disconnect", attributes = TelemetryAttributes {
-        put(TelemetryKey.OfString("notification.operation"), "disconnect")
-        put(TelemetryKey.OfString("notification.system"), "fcm")
-    }) {
-        // Important for serverless environments - clean up Firebase resources
-        try {
-            FirebaseApp.getInstance(name).delete()
-        } catch (e: IllegalStateException) {
-            // App already deleted or doesn't exist
-            log.debug { "FirebaseApp '$name' already deleted or doesn't exist" }
+    /**
+     * Sends one message to one token. Never throws: transport failures and non-2xx responses are
+     * mapped to [NotificationSendResult] so a single bad token can't cancel sibling sends.
+     */
+    private suspend fun sendOne(
+        accessToken: String,
+        message: FcmMessage,
+        errorCodes: MutableSet<String>,
+    ): NotificationSendResult {
+        return try {
+            val response = post(accessToken, FcmSendRequest(message))
+            if (response.status.isSuccess()) NotificationSendResult.Success
+            else classifyError(response, errorCodes)
+        } catch (e: Exception) {
+            context.reportException(e)
+            log.warn(e) { "FCM send failed for a token; marking Failure" }
+            NotificationSendResult.Failure
         }
     }
 
+    /** Maps a non-2xx v1 response to a result, recording the provider error code for logging. */
+    private suspend fun classifyError(response: HttpResponse, errorCodes: MutableSet<String>): NotificationSendResult {
+        val bodyText = response.bodyAsText()
+        val error = runCatching { json.decodeFromString(FcmErrorResponse.serializer(), bodyText).error }.getOrNull()
+        // The v1 messaging error code lives in error.details[].errorCode; fall back to the coarse status.
+        val fcmCode = error?.details?.firstNotNullOfOrNull { it["errorCode"]?.jsonPrimitive?.contentOrNull }
+            ?: error?.status
+        log.debug { "FCM send rejected (${response.status.value} / $fcmCode): ${bodyText.take(200)}" }
+
+        return if (fcmCode == "UNREGISTERED") {
+            NotificationSendResult.DeadToken
+        } else {
+            fcmCode?.let { errorCodes.add(it) }
+            NotificationSendResult.Failure
+        }
+    }
+
+    private suspend fun post(accessToken: String, request: FcmSendRequest): HttpResponse =
+        withContext(SettingContextElement(context)) {
+            http.post(sendUrl) {
+                header(HttpHeaders.Authorization, "Bearer $accessToken")
+                contentType(ContentType.Application.Json)
+                setBody(json.encodeToString(FcmSendRequest.serializer(), request))
+            }
+        }
+
+    // ---- Access token --------------------------------------------------------------------------
+
     /**
-     * Health checks issue a real (but harmless) dry-run send to FCM, so they cost a network round
-     * trip and a tiny amount of quota. Run them sparingly rather than at the 1-minute default.
+     * Returns a valid OAuth2 access token, minting and caching a new one when the cached token is
+     * absent or near expiry. Concurrent callers during a refresh are serialized by [tokenMutex] so
+     * only one JWT exchange happens.
+     */
+    private suspend fun accessToken(): String {
+        val now = System.currentTimeMillis() / 1000
+        cachedToken?.let { if (now < tokenExpiresAtEpochSeconds - TOKEN_REFRESH_BUFFER_SECONDS) return it }
+        return tokenMutex.withLock {
+            val nowLocked = System.currentTimeMillis() / 1000
+            cachedToken?.let { if (nowLocked < tokenExpiresAtEpochSeconds - TOKEN_REFRESH_BUFFER_SECONDS) return@withLock it }
+            val fetched = fetchAccessToken(nowLocked)
+            cachedToken = fetched.accessToken
+            tokenExpiresAtEpochSeconds = nowLocked + fetched.expiresIn
+            fetched.accessToken
+        }
+    }
+
+    /** Exchanges a signed JWT assertion for an access token at the credential's token endpoint. */
+    private suspend fun fetchAccessToken(nowEpochSeconds: Long): FcmTokenResponse {
+        val response = withContext(SettingContextElement(context)) {
+            http.submitForm(
+                url = credentials.tokenUri,
+                formParameters = Parameters.build {
+                    append("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
+                    append("assertion", credentials.signedAssertion(nowEpochSeconds))
+                }
+            ).statusFailing()
+        }
+        return json.decodeFromString(FcmTokenResponse.serializer(), response.bodyAsText())
+    }
+
+    /**
+     * Health checks issue a real (but harmless) `validate_only` send to FCM, so they cost a network
+     * round trip and a tiny amount of quota. Run them sparingly rather than at the 1-minute default.
      */
     override val healthCheckFrequency: Duration get() = 5.minutes
 
     /**
-     * Verifies the service-account credentials by issuing a dry-run send against Google's servers.
+     * Verifies the service-account credentials by issuing a `validate_only` send against FCM.
      *
-     * A dry-run validates the message and authenticates with FCM without delivering a notification.
-     * We send a syntactically-valid but bogus device token, which lets us distinguish the two cases
-     * that matter:
+     * A validate-only send authenticates and validates the message without delivering anything. We use
+     * a syntactically-valid but bogus device token, which lets us distinguish the cases that matter:
      *
-     * - **Credentials work** — either the dry-run succeeds, or FCM rejects the bogus token with
-     *   `INVALID_ARGUMENT`/`UNREGISTERED`/`SENDER_ID_MISMATCH`. Either way authentication passed, so
-     *   the service is healthy ([HealthStatus.Level.OK]).
-     * - **Credentials are broken** — FCM returns `UNAUTHENTICATED` or `PERMISSION_DENIED` (bad or
-     *   unauthorized service account). This is a genuine outage for us ([HealthStatus.Level.ERROR]).
-     * - **Transport/timeout/quota** — network failure, timeout, or rate limiting. The credentials
-     *   may be fine but we can't confirm, so we report [HealthStatus.Level.WARNING].
-     *
-     * Provider exceptions are mapped to a [HealthStatus]; none are allowed to escape.
+     * - **Credentials work** — the send succeeds, or FCM rejects the bogus token with `400`/`404`.
+     *   Either way authentication passed, so the service is healthy ([HealthStatus.Level.OK]).
+     * - **Credentials are broken** — the token endpoint or send returns `401`/`403`. This is a genuine
+     *   outage for us ([HealthStatus.Level.ERROR]).
+     * - **Transport/timeout/quota** — network failure, timeout, or `429`/`5xx`. The credentials may be
+     *   fine but we can't confirm, so we report [HealthStatus.Level.WARNING].
      */
     override suspend fun healthCheck(): HealthStatus {
-        // Syntactically valid FCM token shape (no colon-delimited APA91 form required for a dry-run);
-        // it is guaranteed not to be registered, so a healthy backend rejects it with INVALID_ARGUMENT
-        // or UNREGISTERED rather than actually delivering anything.
-        val probe = Message.builder()
-            .setToken("health-check-token-not-registered")
-            .build()
-
         return try {
             withTimeout(10.seconds) {
-                withContext(Dispatchers.IO) { sendDryRun(probe) }
+                val token = accessToken()
+                val response = post(
+                    token,
+                    FcmSendRequest(FcmMessage(token = HEALTH_PROBE_TOKEN), validateOnly = true),
+                )
+                healthFromStatus(response.status.value, response.bodyAsText())
             }
-            HealthStatus(HealthStatus.Level.OK, additionalMessage = "Dry-run send accepted by FCM.")
         } catch (e: TimeoutCancellationException) {
-            HealthStatus(
-                HealthStatus.Level.WARNING,
-                additionalMessage = "FCM dry-run timed out: ${e.message}"
-            )
-        } catch (e: FirebaseMessagingException) {
-            when (e.errorCode) {
-                // Authentication/authorization failure — the credentials themselves are broken.
-                ErrorCode.UNAUTHENTICATED, ErrorCode.PERMISSION_DENIED -> HealthStatus(
-                    HealthStatus.Level.ERROR,
-                    additionalMessage = "FCM credentials rejected (${e.errorCode}): ${e.message}"
-                )
-                // The bogus token was rejected but the credentials authenticated successfully.
-                ErrorCode.INVALID_ARGUMENT, ErrorCode.NOT_FOUND -> HealthStatus(
-                    HealthStatus.Level.OK,
-                    additionalMessage = "FCM authenticated; probe token rejected as expected (${e.errorCode})."
-                )
-                // Rate limiting / transient backend unavailability — credentials likely fine but
-                // unconfirmed this round.
-                ErrorCode.RESOURCE_EXHAUSTED, ErrorCode.UNAVAILABLE, ErrorCode.DEADLINE_EXCEEDED -> HealthStatus(
-                    HealthStatus.Level.WARNING,
-                    additionalMessage = "FCM temporarily unavailable (${e.errorCode}): ${e.message}"
-                )
-                else -> HealthStatus(
-                    HealthStatus.Level.ERROR,
-                    additionalMessage = "FCM dry-run failed (${e.errorCode}): ${e.message}"
-                )
+            HealthStatus(HealthStatus.Level.WARNING, additionalMessage = "FCM dry-run timed out: ${e.message}")
+        } catch (e: HttpResponseException) {
+            // Raised by fetchAccessToken()'s statusFailing() when the token endpoint rejects our JWT.
+            val code = e.response.status.value
+            if (code == 401 || code == 403) {
+                HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "FCM credentials rejected ($code): ${e.body.take(200)}")
+            } else {
+                HealthStatus(HealthStatus.Level.WARNING, additionalMessage = "FCM token endpoint error ($code): ${e.body.take(200)}")
             }
         } catch (e: Exception) {
-            // Transport/network failure: we couldn't reach FCM at all. Credentials may be fine but
-            // we can't confirm, so warn rather than hard-error.
-            HealthStatus(
-                HealthStatus.Level.WARNING,
-                additionalMessage = "FCM dry-run could not reach the service: ${e.message}"
+            HealthStatus(HealthStatus.Level.WARNING, additionalMessage = "FCM dry-run could not reach the service: ${e.message}")
+        }
+    }
+
+    private fun healthFromStatus(code: Int, body: String): HealthStatus = when {
+        code in 200..299 -> HealthStatus(HealthStatus.Level.OK, additionalMessage = "Dry-run send accepted by FCM.")
+        code == 401 || code == 403 -> HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "FCM credentials rejected ($code): ${body.take(200)}")
+        code == 400 || code == 404 -> HealthStatus(HealthStatus.Level.OK, additionalMessage = "FCM authenticated; probe token rejected as expected ($code).")
+        code == 429 || code in 500..599 -> HealthStatus(HealthStatus.Level.WARNING, additionalMessage = "FCM temporarily unavailable ($code): ${body.take(200)}")
+        else -> HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "FCM dry-run failed ($code): ${body.take(200)}")
+    }
+
+    /**
+     * Builds the token-independent parts of the message once. The returned template carries a
+     * placeholder token; each per-token send copies it with the real device token.
+     */
+    private fun NotificationData.toMessageTemplate(): FcmMessage {
+        val expirationEpochSeconds = timeToLive?.let { (System.currentTimeMillis() / 1000) + it.inWholeSeconds }
+
+        // APNs `aps` dictionary: sound is either a plain name or a critical-sound object.
+        val iosOptions = ios
+        val apnsPayload = buildJsonObject {
+            put("aps", buildJsonObject {
+                when {
+                    iosOptions == null -> put("sound", "default")
+                    iosOptions.critical && iosOptions.sound != null -> put("sound", buildJsonObject {
+                        put("critical", 1)
+                        put("name", iosOptions.sound)
+                        put("volume", 1.0)
+                    })
+                    iosOptions.sound != null -> put("sound", iosOptions.sound)
+                    // ios present but no sound and not critical: leave sound unset.
+                }
+            })
+        }
+
+        val apns = FcmApns(
+            headers = expirationEpochSeconds?.let { mapOf("apns-expiration" to it.toString()) },
+            payload = apnsPayload,
+            fcmOptions = notification?.imageUrl?.let { FcmApnsOptions(image = it) },
+        )
+
+        val androidConfig = android?.let { a ->
+            FcmAndroid(
+                priority = a.priority.toFcm(),
+                ttl = timeToLive?.toFcmTtl(),
+                notification = FcmAndroidNotification(
+                    channelId = a.channel,
+                    sound = a.sound,
+                    clickAction = notification?.link,
+                ),
             )
         }
+
+        val webpush = if (web != null || notification != null) {
+            FcmWebpush(
+                data = web?.data?.takeIf { it.isNotEmpty() },
+                notification = notification?.let { FcmNotification(it.title, it.body, it.imageUrl) },
+                fcmOptions = notification?.link?.let { FcmWebpushOptions(link = it) },
+            )
+        } else null
+
+        val messageData = buildMap {
+            data?.let { putAll(it) }
+            notification?.link?.let { put("link", it) }
+        }.takeIf { it.isNotEmpty() }
+
+        return FcmMessage(
+            token = "",
+            notification = notification?.let { FcmNotification(it.title, it.body, it.imageUrl) },
+            data = messageData,
+            android = androidConfig,
+            apns = apns,
+            webpush = webpush,
+        )
     }
 }
 
+private fun NotificationPriority.toFcm(): String = when (this) {
+    NotificationPriority.HIGH -> "HIGH"
+    NotificationPriority.NORMAL -> "NORMAL"
+}
 
-private fun NotificationPriority.toAndroid(): AndroidConfig.Priority = when (this) {
-    NotificationPriority.HIGH -> AndroidConfig.Priority.HIGH
-    NotificationPriority.NORMAL -> AndroidConfig.Priority.NORMAL
+/**
+ * Formats a [Duration] as the FCM v1 TTL string, e.g. `"3600s"` or `"3.500s"`.
+ * The v1 API expects seconds with an `s` suffix and up to nanosecond fractional precision.
+ */
+private fun Duration.toFcmTtl(): String {
+    val seconds = inWholeSeconds
+    val nanos = inWholeNanoseconds - seconds * 1_000_000_000L
+    return if (nanos == 0L) "${seconds}s"
+    else "$seconds.${nanos.toString().padStart(9, '0').trimEnd('0')}s"
 }

@@ -2,6 +2,7 @@ import com.lightningkite.deployhelpers.lkLibrary
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
@@ -9,9 +10,13 @@ plugins {
 
 dependencies {
     api(project(path = ":notifications"))
+    // Talks to the FCM HTTP v1 API directly instead of pulling in the Firebase Admin SDK.
+    implementation(project(path = ":http-client"))
+    implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.kotlin.test)
-    implementation(libs.firebase.admin)
     testImplementation(libs.coroutines.testing)
+    testImplementation(libs.ktor.client.core)
+    testImplementation(libs.ktor.client.mock)
     testImplementation(project(path = ":test"))
 }
 
