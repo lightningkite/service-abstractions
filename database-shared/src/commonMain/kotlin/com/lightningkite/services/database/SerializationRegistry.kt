@@ -495,6 +495,11 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 it[0]
             )
         }
+        register(UpdateRestrictions.RestrictionOption.serializer(NothingSerializer()).descriptor.serialName) {
+            UpdateRestrictions.RestrictionOption.serializer(
+                it[0]
+            )
+        }
         register(DataClassPathPartial.serializer(NothingSerializer()).descriptor.serialName) {
             DataClassPathPartial.serializer(
                 it[0]
