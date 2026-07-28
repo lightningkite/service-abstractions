@@ -73,7 +73,7 @@ kotlin {
             dependencies {
                 // basis is below :test in the dependency graph, so it can't reuse :test's logging
                 // binding. Provide one directly so kotlin-logging has an slf4j backend at test runtime.
-                implementation(libs.logBackClassic)
+                implementation(libs.slf4j.simple)
             }
         }
     }

@@ -10,7 +10,11 @@ plugins {
 
 dependencies {
     api(project(path = ":cache"))
-    api(libs.dynamodb)
+    // Exclude DynamoDB's bundled default HTTP clients; the shared client pair comes from :aws-client.
+    api(libs.dynamodb) {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
+    }
     implementation(project(":aws-client"))
     implementation(libs.coroutines.reactive)
 

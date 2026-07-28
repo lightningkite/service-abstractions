@@ -13,7 +13,6 @@ dependencies {
     api(project(path = ":cache-redis"))
     implementation(libs.lettuce)
     testImplementation(libs.embedded.redis)
-    implementation(libs.guava)
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.reactive)
     testImplementation(libs.kotlin.test)

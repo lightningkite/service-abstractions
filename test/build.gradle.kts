@@ -51,7 +51,7 @@ kotlin {
         val commonTest by getting {}
         val androidMain by getting {
             dependencies {
-                api(libs.logBackClassic)
+                api(libs.slf4j.simple)
                 api(libs.kotlin.test.junit)
             }
         }
@@ -62,7 +62,7 @@ kotlin {
         }
         val jvmMain by getting {
             dependencies {
-                api(libs.logBackClassic)
+                api(libs.slf4j.simple)
                 api(libs.kotlin.test.junit)
             }
         }

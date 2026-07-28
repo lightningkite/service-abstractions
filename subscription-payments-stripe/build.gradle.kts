@@ -36,7 +36,7 @@ dependencies {
     testImplementation(libs.lightningServer.engine.netty) {
         exclude(group = "com.lightningkite.services")
     }
-    testImplementation(libs.logBackClassic)
+    testImplementation(libs.slf4j.simple)
 }
 
 kotlin {
