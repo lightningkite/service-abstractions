@@ -14,6 +14,10 @@ All the services and their implementations have the following:
 
 We've done our best to minimize the dependencies in the `basis` package.
 
+## Current Status
+
+Version 1.3 has breaking changes that improve the ergonomics and safety, and is in the process of release.
+
 ## Goals
 
 - **Abstract services where possible:** make it possible to switch databases and caches
