@@ -22,12 +22,12 @@ greenmail = "2.1.8"
 guava = "33.6.0-jre"
 hikariCP = "6.3.0"
 koogAgents = "0.7.2"
-kotlin = "2.3.21"
+kotlin = "2.4.10"
 kotlinLogging = "8.0.02"
 kotlinXDatetime = "0.7.1"
 kotlinXIO = "0.9.0"
 kotlinXSerialization = "1.11.0"
-ksp = "2.3.6"
+ksp = "2.3.10"
 ktor = "3.4.3"
 lettuce = "6.7.1.RELEASE"
 lightningServer = "5.0.0"
@@ -58,6 +58,8 @@ atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version = { ref = "atomi
 aws-auth = { module = "software.amazon.awssdk:auth", version = { ref = "awsVersion" } }
 aws-cloudWatch = { module = "software.amazon.awssdk:cloudwatch", version = { ref = "awsVersion" } }
 aws-crt-client = { module = "software.amazon.awssdk:aws-crt-client", version = { ref = "awsVersion" } }
+aws-nettyNioClient = { module = "software.amazon.awssdk:netty-nio-client", version = { ref = "awsVersion" } }
+aws-urlConnectionClient = { module = "software.amazon.awssdk:url-connection-client", version = { ref = "awsVersion" } }
 aws-otel = { module = "io.opentelemetry.instrumentation:opentelemetry-aws-sdk-2.2", version = { ref = "openTelemetryInstrumentationAlpha" } }
 aws-s3 = { module = "software.amazon.awssdk:s3", version = { ref = "awsVersion" } }
 bouncyCastle = { module = "org.bouncycastle:bcpkix-jdk18on", version = { ref = "bouncyCastle" } }
@@ -100,6 +102,8 @@ ksp = { module = "com.google.devtools.ksp:symbol-processing-api", version = { re
 ktor-client-auth = { module = "io.ktor:ktor-client-auth", version = { ref = "ktor" } }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version = { ref = "ktor" } }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version = { ref = "ktor" } }
+ktor-client-mock = { module = "io.ktor:ktor-client-mock", version = { ref = "ktor" } }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version = { ref = "ktor" } }
 ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version = { ref = "ktor" } }
 ktor-contentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version = { ref = "ktor" } }
 ktor-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version = { ref = "ktor" } }
