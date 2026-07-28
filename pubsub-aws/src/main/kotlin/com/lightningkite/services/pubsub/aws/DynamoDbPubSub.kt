@@ -2,6 +2,7 @@ package com.lightningkite.services.pubsub.aws
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.telemetryAttributesOf
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.HealthStatus
@@ -287,12 +288,10 @@ public class DynamoDbPubSub(
             ensureReady()
             telemetryTrace(
                 "publish",
-                attributes = TelemetryAttributes(
-                    mapOf(
-                        "messaging.system" to "dynamodb",
-                        "messaging.destination" to key,
-                        "messaging.operation" to "publish",
-                    )
+                attributes = telemetryAttributesOf(
+                    TelemetryKeys.Messaging.system to "dynamodb",
+                    TelemetryKeys.Messaging.destinationName to key,
+                    TelemetryKeys.Messaging.operation to "publish",
                 )
             ) {
                 val message = encode(value)
@@ -368,11 +367,9 @@ public class DynamoDbPubSub(
             while (coroutineContext.isActive) {
                 telemetryTrace(
                     "poll",
-                    attributes = TelemetryAttributes(
-                        mapOf(
-                            "messaging.system" to "dynamodb",
-                            "messaging.destination" to key,
-                        )
+                    attributes = telemetryAttributesOf(
+                        TelemetryKeys.Messaging.system to "dynamodb",
+                        TelemetryKeys.Messaging.destinationName to key,
                     )
                 ) { pollSpan ->
                     try {

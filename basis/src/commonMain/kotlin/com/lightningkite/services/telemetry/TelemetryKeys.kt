@@ -1058,4 +1058,16 @@ public object TelemetryKeys {
         public val smfId: TelemetryKey.OfString = TelemetryKey.OfString("zos.smf.id")
         public val sysplexName: TelemetryKey.OfString = TelemetryKey.OfString("zos.sysplex.name")
     }
+
+    // Custom keys for AI/speech services (not part of OpenTelemetry semantic conventions)
+    public object Ai {
+        public val provider: TelemetryKey.OfString = TelemetryKey.OfString("ai.provider")
+        public val model: TelemetryKey.OfString = TelemetryKey.OfString("ai.model")
+    }
+    public object Audio {
+        public val sizeBytes: TelemetryKey.OfLong = TelemetryKey.OfLong("audio.size_bytes")
+    }
+    public object Text {
+        public val charCount: TelemetryKey.OfLong = TelemetryKey.OfLong("text.char_count")
+    }
 }

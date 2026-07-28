@@ -1,9 +1,11 @@
 package com.lightningkite.services.http
 
-import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.telemetryAttributesOf
 import com.lightningkite.services.telemetry.telemetryTrace
 import io.ktor.client.plugins.api.*
 import kotlinx.coroutines.currentCoroutineContext
@@ -16,6 +18,8 @@ import kotlin.coroutines.CoroutineContext
  * to enable automatic telemetry instrumentation.
  */
 private val SettingContextKey = object : CoroutineContext.Key<SettingContextElement> {}
+
+private val responseStatusClass = TelemetryKey.OfString("http.response.status_class")
 
 /**
  * Coroutine context element that carries a SettingContext.
@@ -74,30 +78,26 @@ internal val OpenTelemetryPlugin = createClientPlugin("OpenTelemetryPlugin") {
             val url = request.url
             // HTTP semantic-convention attributes known up front (span-only; high cardinality on
             // `url.full` is fine — these are NOT metric dimensions).
-            val upFront = mutableMapOf<String, Any?>(
-                "http.request.method" to request.method.value,
-                "url.full" to settingContext.telemetrySanitization.sanitizeUrl(url.buildString()),
-                "server.address" to url.host,
-            )
-            if (url.port > 0) upFront["server.port"] = url.port.toLong()
+            val upFront = TelemetryAttributes {
+                put(TelemetryKeys.Http.requestMethod, request.method.value)
+                put(TelemetryKeys.Url.full, settingContext.telemetrySanitization.sanitizeUrl(url.buildString()))
+                put(TelemetryKeys.Server.address, url.host)
+                if (url.port > 0) put(TelemetryKeys.Server.port, url.port)
+            }
 
             HttpClientOwner(settingContext).telemetryTrace(
                 opName = "request",
-                attributes = TelemetryAttributes(upFront),
+                attributes = upFront,
                 // Low-cardinality dimensions promoted onto the RED metrics: the method, and a
                 // status-class flag enriched after the response for error-rate-by-class.
                 dimensions = setOf(TelemetryKeys.Http.requestMethod, TelemetryKeys.Http.responseStatusCode),
             ) { span ->
                 val call = proceed(request)
                 val status = call.response.status.value
-                span.enrich(
-                    TelemetryAttributes(
-                        mapOf(
-                            "http.response.status_code" to status.toLong(),
-                            "http.response.status_class" to "${status / 100}xx",
-                        )
-                    )
-                )
+                span.enrich(telemetryAttributesOf(
+                    TelemetryKeys.Http.responseStatusCode to status.toLong(),
+                    responseStatusClass to "${status / 100}xx",
+                ))
                 call
             }
         }
