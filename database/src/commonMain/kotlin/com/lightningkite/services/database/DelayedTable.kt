@@ -201,8 +201,12 @@ public fun Database.delayed(range: ClosedRange<Duration>): Database = object : D
     override val name: String
         get() = this@delayed.name
 
-    override fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> {
-        return this@delayed.table(serializer, name).delayed(range)
+    override fun <T : Any> table(tableDef: DatabaseTableDefinition<T>): Table<T> {
+        return this@delayed.table(tableDef).delayed(range)
+    }
+
+    override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): Table<T> {
+        return this@delayed.prepare(tableDef).delayed(range)
     }
 
     override val context: SettingContext

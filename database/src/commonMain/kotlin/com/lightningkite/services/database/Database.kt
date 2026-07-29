@@ -5,6 +5,11 @@ import com.lightningkite.services.data.*
 import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.telemetry.TelemetryKey
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -167,12 +172,21 @@ public interface Database : Service {
         }
     }
 
+    public suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): Table<T>
+    public fun <T : Any> table(tableDef: DatabaseTableDefinition<T>): Table<T>
+
     /**
      * Returns a table of type T that will access and manipulate data from a table in the underlying database system.
      */
-    public fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T>
+    @OptIn(DelicateCoroutinesApi::class)
+    @Deprecated("Use the new table definition system instead, including the 'prepare' function.")
+    public fun <T : Any> table(serializer: KSerializer<T>, name: String): Table<T> {
+        val def = DatabaseTableDefinition(serializer, name)
+        return PrepareFirstTable(serializer, GlobalScope.async { prepare(def) })
+    }
 
     @Suppress("UNCHECKED_CAST")
+    @Deprecated("Use the new table definition system instead, including the 'prepare' function.")
     public fun <T : Any> table(type: KType, name: String): Table<T> =
         table(context.internalSerializersModule.serializer(type) as KSerializer<T>, name)
 
@@ -201,8 +215,170 @@ public data class HealthCheckTestModel(override val _id: String) : HasId<String>
  * A Helper function for getting a table from a database using generics.
  * This can make table calls much cleaner and less wordy when the types can be inferred.
  */
+@Deprecated("Use the new table definition system instead, including the 'prepare' function.")
 public inline fun <reified T : Any> Database.table(name: String = T::class.simpleName!!): Table<T> {
     return table(context.internalSerializersModule.serializer<T>(), name)
+}
+
+/**
+ * A [Table] wrapper that awaits an in-progress [prepare] job before delegating any operation to
+ * [deferTo].
+ *
+ * Used by the deprecated `table(serializer, name)` bridge, which kicks off [Database.prepare]
+ * eagerly and hands back a table immediately. Awaiting the job on first use avoids the race where
+ * an operation runs before the table's collection/indexes exist. [prepare] is a [Deferred] rather
+ * than a bare `Job` so that a failed preparation rethrows at the point of use instead of being
+ * silently swallowed.
+ */
+public class PrepareFirstTable<MODEL : Any>(
+    override val serializer: KSerializer<MODEL>,
+    private val prepare: Deferred<Table<MODEL>>,
+) : Table<MODEL> {
+
+    override suspend fun find(
+        condition: Condition<MODEL>,
+        orderBy: List<SortPart<MODEL>>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long
+    ): Flow<MODEL> {
+        return prepare.await().find(condition, orderBy, skip, limit, maxQueryMs)
+    }
+
+    override suspend fun count(condition: Condition<MODEL>): Int {
+        return prepare.await().count(condition)
+    }
+
+    override suspend fun <Key> groupCount(
+        condition: Condition<MODEL>,
+        groupBy: DataClassPath<MODEL, Key>
+    ): Map<Key, Int> {
+        return prepare.await().groupCount(condition, groupBy)
+    }
+
+    override suspend fun <N : Number?> aggregate(
+        aggregate: Aggregate,
+        condition: Condition<MODEL>,
+        property: DataClassPath<MODEL, N>
+    ): Double? {
+        return prepare.await().aggregate(aggregate, condition, property)
+    }
+
+    override suspend fun <N : Number?, Key> groupAggregate(
+        aggregate: Aggregate,
+        condition: Condition<MODEL>,
+        groupBy: DataClassPath<MODEL, Key>,
+        property: DataClassPath<MODEL, N>
+    ): Map<Key, Double?> {
+        return prepare.await().groupAggregate(aggregate, condition, groupBy, property)
+    }
+
+    override suspend fun insert(models: Iterable<MODEL>): List<MODEL> {
+        return prepare.await().insert(models)
+    }
+
+    override suspend fun replaceOne(
+        condition: Condition<MODEL>,
+        model: MODEL,
+        orderBy: List<SortPart<MODEL>>
+    ): EntryChange<MODEL> {
+        return prepare.await().replaceOne(condition, model, orderBy)
+    }
+
+    override suspend fun replaceOneIgnoringResult(
+        condition: Condition<MODEL>,
+        model: MODEL,
+        orderBy: List<SortPart<MODEL>>
+    ): Boolean {
+        return prepare.await().replaceOneIgnoringResult(condition, model, orderBy)
+    }
+
+    override suspend fun upsertOne(
+        condition: Condition<MODEL>,
+        modification: Modification<MODEL>,
+        model: MODEL
+    ): EntryChange<MODEL> {
+        return prepare.await().upsertOne(condition, modification, model)
+    }
+
+    override suspend fun upsertOneIgnoringResult(
+        condition: Condition<MODEL>,
+        modification: Modification<MODEL>,
+        model: MODEL
+    ): Boolean {
+        return prepare.await().upsertOneIgnoringResult(condition, modification, model)
+    }
+
+    override suspend fun updateOne(
+        condition: Condition<MODEL>,
+        modification: Modification<MODEL>,
+        orderBy: List<SortPart<MODEL>>
+    ): EntryChange<MODEL> {
+        return prepare.await().updateOne(condition, modification, orderBy)
+    }
+
+    override suspend fun updateOneIgnoringResult(
+        condition: Condition<MODEL>,
+        modification: Modification<MODEL>,
+        orderBy: List<SortPart<MODEL>>
+    ): Boolean {
+        return prepare.await().updateOneIgnoringResult(condition, modification, orderBy)
+    }
+
+    override suspend fun updateMany(
+        condition: Condition<MODEL>,
+        modification: Modification<MODEL>
+    ): CollectionChanges<MODEL> {
+        return prepare.await().updateMany(condition, modification)
+    }
+
+    override suspend fun updateManyIgnoringResult(
+        condition: Condition<MODEL>,
+        modification: Modification<MODEL>
+    ): Int {
+        return prepare.await().updateManyIgnoringResult(condition, modification)
+    }
+
+    override suspend fun deleteOne(
+        condition: Condition<MODEL>,
+        orderBy: List<SortPart<MODEL>>
+    ): MODEL? {
+        return prepare.await().deleteOne(condition, orderBy)
+    }
+
+    override suspend fun deleteOneIgnoringOld(
+        condition: Condition<MODEL>,
+        orderBy: List<SortPart<MODEL>>
+    ): Boolean {
+        return prepare.await().deleteOneIgnoringOld(condition, orderBy)
+    }
+
+    override suspend fun deleteMany(condition: Condition<MODEL>): List<MODEL> {
+        return prepare.await().deleteMany(condition)
+    }
+
+    override suspend fun deleteManyIgnoringOld(condition: Condition<MODEL>): Int {
+        return prepare.await().deleteManyIgnoringOld(condition)
+    }
+
+    override suspend fun findSimilar(
+        vectorField: DataClassPath<MODEL, Embedding>,
+        params: DenseVectorSearchParams,
+        condition: Condition<MODEL>,
+        maxQueryMs: Long
+    ): Flow<ScoredResult<MODEL>> {
+        return prepare.await().findSimilar(vectorField, params, condition, maxQueryMs)
+    }
+
+    override suspend fun findSimilarSparse(
+        vectorField: DataClassPath<MODEL, SparseEmbedding>,
+        params: SparseVectorSearchParams,
+        condition: Condition<MODEL>,
+        maxQueryMs: Long
+    ): Flow<ScoredResult<MODEL>> {
+        return prepare.await().findSimilarSparse(vectorField, params, condition, maxQueryMs)
+    }
+
 }
 
 // TODO: API Recommendation - Add transaction support API
