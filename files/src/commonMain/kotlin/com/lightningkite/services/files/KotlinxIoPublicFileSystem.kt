@@ -40,6 +40,17 @@ public class KotlinxIoPublicFileSystem(
     private val signingKeyFile = ".signingKey"
 
     /**
+     * Top-level directory holding the content-type sidecar of every stored file, mirroring the
+     * file's own path with `.contenttype` appended.
+     *
+     * Sidecars live in their own subtree rather than beside the file they describe so that no name a
+     * caller can write is ever also a sidecar name: storing them side by side would let anyone with
+     * an upload URL write `photo.jpg.contenttype` and choose the content type this server later
+     * serves `photo.jpg` with, which is enough to turn an image upload into stored XSS.
+     */
+    private val metadataDirectory = ".metadata"
+
+    /**
      * HMAC signing key used for URL signatures.
      *
      * The key is persisted in `.signingKey` file in the root directory. If the file doesn't exist,
@@ -59,8 +70,6 @@ public class KotlinxIoPublicFileSystem(
             key
         }
     }
-
-    override val rootUrls: List<String> = listOf(serveUrl)
 
     /**
      * Data structure for signing URLs with expiration and upload permissions.
@@ -104,8 +113,12 @@ public class KotlinxIoPublicFileSystem(
      */
     internal fun DataToSign.signed() = toString() + "&signature=" + sign(this)
 
-    override fun url(path: ExternalPath): String =
-        serveUrl.removeSuffix("/") + '/' + path.parts.joinToString("/")
+    /**
+     * The served URL for [path], with the path in [ExternalPath]'s conservative form so that it is
+     * URL-safe without any further encoding. [parsePath] reverses it.
+     */
+    private fun url(path: ExternalPath): String =
+        serveUrl.removeSuffix("/") + '/' + path.toString()
 
     override fun signUrl(path: ExternalPath, timeout: Duration?): String {
         val u = url(path)
@@ -118,16 +131,14 @@ public class KotlinxIoPublicFileSystem(
         DataToSign(url(path), context.clock.now().plus(timeout), true).signed()
 
     /**
-     * Parses an internal (unsigned) URL into an [ExternalFile].
+     * Parses a serveUrl-based absolute URL stored by the pre-canonical version, which wrote path
+     * segments literally rather than in the conservative form [url] now emits.
      *
      * @return An ExternalFile if the URL starts with this file system's serveUrl, null otherwise
      */
-    override fun parseInternalUrl(url: String): ExternalFile? {
-        // New canonical form: sf://<name>/<key>. Kept first so new rows resolve regardless of backend.
-        parseBackendInternalUrl(url)?.let { return it }
-        // Legacy form: a serveUrl-based absolute URL stored by the pre-canonical version.
+    override fun parseLegacyUrl(url: String): ExternalFile? {
         if (!url.startsWith(serveUrl)) return null
-        return ExternalFile(this, parsePath(url.substringAfter(serveUrl)))
+        return ExternalFile(this, pathFromLiteral(url.substringAfter(serveUrl)))
     }
 
     /**
@@ -140,9 +151,6 @@ public class KotlinxIoPublicFileSystem(
      *         URL doesn't match this file system, or URL is for upload (not read)
      */
     override fun parseExternalUrl(url: String): ExternalFile? {
-        // Canonical sf:// references are server-internal and must never be accepted from untrusted
-        // client input. (A serveUrl is always http(s), so this is also covered below, but be explicit.)
-        if (url.startsWith("sf://")) return null
         if (!url.startsWith(serveUrl)) return null
         return if (signedUrlDuration != null) {
             val data = DataToSign(url.substringBeforeLast("&"))
@@ -176,35 +184,59 @@ public class KotlinxIoPublicFileSystem(
         return ExternalFile(this, parsePath(data.url.substringAfter(serveUrl)))
     }
 
-    private fun parsePath(relative: String): ExternalPath =
-        ExternalPath(relative.replace('\\', '/').split("/").filter { it.isNotEmpty() })
+    /** Reads a served path, which [url] wrote in [ExternalPath]'s conservative form. */
+    private fun parsePath(relative: String): ExternalPath = ExternalPath.fromConservativeString(relative)
+
+    /** Reads a path whose segments were written literally: legacy URLs and on-disk locations. */
+    private fun pathFromLiteral(relative: String): ExternalPath =
+        ExternalPath(relative.replace('\\', '/').split('/').filter { it.isNotEmpty() })
 
     /**
-     * Rejects operations directly against the `.signingKey` file, which backs URL signing and
-     * must never be readable/writable through the public file API. Traversal (`.`/`..`) is
-     * already rejected by [ExternalPath]'s constructor.
+     * The parts of the root that back the file system itself and so are not addressable through the
+     * public API: the signing key and the sidecar subtree.
+     */
+    private fun ExternalPath.isReserved(): Boolean =
+        parts.firstOrNull().let { it == signingKeyFile || it == metadataDirectory }
+
+    /**
+     * Rejects paths that must not reach the disk:
+     *
+     * - segments that a hierarchical file system reads as navigation rather than as a name.
+     *   [ExternalPath] segments are literal, so a path parsed from anywhere - including an escape
+     *   in a signed URL - can legitimately contain `..` or a separator, and joining those onto the
+     *   root would step outside it.
+     * - the file system's own storage, per [isReserved].
      */
     private fun guard(path: ExternalPath) {
-        if (path.parts.size == 1 && path.parts[0] == signingKeyFile)
+        if (path.parts.any { it.isEmpty() || it == "." || it == ".." || '/' in it || '\\' in it })
+            throw IllegalArgumentException("Invalid file path.")
+        if (path.isReserved())
             throw IllegalArgumentException("Invalid file path.")
     }
 
-    private fun kfileFor(path: ExternalPath): KFile =
-        KFile(rootKFile.fileSystem, Path(rootKFile.path, path.parts.joinToString("/")))
+    private fun kfileFor(path: ExternalPath): KFile {
+        guard(path)
+        return KFile(rootKFile.fileSystem, Path(rootKFile.path, path.parts.joinToString("/")))
+    }
 
     private val KFile.localPath: Path get() = Path(this.path.toString().removePrefix(rootKFile.path.toString()))
 
     /**
-     * Path to the sidecar file that stores a file's content type.
+     * The sidecar file that stores the content type of the file at [path], inside
+     * [metadataDirectory]: `photo.jpg` is described by `.metadata/photo.jpg.contenttype`.
      *
-     * For a file named `photo.jpg`, the content type is stored in `photo.jpg.contenttype`.
+     * Only call this with a path that [kfileFor] has already accepted - it deliberately reaches into
+     * the reserved subtree.
      */
-    private fun contentTypePath(kfile: KFile): KFile = kfile.parent!!.then("${kfile.name}.contenttype")
+    private fun contentTypeFileFor(path: ExternalPath): KFile = KFile(
+        rootKFile.fileSystem,
+        Path(rootKFile.path, (listOf(metadataDirectory) + path.parts).joinToString("/") + ".contenttype")
+    )
 
     /**
      * Lists the contents of the directory at [path].
      *
-     * Filters out `.contenttype` sidecar files and the `.signingKey` file.
+     * Filters out the file system's own storage; everything else is a file a caller stored.
      *
      * @return A list of child paths, null if this is a file (not a directory) or doesn't exist
      */
@@ -214,16 +246,16 @@ public class KotlinxIoPublicFileSystem(
         path = path.parts.joinToString("/"),
         storageSystem = "file"
     ) {
-        guard(path)
         val kfile = kfileFor(path)
         try {
             kfile.list()
-                .filter { !it.name.endsWith(".contenttype") && it.name != signingKeyFile }
-                .map { parsePath(it.localPath.toString()) }
+                // Names come off the disk literally, not in conservative form.
+                .map { pathFromLiteral(it.localPath.toString()) }
+                .filter { !it.isReserved() }
         } catch (e: FileNotFoundException) {
             null
         } catch (e: IOException) {
-            if (contentTypePath(kfile).exists()) null
+            if (contentTypeFileFor(path).exists()) null
             else throw e
         }
     }
@@ -244,12 +276,11 @@ public class KotlinxIoPublicFileSystem(
         storageSystem = "file",
         attributes = mapOf("rpc.system" to "filesystem")
     ) {
-        guard(path)
         val kfile = kfileFor(path)
         val metadata = kfile.metadataOrNull() ?: return@traceFileOperation null
-        val contentTypePath = contentTypePath(kfile)
-        val mediaType = if (contentTypePath.exists()) {
-            contentTypePath.source().use { source ->
+        val contentTypeFile = contentTypeFileFor(path)
+        val mediaType = if (contentTypeFile.exists()) {
+            contentTypeFile.source().use { source ->
                 MediaType(source.buffered().readString())
             }
         } else {
@@ -266,7 +297,8 @@ public class KotlinxIoPublicFileSystem(
     /**
      * Writes content to the file at [path].
      *
-     * Creates parent directories if needed and stores the media type in a `.contenttype` sidecar file.
+     * Creates parent directories if needed and stores the media type in a sidecar file under
+     * [metadataDirectory].
      */
     override suspend fun put(path: ExternalPath, content: TypedData): Unit = traceFileOperation(
         owner = this,
@@ -278,7 +310,6 @@ public class KotlinxIoPublicFileSystem(
             "file.content_type" to content.mediaType.toString()
         )
     ) {
-        guard(path)
         val kfile = kfileFor(path)
 
         // Create parent directories if they don't exist
@@ -288,7 +319,9 @@ public class KotlinxIoPublicFileSystem(
         }
 
         // Write content type to content type file
-        contentTypePath(kfile).sink().buffered().use {
+        val contentTypeFile = contentTypeFileFor(path)
+        contentTypeFile.parent?.takeUnless { it.exists() }?.createDirectories()
+        contentTypeFile.sink().buffered().use {
             it.writeString(content.mediaType.toString())
         }
 
@@ -310,7 +343,6 @@ public class KotlinxIoPublicFileSystem(
         storageSystem = "file",
         attributes = mapOf("rpc.system" to "filesystem")
     ) {
-        guard(path)
         val kfile = kfileFor(path)
 
         // Try-open avoids a redundant exists() syscall before open.
@@ -320,9 +352,9 @@ public class KotlinxIoPublicFileSystem(
             return@traceFileOperation null
         }
 
-        val contentTypePath = contentTypePath(kfile)
-        val mediaType = if (contentTypePath.exists()) {
-            contentTypePath.source().buffered().use { s ->
+        val contentTypeFile = contentTypeFileFor(path)
+        val mediaType = if (contentTypeFile.exists()) {
+            contentTypeFile.source().buffered().use { s ->
                 MediaType(s.readString())
             }
         } else {
@@ -336,7 +368,7 @@ public class KotlinxIoPublicFileSystem(
     }
 
     /**
-     * Deletes the file at [path] and its `.contenttype` sidecar file.
+     * Deletes the file at [path] and its content-type sidecar.
      *
      * @throws RuntimeException if deletion fails
      */
@@ -346,12 +378,11 @@ public class KotlinxIoPublicFileSystem(
         path = path.parts.joinToString("/"),
         storageSystem = "file"
     ) {
-        guard(path)
         val kfile = kfileFor(path)
         try {
-            val contentTypePath = contentTypePath(kfile)
-            if (contentTypePath.exists()) {
-                contentTypePath.delete()
+            val contentTypeFile = contentTypeFileFor(path)
+            if (contentTypeFile.exists()) {
+                contentTypeFile.delete()
             }
 
             if (kfile.exists()) {

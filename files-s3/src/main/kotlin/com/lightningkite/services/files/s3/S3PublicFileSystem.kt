@@ -66,11 +66,6 @@ public class S3PublicFileSystem(
     override val context: SettingContext,
 ) : PublicFileSystem {
 
-    override val rootUrls: List<String> = listOf(
-        "https://${bucket}.s3.${region.id()}.amazonaws.com/",
-        "https://s3-${region.id()}.amazonaws.com/${bucket}/",
-    )
-
     @Volatile
     private var credsOnHand: AwsCredentials? = null
     @Volatile
@@ -403,7 +398,7 @@ public class S3PublicFileSystem(
      * The unsigned URL for the file at [path].
      * This URL will only work if the bucket has public read access configured.
      */
-    override fun url(path: ExternalPath): String =
+    private fun url(path: ExternalPath): String =
         "https://${bucket}.s3.${region.id()}.amazonaws.com/${unixPathOf(path)}"
 
     private fun encodedUrl(unixPath: String): String =
@@ -561,10 +556,12 @@ public class S3PublicFileSystem(
         } ?: url(path)
     }
 
-    override fun parseInternalUrl(url: String): ExternalFile? {
-        // New canonical form: sf://<name>/<key>. Kept first so new rows resolve regardless of backend.
-        parseBackendInternalUrl(url)?.let { return it }
-        // Legacy form: a backend-specific absolute URL stored by the pre-canonical version.
+
+    private val rootUrls: List<String> = listOf(
+        "https://${bucket}.s3.${region.id()}.amazonaws.com/",
+        "https://s3-${region.id()}.amazonaws.com/${bucket}/",
+    )
+    override fun parseLegacyUrl(url: String): ExternalFile? {
         val matchingPrefix = rootUrls.firstOrNull { prefix -> url.startsWith(prefix) } ?: return null
         // Internal URLs come from url(path), which writes the object key literally (un-encoded).
         // Do NOT percent-decode here, or a stored key that literally contains '%xx' would be
@@ -577,11 +574,7 @@ public class S3PublicFileSystem(
     override fun parseExternalUrl(url: String): ExternalFile? {
         // Signed URLs are percent-encoded by signUrl/encodedUrl, so decode the path before matching.
         val decodedPath = url.substringBefore('?').decodeURLPart()
-        // Canonical sf:// references are server-internal (unsigned) and must never be accepted from
-        // untrusted client input; otherwise a client could reference arbitrary keys with no signature.
-        // Guard the DECODED value so an encoded "sf%3A//..." can't slip past into parseInternalUrl.
-        if (decodedPath.startsWith("sf://")) return null
-        return parseInternalUrl(decodedPath)
+        return parseLegacyUrl(decodedPath)
             ?.also { assertSignatureValid(it.path, url.substringAfter('?')) }
     }
 

@@ -38,29 +38,32 @@ public fun ExternalFile.resolveRandom(prefix: String, extension: String): FileOb
 /**
  * Creates a FileObject with a random UUID-based filename.
  *
+ * The separator is `-` rather than `_` so the name survives [ExternalPath.toString] unescaped,
+ * keeping generated URLs and stored references readable.
+ *
  * @param prefix The prefix for the filename (before the UUID)
  * @param extension The file extension (without the dot)
- * @return A FileObject with path like `{prefix}_{uuid}.{extension}`
+ * @return A FileObject with path like `{prefix}-{uuid}.{extension}`
  *
  * Example:
  * ```
  * val file = root.thenRandom("upload", "jpg")
- * // Results in something like: upload_550e8400-e29b-41d4-a716-446655440000.jpg
+ * // Results in something like: upload-550e8400-e29b-41d4-a716-446655440000.jpg
  * ```
  */
 public fun ExternalFile.thenRandom(prefix: String, extension: String): FileObject {
-    return then("${prefix}_${Uuid.random()}.${extension}")
+    return then("${prefix}-${Uuid.random()}.${extension}")
 }
 
 /**
  * Converts a FileObject to a persistable [ServerFile] reference.
  *
- * This wraps the backend-agnostic canonical `sf://<name>/<path>` form (see
- * [PublicFileSystem.backendInternalUrl]), which is what should be stored in a database - not a
- * backend-specific absolute URL. Clients receive a real signed URL only when the [ServerFile]
- * is serialized out through the file serializer.
+ * This wraps the backend-agnostic canonical `sf://<name>/<path>` form (see [ExternalFile.toString]),
+ * which is what should be stored in a database - not a backend-specific absolute URL. Clients
+ * receive a real signed URL only when the [ServerFile] is serialized out through the file
+ * serializer, and [ExternalFile.Parser] reads the stored form back.
  */
-public val ExternalFile.serverFile: ServerFile get() = ServerFile(fileSystem.backendInternalUrl(path))
+public val ExternalFile.serverFile: ServerFile get() = ServerFile(toString())
 
 /*
  * TODO: API Recommendations

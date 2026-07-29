@@ -73,8 +73,8 @@ import kotlin.uuid.Uuid
  * ## URL Parsing
  *
  * ```kotlin
- * // Internal URL: accepts the canonical sf:// form AND legacy absolute URLs (server-side only)
- * val file = fs.parseInternalUrl("sf://storage/image.jpg")
+ * // Stored references, server-side only: the canonical sf:// form and legacy absolute URLs
+ * val file = ExternalFile.Parser(listOf(fs)).parse("sf://storage/image.jpg")
  *
  * // External URL (validates signature); does NOT accept canonical sf:// references
  * val file = fs.parseExternalUrl(signedUrlFromClient)
@@ -82,18 +82,19 @@ import kotlin.uuid.Uuid
  *
  * ## Persisting References
  *
- * Store the backend-agnostic canonical form (see [backendInternalUrl]) - `sf://<name>/<path>` - not a
- * signed or backend-specific absolute URL. `ExternalFile.serverFile` produces it, and the file
+ * Store the backend-agnostic canonical form (see [ExternalFile.toString]) - `sf://<name>/<path>` -
+ * not a signed or backend-specific absolute URL. `ExternalFile.serverFile` produces it, and the file
  * serializer both writes it on the way in and turns it back into a signed URL on the way out.
  * Because it is keyed by the service [name], a stored value keeps resolving after the backend is
  * swapped, provided the service keeps the same name and the files are moved across. Legacy absolute
- * URLs already in a database continue to resolve as long as the same backend and name are configured.
+ * URLs already in a database continue to resolve through [parseLegacyUrl] as long as the same
+ * backend and name are configured.
  *
  * ## Important Gotchas
  *
  * - **Public access**: Files are publicly accessible unless using signed URLs
- * - **Never persist signed URLs**: they expire; persist the canonical [backendInternalUrl] form instead
- * - **Path traversal**: [ExternalPath] rejects `.`/`..` segments at construction time
+ * - **Never persist signed URLs**: they expire; persist the canonical `sf://` form instead
+ * - **Path traversal**: [ExternalPath] rejects `.`/`..`/separator-bearing segments at construction time
  * - **Concurrency**: Concurrent writes to same file may result in race conditions
  * - **serveUrl required**: Local filesystem requires serveUrl parameter (base URL for file access)
  * - **Health check writes**: Creates test file at `health-check/test-file.txt`
@@ -118,11 +119,12 @@ public interface PublicFileSystem : Service {
      * @throws IllegalArgumentException if the source file doesn't exist
      */
     public suspend fun copyTo(path: ExternalPath, other: ExternalFile) {
-        val content = get(path) ?: throw IllegalArgumentException("Source file does not exist: ${url(path)}")
+        val content = get(path)
+            ?: throw IllegalArgumentException("Source file does not exist: ${ExternalFile(this, path)}")
         try {
             other.put(content)
         } catch (e: Exception) {
-            throw Exception("Failed to copy file from ${url(path)} to ${other.fileSystem.url(other.path)}", e)
+            throw Exception("Failed to copy file from ${ExternalFile(this, path)} to $other", e)
         }
     }
 
@@ -136,12 +138,13 @@ public interface PublicFileSystem : Service {
      * @throws IllegalArgumentException if the source file doesn't exist
      */
     public suspend fun moveTo(path: ExternalPath, other: ExternalFile) {
-        val content = get(path) ?: throw IllegalArgumentException("Source file does not exist: ${url(path)}")
+        val content = get(path)
+            ?: throw IllegalArgumentException("Source file does not exist: ${ExternalFile(this, path)}")
         try {
             other.put(content)
         } catch (e: Exception) {
             throw Exception(
-                "Failed to move file from ${url(path)} to ${other.fileSystem.url(other.path)}: copy failed",
+                "Failed to move file from ${ExternalFile(this, path)} to $other: copy failed",
                 e
             )
         }
@@ -149,53 +152,11 @@ public interface PublicFileSystem : Service {
             delete(path)
         } catch (e: Exception) {
             throw Exception(
-                "File copied to ${other.fileSystem.url(other.path)} but failed to delete source at ${url(path)}",
+                "File copied to $other but failed to delete source at ${ExternalFile(this, path)}",
                 e
             )
         }
     }
-
-    /**
-     * The internal URL for a file at [path] (may be unsigned).
-     */
-    public fun url(path: ExternalPath): String
-
-    /**
-     * The canonical, backend-agnostic reference for a file at [path], of the form
-     * `sf://<name>/<path>`.
-     *
-     * This - not a backend-specific absolute URL - is what should be persisted in a database
-     * (it is what [ServerFile] wraps for stored values). Because it is keyed by this service's
-     * [name] rather than by where the bytes physically live, the stored value keeps resolving
-     * after the storage backend is swapped (e.g. S3 to local), as long as the service keeps the
-     * same [name] and the underlying files are moved across.
-     *
-     * The path is written literally (not percent-encoded); [parseBackendInternalUrl] reads it back the
-     * same way. Requires [name] to be a stable identifier that does not contain `/`.
-     */
-    public fun backendInternalUrl(path: ExternalPath): String {
-        require('/' !in name) { "PublicFileSystem name '$name' must not contain '/' to be used in a canonical sf:// reference." }
-        return "sf://$name/$path"
-    }
-
-    /**
-     * Parses a canonical `sf://<name>/<path>` reference (see [backendInternalUrl]) into an [ExternalFile],
-     * or returns null if [url] is not a canonical reference belonging to THIS file system's [name].
-     *
-     * The path is taken literally (not percent-decoded), matching how [backendInternalUrl] writes it.
-     */
-    public fun parseBackendInternalUrl(url: String): ExternalFile? {
-        val prefix = "sf://$name/"
-        if (!url.startsWith(prefix)) return null
-        return ExternalFile(this, ExternalPath(url.substringAfter(prefix).split('/').filter { it.isNotEmpty() }))
-    }
-
-    /**
-     * The root URLs for this file system.
-     * Default implementation returns a single-element list containing the root's URL.
-     * Override this if your file system has multiple root URLs (e.g., CDN mirrors).
-     */
-    public val rootUrls: List<String> get() = listOf(url(ExternalPath(emptyList())))
 
     /**
      * A signed URL for the file at [path] that can be used to access it securely.
@@ -211,11 +172,16 @@ public interface PublicFileSystem : Service {
     public fun uploadUrl(path: ExternalPath, timeout: Duration): String
 
     /**
-     * Parses an internal URL (unsigned, used within the server) into an [ExternalFile].
+     * Parses an absolute URL of the kind this backend stored before the canonical `sf://` form
+     * existed, into an [ExternalFile].
+     *
+     * These URLs are unsigned, so this is server-internal: only values that came out of our own
+     * storage may be passed here, never client input. [ExternalFile.Parser] uses it as the fallback
+     * for stored references that are not canonical.
      *
      * @return An [ExternalFile] if the URL belongs to this file system, null otherwise
      */
-    public fun parseInternalUrl(url: String): ExternalFile?
+    public fun parseLegacyUrl(url: String): ExternalFile?
 
     /**
      * Parses an external URL (signed, provided to clients) into an [ExternalFile].

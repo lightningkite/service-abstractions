@@ -2,6 +2,7 @@ package com.lightningkite.services.files.test
 
 import com.lightningkite.services.data.*
 import com.lightningkite.services.default
+import com.lightningkite.services.files.ExternalFile
 import com.lightningkite.services.files.PublicFileSystem
 import com.lightningkite.services.files.serverFile
 import com.lightningkite.services.http.client
@@ -48,21 +49,10 @@ abstract class FileSystemTests {
         }
     }
 
-    @Test
-    fun testLocalRestoration() = runSuspendingTest {
-        val system = system ?: run {
-            println("Could not test because the file system isn't supported here.")
-            return@runSuspendingTest
-        }
-        val file = system.root.then("test.txt")
-        println(file)
-        assertEquals(file, system.parseInternalUrl(file.url.also { println(it) }))
-    }
-
     /**
      * The canonical `sf://<name>/<path>` form is what gets persisted to a database, and it must
-     * round-trip back to the same file through [PublicFileSystem.parseInternalUrl] (the path the
-     * file serializer takes when reading a stored value).
+     * round-trip back to the same file through [ExternalFile.Parser] (the path the file serializer
+     * takes when reading a stored value).
      */
     @Test
     fun testCanonicalRestoration() = runSuspendingTest {
@@ -70,11 +60,17 @@ abstract class FileSystemTests {
             println("Could not test because the file system isn't supported here.")
             return@runSuspendingTest
         }
-        val file = system.root.then("folder/test.txt")
-        val canonical = file.serverFile.location
-        println(canonical)
-        assertTrue(canonical.startsWith("sf://"), "Persisted reference should be canonical, was '$canonical'")
-        assertEquals(file, system.parseInternalUrl(canonical))
+        val parser = ExternalFile.Parser(listOf(system))
+        for (file in listOf(
+            system.root.then("folder/test.txt"),
+            system.root.then("folder/file with spaces & odd ?#[]()@*,;= chars.txt"),
+            system.root,
+        )) {
+            val canonical = file.serverFile.location
+            println(canonical)
+            assertTrue(canonical.startsWith("sf://"), "Persisted reference should be canonical, was '$canonical'")
+            assertEquals(file, parser.parse(canonical))
+        }
     }
 
     @Test
@@ -161,7 +157,7 @@ abstract class FileSystemTests {
             val message = "Hello world!"
             try {
                 testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                assertTrue(testFile.signedUrl.startsWith(testFile.url))
+                assertEquals(testFile, system.parseExternalUrl(testFile.signedUrl))
                 println("testfile.signedUrl: ${testFile.signedUrl}")
                 assertTrue(client.get(testFile.signedUrl).status.isSuccess())
             } finally {
@@ -173,7 +169,7 @@ abstract class FileSystemTests {
             val message = "Hello world!"
             try {
                 testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                assertTrue(testFile.url.startsWith(testFile.url))
+                assertEquals(testFile, system.parseExternalUrl(testFile.signedUrl))
                 println("testfile.signedUrl: ${testFile.signedUrl}")
                 assertTrue(client.get(testFile.signedUrl).status.isSuccess())
             } finally {
@@ -185,7 +181,7 @@ abstract class FileSystemTests {
             val message = "Hello world!"
             try {
                 testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                assertTrue(testFile.url.startsWith(testFile.url))
+                assertEquals(testFile, system.parseExternalUrl(testFile.signedUrl))
                 println("testfile.signedUrl: ${testFile.signedUrl}")
                 assertTrue(client.get(testFile.signedUrl).status.isSuccess())
             } finally {

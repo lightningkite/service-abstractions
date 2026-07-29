@@ -177,9 +177,9 @@ class ExternalServerFileSerializerTest {
 
     private val foreignUrl = "https://malware.example.com/evil.exe"
 
-    /** A ServerFile whose location belongs to the configured file system root. */
+    /** A ServerFile whose location belongs to the configured file system, as it would be stored. */
     private fun knownRootFile(ser: ExternalServerFileSerializer): ServerFile =
-        ServerFile(ser.ready.then("known.txt").url)
+        ser.ready.then("known.txt").serverFile
 
     @Test
     fun foreignUrlWarnPassesThrough() {
@@ -229,8 +229,8 @@ class ExternalServerFileSerializerTest {
             val json = Json { serializersModule = serializersModuleOf(ser) }
             val encoded = json.encodeToJsonElement(ser, knownRootFile(ser)).jsonPrimitive.content
             // Known-root files always produce a non-blank, non-foreign signed url regardless of mode.
-            assertTrue(encoded.isNotBlank(), "Known-root file should serialize to a url in mode $mode")
-            assertTrue(encoded.contains("known.txt"), "Known-root file should serialize to its own url in mode $mode: $encoded")
+            assertTrue(encoded.isNotBlank(), "Known-root file should serialize to a url in mode $entry")
+            assertTrue(encoded.contains("known.txt"), "Known-root file should serialize to its own url in mode $entry: $encoded")
         }
     }
 }

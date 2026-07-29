@@ -4,7 +4,6 @@ import com.lightningkite.services.data.Description
 import com.lightningkite.services.data.ExperimentalLightningServer
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
-import com.lightningkite.services.database.InliningSerialDescriptor
 import com.lightningkite.services.database.PrimitiveDescriptorWithAnnotations
 import dev.whyoleg.cryptography.algorithms.HMAC
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -93,6 +92,10 @@ public class ExternalServerFileSerializer(
     private val primary = fileSystems.first()
     private val logger = KotlinLogging.logger("com.lightningkite.lightningserver.files.ExternalServerFileSerializer")
 
+    /** Resolves stored locations: canonical `sf://` references, or legacy absolute URLs. */
+    private val storedReferences = ExternalFile.Parser(fileSystems)
+    private val knownSystemsString: String get() = fileSystems.joinToString { it.name }
+
     private val uploadFile: suspend (data: TypedData) -> FileObject = {
         scanners.scan(it)
         val d = primary.root.thenRandom("uploaded", "file")
@@ -116,17 +119,13 @@ public class ExternalServerFileSerializer(
      * Otherwise, the foreign URL is handled according to [foreignUrlHandling] (default: rejected).
      */
     override fun serialize(encoder: Encoder, value: ServerFile) {
-        val url = value.location
-        val file = fileSystems.firstNotNullOfOrNull {
-            // We don't need to check signatures; this is coming from us, after all.
-            it.parseInternalUrl(url)
-        }
+        // We don't need to check signatures; this is coming from us, after all.
+        val file = storedReferences.parseOrNull(value.location)
         if (file == null) {
-            val knownRoots = { fileSystems.flatMap { it.rootUrls }.joinToString() }
             when (foreignUrlHandling) {
                 ForeignUrlHandling.WARN -> {
                     logger.warn {
-                        "The given url (${value.location}) does not start with any files root. Known roots: ${knownRoots()}"
+                        "The given url (${value.location}) belongs to no known file system. Known file systems: $knownSystemsString"
                     }
                     encoder.encodeString(value.location)
                 }
@@ -134,7 +133,7 @@ public class ExternalServerFileSerializer(
                 ForeignUrlHandling.CENSOR -> encoder.encodeString("")
 
                 ForeignUrlHandling.ERROR -> throw IllegalArgumentException(
-                    "Refusing to serialize foreign url (${value.location}); it does not start with any files root. Known roots: ${knownRoots()}"
+                    "Refusing to serialize foreign url (${value.location}); it belongs to no known file system. Known file systems: $knownSystemsString"
                 )
             }
         } else {
@@ -248,9 +247,7 @@ public class ExternalServerFileSerializer(
                 val file = fileSystems.firstNotNullOfOrNull {
                     it.parseExternalUrl(raw)
                 } ?: throw IllegalArgumentException(
-                    "The given url (${raw.substringBefore('?')}) does not start with any files root.  Known roots: ${
-                        fileSystems.flatMap { it.rootUrls }.joinToString()
-                    }"
+                    "The given url (${raw.substringBefore('?')}) belongs to no known file system. Known file systems: $knownSystemsString"
                 )
                 return file.serverFile
             }

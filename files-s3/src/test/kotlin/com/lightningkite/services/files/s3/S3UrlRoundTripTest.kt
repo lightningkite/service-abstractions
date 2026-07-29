@@ -1,6 +1,7 @@
 package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.files.ExternalFile
 import com.lightningkite.services.files.serverFile
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
@@ -19,7 +20,7 @@ import kotlin.time.Duration.Companion.hours
  * A `ServerFile` persists its `location` verbatim, and that location is the *unsigned internal* URL
  * produced by `url(path)` — `https://{bucket}.s3.{region}.amazonaws.com/{key}` with the object key
  * written **literally, without percent-encoding**. When such a record is later read and serialized
- * out to a client, `ExternalServerFileSerializer.serialize` calls [S3PublicFileSystem.parseInternalUrl]
+ * out to a client, `ExternalServerFileSerializer.serialize` calls [S3PublicFileSystem.parseLegacyUrl]
  * on that stored string. So the invariant that protects existing data is:
  *
  * > Parsing the exact URL the old version stored must resolve to the exact same S3 object key.
@@ -66,26 +67,32 @@ class S3UrlRoundTripTest {
     )
 
     /**
+     * The literal string the old version wrote into the database for [key]: the bucket URL with the
+     * object key appended verbatim, no percent-encoding. Spelled out here rather than taken from the
+     * current code so the test keeps pinning the historical format even as the code moves on.
+     */
+    private fun legacyStoredUrl(key: String): String =
+        "https://example-bucket.s3.us-east-1.amazonaws.com/$key"
+
+    /**
      * The unsigned URL is exactly what the previous version persisted to the database. Re-parsing it
-     * with [parseInternalUrl] must land on the original object for every key.
+     * with [S3PublicFileSystem.parseLegacyUrl] must land on the original object for every key.
      *
-     * This is the case that regressed: the redesigned `parseInternalUrl` percent-decodes the path,
-     * so a stored key literally containing `%20` decodes to a space (wrong object) and a stored key
-     * with a bare `%` (invalid escape) throws instead of resolving.
+     * This is the case that regressed once: percent-decoding the stored path makes a key literally
+     * containing `%20` decode to a space (wrong object), and a key with a bare `%` (invalid escape)
+     * throw instead of resolving.
      */
     @Test
     fun storedUnsignedUrlResolvesToSameObject() {
         val system = system()
         val failures = edgeCaseKeys.mapNotNull { key ->
             val file = system.root.then(key)
+            val stored = legacyStoredUrl(key)
 
-            @Suppress("DEPRECATION") // url is the exact string the old version stored in the DB.
-            val stored = file.url
-
-            val parsed = runCatching { system.parseInternalUrl(stored) }
+            val parsed = runCatching { system.parseLegacyUrl(stored) }
             when {
                 parsed.isFailure ->
-                    "key='$key': parseInternalUrl threw ${parsed.exceptionOrNull()} for stored url '$stored'"
+                    "key='$key': parseLegacyUrl threw ${parsed.exceptionOrNull()} for stored url '$stored'"
                 parsed.getOrNull() != file ->
                     "key='$key': stored url '$stored' resolved to key='${parsed.getOrNull()?.path}', expected key='${file.path}'"
                 else -> null
@@ -133,34 +140,33 @@ class S3UrlRoundTripTest {
     fun plusInStoredUrlIsPreservedNotSpaced() {
         val system = system()
         val file = system.root.then("a+b.txt")
-
-        @Suppress("DEPRECATION")
-        val stored = file.url
+        val stored = legacyStoredUrl("a+b.txt")
 
         assertEquals(
             file,
-            system.parseInternalUrl(stored),
+            system.parseLegacyUrl(stored),
             "A '+' in a stored object key must stay a '+', not decode to a space"
         )
     }
 
     /**
      * The canonical `sf://<name>/<key>` form (what new rows persist) must round-trip back to the
-     * same object for the same edge-case keys. Canonical stores keys literally, so no `%`/`+`
-     * mangling should occur.
+     * same object for the same edge-case keys. Canonical escapes the key conservatively, so no
+     * `%`/`+` mangling should occur.
      */
     @Test
     fun canonicalFormRoundTripsToSameObject() {
         val system = system()
+        val parser = ExternalFile.Parser(listOf(system))
         val failures = edgeCaseKeys.mapNotNull { key ->
             val file = system.root.then(key)
             val canonical = file.serverFile.location
-            val parsed = runCatching { system.parseInternalUrl(canonical) }
+            val parsed = runCatching { parser.parse(canonical) }
             when {
                 !canonical.startsWith("sf://") ->
                     "key='$key': persisted form was not canonical: '$canonical'"
                 parsed.isFailure ->
-                    "key='$key': parseInternalUrl threw ${parsed.exceptionOrNull()} for canonical '$canonical'"
+                    "key='$key': parse threw ${parsed.exceptionOrNull()} for canonical '$canonical'"
                 parsed.getOrNull() != file ->
                     "key='$key': canonical '$canonical' resolved to key='${parsed.getOrNull()?.path}', expected key='${file.path}'"
                 else -> null
