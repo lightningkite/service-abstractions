@@ -67,4 +67,20 @@ val verifyNoDirectOtel by tasks.registering {
 
 subprojects {
     tasks.matching { it.name == "check" }.configureEach { dependsOn(verifyNoDirectOtel) }
+
+    // Expensive tests — live-service suites that need a running local server (Ollama, LM Studio)
+    // or a keyed cloud provider (Anthropic, OpenAI, Bedrock) — live in an `integration` package.
+    // They are slow, machine-dependent, and sometimes billed, so the normal test run excludes them.
+    // Run them deliberately with `-Pexpensive`:
+    //     ./gradlew :ai-ollama:test -Pexpensive --tests '*.integration.*'
+    // Running a single suite from the IDE is unaffected: the IDE invokes JUnit directly and never
+    // applies this filter. The suites' own `servicePresent` probes still skip when a server is down.
+    if (!project.hasProperty("expensive")) {
+        tasks.withType<Test>().configureEach {
+            filter {
+                excludeTestsMatching("*.integration.*")
+                isFailOnNoMatchingTests = false
+            }
+        }
+    }
 }
