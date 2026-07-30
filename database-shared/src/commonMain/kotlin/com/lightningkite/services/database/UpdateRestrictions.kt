@@ -2,6 +2,7 @@ package com.lightningkite.services.database
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNames
+import kotlinx.serialization.serializer
 
 /**
  * Defines restrictions on which fields can be modified in database update operations and under what conditions.
@@ -30,10 +31,9 @@ import kotlinx.serialization.json.JsonNames
  * ```
  *
  * ## Wire format
- * For compatibility with clients released against v1 (e.g. the admin UI), [UpdateRestrictions] serializes
- * *outbound* in the v1 `{mode, fields}` shape via [UpdateRestrictionsSerializer] rather than its actual
- * `{perField, default}` shape -- see that class for the conversion and its one lossy case (`anyOf` with more
- * than one alternative on a field, which a v1 `Part` cannot represent).
+ * [UpdateRestrictionsSerializer] writes the real `perField`/`default` data *and* a lossy projection of it into the
+ * v1 `{mode, fields}` shape, so clients released against v1 (e.g. the admin UI) keep working. Reads accept either
+ * shape and prefer `perField`/`default`. See that class for the projection's two lossy cases.
  *
  * @param T The data class type being restricted
  * @param perField Alternative restriction rules, keyed by field path
@@ -46,18 +46,16 @@ public data class UpdateRestrictions<T>(
 ) {
     /**
      * One alternative rule for a field. The field may be modified when the *existing* record matches
-     * [ifCurrentValue], and only if the record matches [newValueMustBe] *after* the modification is applied.
+     * [ifCurrentItem], and only if the record matches [newValueMustBe] *after* the modification is applied.
      */
     @Serializable
     public data class RestrictionOption<T>(
-        public val ifCurrentValue: Condition<T>,
+        public val ifCurrentItem: Condition<T>,
         public val newValueMustBe: Condition<T>,
     )
 
-    /**
-     * Determines the default behavior for fields not explicitly mentioned in [perField].
-     * Kept for the [Builder] DSL; new code should construct [perField]/[default] directly.
-     */
+    /** The default behavior for fields not explicitly mentioned in [perField], as selected by the DSL. */
+    @Serializable
     public enum class Mode {
         /** All fields can be modified except explicitly restricted ones */
         Blacklist,
@@ -65,42 +63,6 @@ public data class UpdateRestrictions<T>(
         /** Only explicitly allowed fields can be modified */
         Whitelist,
     }
-
-    /** Derived from whether [default] is empty. Kept for source compatibility with the v1 API. */
-    @Deprecated("Derived from `default`; construct perField/default directly instead of branching on mode")
-    public val mode: Mode get() = if (default.isEmpty()) Mode.Whitelist else Mode.Blacklist
-
-    /**
-     * A single field-specific restriction rule, as used by the v1 [UpdateRestrictions] representation.
-     * Retained so old serialized payloads (`{mode, fields}`) can still be read/converted.
-     */
-    @Deprecated("Replaced by RestrictionOption stored in perField/default")
-    @Serializable
-    public data class Part<T>(
-        @JsonNames("path") public val property: DataClassPathPartial<T>,
-        @JsonNames("limitedIf") public val requires: Condition<T>,
-        public val limitedTo: Condition<T>,
-    )
-
-    /**
-     * Converts the v1 (mode, fields) shape into the v2 perField/default representation. A `Part` with
-     * `requires == Never` (what `cannotBeModified()` produces) collapses to an empty option list -- v1's
-     * "unconditionally blocked" -- rather than being AND-merged in literally, both to match what the [Builder]
-     * itself would produce and because `Never` is absorbing under AND regardless of `limitedTo` either way.
-     */
-    @Suppress("DEPRECATION")
-    @Deprecated("Use the perField/default constructor, or the updateRestrictions {} DSL, instead")
-    public constructor(mode: Mode = Mode.Blacklist, fields: List<Part<T>>) : this(
-        perField = fields.groupBy { it.property }.mapValues { (_, parts) ->
-            parts.fold(null as List<RestrictionOption<T>>?) { acc, part ->
-                val partOptions =
-                    if (part.requires == Condition.Never) emptyList()
-                    else listOf(RestrictionOption(part.requires, part.limitedTo))
-                if (acc == null) partOptions else andMerge(acc, partOptions)
-            }!!
-        },
-        default = if (mode == Mode.Whitelist) emptyList() else listOf(RestrictionOption(Condition.Always, Condition.Always)),
-    )
 
     /**
      * Evaluates the restrictions against a [Modification] and returns the [Condition] that must be met on the
@@ -129,7 +91,7 @@ public data class UpdateRestrictions<T>(
             for (restrictions in listOf(direct) + descendants) {
                 val matching = restrictions.filter { it.newValueMustBe.guaranteedAfter(on) }
                 if (matching.isEmpty()) return Condition.Never
-                total.add(Condition.Or(matching.map { it.ifCurrentValue }))
+                total.add(Condition.Or(matching.map { it.ifCurrentItem }))
             }
         }
         return Condition.And(total).simplify()
@@ -198,13 +160,35 @@ public data class UpdateRestrictions<T>(
         }
 
         /**
-         * Declares multiple alternative rules (OR'd) for this field in a single call -- the capability the v1
-         * one-rule-per-field model didn't have, e.g. "admins may set any role; users may set their own role only
-         * to Member". AND-merges with any prior rules on this field, same as the other builder methods.
+         * Declares alternative rules (OR'd) for this field in a single call -- the capability the v1
+         * one-rule-per-field model didn't have. AND-merges with any prior rules on this field, same as the other
+         * builder methods.
+         *
+         * ```kotlin
+         * // Admins may set any role; anyone may demote themselves to plain User
+         * user.role.anyOf(
+         *     UpdateRestrictions.RestrictionOption(user.role eq Role.Admin, Condition.Always),
+         *     UpdateRestrictions.RestrictionOption(Condition.Always, user.role eq Role.User),
+         * )
+         * ```
          */
-        public fun DataClassPath<T, *>.anyOf(vararg options: RestrictionOption<T>) {
-            mergeInto(this, options.toList())
+        public fun <V> DataClassPath<T, V>.anyOf(vararg options: Option<T, V>) {
+            require(options.isNotEmpty()) {
+                "anyOf needs at least one alternative; use cannotBeModified() to block the field entirely"
+            }
+            mergeInto(this, options.map {
+                RestrictionOption(ifCurrentItem = it.ifCurrentItem, newValueMustBe = this@anyOf.mapCondition(it.newValueMustBe))
+            })
         }
+
+        public class Option<T, V>(
+            public val ifCurrentItem: Condition<T>,
+            public val newValueMustBe: Condition<V>,
+        )
+        public inline fun <reified V> Option(
+            ifCurrentItem: Condition<T>,
+            newValueMustBe: (DataClassPath<V, V>) -> Condition<V>,
+        ): Option<T, V> = Option(ifCurrentItem, newValueMustBe(DataClassPathSelf(serializer<V>())))
 
         @PublishedApi
         internal fun mergeInto(path: DataClassPathPartial<T>, options: List<RestrictionOption<T>>) {
@@ -221,9 +205,9 @@ public data class UpdateRestrictions<T>(
          * **Important**: If [mask] is in a different [Mode], this builder is put into the more restrictive mode
          * (i.e. [Mode.Whitelist]).
          */
-        @Suppress("DEPRECATION")
         public fun include(mask: UpdateRestrictions<T>) {
-            mode = maxOf(mode, mask.mode)
+            // An empty `default` is exactly what whitelist mode means.
+            if (mask.default.isEmpty()) mode = Mode.Whitelist
             for ((key, options) in mask.perField) {
                 mergeInto(key, options)
             }
@@ -234,6 +218,50 @@ public data class UpdateRestrictions<T>(
             default = if (mode == Mode.Whitelist) emptyList() else listOf(RestrictionOption(Condition.Always, Condition.Always)),
         )
     }
+
+    // =================================================================================================
+    // Deprecated: the v1 `(mode, fields)` representation.
+    //
+    // Retained only so old serialized payloads and old source keep working; everything above is
+    // independent of it, and [UpdateRestrictionsSerializer] is the only thing in this library that still
+    // reads or writes it.
+    // =================================================================================================
+
+    /** Derived from whether [default] is empty. Kept for source compatibility with the v1 API. */
+    @Deprecated("Derived from `default`; construct perField/default directly instead of branching on mode")
+    public val mode: Mode get() = if (default.isEmpty()) Mode.Whitelist else Mode.Blacklist
+
+    /**
+     * A single field-specific restriction rule, as used by the v1 [UpdateRestrictions] representation.
+     * Retained so old serialized payloads (`{mode, fields}`) can still be read/converted.
+     */
+    @Deprecated("Replaced by RestrictionOption stored in perField/default")
+    @Serializable
+    public data class Part<T>(
+        @JsonNames("path") public val property: DataClassPathPartial<T>,
+        @JsonNames("limitedIf") public val requires: Condition<T>,
+        public val limitedTo: Condition<T>,
+    )
+
+    /**
+     * Converts the v1 (mode, fields) shape into the current perField/default representation. A `Part` with
+     * `requires == Never` (what `cannotBeModified()` produces) collapses to an empty option list -- v1's
+     * "unconditionally blocked" -- rather than being AND-merged in literally, both to match what the [Builder]
+     * itself would produce and because `Never` is absorbing under AND regardless of `limitedTo` either way.
+     */
+    @Suppress("DEPRECATION")
+    @Deprecated("Use the perField/default constructor, or the updateRestrictions {} DSL, instead")
+    public constructor(mode: Mode = Mode.Blacklist, fields: List<Part<T>>) : this(
+        perField = fields.groupBy { it.property }.mapValues { (_, parts) ->
+            parts.fold(null as List<RestrictionOption<T>>?) { acc, part ->
+                val partOptions =
+                    if (part.requires == Condition.Never) emptyList()
+                    else listOf(RestrictionOption(part.requires, part.limitedTo))
+                if (acc == null) partOptions else andMerge(acc, partOptions)
+            }!!
+        },
+        default = if (mode == Mode.Whitelist) emptyList() else listOf(RestrictionOption(Condition.Always, Condition.Always)),
+    )
 }
 
 /**
@@ -247,7 +275,7 @@ internal fun <T> andMerge(
 ): List<UpdateRestrictions.RestrictionOption<T>> = a.flatMap { x ->
     b.map { y ->
         UpdateRestrictions.RestrictionOption(
-            ifCurrentValue = x.ifCurrentValue and y.ifCurrentValue,
+            ifCurrentItem = x.ifCurrentItem and y.ifCurrentItem,
             newValueMustBe = x.newValueMustBe and y.newValueMustBe,
         )
     }
@@ -315,16 +343,20 @@ public inline fun <reified T> whitelistRestrictions(
  * Creates a copy of these [ModelPermissions] with additional update restrictions layered on top of the existing
  * ones, in the same [UpdateRestrictions.Mode] as the original.
  */
-@Suppress("DEPRECATION")
 public inline fun <reified T> ModelPermissions<T>.withAdditionalUpdateRestrictions(
     builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
 ): ModelPermissions<T> =
     copy(
-        updateRestrictions = updateRestrictions(this.updateRestrictions.mode) {
+        // No explicit mode: `include` already adopts the original's mode.
+        updateRestrictions = updateRestrictions {
             include(updateRestrictions)
             builder(it)
         }
     )
+
+// =====================================================================================================
+// Deprecated
+// =====================================================================================================
 
 @Deprecated("Renamed", ReplaceWith("UpdateRestrictions.Part"))
 public typealias UpdateRestrictionsPart<T> = UpdateRestrictions.Part<T>

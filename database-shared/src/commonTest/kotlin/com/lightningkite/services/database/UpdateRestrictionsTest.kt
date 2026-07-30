@@ -1,16 +1,17 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.serializers.KotlinBytesFormat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.NothingSerializer
+import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.uuid.Uuid
 
@@ -598,12 +599,12 @@ class UpdateRestrictionsTest {
             user.role.anyOf(
                 // Admins may change the role to anything
                 UpdateRestrictions.RestrictionOption(
-                    ifCurrentValue = user.role eq Role.Admin,
+                    ifCurrentItem = user.role eq Role.Admin,
                     newValueMustBe = Condition.Always
                 ),
                 // Anyone may set their own role down to plain User
                 UpdateRestrictions.RestrictionOption(
-                    ifCurrentValue = Condition.Always,
+                    ifCurrentItem = Condition.Always,
                     newValueMustBe = user.role eq Role.User
                 ),
             )
@@ -616,6 +617,127 @@ class UpdateRestrictionsTest {
         assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(toAdminMod))
         // Setting the role to User matches the second, unconditional alternative
         assertEquals(Condition.Always, restrictions(toUserMod))
+    }
+
+    @Test
+    fun `anyOf with a single alternative behaves like the equivalent single-rule declaration`() {
+        val viaAnyOf = updateRestrictions<TestUser> { user ->
+            user.credits.anyOf(
+                UpdateRestrictions.RestrictionOption(
+                    ifCurrentItem = user.role eq Role.Admin,
+                    newValueMustBe = Condition.Always
+                )
+            )
+        }
+        val viaRequires = updateRestrictions<TestUser> { user ->
+            user.credits requires (user.role eq Role.Admin)
+        }
+        assertEquals(viaRequires, viaAnyOf)
+    }
+
+    @Test
+    fun `an anyOf alternative can pair a requires condition with a value limit`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            user.credits.anyOf(
+                // Admins may set credits to anything
+                UpdateRestrictions.RestrictionOption(
+                    ifCurrentItem = user.role eq Role.Admin,
+                    newValueMustBe = Condition.Always
+                ),
+                // Moderators may only hand out small amounts
+                UpdateRestrictions.RestrictionOption(
+                    ifCurrentItem = user.role eq Role.Moderator,
+                    newValueMustBe = user.credits.condition { it lt 100 }
+                ),
+            )
+        }
+
+        // A big grant is only possible for admins
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            restrictions(modification<TestUser> { it.credits assign 500 })
+        )
+        // A small grant works for either -- simplify() folds the OR'd equalities into a membership check
+        assertEquals(
+            condition<TestUser> { it.role inside setOf(Role.Admin, Role.Moderator) },
+            restrictions(modification<TestUser> { it.credits assign 50 })
+        )
+    }
+
+    @Test
+    fun `anyOf with no alternatives is rejected rather than silently blocking the field`() {
+        assertFailsWith<IllegalArgumentException> {
+            updateRestrictions<TestUser> { user -> user.credits.anyOf() }
+        }
+    }
+
+    @Test
+    fun `anyOf AND-merges with a prior declaration on the same field`() {
+        val restrictions = updateRestrictions<TestUser> { user ->
+            // Only active accounts may touch credits at all...
+            user.credits requires (user.isActive eq true)
+            // ...and then only admins, or moderators handing out small amounts
+            user.credits.anyOf(
+                UpdateRestrictions.RestrictionOption(
+                    ifCurrentItem = user.role eq Role.Admin,
+                    newValueMustBe = Condition.Always
+                ),
+                UpdateRestrictions.RestrictionOption(
+                    ifCurrentItem = user.role eq Role.Moderator,
+                    newValueMustBe = user.credits.condition { it lt 100 }
+                ),
+            )
+        }
+
+        // The prior `requires` ANDs into every alternative, so only the admin alternative survives a big grant
+        assertEquals(
+            condition<TestUser> { (it.isActive eq true) and (it.role eq Role.Admin) },
+            restrictions(modification<TestUser> { it.credits assign 500 })
+        )
+    }
+
+    // ==================== Layering onto existing ModelPermissions ====================
+
+    @Test
+    fun `withAdditionalUpdateRestrictions layers new rules onto the existing ones`() {
+        val base = ModelPermissions<TestUser>(
+            updateRestrictions = updateRestrictions { user -> user.role.cannotBeModified() }
+        )
+        val combined = base.withAdditionalUpdateRestrictions { user ->
+            user.credits requires (user.role eq Role.Admin)
+        }
+
+        // The original rule survives...
+        assertEquals(
+            Condition.Never,
+            combined.updateRestrictions(modification<TestUser> { it.role assign Role.Admin })
+        )
+        // ...alongside the new one...
+        assertEquals(
+            condition<TestUser> { it.role eq Role.Admin },
+            combined.updateRestrictions(modification<TestUser> { it.credits assign 5 })
+        )
+        // ...and blacklist mode is kept, so unmentioned fields stay unrestricted.
+        assertEquals(
+            Condition.Always,
+            combined.updateRestrictions(modification<TestUser> { it.username assign "newuser" })
+        )
+    }
+
+    @Test
+    fun `withAdditionalUpdateRestrictions keeps the original whitelist mode`() {
+        val base = ModelPermissions<TestUser>(
+            updateRestrictions = whitelistRestrictions { user -> user.username.canBeModified() }
+        )
+        val combined = base.withAdditionalUpdateRestrictions { user -> user.age.canBeModified() }
+
+        assertEquals(
+            Condition.Always,
+            combined.updateRestrictions(modification<TestUser> { it.username assign "newuser" })
+        )
+        assertEquals(Condition.Always, combined.updateRestrictions(modification<TestUser> { it.age assign 30 }))
+        // Still a whitelist: anything not explicitly allowed remains blocked.
+        assertEquals(Condition.Never, combined.updateRestrictions(modification<TestUser> { it.credits assign 5 }))
     }
 
     // ==================== V2: nested longest-prefix + descendant matching ====================
@@ -673,11 +795,11 @@ class UpdateRestrictionsTest {
         assertEquals(Condition.Always, restrictions(noOp))
     }
 
-    // ==================== V1-compat wire format (UpdateRestrictionsSerializer) ====================
+    // ==================== Wire format (UpdateRestrictionsSerializer) ====================
     //
-    // UpdateRestrictions now serializes OUTBOUND in the v1 `{mode, fields}` shape (via a hand-written
-    // UpdateRestrictionsSerializer) so clients released against v1, like the admin UI, keep working unchanged.
-    // Inbound reading tolerates both the v1 shape and the real v2 `{perField, default}` shape.
+    // UpdateRestrictions serializes the real `perField`/`default` data alongside a lossy projection of it into the
+    // v1 `{mode, fields}` shape, so clients released against v1, like the admin UI, keep working unchanged.
+    // Inbound reading accepts either shape and prefers `perField`/`default`.
 
     @Test
     fun `serialize emits the v1 mode-fields wire shape with property-requires-limitedTo keys`() {
@@ -687,9 +809,7 @@ class UpdateRestrictionsTest {
         }
 
         val serializer = UpdateRestrictions.serializer(TestUser.serializer())
-        // encodeDefaults = true so `mode` (which equals its default, Blacklist) is still present to assert on --
-        // the default Json instance omits default-valued fields, same as v1 did.
-        val json = Json { encodeDefaults = true }.encodeToJsonElement(serializer, restrictions).jsonObject
+        val json = Json.encodeToJsonElement(serializer, restrictions).jsonObject
         val conditionSerializer = Condition.serializer(TestUser.serializer())
 
         assertEquals("Blacklist", json.getValue("mode").jsonPrimitive.content)
@@ -730,7 +850,7 @@ class UpdateRestrictionsTest {
     }
 
     @Test
-    fun `v1 JSON survives a deserialize-then-serialize round trip unchanged`() {
+    fun `JSON survives a deserialize-then-serialize round trip unchanged`() {
         val restrictions = updateRestrictions<TestUser> { user ->
             user.role.cannotBeModified()
             user.credits requires (user.role eq Role.Admin)
@@ -738,18 +858,37 @@ class UpdateRestrictionsTest {
         }
 
         val serializer = UpdateRestrictions.serializer(TestUser.serializer())
-        val v1Json = Json.encodeToString(serializer, restrictions)
-        assertTrue(v1Json.contains("\"fields\""), "Expected the v1 `fields` key in $v1Json")
+        val json = Json.encodeToString(serializer, restrictions)
+        assertTrue(json.contains("\"fields\""), "Expected the v1 `fields` key in $json")
+        assertTrue(json.contains("\"perField\""), "Expected the real `perField` data in $json")
 
-        val decoded = Json.decodeFromString(serializer, v1Json)
+        val decoded = Json.decodeFromString(serializer, json)
         assertEquals(restrictions, decoded)
 
         val reEncoded = Json.encodeToString(serializer, decoded)
-        assertEquals(v1Json, reEncoded)
+        assertEquals(json, reEncoded)
     }
 
     @Test
-    fun `v2 perField-default JSON still deserializes tolerantly`() {
+    fun `perField wins over the v1 projection when a payload carries both`() {
+        val conditionSerializer = Condition.serializer(TestUser.serializer())
+        val roleAdminJson = Json.encodeToString(conditionSerializer, condition<TestUser> { it.role eq Role.Admin })
+        val alwaysJson = Json.encodeToString(conditionSerializer, Condition.Always)
+        val neverJson = Json.encodeToString(conditionSerializer, Condition.Never)
+
+        // `fields` deliberately disagrees with `perField` -- it is only the lossy projection, so it must lose.
+        val json = """{"mode":"Blacklist",""" +
+            """"fields":[{"property":"credits","requires":$neverJson,"limitedTo":$alwaysJson}],""" +
+            """"perField":{"credits":[{"ifCurrentValue":$roleAdminJson,"newValueMustBe":$alwaysJson}]},""" +
+            """"default":[{"ifCurrentValue":$alwaysJson,"newValueMustBe":$alwaysJson}]}"""
+
+        val serializer = UpdateRestrictions.serializer(TestUser.serializer())
+        val expected = updateRestrictions<TestUser> { user -> user.credits requires (user.role eq Role.Admin) }
+        assertEquals(expected, Json.decodeFromString(serializer, json))
+    }
+
+    @Test
+    fun `a payload carrying only perField-default deserializes`() {
         val restrictions = updateRestrictions<TestUser> { user ->
             user.credits requires (user.role eq Role.Admin)
         }
@@ -758,8 +897,7 @@ class UpdateRestrictionsTest {
         val roleAdminJson = Json.encodeToString(conditionSerializer, condition<TestUser> { it.role eq Role.Admin })
         val alwaysJson = Json.encodeToString(conditionSerializer, Condition.Always)
 
-        // What the raw v2 perField/default data shape looks like on the wire -- not something this serializer
-        // emits anymore, but still accepted on read.
+        // A payload without the legacy projection, e.g. hand-written or produced by a stricter future writer.
         val v2Json = """{"perField":{"credits":[{"ifCurrentValue":$roleAdminJson,"newValueMustBe":$alwaysJson}]},""" +
             """"default":[{"ifCurrentValue":$alwaysJson,"newValueMustBe":$alwaysJson}]}"""
 
@@ -769,15 +907,15 @@ class UpdateRestrictionsTest {
     }
 
     @Test
-    fun `anyOf multi-option collapses into a single lossy v1 Part on serialize`() {
+    fun `anyOf round-trips losslessly while still projecting a collapsed v1 Part`() {
         val restrictions = updateRestrictions<TestUser> { user ->
             user.role.anyOf(
                 UpdateRestrictions.RestrictionOption(
-                    ifCurrentValue = user.role eq Role.Admin,
+                    ifCurrentItem = user.role eq Role.Admin,
                     newValueMustBe = Condition.Always
                 ),
                 UpdateRestrictions.RestrictionOption(
-                    ifCurrentValue = Condition.Always,
+                    ifCurrentItem = Condition.Always,
                     newValueMustBe = user.role eq Role.User
                 ),
             )
@@ -785,6 +923,12 @@ class UpdateRestrictionsTest {
 
         val serializer = UpdateRestrictions.serializer(TestUser.serializer())
         val json = Json.encodeToJsonElement(serializer, restrictions).jsonObject
+
+        // The real data is preserved, so current-version peers lose nothing.
+        assertEquals(restrictions, Json.decodeFromJsonElement(serializer, json))
+
+        // ...and a v1 reader still sees a single Part, with the alternatives OR'd together. That projection is
+        // lossy -- it can't express "either of these two paired rules" -- but it stays usable.
         val fields = json.getValue("fields").jsonArray
         assertEquals(1, fields.size, "The two alternatives collapse into a single v1 Part")
 
@@ -794,22 +938,53 @@ class UpdateRestrictionsTest {
         val conditionSerializer = Condition.serializer(TestUser.serializer())
         assertEquals(
             condition<TestUser> { (it.role eq Role.Admin) or Condition.Always },
-            Json.decodeFromJsonElement(conditionSerializer, roleField.getValue("requires")),
-            "Lossy: independent alternatives collapse into a single OR'd `requires`"
+            Json.decodeFromJsonElement(conditionSerializer, roleField.getValue("requires"))
         )
         assertEquals(
             condition<TestUser> { Condition.Always or (it.role eq Role.User) },
-            Json.decodeFromJsonElement(conditionSerializer, roleField.getValue("limitedTo")),
-            "Lossy: independent alternatives collapse into a single OR'd `limitedTo`"
+            Json.decodeFromJsonElement(conditionSerializer, roleField.getValue("limitedTo"))
         )
-
-        // Still valid v1-shaped JSON that round-trips to *some* v1-compatible restriction, just not the original.
-        val roundTripped = Json.decodeFromString(serializer, Json.encodeToString(serializer, restrictions))
-        assertEquals(1, roundTripped.perField.values.single().size)
     }
 
     @Test
-    fun `UpdateRestrictions round-trips through the SerializationRegistry in the v1 shape`() {
+    fun `round-trips through a non-JSON format`() {
+        val format = KotlinBytesFormat(EmptySerializersModule())
+        val serializer = UpdateRestrictions.serializer(TestUser.serializer())
+
+        // Everything the representation can express: blocked fields, conditional fields, value limits,
+        // multiple alternatives, and both defaults.
+        val cases = listOf(
+            UpdateRestrictions(),
+            blacklistRestrictions<TestUser> { user ->
+                user.role.cannotBeModified()
+                user.credits requires (user.role eq Role.Admin)
+                user.isActive.mustBe { it eq true }
+            },
+            whitelistRestrictions<TestUser> { user ->
+                user.role.always
+                user.role.never
+                user.username.canBeModified()
+                user.role.anyOf(
+                    Option(
+                        ifCurrentItem = user.role eq Role.Admin,
+                        newValueMustBe = { it.always }
+                    ),
+                    Option(
+                        ifCurrentItem = Condition.Always,
+                        newValueMustBe = { it eq Role.User }
+                    ),
+                )
+            },
+        )
+
+        for (restrictions in cases) {
+            val decoded = format.decodeFromByteArray(serializer, format.encodeToByteArray(serializer, restrictions))
+            assertEquals(restrictions, decoded)
+        }
+    }
+
+    @Test
+    fun `UpdateRestrictions round-trips through the SerializationRegistry`() {
         val restrictions = updateRestrictions<TestUser> { user ->
             user.credits requires (user.role eq Role.Admin)
         }

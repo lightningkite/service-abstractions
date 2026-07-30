@@ -2,105 +2,116 @@ package com.lightningkite.services.database
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.json.JsonDecoder
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.decodeFromJsonElement
-
-// The v1 wire shape (`{mode, fields}`), used only for encoding/decoding by UpdateRestrictionsSerializer. Never
-// exposed outside this file -- callers always see the real UpdateRestrictions(perField, default) model.
-@Suppress("DEPRECATION")
-@Serializable
-private data class UpdateRestrictionsV1Shape<T>(
-    val mode: UpdateRestrictions.Mode = UpdateRestrictions.Mode.Blacklist,
-    val fields: List<UpdateRestrictions.Part<T>>,
-)
-
-// The v2 wire shape (`{perField, default}`), accepted for inbound tolerance (e.g. reading back whatever this
-// serializer itself last wrote before this v1-compat change existed) but never emitted.
-@Serializable
-private data class UpdateRestrictionsV2Shape<T>(
-    val perField: Map<DataClassPathPartial<T>, List<UpdateRestrictions.RestrictionOption<T>>> = emptyMap(),
-    val default: List<UpdateRestrictions.RestrictionOption<T>> =
-        listOf(UpdateRestrictions.RestrictionOption(Condition.Always, Condition.Always)),
-)
+import kotlinx.serialization.encoding.decodeStructure
+import kotlinx.serialization.encoding.encodeStructure
 
 /**
- * Serializes [UpdateRestrictions] in the v1 `{mode, fields}` wire shape, so clients released against v1 (such as
- * the admin UI) keep working without a re-release, while the in-memory representation stays the v2
- * `perField`/`default` model.
+ * Serializes [UpdateRestrictions] as a single structure carrying both the current `perField`/`default` model and a
+ * best-effort projection of it into the v1 `mode`/`fields` shape, so clients released against v1 (such as the admin
+ * UI) keep reading the payload without a re-release.
  *
- * ## Outbound (serialize)
- * Always emits `{mode, fields}`. `mode` is derived from whether [UpdateRestrictions.default] is empty. Each
- * `perField` entry becomes one [UpdateRestrictions.Part]:
- * - Zero options (`cannotBeModified()`) -> `Part(requires = Never, limitedTo = Always)` -- identical to what v1
- *   itself produced.
- * - One option -> `Part(requires = option.ifCurrentValue, limitedTo = option.newValueMustBe)` -- also identical to
- *   v1, and since every v1-built restriction (and every `requires`/`mustBe` call, which AND-merge into a single
- *   option) has exactly one option per field, this covers all pre-existing data losslessly.
- * - More than one option (only reachable via the new `anyOf`) -> collapsed into one best-effort
- *   `Part(requires = Or(all ifCurrentValue), limitedTo = Or(all newValueMustBe))`. This loses the independence
- *   between alternatives (a v1 `Part` has no way to express "either of these two independent rules"); round-trip
- *   through the actual `perField`/`default` shape (e.g. via [SerializationRegistry] with a non-Json format, or
- *   in-memory) if full `anyOf` fidelity is needed.
+ * ## Outbound
+ * All four elements are always written. `perField`/`default` are the real values. `mode` and `fields` are derived:
+ * each `perField` entry becomes one [UpdateRestrictions.Part], and `mode` reflects whether [UpdateRestrictions.default]
+ * is empty. The derivation is lossy in two ways, which is acceptable because it exists only for v1 readers:
+ * - A field with more than one alternative (only reachable via `anyOf`) collapses to
+ *   `Part(requires = Or(all ifCurrentValue), limitedTo = Or(all newValueMustBe))`, losing the independence between
+ *   the alternatives -- a v1 `Part` cannot express "either of these two paired rules".
+ * - A `default` other than "always" or "never" has no v1 equivalent at all; `mode` only distinguishes those two.
  *
- * ## Inbound (deserialize)
- * Tolerantly accepts both shapes on JSON: v1 `{mode, fields}` (detected by a `fields` key) and v2
- * `{perField, default}`. Non-JSON formats have no keys to peek at, so they're read as the v1 shape -- the only
- * wire format ever actually released.
+ * ## Inbound
+ * `perField`/`default` win whenever either is present, since `mode`/`fields` are only their lossy projection.
+ * A payload carrying just the v1 elements -- the only shape ever actually released -- is converted through the v1
+ * constructor. Elements are read through the ordinary `decodeElementIndex` loop and every element is optional, so
+ * this behaves the same on any format, including binary ones that address elements by index rather than by name and
+ * ones that decode sequentially.
  */
 @OptIn(ExperimentalSerializationApi::class)
+@Suppress("DEPRECATION")
 public class UpdateRestrictionsSerializer<T>(private val inner: KSerializer<T>) : KSerializer<UpdateRestrictions<T>> {
-    private val v1Serializer = UpdateRestrictionsV1Shape.serializer(inner)
-    private val v2Serializer = UpdateRestrictionsV2Shape.serializer(inner)
+    private val modeSerializer = UpdateRestrictions.Mode.serializer()
+    private val fieldsSerializer = ListSerializer(UpdateRestrictions.Part.serializer(inner))
+    private val optionsSerializer = ListSerializer(UpdateRestrictions.RestrictionOption.serializer(inner))
+    private val perFieldSerializer = MapSerializer(DataClassPathSerializer(inner), optionsSerializer)
 
-    override val descriptor: SerialDescriptor =
-        SerialDescriptor("com.lightningkite.services.database.UpdateRestrictions", v1Serializer.descriptor)
-
-    @Suppress("DEPRECATION")
-    override fun serialize(encoder: Encoder, value: UpdateRestrictions<T>) {
-        val v1 = UpdateRestrictionsV1Shape(
-            mode = value.mode,
-            fields = value.perField.map { (path, options) -> toPart(path, options) },
-        )
-        encoder.encodeSerializableValue(v1Serializer, v1)
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor(
+        "com.lightningkite.services.database.UpdateRestrictions",
+        inner.descriptor,
+    ) {
+        element("mode", modeSerializer.descriptor, isOptional = true)
+        element("fields", fieldsSerializer.descriptor, isOptional = true)
+        element("perField", perFieldSerializer.descriptor, isOptional = true)
+        element("default", optionsSerializer.descriptor, isOptional = true)
     }
 
-    override fun deserialize(decoder: Decoder): UpdateRestrictions<T> {
-        if (decoder is JsonDecoder) {
-            val element = decoder.decodeJsonElement()
-            val obj = element as? JsonObject
-                ?: throw SerializationException("Expected a JSON object for UpdateRestrictions, got $element")
-            return if ("fields" in obj) {
-                fromV1(decoder.json.decodeFromJsonElement(v1Serializer, element))
-            } else {
-                val v2 = decoder.json.decodeFromJsonElement(v2Serializer, element)
-                UpdateRestrictions(perField = v2.perField, default = v2.default)
+    override fun serialize(encoder: Encoder, value: UpdateRestrictions<T>) {
+        encoder.encodeStructure(descriptor) {
+            encodeSerializableElement(descriptor, 0, modeSerializer, value.mode)
+            encodeSerializableElement(descriptor, 1, fieldsSerializer, value.perField.map(::toPart))
+            encodeSerializableElement(descriptor, 2, perFieldSerializer, value.perField)
+            encodeSerializableElement(descriptor, 3, optionsSerializer, value.default)
+        }
+    }
+
+    override fun deserialize(decoder: Decoder): UpdateRestrictions<T> = decoder.decodeStructure(descriptor) {
+        var mode = UpdateRestrictions.Mode.Blacklist
+        var fields: List<UpdateRestrictions.Part<T>>? = null
+        var perField: Map<DataClassPathPartial<T>, List<UpdateRestrictions.RestrictionOption<T>>>? = null
+        var default: List<UpdateRestrictions.RestrictionOption<T>>? = null
+
+        if (decodeSequentially()) {
+            mode = decodeSerializableElement(descriptor, 0, modeSerializer)
+            fields = decodeSerializableElement(descriptor, 1, fieldsSerializer)
+            perField = decodeSerializableElement(descriptor, 2, perFieldSerializer)
+            default = decodeSerializableElement(descriptor, 3, optionsSerializer)
+        } else {
+            while (true) {
+                when (val index = decodeElementIndex(descriptor)) {
+                    0 -> mode = decodeSerializableElement(descriptor, 0, modeSerializer)
+                    1 -> fields = decodeSerializableElement(descriptor, 1, fieldsSerializer)
+                    2 -> perField = decodeSerializableElement(descriptor, 2, perFieldSerializer)
+                    3 -> default = decodeSerializableElement(descriptor, 3, optionsSerializer)
+                    CompositeDecoder.DECODE_DONE -> break
+                    else -> throw SerializationException("Unexpected element index $index for UpdateRestrictions")
+                }
             }
         }
-        // Non-JSON formats have no keys to peek at; the v1 shape is the only wire format ever actually released.
-        return fromV1(decoder.decodeSerializableValue(v1Serializer))
+
+        if (perField != null || default != null) {
+            UpdateRestrictions(
+                perField = perField ?: emptyMap(),
+                default = default ?: defaultFor(mode),
+            )
+        } else {
+            UpdateRestrictions(mode = mode, fields = fields ?: emptyList())
+        }
     }
 
-    @Suppress("DEPRECATION")
     private fun toPart(
-        path: DataClassPathPartial<T>,
-        options: List<UpdateRestrictions.RestrictionOption<T>>,
-    ): UpdateRestrictions.Part<T> = when (options.size) {
-        0 -> UpdateRestrictions.Part(path, Condition.Never, Condition.Always)
-        1 -> UpdateRestrictions.Part(path, options[0].ifCurrentValue, options[0].newValueMustBe)
-        else -> UpdateRestrictions.Part(
-            path,
-            requires = Condition.Or(options.map { it.ifCurrentValue }),
-            limitedTo = Condition.Or(options.map { it.newValueMustBe }),
-        )
+        entry: Map.Entry<DataClassPathPartial<T>, List<UpdateRestrictions.RestrictionOption<T>>>,
+    ): UpdateRestrictions.Part<T> {
+        val options = entry.value
+        return when (options.size) {
+            // v1's "unconditionally blocked", which is what `cannotBeModified()` produced there too.
+            0 -> UpdateRestrictions.Part(entry.key, Condition.Never, Condition.Always)
+            1 -> UpdateRestrictions.Part(entry.key, options[0].ifCurrentItem, options[0].newValueMustBe)
+            else -> UpdateRestrictions.Part(
+                entry.key,
+                requires = Condition.Or(options.map { it.ifCurrentItem }),
+                limitedTo = Condition.Or(options.map { it.newValueMustBe }),
+            )
+        }
     }
 
-    @Suppress("DEPRECATION")
-    private fun fromV1(v1: UpdateRestrictionsV1Shape<T>): UpdateRestrictions<T> =
-        UpdateRestrictions(mode = v1.mode, fields = v1.fields)
+    private fun defaultFor(mode: UpdateRestrictions.Mode): List<UpdateRestrictions.RestrictionOption<T>> =
+        if (mode == UpdateRestrictions.Mode.Whitelist) emptyList()
+        else listOf(UpdateRestrictions.RestrictionOption(Condition.Always, Condition.Always))
 }

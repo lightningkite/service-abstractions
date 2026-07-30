@@ -52,6 +52,8 @@ kotlin {
         val commonTest by getting {
             dependencies {
                 implementation(project(":test"))
+                // A binary format, to prove serializers here don't quietly depend on JSON.
+                implementation(project(":kotlin-bytes-format"))
                 implementation(libs.kotlin.test)
                 implementation(libs.coroutines.testing)
             }
