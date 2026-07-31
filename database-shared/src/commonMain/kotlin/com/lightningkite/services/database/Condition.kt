@@ -368,7 +368,7 @@ public fun <T> Condition.Companion.orNotNull(vararg conditions: Condition<T>?): 
  *
  * This can be thought of as a logical implication: `if_` implies `then`.
  *
- * Useful when building [Mask] or [UpdateRestrictions] when changes only _sometimes_ must meet conditions
+ * Useful when building [Mask] or [UpdateRestriction] when changes only _sometimes_ must meet conditions
  */
 public fun <T> Condition.Companion.ifThen(if_: Condition<T>, then: Condition<T>): Condition.Or<T> =
     (if_ and then) or !if_

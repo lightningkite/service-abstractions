@@ -39,7 +39,7 @@ class MaskTest {
         val notMatchingModA = modification<LargeTestModel> { it.embedded.value2 assign 2 }
         val notMatchingModB = modification<LargeTestModel> { it.int assign 2 }
 
-        val mask = updateRestrictions<LargeTestModel> { it.embedded.value1 requires it.never }
+        val mask = updateRestriction<LargeTestModel> { it.embedded.value1 requires it.never }
 
         assertTrue(mask(matchingMod) is Condition.Never)
         assertTrue(mask(notMatchingModA) is Condition.Always)
@@ -48,11 +48,10 @@ class MaskTest {
 
     @Test
     fun complexModification() {
-        val mask = updateRestrictions<LargeTestModel> {
-            it.embedded.value2.requires<Int>(
-                requires = it.always,
-                valueMust = { it gt 4 }
-            )
+        // The old combined `requires(requires, valueMust)` verb is just these two clauses ANDed together.
+        val mask = updateRestriction<LargeTestModel> {
+            it.embedded.value2 requires it.always
+            it.embedded.value2.mustBe { it gt 4 }
         }
 
         assertTrue(mask(modification { it.embedded.value2 assign 5 }) is Condition.Always)

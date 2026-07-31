@@ -485,18 +485,8 @@ public class SerializationRegistry(public val module: SerializersModule) {
         register(Query.serializer(NothingSerializer()).descriptor.serialName) { Query.serializer(it[0]) }
         register(QueryPartial.serializer(NothingSerializer()).descriptor.serialName) { QueryPartial.serializer(it[0]) }
         register(SortPart.serializer(NothingSerializer()).descriptor.serialName) { SortPart.serializer(it[0]) }
-        register(UpdateRestrictions.Part.serializer(NothingSerializer()).descriptor.serialName) {
-            UpdateRestrictions.Part.serializer(
-                it[0]
-            )
-        }
-        register(UpdateRestrictions.serializer(NothingSerializer()).descriptor.serialName) {
-            UpdateRestrictions.serializer(
-                it[0]
-            )
-        }
-        register(UpdateRestrictions.RestrictionOption.serializer(NothingSerializer()).descriptor.serialName) {
-            UpdateRestrictions.RestrictionOption.serializer(
+        register(UpdateRestriction.serializer(NothingSerializer()).descriptor.serialName) {
+            UpdateRestriction.serializer(
                 it[0]
             )
         }

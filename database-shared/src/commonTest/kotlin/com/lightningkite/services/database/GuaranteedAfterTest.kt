@@ -17,7 +17,7 @@ data class GuaranteedAfterTestModel(
  * Regression tests for [Condition.guaranteedAfter]: a top-level [Condition.And]/[Condition.Or] used to be
  * evaluated against a non-[Modification.Assign] modification by casting `this` straight to [Condition.OnField],
  * which always failed and fell back to `true` -- silently treating any restriction built from an AND-merge (as
- * the [UpdateRestrictions] DSL does) as unconditionally satisfied.
+ * the [UpdateRestriction] DSL does) as unconditionally satisfied.
  */
 class GuaranteedAfterTest {
     @Test

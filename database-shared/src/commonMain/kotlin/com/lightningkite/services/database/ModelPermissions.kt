@@ -28,8 +28,12 @@ public data class ModelPermissions<Model>(
     val update: Condition<Model> = Condition.Never,
     /**
      * Restrictions on what the user is allowed to update.
+     *
+     * Deliberately *not* named `updateRestrictions`: that key held the old per-field representation, which this
+     * cannot be read as. Using a new name means a payload written by either version simply falls back to the
+     * default for the key it doesn't recognize, rather than mis-reading the other's data.
      */
-    val updateRestrictions: UpdateRestrictions<Model> = UpdateRestrictions(),
+    val updateRestriction: UpdateRestriction<Model> = UpdateRestriction.unrestricted(),
     /**
      * The user may only delete models that match this condition.
      */
@@ -52,11 +56,11 @@ public data class ModelPermissions<Model>(
         read: Condition<Model>,
         readMask: Mask<Model> = Mask(),
         manage: Condition<Model>,
-        updateRestriction: UpdateRestrictions<Model> = UpdateRestrictions(),
+        updateRestriction: UpdateRestriction<Model> = UpdateRestriction.unrestricted(),
     ) : this(
         create = manage,
         update = manage,
-        updateRestrictions = updateRestriction,
+        updateRestriction = updateRestriction,
         read = read,
         readMask = readMask,
         delete = manage
@@ -65,11 +69,11 @@ public data class ModelPermissions<Model>(
     public constructor(
         all: Condition<Model>,
         readMask: Mask<Model> = Mask(),
-        updateRestriction: UpdateRestrictions<Model> = UpdateRestrictions(),
+        updateRestriction: UpdateRestriction<Model> = UpdateRestriction.unrestricted(),
     ) : this(
         create = all,
         update = all,
-        updateRestrictions = updateRestriction,
+        updateRestriction = updateRestriction,
         read = all,
         readMask = readMask,
         delete = all
@@ -79,7 +83,7 @@ public data class ModelPermissions<Model>(
      * @return a condition defining under what circumstances the given [modification] is permitted in.
      */
     public fun allowed(modification: Modification<Model>): Condition<Model> =
-        updateRestrictions(modification) and update
+        updateRestriction(modification) and update
 
     /**
      * Masks a single instance of the model.
