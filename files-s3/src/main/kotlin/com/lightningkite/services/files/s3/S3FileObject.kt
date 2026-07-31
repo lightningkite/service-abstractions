@@ -545,7 +545,7 @@ public class S3FileObject(
             // Local verification failed (signature was not produced by this server); fall back to HTTP.
             // The shared client applies a 60s engine timeout.
             // It would be great if we could make this async, but it's used in serialization, so not possible.
-            return runBlocking {
+            return runBlocking(Dispatchers.IO) {
                 val response = client.get("$url?$queryParams") {
                     header("Range", "bytes=0-0")
                 }
