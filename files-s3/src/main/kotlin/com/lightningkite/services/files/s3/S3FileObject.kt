@@ -547,7 +547,7 @@ public class S3FileObject(
             // It would be great if we could make this async, but it's used in serialization, so not possible.
             return runBlocking {
                 val response = client.get("$url?$queryParams") {
-                    header("Range", "0-0")
+                    header("Range", "bytes=0-0")
                 }
                 if (!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
             }
