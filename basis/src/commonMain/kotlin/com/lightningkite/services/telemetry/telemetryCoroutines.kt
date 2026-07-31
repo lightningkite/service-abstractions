@@ -15,13 +15,13 @@ internal class TelemetryAttributeElement(
 
     fun flattened(): TelemetryAttributes {
         if (parent == null) return attributes
-        val merged = LinkedHashMap<TelemetryKey<*>, Any?>()
-        fun add(element: TelemetryAttributeElement) {
-            element.parent?.let(::add) // root first so children override
-            merged.putAll(element.attributes.map)
+        return TelemetryAttributes {
+            fun add(element: TelemetryAttributeElement) {
+                element.parent?.let(::add) // root first so children override
+                putAll(element.attributes)
+            }
+            add(this@TelemetryAttributeElement)
         }
-        add(this)
-        return TelemetryAttributes(merged)
     }
 }
 

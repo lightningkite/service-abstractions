@@ -1,7 +1,7 @@
 package com.lightningkite.services.speech.openai
 
-import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.telemetryAttributesOf
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.telemetry.telemetryTrace
@@ -167,11 +167,9 @@ public class OpenAITextToSpeechService(
 
         return telemetryTrace(
             "synthesize",
-            attributes = TelemetryAttributes(
-                mapOf(
-                    "ai.model" to model,
-                    "text.char_count" to text.length.toLong(),
-                )
+            attributes = telemetryAttributesOf(
+                TelemetryKeys.Ai.model to model,
+                TelemetryKeys.Text.charCount to text.length.toLong(),
             )
         ) { span ->
             logger.debug { "[$name] Synthesizing ${text.length} chars with voice=$voiceId, model=$model" }
@@ -200,7 +198,7 @@ public class OpenAITextToSpeechService(
             val mediaType = mapFormatToMediaType(options.outputFormat)
 
             logger.debug { "[$name] Synthesized ${audioBytes.size} bytes of audio" }
-            span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("audio.size_bytes"), audioBytes.size.toLong()) })
+            span.enrich(telemetryAttributesOf(TelemetryKeys.Audio.sizeBytes to audioBytes.size.toLong()))
             TypedData(Data.Bytes(audioBytes), mediaType)
         }
     }
@@ -216,11 +214,9 @@ public class OpenAITextToSpeechService(
 
         telemetryTrace(
             "synthesize_stream",
-            attributes = TelemetryAttributes(
-                mapOf(
-                    "ai.model" to model,
-                    "text.char_count" to text.length.toLong(),
-                )
+            attributes = telemetryAttributesOf(
+                TelemetryKeys.Ai.model to model,
+                TelemetryKeys.Text.charCount to text.length.toLong(),
             )
         ) {
             logger.debug { "[$name] Streaming TTS for ${text.length} chars with voice=$voiceId" }
