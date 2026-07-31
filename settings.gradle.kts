@@ -29,7 +29,6 @@ pluginManagement {
 
 //include(":database-cassandra")   // EXPERIMENTAL
 //include(":database-migration")   // EXPERIMENTAL
-//include(":files-s3-kmp") // EXPERIMENTAL
 //include(":pubsub-mqtt")  // EXPERIMENTAL
 //include(":pubsub-mqtt-aws")  // EXPERIMENTAL
 //include(":pubsub-mqtt-paho")  // EXPERIMENTAL

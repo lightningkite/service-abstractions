@@ -1,8 +1,11 @@
 package com.lightningkite.services.files.test
 
 import com.lightningkite.services.data.*
+import com.lightningkite.services.data.DataSize.Companion.bytes
 import com.lightningkite.services.default
-import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.files.ExternalFile
+import com.lightningkite.services.files.ExternalFileSystem
+import com.lightningkite.services.files.serverFile
 import com.lightningkite.services.http.client
 import com.lightningkite.services.test.runTestWithClock
 import io.ktor.client.request.*
@@ -15,7 +18,7 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 abstract class FileSystemTests {
-    abstract val system: PublicFileSystem?
+    abstract val system: ExternalFileSystem?
     open fun runSuspendingTest(body: suspend CoroutineScope.() -> Unit) = runTestWithClock { body() }
 
     @Test
@@ -47,15 +50,28 @@ abstract class FileSystemTests {
         }
     }
 
+    /**
+     * The canonical `sf://<name>/<path>` form is what gets persisted to a database, and it must
+     * round-trip back to the same file through [ExternalFile.Parser] (the path the file serializer
+     * takes when reading a stored value).
+     */
     @Test
-    fun testLocalRestoration() = runSuspendingTest {
+    fun testCanonicalRestoration() = runSuspendingTest {
         val system = system ?: run {
             println("Could not test because the file system isn't supported here.")
             return@runSuspendingTest
         }
-        val file = system.root.then("test.txt")
-        println(file)
-        assertEquals(file, system.parseInternalUrl(file.url.also { println(it) }))
+        val parser = ExternalFile.Parser(listOf(system))
+        for (file in listOf(
+            system.root.then("folder/test.txt"),
+            system.root.then("folder/file with spaces & odd ?#[]()@*,;= chars.txt"),
+            system.root,
+        )) {
+            val canonical = file.serverFile.location
+            println(canonical)
+            assertTrue(canonical.startsWith("sf://"), "Persisted reference should be canonical, was '$canonical'")
+            assertEquals(file, parser.parse(canonical))
+        }
     }
 
     @Test
@@ -85,7 +101,7 @@ abstract class FileSystemTests {
                 val info = testFile.head()
                 assertNotNull(info)
                 assertEquals(MediaType.Text.Plain, info.type)
-                assertTrue(info.size > 0L)
+                assertTrue(info.size > 0L.bytes)
                 assertTrue(info.lastModified == null || info.lastModified!! > beforeModify)
 
                 // Testing with sub folders.
@@ -95,7 +111,7 @@ abstract class FileSystemTests {
                 val secondInfo = secondFile.head()
                 assertNotNull(secondInfo)
                 assertEquals(MediaType.Text.Plain, secondInfo.type)
-                assertTrue(secondInfo.size > 0L)
+                assertTrue(secondInfo.size > 0L.bytes)
                 assertTrue(secondInfo.lastModified == null || secondInfo.lastModified!! > secondBeforeModify)
             } finally {
                 testFile.delete()
@@ -142,7 +158,7 @@ abstract class FileSystemTests {
             val message = "Hello world!"
             try {
                 testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                assertTrue(testFile.signedUrl.startsWith(testFile.url))
+                assertEquals(testFile, system.parseExternalUrl(testFile.signedUrl))
                 println("testfile.signedUrl: ${testFile.signedUrl}")
                 assertTrue(client.get(testFile.signedUrl).status.isSuccess())
             } finally {
@@ -154,7 +170,7 @@ abstract class FileSystemTests {
             val message = "Hello world!"
             try {
                 testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                assertTrue(testFile.url.startsWith(testFile.url))
+                assertEquals(testFile, system.parseExternalUrl(testFile.signedUrl))
                 println("testfile.signedUrl: ${testFile.signedUrl}")
                 assertTrue(client.get(testFile.signedUrl).status.isSuccess())
             } finally {
@@ -166,7 +182,7 @@ abstract class FileSystemTests {
             val message = "Hello world!"
             try {
                 testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                assertTrue(testFile.url.startsWith(testFile.url))
+                assertEquals(testFile, system.parseExternalUrl(testFile.signedUrl))
                 println("testfile.signedUrl: ${testFile.signedUrl}")
                 assertTrue(client.get(testFile.signedUrl).status.isSuccess())
             } finally {

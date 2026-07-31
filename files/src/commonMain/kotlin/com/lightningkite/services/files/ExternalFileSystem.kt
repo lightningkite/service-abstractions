@@ -4,6 +4,8 @@ import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.kfile.workingDirectory
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -15,13 +17,13 @@ import kotlin.uuid.Uuid
  * Service abstraction for cloud file storage and content delivery.
  *
  * PublicFileSystem provides a unified interface for storing and serving files across
- * different storage backends (local filesystem, AWS S3, etc.). Files are accessible
- * via public URLs with optional signed URL support for access control.
+ * different storage backends (local filesystem, AWS S3, etc.), keyed by [ExternalPath].
+ * Files are accessible via public URLs with optional signed URL support for access control.
  *
  * ## Available Implementations
  *
  * - **KotlinxIoPublicFileSystem** (`file://`) - Local filesystem storage
- * - **S3PublicFileSystem** (`s3://`) - AWS S3 storage (JVM-only: files-s3, KMP: files-s3-kmp)
+ * - **S3PublicFileSystem** (`s3://`) - AWS S3 storage (JVM-only: files-s3)
  *
  * ## Configuration
  *
@@ -50,20 +52,11 @@ import kotlin.uuid.Uuid
  * val file = fs.root.then("uploads/avatar.jpg")
  * file.put(TypedData(imageBytes, MediaType.Image.Jpeg))
  *
- * // Get public URL
- * val url = file.url  // https://example.com/files/uploads/avatar.jpg
- *
  * // Read file
- * val content = file.get()  // TypedData with content and media type
+ * val content = file.get()  // TypedData with content and media type, null if it doesn't exist
  *
  * // Delete file
  * file.delete()
- *
- * // List files
- * val uploadDir = fs.root.then("uploads/")
- * uploadDir.list().collect { fileInfo ->
- *     println("${fileInfo.name}: ${fileInfo.size} bytes")
- * }
  * ```
  *
  * ## Signed URLs
@@ -71,89 +64,150 @@ import kotlin.uuid.Uuid
  * For access control, signed URLs include signatures that expire:
  *
  * ```kotlin
- * // Configure with signed URLs (1 hour expiration)
  * val fs = PublicFileSystem.Settings(
  *     "s3://bucket.s3-us-east-1.amazonaws.com?signedUrlDuration=1h"
  * )("storage", context)
  *
  * val file = fs.root.then("private/document.pdf")
- * val signedUrl = file.url  // Includes signature, expires in 1 hour
+ * val signedUrl = file.signedUrl  // Includes signature, expires in 1 hour
  * ```
  *
  * ## URL Parsing
  *
- * Parse URLs back into FileObject references:
- *
  * ```kotlin
- * // Internal URL (server-side only)
- * val file = fs.parseInternalUrl("https://cdn.example.com/files/image.jpg")
+ * // Stored references, server-side only: the canonical sf:// form and legacy absolute URLs
+ * val file = ExternalFile.Parser(listOf(fs)).parse("sf://storage/image.jpg")
  *
- * // External URL (validates signature)
+ * // External URL (validates signature); does NOT accept canonical sf:// references
  * val file = fs.parseExternalUrl(signedUrlFromClient)
  * ```
+ *
+ * ## Persisting References
+ *
+ * Store the backend-agnostic canonical form (see [ExternalFile.toString]) - `sf://<name>/<path>` -
+ * not a signed or backend-specific absolute URL. `ExternalFile.serverFile` produces it, and the file
+ * serializer both writes it on the way in and turns it back into a signed URL on the way out.
+ * Because it is keyed by the service [name], a stored value keeps resolving after the backend is
+ * swapped, provided the service keeps the same name and the files are moved across. Legacy absolute
+ * URLs already in a database continue to resolve through [parseLegacyUrl] as long as the same
+ * backend and name are configured.
  *
  * ## Important Gotchas
  *
  * - **Public access**: Files are publicly accessible unless using signed URLs
- * - **URL persistence**: File URLs should not be stored long-term if using signed URLs
- * - **Path traversal**: FileObject normalizes paths to prevent .. attacks
+ * - **Never persist signed URLs**: they expire; persist the canonical `sf://` form instead
+ * - **Path traversal**: [ExternalPath] rejects `.`/`..`/separator-bearing segments at construction time
  * - **Concurrency**: Concurrent writes to same file may result in race conditions
- * - **Storage costs**: Cloud storage (S3) charges for storage and bandwidth
  * - **serveUrl required**: Local filesystem requires serveUrl parameter (base URL for file access)
  * - **Health check writes**: Creates test file at `health-check/test-file.txt`
- * - **Media type detection**: Set MediaType explicitly, don't rely on auto-detection
- * - **Large files**: For uploads >5MB on S3, consider multipart upload (handled automatically by some implementations)
  *
- * @see FileObject
+ * @see ExternalFile
+ * @see ExternalPath
  * @see TypedData
  */
-public interface PublicFileSystem : Service {
-    /**
-     * The root file object for this file system.
-     * All file paths are resolved relative to this root.
-     */
-    public val root: FileObject
+public interface ExternalFileSystem : Service {
+    public suspend fun flow(path: ExternalPath): Flow<ExternalPath>
+    public suspend fun list(path: ExternalPath): List<ExternalPath> = flow(path).toList()
+    public suspend fun head(path: ExternalPath): FileInfo?
+    public suspend fun put(path: ExternalPath, content: TypedData)
+    public suspend fun get(path: ExternalPath): TypedData?
+    public suspend fun delete(path: ExternalPath)
+
+
 
     /**
-     * The root URLs for this file system.
-     * Default implementation returns a single-element list containing the root's URL.
-     * Override this if your file system has multiple root URLs (e.g., CDN mirrors).
-     */
-    public val rootUrls: List<String> get() = listOf(root.url)
-
-    /**
-     * Parses an internal URL (unsigned, used within the server) into a FileObject.
+     * Copies the file at [path] to [other].
      *
-     * @param url The internal URL to parse
-     * @return A FileObject if the URL belongs to this file system, null otherwise
+     * The default implementation downloads then re-uploads, which works across file systems;
+     * implementations may override this to optimize same-system copies (e.g. server-side copy).
+     *
+     * @throws IllegalArgumentException if the source file doesn't exist
      */
-    public fun parseInternalUrl(url: String): FileObject?
+    public suspend fun copyTo(path: ExternalPath, other: ExternalFile) {
+        val content = get(path)
+            ?: throw IllegalArgumentException("Source file does not exist: ${ExternalFile(this, path)}")
+        try {
+            other.put(content)
+        } catch (e: Exception) {
+            throw Exception("Failed to copy file from ${ExternalFile(this, path)} to $other", e)
+        }
+    }
 
     /**
-     * Parses an external URL (signed, provided to clients) into a FileObject.
+     * Moves the file at [path] to [other] by copying and then deleting the source.
+     *
+     * This ensures the copy succeeds before deleting the source to prevent data loss. It is
+     * still not fully atomic - if the delete fails after a successful copy, the file will
+     * exist in both locations.
+     *
+     * @throws IllegalArgumentException if the source file doesn't exist
+     */
+    public suspend fun moveTo(path: ExternalPath, other: ExternalFile) {
+        val content = get(path)
+            ?: throw IllegalArgumentException("Source file does not exist: ${ExternalFile(this, path)}")
+        try {
+            other.put(content)
+        } catch (e: Exception) {
+            throw Exception(
+                "Failed to move file from ${ExternalFile(this, path)} to $other: copy failed",
+                e
+            )
+        }
+        try {
+            delete(path)
+        } catch (e: Exception) {
+            throw Exception(
+                "File copied to $other but failed to delete source at ${ExternalFile(this, path)}",
+                e
+            )
+        }
+    }
+
+    /**
+     * A signed URL for the file at [path] that can be used to access it securely.
+     *
+     * @param timeout How long the URL should remain valid. Defaults to the file system's
+     * configured signed-URL duration; if that is also unset, the URL is unsigned.
+     */
+    public fun signUrl(path: ExternalPath, timeout: Duration? = null): String
+
+    /**
+     * Generates a signed URL that can be used to upload content to the file at [path].
+     */
+    public fun uploadUrl(path: ExternalPath, timeout: Duration): String
+
+    /**
+     * Parses an absolute URL of the kind this backend stored before the canonical `sf://` form
+     * existed, into an [ExternalFile].
+     *
+     * These URLs are unsigned, so this is server-internal: only values that came out of our own
+     * storage may be passed here, never client input. [ExternalFile.Parser] uses it as the fallback
+     * for stored references that are not canonical.
+     *
+     * @return An [ExternalFile] if the URL belongs to this file system, null otherwise
+     */
+    public fun parseLegacyUrl(url: String): ExternalFile?
+
+    /**
+     * Parses an external URL (signed, provided to clients) into an [ExternalFile].
      *
      * For file systems with signed URLs, this will validate the signature and expiration.
      *
-     * @param url The external/signed URL to parse
-     * @return A FileObject if the URL is valid and belongs to this file system, null otherwise
+     * @return An [ExternalFile] if the URL is valid and belongs to this file system, null otherwise
      * @throws IllegalArgumentException if signature validation fails or URL has expired
      */
-    public fun parseExternalUrl(url: String): FileObject?
+    public fun parseExternalUrl(url: String): ExternalFile?
 
+    /**
+     * The root file for this file system. All file paths are resolved relative to this root.
+     */
+    public val root: ExternalFile get() = ExternalFile(this, ExternalPath(emptyList()))
 
     /**
      * Performs a health check by writing, reading, and deleting a test file.
      *
-     * The health check verifies:
-     * - Ability to write files
-     * - Ability to read files with correct content type
-     * - Ability to read files with matching content
-     * - Ability to delete files
-     *
-     * Note: The test file is created at `health-check/test-file.txt` relative to root.
+     * Note: The test file is created at `health-check/test-file-<uuid>.txt` relative to root.
      * If deletion fails, this file may persist.
-     *
-     * @return HealthStatus.Level.OK if all operations succeed, HealthStatus.Level.ERROR otherwise
      */
     override suspend fun healthCheck(): HealthStatus {
         return try {
@@ -227,9 +281,9 @@ public interface PublicFileSystem : Service {
         public val url: String = "file://${
             workingDirectory.then("local/files").also { it.createDirectories() }
         }?serveUrl=files",
-    ) : Setting<PublicFileSystem> {
+    ) : Setting<ExternalFileSystem> {
 
-        public companion object : UrlSettingParser<PublicFileSystem>() {
+        public companion object : UrlSettingParser<ExternalFileSystem>() {
             init {
                 register("file") { name, url, context ->
 
@@ -259,7 +313,7 @@ public interface PublicFileSystem : Service {
                         }
                     }
 
-                    KotlinxIoPublicFileSystem(
+                    KotlinxIoExternalFileSystem(
                         name = name,
                         context = context,
                         rootKFile = KFile(path),
@@ -270,31 +324,8 @@ public interface PublicFileSystem : Service {
             }
         }
 
-        override fun invoke(name: String, context: SettingContext): PublicFileSystem {
+        override fun invoke(name: String, context: SettingContext): ExternalFileSystem {
             return parse(name, url, context)
         }
     }
 }
-
-/*
- * TODO: API Recommendations
- *
- * 1. Consider adding a `exists()` method to the interface for checking file existence
- *    without reading the entire file (more efficient than calling head() != null).
- *
- * 2. Consider adding bulk operations for better performance:
- *    - suspend fun copyBatch(items: List<Pair<FileObject, FileObject>>)
- *    - suspend fun deleteBatch(items: List<FileObject>)
- *
- * 3. The healthCheck leaves a test file if deletion fails. Consider adding a cleanup
- *    method or documenting this behavior more prominently for operations teams.
- *
- * 4. Consider adding metadata operations:
- *    - suspend fun setMetadata(key: String, value: String)
- *    - suspend fun getMetadata(key: String): String?
- *    This would be useful for tags, custom headers, etc.
- *
- * 5. The distinction between parseInternalUrl and parseExternalUrl could be clarified
- *    with better naming (e.g., parseUnsignedUrl vs parseSignedUrl) or merged into a
- *    single method with a validation parameter.
- */

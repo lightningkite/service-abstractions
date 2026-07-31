@@ -97,7 +97,7 @@ public suspend fun FileScanner.scan(item: TypedData): Unit = scan(item.mediaType
  * @param destination The destination file location
  * @throws FileScanException if scanning fails
  */
-public suspend fun FileScanner.copyAndScan(source: FileObject, destination: FileObject) {
+public suspend fun FileScanner.copyAndScan(source: ExternalFile, destination: ExternalFile) {
     try {
         source.copyTo(destination)
         scan(source.get()!!)
@@ -141,10 +141,10 @@ public suspend fun List<FileScanner>.scan(item: TypedData) {
  * @throws FileScanException if any scanner fails validation
  * @throws IllegalArgumentException if the source file doesn't exist
  */
-public suspend fun List<FileScanner>.copyAndScan(source: FileObject, destination: FileObject) {
+public suspend fun List<FileScanner>.copyAndScan(source: ExternalFile, destination: ExternalFile) {
     try {
         source.copyTo(destination)
-        scan(source.get() ?: throw IllegalArgumentException("Source file ${source.url} does not exist."))
+        scan(source.get() ?: throw IllegalArgumentException("Source file $source does not exist."))
     } catch (e: Exception) {
         destination.delete()
         throw e

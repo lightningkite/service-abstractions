@@ -2,7 +2,7 @@ package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.HealthStatus
-import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.files.ExternalFileSystem
 import com.lightningkite.services.files.test.FileSystemTests
 import com.lightningkite.services.test.performance
 import io.ktor.client.request.*
@@ -12,14 +12,14 @@ import java.io.File
 import kotlin.test.Test
 
 /**
- * Tests for [S3PublicFileSystem].
+ * Tests for [S3ExternalFileSystem].
  *
  * This test class extends [FileSystemTests] to run the shared file system test suite
  * against the S3 implementation. It also includes S3-specific tests for performance
  * and configuration parsing.
  *
  */
-class S3PublicFileSystemTest : FileSystemTests() {
+class S3ExternalFileSystemTest : FileSystemTests() {
 
     /**
      * The S3 file system instance for testing.
@@ -31,14 +31,14 @@ class S3PublicFileSystemTest : FileSystemTests() {
      * credentials produce a clean skip rather than every test failing with an
      * `SdkClientException`.
      */
-    override val system: S3PublicFileSystem? by lazy {
-        S3PublicFileSystem
-        val fs = PublicFileSystem.Settings(
+    override val system: S3ExternalFileSystem? by lazy {
+        S3ExternalFileSystem
+        val fs = ExternalFileSystem.Settings(
             File("../local/s3.txt").takeIf { it.exists() }?.readText() ?: run {
                 println("Skipping; need ../local/s3.txt to run the tests")
                 return@lazy null
             }
-        ).invoke("test", TestSettingContext()) as? S3PublicFileSystem ?: return@lazy null
+        ).invoke("test", TestSettingContext()) as? S3ExternalFileSystem ?: return@lazy null
 
         val reachable = runCatching {
             runBlocking { withTimeoutOrNull(10_000) { fs.healthCheck() } }
@@ -73,7 +73,7 @@ class S3PublicFileSystemTest : FileSystemTests() {
             file.signedUrl
         }
         val theirs = performance(10_000) {
-            file.signedUrlOfficial
+            system.signedUrlOfficial(file.path)
         }
         println("Mine: $mine")
         println("Theirs: $theirs")
@@ -90,9 +90,9 @@ class S3PublicFileSystemTest : FileSystemTests() {
      */
     @Test
     fun settingParse() {
-        S3PublicFileSystem
-        PublicFileSystem.Settings("s3://demo-example-files20220920193513533900000004.s3-us-west-2.amazonaws.com/?signedUrlDuration=1d")
-            .invoke("test", TestSettingContext()) as? S3PublicFileSystem
+        S3ExternalFileSystem
+        ExternalFileSystem.Settings("s3://demo-example-files20220920193513533900000004.s3-us-west-2.amazonaws.com/?signedUrlDuration=1d")
+            .invoke("test", TestSettingContext()) as? S3ExternalFileSystem
     }
 }
 

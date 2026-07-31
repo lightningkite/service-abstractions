@@ -11,7 +11,7 @@ import kotlin.test.*
 class FileObjectOperationsTest {
 
     private val fileSystem =
-        PublicFileSystem.Settings("file://build/test-files-ops?serveUrl=http://localhost:8080/files")
+        ExternalFileSystem.Settings("file://build/test-files-ops?serveUrl=http://localhost:8080/files")
             .invoke("test", TestSettingContext())
 
     @Test
@@ -57,7 +57,7 @@ class FileObjectOperationsTest {
         val file2 = fileSystem.root.thenRandom("test", "txt")
 
         assertTrue(file1.name != file2.name, "Random filenames should be unique")
-        assertTrue(file1.name.startsWith("test_"), "Filename should start with prefix")
+        assertTrue(file1.name.startsWith("test-"), "Filename should start with prefix")
         assertTrue(file1.name.endsWith(".txt"), "Filename should end with extension")
     }
 

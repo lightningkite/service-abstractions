@@ -3,18 +3,26 @@ package com.lightningkite.services.files
 import com.lightningkite.services.data.*
 import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.kfile.temporary
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.io.files.SystemFileSystem
 import kotlin.uuid.Uuid
 
 /**
- * Downloads a FileObject to a local temporary file.
+ * Downloads a FileObject to a local file.
  *
- * @param file Optional KFile to download to. If null, a temporary file will be created.
+ * @param file KFile to download to.
  * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
  */
-public suspend fun FileObject.download(
-    file: KFile?,
-): KFile? = get()?.let { download(file ?: SystemFileSystem.temporary(extension = it.mediaType.extension)) }
+public suspend fun ExternalFile.download(file: KFile): KFile? = get()?.let { download(file) }
+
+/**
+ * Downloads a FileObject to a local temporary file with the correct extension.
+ *
+ * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
+ */
+public suspend fun ExternalFile.downloadToTemporaryFile(): KFile? = get()?.let { download(SystemFileSystem.temporary(extension = it.mediaType.extension)) }
+
 
 /**
  * Downloads TypedData to a local file.
@@ -30,34 +38,42 @@ public suspend fun TypedData.download(
 }
 
 @Deprecated("Use then", ReplaceWith("then(path)"))
-public fun FileObject.resolve(path: String): FileObject = then(path)
+public fun ExternalFile.resolve(path: String): ExternalFile = then(path)
 
 @Deprecated("Use thenRandom", ReplaceWith("thenRandom(prefix, extension)"))
-public fun FileObject.resolveRandom(prefix: String, extension: String): FileObject = thenRandom(prefix, extension)
+public fun ExternalFile.resolveRandom(prefix: String, extension: String): ExternalFile = thenRandom(prefix, extension)
 
 /**
  * Creates a FileObject with a random UUID-based filename.
  *
+ * The separator is `-` rather than `_` so the name survives [ExternalPath.toString] unescaped,
+ * keeping generated URLs and stored references readable.
+ *
  * @param prefix The prefix for the filename (before the UUID)
  * @param extension The file extension (without the dot)
- * @return A FileObject with path like `{prefix}_{uuid}.{extension}`
+ * @return A FileObject with path like `{prefix}-{uuid}.{extension}`
  *
  * Example:
  * ```
  * val file = root.thenRandom("upload", "jpg")
- * // Results in something like: upload_550e8400-e29b-41d4-a716-446655440000.jpg
+ * // Results in something like: upload-550e8400-e29b-41d4-a716-446655440000.jpg
  * ```
  */
-public fun FileObject.thenRandom(prefix: String, extension: String): FileObject {
-    return then("${prefix}_${Uuid.random()}.${extension}")
+public fun ExternalFile.thenRandom(prefix: String, extension: String): ExternalFile {
+    return then("${prefix}-${Uuid.random()}.${extension}")
 }
 
 /**
- * Converts a FileObject to a ServerFile reference containing its URL.
+ * Converts a FileObject to a persistable [ServerFile] reference.
  *
- * ServerFile is typically used for serialization and client communication.
+ * This wraps the backend-agnostic canonical `sf://<name>/<path>` form (see [ExternalFile.toString]),
+ * which is what should be stored in a database - not a backend-specific absolute URL. Clients
+ * receive a real signed URL only when the [ServerFile] is serialized out through the file
+ * serializer, and [ExternalFile.Parser] reads the stored form back.
  */
-public val FileObject.serverFile: ServerFile get() = ServerFile(url)
+public val ExternalFile.serverFile: ServerFile get() = ServerFile(toString())
+
+internal expect val Dispatchers.Io: CoroutineDispatcher
 
 /*
  * TODO: API Recommendations

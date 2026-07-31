@@ -1,19 +1,17 @@
 package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.files.ExternalServerFileSerializer
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.regions.Region
-import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.time.Duration.Companion.hours
 
 /**
- * Verifies that [S3FileObject.assertSignatureValid] (reached via
- * [S3PublicFileSystem.parseExternalUrl]) validates signed URLs by PURE local HMAC recomputation —
+ * Verifies that [S3ExternalFileSystem.assertSignatureValid] (reached via
+ * [S3ExternalFileSystem.parseExternalUrl]) validates signed URLs by PURE local HMAC recomputation —
  * no network round-trip — and rejects tampered signatures.
  *
  * Signing and verification with static credentials are entirely CPU-bound, so these tests need no
@@ -22,15 +20,10 @@ import kotlin.time.Duration.Companion.hours
 class S3SignatureVerificationTest {
 
     init {
-        S3PublicFileSystem
+        S3ExternalFileSystem
     }
 
-    @AfterTest
-    fun resetFlag() {
-        ExternalServerFileSerializer.inlineScanOnDeserialize = false
-    }
-
-    private fun system(): S3PublicFileSystem = S3PublicFileSystem(
+    private fun system(): S3ExternalFileSystem = S3ExternalFileSystem(
         name = "test",
         region = Region.US_WEST_2,
         credentialProvider = StaticCredentialsProvider.create(
@@ -90,6 +83,26 @@ class S3SignatureVerificationTest {
         val tampered = signed.replace("AKIAEXAMPLEKEYID0000", "AKIADIFFERENTKEYID00")
         assertFailsWith<IllegalArgumentException> {
             system.parseExternalUrl(tampered)
+        }
+    }
+
+    /**
+     * A genuinely-signed URL that has passed its X-Amz-Date + X-Amz-Expires window must be rejected.
+     * Local signature recomputation is not enough: without an expiry check, an expired-but-once-valid
+     * URL would be accepted here and laundered into a permanent reference by the serializer.
+     */
+    @Test
+    fun expiredSignatureRejected() {
+        val system = system()
+        val file = system.root.then("folder/test.txt")
+        val params = file.signedUrl.substringAfter('?')
+
+        // Freshly signed with a 1h window: valid right now.
+        system.assertSignatureValid(file.path, params, now = java.time.Instant.now())
+
+        // The exact same validly-signed URL, evaluated just past its 1h window: must be rejected.
+        assertFailsWith<IllegalArgumentException> {
+            system.assertSignatureValid(file.path, params, now = java.time.Instant.now().plusSeconds(3600 + 60))
         }
     }
 }
