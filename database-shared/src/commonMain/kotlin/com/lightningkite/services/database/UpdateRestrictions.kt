@@ -1,8 +1,8 @@
 package com.lightningkite.services.database
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNames
-import kotlinx.serialization.serializer
 
 /**
  * Defines restrictions on which fields can be modified in database update operations and under what conditions.
@@ -49,19 +49,26 @@ public data class UpdateRestrictions<T>(
      * [ifCurrentItem], and only if the record matches [newValueMustBe] *after* the modification is applied.
      */
     @Serializable
-    public data class RestrictionOption<T>(
+    public data class RestrictionOption<in T>(
         public val ifCurrentItem: Condition<T>,
         public val newValueMustBe: Condition<T>,
     )
 
     /** The default behavior for fields not explicitly mentioned in [perField], as selected by the DSL. */
     @Serializable
-    public enum class Mode {
+    public enum class Mode(public val default: List<RestrictionOption<Any?>>) {
         /** All fields can be modified except explicitly restricted ones */
-        Blacklist,
+        Blacklist(
+            listOf(RestrictionOption(
+                ifCurrentItem = Condition.Always,
+                newValueMustBe = Condition.Always
+            ))
+        ),
 
         /** Only explicitly allowed fields can be modified */
-        Whitelist,
+        Whitelist(
+            emptyList()
+        );
     }
 
     /**
@@ -106,29 +113,26 @@ public data class UpdateRestrictions<T>(
      * (cross product of both calls' alternatives), matching the v1 builder's "multiple rules AND together"
      * behavior.
      */
-    public class Builder<T> @PublishedApi internal constructor(mode: Mode) {
+    public class Builder<T> @PublishedApi internal constructor(private var default: List<RestrictionOption<T>>) {
         @PublishedApi
         internal val perField: LinkedHashMap<DataClassPathPartial<T>, List<RestrictionOption<T>>> = LinkedHashMap()
 
-        public var mode: Mode = mode
-            private set
-
         /**
          * Completely blocks modifications to this field.
-         * In [Mode.Whitelist], this is a no-op (fields are already blocked by default).
+         *
+         * **Warning:** This overrides all previous restrictions
          */
         public fun DataClassPath<T, *>.cannotBeModified() {
-            if (mode == Mode.Whitelist) return
             perField[this] = emptyList()
         }
 
         /**
          * Allows unrestricted modifications to this field.
-         * In [Mode.Blacklist], this is a no-op (fields are already allowed by default).
+         *
+         * **Warning:** This overrides all previous restrictions
          */
         public fun DataClassPath<T, *>.canBeModified() {
-            if (mode == Mode.Blacklist) return
-            perField[this] = (perField[this] ?: emptyList()) + RestrictionOption(Condition.Always, Condition.Always)
+            perField[this] = listOf(RestrictionOption(Condition.Always, Condition.Always))
         }
 
         /**
@@ -143,7 +147,7 @@ public data class UpdateRestrictions<T>(
          * value must satisfy.
          */
         public inline fun <reified V> DataClassPath<T, V>.mustBe(
-            noinline valueMust: (DataClassPath<V, V>) -> Condition<V>,
+            valueMust: (DataClassPath<V, V>) -> Condition<V>,
         ) {
             mergeInto(this, listOf(RestrictionOption(Condition.Always, this.condition(valueMust))))
         }
@@ -154,7 +158,7 @@ public data class UpdateRestrictions<T>(
          */
         public inline fun <reified V> DataClassPath<T, V>.requires(
             requires: Condition<T>,
-            noinline valueMust: (DataClassPath<V, V>) -> Condition<V>,
+            valueMust: (DataClassPath<V, V>) -> Condition<V>,
         ) {
             mergeInto(this, listOf(RestrictionOption(requires, this.condition(valueMust))))
         }
@@ -167,28 +171,68 @@ public data class UpdateRestrictions<T>(
          * ```kotlin
          * // Admins may set any role; anyone may demote themselves to plain User
          * user.role.anyOf(
-         *     UpdateRestrictions.RestrictionOption(user.role eq Role.Admin, Condition.Always),
-         *     UpdateRestrictions.RestrictionOption(Condition.Always, user.role eq Role.User),
+         *     Option(user.role eq Role.Admin),
+         *     Option(Condition.Always) { it.role eq Role.User },
          * )
          * ```
          */
-        public fun <V> DataClassPath<T, V>.anyOf(vararg options: Option<T, V>) {
+        public fun <V> DataClassPath<T, V>.requiresAnyOf(vararg options: Option<T, V>) {
             require(options.isNotEmpty()) {
-                "anyOf needs at least one alternative; use cannotBeModified() to block the field entirely"
+                "anyOf needs at least one option; use cannotBeModified() to block the field entirely"
             }
             mergeInto(this, options.map {
-                RestrictionOption(ifCurrentItem = it.ifCurrentItem, newValueMustBe = this@anyOf.mapCondition(it.newValueMustBe))
+                when (it) {
+                    is Option.OnClass<T> -> RestrictionOption(it.ifCurrentItem, it.newValueMustBe)
+                    is Option.OnValue<T, V> -> RestrictionOption(it.ifCurrentItem, mapCondition(it.newValueMustBe))
+                }
             })
         }
 
-        public class Option<T, V>(
-            public val ifCurrentItem: Condition<T>,
-            public val newValueMustBe: Condition<V>,
-        )
+        public sealed interface Option<T, in V> {
+            public class OnClass<T>(
+                public val ifCurrentItem: Condition<T>,
+                public val newValueMustBe: Condition<T>
+            ): Option<T, Any?>
+
+            public class OnValue<T, V>(
+                public val ifCurrentItem: Condition<T>,
+                public val newValueMustBe: Condition<V>,
+            ): Option<T, V>
+        }
+
+        public fun Option(
+            ifCurrentItem: Condition<T>,
+            newValueMustBe: Condition<T> = Condition.Always,
+        ): Option<T, Any?> = Option.OnClass(ifCurrentItem, newValueMustBe)
+
         public inline fun <reified V> Option(
             ifCurrentItem: Condition<T>,
             newValueMustBe: (DataClassPath<V, V>) -> Condition<V>,
-        ): Option<T, V> = Option(ifCurrentItem, newValueMustBe(DataClassPathSelf(serializer<V>())))
+        ): Option<T, V> = Option.OnValue(
+            ifCurrentItem,
+            newValueMustBe(com.lightningkite.services.database.path())
+        )
+
+        /**
+         * Declares alternative rules (OR'd) for this field in a single call -- the capability the v1
+         * one-rule-per-field model didn't have. AND-merges with any prior rules on this field, same as the other
+         * builder methods.
+         *
+         * ```kotlin
+         * // Admins may set any role; anyone may demote themselves to plain User
+         * user.role.anyOf(
+         *     Option(user.role eq Role.Admin),
+         *     Option(Condition.Always) { it.role eq Role.User },
+         * )
+         * ```
+         */
+        public fun DataClassPath<T, *>.anyOfRestrictions(vararg options: RestrictionOption<T>) {
+            require(options.isNotEmpty()) {
+                "anyOf needs at least one option; use cannotBeModified() to block the field entirely"
+            }
+            mergeInto(this, options.toList())
+        }
+
 
         @PublishedApi
         internal fun mergeInto(path: DataClassPathPartial<T>, options: List<RestrictionOption<T>>) {
@@ -199,23 +243,24 @@ public data class UpdateRestrictions<T>(
             perField[path] = if (existing == null) options else andMerge(existing, options)
         }
 
-        /**
-         * Includes all restrictions from another [UpdateRestrictions] instance into this builder.
-         *
-         * **Important**: If [mask] is in a different [Mode], this builder is put into the more restrictive mode
-         * (i.e. [Mode.Whitelist]).
-         */
         public fun include(mask: UpdateRestrictions<T>) {
-            // An empty `default` is exactly what whitelist mode means.
-            if (mask.default.isEmpty()) mode = Mode.Whitelist
+            default = default.flatMap { mine ->
+                mask.default.map {
+                    mine.copy(
+                        ifCurrentItem = (mine.ifCurrentItem and it.ifCurrentItem).simplify(),
+                        newValueMustBe = (mine.newValueMustBe and it.newValueMustBe).simplify()
+                    )
+                }
+            }.distinct()
+
             for ((key, options) in mask.perField) {
                 mergeInto(key, options)
             }
         }
 
         public fun build(): UpdateRestrictions<T> = UpdateRestrictions(
-            perField = perField,
-            default = if (mode == Mode.Whitelist) emptyList() else listOf(RestrictionOption(Condition.Always, Condition.Always)),
+            default = default,
+            perField = perField.filter { it.value.all { option -> option == default } } // filter fields where all options are the same as the default
         )
     }
 
@@ -236,6 +281,7 @@ public data class UpdateRestrictions<T>(
      * Retained so old serialized payloads (`{mode, fields}`) can still be read/converted.
      */
     @Deprecated("Replaced by RestrictionOption stored in perField/default")
+    @OptIn(ExperimentalSerializationApi::class)
     @Serializable
     public data class Part<T>(
         @JsonNames("path") public val property: DataClassPathPartial<T>,
@@ -316,7 +362,14 @@ public inline fun <reified T> updateRestrictions(
     mode: UpdateRestrictions.Mode = UpdateRestrictions.Mode.Blacklist,
     builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
 ): UpdateRestrictions<T> {
-    return UpdateRestrictions.Builder<T>(mode).apply { builder(path<T>()) }.build()
+    return UpdateRestrictions.Builder<T>(mode.default).apply { builder(path<T>()) }.build()
+}
+
+public inline fun <reified T> updateRestrictions(
+    default: List<UpdateRestrictions.RestrictionOption<T>>,
+    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
+): UpdateRestrictions<T> {
+    return UpdateRestrictions.Builder(default).apply { builder(path<T>()) }.build()
 }
 
 /**
@@ -347,8 +400,7 @@ public inline fun <reified T> ModelPermissions<T>.withAdditionalUpdateRestrictio
     builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
 ): ModelPermissions<T> =
     copy(
-        // No explicit mode: `include` already adopts the original's mode.
-        updateRestrictions = updateRestrictions {
+        updateRestrictions = updateRestrictions(default = updateRestrictions.default) {
             include(updateRestrictions)
             builder(it)
         }

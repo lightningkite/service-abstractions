@@ -4,11 +4,11 @@ import com.lightningkite.services.data.GenerateDataClassPaths
 import com.lightningkite.services.serializers.KotlinBytesFormat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.NothingSerializer
-import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.modules.EmptySerializersModule
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -596,17 +596,11 @@ class UpdateRestrictionsTest {
     @Test
     fun `anyOf declares alternative rules that are OR'd together`() {
         val restrictions = updateRestrictions<TestUser> { user ->
-            user.role.anyOf(
+            user.role.requiresAnyOf(
                 // Admins may change the role to anything
-                UpdateRestrictions.RestrictionOption(
-                    ifCurrentItem = user.role eq Role.Admin,
-                    newValueMustBe = Condition.Always
-                ),
+                Option(user.role eq Role.Admin),
                 // Anyone may set their own role down to plain User
-                UpdateRestrictions.RestrictionOption(
-                    ifCurrentItem = Condition.Always,
-                    newValueMustBe = user.role eq Role.User
-                ),
+                Option(Condition.Always) { it eq Role.User },
             )
         }
 
@@ -622,11 +616,8 @@ class UpdateRestrictionsTest {
     @Test
     fun `anyOf with a single alternative behaves like the equivalent single-rule declaration`() {
         val viaAnyOf = updateRestrictions<TestUser> { user ->
-            user.credits.anyOf(
-                UpdateRestrictions.RestrictionOption(
-                    ifCurrentItem = user.role eq Role.Admin,
-                    newValueMustBe = Condition.Always
-                )
+            user.credits.requiresAnyOf(
+                Option(user.role eq Role.Admin)
             )
         }
         val viaRequires = updateRestrictions<TestUser> { user ->
@@ -638,17 +629,11 @@ class UpdateRestrictionsTest {
     @Test
     fun `an anyOf alternative can pair a requires condition with a value limit`() {
         val restrictions = updateRestrictions<TestUser> { user ->
-            user.credits.anyOf(
+            user.credits.requiresAnyOf(
                 // Admins may set credits to anything
-                UpdateRestrictions.RestrictionOption(
-                    ifCurrentItem = user.role eq Role.Admin,
-                    newValueMustBe = Condition.Always
-                ),
+                Option(user.role eq Role.Admin),
                 // Moderators may only hand out small amounts
-                UpdateRestrictions.RestrictionOption(
-                    ifCurrentItem = user.role eq Role.Moderator,
-                    newValueMustBe = user.credits.condition { it lt 100 }
-                ),
+                Option(user.role eq Role.Moderator) { it lt 100 },
             )
         }
 
@@ -667,7 +652,7 @@ class UpdateRestrictionsTest {
     @Test
     fun `anyOf with no alternatives is rejected rather than silently blocking the field`() {
         assertFailsWith<IllegalArgumentException> {
-            updateRestrictions<TestUser> { user -> user.credits.anyOf() }
+            updateRestrictions<TestUser> { user -> user.credits.requiresAnyOf() }
         }
     }
 
@@ -677,15 +662,9 @@ class UpdateRestrictionsTest {
             // Only active accounts may touch credits at all...
             user.credits requires (user.isActive eq true)
             // ...and then only admins, or moderators handing out small amounts
-            user.credits.anyOf(
-                UpdateRestrictions.RestrictionOption(
-                    ifCurrentItem = user.role eq Role.Admin,
-                    newValueMustBe = Condition.Always
-                ),
-                UpdateRestrictions.RestrictionOption(
-                    ifCurrentItem = user.role eq Role.Moderator,
-                    newValueMustBe = user.credits.condition { it lt 100 }
-                ),
+            user.credits.requiresAnyOf(
+                Option(user.role eq Role.Admin),
+                Option(user.role eq Role.Moderator) { it lt 100 },
             )
         }
 
@@ -909,15 +888,9 @@ class UpdateRestrictionsTest {
     @Test
     fun `anyOf round-trips losslessly while still projecting a collapsed v1 Part`() {
         val restrictions = updateRestrictions<TestUser> { user ->
-            user.role.anyOf(
-                UpdateRestrictions.RestrictionOption(
-                    ifCurrentItem = user.role eq Role.Admin,
-                    newValueMustBe = Condition.Always
-                ),
-                UpdateRestrictions.RestrictionOption(
-                    ifCurrentItem = Condition.Always,
-                    newValueMustBe = user.role eq Role.User
-                ),
+            user.role.requiresAnyOf(
+                Option(user.role eq Role.Admin),
+                Option(Condition.Always) { it eq Role.User },
             )
         }
 
@@ -959,12 +932,13 @@ class UpdateRestrictionsTest {
                 user.role.cannotBeModified()
                 user.credits requires (user.role eq Role.Admin)
                 user.isActive.mustBe { it eq true }
+                user.role.requiresAnyOf(
+
+                )
             },
             whitelistRestrictions<TestUser> { user ->
-                user.role.always
-                user.role.never
                 user.username.canBeModified()
-                user.role.anyOf(
+                user.role.requiresAnyOf(
                     Option(
                         ifCurrentItem = user.role eq Role.Admin,
                         newValueMustBe = { it.always }
