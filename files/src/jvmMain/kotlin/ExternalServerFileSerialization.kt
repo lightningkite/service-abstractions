@@ -57,7 +57,7 @@ public enum class ForeignUrlHandling {
 public class ExternalServerFileSerializer(
     public val clock: Clock,
     public val scanners: List<FileScanner>,
-    public val fileSystems: List<PublicFileSystem>,
+    public val fileSystems: List<ExternalFileSystem>,
     /**
      * Backward-compatibility flag for the OLD `deserialize` behavior that performed blocking
      * I/O (scanning, copying, and uploading) inline on the deserializing thread via

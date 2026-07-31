@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
 /**
- * A path within a [PublicFileSystem], represented as a list of path segments.
+ * A path within a [ExternalFileSystem], represented as a list of path segments.
  *
  * The empty path (`ExternalPath(emptyList())`) refers to the root of the file system.
  *
@@ -17,7 +17,7 @@ import kotlin.jvm.JvmInline
  * system, as opposed to S3's flat key space) must reject or escape segments that mean something
  * to it - `..` in particular - when mapping a path onto its own storage.
  *
- * @see PublicFileSystem
+ * @see ExternalFileSystem
  * @see ExternalFile
  */
 @Serializable

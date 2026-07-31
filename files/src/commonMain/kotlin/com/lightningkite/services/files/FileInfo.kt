@@ -1,5 +1,6 @@
 package com.lightningkite.services.files
 
+import com.lightningkite.services.data.DataSize
 import com.lightningkite.services.data.MediaType
 import kotlin.time.Instant
 
@@ -22,7 +23,7 @@ public data class FileInfo(
      *
      * For empty files, this will be 0. For directories, the meaning is implementation-specific.
      */
-    val size: Long,
+    val size: DataSize,
 
     /**
      * The last modified timestamp of the file.

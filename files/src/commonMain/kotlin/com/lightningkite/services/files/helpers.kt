@@ -3,18 +3,26 @@ package com.lightningkite.services.files
 import com.lightningkite.services.data.*
 import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.kfile.temporary
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.io.files.SystemFileSystem
 import kotlin.uuid.Uuid
 
 /**
- * Downloads a FileObject to a local temporary file.
+ * Downloads a FileObject to a local file.
  *
- * @param file Optional KFile to download to. If null, a temporary file will be created.
+ * @param file KFile to download to.
  * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
  */
-public suspend fun ExternalFile.download(
-    file: KFile?,
-): KFile? = get()?.let { download(file ?: SystemFileSystem.temporary(extension = it.mediaType.extension)) }
+public suspend fun ExternalFile.download(file: KFile): KFile? = get()?.let { download(file) }
+
+/**
+ * Downloads a FileObject to a local temporary file with the correct extension.
+ *
+ * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
+ */
+public suspend fun ExternalFile.downloadToTemporaryFile(): KFile? = get()?.let { download(SystemFileSystem.temporary(extension = it.mediaType.extension)) }
+
 
 /**
  * Downloads TypedData to a local file.
@@ -30,10 +38,10 @@ public suspend fun TypedData.download(
 }
 
 @Deprecated("Use then", ReplaceWith("then(path)"))
-public fun ExternalFile.resolve(path: String): FileObject = then(path)
+public fun ExternalFile.resolve(path: String): ExternalFile = then(path)
 
 @Deprecated("Use thenRandom", ReplaceWith("thenRandom(prefix, extension)"))
-public fun ExternalFile.resolveRandom(prefix: String, extension: String): FileObject = thenRandom(prefix, extension)
+public fun ExternalFile.resolveRandom(prefix: String, extension: String): ExternalFile = thenRandom(prefix, extension)
 
 /**
  * Creates a FileObject with a random UUID-based filename.
@@ -51,7 +59,7 @@ public fun ExternalFile.resolveRandom(prefix: String, extension: String): FileOb
  * // Results in something like: upload-550e8400-e29b-41d4-a716-446655440000.jpg
  * ```
  */
-public fun ExternalFile.thenRandom(prefix: String, extension: String): FileObject {
+public fun ExternalFile.thenRandom(prefix: String, extension: String): ExternalFile {
     return then("${prefix}-${Uuid.random()}.${extension}")
 }
 
@@ -64,6 +72,8 @@ public fun ExternalFile.thenRandom(prefix: String, extension: String): FileObjec
  * serializer, and [ExternalFile.Parser] reads the stored form back.
  */
 public val ExternalFile.serverFile: ServerFile get() = ServerFile(toString())
+
+internal expect val Dispatchers.Io: CoroutineDispatcher
 
 /*
  * TODO: API Recommendations

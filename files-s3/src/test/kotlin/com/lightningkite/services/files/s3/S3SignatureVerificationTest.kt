@@ -1,19 +1,17 @@
 package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.files.ExternalServerFileSerializer
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.regions.Region
-import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.time.Duration.Companion.hours
 
 /**
- * Verifies that [S3PublicFileSystem.assertSignatureValid] (reached via
- * [S3PublicFileSystem.parseExternalUrl]) validates signed URLs by PURE local HMAC recomputation —
+ * Verifies that [S3ExternalFileSystem.assertSignatureValid] (reached via
+ * [S3ExternalFileSystem.parseExternalUrl]) validates signed URLs by PURE local HMAC recomputation —
  * no network round-trip — and rejects tampered signatures.
  *
  * Signing and verification with static credentials are entirely CPU-bound, so these tests need no
@@ -22,10 +20,10 @@ import kotlin.time.Duration.Companion.hours
 class S3SignatureVerificationTest {
 
     init {
-        S3PublicFileSystem
+        S3ExternalFileSystem
     }
 
-    private fun system(): S3PublicFileSystem = S3PublicFileSystem(
+    private fun system(): S3ExternalFileSystem = S3ExternalFileSystem(
         name = "test",
         region = Region.US_WEST_2,
         credentialProvider = StaticCredentialsProvider.create(

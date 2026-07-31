@@ -3,7 +3,7 @@ package com.lightningkite.services.files.test
 import com.lightningkite.services.data.*
 import com.lightningkite.services.default
 import com.lightningkite.services.files.ExternalFile
-import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.files.ExternalFileSystem
 import com.lightningkite.services.files.serverFile
 import com.lightningkite.services.http.client
 import com.lightningkite.services.test.runTestWithClock
@@ -17,7 +17,7 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 abstract class FileSystemTests {
-    abstract val system: PublicFileSystem?
+    abstract val system: ExternalFileSystem?
     open fun runSuspendingTest(body: suspend CoroutineScope.() -> Unit) = runTestWithClock { body() }
 
     @Test

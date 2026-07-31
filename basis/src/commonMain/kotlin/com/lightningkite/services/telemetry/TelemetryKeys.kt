@@ -374,6 +374,10 @@ public object TelemetryKeys {
         public val path: TelemetryKey.OfString = TelemetryKey.OfString("file.path")
         public val size: TelemetryKey.OfLong = TelemetryKey.OfLong("file.size")
         public val symbolicLinkTargetPath: TelemetryKey.OfString = TelemetryKey.OfString("file.symbolic_link.target_path")
+
+        // Unofficial
+        public val contentType: TelemetryKey.OfString = TelemetryKey.OfString("file.content_type")
+        public val count: TelemetryKey.OfLong = TelemetryKey.OfLong("file.count")
     }
     public object Gcp {
         public val apphubApplicationContainer: TelemetryKey.OfString = TelemetryKey.OfString("gcp.apphub.application.container")

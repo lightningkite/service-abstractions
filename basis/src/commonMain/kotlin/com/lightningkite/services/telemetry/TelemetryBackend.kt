@@ -144,6 +144,8 @@ public interface TelemetryTrace {
     public fun log(level: LogLevel, message: String, attributes: TelemetryAttributes = TelemetryAttributes.empty)
 }
 
+public fun TelemetryTrace.enrich(vararg attributes: TelemetryKey.Entry<*>): Unit = enrich(telemetryAttributesOf(*attributes))
+
 /** Lazy overload: [message] is only called when [TelemetryTrace.isLoggable] returns true for [level]. */
 public inline fun TelemetryTrace.log(level: LogLevel, message: () -> String) {
     if (isLoggable(level)) log(level, message())

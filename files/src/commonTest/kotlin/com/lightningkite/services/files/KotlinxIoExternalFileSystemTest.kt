@@ -12,9 +12,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.time.Duration.Companion.minutes
 
-class KotlinxIoPublicFileSystemTest : FileSystemTests() {
-    override val system: PublicFileSystem =
-        PublicFileSystem.Settings("file://local/test?serveUrl=http://localhost:8080/files")
+class KotlinxIoExternalFileSystemTest : FileSystemTests() {
+    override val system: ExternalFileSystem =
+        ExternalFileSystem.Settings("file://local/test?serveUrl=http://localhost:8080/files")
             .invoke("test", TestSettingContext())
 
     @Test
@@ -25,7 +25,7 @@ class KotlinxIoPublicFileSystemTest : FileSystemTests() {
     override fun testSignedUpload() { /*skip, not hosted*/
     }
 
-    val kfileSystem = KotlinxIoPublicFileSystem(
+    val kfileSystem = KotlinxIoExternalFileSystem(
         "files",
         TestSettingContext(),
         KFile("local/test"),
@@ -74,7 +74,7 @@ class KotlinxIoPublicFileSystemTest : FileSystemTests() {
      */
     @Test
     fun servedUrlCannotTraverse() = runTest {
-        val unsigned = KotlinxIoPublicFileSystem(
+        val unsigned = KotlinxIoExternalFileSystem(
             "unsigned",
             TestSettingContext(),
             KFile("local/test"),
