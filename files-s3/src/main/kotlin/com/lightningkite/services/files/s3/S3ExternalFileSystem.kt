@@ -685,9 +685,9 @@ public class S3ExternalFileSystem(
      */
     private fun verifySignatureOverNetwork(path: ExternalPath, queryParams: String) {
         // The shared client applies a 60s engine timeout.
-        runBlocking {
+        runBlocking(Dispatchers.IO) {
             val response = client.get("${url(path)}?$queryParams") {
-                header("Range", "0-0")
+                header("Range", "bytes=0-0")
             }
             if (!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
         }
