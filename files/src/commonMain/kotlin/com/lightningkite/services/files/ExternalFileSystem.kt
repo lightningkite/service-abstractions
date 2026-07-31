@@ -4,6 +4,8 @@ import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.kfile.workingDirectory
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -103,12 +105,15 @@ import kotlin.uuid.Uuid
  * @see ExternalPath
  * @see TypedData
  */
-public interface PublicFileSystem : Service {
-    public suspend fun list(path: ExternalPath): List<ExternalPath>?
+public interface ExternalFileSystem : Service {
+    public suspend fun flow(path: ExternalPath): Flow<ExternalPath>
+    public suspend fun list(path: ExternalPath): List<ExternalPath> = flow(path).toList()
     public suspend fun head(path: ExternalPath): FileInfo?
     public suspend fun put(path: ExternalPath, content: TypedData)
     public suspend fun get(path: ExternalPath): TypedData?
     public suspend fun delete(path: ExternalPath)
+
+
 
     /**
      * Copies the file at [path] to [other].
@@ -276,9 +281,9 @@ public interface PublicFileSystem : Service {
         public val url: String = "file://${
             workingDirectory.then("local/files").also { it.createDirectories() }
         }?serveUrl=files",
-    ) : Setting<PublicFileSystem> {
+    ) : Setting<ExternalFileSystem> {
 
-        public companion object : UrlSettingParser<PublicFileSystem>() {
+        public companion object : UrlSettingParser<ExternalFileSystem>() {
             init {
                 register("file") { name, url, context ->
 
@@ -308,7 +313,7 @@ public interface PublicFileSystem : Service {
                         }
                     }
 
-                    KotlinxIoPublicFileSystem(
+                    KotlinxIoExternalFileSystem(
                         name = name,
                         context = context,
                         rootKFile = KFile(path),
@@ -319,7 +324,7 @@ public interface PublicFileSystem : Service {
             }
         }
 
-        override fun invoke(name: String, context: SettingContext): PublicFileSystem {
+        override fun invoke(name: String, context: SettingContext): ExternalFileSystem {
             return parse(name, url, context)
         }
     }

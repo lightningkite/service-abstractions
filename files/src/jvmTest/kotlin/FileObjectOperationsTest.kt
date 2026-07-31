@@ -11,7 +11,7 @@ import kotlin.test.*
 class FileObjectOperationsTest {
 
     private val fileSystem =
-        PublicFileSystem.Settings("file://build/test-files-ops?serveUrl=http://localhost:8080/files")
+        ExternalFileSystem.Settings("file://build/test-files-ops?serveUrl=http://localhost:8080/files")
             .invoke("test", TestSettingContext())
 
     @Test

@@ -10,7 +10,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.io.Source
 import kotlinx.serialization.json.*
 import kotlinx.serialization.modules.serializersModuleOf
-import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -41,7 +40,7 @@ class ExternalServerFileSerializerTest {
     @Test
     fun testDirectVerify() {
         val context = TestSettingContext()
-        val fs = KotlinxIoPublicFileSystem("test", context, workingDirectory.then("build/test-files"))
+        val fs = KotlinxIoExternalFileSystem("test", context, workingDirectory.then("build/test-files"))
         val ser = ExternalServerFileSerializer(
             clock = Clock.System,
             scanners = listOf(),
@@ -61,7 +60,7 @@ class ExternalServerFileSerializerTest {
     @Test
     fun testSerialization() {
         val context = TestSettingContext()
-        val fs = KotlinxIoPublicFileSystem("test", context, workingDirectory.then("build/test-files"))
+        val fs = KotlinxIoExternalFileSystem("test", context, workingDirectory.then("build/test-files"))
         val ser = ExternalServerFileSerializer(
             clock = Clock.System,
             scanners = listOf(),
@@ -91,7 +90,7 @@ class ExternalServerFileSerializerTest {
         inlineScanOnDeserialize: Boolean = false,
         foreignUrlHandling: ForeignUrlHandling = ForeignUrlHandling.ERROR,
     ): ExternalServerFileSerializer {
-        val fs = KotlinxIoPublicFileSystem("test", context, workingDirectory.then("build/test-files"))
+        val fs = KotlinxIoExternalFileSystem("test", context, workingDirectory.then("build/test-files"))
         return ExternalServerFileSerializer(
             clock = Clock.System,
             scanners = listOf(scanner),

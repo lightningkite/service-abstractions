@@ -1,6 +1,6 @@
 package com.lightningkite.services.files.s3
 
-import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.files.ExternalFileSystem
 import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.time.Duration
@@ -27,13 +27,13 @@ import kotlin.time.Duration
  * @throws IllegalArgumentException if S3PublicFileSystem is not registered in the settings parser
  */
 context(emitter: TerraformEmitterAws)
-public fun TerraformNeed<PublicFileSystem.Settings>.awsS3Bucket(
+public fun TerraformNeed<ExternalFileSystem.Settings>.awsS3Bucket(
     signedUrlDuration: Duration? = null,
     forceDestroy: Boolean = true,
     corsOrigins: Set<String> = setOf("*"),
     kmsKey: KmsKeySource? = null,
 ): Unit {
-    if (!PublicFileSystem.Settings.supports("s3")) throw IllegalArgumentException("You need to reference S3PublicFileSystem in your server definition to use this.")
+    if (!ExternalFileSystem.Settings.supports("s3")) throw IllegalArgumentException("You need to reference S3PublicFileSystem in your server definition to use this.")
     // null falls back to the deployment-wide default; objects stay private (signed URLs), so KMS is transparent.
     val kmsKeyArn = (kmsKey ?: emitter.encryptionKey).resolveKeyArn(name)
     emitter.fulfillSetting(

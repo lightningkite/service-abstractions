@@ -13,14 +13,14 @@ import kotlin.time.Duration.Companion.hours
 
 /**
  * Backward-compatibility guard for S3 URLs already stored in a database by the PRE-redesign
- * version of this library (before [FileObject] was folded into [S3PublicFileSystem] / [ExternalPath]).
+ * version of this library (before [FileObject] was folded into [S3ExternalFileSystem] / [ExternalPath]).
  *
  * ## What's actually stored
  *
  * A `ServerFile` persists its `location` verbatim, and that location is the *unsigned internal* URL
  * produced by `url(path)` — `https://{bucket}.s3.{region}.amazonaws.com/{key}` with the object key
  * written **literally, without percent-encoding**. When such a record is later read and serialized
- * out to a client, `ExternalServerFileSerializer.serialize` calls [S3PublicFileSystem.parseLegacyUrl]
+ * out to a client, `ExternalServerFileSerializer.serialize` calls [S3ExternalFileSystem.parseLegacyUrl]
  * on that stored string. So the invariant that protects existing data is:
  *
  * > Parsing the exact URL the old version stored must resolve to the exact same S3 object key.
@@ -36,12 +36,12 @@ class S3UrlRoundTripTest {
 
     init {
         // Ensure the "s3" scheme registration side effect has run.
-        S3PublicFileSystem
+        S3ExternalFileSystem
     }
 
-    private fun system(): S3PublicFileSystem = system(signedUrlDuration = 1.hours)
+    private fun system(): S3ExternalFileSystem = system(signedUrlDuration = 1.hours)
 
-    private fun system(signedUrlDuration: kotlin.time.Duration?): S3PublicFileSystem = S3PublicFileSystem(
+    private fun system(signedUrlDuration: kotlin.time.Duration?): S3ExternalFileSystem = S3ExternalFileSystem(
         name = "test",
         region = Region.US_EAST_1,
         credentialProvider = StaticCredentialsProvider.create(
@@ -76,7 +76,7 @@ class S3UrlRoundTripTest {
 
     /**
      * The unsigned URL is exactly what the previous version persisted to the database. Re-parsing it
-     * with [S3PublicFileSystem.parseLegacyUrl] must land on the original object for every key.
+     * with [S3ExternalFileSystem.parseLegacyUrl] must land on the original object for every key.
      *
      * This is the case that regressed once: percent-decoding the stored path makes a key literally
      * containing `%20` decode to a space (wrong object), and a key with a bare `%` (invalid escape)

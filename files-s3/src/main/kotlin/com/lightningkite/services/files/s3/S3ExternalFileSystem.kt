@@ -3,8 +3,9 @@ package com.lightningkite.services.files.s3
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.aws.AwsConnections
 import com.lightningkite.services.data.*
+import com.lightningkite.services.data.DataSize.Companion.bytes
 import com.lightningkite.services.files.ExternalFile
-import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.files.ExternalFileSystem
 import com.lightningkite.services.files.ExternalPath
 import com.lightningkite.services.files.ExternalServerFileSerializer
 import com.lightningkite.services.files.FileInfo
@@ -13,6 +14,8 @@ import com.lightningkite.services.http.client
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.enrich
+import com.lightningkite.services.telemetry.telemetryAttributesOf
 import com.lightningkite.services.telemetry.telemetryTrace
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -20,6 +23,8 @@ import io.ktor.utils.io.charsets.encode
 import io.ktor.utils.io.core.canRead
 import io.ktor.utils.io.core.takeWhile
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.future.await
 import kotlinx.io.*
 import software.amazon.awssdk.auth.credentials.*
@@ -41,7 +46,7 @@ import kotlin.time.toKotlinInstant
 import kotlin.uuid.Uuid
 
 /**
- * An implementation of [PublicFileSystem] that uses AWS S3 for storage.
+ * An implementation of [ExternalFileSystem] that uses AWS S3 for storage.
  *
  * This implementation provides access to files stored in an AWS S3 bucket with support for:
  * - Signed URLs for secure access control
@@ -57,14 +62,14 @@ import kotlin.uuid.Uuid
  * @property signedUrlDuration The duration for which signed URLs are valid. If null, URLs are not signed (public bucket).
  * @property context The setting context for accessing shared resources
  */
-public class S3PublicFileSystem(
+public class S3ExternalFileSystem(
     override val name: String,
     public val region: Region,
     public val credentialProvider: AwsCredentialsProvider,
     public val bucket: String,
     public val signedUrlDuration: Duration? = null,
     override val context: SettingContext,
-) : PublicFileSystem {
+) : ExternalFileSystem {
 
     @Volatile
     private var credsOnHand: AwsCredentials? = null
@@ -224,29 +229,34 @@ public class S3PublicFileSystem(
      * (NoSuchBucket, AccessDenied, throttling, network) propagate so the surrounding telemetry
      * span records them as errors.
      */
-    override suspend fun list(path: ExternalPath): List<ExternalPath>? {
+    override suspend fun flow(path: ExternalPath): Flow<ExternalPath> {
         val unixPath = unixPathOf(path)
-        return telemetryTrace("list", attributes = s3SpanAttrs("list", unixPath)) { span ->
-            val result = withContext(Dispatchers.IO) {
-                val results = ArrayList<ExternalPath>()
-                var token: String? = null
-                while (true) {
-                    val r = s3Async.listObjectsV2 {
+        return kotlinx.coroutines.flow.flow {
+            var token: String? = null
+            while (true) {
+                val response = telemetryTrace("list", attributes = s3SpanAttrs("list", unixPath)) { span ->
+                    s3Async.listObjectsV2 {
                         it.bucket(bucket)
                         it.prefix(unixPath)
                         it.delimiter("/")
                         token?.let { t -> it.continuationToken(t) }
-                    }.await()
-                    results += r.contents().filter { !it.key().substringAfter(unixPath).contains('/') }
-                        .map { pathFromUnix(it.key()) }
-                    if (r.isTruncated) token = r.nextContinuationToken()
-                    else break
+                    }.await().also {
+                        span.enrich(
+                            TelemetryKeys.File.count to it.contents().size.toLong()
+                        )
+                    }
                 }
-                results
+
+                response.contents()
+                    .asSequence()
+                    .filter { !it.key().substringAfter(unixPath).contains('/') }
+                    .map { pathFromUnix(it.key()) }
+                    .forEach { emit(it) }
+
+                if (response.isTruncated) token = response.nextContinuationToken()
+                else break
             }
-            span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("file.count"), result.size.toLong()) })
-            result
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     /**
@@ -263,7 +273,7 @@ public class S3PublicFileSystem(
                     }.await().let {
                         FileInfo(
                             type = MediaType(it.contentType()),
-                            size = it.contentLength(),
+                            size = it.contentLength().bytes,
                             lastModified = it.lastModified().toKotlinInstant()
                         )
                     }
@@ -272,10 +282,10 @@ public class S3PublicFileSystem(
                 }
             }
             result?.let {
-                span.enrich(TelemetryAttributes {
-                    put(TelemetryKey.OfLong("file.size"), it.size)
-                    put(TelemetryKey.OfString("file.content_type"), it.type.toString())
-                })
+                span.enrich(
+                    TelemetryKeys.File.size to it.size.bytes,
+                    TelemetryKeys.File.contentType to it.type.toString()
+                )
             }
             result
         }
@@ -288,8 +298,8 @@ public class S3PublicFileSystem(
         val unixPath = unixPathOf(path)
         telemetryTrace("put", attributes = TelemetryAttributes {
             putAll(s3SpanAttrs("put", unixPath))
-            put(TelemetryKey.OfLong("file.size"), content.data.size ?: -1L)
-            put(TelemetryKey.OfString("file.content_type"), content.mediaType.toString())
+            put(TelemetryKeys.File.size, content.data.size ?: -1L)
+            put(TelemetryKeys.File.contentType, content.mediaType.toString())
         }) {
             withContext(Dispatchers.IO) {
                 s3.putObject(PutObjectRequest.builder().also {
@@ -333,8 +343,8 @@ public class S3PublicFileSystem(
             }
             result?.let {
                 span.enrich(TelemetryAttributes {
-                    put(TelemetryKey.OfLong("file.size"), it.data.size ?: -1L)
-                    put(TelemetryKey.OfString("file.content_type"), it.mediaType.toString())
+                    put(TelemetryKeys.File.size, it.data.size ?: -1L)
+                    put(TelemetryKeys.File.contentType, it.mediaType.toString())
                 })
             }
             result
@@ -350,7 +360,7 @@ public class S3PublicFileSystem(
      */
     override suspend fun copyTo(path: ExternalPath, other: ExternalFile) {
         val unixPath = unixPathOf(path)
-        val otherSystem = other.fileSystem as? S3PublicFileSystem
+        val otherSystem = other.fileSystem as? S3ExternalFileSystem
         val isServerSideCopy = otherSystem != null && otherSystem.bucket == bucket
         telemetryTrace("copy", attributes = TelemetryAttributes {
             putAll(s3SpanAttrs("copy", unixPath))
@@ -777,13 +787,13 @@ public class S3PublicFileSystem(
          * @param bucket S3 bucket name
          * @return Settings URL for S3 file system
          */
-        public fun PublicFileSystem.Settings.Companion.s3(
+        public fun ExternalFileSystem.Settings.Companion.s3(
             user: String,
             password: String,
             region: Region,
             bucket: String,
-        ): PublicFileSystem.Settings =
-            PublicFileSystem.Settings("s3://$user:$password@$bucket.s3-$region.amazonaws.com")
+        ): ExternalFileSystem.Settings =
+            ExternalFileSystem.Settings("s3://$user:$password@$bucket.s3-$region.amazonaws.com")
 
         /**
          * Creates S3 file system settings using a named AWS profile.
@@ -793,11 +803,11 @@ public class S3PublicFileSystem(
          * @param bucket S3 bucket name
          * @return Settings URL for S3 file system
          */
-        public fun PublicFileSystem.Settings.Companion.s3(
+        public fun ExternalFileSystem.Settings.Companion.s3(
             profile: String,
             region: Region,
             bucket: String,
-        ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$profile@$bucket.s3-$region.amazonaws.com")
+        ): ExternalFileSystem.Settings = ExternalFileSystem.Settings("s3://$profile@$bucket.s3-$region.amazonaws.com")
 
         /**
          * Creates S3 file system settings using default AWS credential chain.
@@ -808,10 +818,10 @@ public class S3PublicFileSystem(
          * @param bucket S3 bucket name
          * @return Settings URL for S3 file system
          */
-        public fun PublicFileSystem.Settings.Companion.s3(
+        public fun ExternalFileSystem.Settings.Companion.s3(
             region: Region,
             bucket: String,
-        ): PublicFileSystem.Settings = PublicFileSystem.Settings("s3://$bucket.s3-$region.amazonaws.com")
+        ): ExternalFileSystem.Settings = ExternalFileSystem.Settings("s3://$bucket.s3-$region.amazonaws.com")
 
         init {
             // Registers the "s3" URL scheme with the PublicFileSystem.Settings parser
@@ -821,7 +831,7 @@ public class S3PublicFileSystem(
             // - s3://user:password@bucket.region.amazonaws.com/             (static credentials)
             // Query parameters:
             // - signedUrlDuration: Duration for signed URLs (default: 1h, "forever"/"null" for unsigned)
-            PublicFileSystem.Settings.register("s3") { name, url, context ->
+            ExternalFileSystem.Settings.register("s3") { name, url, context ->
                 val regex =
                     Regex("""s3:\/\/(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com\/?(?:\?(?<params>.*))?""")
                 val match = regex.matchEntire(url) ?: throw IllegalArgumentException(
@@ -858,7 +868,7 @@ public class S3PublicFileSystem(
                     }
                 }
 
-                S3PublicFileSystem(
+                S3ExternalFileSystem(
                     name = name,
                     region = Region.of(region),
                     credentialProvider = when {

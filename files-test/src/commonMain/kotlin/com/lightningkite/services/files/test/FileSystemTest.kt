@@ -1,9 +1,10 @@
 package com.lightningkite.services.files.test
 
 import com.lightningkite.services.data.*
+import com.lightningkite.services.data.DataSize.Companion.bytes
 import com.lightningkite.services.default
 import com.lightningkite.services.files.ExternalFile
-import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.files.ExternalFileSystem
 import com.lightningkite.services.files.serverFile
 import com.lightningkite.services.http.client
 import com.lightningkite.services.test.runTestWithClock
@@ -17,7 +18,7 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 abstract class FileSystemTests {
-    abstract val system: PublicFileSystem?
+    abstract val system: ExternalFileSystem?
     open fun runSuspendingTest(body: suspend CoroutineScope.() -> Unit) = runTestWithClock { body() }
 
     @Test
@@ -100,7 +101,7 @@ abstract class FileSystemTests {
                 val info = testFile.head()
                 assertNotNull(info)
                 assertEquals(MediaType.Text.Plain, info.type)
-                assertTrue(info.size > 0L)
+                assertTrue(info.size > 0L.bytes)
                 assertTrue(info.lastModified == null || info.lastModified!! > beforeModify)
 
                 // Testing with sub folders.
@@ -110,7 +111,7 @@ abstract class FileSystemTests {
                 val secondInfo = secondFile.head()
                 assertNotNull(secondInfo)
                 assertEquals(MediaType.Text.Plain, secondInfo.type)
-                assertTrue(secondInfo.size > 0L)
+                assertTrue(secondInfo.size > 0L.bytes)
                 assertTrue(secondInfo.lastModified == null || secondInfo.lastModified!! > secondBeforeModify)
             } finally {
                 testFile.delete()

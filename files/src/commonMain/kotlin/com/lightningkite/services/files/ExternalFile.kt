@@ -1,10 +1,13 @@
 package com.lightningkite.services.files
 
 import com.lightningkite.services.data.TypedData
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.toList
 import kotlin.time.Duration
 
 /**
- * A reference to a location (which may or may not exist) within a [PublicFileSystem].
+ * A reference to a location (which may or may not exist) within a [ExternalFileSystem].
  *
  * `ExternalFile` is a thin `(fileSystem, path)` pair - all operations delegate to the
  * owning [fileSystem]. Two `ExternalFile`s are equal if they point at the same path in
@@ -19,10 +22,10 @@ import kotlin.time.Duration
  * file.delete()
  * ```
  *
- * @see PublicFileSystem
+ * @see ExternalFileSystem
  * @see ExternalPath
  */
-public data class ExternalFile(public val fileSystem: PublicFileSystem, public val path: ExternalPath) {
+public data class ExternalFile(public val fileSystem: ExternalFileSystem, public val path: ExternalPath) {
     public val name: String get() = path.name
     public val extension: String get() = path.extension
     public val nameWithoutExtension: String get() = path.nameWithoutExtension
@@ -39,7 +42,8 @@ public data class ExternalFile(public val fileSystem: PublicFileSystem, public v
     public fun withAlteredExtension(alter: (String) -> String): ExternalFile =
         withAlteredName { it.substringBeforeLast('.') + "." + alter(it.substringAfterLast('.')) }
 
-    public suspend fun list(): List<ExternalFile>? = fileSystem.list(path)?.map { ExternalFile(fileSystem, it) }
+    public suspend fun flow(): Flow<ExternalFile>? = fileSystem.flow(path)?.map { ExternalFile(fileSystem, it) }
+    public suspend fun list(): List<ExternalFile>? = fileSystem.flow(path)?.map { ExternalFile(fileSystem, it) }?.toList()
     public suspend fun head(): FileInfo? = fileSystem.head(path)
     public suspend fun put(content: TypedData): Unit = fileSystem.put(path, content)
     public suspend fun get(): TypedData? = fileSystem.get(path)
@@ -90,10 +94,10 @@ public data class ExternalFile(public val fileSystem: PublicFileSystem, public v
      *
      * **Server-internal only.** Both forms are unsigned, so a string that reached the server from a
      * client must never be resolved here - it would let the client name any file it likes. Use
-     * [PublicFileSystem.parseExternalUrl] for client input, which checks the signature.
+     * [ExternalFileSystem.parseExternalUrl] for client input, which checks the signature.
      */
-    public class Parser(systems: List<PublicFileSystem>) {
-        private val systems: Map<String, PublicFileSystem> = systems.associateBy { it.name }
+    public class Parser(systems: List<ExternalFileSystem>) {
+        private val systems: Map<String, ExternalFileSystem> = systems.associateBy { it.name }
 
         init {
             require(this.systems.size == systems.size) {

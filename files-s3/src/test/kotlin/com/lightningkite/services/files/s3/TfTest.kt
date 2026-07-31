@@ -1,6 +1,6 @@
 package com.lightningkite.services.files.s3
 
-import com.lightningkite.services.files.PublicFileSystem
+import com.lightningkite.services.files.ExternalFileSystem
 import com.lightningkite.services.test.assertPlannableAws
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.hours
@@ -14,7 +14,7 @@ import kotlin.time.Duration.Companion.hours
 class TfTest {
 
     init {
-        S3PublicFileSystem
+        S3ExternalFileSystem
     }
 
     /**
@@ -28,7 +28,7 @@ class TfTest {
      */
     @Test
     fun testPublicBucket() {
-        assertPlannableAws<PublicFileSystem.Settings>("testPublicBucket") {
+        assertPlannableAws<ExternalFileSystem.Settings>("testPublicBucket") {
             it.awsS3Bucket(
                 forceDestroy = true,
                 signedUrlDuration = null
@@ -46,7 +46,7 @@ class TfTest {
      */
     @Test
     fun testSignedBucket() {
-        assertPlannableAws<PublicFileSystem.Settings>("testSignedBucket") {
+        assertPlannableAws<ExternalFileSystem.Settings>("testSignedBucket") {
             it.awsS3Bucket(
                 forceDestroy = true,
                 signedUrlDuration = 1.hours

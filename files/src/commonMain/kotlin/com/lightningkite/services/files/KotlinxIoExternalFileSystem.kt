@@ -1,11 +1,24 @@
 package com.lightningkite.services.files
 
+import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
+import com.lightningkite.services.data.DataSize.Companion.bytes
 import com.lightningkite.services.kfile.KFile
+import com.lightningkite.services.telemetry.TelemetryAttributes
+import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.TelemetryKeys
+import com.lightningkite.services.telemetry.emptyTelemetryAttributes
+import com.lightningkite.services.telemetry.telemetryAttributesOf
+import com.lightningkite.services.telemetry.telemetryTrace
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.HMAC
 import dev.whyoleg.cryptography.algorithms.SHA256
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.withContext
 import kotlinx.io.*
 import kotlinx.io.files.FileNotFoundException
 import kotlinx.io.files.Path
@@ -13,7 +26,7 @@ import kotlin.time.Duration
 import kotlin.time.Instant
 
 /**
- * A [PublicFileSystem] implementation that uses kotlinx.io for local file system access.
+ * A [ExternalFileSystem] implementation that uses kotlinx.io for local file system access.
  *
  * This implementation stores files on the local file system and provides:
  * - HMAC-based signed URLs for secure file access
@@ -26,13 +39,13 @@ import kotlin.time.Instant
  * @param serveUrl The base URL where files will be served from (e.g., "https://example.com/files/")
  * @param signedUrlDuration How long signed URLs remain valid. If null, URLs are unsigned.
  */
-public class KotlinxIoPublicFileSystem(
+public class KotlinxIoExternalFileSystem(
     override val name: String,
     override val context: SettingContext,
     public val rootKFile: KFile,
     public val serveUrl: String = "http://localhost:8080/files/",
     public val signedUrlDuration: Duration? = null,
-) : PublicFileSystem {
+) : ExternalFileSystem {
     init {
         rootKFile.createDirectories()
     }
@@ -234,15 +247,33 @@ public class KotlinxIoPublicFileSystem(
     )
 
     /**
-     * Lists the contents of the directory at [path].
+     * Internal tracing helper for file operations.
      *
-     * Filters out the file system's own storage; everything else is a file a caller stored.
-     *
-     * @return A list of child paths, null if this is a file (not a directory) or doesn't exist
+     * This provides telemetry tracing on JVM (via [com.lightningkite.services.telemetry.telemetryTrace] on [owner])
+     * and no-op behavior on other platforms. [owner] is the file system the operation belongs to, used
+     * as the span's owner.
      */
-    override suspend fun list(path: ExternalPath): List<ExternalPath>? = traceFileOperation(
+    internal suspend inline fun <T> traceFileOperation(
+        owner: Namespaced,
+        operation: String,
+        path: String,
+        storageSystem: String,
+        attributes: TelemetryAttributes = emptyTelemetryAttributes(),
+        crossinline block: suspend () -> T,
+    ): T = withContext(Dispatchers.Io) {
+        val spanAttributes = TelemetryAttributes {
+            put(TelemetryKeys.File.path, owner.context.telemetrySanitization.sanitizeFilePathWithDepth(path))
+            put(TelemetryKey.OfString("storage.system"), storageSystem)
+            put(TelemetryKeys.Rpc.system, "filesystem")
+            putAll(attributes)
+        }
+        owner.telemetryTrace(operation, attributes = spanAttributes) { block() }
+    }
+
+
+    override suspend fun flow(path: ExternalPath): Flow<ExternalPath> = traceFileOperation(
         owner = this,
-        operation = "list",
+        operation = "flow",
         path = path.parts.joinToString("/"),
         storageSystem = "file"
     ) {
@@ -250,12 +281,15 @@ public class KotlinxIoPublicFileSystem(
         try {
             kfile.list()
                 // Names come off the disk literally, not in conservative form.
+                // TODO: Just realized that sharding is probably needed for the filesystem here; some file systems have limits on the number of files in a folder
+                //  In addition, this absolutely forces IO to block for retrieving the entire list
                 .map { pathFromLiteral(it.localPath.toString()) }
                 .filter { !it.isReserved() }
+                .asFlow()
         } catch (e: FileNotFoundException) {
-            null
+            emptyFlow()
         } catch (e: IOException) {
-            if (contentTypeFileFor(path).exists()) null
+            if (contentTypeFileFor(path).exists()) emptyFlow()
             else throw e
         }
     }
@@ -274,7 +308,6 @@ public class KotlinxIoPublicFileSystem(
         operation = "head",
         path = path.parts.joinToString("/"),
         storageSystem = "file",
-        attributes = mapOf("rpc.system" to "filesystem")
     ) {
         val kfile = kfileFor(path)
         val metadata = kfile.metadataOrNull() ?: return@traceFileOperation null
@@ -289,7 +322,7 @@ public class KotlinxIoPublicFileSystem(
 
         FileInfo(
             type = mediaType,
-            size = metadata.size,
+            size = metadata.size.bytes,
             lastModified = null,
         )
     }
@@ -305,9 +338,9 @@ public class KotlinxIoPublicFileSystem(
         operation = "put",
         path = path.parts.joinToString("/"),
         storageSystem = "file",
-        attributes = mapOf(
-            "file.size" to (content.data.size ?: -1L),
-            "file.content_type" to content.mediaType.toString()
+        attributes = telemetryAttributesOf(
+            TelemetryKeys.File.size to (content.data.size ?: -1L),
+            TelemetryKeys.File.contentType to content.mediaType.toString()
         )
     ) {
         val kfile = kfileFor(path)
@@ -341,7 +374,6 @@ public class KotlinxIoPublicFileSystem(
         operation = "get",
         path = path.parts.joinToString("/"),
         storageSystem = "file",
-        attributes = mapOf("rpc.system" to "filesystem")
     ) {
         val kfile = kfileFor(path)
 

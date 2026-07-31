@@ -15,18 +15,18 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 /**
- * Verifies that [S3PublicFileSystem.list] propagates exceptions from the underlying S3 client
+ * Verifies that [S3ExternalFileSystem.list] propagates exceptions from the underlying S3 client
  * rather than swallowing them and returning null (the prior behaviour).
  */
 class S3ListErrorTest {
 
     init {
-        S3PublicFileSystem
+        S3ExternalFileSystem
     }
 
     /**
      * A minimal [S3AsyncClient] stub whose `listObjectsV2` always fails with the supplied error.
-     * Only the overloads exercised by [S3PublicFileSystem.list] are overridden.
+     * Only the overloads exercised by [S3ExternalFileSystem.list] are overridden.
      */
     private class FailingS3AsyncClient(private val error: RuntimeException) : S3AsyncClient {
         override fun serviceName(): String = "s3"
@@ -44,18 +44,18 @@ class S3ListErrorTest {
     }
 
     /**
-     * Replaces the lazy-delegate of [S3PublicFileSystem.s3Async] so [S3PublicFileSystem.list]
+     * Replaces the lazy-delegate of [S3ExternalFileSystem.s3Async] so [S3ExternalFileSystem.list]
      * routes its call through the supplied stub without touching the network.
      */
-    private fun injectS3Async(system: S3PublicFileSystem, client: S3AsyncClient) {
-        val field = S3PublicFileSystem::class.java.getDeclaredField("s3Async\$delegate")
+    private fun injectS3Async(system: S3ExternalFileSystem, client: S3AsyncClient) {
+        val field = S3ExternalFileSystem::class.java.getDeclaredField("s3Async\$delegate")
         field.isAccessible = true
         field.set(system, lazyOf<S3AsyncClient>(client))
     }
 
     @Test
     fun listPropagatesException() = runTest {
-        val system = S3PublicFileSystem(
+        val system = S3ExternalFileSystem(
             name = "test",
             region = Region.US_EAST_1,
             credentialProvider = StaticCredentialsProvider.create(
