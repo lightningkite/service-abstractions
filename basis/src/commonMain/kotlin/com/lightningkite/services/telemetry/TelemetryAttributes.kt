@@ -28,7 +28,7 @@ public value class TelemetryAttributes private constructor(public val map: Map<T
 
     public operator fun plus(other: TelemetryAttributes): TelemetryAttributes = TelemetryAttributes(this.map + other.map)
 
-    public operator fun minus(other: TelemetryAttributes): TelemetryAttributes = TelemetryAttributes(this.map - other.map)
+    public operator fun minus(other: TelemetryAttributes): TelemetryAttributes = TelemetryAttributes(this.map.minus(other.map.keys))
 
     @Suppress("UNCHECKED_CAST")
     public operator fun <T : Any> get(key: TelemetryKey<T>): T? = map[key] as? T
