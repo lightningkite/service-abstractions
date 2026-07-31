@@ -12,8 +12,6 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.utils.io.jvm.javaio.*
-import kotlinx.io.asInputStream
-import kotlinx.io.buffered
 
 public class MailgunEmailService(
     override val name: String,
