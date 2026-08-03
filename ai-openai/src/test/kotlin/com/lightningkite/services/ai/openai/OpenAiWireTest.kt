@@ -449,15 +449,15 @@ class OpenAiWireTest {
     fun modelCatalogUsesLongestPrefixMatch() {
         val audio = OpenAiModelCatalog.lookup("gpt-4o-audio-preview-2024-10-01")
         assertNotNull(audio)
-        assertEquals("gpt-4o-audio-preview", audio!!.idPrefix)
+        assertEquals("gpt-4o-audio-preview", audio.idPrefix)
 
         val plain = OpenAiModelCatalog.lookup("gpt-4o-2024-11-20")
         assertNotNull(plain)
-        assertEquals("gpt-4o", plain!!.idPrefix)
+        assertEquals("gpt-4o", plain.idPrefix)
 
         val miniDated = OpenAiModelCatalog.lookup("gpt-4o-mini-2024-07-18")
         assertNotNull(miniDated)
-        assertEquals("gpt-4o-mini", miniDated!!.idPrefix)
+        assertEquals("gpt-4o-mini", miniDated.idPrefix)
     }
 
     /** URL-decoded param values — `%25`, `%26`, `%3D` must round-trip to `%`, `&`, `=`. */

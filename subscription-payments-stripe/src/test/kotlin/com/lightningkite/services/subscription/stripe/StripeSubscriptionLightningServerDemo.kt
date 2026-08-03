@@ -66,6 +66,9 @@ import kotlin.time.Clock
  */
 object StripeSubscriptionLightningServerDemo {
     init {
+        // Touching StripeSubscriptionService forces its companion init block to run, registering
+        // the stripe:// URL scheme even though this object never names it directly elsewhere.
+        @Suppress("UNUSED_EXPRESSION")
         StripeSubscriptionService
     }
 
@@ -100,6 +103,9 @@ object StripeSubscriptionLightningServerDemo {
 
 object SubscriptionServer : ServerBuilder() {
     init {
+        // Touching JsonFileDatabase forces its companion init block to run, registering the
+        // json-file:// URL scheme even though this object never names it directly elsewhere.
+        @Suppress("UNUSED_EXPRESSION")
         JsonFileDatabase
     }
 

@@ -97,12 +97,11 @@ internal class SqlSchema(
         /**
          * Extract the id from a ResultRow.
          */
-        @Suppress("UNCHECKED_CAST")
         fun extractId(row: ResultRow): Any? {
             return if (!isCompoundId) {
-                row[col["_id"]!! as Column<Any?>]
+                row[col["_id"]!!]
             } else {
-                idColumns.associate { it.name to row[it as Column<Any?>] }
+                idColumns.associate { it.name to row[it] }
             }
         }
     }

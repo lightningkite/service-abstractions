@@ -38,7 +38,7 @@ dependencies {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     sourceSets.main {
         kotlin.srcDir("build/generated/ksp/main/kotlin")

@@ -20,7 +20,9 @@ import kotlin.test.Test
 class TfTest {
 
     init {
-        // Ensure the companion object is initialized (registers URL schemes)
+        // Ensure the companion object is initialized (registers URL schemes); the bare
+        // reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         DynamoDbPubSub
     }
 

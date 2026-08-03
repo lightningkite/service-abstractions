@@ -28,7 +28,8 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.LineEnding
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -142,7 +143,7 @@ public class OllamaLlmAccess(
                 val channel: ByteReadChannel = response.bodyAsChannel()
 
                 while (!channel.isClosedForRead) {
-                    val line = channel.readUTF8Line() ?: break
+                    val line = channel.readLine(LineEnding.Lenient) ?: break
                     if (line.isBlank()) continue
 
                     val frame: OllamaChatStreamFrame = try {

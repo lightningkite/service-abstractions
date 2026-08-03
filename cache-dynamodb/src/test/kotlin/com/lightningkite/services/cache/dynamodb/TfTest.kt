@@ -16,7 +16,9 @@ import kotlin.test.Test
  */
 class TfTest {
     init {
-        // Ensure DynamoDbCache is initialized so the 'dynamodb' URL scheme is registered
+        // Ensure DynamoDbCache is initialized so the 'dynamodb' URL scheme is registered;
+        // the bare reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         DynamoDbCache
     }
 

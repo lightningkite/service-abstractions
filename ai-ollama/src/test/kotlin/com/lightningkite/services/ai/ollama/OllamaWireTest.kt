@@ -155,9 +155,8 @@ class OllamaWireTest {
         val args = fn["arguments"]!!
         // The critical assertion: `arguments` is a JsonObject, NOT a JsonPrimitive string.
         assertTrue(args is JsonObject, "Expected `arguments` to be a JSON object, got ${args::class}")
-        val argsObj = args as JsonObject
-        assertEquals("Tokyo", argsObj["city"]!!.jsonPrimitive.content)
-        assertEquals("celsius", argsObj["unit"]!!.jsonPrimitive.content)
+        assertEquals("Tokyo", args["city"]!!.jsonPrimitive.content)
+        assertEquals("celsius", args["unit"]!!.jsonPrimitive.content)
     }
 
     @Test

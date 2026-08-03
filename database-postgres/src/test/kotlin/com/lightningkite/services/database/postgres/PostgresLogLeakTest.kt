@@ -57,7 +57,7 @@ class PostgresLogLeakTest {
 
     @Test
     fun queryPathDoesNotLeakToStdout() = runTest {
-        val collection = database.table<LargeTestModel>("PostgresLogLeakTest")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("PostgresLogLeakTest"))
         val model = LargeTestModel(int = 42, string = "leak-canary")
         collection.insertOne(model)
 

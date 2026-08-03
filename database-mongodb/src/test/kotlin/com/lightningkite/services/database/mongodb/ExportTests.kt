@@ -1,7 +1,7 @@
 package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.kfile.KFile
-import com.lightningkite.services.database.table
+import com.lightningkite.services.database.DatabaseTableDefinition
 import com.lightningkite.services.database.test.LargeTestModel
 import com.lightningkite.services.database.test.SimpleLargeTestModel
 import com.lightningkite.services.database.writeToJsonFiles
@@ -14,10 +14,10 @@ class ExportTests {
 
     @Test
     fun exportTest() = runTest {
-        database.table<LargeTestModel>().insert(
+        database.prepare(DatabaseTableDefinition<LargeTestModel>()).insert(
             List(10) { LargeTestModel() }
         )
-        database.table<SimpleLargeTestModel>().insert(
+        database.prepare(DatabaseTableDefinition<SimpleLargeTestModel>()).insert(
             List(10) { SimpleLargeTestModel() }
         )
 

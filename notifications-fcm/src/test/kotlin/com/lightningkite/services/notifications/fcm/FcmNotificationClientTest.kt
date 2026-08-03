@@ -131,7 +131,7 @@ class FcmNotificationClientTest {
 
         val msg = captured!!.message
         assertEquals("token-1", msg.token)
-        assertEquals(false, captured!!.validateOnly)
+        assertEquals(false, captured.validateOnly)
 
         // Top-level notification
         assertEquals("Title", msg.notification?.title)
@@ -155,7 +155,7 @@ class FcmNotificationClientTest {
         val nowSeconds = System.currentTimeMillis() / 1000
         val expiration = msg.apns?.headers?.get("apns-expiration")?.toLong()!!
         assertTrue(expiration in (nowSeconds + 24.hours.inWholeSeconds - 60)..(nowSeconds + 24.hours.inWholeSeconds + 60))
-        assertEquals("https://img", msg.apns?.fcmOptions?.image)
+        assertEquals("https://img", msg.apns.fcmOptions?.image)
     }
 
     @Test
@@ -170,7 +170,7 @@ class FcmNotificationClientTest {
         val sound = captured!!.message.apns?.payload?.get("aps")?.jsonObject?.get("sound")?.jsonPrimitive?.content
         assertEquals("default", sound)
         // No android/webpush-data configured, so those stay absent.
-        assertNull(captured!!.message.android)
+        assertNull(captured.message.android)
     }
 
     @Test

@@ -8,6 +8,9 @@ import kotlin.test.Test
 
 class TfTest {
     init {
+        // Bare reference forces MongoDatabase's companion object to init, registering the
+        // mongodb:// URL schemes needed by the Database.Settings parser used below.
+        @Suppress("UNUSED_EXPRESSION")
         MongoDatabase
     }
 

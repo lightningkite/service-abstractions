@@ -96,7 +96,7 @@ public class ExternalServerFileSerializer(
     private val storedReferences = ExternalFile.Parser(fileSystems)
     private val knownSystemsString: String get() = fileSystems.joinToString { it.name }
 
-    private val uploadFile: suspend (data: TypedData) -> FileObject = {
+    private val uploadFile: suspend (data: TypedData) -> ExternalFile = {
         scanners.scan(it)
         val d = primary.root.thenRandom("uploaded", "file")
         d.put(it)

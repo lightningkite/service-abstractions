@@ -1,3 +1,8 @@
+// This entire file is the deprecated v1 tool-descriptor API surface, kept only for backward
+// compatibility. Its declarations necessarily reference each other, which triggers self-referential
+// deprecation warnings with no non-deprecated code left to migrate; suppressed at the file level.
+@file:Suppress("DEPRECATION")
+
 package com.lightningkite.services.voiceagent
 
 import kotlinx.serialization.SerialName

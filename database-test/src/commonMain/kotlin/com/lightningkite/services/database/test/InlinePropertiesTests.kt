@@ -16,7 +16,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassPersist() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclassPersist")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassPersist"))
         val matching = ValueClassContainingTest(
             direct = ValueClass("1")
         )
@@ -33,7 +33,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun testInlineComparisons() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclassPersist")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassPersist"))
         val numMatching = ValueClassContainingTest(
             wrappedInt = IntWrapper(100)
         )
@@ -47,7 +47,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassSet() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclassSet")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassSet"))
         val matching = ValueClassContainingTest(
             set = setOf(ValueClass("1"))
         )
@@ -65,7 +65,7 @@ abstract class InlinePropertiesTests {
     // modification tets
     @Test
     fun test_inlinePathModifications() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_inlinePathModifications")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_inlinePathModifications"))
 
         val items = List(10) { ValueClassContainingTest(wrappedInt = IntWrapper(it), direct = ValueClass("Item $it")) }
 
@@ -94,7 +94,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun testSortInlineInt() = runTest {
-        val collection = database.table<ValueClassContainingTest>("SortTest_testSortInlineInt")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("SortTest_testSortInlineInt"))
         val items = listOf(
             ValueClassContainingTest(wrappedInt = IntWrapper(4)),
             ValueClassContainingTest(wrappedInt = IntWrapper(5)),
@@ -124,7 +124,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun testInlineAggregates() = runTest {
-        val c = database.table<ValueClassContainingTest>("inlineAggregatesTest")
+        val c = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("inlineAggregatesTest"))
 
         val ints = List(10) { it }
 
@@ -150,7 +150,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclass_neq() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclass_neq")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclass_neq"))
         val matching = ValueClassContainingTest(direct = ValueClass("a"))
         val notMatching = ValueClassContainingTest(direct = ValueClass("b"))
         val manualList = listOf(matching, notMatching)
@@ -165,7 +165,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_eq_direct() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_eq_direct")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_eq_direct"))
         val matching = ValueClassContainingTest(wrappedInt = IntWrapper(42))
         val notMatching = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         val manualList = listOf(matching, notMatching)
@@ -180,7 +180,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_neq() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_neq")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_neq"))
         val matching = ValueClassContainingTest(wrappedInt = IntWrapper(42))
         val notMatching = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         val manualList = listOf(matching, notMatching)
@@ -195,7 +195,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedUuid_persist() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_wrappedUuid_persist")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_wrappedUuid_persist"))
         val testUuid = Uuid.random()
         val item = ExtendedValueClassTest(wrappedUuid = UuidWrapper(testUuid))
         collection.insertOne(item)
@@ -206,7 +206,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedUuid_eq() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_wrappedUuid_eq")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_wrappedUuid_eq"))
         val testUuid = Uuid.random()
         val matching = ExtendedValueClassTest(wrappedUuid = UuidWrapper(testUuid))
         val notMatching = ExtendedValueClassTest(wrappedUuid = UuidWrapper(Uuid.random()))
@@ -222,7 +222,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedUuid_neq() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_wrappedUuid_neq")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_wrappedUuid_neq"))
         val testUuid = Uuid.random()
         val matching = ExtendedValueClassTest(wrappedUuid = UuidWrapper(testUuid))
         val notMatching = ExtendedValueClassTest(wrappedUuid = UuidWrapper(Uuid.random()))
@@ -238,7 +238,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedUuid_eq_innerValue() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_wrappedUuid_eq_innerValue")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_wrappedUuid_eq_innerValue"))
         val testUuid = Uuid.random()
         val matching = ExtendedValueClassTest(wrappedUuid = UuidWrapper(testUuid))
         val notMatching = ExtendedValueClassTest(wrappedUuid = UuidWrapper(Uuid.random()))
@@ -258,7 +258,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_gt() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_gt")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_gt"))
         val lower = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         val higher = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         val manualList = listOf(lower, higher)
@@ -273,7 +273,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_lt() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_lt")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_lt"))
         val lower = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         val higher = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         val manualList = listOf(lower, higher)
@@ -288,7 +288,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_gt_innerValue() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_gt_innerValue")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_gt_innerValue"))
         val lower = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         val higher = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         val manualList = listOf(lower, higher)
@@ -303,7 +303,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_lt_innerValue() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_lt_innerValue")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_lt_innerValue"))
         val lower = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         val higher = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         val manualList = listOf(lower, higher)
@@ -322,7 +322,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_inside() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_inside")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_inside"))
         val matching = ValueClassContainingTest(wrappedInt = IntWrapper(42))
         val notMatching = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         val manualList = listOf(matching, notMatching)
@@ -338,7 +338,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_notInside() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_notInside")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_notInside"))
         val matching = ValueClassContainingTest(wrappedInt = IntWrapper(42))
         val notMatching = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         val manualList = listOf(matching, notMatching)
@@ -354,7 +354,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclass_inside() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclass_inside")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclass_inside"))
         val matching = ValueClassContainingTest(direct = ValueClass("a"))
         val notMatching = ValueClassContainingTest(direct = ValueClass("c"))
         val manualList = listOf(matching, notMatching)
@@ -370,7 +370,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedUuid_inside() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_wrappedUuid_inside")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_wrappedUuid_inside"))
         val testUuid1 = Uuid.random()
         val testUuid2 = Uuid.random()
         val matching = ExtendedValueClassTest(wrappedUuid = UuidWrapper(testUuid1))
@@ -396,7 +396,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclass_value_contains() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclass_value_contains")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclass_value_contains"))
         val matching = ValueClassContainingTest(direct = ValueClass("hello world"))
         val notMatching = ValueClassContainingTest(direct = ValueClass("goodbye"))
         val manualList = listOf(matching, notMatching)
@@ -411,7 +411,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassSet_all() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclassSet_all")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassSet_all"))
         val matching = ValueClassContainingTest(set = setOf(ValueClass("aa"), ValueClass("ab")))
         val notMatching = ValueClassContainingTest(set = setOf(ValueClass("aa"), ValueClass("bc")))
         val manualList = listOf(matching, notMatching)
@@ -426,7 +426,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassList_any() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_valueclassList_any")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_any"))
         val matching = ExtendedValueClassTest(list = listOf(ValueClass("match"), ValueClass("other")))
         val notMatching = ExtendedValueClassTest(list = listOf(ValueClass("no"), ValueClass("other")))
         val manualList = listOf(matching, notMatching)
@@ -441,7 +441,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassList_all() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_valueclassList_all")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_all"))
         val matching = ExtendedValueClassTest(list = listOf(ValueClass("aa"), ValueClass("ab")))
         val notMatching = ExtendedValueClassTest(list = listOf(ValueClass("aa"), ValueClass("bc")))
         val manualList = listOf(matching, notMatching)
@@ -457,7 +457,7 @@ abstract class InlinePropertiesTests {
     @Suppress("DEPRECATION")
     @Test
     fun test_valueclassSet_sizesEquals() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclassSet_sizesEquals")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassSet_sizesEquals"))
         val matching = ValueClassContainingTest(set = setOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
         val notMatching = ValueClassContainingTest(set = setOf(ValueClass("a")))
         val manualList = listOf(matching, notMatching)
@@ -473,7 +473,7 @@ abstract class InlinePropertiesTests {
     @Suppress("DEPRECATION")
     @Test
     fun test_valueclassList_sizesEquals() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_valueclassList_sizesEquals")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_sizesEquals"))
         val matching = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b")))
         val notMatching = ExtendedValueClassTest(list = listOf(ValueClass("a")))
         val manualList = listOf(matching, notMatching)
@@ -492,7 +492,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableValueclass_notNull_eq() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableValueclass_notNull_eq")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableValueclass_notNull_eq"))
         val lower = ExtendedValueClassTest(directNullable = null)
         val higher = ExtendedValueClassTest(directNullable = ValueClass("match"))
         val manualList = listOf(lower, higher)
@@ -507,7 +507,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableValueclass_eq_null() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableValueclass_eq_null")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableValueclass_eq_null"))
         val lower = ExtendedValueClassTest(directNullable = null)
         val higher = ExtendedValueClassTest(directNullable = ValueClass("value"))
         val manualList = listOf(lower, higher)
@@ -522,7 +522,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableWrappedInt_notNull_gt() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableWrappedInt_notNull_gt")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedInt_notNull_gt"))
         val nullItem = ExtendedValueClassTest(wrappedIntNullable = null)
         val lowItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(10))
         val highItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(100))
@@ -538,7 +538,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableWrappedInt_notNull_lt() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableWrappedInt_notNull_lt")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedInt_notNull_lt"))
         val nullItem = ExtendedValueClassTest(wrappedIntNullable = null)
         val lowItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(10))
         val highItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(100))
@@ -554,7 +554,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableWrappedUuid_notNull_eq() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableWrappedUuid_notNull_eq")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedUuid_notNull_eq"))
         val testUuid = Uuid.random()
         val nullItem = ExtendedValueClassTest(wrappedUuidNullable = null)
         val matchingItem = ExtendedValueClassTest(wrappedUuidNullable = UuidWrapper(testUuid))
@@ -571,7 +571,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableWrappedUuid_eq_null() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableWrappedUuid_eq_null")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedUuid_eq_null"))
         val nullItem = ExtendedValueClassTest(wrappedUuidNullable = null)
         val nonNullItem = ExtendedValueClassTest(wrappedUuidNullable = UuidWrapper(Uuid.random()))
         val manualList = listOf(nullItem, nonNullItem)
@@ -590,7 +590,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_multiply() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_multiply")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_multiply"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         collection.insertOne(item)
         val modification = modification<ValueClassContainingTest> { it.wrappedInt.int *= 3 }
@@ -602,7 +602,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_decrement() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_decrement")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_decrement"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         collection.insertOne(item)
         val modification = modification<ValueClassContainingTest> { it.wrappedInt.int += -30 }
@@ -614,7 +614,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_coerceAtMost() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_coerceAtMost")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtMost"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         collection.insertOne(item)
         val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
@@ -626,7 +626,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_coerceAtMost_miss() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_coerceAtMost_miss")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtMost_miss"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(30))
         collection.insertOne(item)
         val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
@@ -638,7 +638,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_coerceAtLeast() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_coerceAtLeast")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtLeast"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         collection.insertOne(item)
         val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
@@ -650,7 +650,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_wrappedInt_coerceAtLeast_miss() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_wrappedInt_coerceAtLeast_miss")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtLeast_miss"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         collection.insertOne(item)
         val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
@@ -666,7 +666,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassSet_addAll() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclassSet_addAll")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassSet_addAll"))
         val item = ValueClassContainingTest(set = setOf(ValueClass("a")))
         collection.insertOne(item)
         val modification =
@@ -679,7 +679,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassSet_removeAll_byCondition() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclassSet_removeAll_byCondition")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassSet_removeAll_byCondition"))
         val item = ValueClassContainingTest(set = setOf(ValueClass("aa"), ValueClass("ab"), ValueClass("bc")))
         collection.insertOne(item)
         val modification = modification<ValueClassContainingTest> { it.set.removeAll { it.value.contains("a") } }
@@ -691,7 +691,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassSet_removeAll_byValues() = runTest {
-        val collection = database.table<ValueClassContainingTest>("test_valueclassSet_removeAll_byValues")
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassSet_removeAll_byValues"))
         val item = ValueClassContainingTest(set = setOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
         collection.insertOne(item)
         val modification =
@@ -708,7 +708,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassList_addAll() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_valueclassList_addAll")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_addAll"))
         val item = ExtendedValueClassTest(list = listOf(ValueClass("a")))
         collection.insertOne(item)
         val modification =
@@ -721,7 +721,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassList_removeAll_byCondition() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_valueclassList_removeAll_byCondition")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_removeAll_byCondition"))
         val item = ExtendedValueClassTest(list = listOf(ValueClass("aa"), ValueClass("ab"), ValueClass("bc")))
         collection.insertOne(item)
         val modification = modification<ExtendedValueClassTest> { it.list.removeAll { it.value.contains("a") } }
@@ -733,7 +733,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassList_removeAll_byValues() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_valueclassList_removeAll_byValues")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_removeAll_byValues"))
         val item = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
         collection.insertOne(item)
         val modification =
@@ -746,7 +746,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassList_dropFirst() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_valueclassList_dropFirst")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_dropFirst"))
         val item = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
         collection.insertOne(item)
         val modification = modification<ExtendedValueClassTest> { it.list.dropFirst() }
@@ -758,7 +758,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_valueclassList_dropLast() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_valueclassList_dropLast")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_dropLast"))
         val item = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
         collection.insertOne(item)
         val modification = modification<ExtendedValueClassTest> { it.list.dropLast() }
@@ -770,7 +770,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_intWrapperList_addAll() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_intWrapperList_addAll")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_intWrapperList_addAll"))
         val item = ExtendedValueClassTest(listInt = listOf(IntWrapper(1)))
         collection.insertOne(item)
         val modification =
@@ -787,7 +787,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableValueclass_assign_null() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableValueclass_assign_null")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableValueclass_assign_null"))
         val item = ExtendedValueClassTest(directNullable = ValueClass("initial"))
         collection.insertOne(item)
         val modification = modification<ExtendedValueClassTest> { it.directNullable assign null }
@@ -799,7 +799,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableValueclass_assign_value() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableValueclass_assign_value")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableValueclass_assign_value"))
         val item = ExtendedValueClassTest(directNullable = null)
         collection.insertOne(item)
         val modification = modification<ExtendedValueClassTest> { it.directNullable assign ValueClass("assigned") }
@@ -811,7 +811,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableWrappedInt_assign_null() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableWrappedInt_assign_null")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedInt_assign_null"))
         val item = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(42))
         collection.insertOne(item)
         val modification = modification<ExtendedValueClassTest> { it.wrappedIntNullable assign null }
@@ -823,7 +823,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableWrappedInt_assign_value() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableWrappedInt_assign_value")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedInt_assign_value"))
         val item = ExtendedValueClassTest(wrappedIntNullable = null)
         collection.insertOne(item)
         val modification = modification<ExtendedValueClassTest> { it.wrappedIntNullable assign IntWrapper(100) }
@@ -835,7 +835,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableWrappedUuid_assign_null() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableWrappedUuid_assign_null")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedUuid_assign_null"))
         val item = ExtendedValueClassTest(wrappedUuidNullable = UuidWrapper(Uuid.random()))
         collection.insertOne(item)
         val modification = modification<ExtendedValueClassTest> { it.wrappedUuidNullable assign null }
@@ -847,7 +847,7 @@ abstract class InlinePropertiesTests {
 
     @Test
     fun test_nullableWrappedUuid_assign_value() = runTest {
-        val collection = database.table<ExtendedValueClassTest>("test_nullableWrappedUuid_assign_value")
+        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedUuid_assign_value"))
         val testUuid = Uuid.random()
         val item = ExtendedValueClassTest(wrappedUuidNullable = null)
         collection.insertOne(item)

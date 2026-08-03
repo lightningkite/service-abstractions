@@ -227,7 +227,7 @@ private class ChildTableListElementConverterEncoder(
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> write(value: T) {
+    private fun <T : Any> write(value: T) {
         val conv = converter as ValueConverter<T, Any>
         output.writeChild(fieldPath, ChildRow(index = index, key = null, values = mapOf("value" to conv.toDatabase(value))))
     }
@@ -609,7 +609,7 @@ private class ChildTableMapElementConverterEncoder(
     override val serializersModule: SerializersModule = kotlinx.serialization.modules.EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> write(value: T) {
+    private fun <T : Any> write(value: T) {
         val conv = converter as ValueConverter<T, Any>
         parent.addElement(index, conv.toDatabase(value))
     }
@@ -807,7 +807,7 @@ private class ChildTableElementConverterDecoder(
     override val serializersModule: SerializersModule = kotlinx.serialization.modules.EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> read(): T {
+    private fun <T : Any> read(): T {
         val conv = converter as ValueConverter<T, Any>
         return conv.fromDatabase(element as Any)
     }

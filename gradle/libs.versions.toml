@@ -78,6 +78,7 @@ embedded-redis = { module = "org.signal:embedded-redis", version = { ref = "embe
 exposed-core = { module = "org.jetbrains.exposed:exposed-core", version = { ref = "exposed" } }
 exposed-javaTime = { module = "org.jetbrains.exposed:exposed-java-time", version = { ref = "exposed" } }
 exposed-jdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version = { ref = "exposed" } }
+exposed-migration = { module = "org.jetbrains.exposed:exposed-migration", version = { ref = "exposed" } }
 firebase-admin = { module = "com.google.firebase:firebase-admin", version = { ref = "firebaseAdmin" } }
 freetts = { module = "net.sf.sociaal:freetts", version.ref = "freetts" }
 greenmail = { module = "com.icegreen:greenmail", version = { ref = "greenmail" } }

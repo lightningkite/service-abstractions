@@ -5,6 +5,7 @@ import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.inference
 import com.lightningkite.services.ai.toolCalls
+import com.lightningkite.services.ai.userMessage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assume
 import kotlin.test.Test
@@ -36,7 +37,7 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText("In one sentence, what is the capital of Japan?"),
+                    userMessage("In one sentence, what is the capital of Japan?"),
                 ),
                 tools = listOf(weatherTool),
                 toolChoice = LlmToolChoice.Auto,
@@ -73,7 +74,7 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
                 messages = listOf(
                     // Ambiguous prompt — the model could answer in text, but Required must
                     // force a call.
-                    userText("Tell me about the weather today."),
+                    userMessage("Tell me about the weather today."),
                 ),
                 tools = listOf(weatherTool),
                 toolChoice = LlmToolChoice.Required,
@@ -109,7 +110,7 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
             prompt = LlmPrompt(
                 messages = listOf(
                     // The user is asking about time, but we're forcing the weather tool.
-                    userText("What's the time right now?"),
+                    userMessage("What's the time right now?"),
                 ),
                 tools = listOf(weatherTool, currentTimeTool),
                 toolChoice = LlmToolChoice.Specific("get_weather"),
@@ -148,7 +149,7 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText("What's the current weather in Seattle?"),
+                    userMessage("What's the current weather in Seattle?"),
                 ),
                 tools = listOf(weatherTool),
                 toolChoice = LlmToolChoice.None,

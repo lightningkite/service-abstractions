@@ -42,8 +42,8 @@ public data class ExternalFile(public val fileSystem: ExternalFileSystem, public
     public fun withAlteredExtension(alter: (String) -> String): ExternalFile =
         withAlteredName { it.substringBeforeLast('.') + "." + alter(it.substringAfterLast('.')) }
 
-    public suspend fun flow(): Flow<ExternalFile>? = fileSystem.flow(path)?.map { ExternalFile(fileSystem, it) }
-    public suspend fun list(): List<ExternalFile>? = fileSystem.flow(path)?.map { ExternalFile(fileSystem, it) }?.toList()
+    public suspend fun flow(): Flow<ExternalFile> = fileSystem.flow(path).map { ExternalFile(fileSystem, it) }
+    public suspend fun list(): List<ExternalFile> = fileSystem.flow(path).map { ExternalFile(fileSystem, it) }.toList()
     public suspend fun head(): FileInfo? = fileSystem.head(path)
     public suspend fun put(content: TypedData): Unit = fileSystem.put(path, content)
     public suspend fun get(): TypedData? = fileSystem.get(path)

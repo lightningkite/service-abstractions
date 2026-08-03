@@ -1,7 +1,6 @@
 package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryAttributesBuilder
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
@@ -53,7 +52,7 @@ public class JsonFileTable<Model : Any>(
 
     private suspend inline fun <R> traced(
         operation: String,
-        noinline extraBlock: (TelemetryAttributesBuilder.() -> Unit)? = null,
+        noinline extraBlock: (TelemetryAttributes.Builder.() -> Unit)? = null,
         noinline block: suspend (TelemetryTrace) -> R,
     ): R {
         val attrs = if (extraBlock != null) TelemetryAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)

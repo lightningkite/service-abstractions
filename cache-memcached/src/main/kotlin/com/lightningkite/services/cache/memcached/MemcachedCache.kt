@@ -11,7 +11,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import net.rubyeye.xmemcached.MemcachedClient
 import net.rubyeye.xmemcached.XMemcachedClient
-import net.rubyeye.xmemcached.aws.AWSElasticCacheClient
+import net.rubyeye.xmemcached.autodiscovery.AutoDiscoveryCacheClient
 import java.net.InetSocketAddress
 import kotlin.time.Duration
 
@@ -108,7 +108,9 @@ public class MemcachedCache(
                 val configFullHost = url.substringAfter("://")
                 val configPort = configFullHost.substringAfter(':', "").toIntOrNull() ?: 11211
                 val configHost = configFullHost.substringBefore(':')
-                val client = AWSElasticCacheClient(InetSocketAddress(configHost, configPort))
+                // AWSElasticCacheClient is deprecated in favor of AutoDiscoveryCacheClient, which is
+                // the same auto-discovery implementation under a new (non-AWS-specific) name.
+                val client = AutoDiscoveryCacheClient(InetSocketAddress(configHost, configPort))
                 MemcachedCache(name, client, context)
             }
         }
@@ -149,7 +151,6 @@ public class MemcachedCache(
                         json.encodeToString(serializer, value)
                     )
                 ) throw IllegalStateException("Failed to set value in Memcached")
-                Unit
             }
         }
 
@@ -191,7 +192,6 @@ public class MemcachedCache(
         telemetryTrace("remove", attributes = spanAttrs(key)) {
             withContext(Dispatchers.IO) {
                 client.delete(key)
-                Unit
             }
         }
 

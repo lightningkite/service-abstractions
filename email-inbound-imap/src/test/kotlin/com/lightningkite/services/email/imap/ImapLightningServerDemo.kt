@@ -52,6 +52,9 @@ import kotlin.time.Duration.Companion.seconds
  */
 object ImapLightningServerDemo {
     init {
+        // Referencing ImapEmailInboundService triggers its companion init block, which registers
+        // the imap/imaps URL schemes. The reference itself is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         ImapEmailInboundService
     }
 

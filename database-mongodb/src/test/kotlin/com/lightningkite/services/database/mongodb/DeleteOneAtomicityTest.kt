@@ -39,7 +39,7 @@ class DeleteOneAtomicityTest {
         // Repeat a few times — a non-atomic implementation may occasionally win the race
         // (single doc, fast handoff), but over multiple rounds the race will be exposed.
         repeat(10) { round ->
-            val collection = database.table<LargeTestModel>("delete_atomicity_round_$round")
+            val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("delete_atomicity_round_$round"))
             val model = LargeTestModel(int = round)
             collection.insertOne(model)
 

@@ -32,6 +32,9 @@ class S3ExternalFileSystemTest : FileSystemTests() {
      * `SdkClientException`.
      */
     override val system: S3ExternalFileSystem? by lazy {
+        // Force the s3:// URL scheme to register before constructing Settings.
+        // The bare reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         S3ExternalFileSystem
         val fs = ExternalFileSystem.Settings(
             File("../local/s3.txt").takeIf { it.exists() }?.readText() ?: run {
@@ -90,6 +93,9 @@ class S3ExternalFileSystemTest : FileSystemTests() {
      */
     @Test
     fun settingParse() {
+        // Force the s3:// URL scheme to register before constructing Settings.
+        // The bare reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         S3ExternalFileSystem
         ExternalFileSystem.Settings("s3://demo-example-files20220920193513533900000004.s3-us-west-2.amazonaws.com/?signedUrlDuration=1d")
             .invoke("test", TestSettingContext()) as? S3ExternalFileSystem

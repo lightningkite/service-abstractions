@@ -15,6 +15,7 @@ import kotlinx.coroutines.*
 import kotlin.test.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 abstract class FileSystemTests {
@@ -128,15 +129,15 @@ abstract class FileSystemTests {
         }
         runSuspendingTest {
             withContext(Dispatchers.Default.limitedParallelism(1)) {
-                withTimeout(10_000L) {
+                withTimeout(10.seconds) {
                     val testFile = system.root.then("test.txt")
                     val testFileNotIncluded = system.root.then("doNotInclude/test.txt")
                     val message = "Hello world!"
                     try {
                         testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
                         testFileNotIncluded.put(TypedData(Data.Text(message), MediaType.Text.Plain))
-                        assertContains(testFile.parent!!.list()!!.also { println(it) }, testFile)
-                        assertFalse(testFileNotIncluded in testFile.parent!!.list()!!)
+                        assertContains(testFile.parent!!.list().also { println(it) }, testFile)
+                        assertFalse(testFileNotIncluded in testFile.parent!!.list())
                         testFile.get()!!.data.text()
                     } finally {
                         testFile.delete()

@@ -93,7 +93,7 @@ public sealed class Modification<T> {
         override val isNothing: Boolean get() = true
 
         @Suppress("UNCHECKED_CAST")
-        public inline operator fun <T> invoke(): Modification<T> = this as Modification<T>
+        public operator fun <T> invoke(): Modification<T> = this as Modification<T>
         override fun invoke(on: Any?): Any? = on
 
         //        override fun invokeDefault(): Any? = throw IllegalStateException()

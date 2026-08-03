@@ -26,7 +26,6 @@ dependencies {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
     explicitApi()
 }

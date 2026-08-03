@@ -2,6 +2,7 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.data.ExperimentalLightningServer
 import com.lightningkite.services.data.nowLocal
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
@@ -95,6 +96,7 @@ public data class VirtualStruct(
             // then this placeholder will be returned, which holds dummy information until the full descriptor is built
             object : KSerializer<Any?> {
                 private val placeholderDescriptor = buildClassSerialDescriptor("$serialName.placeholder").nullable
+                @OptIn(ExperimentalLightningServer::class)
                 override val descriptor: SerialDescriptor = LazySerialDescriptor(serialName, StructureKind.CLASS) {
                     if (instantiated) this@Concrete.descriptor else placeholderDescriptor
                 }

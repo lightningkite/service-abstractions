@@ -7,6 +7,7 @@ import com.lightningkite.services.ai.LlmStreamEvent
 import com.lightningkite.services.ai.inference
 import com.lightningkite.services.ai.plainText
 import com.lightningkite.services.ai.toolCalls
+import com.lightningkite.services.ai.userMessage
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -47,7 +48,7 @@ public abstract class StreamingTests : LlmAccessTests() {
         val events = service.stream(
             model = cheapModel,
             prompt = LlmPrompt(
-                messages = listOf(userText("Say hello in three words.")),
+                messages = listOf(userMessage("Say hello in three words.")),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
             ),
@@ -85,7 +86,7 @@ public abstract class StreamingTests : LlmAccessTests() {
     public fun streamConcatenatesToInference(): Unit = runTest(timeout = 90.seconds) {
         skipIfServiceAbsent()
         val prompt = LlmPrompt(
-            messages = listOf(userText("In one short sentence, say what a unit test is.")),
+            messages = listOf(userMessage("In one short sentence, say what a unit test is.")),
             maxTokens = testMaxTokens,
             temperature = 0.0,
         )
@@ -123,7 +124,7 @@ public abstract class StreamingTests : LlmAccessTests() {
         val events = service.stream(
             model = cheapModel,
             prompt = LlmPrompt(
-                messages = listOf(userText("What's the current weather in Osaka?")),
+                messages = listOf(userMessage("What's the current weather in Osaka?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
@@ -165,7 +166,7 @@ public abstract class StreamingTests : LlmAccessTests() {
                 systemPrompt = listOf(
                     LlmPart.Text("You are a helpful assistant. Greet the user by their name, Clarence."),
                 ),
-                messages = listOf(userText("Hi! What's the current weather in Denver?")),
+                messages = listOf(userMessage("Hi! What's the current weather in Denver?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
@@ -209,7 +210,7 @@ public abstract class StreamingTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText("Solve: if 3x + 7 = 22, what is x? Show your reasoning step by step."),
+                    userMessage("Solve: if 3x + 7 = 22, what is x? Show your reasoning step by step."),
                 ),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
@@ -250,7 +251,7 @@ public abstract class StreamingTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText(
+                    userMessage(
                         "Write a very long poem of at least 200 lines. Do not stop early.",
                     ),
                 ),

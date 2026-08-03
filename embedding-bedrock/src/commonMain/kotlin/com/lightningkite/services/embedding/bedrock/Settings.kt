@@ -9,6 +9,10 @@ import com.lightningkite.services.embedding.EmbeddingService
 public object BedrockEmbeddingSettings {
     /** No-op call site; forces class init and therefore scheme registration. */
     public fun ensureRegistered() {
+        // Referencing BedrockEmbeddingService triggers its companion init block which
+        // registers the bedrock:// scheme. The reference itself is the point of this line, so
+        // the "unused expression" warning is expected and suppressed.
+        @Suppress("UNUSED_EXPRESSION")
         BedrockEmbeddingService
     }
 }
@@ -30,6 +34,7 @@ public fun EmbeddingService.Settings.Companion.bedrock(
     secretAccessKey: String? = null,
     profile: String? = null,
 ): EmbeddingService.Settings {
+    @Suppress("UNUSED_EXPRESSION")
     BedrockEmbeddingService  // ensure scheme registration
     require(accessKeyId == null || profile == null) {
         "Specify either (accessKeyId, secretAccessKey) or profile -- not both."

@@ -56,6 +56,9 @@ import kotlin.time.Duration.Companion.seconds
  */
 object TwilioLightningServerDemo {
     init {
+        // Touching TwilioPhoneCallService forces its companion init block to run, registering
+        // the twilio:// URL scheme even though this object never names it directly elsewhere.
+        @Suppress("UNUSED_EXPRESSION")
         TwilioPhoneCallService
     }
     // ==================== Main ====================

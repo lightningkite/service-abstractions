@@ -26,7 +26,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.LineEnding
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -138,7 +139,7 @@ public class AnthropicLlmAccess(
     /**
      * Read Anthropic SSE events line-by-line off the response channel, decode them, and
      * hand each resulting [LlmStreamEvent] to [emit]. Uses the non-blocking
-     * [ByteReadChannel.readUTF8Line] so the coroutine's dispatcher is never blocked
+     * [ByteReadChannel.readLine] so the coroutine's dispatcher is never blocked
      * waiting for bytes.
      */
     private suspend fun parseSseStream(
@@ -148,7 +149,7 @@ public class AnthropicLlmAccess(
         val channel: ByteReadChannel = response.bodyAsChannel()
         val state = SseState()
         while (!channel.isClosedForRead) {
-            val line = channel.readUTF8Line() ?: break
+            val line = channel.readLine(LineEnding.Lenient) ?: break
             val done = processSseLine(line, state, emit)
             if (done) break
         }

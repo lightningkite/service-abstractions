@@ -147,9 +147,7 @@ public class DynamoDbCache(
                                     } else DefaultCredentialsProvider.builder().build()
                                 )
                                 .httpClient(context[AwsConnections].asyncClient)
-                                .apply {
-                                    context[AwsConnections].clientOverrideConfiguration?.let { overrideConfiguration(it) }
-                                }
+                                .overrideConfiguration(context[AwsConnections].clientOverrideConfiguration)
                                 .region(Region.of(match.groups["region"]!!.value))
                                 .build()
                         },
@@ -263,7 +261,6 @@ public class DynamoDbCache(
                     } ?: mapOf())
                 )
             }.await()
-            Unit
         }
 
     override suspend fun <T> setIfNotExists(
@@ -365,7 +362,6 @@ public class DynamoDbCache(
                 it.tableName(tableName)
                 it.key(mapOf("key" to AttributeValue.fromS(key)))
             }.await()
-            Unit
         }
 
     override suspend fun <T> getAndRemove(key: String, serializer: KSerializer<T>): T? =

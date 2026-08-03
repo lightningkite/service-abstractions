@@ -1,7 +1,6 @@
 package com.lightningkite.services.database.sql
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryAttributesBuilder
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
@@ -36,6 +35,13 @@ public class SqlCollection<T : Any>(
     private val format = SqlMapFormat(serializersModule)
     internal val schema = SqlSchema(name, serializersModule, serializer.descriptor)
 
+    /**
+     * Every Exposed table backing this collection: the main table, plus one child table per
+     * collection-valued field. Exposed's schema tooling works on these directly — see [migrationStatements].
+     */
+    public val exposedTables: List<org.jetbrains.exposed.sql.Table>
+        get() = listOf(schema.mainTable) + schema.childTables.values.map { it.table }
+
     private suspend inline fun <T> t(noinline action: suspend Transaction.() -> T): T =
         newSuspendedTransaction(Dispatchers.IO, db = db, transactionIsolation = TRANSACTION_READ_COMMITTED, statement = {
             action()
@@ -58,7 +64,7 @@ public class SqlCollection<T : Any>(
     // hands the started span to [block] for dynamic per-result attributes.
     private suspend inline fun <R> traced(
         operation: String,
-        noinline extraBlock: (TelemetryAttributesBuilder.() -> Unit)? = null,
+        noinline extraBlock: (TelemetryAttributes.Builder.() -> Unit)? = null,
         noinline block: suspend (TelemetryTrace) -> R,
     ): R {
         val attrs = if (extraBlock != null) TelemetryAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
@@ -68,11 +74,10 @@ public class SqlCollection<T : Any>(
     @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
     internal val prepare = GlobalScope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
         t {
-            val allTables = listOf(schema.mainTable) + schema.childTables.values.map { it.table }
             // Single combined call: per-table calls re-emit statements for FK-referenced tables,
             // producing duplicate CREATE INDEX errors that abort the whole transaction on Postgres.
             // Any failure here is a real schema problem, so let it propagate.
-            statementsRequiredToActualizeScheme(*allTables.toTypedArray()).forEach { exec(it) }
+            additiveSchemaStatements(exposedTables).forEach { exec(it) }
         }
     }
 
@@ -96,7 +101,7 @@ public class SqlCollection<T : Any>(
             val childTable = childDef.table
 
             val query = if (childTable.ownerIdColumns.size == 1) {
-                val ownerCol = childTable.ownerIdColumns[0] as Column<Any?>
+                val ownerCol = childTable.ownerIdColumns[0]
                 childTable.selectAll().where { ownerCol inList ids }
             } else {
                 // Compound owner key: build OR of AND-clauses, one per parent ID.
@@ -114,14 +119,14 @@ public class SqlCollection<T : Any>(
             childTable.idxColumn?.let { query.orderBy(it to SortOrder.ASC) }
 
             val ownerKeyOf: (ResultRow) -> Any? = if (childTable.ownerIdColumns.size == 1) {
-                val ownerCol = childTable.ownerIdColumns[0] as Column<Any?>
+                val ownerCol = childTable.ownerIdColumns[0]
                 { row -> row[ownerCol] }
             } else {
                 // Reconstruct the compound id map matching the main table key shape (_id__a, _id__b, ...).
                 { row ->
                     childTable.ownerIdColumns.associate { ownerCol ->
                         val mainColName = "_id" + ownerCol.name.removePrefix("owner_id")
-                        mainColName to row[ownerCol as Column<Any?>]
+                        mainColName to row[ownerCol]
                     }
                 }
             }
@@ -198,29 +203,25 @@ public class SqlCollection<T : Any>(
 
             childTable.batchInsert(childRows) { childRow ->
                 if (childTable.ownerIdColumns.size == 1) {
-                    @Suppress("UNCHECKED_CAST")
-                    this[childTable.ownerIdColumns[0] as Column<Any?>] = ownerId
+                    this[childTable.ownerIdColumns[0]] = ownerId
                 } else {
                     @Suppress("UNCHECKED_CAST")
                     val ownerIdMap = ownerId as Map<String, Any?>
                     for (ownerCol in childTable.ownerIdColumns) {
                         val mainColName = "_id" + ownerCol.name.removePrefix("owner_id")
-                        @Suppress("UNCHECKED_CAST")
-                        this[ownerCol as Column<Any?>] = ownerIdMap[mainColName]
+                        this[ownerCol] = ownerIdMap[mainColName]
                     }
                 }
                 childTable.idxColumn?.let { this[it] = childRow.index ?: 0 }
                 if (childDef.isMap && childRow.key != null) {
                     for ((keyName, keyValue) in childRow.key) {
                         val col = childTable.keyColumns[keyName] ?: continue
-                        @Suppress("UNCHECKED_CAST")
-                        this[col as Column<Any?>] = keyValue
+                        this[col] = keyValue
                     }
                 }
                 for ((valName, valValue) in childRow.values) {
                     val col = childTable.elementColumns[valName] ?: continue
-                    @Suppress("UNCHECKED_CAST")
-                    this[col as Column<Any?>] = valValue
+                    this[col] = valValue
                 }
             }
         }
@@ -289,8 +290,7 @@ public class SqlCollection<T : Any>(
         }) { builder ->
             for ((key, value) in writeResult.mainRecord) {
                 val col = schema.mainTable.col[key] ?: continue
-                @Suppress("UNCHECKED_CAST")
-                builder[col as Column<Any?>] = value
+                builder[col] = value
             }
         }
         // Re-write children
@@ -487,8 +487,7 @@ public class SqlCollection<T : Any>(
                     schema.mainTable.insert { builder ->
                         for ((key, value) in writeResult.mainRecord) {
                             val col = schema.mainTable.col[key] ?: continue
-                            @Suppress("UNCHECKED_CAST")
-                            builder[col as Column<Any?>] = value
+                            builder[col] = value
                         }
                     }
 
@@ -530,8 +529,7 @@ public class SqlCollection<T : Any>(
                 schema.mainTable.insert { builder ->
                     for ((key, value) in writeResult.mainRecord) {
                         val col = schema.mainTable.col[key] ?: continue
-                        @Suppress("UNCHECKED_CAST")
-                        builder[col as Column<Any?>] = value
+                        builder[col] = value
                     }
                 }
                 insertChildren(ownerId, writeResult)
@@ -559,8 +557,7 @@ public class SqlCollection<T : Any>(
                 schema.mainTable.insert { builder ->
                     for ((key, value) in writeResult.mainRecord) {
                         val col = schema.mainTable.col[key] ?: continue
-                        @Suppress("UNCHECKED_CAST")
-                        builder[col as Column<Any?>] = value
+                        builder[col] = value
                     }
                 }
                 insertChildren(ownerId, writeResult)

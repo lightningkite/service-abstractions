@@ -201,6 +201,7 @@ public class MongoTable<Model : Any>(
                                 val path = ser.fromString(key)
 
                                 @Suppress("UNCHECKED_CAST")
+                                @OptIn(ExperimentalSerializationApi::class)
                                 fun KSerializer<*>.unwrap(): KSerializer<*> {
                                     return when {
                                         this.descriptor.isNullable -> this.innerElement()

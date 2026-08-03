@@ -49,6 +49,9 @@ import kotlin.time.Clock
  */
 object TwilioSmsLightningServerDemo {
     init {
+        // Touching TwilioSmsInboundService forces its companion init block to run, registering
+        // the twilio:// URL scheme even though this object never names it directly elsewhere.
+        @Suppress("UNUSED_EXPRESSION")
         TwilioSmsInboundService
     }
 

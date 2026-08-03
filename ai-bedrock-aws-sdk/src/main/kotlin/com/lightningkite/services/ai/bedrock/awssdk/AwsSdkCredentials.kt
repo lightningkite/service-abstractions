@@ -27,7 +27,7 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider as SdkAwsC
  *   which walks the standard AWS credential chain exactly like the AWS CLI and SDKs.
  */
 public fun awsSdkCredentials(
-    provider: SdkAwsCredentialsProvider = DefaultCredentialsProvider.create(),
+    provider: SdkAwsCredentialsProvider = DefaultCredentialsProvider.builder().build(),
 ): AwsCredentialsProvider = AwsCredentialsProvider {
     withContext(Dispatchers.IO) {
         val resolved = provider.resolveCredentials()

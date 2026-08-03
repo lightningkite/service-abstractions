@@ -1,6 +1,9 @@
+@file:OptIn(Untested::class)
+
 package com.lightningkite.services.email.sendgrid
 
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.Untested
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

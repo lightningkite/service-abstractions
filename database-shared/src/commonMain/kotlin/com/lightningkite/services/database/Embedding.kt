@@ -1,5 +1,6 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.data.ExperimentalLightningServer
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.FloatArraySerializer
 import kotlinx.serialization.descriptors.*
@@ -40,6 +41,7 @@ public class Embedding(public val values: FloatArray) {
 public class EmbeddingSerializer : GeneratedSerializer<Embedding> {
     private val defer = FloatArraySerializer()
 
+    @OptIn(ExperimentalLightningServer::class)
     override val descriptor: SerialDescriptor =
         InliningSerialDescriptor("com.lightningkite.services.database.Embedding", defer.descriptor)
 

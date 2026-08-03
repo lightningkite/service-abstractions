@@ -7,6 +7,9 @@ import kotlin.test.Test
 
 class TfTest {
     init {
+        // Referencing JavaSmtpEmailService triggers its companion init block, which registers
+        // the smtp URL scheme. The reference itself is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         JavaSmtpEmailService
     }
 

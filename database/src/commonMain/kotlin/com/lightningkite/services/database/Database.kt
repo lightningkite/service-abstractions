@@ -185,7 +185,7 @@ public interface Database : Service {
         return PrepareFirstTable(serializer, GlobalScope.async { prepare(def) })
     }
 
-    @Suppress("UNCHECKED_CAST")
+    @Suppress("UNCHECKED_CAST", "DEPRECATION") // Deprecated bridge intentionally calling the other deprecated bridge.
     @Deprecated("Use the new table definition system instead, including the 'prepare' function.")
     public fun <T : Any> table(type: KType, name: String): Table<T> =
         table(context.internalSerializersModule.serializer(type) as KSerializer<T>, name)
@@ -194,9 +194,8 @@ public interface Database : Service {
      * Will attempt inserting data into the database to confirm that the connection is alive and available.
      */
     override suspend fun healthCheck(): HealthStatus {
-//        prepareModelsServerCore()
         try {
-            val c = table<HealthCheckTestModel>()
+            val c = prepare(DatabaseTableDefinition<HealthCheckTestModel>())
             val id = "HealthCheck"
             c.upsertOneById(id, HealthCheckTestModel(id))
             if (c.get(id) == null) throw AssertionError("Assertion Failed")
@@ -216,6 +215,7 @@ public data class HealthCheckTestModel(override val _id: String) : HasId<String>
  * This can make table calls much cleaner and less wordy when the types can be inferred.
  */
 @Deprecated("Use the new table definition system instead, including the 'prepare' function.")
+@Suppress("DEPRECATION") // Deprecated bridge intentionally calling the other deprecated bridge.
 public inline fun <reified T : Any> Database.table(name: String = T::class.simpleName!!): Table<T> {
     return table(context.internalSerializersModule.serializer<T>(), name)
 }

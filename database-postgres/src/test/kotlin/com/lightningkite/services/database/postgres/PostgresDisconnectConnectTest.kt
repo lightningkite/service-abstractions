@@ -40,7 +40,7 @@ class PostgresDisconnectConnectTest {
 
         // 1. Insert + find roundtrip to force lazy initialization of both
         //    the database connection and the per-collection scope.
-        val collection = database.table<LargeTestModel>("DisconnectReconnectTest")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("DisconnectReconnectTest"))
         val original = LargeTestModel(instant = Instant.fromEpochMilliseconds(42L))
         collection.insertOne(original)
         val before = collection.find(Condition.Always).toList()
@@ -70,7 +70,7 @@ class PostgresDisconnectConnectTest {
         // 4. Connect again and verify data persists (Postgres is durable across
         //    a logical disconnect) and a new collection works end-to-end.
         database.connect()
-        val collection2 = database.table<LargeTestModel>("DisconnectReconnectTest")
+        val collection2 = database.prepare(DatabaseTableDefinition<LargeTestModel>("DisconnectReconnectTest"))
         val after = collection2.find(Condition.Always).toList()
         assertEquals(listOf(original), after, "row should still be readable after reconnect")
 

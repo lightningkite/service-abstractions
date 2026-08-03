@@ -289,8 +289,8 @@ internal actual class EmbeddedLlmEngine actual constructor(
         val result = FloatArray(vocabSize)
         for (v in 0 until vocabSize) {
             val flatIndex = baseOffset + v * vocabStride
-            val num = logitsArray.objectAtIndexedSubscript(flatIndex) as? NSNumber
-            result[v] = num?.floatValue ?: 0f
+            val num = logitsArray.objectAtIndexedSubscript(flatIndex)
+            result[v] = num.floatValue
         }
         return result
     }

@@ -1,7 +1,6 @@
 package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryAttributesBuilder
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
@@ -16,7 +15,6 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.modules.SerializersModule
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.SchemaUtils.statementsRequiredToActualizeScheme
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import java.sql.Connection.TRANSACTION_READ_COMMITTED
 import java.sql.Connection.TRANSACTION_SERIALIZABLE
@@ -31,6 +29,12 @@ public class PostgresCollection<T : Any>(
     private var format = DbMapLikeFormat(serializersModule)
 
     private val table = SerialDescriptorTable(name, serializersModule, serializer.descriptor)
+
+    /**
+     * The Exposed table backing this collection. Exposed's schema tooling works on it directly —
+     * see [migrationStatements].
+     */
+    public val exposedTables: List<org.jetbrains.exposed.sql.Table> get() = listOf(table)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
@@ -60,7 +64,7 @@ public class PostgresCollection<T : Any>(
     // hands the started span to [block] for dynamic per-result attributes.
     private suspend inline fun <R> traced(
         operation: String,
-        noinline extraBlock: (TelemetryAttributesBuilder.() -> Unit)? = null,
+        noinline extraBlock: (TelemetryAttributes.Builder.() -> Unit)? = null,
         noinline block: suspend (TelemetryTrace) -> R,
     ): R {
         val attrs = if (extraBlock != null) TelemetryAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
@@ -70,8 +74,7 @@ public class PostgresCollection<T : Any>(
     @OptIn(ExperimentalSerializationApi::class)
     internal val prepare = scope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
         t {
-//            MigrationUtils.statementsRequiredForDatabaseMigration
-            statementsRequiredToActualizeScheme(table).forEach {
+            additiveSchemaStatements(exposedTables).forEach {
                 exec(it)
             }
         }

@@ -33,6 +33,9 @@ class AnthropicLiveTest {
         }
 
         // Force the anthropic:// URL scheme to register before constructing Settings.
+        // The bare reference is the point of this line, so the unused-expression warning
+        // is expected and suppressed.
+        @Suppress("UNUSED_EXPRESSION")
         AnthropicLlmAccess
         val context = TestSettingContext()
         val settings = LlmAccess.Settings("anthropic://claude-haiku-4-5?apiKey=$key")

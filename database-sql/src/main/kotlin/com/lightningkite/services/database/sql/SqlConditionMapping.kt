@@ -253,8 +253,6 @@ private fun <T> ISqlExpressionBuilder.condition(
                 unsupported()
             }
         }
-
-        else -> unsupported()
     }
 }
 
@@ -325,7 +323,6 @@ private fun ISqlExpressionBuilder.conditionOnChildTable(
             val innerCond = when (condition) {
                 is Condition.ListAnyElements<*> -> condition.condition as Condition<Any?>
                 is Condition.SetAnyElements<*> -> condition.condition as Condition<Any?>
-                else -> throw IllegalStateException()
             }
             val efs = elementFieldSet()
             existsSubquery(condition(innerCond, efs, ctx, negated))
@@ -335,7 +332,6 @@ private fun ISqlExpressionBuilder.conditionOnChildTable(
             val innerCond = when (condition) {
                 is Condition.ListAllElements<*> -> condition.condition as Condition<Any?>
                 is Condition.SetAllElements<*> -> condition.condition as Condition<Any?>
-                else -> throw IllegalStateException()
             }
             val efs = elementFieldSet()
             // NOT EXISTS (... WHERE NOT <condition>)
@@ -346,7 +342,6 @@ private fun ISqlExpressionBuilder.conditionOnChildTable(
             val count = when (condition) {
                 is Condition.ListSizesEquals<*> -> condition.count
                 is Condition.SetSizesEquals<*> -> condition.count
-                else -> throw IllegalStateException()
             }
             EqOp(countSubquery(), sqlLiteralOfSomeKind(IntegerColumnType(), count))
         }
@@ -424,6 +419,10 @@ private fun ISqlExpressionBuilder.conditionOnChildTable(
  * Returns true if this modification can be fully expressed as SQL UPDATE SET clauses
  * (no collection modifications).
  */
+// Recursing into IfNotNull/OnField's wrapped Modification<*> requires re-asserting the type
+// parameter as Any?; the variance is erased at runtime so this is safe (isScalarOnly only reads
+// structure, never the wrapped value).
+@Suppress("UNCHECKED_CAST")
 internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = ""): Boolean = when (this) {
     is Modification.Nothing -> true
     is Modification.Chain -> modifications.all { it.isScalarOnly(schema, path) }
@@ -513,7 +512,7 @@ internal fun <T> UpdateBuilder<*>.modification(
     )
     for (entry in map) {
         val col = table.col[entry.key] ?: continue
-        this.update(col as Column<Any?>, entry.value)
+        this.update(col, entry.value)
     }
 }
 

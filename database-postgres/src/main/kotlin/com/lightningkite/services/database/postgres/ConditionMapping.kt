@@ -376,7 +376,7 @@ private fun <T> FieldModifier.modification(
     fieldSet: FieldSet2<T>,
 ): Unit {
     when (modification) {
-        is Modification.Nothing -> Modification.Nothing
+        is Modification.Nothing -> {}
         is Modification.Chain -> modification.modifications.forEach { modification(it, fieldSet) }
         is Modification.Assign -> modifyEach(fieldSet, modification.value) { type, it, old -> it }
         is Modification.IfNotNull<*> -> modification<Any?>(

@@ -9,7 +9,7 @@ abstract class IndexTests {
 
     @Test
     fun testNotUniqueIndexes() = runTest {
-        val table = database.table<NotUniqueIndexTestModel>()
+        val table = database.prepare(DatabaseTableDefinition<NotUniqueIndexTestModel>())
 
         table.insertMany(
             listOf(
@@ -31,7 +31,7 @@ abstract class IndexTests {
 
     @Test
     fun testUniqueIndexes() = runTest {
-        val table = database.table<UniqueIndexTestModel>()
+        val table = database.prepare(DatabaseTableDefinition<UniqueIndexTestModel>())
 
         // all different
 
@@ -132,7 +132,7 @@ abstract class IndexTests {
 
     @Test
     fun testUniqueNullSparseIndexes() = runTest {
-        val table = database.table<UniqueNullSparseIndexTestModel>()
+        val table = database.prepare(DatabaseTableDefinition<UniqueNullSparseIndexTestModel>())
 
         // all different
 

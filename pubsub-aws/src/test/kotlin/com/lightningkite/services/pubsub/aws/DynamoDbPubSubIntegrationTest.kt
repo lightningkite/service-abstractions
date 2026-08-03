@@ -80,7 +80,8 @@ class DynamoDbPubSubIntegrationTest {
     }
 
     init {
-        // Ensure URL scheme is registered
+        // Ensure URL scheme is registered; the bare reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         DynamoDbPubSub
         if (useRealDynamoDB) {
             println("*** RUNNING WITH REAL AWS DYNAMODB (us-west-2, 'lk' profile) ***")

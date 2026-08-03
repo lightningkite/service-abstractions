@@ -14,7 +14,7 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
@@ -46,7 +46,7 @@ kotlin {
             kotlin {
                 compilerOptions {
                     optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
                 }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
@@ -59,7 +59,7 @@ kotlin {
             kotlin {
                 compilerOptions {
                     optIn.add("kotlin.time.ExperimentalTime")
-                    optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+                    optIn.add("kotlin.uuid.ExperimentalUuidApi")
                 }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }

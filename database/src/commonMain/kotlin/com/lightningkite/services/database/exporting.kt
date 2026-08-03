@@ -7,6 +7,8 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.*
 
+// TODO: This whole API should be reconsidered
+
 public suspend fun Database.importTablesFrom(
     source: Database,
     tables: List<Pair<String, KSerializer<*>>>,
@@ -15,8 +17,9 @@ public suspend fun Database.importTablesFrom(
     tables as List<Pair<String, KSerializer<Any>>>
 
     for ((name, serializer) in tables) {
-        val sauce = source.table(serializer, name)
-        val dest = this.table(serializer, name)
+        val def = DatabaseTableDefinition(serializer, name)
+        val sauce = source.prepare(def)
+        val dest = this.prepare(def)
         dest.insert(sauce.all().toList())
     }
 }

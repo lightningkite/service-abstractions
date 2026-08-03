@@ -130,7 +130,7 @@ class PostgresRetrievalTest {
 
     @kotlin.test.Test
     fun inout() = runTest {
-        val collection = database.table<LargeTestModel>("PostgresRetrievalTest")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("PostgresRetrievalTest"))
         val lower = LargeTestModel(instant = Instant.fromEpochMilliseconds(5000L))
         val higher = LargeTestModel(instant = Instant.fromEpochMilliseconds(15000L))
         val middle = LargeTestModel(instant = Instant.fromEpochMilliseconds(10000L))
@@ -141,12 +141,11 @@ class PostgresRetrievalTest {
         assertEquals(result[0], lower)
         assertEquals(result[1], middle)
         assertEquals(result[2], higher)
-        Unit
     }
 
     @Test
     fun test_Instant_nullable_eq() = runTest {
-        val collection = database.table<LargeTestModel>("quicktest")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("quicktest"))
         val lower = LargeTestModel(instant = Instant.fromEpochMilliseconds(0L))
         val higher = LargeTestModel(instant = Instant.fromEpochMilliseconds(15000L))
         val manualList = listOf(lower, higher)
@@ -159,7 +158,6 @@ class PostgresRetrievalTest {
         assertContains(results, higher)
         assertTrue(lower !in results)
         assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-        Unit
     }
 
     object StarWarsFilms : IntIdTable() {

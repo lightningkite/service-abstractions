@@ -3,6 +3,7 @@ package com.lightningkite.services.database.mongodb
 import com.lightningkite.services.telemetry.TelemetryBackend
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.SharedResources
+import com.lightningkite.services.database.DatabaseTableDefinition
 import com.lightningkite.services.database.HasId
 import com.lightningkite.services.database.Table
 import com.lightningkite.services.otel.OtelTelemetryBackend
@@ -73,7 +74,7 @@ class SpanParentingTest {
             clientSettings = testMongo(),
             context = OtelContext(),
         )
-        val table: Table<Thing> = database.table(Thing.serializer(), "things_parenting")
+        val table: Table<Thing> = database.prepare(DatabaseTableDefinition(Thing.serializer(), "things_parenting"))
 
         val tracer = sdk.getTracer("test-caller")
         val parentSpan = tracer.spanBuilder("request").startSpan()

@@ -17,6 +17,7 @@ class ElevenLabsTextToSpeechServiceTest {
 
     init {
         // Ensure companion object init block runs to register the URL handler
+        @Suppress("UNUSED_EXPRESSION")
         ElevenLabsTextToSpeechService
     }
 

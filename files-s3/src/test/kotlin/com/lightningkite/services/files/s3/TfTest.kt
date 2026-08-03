@@ -14,6 +14,9 @@ import kotlin.time.Duration.Companion.hours
 class TfTest {
 
     init {
+        // Force class init so S3ExternalFileSystem's companion registers the URL scheme;
+        // the bare reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         S3ExternalFileSystem
     }
 
