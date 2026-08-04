@@ -6,9 +6,9 @@ import com.lightningkite.services.database.*
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.EmptySerializersModule
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
-import org.jetbrains.exposed.sql.vendors.currentDialect
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.transactions.inTopLevelSuspendTransaction
+import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -72,7 +72,7 @@ class MigrationStatementsTest {
     fun `reports a column the model no longer has as a drop`() = runTest {
         val db = database("migrationDrop")
         val collection = db.prepare(DatabaseTableDefinition<MigrationTestModel>("MigrationDrop"))
-        newSuspendedTransaction(db = collection.db) {
+        inTopLevelSuspendTransaction(db = collection.db) {
             exec("ALTER TABLE MigrationDrop ADD COLUMN legacy_note VARCHAR(64)")
         }
 
@@ -83,7 +83,7 @@ class MigrationStatementsTest {
             "Expected a DROP COLUMN statement for legacy_note, got $statements",
         )
         // Reported, not applied: the column must still be there.
-        val stillPresent = newSuspendedTransaction(db = collection.db) {
+        val stillPresent = inTopLevelSuspendTransaction(db = collection.db) {
             // H2 folds unquoted identifiers to upper case, which is how they land in information_schema.
             exec("SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'MIGRATIONDROP' AND column_name = 'LEGACY_NOTE'") { rs ->
                 rs.next()
@@ -101,11 +101,11 @@ class MigrationStatementsTest {
     fun `additive preparation never drops anything`() = runTest {
         val db = database("migrationAdditive")
         val collection = db.prepare(DatabaseTableDefinition<MigrationTestModel>("MigrationAdditive"))
-        newSuspendedTransaction(db = collection.db) {
+        inTopLevelSuspendTransaction(db = collection.db) {
             exec("ALTER TABLE MigrationAdditive ADD COLUMN legacy_note VARCHAR(64)")
         }
 
-        val statements = newSuspendedTransaction(db = collection.db) {
+        val statements = inTopLevelSuspendTransaction(db = collection.db) {
             additiveSchemaStatements(collection.exposedTables)
         }
 
@@ -126,7 +126,7 @@ class MigrationStatementsTest {
         val db = database("migrationIndexNew")
         val collection = db.table(DatabaseTableDefinition<MigrationIndexedModel>("IndexNew"))
 
-        val statements = newSuspendedTransaction(db = collection.db) {
+        val statements = inTopLevelSuspendTransaction(db = collection.db) {
             additiveSchemaStatements(collection.exposedTables, withLogs = false)
         }
 
@@ -141,12 +141,12 @@ class MigrationStatementsTest {
         val db = database("migrationIndexExisting")
         val collection = db.table(DatabaseTableDefinition<MigrationIndexedModel>("IndexExisting"))
         // Create the table WITHOUT its index, so the index is the only thing left to actualize.
-        newSuspendedTransaction(db = collection.db) {
+        inTopLevelSuspendTransaction(db = collection.db) {
             exec("CREATE TABLE IndexExisting (_id TEXT PRIMARY KEY, category TEXT NOT NULL)")
         }
 
-        val statements = newSuspendedTransaction(db = collection.db) {
-            currentDialect.resetCaches()
+        val statements = inTopLevelSuspendTransaction(db = collection.db) {
+            currentDialectMetadata.resetCaches()
             additiveSchemaStatements(collection.exposedTables, withLogs = false)
         }
 

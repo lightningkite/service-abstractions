@@ -13,7 +13,7 @@ dependencies {
     api(libs.exposed.core)
     api(libs.exposed.javaTime)
     api(libs.exposed.jdbc)
-    api(libs.exposed.migration)
+    api(libs.exposed.migrationJdbc)
     api(libs.postgresql)
     api(libs.hikariCP)
 

@@ -4,6 +4,8 @@ import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSFile
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.io.Writer
 
 abstract class CommonSymbolProcessor2(
@@ -71,7 +73,10 @@ abstract class CommonSymbolProcessor2(
                 processFiles(
                     version = version,
                     dependencies = interestedIn.asSequence().map { it.filePath.let(::File) },
-                    lockFile = metaFolder.resolve("$myId.lock"),
+                    // Keyed by flavor as well as processor: main and test generate from different
+                    // sources into different folders, so sharing one hash file made each run see the
+                    // other flavor's hash, miss the cache, and regenerate on every build.
+                    lockFile = metaFolder.resolve("$myId-common$flavor.lock"),
                     destinationFolder = outFolder.resolve(myId).also { it.mkdirs() },
                     action = {
                         fileCreator = label@{ _, packageName, fileName, extensionName ->
@@ -133,42 +138,88 @@ fun processFiles(
     action: FileGenerator.() -> Unit,
 ) {
     lockFile.parentFile.mkdirs()
-    val dependenciesFile = File(lockFile.absolutePath + ".dependencies")
-    if (!dependenciesFile.exists()) dependenciesFile.createNewFile()
-    dependenciesFile.appendText(dependencies.joinToString("\n") + "\n\n")
+    File(lockFile.absolutePath + ".dependencies").writeText(dependencies.joinToString("\n"))
     val hash = dependencies.checksum() + version
+
+    // Every KSP task of every target runs this processor, so the lock is what makes exactly one of
+    // them generate while the rest fall through to the up-to-date check below. Readers are safe
+    // because the live output folder is never emptied and files are replaced atomically — see
+    // [syncInto]. The wait is generous because a large project can queue up a lot of tasks here.
     val runningFile = File(lockFile.absolutePath + ".running")
-    val pastHashesFile = File(lockFile.absolutePath + ".past")
-    if (!pastHashesFile.exists()) pastHashesFile.createNewFile()
     var count = 0
-    while (!runningFile.createNewFile() && count++ < 50) {
+    while (!runningFile.createNewFile() && count++ < 600) {
         Thread.sleep(100)
-        println("Waiting on lock...")
     }
-    if (count >= 50) throw Exception("Waited, could not get lock")
-    println("Running...")
-    val hashFromFile = lockFile.takeIf { it.exists() }?.readText()?.toIntOrNull()
-    lockFile.writeText(hash.toString())
-    pastHashesFile.appendText(hash.toString() + "\n")
+    if (count >= 600) throw IllegalStateException(
+        "Timed out waiting for $runningFile. If no build is running, delete it."
+    )
     try {
-        println("Hash comparison: $hash vs $hashFromFile")
-        if (hash != hashFromFile) {
-            println("Running the action!")
-            destinationFolder.deleteRecursively()
-            destinationFolder.mkdirs()
+        val hashFromFile = lockFile.takeIf { it.exists() }?.readText()?.toIntOrNull()
+        val outputsFile = File(lockFile.absolutePath + ".outputs")
+        val previousOutputs = outputsFile.takeIf { it.exists() }?.readLines()?.filter { it.isNotBlank() }.orEmpty()
+        // Up to date when the inputs are unchanged and everything previously produced is still there.
+        // The recorded list is what makes this work for a module that legitimately generates nothing:
+        // asking the folder whether it holds files would say "no" forever and regenerate every run.
+        if (hash == hashFromFile && previousOutputs.all { destinationFolder.resolve(it).exists() }) return
+
+        // Generate to the side, then move only what actually changed into place. Rewriting the
+        // destination directly would briefly empty a source root the IDE is indexing, breaking
+        // resolution in the common source set every time this runs.
+        println("Regenerating $destinationFolder (hash $hashFromFile -> $hash)")
+        // Staged beside the lock file rather than beside the destination: the destination lives
+        // inside a Kotlin source root, and a folder of .kt files there would be compiled too,
+        // producing duplicate declarations. The lock file name already distinguishes the flavor.
+        val staging = lockFile.parentFile.resolve(lockFile.nameWithoutExtension + ".staging")
+        staging.deleteRecursively()
+        staging.mkdirs()
+        val written: Set<String>
+        try {
             action(object : FileGenerator {
                 override fun file(name: String): Writer {
-                    return destinationFolder.resolve(name).also {
+                    return staging.resolve(name).also {
                         it.parentFile.mkdirs()
                     }.bufferedWriter()
                 }
             })
+            written = staging.syncInto(destinationFolder)
+        } finally {
+            staging.deleteRecursively()
         }
-    } catch (e: Exception) {
-        // abandon
-        e.printStackTrace()
+        // Recorded only once the output is actually valid. Writing it up front meant a failed run
+        // left an empty folder marked current, so every later build skipped regenerating it.
+        outputsFile.writeText(written.joinToString("\n"))
+        lockFile.writeText(hash.toString())
     } finally {
         runningFile.delete()
-        println("Done.")
     }
+}
+
+/**
+ * Makes [destination] match this folder, rewriting only files whose contents differ and removing
+ * only files that are no longer generated. Untouched files keep their identity, so anything
+ * watching the folder — the IDE especially — sees a stable set of sources.
+ *
+ * Returns the destination-relative paths that now make up the generated output.
+ */
+private fun File.syncInto(destination: File): Set<String> {
+    destination.mkdirs()
+    val generated = walkTopDown().filter { it.isFile }.map { it.relativeTo(this).path }.toSet()
+    for (relative in generated) {
+        val from = resolve(relative)
+        val to = destination.resolve(relative)
+        if (to.exists() && to.readText() == from.readText()) continue
+        to.parentFile.mkdirs()
+        // Land the content on a temp file beside the target, then rename it into place. Rename is
+        // atomic within a filesystem, so a compiler or IDE reading this source root while another
+        // target's KSP task regenerates sees either the old file or the new one, never a partial
+        // one. The temp name is not a .kt file, so it is never itself compiled.
+        val temp = File(to.absolutePath + ".tmp")
+        from.copyTo(temp, overwrite = true)
+        Files.move(temp.toPath(), to.toPath(), StandardCopyOption.ATOMIC_MOVE)
+    }
+    destination.walkTopDown()
+        .filter { it.isFile && it.relativeTo(destination).path !in generated }
+        .toList()
+        .forEach { it.delete() }
+    return generated
 }

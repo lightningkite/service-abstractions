@@ -131,3 +131,33 @@ class DocumentDbMetaTest : MetaTest() {
     @BeforeTest fun checkAvailable() = skipIfUnavailable()
     @kotlin.test.Test fun start() {}
 }
+
+class DocumentDbSingleRowOperationTests : SingleRowOperationTests() {
+    override val database: Database get() = docDb()
+    @BeforeTest fun checkAvailable() = skipIfUnavailable()
+    @kotlin.test.Test fun start() {}
+}
+
+class DocumentDbReturnContractTests : ReturnContractTests() {
+    override val database: Database get() = docDb()
+    @BeforeTest fun checkAvailable() = skipIfUnavailable()
+    @kotlin.test.Test fun start() {}
+}
+
+class DocumentDbPaginationTests : PaginationTests() {
+    override val database: Database get() = docDb()
+    @BeforeTest fun checkAvailable() = skipIfUnavailable()
+    @kotlin.test.Test fun start() {}
+}
+
+class DocumentDbScaleAndBoundaryTests : ScaleAndBoundaryTests() {
+    override val database: Database get() = docDb()
+    @BeforeTest fun checkAvailable() = skipIfUnavailable()
+    @kotlin.test.Test fun start() {}
+}
+
+class DocumentDbConcurrencyTests : ConcurrencyTests() {
+    override val database: Database get() = docDb()
+    @BeforeTest fun checkAvailable() = skipIfUnavailable()
+    @kotlin.test.Test fun start() {}
+}

@@ -50,3 +50,27 @@ class JsonFileInlinesTest : InlinePropertiesTests() {
     fun start() {
     }
 }
+
+class JsonFileIndexTests : IndexTests() {
+    override val database: Database = db()
+}
+
+class JsonFileSingleRowOperationTests : SingleRowOperationTests() {
+    override val database: Database = db()
+}
+
+class JsonFileReturnContractTests : ReturnContractTests() {
+    override val database: Database = db()
+}
+
+class JsonFilePaginationTests : PaginationTests() {
+    override val database: Database = db()
+}
+
+class JsonFileScaleAndBoundaryTests : ScaleAndBoundaryTests() {
+    override val database: Database = db()
+}
+
+class JsonFileConcurrencyTests : ConcurrencyTests() {
+    override val database: Database = db()
+}

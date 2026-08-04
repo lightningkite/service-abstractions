@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.test
 
 import com.lightningkite.services.database.*
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,24 +16,40 @@ abstract class ModificationTests() {
         val max = 10
         collection.insert((1..max).map { LargeTestModel(int = it, long = it.toLong()) })
         assertEquals(collection.count(), max)
-        try {
-            val updated = collection.updateOne(
-                condition = Condition.Always,
-                modification = modification { it.boolean assign true },
-                orderBy = sort { it.int.descending() }
-//                orderBy = listOf(SortPart(LargeTestModel_int, ascending = false))
-            )
-            assertEquals(max, updated.new!!.int)
-            val deleted = collection.deleteOne(
-                condition = Condition.Always,
-                orderBy = sort { it.int.descending() }
-//                orderBy = listOf(SortPart(LargeTestModel_int, ascending = false))
-            )
-            assertEquals(max, deleted!!.int)
-            assertEquals(collection.count(), max - 1)
-        } catch (u: UnsupportedOperationException) {
-            println("fine...")
-        }
+        val updated = collection.updateOne(
+            condition = Condition.Always,
+            modification = modification { it.boolean assign true },
+            orderBy = sort { it.int.descending() }
+        )
+        assertEquals(max, updated.new!!.int)
+        val deleted = collection.deleteOne(
+            condition = Condition.Always,
+            orderBy = sort { it.int.descending() }
+        )
+        assertEquals(max, deleted!!.int)
+        assertEquals(collection.count(), max - 1)
+    }
+
+    @Test
+    fun test_orderedOneModsIgnoringResult() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_orderedOneModsIgnoringResult"))
+        val max = 10
+        collection.insert((1..max).map { LargeTestModel(int = it, long = it.toLong()) })
+
+        assertEquals(true, collection.updateOneIgnoringResult(
+            condition = Condition.Always,
+            modification = modification { it.boolean assign true },
+            orderBy = sort { it.int.descending() }
+        ))
+        // Exactly one row, and it must be the one the sort selected.
+        assertEquals(listOf(max), collection.find(condition { it.boolean eq true }).toList().map { it.int })
+
+        assertEquals(true, collection.deleteOneIgnoringOld(
+            condition = Condition.Always,
+            orderBy = sort { it.int.descending() }
+        ))
+        assertEquals(max - 1, collection.count())
+        assertEquals(null, collection.findOne(condition { it.int eq max }))
     }
 
     @Test

@@ -9,7 +9,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.modules.EmptySerializersModule
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
+import org.jetbrains.exposed.v1.jdbc.transactions.inTopLevelSuspendTransaction
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -77,7 +77,7 @@ class HikariPoolBehaviorTest {
             // briefly; the pool must serialize them rather than exhaust/fail.
             val jobs = (1..6).map {
                 async(Dispatchers.IO) {
-                    newSuspendedTransaction(Dispatchers.IO, db = pooled.database) {
+                    inTopLevelSuspendTransaction(db = pooled.database) {
                         exec("SELECT 1")
                         val now = concurrent.incrementAndGet()
                         peak.updateAndGet { maxOf(it, now) }

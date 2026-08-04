@@ -7,7 +7,7 @@ import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.modules.EmptySerializersModule
-import org.jetbrains.exposed.sql.Database
+import org.jetbrains.exposed.v1.jdbc.Database
 import org.junit.ClassRule
 import kotlin.test.Test
 import kotlin.test.assertEquals

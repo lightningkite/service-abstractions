@@ -1,10 +1,15 @@
+@file:OptIn(ExperimentalSerializationApi::class)
+
 package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.database.*
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.ops.SingleValueInListOp
-import org.jetbrains.exposed.sql.statements.UpdateBuilder
+import kotlinx.serialization.descriptors.*
+import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.core.ops.SingleValueInListOp
+import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
 internal data class FieldSet2<V>(
     val serializer: KSerializer<V>,
@@ -27,12 +32,25 @@ internal data class FieldSet2<V>(
         single to sqlLiteralOfSomeKind(single.columnType, formatSingle(value))
 
     @Suppress("UNCHECKED_CAST")
-    fun sub(property: SerializableProperty<V, *>) = FieldSet2<Any?>(
-        serializer = property.serializer as KSerializer<Any?>,
-        fields = fields.filter { it.key == property.name || it.key.startsWith(property.name + "__") }
-            .mapKeys { it.key.substringAfter(property.name).removePrefix("__") },
-        format = format,
-    )
+    fun sub(property: SerializableProperty<V, *>): FieldSet2<Any?> {
+        val matched = fields.filter { it.key == property.name || it.key.startsWith(property.name + "__") }
+            .mapKeys { it.key.substringAfter(property.name).removePrefix("__") }
+        // by Claude - SerialDescriptorTable flattens inline/value classes (e.g. `value class IntWrapper(val
+        // int: Int)`) into the SAME column as their one wrapped member, rather than nesting it under the
+        // member's name. So a fieldset that already IS such a wrapped value (single "" key) has no literal
+        // "<memberName>" key to match above. When the property being navigated to is exactly that value's
+        // sole wrapped member, the wrapped value and its member are the same column - pass fields through.
+        val resolved = matched.ifEmpty {
+            val d = serializer.descriptor
+            if (fields.keys == setOf("") && d.isInline && d.getElementName(0) == property.name) fields
+            else matched
+        }
+        return FieldSet2(
+            serializer = property.serializer as KSerializer<Any?>,
+            fields = resolved,
+            format = format,
+        )
+    }
 
     @Suppress("UNCHECKED_CAST")
     val exists: Expression<Boolean>
@@ -70,7 +88,7 @@ internal data class FieldSet2<V>(
     }
 }
 
-internal fun <T> ISqlExpressionBuilder.condition(
+internal fun <T> condition(
     condition: Condition<T>,
     serializer: KSerializer<T>,
     table: SerialDescriptorTable,
@@ -78,7 +96,7 @@ internal fun <T> ISqlExpressionBuilder.condition(
 ): Expression<Boolean> = condition(condition, FieldSet2(serializer, table, format))
 
 @Suppress("UNCHECKED_CAST")
-private fun <T> ISqlExpressionBuilder.condition(
+private fun <T> condition(
     condition: Condition<T>,
     fieldSet: FieldSet2<T>,
 ): Expression<Boolean> {
@@ -447,7 +465,7 @@ private fun <T> FieldModifier.modification(
                     fieldSet as FieldSet2<List<Any?>>,
                     { f -> f.fields[it.key]!! },
                     {
-                        SqlExpressionBuilder.run {
+                        run {
                             NotOp(
                                 condition(
                                     modification.condition as Condition<Any?>,
@@ -476,7 +494,7 @@ private fun <T> FieldModifier.modification(
                             }
                         }.modification(modification.modification as Modification<Any?>, f)
                         if (modification.condition is Condition.Always) result
-                        else with(SqlExpressionBuilder) {
+                        else run {
                             case()
                                 .When(condition(modification.condition as Condition<Any?>, f), result)
                                 .Else(f.fields[it.key]!!)
@@ -552,7 +570,7 @@ private fun <T> FieldModifier.modification(
                     fieldSet as FieldSet2<List<Any?>>,
                     { f -> f.fields[it.key]!! },
                     {
-                        SqlExpressionBuilder.run {
+                        run {
                             NotOp(
                                 condition(
                                     modification.condition as Condition<Any?>,
@@ -581,7 +599,7 @@ private fun <T> FieldModifier.modification(
                             }
                         }.modification(modification.modification as Modification<Any?>, f)
                         if (modification.condition is Condition.Always) result
-                        else with(SqlExpressionBuilder) {
+                        else run {
                             case()
                                 .When(condition(modification.condition as Condition<Any?>, f), result)
                                 .Else(f.fields[it.key]!!)
@@ -594,9 +612,18 @@ private fun <T> FieldModifier.modification(
         is Modification.Combine<*> -> TODO()
         is Modification.ModifyByKey<*> -> TODO()
         is Modification.RemoveKeys<*> -> TODO()
-        is Modification.OnField<*, *> -> sub(modification.key.name).modification(
-            modification.modification as Modification<Any?>,
-            fieldSet.sub(modification.key as SerializableProperty<T, Any?>)
-        )
+        is Modification.OnField<*, *> -> {
+            val key = modification.key as SerializableProperty<T, Any?>
+            val d = fieldSet.serializer.descriptor
+            // by Claude - mirrors FieldSet2.sub: navigating into an inline/value class's sole wrapped
+            // member targets the SAME physical column as the value class itself, so the accumulated
+            // output key must not gain an extra "__member" suffix that no column was ever registered
+            // under (see SerialDescriptorTable's isInline flattening).
+            val nextModifier = if (d.isInline && d.getElementName(0) == key.name) this else sub(key.name)
+            nextModifier.modification(
+                modification.modification as Modification<Any?>,
+                fieldSet.sub(key)
+            )
+        }
     }
 }

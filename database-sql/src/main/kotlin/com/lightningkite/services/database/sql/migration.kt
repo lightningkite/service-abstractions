@@ -1,9 +1,12 @@
 package com.lightningkite.services.database.sql
 
 import kotlinx.coroutines.Dispatchers
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
-import org.jetbrains.exposed.sql.vendors.currentDialect
+import kotlinx.coroutines.withContext
+import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.jdbc.transactions.inTopLevelSuspendTransaction
+import org.jetbrains.exposed.v1.migration.jdbc.MigrationUtils
+import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 
 /**
  * The statements needed to bring the database up to date with [tables] **without destroying anything**:
@@ -21,7 +24,7 @@ import org.jetbrains.exposed.sql.vendors.currentDialect
  * Composed from Exposed's own non-deprecated building blocks, mirroring what the deprecated function did.
  * Must be called inside a transaction: each step reads the connected database's metadata.
  */
-internal fun Transaction.additiveSchemaStatements(
+internal fun JdbcTransaction.additiveSchemaStatements(
     tables: List<Table>,
     withLogs: Boolean = true,
 ): List<String> {
@@ -58,11 +61,13 @@ public suspend fun migrationStatements(
         "All collections must belong to one database, but got ${collections.map { it.name }} spanning several."
     }
     val tables = collections.flatMap { it.exposedTables }.toTypedArray()
-    return newSuspendedTransaction(Dispatchers.IO, db = db) {
-        // Schema preparation execs raw DDL strings, which does not invalidate Exposed's cached view of
-        // the database's tables. Left stale, a table created earlier in this process still looks absent,
-        // and the migration would be computed against a database that no longer exists as described.
-        currentDialect.resetCaches()
-        MigrationUtils.statementsRequiredForDatabaseMigration(tables = tables, withLogs = withLogs)
+    return withContext(Dispatchers.IO) {
+        inTopLevelSuspendTransaction(db = db) {
+            // Schema preparation execs raw DDL strings, which does not invalidate Exposed's cached view
+            // of the database's tables. Left stale, a table created earlier in this process still looks
+            // absent, and the migration would be computed against a database that no longer matches.
+            currentDialectMetadata.resetCaches()
+            MigrationUtils.statementsRequiredForDatabaseMigration(tables = tables, withLogs = withLogs)
+        }
     }
 }

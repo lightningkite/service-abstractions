@@ -1,11 +1,24 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.data.IndexUniqueness
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 
 abstract class IndexTests {
     abstract val database: Database
+
+    /**
+     * Whether this database can enforce [IndexUniqueness.Unique] across NULLs — treating two NULL
+     * rows as a collision, so at most one may exist.
+     *
+     * Document databases do. SQL does not: a UNIQUE index treats every NULL as distinct, which is
+     * precisely [IndexUniqueness.UniqueNullSparse]. A driver that cannot honor the stronger rule
+     * must reject the model when the table is prepared rather than build a weaker index and let
+     * duplicates through later, and overriding this to `false` asserts exactly that.
+     */
+    open val supportsUniqueAcrossNulls: Boolean = true
 
     @Test
     fun testNotUniqueIndexes() = runTest {
@@ -31,6 +44,16 @@ abstract class IndexTests {
 
     @Test
     fun testUniqueIndexes() = runTest {
+        if (!supportsUniqueAcrossNulls) {
+            // UniqueIndexTestModel marks nullable fields Unique. A driver that cannot enforce that
+            // has to say so while preparing the table — silently creating a weaker index would let
+            // duplicate NULL rows through at some later insert that should have been rejected.
+            assertFailsWith<IllegalArgumentException> {
+                database.prepare(DatabaseTableDefinition<UniqueIndexTestModel>())
+            }
+            return@runTest
+        }
+
         val table = database.prepare(DatabaseTableDefinition<UniqueIndexTestModel>())
 
         // all different

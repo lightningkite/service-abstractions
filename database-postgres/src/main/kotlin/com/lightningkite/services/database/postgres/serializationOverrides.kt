@@ -5,9 +5,9 @@ import kotlinx.serialization.*
 import kotlinx.serialization.builtins.ByteArraySerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
-import org.jetbrains.exposed.sql.BasicBinaryColumnType
-import org.jetbrains.exposed.sql.UUIDColumnType
-import org.jetbrains.exposed.sql.javatime.*
+import org.jetbrains.exposed.v1.core.BasicBinaryColumnType
+import org.jetbrains.exposed.v1.core.java.UUIDColumnType
+import org.jetbrains.exposed.v1.javatime.*
 import java.util.*
 import kotlin.time.*
 import kotlin.time.Instant
@@ -17,64 +17,70 @@ import kotlin.uuid.*
 @OptIn(ExperimentalSerializationApi::class)
 private val serializationOverrides = mapOf<SerialDescriptor, JdbcConversion<*, *>>(
     Uuid.serializer().descriptor to object : JdbcConversion<Uuid, java.util.UUID> {
-        override val columnTypeInfo: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), UUIDColumnType(), listOf())
-        override val columnTypeInfoNullable: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), UUIDColumnType().also { it.nullable = true }, listOf())
+        // by Claude - columnTypeInfo/columnTypeInfoNullable are `get()` properties, not `val`s, on purpose:
+        // callers (SerialDescriptorTable.columnType) mutate the returned ColumnType's `nullable` flag in
+        // place while propagating nullability up through nested/optional structures. A `val` here would be
+        // one shared ColumnType instance reused by every model in the process; mutating it for one model
+        // (e.g. a Uuid nested inside an optional wrapper class) would silently flip nullability for every
+        // other model's plain Uuid column too. A fresh instance per access keeps each caller's mutation local.
+        override val columnTypeInfo: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), UUIDColumnType(), listOf())
+        override val columnTypeInfoNullable: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), UUIDColumnType().also { it.nullable = true }, listOf())
 
         override fun toJava(value: Uuid): UUID = value.toJavaUuid()
         override fun toKotlin(value: UUID): Uuid = value.toKotlinUuid()
     },
     LocalDate.serializer().descriptor to object : JdbcConversion<LocalDate, java.time.LocalDate> {
-        override val columnTypeInfo: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaLocalDateColumnType(), listOf())
-        override val columnTypeInfoNullable: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaLocalDateColumnType().also { it.nullable = true }, listOf())
+        override val columnTypeInfo: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaLocalDateColumnType(), listOf())
+        override val columnTypeInfoNullable: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaLocalDateColumnType().also { it.nullable = true }, listOf())
 
         override fun toJava(value: LocalDate): java.time.LocalDate = value.toJavaLocalDate()
         override fun toKotlin(value: java.time.LocalDate): LocalDate = value.toKotlinLocalDate()
     },
     Instant.serializer().descriptor to object : JdbcConversion<Instant, java.time.Instant> {
-        override val columnTypeInfo: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaInstantColumnType(), listOf())
-        override val columnTypeInfoNullable: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaInstantColumnType().also { it.nullable = true }, listOf())
+        override val columnTypeInfo: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaInstantColumnType(), listOf())
+        override val columnTypeInfoNullable: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaInstantColumnType().also { it.nullable = true }, listOf())
 
         override fun toJava(value: Instant): java.time.Instant = value.toJavaInstant()
         override fun toKotlin(value: java.time.Instant): Instant = value.toKotlinInstant()
     },
     Duration.serializer().descriptor to object : JdbcConversion<Duration, java.time.Duration> {
-        override val columnTypeInfo: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaDurationColumnType(), listOf())
-        override val columnTypeInfoNullable: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaDurationColumnType().also { it.nullable = true }, listOf())
+        override val columnTypeInfo: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaDurationColumnType(), listOf())
+        override val columnTypeInfoNullable: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaDurationColumnType().also { it.nullable = true }, listOf())
 
         override fun toJava(value: Duration): java.time.Duration = value.toJavaDuration()
         override fun toKotlin(value: java.time.Duration): Duration = value.toKotlinDuration()
     },
     LocalDateTime.serializer().descriptor to object : JdbcConversion<LocalDateTime, java.time.LocalDateTime> {
-        override val columnTypeInfo: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaLocalDateTimeColumnType(), listOf())
-        override val columnTypeInfoNullable: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaLocalDateTimeColumnType().also { it.nullable = true }, listOf())
+        override val columnTypeInfo: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaLocalDateTimeColumnType(), listOf())
+        override val columnTypeInfoNullable: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaLocalDateTimeColumnType().also { it.nullable = true }, listOf())
 
         override fun toJava(value: LocalDateTime): java.time.LocalDateTime = value.toJavaLocalDateTime()
         override fun toKotlin(value: java.time.LocalDateTime): LocalDateTime = value.toKotlinLocalDateTime()
     },
     LocalTime.serializer().descriptor to object : JdbcConversion<LocalTime, java.time.LocalTime> {
-        override val columnTypeInfo: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaLocalTimeColumnType(), listOf())
-        override val columnTypeInfoNullable: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), JavaLocalTimeColumnType().also { it.nullable = true }, listOf())
+        override val columnTypeInfo: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaLocalTimeColumnType(), listOf())
+        override val columnTypeInfoNullable: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), JavaLocalTimeColumnType().also { it.nullable = true }, listOf())
 
         override fun toJava(value: LocalTime): java.time.LocalTime = value.toJavaLocalTime()
         override fun toKotlin(value: java.time.LocalTime): LocalTime = value.toKotlinLocalTime()
     },
     ByteArraySerializer().descriptor to object : JdbcConversion<ByteArray, ByteArray> {
-        override val columnTypeInfo: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), BasicBinaryColumnType(), listOf())
-        override val columnTypeInfoNullable: ColumnTypeInfo =
-            ColumnTypeInfo(listOf<String>(), BasicBinaryColumnType().also { it.nullable = true }, listOf())
+        override val columnTypeInfo: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), BasicBinaryColumnType(), listOf())
+        override val columnTypeInfoNullable: ColumnTypeInfo
+            get() = ColumnTypeInfo(listOf<String>(), BasicBinaryColumnType().also { it.nullable = true }, listOf())
 
         override fun toJava(value: ByteArray): ByteArray = value
         override fun toKotlin(value: ByteArray): ByteArray = value

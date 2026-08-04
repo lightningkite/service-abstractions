@@ -161,7 +161,11 @@ private class ChildTableListEncoder(
     }
 
     override fun endStructure(descriptor: SerialDescriptor) {
-        // All elements written inline via writeChild()
+        // All elements written inline via writeChild(). Also mark the field as present (even
+        // when empty) so a nullable collection's decodeNotNullMark() can tell "empty" apart from
+        // "null" — see SqlSchema.registerNullableCollectionMarker(). Harmless no-op if the field
+        // isn't nullable: no such column exists, so the write is silently dropped on persist.
+        output.writeField(fieldPath, true)
     }
 }
 
@@ -551,7 +555,11 @@ private class ChildTableMapEncoder(
     }
 
     override fun endStructure(descriptor: SerialDescriptor) {
-        // All entries written inline via writeChild()
+        // All entries written inline via writeChild(). Also mark the field as present (even
+        // when empty) so a nullable map's decodeNotNullMark() can tell "empty" apart from
+        // "null" — see SqlSchema.registerNullableCollectionMarker(). Harmless no-op if the field
+        // isn't nullable: no such column exists, so the write is silently dropped on persist.
+        output.writeField(fieldPath, true)
     }
 }
 

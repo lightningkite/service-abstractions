@@ -1,6 +1,7 @@
 // by Claude
 package com.lightningkite.services.database.postgres
 
+import com.lightningkite.services.database.isSelfReferential
 import com.lightningkite.services.database.mapformat.MapFormat
 import com.lightningkite.services.database.mapformat.MapFormatConfig
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -8,9 +9,9 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.modules.SerializersModule
-import org.jetbrains.exposed.sql.Column
-import org.jetbrains.exposed.sql.ResultRow
-import org.jetbrains.exposed.sql.statements.UpdateBuilder
+import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.ResultRow
+import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
 /**
  * MapFormat configured for PostgreSQL.
@@ -48,6 +49,11 @@ internal class PostgresMapFormat(val serializersModule: SerializersModule) {
      * For primitives, returns [""] (single empty path).
      * For classes, returns all flattened field paths.
      */
+    // by Claude - mirrors the self-reference check in SerialDescriptorTable.columnType(): a
+    // self-referential descriptor (e.g. a `Condition<T>` field, whose And/Or/Not cases recursively
+    // contain more `Condition<T>`) would otherwise recurse into the same descriptor instance forever.
+    // Such a type is stored as a single opaque JSON leaf instead of being flattened - matching what
+    // MapEncoder/MapDecoder already do at write/read time for the same check.
     private fun resolveLeafPaths(descriptor: SerialDescriptor): List<String> {
         // Check for converter - converted types are leaf nodes
         if (postgresConverterRegistry.get(descriptor) != null) {
@@ -59,6 +65,9 @@ internal class PostgresMapFormat(val serializersModule: SerializersModule) {
                 // Value classes (inline classes) should be treated as their underlying type - by Claude
                 if (descriptor.isInline) {
                     return resolveLeafPaths(descriptor.getElementDescriptor(0))
+                }
+                if (descriptor.isSelfReferential(serializersModule)) {
+                    return listOf("")
                 }
                 // Recursively collect paths from all elements
                 val paths = mutableListOf<String>()

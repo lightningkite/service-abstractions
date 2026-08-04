@@ -9,7 +9,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.EmptySerializersModule
 import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules
-import org.jetbrains.exposed.sql.Database
+import org.jetbrains.exposed.v1.jdbc.Database
 import org.junit.ClassRule
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -97,6 +97,89 @@ class SqlOperationsTests : OperationsTests() {
     override val database: com.lightningkite.services.database.Database by lazy {
         SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
             PooledDatabase(Database.connect("jdbc:h2:mem:operationsTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlSingleRowOperationTests : SingleRowOperationTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:singleRowOperationTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlReturnContractTests : ReturnContractTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:returnContractTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlPaginationTests : PaginationTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:paginationTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlScaleAndBoundaryTests : ScaleAndBoundaryTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:scaleAndBoundaryTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlConcurrencyTests : ConcurrencyTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:concurrencyTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+// Row-level locking (SELECT ... FOR UPDATE) is where H2 in-memory and Postgres are most likely to
+// diverge, so the concurrency contract is also verified against a real Postgres instance.
+class SqlPostgresConcurrencyTests : ConcurrencyTests() {
+    companion object {
+        @ClassRule
+        @JvmField
+        val postgres = EmbeddedPostgresRules.singleInstance()
+    }
+
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null)
+        }
+    }
+}
+
+class SqlMetaTest : MetaTest() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:metaTest;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlInlinePropertiesTests : InlinePropertiesTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:inlinePropertiesTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlIndexTests : IndexTests() {
+    // SQL UNIQUE treats NULLs as distinct, so `Unique` on a nullable column is rejected at prepare.
+    override val supportsUniqueAcrossNulls: Boolean = false
+
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:indexTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
         }
     }
 }

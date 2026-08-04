@@ -2,10 +2,10 @@ package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.database.listElement
 import kotlinx.serialization.KSerializer
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.statements.jdbc.JdbcConnectionImpl
-import org.jetbrains.exposed.sql.transactions.TransactionManager
+import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.jdbc.statements.jdbc.JdbcConnectionImpl
+import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 
 internal fun <T> Table.array(name: String, columnType: ColumnType<T>): Column<List<T>> =
     registerColumn(name, ArrayColumnType(columnType))

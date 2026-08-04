@@ -17,7 +17,8 @@ fun KSTypeReference.tryResolve(): KSType? = try {
 
 val KSDeclaration.importSafeName: String
     get() = when (packageName.asString()) {
-        "kotlin", "kotlin.collection", "com.lightningkite.services.database.processor", "org.jetbrains.exposed.sql" -> this.simpleName.asString()
+        // Exposed's DSL package was renamed org.jetbrains.exposed.sql -> org.jetbrains.exposed.v1.core in 1.0.
+        "kotlin", "kotlin.collection", "com.lightningkite.services.database.processor", "org.jetbrains.exposed.v1.core" -> this.simpleName.asString()
         else -> this.qualifiedName!!.asString()
     }
 

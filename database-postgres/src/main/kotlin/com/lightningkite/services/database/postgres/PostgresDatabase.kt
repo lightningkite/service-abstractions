@@ -4,7 +4,7 @@ import com.lightningkite.services.telemetry.MetricUnit
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.telemetry.telemetryGauge
 import com.lightningkite.services.database.DatabaseTableDefinition
-import org.jetbrains.exposed.sql.transactions.TransactionManager
+import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -65,7 +65,7 @@ public class PostgresDatabase(
 ) : com.lightningkite.services.database.Database {
     private var _db = lazy(makeDb)
 
-    public val db: org.jetbrains.exposed.sql.Database get() = _db.value.database
+    public val db: org.jetbrains.exposed.v1.jdbc.Database get() = _db.value.database
 
     // Point-in-time count of busy connections; sampled by the exporter, so guard the lazy pool.
     private val poolActiveGauge = telemetryGauge("sql.pool.active", MetricUnit.Occurrences) {

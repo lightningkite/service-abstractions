@@ -2,11 +2,13 @@ package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.data.*
 import com.lightningkite.services.data.Index
+import com.lightningkite.services.database.isSelfReferential
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SealedSerializationApi
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.modules.SerializersModule
-import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.jdbc.*
 
 internal class SerialDescriptorTable(
     name: String,
@@ -35,9 +37,40 @@ internal class SerialDescriptorTable(
             }
     }
 
-    override val primaryKey: PrimaryKey? = columns.find { it.name == "_id" }?.let { PrimaryKey(it) }
+    // Resolved through the dot-path index rather than by exact column name: a compound `_id` flattens
+    // into `_id__first`, `_id__second`, ... and no column is ever literally named `_id`, so a name
+    // lookup left compound-key models with no primary key at all — no uniqueness constraint in the
+    // database, and a null dereference anywhere the key is used to identify a row.
+    @Suppress("UNCHECKED_CAST")
+    override val primaryKey: PrimaryKey? = columnsByDotPath[listOf("_id")]
+        ?.let { PrimaryKey(it.toTypedArray() as Array<Column<*>>) }
 
     val col = columns.associateBy { it.name }
+
+    /**
+     * Declares an index, refusing any [IndexUniqueness.Unique] that Postgres cannot enforce.
+     *
+     * A UNIQUE index treats every NULL as distinct from every other NULL — which is exactly
+     * [IndexUniqueness.UniqueNullSparse]. [IndexUniqueness.Unique] means NULL collides with NULL, so
+     * at most one NULL row may exist. Creating a plain UNIQUE index for that case would quietly
+     * enforce the weaker rule, so the model is rejected while the table is being prepared instead of
+     * at some later insert that should have failed and didn't.
+     */
+    private fun checkedIndex(customIndexName: String?, uniqueness: IndexUniqueness, columns: List<Column<Any?>>) {
+        val nullable = columns.filter { it.columnType.nullable }
+        require(uniqueness != IndexUniqueness.Unique || nullable.isEmpty()) {
+            "Table $tableName declares IndexUniqueness.Unique over nullable column(s) " +
+                "${nullable.joinToString { it.name }}, which Postgres cannot enforce: a UNIQUE index " +
+                "treats NULLs as distinct, so multiple NULL rows would be accepted. Use " +
+                "IndexUniqueness.UniqueNullSparse if that is the intent, or make the column " +
+                "non-nullable to get the stricter guarantee."
+        }
+        index(
+            customIndexName = customIndexName,
+            isUnique = uniqueness.isUnique,
+            columns = columns.toTypedArray(),
+        )
+    }
 
     init {
         val seen = HashSet<SerialDescriptor>()
@@ -45,10 +78,10 @@ internal class SerialDescriptorTable(
             if (!seen.add(descriptor)) return
             descriptor.annotations.forEach {
                 when (it) {
-                    is IndexSet -> index(
+                    is IndexSet -> checkedIndex(
                         customIndexName = it.name.takeIf { it.isNotBlank() },
-                        isUnique = it.unique.isUnique,
-                        columns = it.fields.flatMap { columnsByDotPath[it.split('.')]!! }.toTypedArray()
+                        uniqueness = it.unique,
+                        columns = it.fields.flatMap { columnsByDotPath[it.split('.')]!! }
                     )
 
                     is TextIndex -> {
@@ -58,13 +91,15 @@ internal class SerialDescriptorTable(
             }
             (0 until descriptor.elementsCount).forEach { index ->
                 val sub = descriptor.getElementDescriptor(index)
-                if (sub.kind == StructureKind.CLASS) handleDescriptor(sub)
+                // Self-referential fields (e.g. Condition<T>) collapse to a single column - see
+                // columnType() - so there's no per-subfield dot-path to recurse into here either.
+                if (sub.kind == StructureKind.CLASS && !sub.isSelfReferential(serializersModule)) handleDescriptor(sub)
                 descriptor.getElementAnnotations(index).forEach {
                     when (it) {
-                        is Index -> index(
+                        is Index -> checkedIndex(
                             customIndexName = it.name.takeIf { it.isNotBlank() },
-                            isUnique = it.unique.isUnique,
-                            columns = columnsByDotPath[listOf(descriptor.getElementName(index))]!!.toTypedArray()
+                            uniqueness = it.unique,
+                            columns = columnsByDotPath[listOf(descriptor.getElementName(index))]!!
                         )
                     }
                 }
@@ -87,6 +122,13 @@ internal data class SerialDescriptorColumns(val descriptor: SerialDescriptor, va
 
 internal data class ColumnTypeInfo(val key: List<String>, val type: ColumnType<*>, val descriptorPath: List<Int>)
 
+// by Claude - self-referential descriptors (e.g. a field of type `Condition<T>`, a sealed hierarchy whose
+// `And`/`Or`/`Not` cases recursively contain more `Condition<T>`) would make this function recurse into the
+// exact same SerialDescriptor instance forever, since the descriptor GRAPH is cyclic regardless of how deep
+// any actual value nests. [SerialDescriptor.isSelfReferential] detects that up front (by descriptor object
+// identity, not by name - see its doc), and such a field is stored as a single opaque JSON column instead of
+// being flattened - matching exactly what MapEncoder/MapDecoder already do at write/read time for the same
+// check, so the schema matches the actual on-the-wire shape.
 @OptIn(ExperimentalSerializationApi::class)
 internal fun SerialDescriptor.columnType(serializersModule: SerializersModule): List<ColumnTypeInfo> {
     if (this.kind == SerialKind.CONTEXTUAL)
@@ -94,8 +136,17 @@ internal fun SerialDescriptor.columnType(serializersModule: SerializersModule): 
             .columnType(serializersModule)
     val u = this.unnull()
     val override = serializationOverride(u)
-    return if (override != null) listOf(override.columnTypeInfo(this.isNullable))
-    else when (kind) {
+    if (override != null) return listOf(override.columnTypeInfo(this.isNullable))
+    if (u.isSelfReferential(serializersModule)) {
+        return listOf(
+            ColumnTypeInfo(
+                listOf<String>(),
+                TextColumnType().also { it.nullable = this.isNullable },
+                listOf()
+            )
+        )
+    }
+    return when (kind) {
         SerialKind.CONTEXTUAL -> throw Error()
         PolymorphicKind.OPEN -> throw NotImplementedError()
         PolymorphicKind.SEALED -> throw NotImplementedError()

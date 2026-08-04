@@ -231,8 +231,14 @@ public open class InMemoryTable<Model : Any>(
     override suspend fun insert(models: Iterable<Model>): List<Model> = traced {
         val list = models.toList()
         lock.withLock {
-            uniqueCheck(list.map { EntryChange(null, it) })
-            for (m in list) data[idOf(m)] = m
+            // Checked and written one at a time so each row is validated against the rows already
+            // placed by this same call. Checking the whole batch up front compared every new row
+            // only against previously committed data, so two conflicting rows inserted together
+            // never saw each other and both went in.
+            for (m in list) {
+                uniqueCheck(EntryChange(null, m))
+                data[idOf(m)] = m
+            }
             return@traced list
         }
     }
@@ -305,8 +311,10 @@ public open class InMemoryTable<Model : Any>(
         lock.withLock {
             val matches = snapshotFor(condition, emptyList())
                 .map { old -> EntryChange(old, modification(old)) }
-            uniqueCheck(matches)
+            // Same reason as [insert]: checked and written per row, so a modification that makes two
+            // of the matched rows collide with each other is caught rather than silently applied.
             for (change in matches) {
+                uniqueCheck(change)
                 val oldId = idOf(change.old!!)
                 val newId = idOf(change.new!!)
                 if (oldId != newId) data.remove(oldId)

@@ -22,19 +22,19 @@ import kotlinx.datetime.toJavaLocalDateTime
 import kotlinx.datetime.toKotlinLocalDateTime
 import kotlinx.datetime.toJavaLocalTime
 import kotlinx.datetime.toKotlinLocalTime
-import org.jetbrains.exposed.sql.BasicBinaryColumnType
-import org.jetbrains.exposed.sql.UUIDColumnType
-import org.jetbrains.exposed.sql.javatime.JavaDurationColumnType
-import org.jetbrains.exposed.sql.javatime.JavaInstantColumnType
-import org.jetbrains.exposed.sql.javatime.JavaLocalDateColumnType
-import org.jetbrains.exposed.sql.javatime.JavaLocalDateTimeColumnType
-import org.jetbrains.exposed.sql.javatime.JavaLocalTimeColumnType
+import org.jetbrains.exposed.v1.core.BasicBinaryColumnType
+import org.jetbrains.exposed.v1.core.java.UUIDColumnType
+import org.jetbrains.exposed.v1.javatime.JavaDurationColumnType
+import org.jetbrains.exposed.v1.javatime.JavaInstantColumnType
+import org.jetbrains.exposed.v1.javatime.JavaLocalDateColumnType
+import org.jetbrains.exposed.v1.javatime.JavaLocalDateTimeColumnType
+import org.jetbrains.exposed.v1.javatime.JavaLocalTimeColumnType
 import kotlin.time.Duration
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 // Column type info for schema generation
-internal data class ColumnTypeInfo(val key: List<String>, val type: org.jetbrains.exposed.sql.ColumnType<*>, val descriptorPath: List<Int>)
+internal data class ColumnTypeInfo(val key: List<String>, val type: org.jetbrains.exposed.v1.core.ColumnType<*>, val descriptorPath: List<Int>)
 
 internal interface JdbcConversion<KOTLIN, JAVA> {
     val columnTypeInfo: ColumnTypeInfo
