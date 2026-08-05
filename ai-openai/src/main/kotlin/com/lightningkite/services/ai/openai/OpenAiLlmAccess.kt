@@ -22,7 +22,8 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.LineEnding
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import java.io.IOException
@@ -114,7 +115,7 @@ public class OpenAiLlmAccess(
                 // coroutine dispatcher free while the network waits.
                 val channel: ByteReadChannel = response.bodyAsChannel()
                 while (!channel.isClosedForRead) {
-                    val raw = channel.readUTF8Line() ?: break
+                    val raw = channel.readLine(LineEnding.Lenient) ?: break
                     val line = raw.trimEnd('\r')
                     if (line.isEmpty()) continue
                     if (!line.startsWith("data:")) continue

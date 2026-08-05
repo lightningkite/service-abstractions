@@ -230,7 +230,6 @@ public class RedisPubSub(
             span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("message.size"), message.length.toLong()) })
             val result = publishConnection.reactive().publish(key, message).awaitFirst()
             span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("pubsub.subscribers_reached"), result) })
-            Unit
         }
     }
 

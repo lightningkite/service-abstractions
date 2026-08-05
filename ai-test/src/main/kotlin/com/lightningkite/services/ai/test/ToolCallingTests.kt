@@ -8,6 +8,7 @@ import com.lightningkite.services.ai.firstToolCall
 import com.lightningkite.services.ai.inference
 import com.lightningkite.services.ai.plainText
 import com.lightningkite.services.ai.toolCalls
+import com.lightningkite.services.ai.userMessage
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -41,7 +42,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
         val result = service.inference(
             model = cheapModel,
             prompt = LlmPrompt(
-                messages = listOf(userText("What's the current weather in Tokyo?")),
+                messages = listOf(userMessage("What's the current weather in Tokyo?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
@@ -76,7 +77,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
         val result = service.inference(
             model = cheapModel,
             prompt = LlmPrompt(
-                messages = listOf(userText("What's the weather in Paris right now?")),
+                messages = listOf(userMessage("What's the weather in Paris right now?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
@@ -103,7 +104,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
         val firstResult = service.inference(
             model = cheapModel,
             prompt = LlmPrompt(
-                messages = listOf(userText("What's the current weather in Paris?")),
+                messages = listOf(userMessage("What's the current weather in Paris?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
@@ -117,7 +118,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText("What's the current weather in Paris?"),
+                    userMessage("What's the current weather in Paris?"),
                     firstResult.message, // Agent message containing ToolCall
                     LlmMessage.ToolResult(
                         toolCallId = call.id,
@@ -156,7 +157,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText(
+                    userMessage(
                         "Please get me BOTH the current weather in Tokyo AND the current time in " +
                             "UTC. Call both tools.",
                     ),
@@ -200,7 +201,7 @@ public abstract class ToolCallingTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText(
+                    userMessage(
                         "Call get_weather_nested to check the weather in Berlin, and include " +
                             "the note 'priority=high' in the notes list.",
                     ),

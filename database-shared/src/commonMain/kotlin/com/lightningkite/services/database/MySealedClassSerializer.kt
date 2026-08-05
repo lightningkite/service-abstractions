@@ -2,6 +2,7 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.data.ExperimentalLightningServer
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
@@ -45,6 +46,7 @@ public class MySealedClassSerializer<T : Any>(
     public fun getOption(item: T): Option<T, *> = options.find { it.isInstance(item) }
         ?: throw IllegalStateException("No serializer inside ${descriptor.serialName} found for ${item::class}")
 
+    @OptIn(ExperimentalLightningServer::class)
     override val descriptor: SerialDescriptor = LazySerialDescriptor(serialName, StructureKind.CLASS) {
         buildClassSerialDescriptor(serialName) {
             this.annotations = this@MySealedClassSerializer.annotations

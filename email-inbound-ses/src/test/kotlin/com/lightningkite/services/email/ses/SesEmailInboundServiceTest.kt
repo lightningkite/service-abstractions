@@ -43,6 +43,9 @@ class SesEmailInboundServiceTest {
     private lateinit var certUrl: String
 
     init {
+        // Referencing SesEmailInboundService triggers its companion init block, which registers
+        // the ses URL scheme. The reference itself is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         SesEmailInboundService
     }
 

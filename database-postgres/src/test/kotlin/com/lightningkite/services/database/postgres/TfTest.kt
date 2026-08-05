@@ -8,6 +8,9 @@ import kotlin.test.Test
 @OptIn(Untested::class)
 class TfTest {
     init {
+        // Bare reference forces PostgresDatabase's companion object to init, registering the
+        // postgresql:// URL schemes needed by the Database.Settings parser used below.
+        @Suppress("UNUSED_EXPRESSION")
         PostgresDatabase
     }
 

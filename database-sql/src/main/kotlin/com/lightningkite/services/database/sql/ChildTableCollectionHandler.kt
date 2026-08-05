@@ -161,7 +161,11 @@ private class ChildTableListEncoder(
     }
 
     override fun endStructure(descriptor: SerialDescriptor) {
-        // All elements written inline via writeChild()
+        // All elements written inline via writeChild(). Also mark the field as present (even
+        // when empty) so a nullable collection's decodeNotNullMark() can tell "empty" apart from
+        // "null" — see SqlSchema.registerNullableCollectionMarker(). Harmless no-op if the field
+        // isn't nullable: no such column exists, so the write is silently dropped on persist.
+        output.writeField(fieldPath, true)
     }
 }
 
@@ -227,7 +231,7 @@ private class ChildTableListElementConverterEncoder(
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> write(value: T) {
+    private fun <T : Any> write(value: T) {
         val conv = converter as ValueConverter<T, Any>
         output.writeChild(fieldPath, ChildRow(index = index, key = null, values = mapOf("value" to conv.toDatabase(value))))
     }
@@ -551,7 +555,11 @@ private class ChildTableMapEncoder(
     }
 
     override fun endStructure(descriptor: SerialDescriptor) {
-        // All entries written inline via writeChild()
+        // All entries written inline via writeChild(). Also mark the field as present (even
+        // when empty) so a nullable map's decodeNotNullMark() can tell "empty" apart from
+        // "null" — see SqlSchema.registerNullableCollectionMarker(). Harmless no-op if the field
+        // isn't nullable: no such column exists, so the write is silently dropped on persist.
+        output.writeField(fieldPath, true)
     }
 }
 
@@ -609,7 +617,7 @@ private class ChildTableMapElementConverterEncoder(
     override val serializersModule: SerializersModule = kotlinx.serialization.modules.EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> write(value: T) {
+    private fun <T : Any> write(value: T) {
         val conv = converter as ValueConverter<T, Any>
         parent.addElement(index, conv.toDatabase(value))
     }
@@ -807,7 +815,7 @@ private class ChildTableElementConverterDecoder(
     override val serializersModule: SerializersModule = kotlinx.serialization.modules.EmptySerializersModule()
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> read(): T {
+    private fun <T : Any> read(): T {
         val conv = converter as ValueConverter<T, Any>
         return conv.fromDatabase(element as Any)
     }

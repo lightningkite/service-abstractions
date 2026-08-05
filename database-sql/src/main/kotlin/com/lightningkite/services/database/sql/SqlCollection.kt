@@ -1,7 +1,6 @@
 package com.lightningkite.services.database.sql
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryAttributesBuilder
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
@@ -15,15 +14,22 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.modules.SerializersModule
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.ops.SingleValueInListOp
-import org.jetbrains.exposed.sql.SchemaUtils.statementsRequiredToActualizeScheme
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
-import org.jetbrains.exposed.sql.vendors.PostgreSQLDialect
-import org.jetbrains.exposed.sql.vendors.currentDialect
+import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.core.ops.SingleValueInListOp
+import org.jetbrains.exposed.v1.jdbc.transactions.inTopLevelSuspendTransaction
+import org.jetbrains.exposed.v1.core.vendors.ForUpdateOption
+import org.jetbrains.exposed.v1.core.vendors.PostgreSQLDialect
+import org.jetbrains.exposed.v1.core.vendors.currentDialect
 import java.sql.Connection.TRANSACTION_READ_COMMITTED
 import java.sql.Connection.TRANSACTION_SERIALIZABLE
+
+// Aggregates come back from SQL as NUMERIC with a fixed scale, and this abstraction hands callers a
+// Double. A scale of 8 silently truncated every result far below what a Double can represent — the
+// sample standard deviation of 0..9 came back as 3.02765035 instead of 3.0276503540974917. The scale
+// now exceeds a Double's ~17 significant digits, so the only narrowing is the final toDouble().
+private const val AGGREGATE_SCALE = 20
 
 public class SqlCollection<T : Any>(
     public val db: Database,
@@ -36,15 +42,26 @@ public class SqlCollection<T : Any>(
     private val format = SqlMapFormat(serializersModule)
     internal val schema = SqlSchema(name, serializersModule, serializer.descriptor)
 
-    private suspend inline fun <T> t(noinline action: suspend Transaction.() -> T): T =
-        newSuspendedTransaction(Dispatchers.IO, db = db, transactionIsolation = TRANSACTION_READ_COMMITTED, statement = {
-            action()
-        })
+    /**
+     * Every Exposed table backing this collection: the main table, plus one child table per
+     * collection-valued field. Exposed's schema tooling works on these directly — see [migrationStatements].
+     */
+    public val exposedTables: List<org.jetbrains.exposed.v1.core.Table>
+        get() = listOf(schema.mainTable) + schema.childTables.values.map { it.table }
 
-    private suspend inline fun <T> tSerial(noinline action: suspend Transaction.() -> T): T =
-        newSuspendedTransaction(Dispatchers.IO, db = db, transactionIsolation = TRANSACTION_SERIALIZABLE, statement = {
-            action()
-        })
+    private suspend inline fun <T> t(noinline action: suspend JdbcTransaction.() -> T): T =
+        withContext(Dispatchers.IO) {
+            inTopLevelSuspendTransaction(db = db, transactionIsolation = TRANSACTION_READ_COMMITTED) {
+                action()
+            }
+        }
+
+    private suspend inline fun <T> tSerial(noinline action: suspend JdbcTransaction.() -> T): T =
+        withContext(Dispatchers.IO) {
+            inTopLevelSuspendTransaction(db = db, transactionIsolation = TRANSACTION_SERIALIZABLE) {
+                action()
+            }
+        }
 
     // Per-collection default span attributes shared by every operation.
     private fun baseAttributes(operation: String): TelemetryAttributes = TelemetryAttributes {
@@ -58,7 +75,7 @@ public class SqlCollection<T : Any>(
     // hands the started span to [block] for dynamic per-result attributes.
     private suspend inline fun <R> traced(
         operation: String,
-        noinline extraBlock: (TelemetryAttributesBuilder.() -> Unit)? = null,
+        noinline extraBlock: (TelemetryAttributes.Builder.() -> Unit)? = null,
         noinline block: suspend (TelemetryTrace) -> R,
     ): R {
         val attrs = if (extraBlock != null) TelemetryAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
@@ -68,11 +85,10 @@ public class SqlCollection<T : Any>(
     @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
     internal val prepare = GlobalScope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
         t {
-            val allTables = listOf(schema.mainTable) + schema.childTables.values.map { it.table }
             // Single combined call: per-table calls re-emit statements for FK-referenced tables,
             // producing duplicate CREATE INDEX errors that abort the whole transaction on Postgres.
             // Any failure here is a real schema problem, so let it propagate.
-            statementsRequiredToActualizeScheme(*allTables.toTypedArray()).forEach { exec(it) }
+            additiveSchemaStatements(exposedTables).forEach { exec(it) }
         }
     }
 
@@ -87,7 +103,7 @@ public class SqlCollection<T : Any>(
      * Read child rows for a set of owner IDs, grouped by child table path and owner ID.
      */
     @Suppress("UNCHECKED_CAST")
-    private fun Transaction.fetchChildRows(
+    private fun JdbcTransaction.fetchChildRows(
         ids: List<Any?>,
     ): Map<String, Map<Any?, List<ChildRow>>> {
         if (ids.isEmpty() || schema.childTables.isEmpty()) return emptyMap()
@@ -96,7 +112,7 @@ public class SqlCollection<T : Any>(
             val childTable = childDef.table
 
             val query = if (childTable.ownerIdColumns.size == 1) {
-                val ownerCol = childTable.ownerIdColumns[0] as Column<Any?>
+                val ownerCol = childTable.ownerIdColumns[0]
                 childTable.selectAll().where { ownerCol inList ids }
             } else {
                 // Compound owner key: build OR of AND-clauses, one per parent ID.
@@ -114,14 +130,14 @@ public class SqlCollection<T : Any>(
             childTable.idxColumn?.let { query.orderBy(it to SortOrder.ASC) }
 
             val ownerKeyOf: (ResultRow) -> Any? = if (childTable.ownerIdColumns.size == 1) {
-                val ownerCol = childTable.ownerIdColumns[0] as Column<Any?>
+                val ownerCol = childTable.ownerIdColumns[0]
                 { row -> row[ownerCol] }
             } else {
                 // Reconstruct the compound id map matching the main table key shape (_id__a, _id__b, ...).
                 { row ->
                     childTable.ownerIdColumns.associate { ownerCol ->
                         val mainColName = "_id" + ownerCol.name.removePrefix("owner_id")
-                        mainColName to row[ownerCol as Column<Any?>]
+                        mainColName to row[ownerCol]
                     }
                 }
             }
@@ -190,7 +206,7 @@ public class SqlCollection<T : Any>(
     /**
      * Insert child rows for a single entity.
      */
-    private fun Transaction.insertChildren(ownerId: Any?, writeResult: com.lightningkite.services.database.mapformat.WriteResult) {
+    private fun JdbcTransaction.insertChildren(ownerId: Any?, writeResult: com.lightningkite.services.database.mapformat.WriteResult) {
         for ((childPath, childRows) in writeResult.children) {
             val childDef = schema.childTables[childPath] ?: continue
             val childTable = childDef.table
@@ -198,29 +214,25 @@ public class SqlCollection<T : Any>(
 
             childTable.batchInsert(childRows) { childRow ->
                 if (childTable.ownerIdColumns.size == 1) {
-                    @Suppress("UNCHECKED_CAST")
-                    this[childTable.ownerIdColumns[0] as Column<Any?>] = ownerId
+                    this[childTable.ownerIdColumns[0]] = ownerId
                 } else {
                     @Suppress("UNCHECKED_CAST")
                     val ownerIdMap = ownerId as Map<String, Any?>
                     for (ownerCol in childTable.ownerIdColumns) {
                         val mainColName = "_id" + ownerCol.name.removePrefix("owner_id")
-                        @Suppress("UNCHECKED_CAST")
-                        this[ownerCol as Column<Any?>] = ownerIdMap[mainColName]
+                        this[ownerCol] = ownerIdMap[mainColName]
                     }
                 }
                 childTable.idxColumn?.let { this[it] = childRow.index ?: 0 }
                 if (childDef.isMap && childRow.key != null) {
                     for ((keyName, keyValue) in childRow.key) {
                         val col = childTable.keyColumns[keyName] ?: continue
-                        @Suppress("UNCHECKED_CAST")
-                        this[col as Column<Any?>] = keyValue
+                        this[col] = keyValue
                     }
                 }
                 for ((valName, valValue) in childRow.values) {
                     val col = childTable.elementColumns[valName] ?: continue
-                    @Suppress("UNCHECKED_CAST")
-                    this[col as Column<Any?>] = valValue
+                    this[col] = valValue
                 }
             }
         }
@@ -229,7 +241,7 @@ public class SqlCollection<T : Any>(
     /**
      * Delete all child rows for an owner ID.
      */
-    private fun Transaction.deleteChildren(ownerId: Any?) {
+    private fun JdbcTransaction.deleteChildren(ownerId: Any?) {
         for ((_, childDef) in schema.childTables) {
             val childTable = childDef.table
             if (childTable.ownerIdColumns.size == 1) {
@@ -281,7 +293,7 @@ public class SqlCollection<T : Any>(
     /**
      * Write (replace) an entire entity: update main row + re-write all children.
      */
-    private fun Transaction.writeEntity(oldId: Any?, newValue: T) {
+    private fun JdbcTransaction.writeEntity(oldId: Any?, newValue: T) {
         val writeResult = format.encode(serializer, newValue)
         // Update main table
         schema.mainTable.update(where = {
@@ -289,8 +301,7 @@ public class SqlCollection<T : Any>(
         }) { builder ->
             for ((key, value) in writeResult.mainRecord) {
                 val col = schema.mainTable.col[key] ?: continue
-                @Suppress("UNCHECKED_CAST")
-                builder[col as Column<Any?>] = value
+                builder[col] = value
             }
         }
         // Re-write children
@@ -316,9 +327,7 @@ public class SqlCollection<T : Any>(
         
         val items = t {
             val ctx = SqlConditionContext(schema, format)
-            val condExpr = SqlExpressionBuilder.run {
-                condition(condition, serializer, schema, format, ctx)
-            }
+            val condExpr = condition(condition, serializer, schema, format, ctx)
 
             // Step 1: Get matching main rows with limit/offset
             val mainRows = schema.mainTable
@@ -355,9 +364,7 @@ public class SqlCollection<T : Any>(
         
         val result = t {
             val ctx = SqlConditionContext(schema, format)
-            val condExpr = SqlExpressionBuilder.run {
-                condition(condition, serializer, schema, format, ctx)
-            }
+            val condExpr = condition(condition, serializer, schema, format, ctx)
 
             if (ctx.isExact) {
                 schema.mainTable.selectAll()
@@ -385,9 +392,7 @@ public class SqlCollection<T : Any>(
         
         val result = t {
             val ctx = SqlConditionContext(schema, format)
-            val condExpr = SqlExpressionBuilder.run {
-                condition(condition, serializer, schema, format, ctx)
-            }
+            val condExpr = condition(condition, serializer, schema, format, ctx)
             @Suppress("UNCHECKED_CAST")
             val groupCol = schema.mainTable.col[groupBy.colName] as Column<Key>
             val count = Count(stringLiteral("*"))
@@ -414,16 +419,14 @@ public class SqlCollection<T : Any>(
         
         t {
             val ctx = SqlConditionContext(schema, format)
-            val condExpr = SqlExpressionBuilder.run {
-                condition(condition, serializer, schema, format, ctx)
-            }
+            val condExpr = condition(condition, serializer, schema, format, ctx)
             @Suppress("UNCHECKED_CAST")
             val valueCol = schema.mainTable.col[property.colName] as Column<Double>
             val agg = when (aggregate) {
                 Aggregate.Sum -> Sum(valueCol, DoubleColumnType())
-                Aggregate.Average -> Avg(valueCol, 8)
-                Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, 8)
-                Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, 8)
+                Aggregate.Average -> Avg(valueCol, AGGREGATE_SCALE)
+                Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, AGGREGATE_SCALE)
+                Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, AGGREGATE_SCALE)
             }
             schema.mainTable.select(agg)
                 .where { condExpr.asOp() }
@@ -447,18 +450,16 @@ public class SqlCollection<T : Any>(
         
         val result = t {
             val ctx = SqlConditionContext(schema, format)
-            val condExpr = SqlExpressionBuilder.run {
-                condition(condition, serializer, schema, format, ctx)
-            }
+            val condExpr = condition(condition, serializer, schema, format, ctx)
             @Suppress("UNCHECKED_CAST")
             val groupCol = schema.mainTable.col[groupBy.colName] as Column<Key>
             @Suppress("UNCHECKED_CAST")
             val valueCol = schema.mainTable.col[property.colName] as Column<Double>
             val agg = when (aggregate) {
                 Aggregate.Sum -> Sum(valueCol, DoubleColumnType())
-                Aggregate.Average -> Avg(valueCol, 8)
-                Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, 8)
-                Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, 8)
+                Aggregate.Average -> Avg(valueCol, AGGREGATE_SCALE)
+                Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, AGGREGATE_SCALE)
+                Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, AGGREGATE_SCALE)
             }
             schema.mainTable.select(groupCol, agg)
                 .where { condExpr.asOp() }
@@ -487,8 +488,7 @@ public class SqlCollection<T : Any>(
                     schema.mainTable.insert { builder ->
                         for ((key, value) in writeResult.mainRecord) {
                             val col = schema.mainTable.col[key] ?: continue
-                            @Suppress("UNCHECKED_CAST")
-                            builder[col as Column<Any?>] = value
+                            builder[col] = value
                         }
                     }
 
@@ -496,7 +496,7 @@ public class SqlCollection<T : Any>(
                     insertChildren(ownerId, writeResult)
                 }
             }
-        } catch (e: org.jetbrains.exposed.exceptions.ExposedSQLException) {
+        } catch (e: org.jetbrains.exposed.v1.exceptions.ExposedSQLException) {
             val sqlState = (e.cause as? java.sql.SQLException)?.sqlState
             if (sqlState == "23505" || sqlState == "23000") {
                 throw UniqueViolationException(e, table = name)
@@ -530,8 +530,7 @@ public class SqlCollection<T : Any>(
                 schema.mainTable.insert { builder ->
                     for ((key, value) in writeResult.mainRecord) {
                         val col = schema.mainTable.col[key] ?: continue
-                        @Suppress("UNCHECKED_CAST")
-                        builder[col as Column<Any?>] = value
+                        builder[col] = value
                     }
                 }
                 insertChildren(ownerId, writeResult)
@@ -559,8 +558,7 @@ public class SqlCollection<T : Any>(
                 schema.mainTable.insert { builder ->
                     for ((key, value) in writeResult.mainRecord) {
                         val col = schema.mainTable.col[key] ?: continue
-                        @Suppress("UNCHECKED_CAST")
-                        builder[col as Column<Any?>] = value
+                        builder[col] = value
                     }
                 }
                 insertChildren(ownerId, writeResult)
@@ -582,8 +580,9 @@ public class SqlCollection<T : Any>(
     ) { span ->
         
         val result = t {
-            // Find the matching row
-            val old = findOneInTransaction(condition, orderBy) ?: return@t EntryChange<T>()
+            // Find the matching row, locked: the modification is applied in memory below, so the
+            // read and the write have to be one atomic act. See [Table]'s atomicity contract.
+            val old = findOneInTransaction(condition, orderBy, forUpdate = true) ?: return@t EntryChange<T>()
             val oldId = getId(old)
 
             // Apply modification in memory
@@ -610,16 +609,14 @@ public class SqlCollection<T : Any>(
             if (modification.isScalarOnly(schema) && schema.childTables.isEmpty()) {
                 // Efficient: single SQL UPDATE
                 val ctx = SqlConditionContext(schema, format)
-                val condExpr = SqlExpressionBuilder.run {
-                    condition(condition, serializer, schema, format, ctx)
-                }
+                val condExpr = condition(condition, serializer, schema, format, ctx)
                 schema.mainTable.update(
                     where = { condExpr.asOp() },
                     limit = null,
                 ) { it.modification(modification, serializer, schema, format) } > 0
             } else {
-                // Fallback: read-modify-write
-                val old = findOneInTransaction(condition, orderBy) ?: return@t false
+                // Fallback: read-modify-write, so the read must hold the row lock.
+                val old = findOneInTransaction(condition, orderBy, forUpdate = true) ?: return@t false
                 val new = modification(old)
                 writeEntity(getId(old), new)
                 true
@@ -659,9 +656,7 @@ public class SqlCollection<T : Any>(
         val count = t {
             if (modification.isScalarOnly(schema) && schema.childTables.isEmpty()) {
                 val ctx = SqlConditionContext(schema, format)
-                val condExpr = SqlExpressionBuilder.run {
-                    condition(condition, serializer, schema, format, ctx)
-                }
+                val condExpr = condition(condition, serializer, schema, format, ctx)
                 schema.mainTable.update(
                     where = { condExpr.asOp() },
                     limit = null,
@@ -686,13 +681,13 @@ public class SqlCollection<T : Any>(
     ) { span ->
         
         val result = t {
-            val old = findOneInTransaction(condition, orderBy) ?: return@t null
+            val old = findOneInTransaction(condition, orderBy, forUpdate = true) ?: return@t null
             val oldId = getId(old)
             // Delete children first (in case no CASCADE), then main row
             deleteChildren(oldId)
-            schema.mainTable.deleteWhere(limit = 1) {
-                idEq(oldId)
-            }
+            // Report the row only if this call is what removed it — callers use deleteOne to claim
+            // work, so returning a row someone else deleted would hand the same item to two owners.
+            if (schema.mainTable.deleteWhere { idEq(oldId) } == 0) return@t null
             old
         }
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, if (result != null) 1L else 0L) })
@@ -704,13 +699,10 @@ public class SqlCollection<T : Any>(
     ) { span ->
         
         val deleted = t {
-            val old = findOneInTransaction(condition, orderBy) ?: return@t false
+            val old = findOneInTransaction(condition, orderBy, forUpdate = true) ?: return@t false
             val oldId = getId(old)
             deleteChildren(oldId)
-            schema.mainTable.deleteWhere(limit = 1) {
-                idEq(oldId)
-            }
-            true
+            schema.mainTable.deleteWhere { idEq(oldId) } > 0
         }
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, if (deleted) 1L else 0L) })
         deleted
@@ -745,9 +737,7 @@ public class SqlCollection<T : Any>(
         val count = t {
             // Delete children for matching rows first
             val ctx = SqlConditionContext(schema, format)
-            val condExpr = SqlExpressionBuilder.run {
-                condition(condition, serializer, schema, format, ctx)
-            }
+            val condExpr = condition(condition, serializer, schema, format, ctx)
 
             val ids = schema.mainTable.selectAll()
                 .where { condExpr.asOp() }
@@ -804,16 +794,22 @@ public class SqlCollection<T : Any>(
         "Sparse vector search is not supported by the generic SQL driver"
     )
 
-    // ====================== Transaction Helpers ======================
+    // ====================== JdbcTransaction Helpers ======================
 
-    private fun Transaction.findOneInTransaction(
+    /**
+     * @param forUpdate locks the selected row for the rest of the transaction. Required whenever
+     * the caller is going to write the row back, because this driver has to read-modify-write for
+     * modifications it cannot express as a single SQL statement. Without the lock two concurrent
+     * callers read the same row, each computes its own new value, and one update is silently lost —
+     * which would break the row-level atomicity [Table] guarantees.
+     */
+    private fun JdbcTransaction.findOneInTransaction(
         condition: Condition<T>,
         orderBy: List<SortPart<T>> = listOf(),
+        forUpdate: Boolean = false,
     ): T? {
         val ctx = SqlConditionContext(schema, format)
-        val condExpr = SqlExpressionBuilder.run {
-            condition(condition, serializer, schema, format, ctx)
-        }
+        val condExpr = condition(condition, serializer, schema, format, ctx)
 
         val mainRow = schema.mainTable.selectAll()
             .where { condExpr.asOp() }
@@ -821,6 +817,7 @@ public class SqlCollection<T : Any>(
                 if (orderBy.isNotEmpty()) {
                     orderBy(*sortArguments(orderBy))
                 }
+                if (forUpdate) forUpdate(ForUpdateOption.ForUpdate)
             }
             .limit(1)
             .firstOrNull() ?: return null
@@ -836,11 +833,9 @@ public class SqlCollection<T : Any>(
         return decoded
     }
 
-    private fun Transaction.findManyInTransaction(condition: Condition<T>): List<T> {
+    private fun JdbcTransaction.findManyInTransaction(condition: Condition<T>): List<T> {
         val ctx = SqlConditionContext(schema, format)
-        val condExpr = SqlExpressionBuilder.run {
-            condition(condition, serializer, schema, format, ctx)
-        }
+        val condExpr = condition(condition, serializer, schema, format, ctx)
 
         val mainRows = schema.mainTable.selectAll()
             .where { condExpr.asOp() }

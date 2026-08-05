@@ -71,7 +71,7 @@ abstract class VectorSearchTests {
             return@runTest
         }
 
-        val collection = database.table<VectorTestModel>("testFindSimilarBasic")
+        val collection = database.prepare(DatabaseTableDefinition<VectorTestModel>("testFindSimilarBasic"))
 
         // Clean up any existing documents from previous test runs
         collection.deleteMany(Condition.Always)
@@ -126,7 +126,7 @@ abstract class VectorSearchTests {
             return@runTest
         }
 
-        val collection = database.table<VectorTestModel>("testFindSimilarWithMinScore")
+        val collection = database.prepare(DatabaseTableDefinition<VectorTestModel>("testFindSimilarWithMinScore"))
 
         // Clean up any existing documents from previous test runs
         collection.deleteMany(Condition.Always)
@@ -168,7 +168,7 @@ abstract class VectorSearchTests {
             return@runTest
         }
 
-        val collection = database.table<VectorTestModel>("testFindSimilarWithCondition")
+        val collection = database.prepare(DatabaseTableDefinition<VectorTestModel>("testFindSimilarWithCondition"))
 
         // Clean up any existing documents from previous test runs
         collection.deleteMany(Condition.Always)
@@ -216,7 +216,7 @@ abstract class VectorSearchTests {
             return@runTest
         }
 
-        val collection = database.table<VectorTestModel>("testFindSimilarWithLimit")
+        val collection = database.prepare(DatabaseTableDefinition<VectorTestModel>("testFindSimilarWithLimit"))
 
         // Clean up any existing documents from previous test runs
         collection.deleteMany(Condition.Always)
@@ -257,7 +257,7 @@ abstract class VectorSearchTests {
             return@runTest
         }
 
-        val collection = database.table<VectorTestModel>("testFindSimilarEuclidean")
+        val collection = database.prepare(DatabaseTableDefinition<VectorTestModel>("testFindSimilarEuclidean"))
 
         // Clean up any existing documents from previous test runs
         collection.deleteMany(Condition.Always)
@@ -304,7 +304,7 @@ abstract class VectorSearchTests {
             return@runTest
         }
 
-        val collection = database.table<VectorTestModel>("testFindSimilarDotProduct")
+        val collection = database.prepare(DatabaseTableDefinition<VectorTestModel>("testFindSimilarDotProduct"))
 
         // Clean up any existing documents from previous test runs
         collection.deleteMany(Condition.Always)
@@ -350,7 +350,7 @@ abstract class VectorSearchTests {
             return@runTest
         }
 
-        val collection = database.table<VectorTestModel>("testFindSimilarWithSetCondition")
+        val collection = database.prepare(DatabaseTableDefinition<VectorTestModel>("testFindSimilarWithSetCondition"))
 
         // Clean up any existing documents from previous test runs
         collection.deleteMany(Condition.Always)
@@ -413,7 +413,7 @@ abstract class VectorSearchTests {
             return@runTest
         }
 
-        val collection = database.table<SparseVectorTestModel>("testFindSimilarSparseBasic")
+        val collection = database.prepare(DatabaseTableDefinition<SparseVectorTestModel>("testFindSimilarSparseBasic"))
 
         // Clean up any existing documents from previous test runs
         collection.deleteMany(Condition.Always)

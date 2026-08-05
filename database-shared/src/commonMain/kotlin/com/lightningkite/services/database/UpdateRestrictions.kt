@@ -1,6 +1,7 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.data.GenerateDataClassPaths
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNames
 
@@ -116,6 +117,7 @@ public data class UpdateRestrictions<T>(
      * )
      * ```
      */
+    @OptIn(ExperimentalSerializationApi::class)
     @Serializable
     @GenerateDataClassPaths
     public data class Part<T>(

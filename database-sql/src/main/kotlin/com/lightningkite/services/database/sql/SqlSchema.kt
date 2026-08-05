@@ -2,11 +2,15 @@ package com.lightningkite.services.database.sql
 
 import com.lightningkite.services.data.Index
 import com.lightningkite.services.data.IndexSet
+import com.lightningkite.services.data.IndexUniqueness
 import com.lightningkite.services.data.TextIndex
+import com.lightningkite.services.database.isSelfReferential
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.modules.SerializersModule
-import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.core.java.UUIDColumnType
+import org.jetbrains.exposed.v1.jdbc.*
 
 /**
  * Child table definition for a collection field.
@@ -97,12 +101,11 @@ internal class SqlSchema(
         /**
          * Extract the id from a ResultRow.
          */
-        @Suppress("UNCHECKED_CAST")
         fun extractId(row: ResultRow): Any? {
             return if (!isCompoundId) {
-                row[col["_id"]!! as Column<Any?>]
+                row[col["_id"]!!]
             } else {
-                idColumns.associate { it.name to row[it as Column<Any?>] }
+                idColumns.associate { it.name to row[it] }
             }
         }
     }
@@ -158,6 +161,15 @@ internal class SqlSchema(
                     )
                     return
                 }
+                if (resolved.isSelfReferential(serializersModule)) {
+                    // Self-referential type (e.g. Condition<T>, whose And/Or/Not cases embed
+                    // Condition<T> again): flattening would recurse forever no matter how deep the
+                    // actual value nests. Store the whole field as a single JSON column instead —
+                    // this is exactly what MapEncoder/MapDecoder already do at write/read time for
+                    // the same check, so the schema matches the actual on-the-wire shape.
+                    registerLeafColumn(table, prefix, resolved, isNullable)
+                    return
+                }
                 // Nullable class: add "exists" column
                 if (isNullable) {
                     val existsName = (prefix + "exists").joinToString("__")
@@ -184,6 +196,8 @@ internal class SqlSchema(
                             // concrete collection serializer's serialName is the only signal
                             // (e.g. "kotlin.collections.LinkedHashSet"). Matches the convention
                             // used in database-cassandra.
+                            if (elementResolved.isNullable || isNullable)
+                                registerNullableCollectionMarker(table, newFieldPath)
                             createChildTable(
                                 table, newFieldPath, newPrefix,
                                 elementResolved.getElementDescriptor(0),
@@ -193,6 +207,8 @@ internal class SqlSchema(
                         }
                         StructureKind.MAP -> {
                             // Create child table for map
+                            if (elementResolved.isNullable || isNullable)
+                                registerNullableCollectionMarker(table, newFieldPath)
                             createChildTable(
                                 table, newFieldPath, newPrefix,
                                 elementResolved.getElementDescriptor(1),  // value descriptor
@@ -212,20 +228,47 @@ internal class SqlSchema(
                     }
                 }
             }
-            else -> {
-                // Leaf field: register a single column
-                val colName = prefix.joinToString("__")
-                val colType = leafColumnType(resolved, isNullable)
-                @Suppress("UNCHECKED_CAST")
-                val col = table.registerColumn<Any?>(colName, colType as ColumnType<Any>)
-                if (isNullable || resolved.isNullable) {
-                    col.columnType.nullable = true
-                }
-                for (partialSize in 1..prefix.size)
-                    table.columnsByDotPath.getOrPut(prefix.subList(0, partialSize)) { ArrayList() }.add(col)
-                table.col[colName] = col
-            }
+            else -> registerLeafColumn(table, prefix, resolved, isNullable)
         }
+    }
+
+    /**
+     * Registers a single main-table column for a leaf field (a genuine leaf, or a CLASS-kind
+     * descriptor that can't be flattened further — see the self-reference check in
+     * [registerColumns]).
+     */
+    private fun registerLeafColumn(table: SqlMainTable, prefix: List<String>, resolved: SerialDescriptor, isNullable: Boolean) {
+        val colName = prefix.joinToString("__")
+        val colType = leafColumnType(resolved, isNullable)
+        @Suppress("UNCHECKED_CAST")
+        val col = table.registerColumn<Any?>(colName, colType as ColumnType<Any>)
+        if (isNullable || resolved.isNullable) {
+            col.columnType.nullable = true
+        }
+        for (partialSize in 1..prefix.size)
+            table.columnsByDotPath.getOrPut(prefix.subList(0, partialSize)) { ArrayList() }.add(col)
+        table.col[colName] = col
+    }
+
+    /**
+     * Registers a nullable marker column for a nullable collection field (List?/Set?/Map?),
+     * so decoding can tell an empty collection apart from a null one.
+     *
+     * Both a null field and an empty collection persist as zero child rows, which
+     * MapDecoder.decodeNotNullMark() can't tell apart from the child rows alone. Rather than
+     * adding a "<path>__exists" column (which would need MapEncoder, outside database-sql, to
+     * populate on the null path too), this reuses the bare field-path column name that
+     * MapEncoder's generic null handling *already* writes `null` to whenever the field itself is
+     * null. ChildTableListEncoder/ChildTableMapEncoder write a non-null sentinel here whenever
+     * the collection is actually encoded — even empty — and decodeNotNullMark() already treats
+     * "field present with a non-null value" as proof the field exists. So no changes are needed
+     * outside this module.
+     */
+    private fun registerNullableCollectionMarker(mainTable: SqlMainTable, fieldPath: String) {
+        @Suppress("UNCHECKED_CAST")
+        val col = mainTable.registerColumn<Any?>(fieldPath, BooleanColumnType() as ColumnType<Any>)
+        col.columnType.nullable = true
+        mainTable.col[fieldPath] = col
     }
 
     /**
@@ -323,6 +366,13 @@ internal class SqlSchema(
                     registerChildColumns(table, resolved.getElementDescriptor(0), prefix, target)
                     return
                 }
+                if (resolved.isSelfReferential(serializersModule)) {
+                    // Self-referential type reached through a child table (e.g. a list of
+                    // Condition<T>): fall back to one JSON column, which is what MapEncoder/
+                    // MapDecoder already produce at write/read time for the same check.
+                    registerChildLeaf(table, prefix, resolved, descriptor.isNullable, target)
+                    return
+                }
                 for (i in 0 until resolved.elementsCount) {
                     val elementName = resolved.getElementName(i)
                     val childPrefix = if (prefix.isEmpty()) elementName else "${prefix}__${elementName}"
@@ -341,16 +391,24 @@ internal class SqlSchema(
                     }
                 }
             }
-            else -> {
-                // Leaf
-                val colType = leafColumnType(resolved, descriptor.isNullable)
-                val colName = if (prefix.isEmpty()) "value" else prefix
-                @Suppress("UNCHECKED_CAST")
-                val col = table.registerColumn<Any?>(colName, colType as ColumnType<Any>)
-                if (descriptor.isNullable) col.columnType.nullable = true
-                target[colName] = col
-            }
+            else -> registerChildLeaf(table, prefix, resolved, descriptor.isNullable, target)
         }
+    }
+
+    /** Registers a single child-table column for a descriptor that is not being flattened further. */
+    private fun registerChildLeaf(
+        table: SqlChildExposedTable,
+        prefix: String,
+        resolved: SerialDescriptor,
+        nullable: Boolean,
+        target: MutableMap<String, Column<Any?>>,
+    ) {
+        val colType = leafColumnType(resolved, nullable)
+        val colName = if (prefix.isEmpty()) "value" else prefix
+        @Suppress("UNCHECKED_CAST")
+        val col = table.registerColumn<Any?>(colName, colType as ColumnType<Any>)
+        if (nullable) col.columnType.nullable = true
+        target[colName] = col
     }
 
     /**
@@ -417,29 +475,63 @@ internal class SqlSchema(
             if (!seen.add(desc)) return
             desc.annotations.forEach {
                 when (it) {
-                    is IndexSet -> table.index(
+                    is IndexSet -> table.createUniquenessAwareIndex(
                         customIndexName = it.name.takeIf { n -> n.isNotBlank() },
-                        isUnique = it.unique.isUnique,
-                        columns = it.fields.flatMap { f -> table.columnsByDotPath[f.split('.')]!! }.toTypedArray()
+                        uniqueness = it.unique,
+                        columns = it.fields.flatMap { f -> table.columnsByDotPath[f.split('.')]!! }
                     )
                     is TextIndex -> { /* Not supported in generic SQL yet */ }
                 }
             }
             (0 until desc.elementsCount).forEach { index ->
                 val sub = desc.getElementDescriptor(index)
-                if (sub.kind == StructureKind.CLASS) handleDescriptor(sub)
+                // Self-referential fields (e.g. Condition<T>) collapse to a single column - see
+                // registerColumns() - so there's no per-subfield dot-path to recurse into here either.
+                if (sub.kind == StructureKind.CLASS && !sub.isSelfReferential(serializersModule)) handleDescriptor(sub)
                 desc.getElementAnnotations(index).forEach {
                     when (it) {
-                        is Index -> table.index(
+                        is Index -> table.createUniquenessAwareIndex(
                             customIndexName = it.name.takeIf { n -> n.isNotBlank() },
-                            isUnique = it.unique.isUnique,
-                            columns = table.columnsByDotPath[listOf(desc.getElementName(index))]?.toTypedArray() ?: return@forEach
+                            uniqueness = it.unique,
+                            columns = table.columnsByDotPath[listOf(desc.getElementName(index))] ?: return@forEach
                         )
                     }
                 }
             }
         }
         handleDescriptor(descriptor)
+    }
+
+    /**
+     * Create a single-or-composite index honoring [IndexUniqueness]'s NULL contract, or refuse the
+     * model outright when SQL cannot express it.
+     *
+     * A SQL UNIQUE index treats every NULL as distinct from every other value, including other
+     * NULLs — which is exactly [IndexUniqueness.UniqueNullSparse]'s contract, and trivially
+     * [IndexUniqueness.NotUnique]'s. [IndexUniqueness.Unique] means something stronger: NULL
+     * collides with NULL, so at most one NULL row may exist. Creating a plain UNIQUE index for that
+     * case would silently enforce the weaker rule and let duplicates through, so it is rejected here
+     * instead — while the table is being prepared, rather than at some later insert that should have
+     * failed and didn't.
+     */
+    private fun SqlMainTable.createUniquenessAwareIndex(
+        customIndexName: String?,
+        uniqueness: IndexUniqueness,
+        columns: List<Column<Any?>>,
+    ) {
+        val nullable = columns.filter { it.columnType.nullable }
+        require(uniqueness != IndexUniqueness.Unique || nullable.isEmpty()) {
+            "Table $tableName declares IndexUniqueness.Unique over nullable column(s) " +
+                "${nullable.joinToString { it.name }}, which SQL cannot enforce: a UNIQUE index " +
+                "treats NULLs as distinct, so multiple NULL rows would be accepted. Use " +
+                "IndexUniqueness.UniqueNullSparse if that is the intent, or make the column " +
+                "non-nullable to get the stricter guarantee."
+        }
+        index(
+            customIndexName = customIndexName,
+            isUnique = uniqueness.isUnique,
+            columns = columns.toTypedArray(),
+        )
     }
 }
 
@@ -459,11 +551,11 @@ internal fun ColumnType<*>.clone(): ColumnType<*> {
         is DoubleColumnType -> DoubleColumnType()
         is TextColumnType -> TextColumnType()
         is CharColumnType -> CharColumnType(1)
-        is org.jetbrains.exposed.sql.javatime.JavaInstantColumnType -> org.jetbrains.exposed.sql.javatime.JavaInstantColumnType()
-        is org.jetbrains.exposed.sql.javatime.JavaDurationColumnType -> org.jetbrains.exposed.sql.javatime.JavaDurationColumnType()
-        is org.jetbrains.exposed.sql.javatime.JavaLocalDateColumnType -> org.jetbrains.exposed.sql.javatime.JavaLocalDateColumnType()
-        is org.jetbrains.exposed.sql.javatime.JavaLocalDateTimeColumnType -> org.jetbrains.exposed.sql.javatime.JavaLocalDateTimeColumnType()
-        is org.jetbrains.exposed.sql.javatime.JavaLocalTimeColumnType -> org.jetbrains.exposed.sql.javatime.JavaLocalTimeColumnType()
+        is org.jetbrains.exposed.v1.javatime.JavaInstantColumnType -> org.jetbrains.exposed.v1.javatime.JavaInstantColumnType()
+        is org.jetbrains.exposed.v1.javatime.JavaDurationColumnType -> org.jetbrains.exposed.v1.javatime.JavaDurationColumnType()
+        is org.jetbrains.exposed.v1.javatime.JavaLocalDateColumnType -> org.jetbrains.exposed.v1.javatime.JavaLocalDateColumnType()
+        is org.jetbrains.exposed.v1.javatime.JavaLocalDateTimeColumnType -> org.jetbrains.exposed.v1.javatime.JavaLocalDateTimeColumnType()
+        is org.jetbrains.exposed.v1.javatime.JavaLocalTimeColumnType -> org.jetbrains.exposed.v1.javatime.JavaLocalTimeColumnType()
         is BasicBinaryColumnType -> BasicBinaryColumnType()
         else -> TextColumnType()  // Fallback
     }.also { it.nullable = this.nullable }

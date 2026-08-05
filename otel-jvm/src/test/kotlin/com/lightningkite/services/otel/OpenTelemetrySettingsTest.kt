@@ -1,3 +1,7 @@
+// This file intentionally tests the deprecated OpenTelemetrySettings API, which is still
+// shipped for backward compatibility.
+@file:Suppress("DEPRECATION")
+
 package com.lightningkite.services.otel
 
 import com.lightningkite.services.TestSettingContext

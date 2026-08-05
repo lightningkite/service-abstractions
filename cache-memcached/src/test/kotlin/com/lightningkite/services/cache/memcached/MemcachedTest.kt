@@ -12,6 +12,9 @@ import kotlin.time.Duration.Companion.seconds
 
 class MemcachedTest : CacheTest() {
     init {
+        // Force class init so MemcachedCache's companion registers the URL scheme;
+        // the bare reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         MemcachedCache
     }
 

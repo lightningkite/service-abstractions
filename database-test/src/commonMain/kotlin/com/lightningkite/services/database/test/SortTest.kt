@@ -13,7 +13,7 @@ abstract class SortTest {
 
     @Test
     fun testSortInt() = runTest {
-        val collection = database.table<LargeTestModel>("SortTest_testSortInt")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("SortTest_testSortInt"))
         val items = listOf(
             LargeTestModel(int = 4),
             LargeTestModel(int = 5),
@@ -36,7 +36,7 @@ abstract class SortTest {
 
     @Test
     fun testSortIntEmbedded() = runTest {
-        val collection = database.table<LargeTestModel>("SortTest_testSortIntEmbedded")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("SortTest_testSortIntEmbedded"))
         val items = listOf(
             LargeTestModel(embedded = ClassUsedForEmbedding(value2 = 4)),
             LargeTestModel(embedded = ClassUsedForEmbedding(value2 = 5)),
@@ -61,7 +61,7 @@ abstract class SortTest {
 
     @Test
     fun testSortIntEmbeddedNullable() = runTest {
-        val collection = database.table<LargeTestModel>("SortTest_testSortIntEmbeddedNullable")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("SortTest_testSortIntEmbeddedNullable"))
         val items = listOf(
             LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 4)),
             LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 5)),
@@ -88,7 +88,7 @@ abstract class SortTest {
 
     @Test
     fun testSortTime() = runTest {
-        val collection = database.table<LargeTestModel>("SortTest_testSortTime")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("SortTest_testSortTime"))
         val items = listOf(
             LargeTestModel(instant = Clock.System.now().minus(4.minutes)),
             LargeTestModel(instant = Clock.System.now().minus(5.minutes)),
@@ -112,7 +112,7 @@ abstract class SortTest {
 
     @Test
     fun testSortCase() = runTest {
-        val collection = database.table<LargeTestModel>("SortTest_testSortCase")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("SortTest_testSortCase"))
         val items = listOf(
             LargeTestModel(string = "aa"),
             LargeTestModel(string = "Ab"),
@@ -134,7 +134,7 @@ abstract class SortTest {
 
     @Test
     fun testSortCaseInsensitive() = runTest {
-        val collection = database.table<LargeTestModel>("SortTest_testSortCaseInsensitive")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("SortTest_testSortCaseInsensitive"))
         val items = listOf(
             LargeTestModel(string = "aa"),
             LargeTestModel(string = "Ab"),
@@ -167,7 +167,7 @@ abstract class SortTest {
      */
     @Test
     fun testSortNullsBelowEverything() = runTest {
-        val collection = database.table<LargeTestModel>("SortTest_testSortNullsBelowEverything")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("SortTest_testSortNullsBelowEverything"))
         collection.insertMany(
             listOf(
                 LargeTestModel(intNullable = 2),
@@ -191,7 +191,7 @@ abstract class SortTest {
 
     @Test
     fun testSortCaseInsensitiveCrash() = runTest {
-        val collection = database.table<LargeTestModel>("testSortCaseInsensitiveCrash")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("testSortCaseInsensitiveCrash"))
         val items = listOf(
             LargeTestModel(string = "aa"),
             LargeTestModel(string = "Ab"),

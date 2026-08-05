@@ -32,6 +32,15 @@ public class LazySerialDescriptor(override val serialName: String, kind: SerialK
 
     private val original: SerialDescriptor by lazy(deferred)
 
+    /**
+     * The descriptor this instance forwards structural queries to, once [deferred] has been forced.
+     * Exposed so callers doing graph analysis over descriptors (e.g. detecting self-referential types
+     * in [com.lightningkite.services.database.isSelfReferential]) can see through this wrapper to what
+     * it actually represents - [equals]/[hashCode] compare by [original] too, but that alone doesn't let
+     * a caller walk the chain when [original] is itself another wrapper.
+     */
+    public val wrapped: SerialDescriptor get() = original
+
     // When no kind is given, fall back to the deferred descriptor's kind lazily rather than forcing it eagerly.
     private val explicitKind: SerialKind? = kind
     override val kind: SerialKind get() = explicitKind ?: original.kind

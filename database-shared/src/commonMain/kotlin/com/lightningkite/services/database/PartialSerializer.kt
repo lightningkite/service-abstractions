@@ -2,6 +2,7 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.data.ExperimentalLightningServer
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.nullable
@@ -60,6 +61,7 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
             throw Exception("Failed to make partial descriptor for ${source.descriptor.serialName}", e)
         }
     }
+    @OptIn(ExperimentalLightningServer::class)
     override val descriptor: SerialDescriptor =
         LazySerialDescriptor("com.lightningkite.services.database.Partial", StructureKind.CLASS) { innerDescriptor }
 

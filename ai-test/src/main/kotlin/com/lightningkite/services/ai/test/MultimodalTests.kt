@@ -4,6 +4,7 @@ import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.inference
 import com.lightningkite.services.ai.plainText
+import com.lightningkite.services.ai.userMessage
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -34,7 +35,7 @@ public abstract class MultimodalTests : LlmAccessTests() {
             model = model,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userWithAttachment(
+                    userMessage(
                         caption = "What single color is this image? Respond with just the color name.",
                         attachment = LlmAttachment.Base64(pngMediaType, TINY_RED_PNG_BASE64),
                     ),
@@ -70,7 +71,7 @@ public abstract class MultimodalTests : LlmAccessTests() {
             model = model,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userWithAttachment(
+                    userMessage(
                         caption = "What is the primary color of this image? Respond with just the color name.",
                         attachment = LlmAttachment.Url(pngMediaType, STABLE_BLUE_IMAGE_URL),
                     ),

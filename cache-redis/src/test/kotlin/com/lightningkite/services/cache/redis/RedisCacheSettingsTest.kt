@@ -14,7 +14,9 @@ import kotlin.test.assertTrue
 class RedisCacheSettingsTest {
 
     init {
-        // Trigger companion object initialization
+        // Trigger companion object initialization; the bare reference is the point of
+        // this line (it registers the redis:// URL scheme).
+        @Suppress("UNUSED_EXPRESSION")
         RedisCache
     }
 

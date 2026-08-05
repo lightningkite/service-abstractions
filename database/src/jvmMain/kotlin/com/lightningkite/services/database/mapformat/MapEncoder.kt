@@ -3,6 +3,7 @@
 
 package com.lightningkite.services.database.mapformat
 
+import com.lightningkite.services.database.isSelfReferential
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeEncoder
@@ -17,16 +18,16 @@ import kotlinx.serialization.modules.SerializersModule
  * Handles value classes properly via encodeInline/encodeInlineElement,
  * flattens embedded structs, and delegates collection handling to CollectionHandler.
  *
- * by Claude - Uses seenStack to detect self-referential types (types that can contain
- * instances of themselves). When a type is already on the stack, it's serialized as JSON
- * instead of being flattened, since infinite nesting can't be represented as columns.
+ * by Claude - Uses [SerialDescriptor.isSelfReferential] to detect types that can contain instances of
+ * themselves (e.g. Condition<T>, Modification<T>). Such a value is serialized as JSON in full instead
+ * of being flattened, since infinite nesting can't be represented as columns - this is checked up front
+ * rather than only on re-entry, so the whole field becomes one JSON value/column, matching what the
+ * schema builders (SqlSchema, SerialDescriptorTable) do for the same field.
  */
 @OptIn(ExperimentalSerializationApi::class)
 public class MapEncoder(
     private val config: MapFormatConfig,
     private val output: WriteTarget,
-    // by Claude - track types currently being serialized to detect self-referential types
-    private val seenStack: MutableList<String> = mutableListOf(),
 ) : Encoder, CompositeEncoder {
 
     override val serializersModule: SerializersModule = config.serializersModule
@@ -98,11 +99,12 @@ public class MapEncoder(
             return
         }
 
-        val serialName = serializer.descriptor.serialName
-
-        // by Claude - detect self-referential types (types that can contain instances of themselves)
-        // If we've already seen this type on the stack, serialize as JSON to avoid infinite nesting
-        if (serializer.descriptor.kind == StructureKind.CLASS && seenStack.contains(serialName)) {
+        // by Claude - self-referential types (types that can contain instances of themselves, e.g.
+        // Condition<T>/Modification<T>) can never be fully flattened into columns no matter how deep
+        // the actual value nests, so the whole value is serialized as JSON instead.
+        if (serializer.descriptor.kind == StructureKind.CLASS &&
+            serializer.descriptor.isSelfReferential(config.serializersModule)
+        ) {
             encodeAsJson(serializer, value)
             return
         }
@@ -116,17 +118,7 @@ public class MapEncoder(
             return
         }
 
-        // by Claude - track CLASS types on the seenStack to detect self-referential nesting
-        if (serializer.descriptor.kind == StructureKind.CLASS) {
-            seenStack.add(serialName)
-        }
-
         serializer.serialize(this, value)
-
-        // by Claude - remove from seenStack after serializing
-        if (serializer.descriptor.kind == StructureKind.CLASS) {
-            seenStack.removeLastOrNull()
-        }
 
         // For CLASS/OBJECT types, pop the tag that was pushed by encodeSerializableElement
         // (primitives and converters pop in their encode methods, but classes don't)

@@ -12,7 +12,9 @@ public object BedrockLlmSettings {
     /** No-op call site; forces class init and therefore scheme registration. */
     public fun ensureRegistered() {
         // Referencing BedrockLlmAccess triggers its companion init block which registers the
-        // bedrock:// scheme on LlmAccess.Settings.
+        // bedrock:// scheme on LlmAccess.Settings. The reference itself is the point of this
+        // line, so the "unused expression" warning is expected and suppressed.
+        @Suppress("UNUSED_EXPRESSION")
         BedrockLlmAccess
     }
 }
@@ -54,6 +56,7 @@ public fun LlmAccess.Settings.Companion.bedrock(
     profile: String? = null,
 ): LlmAccess.Settings {
     // Touch BedrockLlmAccess to guarantee the URL scheme is registered.
+    @Suppress("UNUSED_EXPRESSION")
     BedrockLlmAccess
     require(accessKeyId == null || profile == null) {
         "Specify either (accessKeyId, secretAccessKey) or profile — not both."

@@ -3,6 +3,7 @@ package com.lightningkite.services.ai.test
 import com.lightningkite.services.ai.LlmModelId
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.userMessage
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -41,7 +42,7 @@ public abstract class ErrorHandlingTests : LlmAccessTests() {
             service.inference(
                 model = bogus,
                 prompt = LlmPrompt(
-                    messages = listOf(userText("Hello.")),
+                    messages = listOf(userMessage("Hello.")),
                     maxTokens = testMaxTokens,
                 ),
             )
@@ -73,7 +74,7 @@ public abstract class ErrorHandlingTests : LlmAccessTests() {
             bad.inference(
                 model = cheapModel,
                 prompt = LlmPrompt(
-                    messages = listOf(userText("Hello.")),
+                    messages = listOf(userMessage("Hello.")),
                     maxTokens = testMaxTokens,
                 ),
             )

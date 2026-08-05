@@ -201,6 +201,7 @@ public class MongoTable<Model : Any>(
                                 val path = ser.fromString(key)
 
                                 @Suppress("UNCHECKED_CAST")
+                                @OptIn(ExperimentalSerializationApi::class)
                                 fun KSerializer<*>.unwrap(): KSerializer<*> {
                                     return when {
                                         this.descriptor.isNullable -> this.innerElement()
@@ -606,6 +607,8 @@ public class MongoTable<Model : Any>(
     ): Boolean {
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
+        // `updateOne` takes no sort; only `findOneAndUpdate` does, so hand off when order matters.
+        if (orderBy.isNotEmpty()) return updateOne(cs, modification, orderBy).old != null
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
         val m = simplifiedModification.bson(serializer, bson = bson)
@@ -728,6 +731,10 @@ public class MongoTable<Model : Any>(
     ): Flow<Model> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return emptyFlow()
+        // A limit of zero means zero rows, and neither Mongo path expresses that: `$limit: 0` is a
+        // hard error in an aggregation pipeline, while `FindIterable.limit(0)` quietly means
+        // "unlimited" and would return everything. Answer it here instead of asking the server.
+        if (limit <= 0) return emptyFlow()
         // Wrap the cold result flow so the metric measures the actual query round-trip (driven by the
         // consumer's collect), not just the lazy pipeline construction.
         return recordingFlow("find") { access {

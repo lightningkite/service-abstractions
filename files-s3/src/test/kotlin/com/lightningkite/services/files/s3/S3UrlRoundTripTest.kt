@@ -35,7 +35,9 @@ import kotlin.time.Duration.Companion.hours
 class S3UrlRoundTripTest {
 
     init {
-        // Ensure the "s3" scheme registration side effect has run.
+        // Ensure the "s3" scheme registration side effect has run; the bare reference
+        // is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         S3ExternalFileSystem
     }
 

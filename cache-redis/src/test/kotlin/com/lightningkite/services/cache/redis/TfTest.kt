@@ -8,6 +8,9 @@ import kotlin.test.Test
 @OptIn(Untested::class)
 class TfTest {
     init {
+        // Force class init so RedisCache's companion registers the URL scheme;
+        // the bare reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         RedisCache
     }
 

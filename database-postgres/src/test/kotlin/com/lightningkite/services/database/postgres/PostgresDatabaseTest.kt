@@ -3,6 +3,7 @@ package com.lightningkite.services.database.postgres
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.test.*
+import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
@@ -11,11 +12,12 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.EmptySerializersModule
-import org.jetbrains.exposed.dao.id.IntIdTable
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.javatime.timestamp
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
+import org.jetbrains.exposed.v1.core.dao.id.IntIdTable
+import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.javatime.timestamp
+import org.jetbrains.exposed.v1.jdbc.transactions.inTopLevelSuspendTransaction
 import org.junit.ClassRule
 import org.junit.Rule
 import java.sql.Connection.TRANSACTION_READ_COMMITTED
@@ -23,6 +25,24 @@ import kotlin.test.*
 import kotlin.time.Clock.System.now
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
+
+/**
+ * A single embedded Postgres cluster shared by the conformance suites below (as opposed to the
+ * `@ClassRule EmbeddedPostgresRules.singleInstance()` pattern used elsewhere in this file, which starts
+ * a brand-new cluster per test class).
+ *
+ * This is safe here because every suite below writes to its own uniquely-named table (verified by
+ * inspection - no two suites share a literal table name or an unqualified `DatabaseTableDefinition<T>()`
+ * for the same model type), so there is no cross-suite data contamination despite sharing one cluster.
+ *
+ * `EmbeddedPostgres.start()` builds with `registerShutdownHook = true` by default (see
+ * `EmbeddedPostgres.Builder`), which adds a JVM shutdown hook that stops the postgres process and
+ * cleans up its data directory. Since Gradle test workers run in their own JVM, that hook fires when
+ * the worker exits, so no explicit teardown is needed here and no process is leaked.
+ */
+private object SharedEmbeddedPostgres {
+    val instance: EmbeddedPostgres by lazy { EmbeddedPostgres.start() }
+}
 
 class BasicTest() {
     @Rule
@@ -130,7 +150,7 @@ class PostgresRetrievalTest {
 
     @kotlin.test.Test
     fun inout() = runTest {
-        val collection = database.table<LargeTestModel>("PostgresRetrievalTest")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("PostgresRetrievalTest"))
         val lower = LargeTestModel(instant = Instant.fromEpochMilliseconds(5000L))
         val higher = LargeTestModel(instant = Instant.fromEpochMilliseconds(15000L))
         val middle = LargeTestModel(instant = Instant.fromEpochMilliseconds(10000L))
@@ -141,12 +161,11 @@ class PostgresRetrievalTest {
         assertEquals(result[0], lower)
         assertEquals(result[1], middle)
         assertEquals(result[2], higher)
-        Unit
     }
 
     @Test
     fun test_Instant_nullable_eq() = runTest {
-        val collection = database.table<LargeTestModel>("quicktest")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("quicktest"))
         val lower = LargeTestModel(instant = Instant.fromEpochMilliseconds(0L))
         val higher = LargeTestModel(instant = Instant.fromEpochMilliseconds(15000L))
         val manualList = listOf(lower, higher)
@@ -159,7 +178,6 @@ class PostgresRetrievalTest {
         assertContains(results, higher)
         assertTrue(lower !in results)
         assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-        Unit
     }
 
     object StarWarsFilms : IntIdTable() {
@@ -172,9 +190,8 @@ class PostgresRetrievalTest {
     @Test
     fun directBullshit() = runBlocking {
         val db = (database as PostgresDatabase).db
-        suspend fun <T> t(action: suspend Transaction.() -> T): T =
-            newSuspendedTransaction(
-                Dispatchers.IO,
+        suspend fun <T> t(action: suspend JdbcTransaction.() -> T): T =
+            inTopLevelSuspendTransaction(
                 db = db,
                 transactionIsolation = TRANSACTION_READ_COMMITTED,
                 statement = {
@@ -335,4 +352,88 @@ class PostgresVectorSearchTests : VectorSearchTests() {
     // Sparse vector support requires additional column type mapping work
     // pgvector's sparsevec type needs special serialization handling
     override val supportsSparseVectorSearch: Boolean = false
+}
+
+class PostgresSingleRowOperationTests : SingleRowOperationTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
+}
+
+class PostgresReturnContractTests : ReturnContractTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
+}
+
+class PostgresPaginationTests : PaginationTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
+}
+
+class PostgresScaleAndBoundaryTests : ScaleAndBoundaryTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
+}
+
+class PostgresConcurrencyTests : ConcurrencyTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
+}
+
+class PostgresOperationsTests : OperationsTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
+}
+
+class PostgresInlinePropertiesTests : InlinePropertiesTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
+}
+
+class PostgresMetaTest : MetaTest() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
+}
+
+class PostgresIndexTests : IndexTests() {
+    // SQL UNIQUE treats NULLs as distinct, so `Unique` on a nullable column is rejected at prepare.
+    override val supportsUniqueAcrossNulls: Boolean = false
+
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
 }

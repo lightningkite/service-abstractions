@@ -9,9 +9,10 @@ import com.lightningkite.services.database.mapValueElement
 import com.lightningkite.services.database.nullElement
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.serializer
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.ops.SingleValueInListOp
-import org.jetbrains.exposed.sql.statements.UpdateBuilder
+import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.core.ops.SingleValueInListOp
+import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
 // ==================== Field Set ====================
 
@@ -29,14 +30,32 @@ internal data class SqlFieldSet<V>(
         single to sqlLiteralOfSomeKind(single.columnType, formatSingle(value))
 
     @Suppress("UNCHECKED_CAST")
-    fun sub(property: SerializableProperty<V, *>): SqlFieldSet<Any?> = SqlFieldSet(
-        serializer = property.serializer as KSerializer<Any?>,
-        fields = fields.filter { it.key == property.name || it.key.startsWith(property.name + "__") }
-            .mapKeys { it.key.substringAfter(property.name).removePrefix("__") },
-        format = format,
-        schema = schema,
-        fieldPath = if (fieldPath.isEmpty()) property.name else "${fieldPath}__${property.name}",
-    )
+    fun sub(property: SerializableProperty<V, *>): SqlFieldSet<Any?> {
+        val newFieldPath = if (fieldPath.isEmpty()) property.name else "${fieldPath}__${property.name}"
+        // Navigating through the sole wrapped property of a Kotlin value class (property.inline)
+        // does not consume a storage segment: SqlSchema.registerColumns/registerChildColumns
+        // collapse value classes away when building column names, mirroring kotlinx
+        // serialization's transparent encodeInline. So the columns stay exactly the same;
+        // only the serializer (and reported field path) changes.
+        return if (property.inline) {
+            SqlFieldSet(
+                serializer = property.serializer as KSerializer<Any?>,
+                fields = fields,
+                format = format,
+                schema = schema,
+                fieldPath = newFieldPath,
+            )
+        } else {
+            SqlFieldSet(
+                serializer = property.serializer as KSerializer<Any?>,
+                fields = fields.filter { it.key == property.name || it.key.startsWith(property.name + "__") }
+                    .mapKeys { it.key.substringAfter(property.name).removePrefix("__") },
+                format = format,
+                schema = schema,
+                fieldPath = newFieldPath,
+            )
+        }
+    }
 
     @Suppress("UNCHECKED_CAST")
     val exists: Expression<Boolean>
@@ -72,7 +91,7 @@ internal class SqlConditionContext(
     var isExact: Boolean = true
 }
 
-internal fun <T> ISqlExpressionBuilder.condition(
+internal fun <T> condition(
     condition: Condition<T>,
     serializer: KSerializer<T>,
     schema: SqlSchema,
@@ -92,7 +111,7 @@ internal fun <T> ISqlExpressionBuilder.condition(
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun <T> ISqlExpressionBuilder.condition(
+private fun <T> condition(
     condition: Condition<T>,
     fieldSet: SqlFieldSet<T>,
     ctx: SqlConditionContext,
@@ -253,8 +272,6 @@ private fun <T> ISqlExpressionBuilder.condition(
                 unsupported()
             }
         }
-
-        else -> unsupported()
     }
 }
 
@@ -262,7 +279,7 @@ private fun <T> ISqlExpressionBuilder.condition(
  * Handle conditions on collection fields stored in child tables.
  */
 @Suppress("UNCHECKED_CAST")
-private fun ISqlExpressionBuilder.conditionOnChildTable(
+private fun conditionOnChildTable(
     condition: Condition<Any?>,
     childDef: SqlChildTableDef,
     schema: SqlSchema,
@@ -325,7 +342,6 @@ private fun ISqlExpressionBuilder.conditionOnChildTable(
             val innerCond = when (condition) {
                 is Condition.ListAnyElements<*> -> condition.condition as Condition<Any?>
                 is Condition.SetAnyElements<*> -> condition.condition as Condition<Any?>
-                else -> throw IllegalStateException()
             }
             val efs = elementFieldSet()
             existsSubquery(condition(innerCond, efs, ctx, negated))
@@ -335,7 +351,6 @@ private fun ISqlExpressionBuilder.conditionOnChildTable(
             val innerCond = when (condition) {
                 is Condition.ListAllElements<*> -> condition.condition as Condition<Any?>
                 is Condition.SetAllElements<*> -> condition.condition as Condition<Any?>
-                else -> throw IllegalStateException()
             }
             val efs = elementFieldSet()
             // NOT EXISTS (... WHERE NOT <condition>)
@@ -346,7 +361,6 @@ private fun ISqlExpressionBuilder.conditionOnChildTable(
             val count = when (condition) {
                 is Condition.ListSizesEquals<*> -> condition.count
                 is Condition.SetSizesEquals<*> -> condition.count
-                else -> throw IllegalStateException()
             }
             EqOp(countSubquery(), sqlLiteralOfSomeKind(IntegerColumnType(), count))
         }
@@ -424,6 +438,10 @@ private fun ISqlExpressionBuilder.conditionOnChildTable(
  * Returns true if this modification can be fully expressed as SQL UPDATE SET clauses
  * (no collection modifications).
  */
+// Recursing into IfNotNull/OnField's wrapped Modification<*> requires re-asserting the type
+// parameter as Any?; the variance is erased at runtime so this is safe (isScalarOnly only reads
+// structure, never the wrapped value).
+@Suppress("UNCHECKED_CAST")
 internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = ""): Boolean = when (this) {
     is Modification.Nothing -> true
     is Modification.Chain -> modifications.all { it.isScalarOnly(schema, path) }
@@ -436,7 +454,11 @@ internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = 
     is Modification.AppendString -> true
     is Modification.AppendRawString -> true
     is Modification.OnField<*, *> -> {
-        val newPath = if (path.isEmpty()) key.name else "${path}__${key.name}"
+        // Navigating through a value class's wrapped property (key.inline) doesn't consume a
+        // storage segment — see SqlFieldSet.sub() — so it must not extend the path either, or
+        // the childTables membership check below would look for a path that was never registered.
+        val newPath = if (key.inline) path
+            else if (path.isEmpty()) key.name else "${path}__${key.name}"
         (modification as Modification<Any?>).isScalarOnly(schema, newPath)
     }
     // All collection modifications
@@ -513,7 +535,7 @@ internal fun <T> UpdateBuilder<*>.modification(
     )
     for (entry in map) {
         val col = table.col[entry.key] ?: continue
-        this.update(col as Column<Any?>, entry.value)
+        this.update(col, entry.value)
     }
 }
 
@@ -566,10 +588,15 @@ private fun <T> FieldModifier.scalarModification(
             Concat("", old, fieldSet.formatSingleExpression(modification.value as T)) as Expression<Any?>
         }
         is Modification.OnField<*, *> -> {
-            val newPath = if (path.isEmpty()) modification.key.name else "${path}__${modification.key.name}"
+            // Value class hop (modification.key.inline): no storage segment consumed, so neither
+            // the field-name prefix nor the path grows here — mirrors SqlFieldSet.sub() and the
+            // isScalarOnly() path tracking above.
+            val newPath = if (modification.key.inline) path
+                else if (path.isEmpty()) modification.key.name else "${path}__${modification.key.name}"
             // Skip if this navigates to a child table field
             if (!schema.childTables.containsKey(newPath)) {
-                sub(modification.key.name).scalarModification(
+                val nextModifier = if (modification.key.inline) this else sub(modification.key.name)
+                nextModifier.scalarModification(
                     modification.modification as Modification<Any?>,
                     fieldSet.sub(modification.key as SerializableProperty<T, Any?>),
                     schema,

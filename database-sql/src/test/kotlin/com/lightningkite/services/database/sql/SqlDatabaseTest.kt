@@ -9,7 +9,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.EmptySerializersModule
 import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules
-import org.jetbrains.exposed.sql.Database
+import org.jetbrains.exposed.v1.jdbc.Database
 import org.junit.ClassRule
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -101,6 +101,89 @@ class SqlOperationsTests : OperationsTests() {
     }
 }
 
+class SqlSingleRowOperationTests : SingleRowOperationTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:singleRowOperationTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlReturnContractTests : ReturnContractTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:returnContractTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlPaginationTests : PaginationTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:paginationTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlScaleAndBoundaryTests : ScaleAndBoundaryTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:scaleAndBoundaryTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlConcurrencyTests : ConcurrencyTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:concurrencyTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+// Row-level locking (SELECT ... FOR UPDATE) is where H2 in-memory and Postgres are most likely to
+// diverge, so the concurrency contract is also verified against a real Postgres instance.
+class SqlPostgresConcurrencyTests : ConcurrencyTests() {
+    companion object {
+        @ClassRule
+        @JvmField
+        val postgres = EmbeddedPostgresRules.singleInstance()
+    }
+
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null)
+        }
+    }
+}
+
+class SqlMetaTest : MetaTest() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:metaTest;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlInlinePropertiesTests : InlinePropertiesTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:inlinePropertiesTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
+class SqlIndexTests : IndexTests() {
+    // SQL UNIQUE treats NULLs as distinct, so `Unique` on a nullable column is rejected at prepare.
+    override val supportsUniqueAcrossNulls: Boolean = false
+
+    override val database: com.lightningkite.services.database.Database by lazy {
+        SqlDatabase("test", TestSettingContext(EmptySerializersModule())) {
+            PooledDatabase(Database.connect("jdbc:h2:mem:indexTests;DB_CLOSE_DELAY=-1", "org.h2.Driver"), null)
+        }
+    }
+}
+
 // ===== Basic smoke test =====
 
 class SqlBasicTest {
@@ -112,7 +195,7 @@ class SqlBasicTest {
 
     @Test
     fun insertAndFind() = runTest {
-        val collection = database.collection<LargeTestModel>("insertAndFind")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("insertAndFind"))
         val model = LargeTestModel()
         collection.insertOne(model)
         val found = collection.find(Condition.Always).firstOrNull()
@@ -122,7 +205,7 @@ class SqlBasicTest {
 
     @Test
     fun insertAndFindByCondition() = runTest {
-        val collection = database.collection<LargeTestModel>("insertAndFindByCondition")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("insertAndFindByCondition"))
         val a = LargeTestModel(int = 10)
         val b = LargeTestModel(int = 20)
         collection.insertMany(listOf(a, b))
@@ -134,7 +217,7 @@ class SqlBasicTest {
 
     @Test
     fun updateOne() = runTest {
-        val collection = database.collection<LargeTestModel>("updateOne")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("updateOne"))
         val model = LargeTestModel(int = 5)
         collection.insertOne(model)
 
@@ -151,7 +234,7 @@ class SqlBasicTest {
 
     @Test
     fun deleteOne() = runTest {
-        val collection = database.collection<LargeTestModel>("deleteOne")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("deleteOne"))
         val model = LargeTestModel()
         collection.insertOne(model)
         assertEquals(1, collection.count(Condition.Always))
@@ -208,7 +291,7 @@ class SqlBasicTest {
 
     @Test
     fun setFieldRoundTrip() = runTest {
-        val collection = database.collection<LargeTestModel>("setFieldRoundTrip")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("setFieldRoundTrip"))
         val model = LargeTestModel(
             set = setOf(3, 1, 2),
             setEmbedded = setOf(
@@ -229,7 +312,7 @@ class SqlBasicTest {
     @Test
     fun setMembershipQuery() = runTest {
         // Membership queries against a set child table must still work without idx.
-        val collection = database.collection<LargeTestModel>("setMembershipQuery")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("setMembershipQuery"))
         val match = LargeTestModel(set = setOf(10, 20))
         val noMatch = LargeTestModel(set = setOf(30, 40))
         collection.insertMany(listOf(match, noMatch))
@@ -241,7 +324,7 @@ class SqlBasicTest {
 
     @Test
     fun listFieldRoundTrip() = runTest {
-        val collection = database.collection<LargeTestModel>("listFieldRoundTrip")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("listFieldRoundTrip"))
         val model = LargeTestModel(listEmbedded = listOf(
             ClassUsedForEmbedding("Alice", 1),
             ClassUsedForEmbedding("Bob", 2),
@@ -267,7 +350,7 @@ class SqlCompoundKeyTest {
 
     @Test
     fun insertAndReadListField() = runTest {
-        val collection = database.collection<CompoundKeyModel>("insertAndReadListField")
+        val collection = database.prepare(DatabaseTableDefinition<CompoundKeyModel>("insertAndReadListField"))
         val model = CompoundKeyModel(
             _id = CompoundId("x", 1),
             name = "test",
@@ -284,7 +367,7 @@ class SqlCompoundKeyTest {
 
     @Test
     fun updateListField() = runTest {
-        val collection = database.collection<CompoundKeyModel>("updateListField")
+        val collection = database.prepare(DatabaseTableDefinition<CompoundKeyModel>("updateListField"))
         val model = CompoundKeyModel(
             _id = CompoundId("y", 2),
             name = "update-test",
@@ -306,7 +389,7 @@ class SqlCompoundKeyTest {
 
     @Test
     fun deleteRemovesChildRows() = runTest {
-        val collection = database.collection<CompoundKeyModel>("deleteRemovesChildRows")
+        val collection = database.prepare(DatabaseTableDefinition<CompoundKeyModel>("deleteRemovesChildRows"))
         val model = CompoundKeyModel(
             _id = CompoundId("z", 3),
             name = "delete-test",

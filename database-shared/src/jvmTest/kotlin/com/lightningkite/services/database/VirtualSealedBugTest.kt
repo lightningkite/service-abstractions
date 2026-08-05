@@ -159,31 +159,29 @@ class VirtualSealedBugTest {
         }
     }
 
-    // ── Remaining open bug ─────────────────────────────────────────────────────
+    // ── KSerializerWithDefault conformance ──────────────────────────────────────
 
     /**
-     * VirtualSealed.Concrete implements KSerializer<VirtualSealedInstance> but not
-     * KSerializerWithDefault, unlike VirtualStruct.Concrete which does.
-     * Code that calls .default() via KSerializerWithDefault will fail for sealed types.
-     * This test currently FAILS, proving the gap remains.
+     * VirtualSealed.Concrete implements KSerializerWithDefault<VirtualSealedInstance>, matching
+     * VirtualStruct.Concrete, so an `is KSerializerWithDefault` check is now statically true and
+     * proves nothing at runtime. What is worth guarding is the value `default` produces: the first
+     * declared option, carrying that option's own field defaults.
      */
     @Test
-    fun `bug - VirtualSealed Concrete should implement KSerializerWithDefault`() {
+    fun `VirtualSealed Concrete default wraps the first option's own default`() {
         val registry = SerializationRegistry(EmptySerializersModule())
         registry.registerVirtualDeep(serializer<Shape>())
         val concrete = registry[serializer<Shape>().descriptor.serialName, arrayOf()] as VirtualSealed.Concrete
 
-        // Sanity: VirtualStruct.Concrete does implement it
         val circleVt = registry.virtualTypes["BugTest.Circle"] as VirtualStruct
-        assertTrue(
-            circleVt.Concrete(registry, arrayOf()) is KSerializerWithDefault<*>,
-            "VirtualStruct.Concrete should implement KSerializerWithDefault (sanity check)"
-        )
+        val circleDefault = circleVt.Concrete(registry, arrayOf()).default
 
-        // VirtualSealed.Concrete should too — currently FAILS
-        assertTrue(
-            concrete is KSerializerWithDefault<*>,
-            "VirtualSealed.Concrete should implement KSerializerWithDefault"
-        )
+        val sealedDefault = concrete.default
+        assertEquals("BugTest.Circle", sealedDefault.option.name, "default should pick the first declared option")
+        val wrapped = assertIs<VirtualInstance>(sealedDefault.value, "sealed default should wrap a struct instance")
+        assertEquals("BugTest.Circle", wrapped.type.serialName, "wrapped value should be an instance of that option")
+        // VirtualStruct.Concrete is a plain inner class with identity equality, so two separately
+        // constructed instances of the same type are never equal — compare field values instead.
+        assertEquals(circleDefault.values, wrapped.values, "wrapped value should carry the option's field defaults")
     }
 }

@@ -172,6 +172,9 @@ private fun evaluateExpression(expr: String): Double {
  * Run with: ./gradlew :voiceagent-openai:run or execute main() directly in IDE
  */
 fun main() = runBlocking {
+    // Force the URL scheme to register before constructing Settings elsewhere in this
+    // demo. The bare reference is the point of this line.
+    @Suppress("UNUSED_EXPRESSION")
     OpenAIVoiceAgentService
     val apiKey = System.getenv("OPENAI_API_KEY")
         ?: File("local/openai.txt").readText()

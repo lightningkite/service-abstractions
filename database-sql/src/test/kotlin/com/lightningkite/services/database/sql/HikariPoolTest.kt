@@ -9,7 +9,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.modules.EmptySerializersModule
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
+import org.jetbrains.exposed.v1.jdbc.transactions.inTopLevelSuspendTransaction
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -77,7 +77,7 @@ class HikariPoolBehaviorTest {
             // briefly; the pool must serialize them rather than exhaust/fail.
             val jobs = (1..6).map {
                 async(Dispatchers.IO) {
-                    newSuspendedTransaction(Dispatchers.IO, db = pooled.database) {
+                    inTopLevelSuspendTransaction(db = pooled.database) {
                         exec("SELECT 1")
                         val now = concurrent.incrementAndGet()
                         peak.updateAndGet { maxOf(it, now) }
@@ -104,7 +104,7 @@ class HikariPoolBehaviorTest {
             pooled("disconnectClose", maxPoolSize = 3)
         }
         // Force the lazy pool to materialize and run a real operation.
-        db.collection<LargeTestModel>("x").insertOne(LargeTestModel())
+        db.prepare(DatabaseTableDefinition<LargeTestModel>("x")).insertOne(LargeTestModel())
         val dataSource = db.materializePool().dataSource
         assertTrue(dataSource != null && !dataSource.isClosed, "Pool should be open after use")
 
@@ -115,6 +115,7 @@ class HikariPoolBehaviorTest {
     @Test
     fun memDatabaseBypassesPoolByDefault() {
         // Registered sql-h2 mem URL: pooling must be bypassed (single connection).
+        @Suppress("UNUSED_EXPRESSION")
         SqlDatabase.Companion // force class-load so the URL scheme handlers register
         val pooled = (com.lightningkite.services.database.Database.Settings("sql-h2://mem:bypassTest")
             .invoke("test", TestSettingContext(EmptySerializersModule())) as SqlDatabase)
@@ -128,6 +129,7 @@ class HikariPoolBehaviorTest {
 
     @Test
     fun sqliteBypassesPoolByDefault() {
+        @Suppress("UNUSED_EXPRESSION")
         SqlDatabase.Companion // force class-load so the URL scheme handlers register
         val pooled = (com.lightningkite.services.database.Database.Settings("sql-sqlite://:memory:")
             .invoke("test", TestSettingContext(EmptySerializersModule())) as SqlDatabase)

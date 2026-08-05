@@ -64,7 +64,7 @@ public fun <A> SerializableProperty<*, A>.toPartialEntry(value: A): Any? =
 
 @Suppress("UNCHECKED_CAST")
 public class PartialBuilder<T>(public val partial: Partial<T> = Partial()) {
-    public inline infix fun <A> DataClassPath<T, A>.assign(value: A) {
+    public infix fun <A> DataClassPath<T, A>.assign(value: A) {
         var target: Partial<Any> = partial as Partial<Any>
         val props = properties
         for (prop in props.dropLast(1)) {
@@ -74,7 +74,7 @@ public class PartialBuilder<T>(public val partial: Partial<T> = Partial()) {
         target.parts[last] = last.toPartialEntry(value)
     }
 
-    public inline infix fun <A> DataClassPath<T, A>.assign(value: Partial<A>) {
+    public infix fun <A> DataClassPath<T, A>.assign(value: Partial<A>) {
         var target: Partial<Any> = partial as Partial<Any>
         val props = properties
         for (prop in props.dropLast(1)) {

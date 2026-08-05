@@ -80,6 +80,32 @@ import kotlinx.serialization.KSerializer
  *
  * This is memory-efficient for large result sets.
  *
+ * ## Atomicity
+ *
+ * **Only row-level atomicity is guaranteed.** A single-row operation — [updateOne],
+ * [updateOneIgnoringResult], [replaceOne], [replaceOneIgnoringResult], [deleteOne],
+ * [deleteOneIgnoringOld] — is atomic with respect to the one row it affects. Every
+ * implementation must satisfy this, and the shared test suite enforces it.
+ *
+ * Nothing spanning more than one row is atomic. [updateMany], [deleteMany], their
+ * `Ignoring` variants, and a multi-model [insert] may be observed part-way through by a
+ * concurrent reader, and may leave some rows changed if they fail part-way. Do not treat
+ * them as all-or-nothing.
+ *
+ * [updateOne] is additionally the only operation that atomically *observes* the row it
+ * changes: it returns the pre-modification row as part of the same atomic act. That makes
+ * it the only safe primitive for compare-and-swap and claim patterns — express the
+ * expected state as part of the `condition`, and a non-null result means you won the race.
+ *
+ * Two consequences worth internalizing:
+ *
+ * - [EntryChange.new] is computed on the client by applying the modification to the row
+ *   that was read; it is a prediction, not an observation. Only [EntryChange.old] reflects
+ *   what the database actually held. Under contention a later read may disagree with `new`.
+ * - [upsertOne] is *not* covered by the row-level guarantee. It has no single row to be
+ *   atomic about until it decides whether to insert, and implementations differ in how
+ *   they resolve a concurrent insert of the same key.
+ *
  * ## Important Gotchas
  *
  * - **Ordering**: Without orderBy, result order is database-dependent
@@ -189,6 +215,10 @@ public interface Table<Model : Any> {
 
     /**
      * Replaces a single item via a condition.
+     *
+     * [model] must carry the same id as the row it replaces. Re-keying a row is not a replace, and
+     * backends do not agree on it — MongoDB rejects any update that would alter `_id` outright.
+     *
      * @return The old and new items.
      */
     public suspend fun replaceOne(
@@ -209,6 +239,11 @@ public interface Table<Model : Any> {
 
     /**
      * Inserts an item if it doesn't exist, but otherwise modifies it.
+     *
+     * Not covered by the row-level atomicity guarantee: there is no row to be atomic about
+     * until the insert-or-update decision is made, and implementations differ in how they
+     * resolve a concurrent insert of the same key. See the atomicity section on [Table].
+     *
      * @return The old and new items.
      */
     public suspend fun upsertOne(
@@ -229,7 +264,13 @@ public interface Table<Model : Any> {
 
     /**
      * Updates a single item in the collection.
-     * @return The old and new items.
+     *
+     * Atomic with respect to the row it changes, and the only operation that atomically
+     * observes that row — see the atomicity section on [Table]. Put the state you expect
+     * into [condition] and a non-null [EntryChange.old] means you won the race.
+     *
+     * @return The old and new items. [EntryChange.new] is computed on the client, so it is a
+     * prediction of the resulting row rather than a read of it.
      */
     public suspend fun updateOne(
         condition: Condition<Model>,
@@ -250,6 +291,10 @@ public interface Table<Model : Any> {
 
     /**
      * Updates many items in the collection.
+     *
+     * Not atomic as a whole — only each individual row is. A concurrent reader may observe
+     * this part-way through. See the atomicity section on [Table].
+     *
      * @return The changes made to the collection.
      */
     public suspend fun updateMany(
@@ -287,6 +332,12 @@ public interface Table<Model : Any> {
 
     /**
      * Deletes many items from the collection.
+     *
+     * Not atomic as a whole — only each individual row is. Two concurrent callers matching
+     * the same rows may both be returned the same row even though only one deleted it, so
+     * this is not a way to claim work. Use [deleteOne] for that. See the atomicity section
+     * on [Table].
+     *
      * @return The item removed from the collection.
      */
     public suspend fun deleteMany(

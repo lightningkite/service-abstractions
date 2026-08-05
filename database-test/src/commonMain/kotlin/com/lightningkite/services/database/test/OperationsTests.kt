@@ -11,7 +11,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_enumkey() = runTest {
-        val collection = database.table<HasWeirdMap>("test_enumkey")
+        val collection = database.prepare(DatabaseTableDefinition<HasWeirdMap>("test_enumkey"))
         val m = HasWeirdMap(map = mapOf(TestEnum.One to "1", TestEnum.Two to "2"))
         collection.insertOne(m)
         val result = collection.get(m._id)
@@ -20,7 +20,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_partials() = runTest {
-        val collection = database.table<LargeTestModel>("test_partials")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_partials"))
         var m = LargeTestModel(int = 42)
         collection.insertOne(m)
         val result = collection.findPartial(
@@ -32,7 +32,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_massUpdate() = runTest {
-        val collection = database.table<LargeTestModel>("test_massUpdate")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_massUpdate"))
         val basis = (0..100).map { LargeTestModel(int = it) }
         collection.insert(basis)
         val cond = condition<LargeTestModel> { it.int gt 50 }
@@ -46,7 +46,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_replace() = runTest {
-        val collection = database.table<LargeTestModel>("test_replace")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_replace"))
         var m = LargeTestModel()
         collection.insertOne(m)
         try {
@@ -60,7 +60,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_wackyUpsert() = runTest {
-        val collection = database.table<LargeTestModel>("test_wackyUpsert")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_wackyUpsert"))
         var m = LargeTestModel(int = 2, byte = 1)
         var updated = collection.upsertOne(condition { it._id eq m._id }, modification { it.boolean assign true }, m)
         assertEquals(null, updated.old)
@@ -79,7 +79,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_normalUpsert() = runTest {
-        val collection = database.table<LargeTestModel>("test_normalUpsert")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_normalUpsert"))
         var m = LargeTestModel(int = 2, boolean = true)
         var updated = collection.upsertOne(condition { it._id eq m._id }, modification { it.boolean assign true }, m)
         assertEquals(null, updated.old)
@@ -98,7 +98,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_modUpsert() = runTest {
-        val collection = database.table<LargeTestModel>("test_modUpsert")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_modUpsert"))
         var m = LargeTestModel(int = 2, boolean = true, byte = 1)
         var updated = collection.upsertOne(condition { it._id eq m._id }, modification { it.byte plusAssign 1 }, m)
         assertEquals(null, updated.old)
@@ -125,7 +125,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_wackyUpsertIgnoring() = runTest {
-        val collection = database.table<LargeTestModel>("test_wackyUpsertIgnoring")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_wackyUpsertIgnoring"))
         var m = LargeTestModel(int = 2)
         var updated = collection.upsertOneIgnoringResult(
             condition { it._id eq m._id },
@@ -142,7 +142,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_normalUpsertIgnoring() = runTest {
-        val collection = database.table<LargeTestModel>("test_normalUpsertIgnoring")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_normalUpsertIgnoring"))
         var m = LargeTestModel(int = 2, boolean = true)
         var updated = collection.upsertOneIgnoringResult(
             condition { it._id eq m._id },
@@ -159,7 +159,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_modUpsertIgnoring() = runTest {
-        val collection = database.table<LargeTestModel>("test_modUpsert")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_modUpsert"))
         var m = LargeTestModel(int = 2, boolean = true, byte = 1)
         var updated =
             collection.upsertOneIgnoringResult(condition { it._id eq m._id }, modification { it.byte plusAssign 1 }, m)
@@ -173,7 +173,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_upsertOneById() = runTest {
-        val collection = database.table<LargeTestModel>("test_upsertOneById")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_upsertOneById"))
         var m = LargeTestModel(int = 2, boolean = true)
         var updated = collection.upsertOneById(m._id, m)
         assertEquals(null, updated.old)
@@ -186,7 +186,7 @@ abstract class OperationsTests() {
     }
 
 //    @Test fun test_concurrency() = runTest {
-//        fun collection() = database.table<LargeTestModel>("test_concurrency")
+//        fun collection() = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_concurrency"))
 //        val operations = (1..1000).map { modification<LargeTestModel> { it.int assign Random.nextInt() } }
 //        var m = LargeTestModel(int = 2, boolean = true)
 //        val opCount = AtomicInteger(0)
@@ -212,7 +212,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_compounds() = runTest {
-        fun collection() = database.table<CompoundKeyTestModel>("test_compounds")
+        suspend fun collection() = database.prepare(DatabaseTableDefinition<CompoundKeyTestModel>("test_compounds"))
         collection().insertOne(CompoundKeyTestModel(CompoundTestKey("A", "B")))
         collection().insertOne(CompoundKeyTestModel(CompoundTestKey("A", "C")))
         collection().insertOne(CompoundKeyTestModel(CompoundTestKey("C", "B")))
@@ -227,7 +227,7 @@ abstract class OperationsTests() {
 
     @Test
     fun test_compoundUpdate() = runTest {
-        fun collection() = database.table<CompoundKeyTestModel>("test_compoundUpdate")
+        suspend fun collection() = database.prepare(DatabaseTableDefinition<CompoundKeyTestModel>("test_compoundUpdate"))
         collection().insertOne(CompoundKeyTestModel(CompoundTestKey("A", "B")))
         collection().updateOne(condition {
             it._id.eq(CompoundTestKey("A", "B")) and it._id.first.eq("A")

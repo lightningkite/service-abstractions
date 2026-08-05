@@ -13,6 +13,7 @@ dependencies {
     api(libs.exposed.core)
     api(libs.exposed.javaTime)
     api(libs.exposed.jdbc)
+    api(libs.exposed.migrationJdbc)
     api(libs.postgresql)
     api(libs.hikariCP)
 
@@ -29,7 +30,6 @@ kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
         optIn.add("kotlin.uuid.ExperimentalUuidApi")
-        freeCompilerArgs.set(listOf("-Xcontext-parameters"))
     }
     explicitApi()
 }

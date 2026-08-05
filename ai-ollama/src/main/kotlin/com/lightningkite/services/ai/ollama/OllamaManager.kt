@@ -14,7 +14,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.LineEnding
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -212,7 +213,7 @@ public class OllamaManager(
             }
             val channel = response.bodyAsChannel()
             while (!channel.isClosedForRead) {
-                val line = channel.readUTF8Line() ?: break
+                val line = channel.readLine(LineEnding.Lenient) ?: break
                 if (line.isBlank()) continue
                 try {
                     val progress = json.decodeFromString(OllamaPullProgress.serializer(), line)

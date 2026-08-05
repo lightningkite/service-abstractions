@@ -15,7 +15,7 @@ kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
         optIn.add("kotlin.uuid.ExperimentalUuidApi")
-        freeCompilerArgs.set(listOf("-Xcontext-parameters", "-Xexpect-actual-classes"))
+        freeCompilerArgs.set(listOf("-Xexpect-actual-classes"))
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
@@ -42,7 +42,7 @@ kotlin {
                 compilerOptions {
                     optIn.add("kotlin.time.ExperimentalTime")
                     optIn.add("kotlin.uuid.ExperimentalUuidApi")
-                    freeCompilerArgs.set(listOf("-Xcontext-parameters", "-Xexpect-actual-classes"))
+                    freeCompilerArgs.set(listOf("-Xexpect-actual-classes"))
                 }
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
@@ -56,7 +56,7 @@ kotlin {
                 compilerOptions {
                     optIn.add("kotlin.time.ExperimentalTime")
                     optIn.add("kotlin.uuid.ExperimentalUuidApi")
-                    freeCompilerArgs.set(listOf("-Xcontext-parameters", "-Xexpect-actual-classes"))
+                    freeCompilerArgs.set(listOf("-Xexpect-actual-classes"))
                 }
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }

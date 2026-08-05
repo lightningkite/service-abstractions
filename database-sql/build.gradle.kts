@@ -17,6 +17,7 @@ dependencies {
     api(libs.exposed.core)
     api(libs.exposed.javaTime)
     api(libs.exposed.jdbc)
+    api(libs.exposed.migrationJdbc)
     api(libs.hikariCP)
     testImplementation("com.h2database:h2:2.2.224")
     // SQLite JDBC driver is consumer-provided at runtime; needed here to exercise the sql-sqlite scheme.
@@ -31,7 +32,7 @@ dependencies {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
-        optIn.add("kotlin.uuid.ExperimentalUuidApi"); freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     explicitApi()
     sourceSets.main {

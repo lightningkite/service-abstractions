@@ -3,6 +3,7 @@ package com.lightningkite.services.ai.test
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.inference
+import com.lightningkite.services.ai.userMessage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assume
 import kotlin.test.Test
@@ -49,7 +50,7 @@ public abstract class CachingTests : LlmAccessTests() {
         val prompt = LlmPrompt(
             systemPrompt = listOf(LlmPart.Text(longSystemContent)),
             messages = listOf(
-                userText("Respond with only the word PONG.").copy(cacheBoundary = true),
+                userMessage("Respond with only the word PONG.").copy(cacheBoundary = true),
             ),
             maxTokens = testMaxTokens ?: 64,
             temperature = 0.0,

@@ -19,7 +19,6 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
-import kotlinx.datetime.Instant
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +28,8 @@ import kotlinx.serialization.json.*
 import org.crac.*
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 private val logger = KotlinLogging.logger {}
@@ -193,7 +194,7 @@ internal class OpenAIVoiceAgentSession(
     private val json: Json,
     private val serializersModule: kotlinx.serialization.modules.SerializersModule,
     private val metrics: VoiceAgentMetrics,
-    private val clock: kotlinx.datetime.Clock,
+    private val clock: Clock,
 ) : VoiceAgentSession {
 
     override val sessionId: String = Uuid.random().toString()
@@ -584,8 +585,10 @@ internal class OpenAIVoiceAgentSession(
 
     private suspend fun sendSessionUpdate(config: VoiceAgentSessionConfig) {
         // Cast to List<Any> first to handle both LlmToolDescriptor (v2) and SerializableToolDescriptor
-        // (v1-compiled code) without a ClassCastException on element access.
-        @Suppress("UNCHECKED_CAST")
+        // (v1-compiled code) without a ClassCastException on element access. The SerializableToolDescriptor
+        // branch is a required backward-compat path for callers still compiled against the deprecated v1
+        // API, so DEPRECATION is suppressed here rather than migrated away.
+        @Suppress("UNCHECKED_CAST", "DEPRECATION")
         val tools = (config.tools as List<Any>).mapNotNull { tool ->
             when (tool) {
                 is com.lightningkite.services.ai.LlmToolDescriptor<*> -> tool.toOpenAIToolDefinition(serializersModule)

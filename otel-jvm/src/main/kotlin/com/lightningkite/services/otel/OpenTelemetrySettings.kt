@@ -263,6 +263,10 @@ public data class OpenTelemetrySettings(
         )
     }
 
+    // The companion registers factories that construct and consume this same deprecated class, so
+    // every reference to OpenTelemetrySettings below is self-referential deprecation noise; suppressed
+    // narrowly rather than migrating (the class itself is what's being kept for backward compatibility).
+    @Suppress("DEPRECATION")
     public companion object : HasUrlSettingParser<OpenTelemetrySettings, OpenTelemetry>() {
         init {
 //            this.register("none") { _, _, _ -> null}
@@ -578,6 +582,9 @@ public data class OpenTelemetrySettings(
         "com.lightningkite.services.TelemetryBackend",
     ),
 )
+// Deprecated function bridging the deprecated OpenTelemetrySettings to OtelTelemetryBackend; its own
+// deprecation doesn't suppress warnings from referencing OpenTelemetrySettings in its signature/body.
+@Suppress("DEPRECATION")
 public fun OpenTelemetrySettings.telemetryBackend(name: String, context: SettingContext): OtelTelemetryBackend =
     OtelTelemetryBackend(invoke(name, context))
 

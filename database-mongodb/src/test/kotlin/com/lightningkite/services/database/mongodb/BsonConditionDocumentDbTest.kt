@@ -41,7 +41,7 @@ class BsonConditionDocumentDbTest {
         val regexValue = stringDoc["\$regex"]
 
         assertIs<BsonRegularExpression>(regexValue, "Expected BsonRegularExpression, got ${regexValue?.javaClass}")
-        val bsonRegex = regexValue as BsonRegularExpression
+        val bsonRegex = regexValue
         assertTrue(bsonRegex.options.contains("i"), "Expected case-insensitive flag in regex options")
         assertNull(stringDoc["\$options"], "Must NOT have a separate \$options field — DocumentDB 5.0+ rejects it")
     }
@@ -55,7 +55,7 @@ class BsonConditionDocumentDbTest {
         val regexValue = stringDoc["\$regex"]
 
         assertIs<BsonRegularExpression>(regexValue)
-        val bsonRegex = regexValue as BsonRegularExpression
+        val bsonRegex = regexValue
         assertFalse(bsonRegex.options.contains("i"), "Should not have case-insensitive flag")
         assertNull(stringDoc["\$options"], "Must NOT have a separate \$options field")
     }

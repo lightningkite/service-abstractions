@@ -19,7 +19,9 @@ import kotlin.time.Duration.Companion.seconds
 class MemcachedCacheEdgeCaseTest {
 
     init {
-        // Trigger companion object initialization
+        // Trigger companion object initialization; the bare reference is the point of
+        // this line (it registers the memcached:// URL scheme).
+        @Suppress("UNUSED_EXPRESSION")
         MemcachedCache
     }
 

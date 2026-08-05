@@ -70,7 +70,7 @@ class FileObjectOperationsTest {
         file.put(TypedData(Data.Text("Content"), MediaType.Text.Plain))
 
         // List should not include .contenttype files
-        val files = testDir.list() ?: emptyList()
+        val files = testDir.list()
         assertTrue(files.any { it.name == "visible-file.txt" }, "Should include actual file")
         assertTrue(files.none { it.name.endsWith(".contenttype") }, "Should not include contenttype files")
 

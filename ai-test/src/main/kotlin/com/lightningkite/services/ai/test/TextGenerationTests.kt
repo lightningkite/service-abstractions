@@ -5,6 +5,8 @@ import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.inference
 import com.lightningkite.services.ai.plainText
+import com.lightningkite.services.ai.systemPrompt
+import com.lightningkite.services.ai.userMessage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assume
 import kotlin.test.Test
@@ -31,7 +33,7 @@ public abstract class TextGenerationTests : LlmAccessTests() {
         val result = service.inference(
             model = cheapModel,
             prompt = LlmPrompt(
-                messages = listOf(userText("Respond with only the word HELLO and nothing else.")),
+                messages = listOf(userMessage("Respond with only the word HELLO and nothing else.")),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
             ),
@@ -58,7 +60,7 @@ public abstract class TextGenerationTests : LlmAccessTests() {
             prompt = LlmPrompt(
                 systemPrompt = systemPrompt("Always respond in French. Never use any other language."),
                 messages = listOf(
-                    userText("What is the capital of France? Answer in one short sentence."),
+                    userMessage("What is the capital of France? Answer in one short sentence."),
                 ),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
@@ -96,7 +98,7 @@ public abstract class TextGenerationTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText(
+                    userMessage(
                         "Output three lines, each containing a single number: '1', '2', 'HALT'. " +
                             "Output exactly those three lines and nothing else.",
                     ),
@@ -130,7 +132,7 @@ public abstract class TextGenerationTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText("Write a long essay about the history of Rome, at least 500 words."),
+                    userMessage("Write a long essay about the history of Rome, at least 500 words."),
                 ),
                 maxTokens = 10,
                 temperature = 0.0,
@@ -167,7 +169,7 @@ public abstract class TextGenerationTests : LlmAccessTests() {
             model = cheapModel,
             prompt = LlmPrompt(
                 messages = listOf(
-                    userText("Solve: if 3x + 7 = 22, what is x? Show your reasoning step by step."),
+                    userMessage("Solve: if 3x + 7 = 22, what is x? Show your reasoning step by step."),
                 ),
                 maxTokens = testMaxTokens,
                 temperature = 0.0,
@@ -201,7 +203,7 @@ public abstract class TextGenerationTests : LlmAccessTests() {
     public fun temperatureDeterminism(): Unit = runTest(timeout = 120.seconds) {
         skipIfServiceAbsent()
         val prompt = LlmPrompt(
-            messages = listOf(userText("In exactly one short sentence, define entropy.")),
+            messages = listOf(userMessage("In exactly one short sentence, define entropy.")),
             maxTokens = testMaxTokens,
             temperature = 0.0,
         )

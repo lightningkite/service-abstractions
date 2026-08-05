@@ -132,6 +132,46 @@ class MondodbInlineTests : InlinePropertiesTests() {
     }
 }
 
+class MongodbSingleRowOperationTests : SingleRowOperationTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MongodbReturnContractTests : ReturnContractTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MongodbPaginationTests : PaginationTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MongodbScaleAndBoundaryTests : ScaleAndBoundaryTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
+class MongodbConcurrencyTests : ConcurrencyTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
 class MongodbVectorSearchTests : VectorSearchTests() {
     override val database: Database = vectorDb()
 

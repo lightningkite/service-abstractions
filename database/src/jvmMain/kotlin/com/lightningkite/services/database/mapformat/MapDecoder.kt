@@ -3,6 +3,7 @@
 
 package com.lightningkite.services.database.mapformat
 
+import com.lightningkite.services.database.isSelfReferential
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
@@ -17,15 +18,14 @@ import kotlinx.serialization.modules.SerializersModule
  * Handles value classes properly via decodeInline/decodeInlineElement,
  * reads flattened embedded structs, and delegates collection handling to CollectionHandler.
  *
- * by Claude - Uses seenStack to detect self-referential types. When a type is already on
- * the stack, the field value is expected to be a JSON string and will be decoded as such.
+ * by Claude - Uses [SerialDescriptor.isSelfReferential] to detect types that can contain instances of
+ * themselves. Such a value's field is expected to hold a JSON string in full (checked up front, not
+ * only on re-entry - see [MapEncoder]) and is decoded as such.
  */
 @OptIn(ExperimentalSerializationApi::class)
 public class MapDecoder(
     private val config: MapFormatConfig,
     private val input: ReadSource,
-    // by Claude - track types currently being deserialized to detect self-referential types
-    private val seenStack: MutableList<String> = mutableListOf(),
 ) : Decoder, CompositeDecoder {
 
     override val serializersModule: SerializersModule = config.serializersModule
@@ -49,8 +49,6 @@ public class MapDecoder(
 
     internal fun copyTagsFrom(other: MapDecoder) {
         tagStack.addAll(other.tagStack)
-        // by Claude - also copy seenStack to propagate self-referential type tracking
-        seenStack.addAll(other.seenStack)
     }
 
     // ========== Value Class (Inline) Support ==========
@@ -123,11 +121,12 @@ public class MapDecoder(
             return config.converters.fromDatabase(deserializer.descriptor, dbValue as Any)
         }
 
-        val serialName = deserializer.descriptor.serialName
-
-        // by Claude - detect self-referential types (types that contain instances of themselves)
-        // If we've already seen this type on the stack, it was encoded as JSON
-        if (deserializer.descriptor.kind == StructureKind.CLASS && seenStack.contains(serialName)) {
+        // by Claude - self-referential types (types that contain instances of themselves) were
+        // written in full as JSON by MapEncoder - see isSelfReferential's doc for why this must be
+        // checked up front rather than only on re-entry.
+        if (deserializer.descriptor.kind == StructureKind.CLASS &&
+            deserializer.descriptor.isSelfReferential(config.serializersModule)
+        ) {
             return decodeFromJson(deserializer)
         }
 
@@ -138,19 +137,7 @@ public class MapDecoder(
             return decodeFromJson(deserializer)
         }
 
-        // by Claude - track CLASS types on the seenStack to detect self-referential nesting
-        if (deserializer.descriptor.kind == StructureKind.CLASS) {
-            seenStack.add(serialName)
-        }
-
-        val result = deserializer.deserialize(this)
-
-        // by Claude - remove from seenStack after deserializing
-        if (deserializer.descriptor.kind == StructureKind.CLASS) {
-            seenStack.removeLastOrNull()
-        }
-
-        return result
+        return deserializer.deserialize(this)
     }
 
     // ========== Structures ==========

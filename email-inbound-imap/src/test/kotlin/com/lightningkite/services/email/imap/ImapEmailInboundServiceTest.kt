@@ -24,7 +24,9 @@ class ImapEmailInboundServiceTest {
     private val smtpPort = 3025
 
     init {
-        // Ensure companion object init block runs to register URL handlers
+        // Referencing ImapEmailInboundService triggers its companion init block, which registers
+        // the imap/imaps URL schemes. The reference itself is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         ImapEmailInboundService
     }
 

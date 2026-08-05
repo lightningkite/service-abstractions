@@ -1,7 +1,6 @@
 package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryAttributesBuilder
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
@@ -45,18 +44,17 @@ public class JsonFileTable<Model : Any>(
 
     override val name: String get() = tableName
 
-    private fun baseAttributes(operation: String): TelemetryAttributes = TelemetryAttributes {
-        put(Database.TelemetryKeys.system, "jsonfile")
-        put(Database.TelemetryKeys.operation, operation)
-        put(Database.TelemetryKeys.collection, tableName)
-    }
-
     private suspend inline fun <R> traced(
         operation: String,
-        noinline extraBlock: (TelemetryAttributesBuilder.() -> Unit)? = null,
+        crossinline extraBlock: TelemetryAttributes.Builder.() -> Unit = {},
         noinline block: suspend (TelemetryTrace) -> R,
     ): R {
-        val attrs = if (extraBlock != null) TelemetryAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
+        val attrs = TelemetryAttributes {
+            put(Database.TelemetryKeys.system, "jsonfile")
+            put(Database.TelemetryKeys.operation, operation)
+            put(Database.TelemetryKeys.collection, tableName)
+            extraBlock()
+        }
         return telemetryTrace(operation, attributes = attrs, action = block)
     }
 

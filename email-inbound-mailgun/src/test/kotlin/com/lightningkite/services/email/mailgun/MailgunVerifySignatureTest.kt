@@ -1,6 +1,9 @@
+@file:OptIn(Untested::class)
+
 package com.lightningkite.services.email.mailgun
 
 import com.lightningkite.services.TestSettingContext
+import com.lightningkite.services.Untested
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.test.Test

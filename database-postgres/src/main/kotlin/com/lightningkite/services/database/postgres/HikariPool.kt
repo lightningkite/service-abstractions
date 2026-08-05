@@ -2,7 +2,7 @@ package com.lightningkite.services.database.postgres
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
-import org.jetbrains.exposed.sql.Database
+import org.jetbrains.exposed.v1.jdbc.Database
 
 /**
  * A live Exposed [Database] together with the [HikariDataSource] backing it.

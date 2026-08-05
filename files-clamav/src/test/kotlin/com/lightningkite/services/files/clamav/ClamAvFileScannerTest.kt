@@ -17,6 +17,9 @@ class ClamAvFileScannerTest {
             println("Could not find clamav on this machine.  Exiting.")
             return@runBlocking
         }
+        // Force the clamav:// URL scheme to register before constructing Settings.
+        // The bare reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         ClamAvFileScanner
         val x = FileScanner.Settings("clamav://localhost/UNIX")("test", TestSettingContext())
         x.scan(TypedData.text("Some sample text", MediaType.Text.Plain))

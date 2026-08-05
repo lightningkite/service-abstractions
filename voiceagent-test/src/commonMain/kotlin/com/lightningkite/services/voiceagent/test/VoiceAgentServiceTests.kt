@@ -65,7 +65,7 @@ public abstract class VoiceAgentServiceTests {
         }
 
         assertIs<VoiceAgentEvent.SessionCreated>(event)
-        assertEquals(session.sessionId, (event as VoiceAgentEvent.SessionCreated).sessionId)
+        assertEquals(session.sessionId, event.sessionId)
 
         session.close()
     }

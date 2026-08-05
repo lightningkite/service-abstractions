@@ -7,7 +7,7 @@ import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.modules.EmptySerializersModule
-import org.jetbrains.exposed.sql.Database
+import org.jetbrains.exposed.v1.jdbc.Database
 import org.junit.ClassRule
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -57,7 +57,7 @@ class PostgresLogLeakTest {
 
     @Test
     fun queryPathDoesNotLeakToStdout() = runTest {
-        val collection = database.table<LargeTestModel>("PostgresLogLeakTest")
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("PostgresLogLeakTest"))
         val model = LargeTestModel(int = 42, string = "leak-canary")
         collection.insertOne(model)
 

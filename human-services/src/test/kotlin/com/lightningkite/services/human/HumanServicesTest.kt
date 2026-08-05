@@ -176,9 +176,16 @@ class HumanServicesTest {
 
     @Test
     fun urlSchemeRegistration() {
+        // Force each class to load so its companion init block registers the
+        // "human://" URL scheme on the corresponding Settings. The bare references
+        // are the point of these lines.
+        @Suppress("UNUSED_EXPRESSION")
         HumanSmsInboundService.Companion
+        @Suppress("UNUSED_EXPRESSION")
         HumanEmailInboundService.Companion
+        @Suppress("UNUSED_EXPRESSION")
         HumanSmsService.Companion
+        @Suppress("UNUSED_EXPRESSION")
         HumanEmailService.Companion
 
         val sms = SmsInboundService.Settings("human://localhost:0")("url-sms", context)

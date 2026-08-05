@@ -147,9 +147,7 @@ public class DynamoDbPubSub(
                                 } else DefaultCredentialsProvider.builder().build()
                             )
                             .httpClient(context[AwsConnections].asyncClient)
-                            .apply {
-                                context[AwsConnections].clientOverrideConfiguration?.let { overrideConfiguration(it) }
-                            }
+                            .overrideConfiguration(context[AwsConnections].clientOverrideConfiguration)
                             .region(Region.of(region))
                             .build()
                     },

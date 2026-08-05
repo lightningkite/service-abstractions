@@ -390,7 +390,9 @@ class AnthropicWireTest {
     @Test
     fun urlSchemeRegistersAndInstantiates() {
         // Referencing the companion triggers the init block, which registers the
-        // `anthropic://` scheme on LlmAccess.Settings.
+        // `anthropic://` scheme on LlmAccess.Settings. The reference itself is the point
+        // of this line, so the unused-expression warning is expected and suppressed.
+        @Suppress("UNUSED_EXPRESSION")
         AnthropicLlmAccess
         assertTrue(
             com.lightningkite.services.ai.LlmAccess.Settings.supports("anthropic"),

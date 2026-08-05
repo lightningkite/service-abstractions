@@ -17,6 +17,9 @@ import kotlin.time.Duration.Companion.seconds
 @Ignore
 class DynamoTest : CacheTest() {
     init {
+        // Force class init so DynamoDbCache's companion registers the URL scheme;
+        // the bare reference is the point of this line.
+        @Suppress("UNUSED_EXPRESSION")
         DynamoDbCache
     }
 

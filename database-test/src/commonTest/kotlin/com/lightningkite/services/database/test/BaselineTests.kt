@@ -42,6 +42,55 @@ class RamVectorSearchTests : VectorSearchTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
 
+class RamSingleRowOperationTests : SingleRowOperationTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
+class RamIndexTests : IndexTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
+class RamReturnContractTests : ReturnContractTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
+class RamPaginationTests : PaginationTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
+class RamScaleAndBoundaryTests : ScaleAndBoundaryTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
+class RamConcurrencyTests : ConcurrencyTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
+
+class RamConformanceTest {
+    @Test
+    fun coversEverySharedSuite() {
+        assertConformanceSuitesCovered(
+            driver = "InMemoryDatabase",
+            covered = listOf(
+                "AggregationsTest",
+                "ConcurrencyTests",
+                "ConditionTests",
+                "IndexTests",
+                "InlinePropertiesTests",
+                "MetaTest",
+                "ModificationTests",
+                "OperationsTests",
+                "PaginationTests",
+                "ReturnContractTests",
+                "ScaleAndBoundaryTests",
+                "SingleRowOperationTests",
+                "SortTest",
+            ),
+        )
+    }
+}
+
 class MetadataTest {
     @Test
     fun check() {

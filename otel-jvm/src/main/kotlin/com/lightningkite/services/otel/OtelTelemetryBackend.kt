@@ -187,7 +187,7 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
                 setAttribute(AttributeKey.stringKey("exception.type"), throwable.javaClass.name)
                 throwable.message?.let { setAttribute(AttributeKey.stringKey("exception.message"), it) }
                 setAttribute(AttributeKey.stringKey("exception.stacktrace"), throwable.stackTraceToString())
-                for ((key, value) in attributes.map) if (value != null) setAttribute(AttributeKey.stringKey(key.name), value.toString())
+                for ((key, value) in attributes.map) setAttribute(AttributeKey.stringKey(key.name), value.toString())
             }
             .emit()
     }
@@ -382,7 +382,7 @@ private class OtelTelemetryTrace(private val span: Span, private val logger: org
 
     override fun log(level: LogLevel, message: String, attributes: TelemetryAttributes) {
         var builder = logger.atLevel(level.toSlf4j())
-        for ((key, value) in attributes.map) builder = builder.addKeyValue(key.name, value?.toString() ?: "null")
+        for ((key, value) in attributes.map) builder = builder.addKeyValue(key.name, value.toString())
         builder.log(message)
     }
 }

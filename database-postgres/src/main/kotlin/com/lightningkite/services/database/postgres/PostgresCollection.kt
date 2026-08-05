@@ -1,7 +1,6 @@
 package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryAttributesBuilder
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
@@ -14,12 +13,19 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.modules.SerializersModule
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.SchemaUtils.statementsRequiredToActualizeScheme
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
+import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.exceptions.ExposedSQLException
+import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.transactions.inTopLevelSuspendTransaction
 import java.sql.Connection.TRANSACTION_READ_COMMITTED
 import java.sql.Connection.TRANSACTION_SERIALIZABLE
+
+// Aggregates come back from SQL as NUMERIC with a fixed scale, and this abstraction hands callers a
+// Double. A scale of 8 silently truncated every result far below what a Double can represent — the
+// sample standard deviation of 0..9 came back as 3.02765035 instead of 3.0276503540974917. The scale
+// now exceeds a Double's ~17 significant digits, so the only narrowing is the final toDouble().
+private const val AGGREGATE_SCALE = 20
 
 public class PostgresCollection<T : Any>(
     public val db: Database,
@@ -32,6 +38,12 @@ public class PostgresCollection<T : Any>(
 
     private val table = SerialDescriptorTable(name, serializersModule, serializer.descriptor)
 
+    /**
+     * The Exposed table backing this collection. Exposed's schema tooling works on it directly —
+     * see [migrationStatements].
+     */
+    public val exposedTables: List<org.jetbrains.exposed.v1.core.Table> get() = listOf(table)
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
     /** Cancels the internal scope, releasing the prepare job and its resources. Called by [PostgresDatabase.disconnect]. */
@@ -39,14 +51,16 @@ public class PostgresCollection<T : Any>(
         scope.cancel()
     }
 
-    private suspend inline fun <T> t(noinline action: suspend Transaction.() -> T): T =
-        newSuspendedTransaction(
-            Dispatchers.IO,
-            db = db,
-            transactionIsolation = TRANSACTION_READ_COMMITTED,
-            statement = {
-                action()
-            })
+    private suspend inline fun <T> t(noinline action: suspend JdbcTransaction.() -> T): T =
+        withContext(Dispatchers.IO) {
+            try {
+                inTopLevelSuspendTransaction(db = db, transactionIsolation = TRANSACTION_READ_COMMITTED) {
+                    action()
+                }
+            } catch (e: ExposedSQLException) {
+                throw e.asUniqueViolationOrNull(name) ?: e
+            }
+        }
 
     // Per-collection default span attributes shared by every operation.
     private fun baseAttributes(operation: String): TelemetryAttributes = TelemetryAttributes {
@@ -60,7 +74,7 @@ public class PostgresCollection<T : Any>(
     // hands the started span to [block] for dynamic per-result attributes.
     private suspend inline fun <R> traced(
         operation: String,
-        noinline extraBlock: (TelemetryAttributesBuilder.() -> Unit)? = null,
+        noinline extraBlock: (TelemetryAttributes.Builder.() -> Unit)? = null,
         noinline block: suspend (TelemetryTrace) -> R,
     ): R {
         val attrs = if (extraBlock != null) TelemetryAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
@@ -70,12 +84,32 @@ public class PostgresCollection<T : Any>(
     @OptIn(ExperimentalSerializationApi::class)
     internal val prepare = scope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
         t {
-//            MigrationUtils.statementsRequiredForDatabaseMigration
-            statementsRequiredToActualizeScheme(table).forEach {
+            additiveSchemaStatements(exposedTables).forEach {
                 exec(it)
             }
         }
     }
+
+    /**
+     * ORDER BY arguments for [orderBy]. Postgres defaults to NULLS LAST when ascending, but SortPart
+     * requires nulls to sort below every non-null value, so null placement is always stated explicitly.
+     */
+    @Suppress("UNCHECKED_CAST")
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun sortArguments(orderBy: List<SortPart<T>>): Array<Pair<Expression<*>, SortOrder>> =
+        Array(orderBy.size) { index ->
+            val part = orderBy[index]
+            val column = table.col[part.field.colName]!!
+            val expression: Expression<*> = if (
+                part.field.serializerAny.descriptor.kind == PrimitiveKind.STRING &&
+                serializationOverride(part.field.serializerAny.descriptor) == null
+            ) {
+                // TODO: Check database default collation to skip extra work
+                if (part.ignoreCase) (column as Column<String>).lowerCase()
+                else AsciiValue(column as Column<String>)
+            } else column
+            expression to if (part.ascending) SortOrder.ASC_NULLS_FIRST else SortOrder.DESC_NULLS_LAST
+        }
 
     override suspend fun find(
         condition: Condition<T>,
@@ -95,22 +129,7 @@ public class PostgresCollection<T : Any>(
             table
                 .selectAll()
                 .where { condition(condition, serializer, table, format).asOp() }
-                .orderBy(*orderBy.map {
-                    @Suppress("UNCHECKED_CAST")
-                    (
-                            if (it.field.serializerAny.descriptor.kind == PrimitiveKind.STRING && serializationOverride(
-                                    it.field.serializerAny.descriptor
-                                ) == null
-                            ) {
-                                // TODO: Check database default collation to skip extra work
-                                if (it.ignoreCase) (table.col[it.field.colName]!! as Column<String>).lowerCase()
-                                else AsciiValue(table.col[it.field.colName]!! as Column<String>)
-                            } else table.col[it.field.colName]!!
-                            // Postgres defaults to NULLS LAST ascending; SortPart requires nulls to
-                            // sort below every non-null value, so ask for the ordering explicitly.
-                            ) to if (it.ascending) SortOrder.ASC_NULLS_FIRST else SortOrder.DESC_NULLS_LAST
-                }
-                    .toTypedArray())
+                .orderBy(*sortArguments(orderBy))
                 .limit(limit).offset(skip.toLong())
                 .toList()
 //                .prep
@@ -170,9 +189,9 @@ public class PostgresCollection<T : Any>(
             val valueCol = table.col[property.colName] as Column<Double>
             val agg = when (aggregate) {
                 Aggregate.Sum -> Sum(valueCol, DoubleColumnType())
-                Aggregate.Average -> Avg(valueCol, 8)
-                Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, 8)
-                Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, 8)
+                Aggregate.Average -> Avg(valueCol, AGGREGATE_SCALE)
+                Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, AGGREGATE_SCALE)
+                Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, AGGREGATE_SCALE)
             }
             table.select(agg)
                 .where { condition(condition, serializer, table, format).asOp() }
@@ -202,9 +221,9 @@ public class PostgresCollection<T : Any>(
             val valueCol = table.col[property.colName] as Column<Double>
             val agg = when (aggregate) {
                 Aggregate.Sum -> Sum(valueCol, DoubleColumnType())
-                Aggregate.Average -> Avg(valueCol, 8)
-                Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, 8)
-                Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, 8)
+                Aggregate.Average -> Avg(valueCol, AGGREGATE_SCALE)
+                Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, AGGREGATE_SCALE)
+                Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, AGGREGATE_SCALE)
             }
             table.select(groupCol, agg)
                 .where { condition(condition, serializer, table, format).asOp() }
@@ -245,7 +264,7 @@ public class PostgresCollection<T : Any>(
         modification: Modification<T>,
         model: T,
     ): EntryChange<T> {
-        return newSuspendedTransaction(db = db, transactionIsolation = TRANSACTION_SERIALIZABLE) {
+        return inTopLevelSuspendTransaction(db = db, transactionIsolation = TRANSACTION_SERIALIZABLE) {
             val existing = findOne(condition)
             if (existing == null) {
                 EntryChange(null, insert(listOf(model)).first())
@@ -259,7 +278,7 @@ public class PostgresCollection<T : Any>(
         modification: Modification<T>,
         model: T,
     ): Boolean {
-        return newSuspendedTransaction(db = db, transactionIsolation = TRANSACTION_SERIALIZABLE) {
+        return inTopLevelSuspendTransaction(db = db, transactionIsolation = TRANSACTION_SERIALIZABLE) {
             val existing = findOne(condition)
             if (existing == null) {
                 insert(listOf(model))
@@ -276,10 +295,10 @@ public class PostgresCollection<T : Any>(
     ): EntryChange<T> = traced(
         operation = "updateOne"
     ) { span ->
-        if (orderBy.isNotEmpty()) throw UnsupportedOperationException()
         val result = t {
             val old = table.updateReturningOld(
                 where = { condition(condition, serializer, table, format).asOp() },
+                orderBy = sortArguments(orderBy).toList(),
                 limit = 1,
                 body = {
                     it.modification(modification, serializer, table, format)
@@ -300,15 +319,18 @@ public class PostgresCollection<T : Any>(
     ): Boolean = traced(
         operation = "updateOneIgnoringResult"
     ) { span ->
-        if (orderBy.isNotEmpty()) throw UnsupportedOperationException()
+        // Routed through the same locked, ordered single-statement UPDATE as updateOne (rather than a
+        // plain Exposed `update`) so the claimed row is chosen and locked atomically; the returned old
+        // rows are only used to count matches, not decoded.
         val count = t {
-            table.update(
+            table.updateReturningOld(
                 where = { condition(condition, serializer, table, format).asOp() },
-                limit = null,
+                orderBy = sortArguments(orderBy).toList(),
+                limit = 1,
                 body = {
                     it.modification(modification, serializer, table, format)
                 }
-            )
+            ).count()
         }
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.updated, count.toLong()) })
         count > 0
@@ -321,7 +343,6 @@ public class PostgresCollection<T : Any>(
             val result = t {
                 val old = table.updateReturningOld(
                     where = { condition(condition, serializer, table, format).asOp() },
-                    limit = null,
                     body = {
                         it.modification(modification, serializer, table, format)
                     }
@@ -350,14 +371,22 @@ public class PostgresCollection<T : Any>(
         count
     }
 
+    /**
+     * Picks its row with `FOR UPDATE SKIP LOCKED`, so concurrent callers claim *different* rows
+     * instead of contending for the same one — which is what makes this usable as a work queue.
+     *
+     * The cost of that choice: a row locked by another in-flight transaction is passed over rather
+     * than waited for. When several rows match, another is taken and nothing is lost. When the
+     * condition targets one specific row and that row is momentarily locked, this reports no match
+     * even though the row exists. [updateOne] blocks instead, so the two are deliberately asymmetric.
+     */
     override suspend fun deleteOne(condition: Condition<T>, orderBy: List<SortPart<T>>): T? = traced(
         operation = "deleteOne"
     ) { span ->
-        if (orderBy.isNotEmpty()) throw UnsupportedOperationException()
         val result = t {
-            table.deleteReturningWhere(
-                limit = 1,
-                where = { condition(condition, serializer, table, format).asOp() }
+            table.deleteReturningOne(
+                where = { condition(condition, serializer, table, format).asOp() },
+                orderBy = sortArguments(orderBy).toList(),
             ).firstOrNull()?.let { format.decode(serializer, it) }
         }
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, if (result != null) 1L else 0L) })
@@ -367,12 +396,11 @@ public class PostgresCollection<T : Any>(
     override suspend fun deleteOneIgnoringOld(condition: Condition<T>, orderBy: List<SortPart<T>>): Boolean = traced(
         operation = "deleteOneIgnoringOld"
     ) { span ->
-        if (orderBy.isNotEmpty()) throw UnsupportedOperationException()
         val count = t {
-            table.deleteWhere(
-                limit = 1,
-                op = { it.condition(condition, serializer, table, format).asOp() }
-            )
+            table.deleteReturningOne(
+                where = { condition(condition, serializer, table, format).asOp() },
+                orderBy = sortArguments(orderBy).toList(),
+            ).count()
         }
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, count.toLong()) })
         count > 0
@@ -383,7 +411,7 @@ public class PostgresCollection<T : Any>(
     ) { span ->
         
         val result = t {
-            table.deleteReturningWhere(
+            table.deleteReturning(
                 where = { condition(condition, serializer, table, format).asOp() }
             ).map { format.decode(serializer, it) }
         }
@@ -397,7 +425,7 @@ public class PostgresCollection<T : Any>(
         
         val count = t {
             table.deleteWhere(
-                op = { it.condition(condition, serializer, table, format).asOp() }
+                op = { condition(condition, serializer, table, format).asOp() }
             )
         }
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.deleted, count.toLong()) })
