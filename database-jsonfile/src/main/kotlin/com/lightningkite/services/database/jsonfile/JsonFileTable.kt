@@ -41,18 +41,17 @@ public class JsonFileTable<Model : Any>(
 
     override val name: String get() = tableName
 
-    private fun baseAttributes(operation: String): TelemetryAttributes = TelemetryAttributes {
-        put(Database.TelemetryKeys.system, "jsonfile")
-        put(Database.TelemetryKeys.operation, operation)
-        put(Database.TelemetryKeys.collection, tableName)
-    }
-
     private suspend inline fun <R> traced(
         operation: String,
-        noinline extraBlock: (TelemetryAttributes.Builder.() -> Unit)? = null,
+        crossinline extraBlock: TelemetryAttributes.Builder.() -> Unit = {},
         noinline block: suspend (TelemetryTrace) -> R,
     ): R {
-        val attrs = if (extraBlock != null) TelemetryAttributes { putAll(baseAttributes(operation)); extraBlock() } else baseAttributes(operation)
+        val attrs = TelemetryAttributes {
+            put(Database.TelemetryKeys.system, "jsonfile")
+            put(Database.TelemetryKeys.operation, operation)
+            put(Database.TelemetryKeys.collection, tableName)
+            extraBlock()
+        }
         return telemetryTrace(operation, attributes = attrs, action = block)
     }
 

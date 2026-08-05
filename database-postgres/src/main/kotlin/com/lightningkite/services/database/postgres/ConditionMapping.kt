@@ -52,6 +52,7 @@ internal data class FieldSet2<V>(
 
     @Suppress("UNCHECKED_CAST")
     fun sub(property: SerializableProperty<V, *>): FieldSet2<Any?> {
+        // TODO: This is fugly, fix. Inline check can probably be made before matching filters.
         val matched = fields.filter { it.key == property.name || it.key.startsWith(property.name + "__") }
             .mapKeys { it.key.substringAfter(property.name).removePrefix("__") }
         // by Claude - SerialDescriptorTable flattens inline/value classes (e.g. `value class IntWrapper(val
@@ -491,14 +492,12 @@ private fun <T> FieldModifier.modification(
                     fieldSet as FieldSet2<List<Any?>>,
                     { f -> f.fields[it.key]!! },
                     {
-                        run {
-                            NotOp(
-                                condition(
-                                    modification.condition as Condition<Any?>,
-                                    it
-                                )
+                        NotOp(
+                            condition(
+                                modification.condition as Condition<Any?>,
+                                it
                             )
-                        }
+                        )
                     }) as Expression<Any?>
             }
         }

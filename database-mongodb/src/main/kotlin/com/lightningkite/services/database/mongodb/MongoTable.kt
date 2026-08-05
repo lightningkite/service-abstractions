@@ -8,6 +8,10 @@ import com.lightningkite.services.database.mongodb.bson.KBson
 import com.lightningkite.services.telemetry.telemetryTrace
 import com.mongodb.MongoCommandException
 import com.mongodb.client.model.*
+import com.mongodb.client.model.Aggregates
+import com.mongodb.client.model.Aggregates.match
+import com.mongodb.client.model.Filters
+import com.mongodb.client.model.Filters.ne
 import com.mongodb.kotlin.client.coroutine.MongoCollection
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -827,20 +831,6 @@ public class MongoTable<Model : Any>(
         }
     }
 
-    /**
-     * Whether a `_id: null` bucket from a `$group` stage on [groupBy] is a legitimate group (kept) or an
-     * artifact of [DataClassPath.get] returning `V?` regardless of `V`'s own nullability -- e.g.
-     * `embeddedNullable.notNull.value2` has declared value type `Int` but nulls out (and Mongo groups
-     * under `_id: null`) when the optional wrapper is absent (dropped). Same rule as the shared
-     * `DataClassPath.dropUnrepresentableNullGroup` helper (`serializer.descriptor.isNullable`), applied
-     * here to exclude the bucket from the pipeline before it's ever parsed: `KeyHolder.serializer` binds
-     * `_id` as [Key], and parsing a BSON null into a non-nullable field throws
-     * (`BsonInvalidOperationException: Invalid numeric type, found: NULL`, confirmed empirically) rather
-     * than producing something a post-parse filter could catch.
-     */
-    private fun <Key> DataClassPath<Model, Key>.excludeNullGroupStage(): List<Bson> =
-        if (serializer.descriptor.isNullable) emptyList() else listOf(Aggregates.match(Filters.ne("_id", null)))
-
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
@@ -852,7 +842,7 @@ public class MongoTable<Model : Any>(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
                     Aggregates.group("\$" + groupBy.mongo, Accumulators.sum("count", 1)),
-                ) + groupBy.excludeNullGroupStage()
+                ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(match(ne("_id", null)))
             )
                 .toList()
                 .associate {
@@ -907,7 +897,7 @@ public class MongoTable<Model : Any>(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
                     Aggregates.group("\$" + groupBy.mongo, aggregate.asValueBson(property.mongo)),
-                ) + groupBy.excludeNullGroupStage()
+                ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(match(ne("_id", null)))
             )
                 .toList()
                 .associate {
