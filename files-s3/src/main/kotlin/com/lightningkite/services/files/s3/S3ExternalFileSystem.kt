@@ -16,7 +16,6 @@ import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.telemetry.enrich
-import com.lightningkite.services.telemetry.telemetryAttributesOf
 import com.lightningkite.services.telemetry.telemetryTrace
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -218,7 +217,7 @@ public class S3ExternalFileSystem(
 
     private fun s3SpanAttrs(operation: String, unixPath: String): TelemetryAttributes = TelemetryAttributes {
         put(TelemetryKey.OfString("file.operation"), operation)
-        put(TelemetryKeys.Aws.s3Key, context.telemetrySanitization.sanitizeFilePathWithDepth(unixPath))
+        put(TelemetryKeys.Aws.s3Key, context.telemetrySanitization.sanitizeFilePath(unixPath))
         put(TelemetryKeys.Aws.s3Bucket, bucket)
         put(TelemetryKeys.Rpc.system, "aws.s3")
     }
@@ -399,7 +398,7 @@ public class S3ExternalFileSystem(
             putAll(s3SpanAttrs("copy", unixPath))
             put(
                 TelemetryKey.OfString("aws.s3.destination.key"),
-                if (otherSystem != null) context.telemetrySanitization.sanitizeFilePathWithDepth(unixPathOf(other.path))
+                if (otherSystem != null) context.telemetrySanitization.sanitizeFilePath(unixPathOf(other.path))
                 else context.telemetrySanitization.sanitizeFilePath(other.toString())
             )
             put(TelemetryKey.OfBoolean("file.copy.server_side"), isServerSideCopy)

@@ -36,14 +36,6 @@ class TelemetrySanitizationTest {
         assertEquals("secret.pdf", TelemetrySanitization.Strict.sanitizeFilePath("/users/john.doe/documents/secret.pdf"))
     }
 
-    @Test
-    fun sanitizeFilePathWithDepth_directoryStylePath_doesNotLeakOriginal() {
-        val path = "s3://bucket/customer-123/"
-        val result = TelemetrySanitization.Strict.sanitizeFilePathWithDepth(path)
-        assertNotEquals(path, result)
-        assertFalse(result.contains("customer-123"))
-    }
-
     // ── sanitizeUrl ────────────────────────────────────────────────────────
 
     @Test

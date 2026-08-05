@@ -11,7 +11,6 @@ public interface TelemetrySanitization {
     public fun sanitizeUrl(url: String): String
     public fun hashCacheKey(key: String): String
     public fun sanitizeFilePath(path: String): String
-    public fun sanitizeFilePathWithDepth(path: String): String
 
     /**
      * Scrubs credential-bearing connection URLs (e.g. `mongodb://user:pass@host`) that may be embedded
@@ -25,7 +24,6 @@ public interface TelemetrySanitization {
         override fun sanitizeUrl(url: String): String = url
         override fun hashCacheKey(key: String): String = key
         override fun sanitizeFilePath(path: String): String = path
-        override fun sanitizeFilePathWithDepth(path: String): String = path
         override fun sanitizeExceptionMessage(message: String): String = message
     }
     public object Strict: TelemetrySanitization {
@@ -106,15 +104,6 @@ public interface TelemetrySanitization {
             // the inputs this function exists to protect, so fall back to a fixed sentinel instead.
             return fileName.ifEmpty { "(root)" }
         }
-
-        /**
-         * Alias for [sanitizeFilePath]. There is no depth parameter on this function, so no
-         * depth-aware behavior can be implemented without an API change to callers outside this fix's
-         * scope (files/files-s3). Kept as a distinct method to avoid a breaking rename, but delegates
-         * to [sanitizeFilePath] so the two can't drift out of sync the way they previously did (both
-         * implementations shared the same unredacted-fallback bug).
-         */
-        override fun sanitizeFilePathWithDepth(path: String): String = sanitizeFilePath(path)
 
         // Matches a scheme + "://" + the following run of non-whitespace characters, i.e. a URL-shaped
         // token embedded anywhere in free text (an exception message, a stack trace line, ...).
