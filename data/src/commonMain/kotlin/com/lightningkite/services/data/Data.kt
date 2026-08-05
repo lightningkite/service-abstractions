@@ -50,7 +50,7 @@ public sealed interface Data : AutoCloseable {
 
     /** Write all bytes to a cooperative [SuspendingSink]. Does not close [to]. Consumes this instance. */
     public suspend fun writeTo(to: SuspendingSink) {
-        to.writeAll(Buffer().apply { write(bytes()) })
+        to.write(Buffer().apply { write(bytes()) })
     }
 
     override fun close() {}
@@ -64,7 +64,7 @@ public sealed interface Data : AutoCloseable {
             to.write(data)
         }
         public override suspend fun writeTo(to: SuspendingSink) {
-            to.writeAll(Buffer().also { it.write(data) })
+            to.write(Buffer().also { it.write(data) })
         }
     }
 
@@ -79,7 +79,7 @@ public sealed interface Data : AutoCloseable {
             to.writeString(data)
         }
         public override suspend fun writeTo(to: SuspendingSink) {
-            to.writeAll(Buffer().also { it.writeString(data) })
+            to.write(Buffer().also { it.writeString(data) })
         }
     }
 
@@ -128,7 +128,7 @@ public sealed interface Data : AutoCloseable {
                 source.use { s ->
                     val staging = Buffer()
                     while (s.readAtMostTo(staging, 8192) != -1L) {
-                        to.writeAll(staging)
+                        to.write(staging)
                     }
                 }
             }
@@ -167,7 +167,7 @@ public sealed interface Data : AutoCloseable {
         }
 
         public override suspend fun writeTo(to: SuspendingSink) {
-            checkNotConsumed(); withContext(ioDispatcher) { to.writeAll(Buffer().also { emit(it) }) }
+            checkNotConsumed(); withContext(ioDispatcher) { to.write(Buffer().also { emit(it) }) }
         }
 
         public override fun close() {}
@@ -211,6 +211,11 @@ public sealed interface Data : AutoCloseable {
             try { source.transferTo(to) } catch (e: Throwable) { source.cancel(e); throw e }
         }
 
+        /**
+         * Abandons the underlying source. Consuming this instance afterward throws rather than yielding an empty
+         * result — an abandoned stream is not an empty one, and quietly returning nothing is how a truncated body
+         * gets mistaken for a complete one.
+         */
         public override fun close() {
             source.cancel()
         }
@@ -232,8 +237,7 @@ public sealed interface Data : AutoCloseable {
 
         private suspend fun collect(): Buffer {
             val sink = BufferSuspendingSink()
-            emit(sink)
-            sink.close()
+            sink.use { emit(it) }
             return sink.buffer
         }
 
@@ -250,8 +254,9 @@ public sealed interface Data : AutoCloseable {
         }
 
         public override suspend fun write(to: kotlinx.io.Sink) {
-            // Do not close the caller's sink — closeUnderlying=false makes the producer's close only flush.
-            checkNotConsumed(); emit(to.asSuspendingSink(closeUnderlying = false))
+            // Do not close the caller's sink — with closeUnderlying=false, finishing flushes it and nothing more.
+            // Going through use() is what guarantees that flush happens even for a producer that never closes.
+            checkNotConsumed(); to.asSuspendingSink(closeUnderlying = false).use { emit(it) }
         }
 
         public override suspend fun writeTo(to: SuspendingSink) {
