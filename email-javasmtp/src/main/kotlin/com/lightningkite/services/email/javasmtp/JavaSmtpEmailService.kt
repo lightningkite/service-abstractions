@@ -175,17 +175,9 @@ public class JavaSmtpEmailService(
             put("mail.smtp.host", hostName)
             put("mail.smtp.port", port)
             put("mail.smtp.auth", username != null && password != null)
-            // TLS is required by default regardless of port — inferring it from the port number
-            // alone (the old behavior) meant any non-standard port (e.g. Mailtrap's 2525) silently
-            // sent credentials and message bodies in cleartext. Port 465 uses implicit SSL; every
-            // other port uses STARTTLS. requireTls=false is an explicit, deliberate opt-out.
-            // (Properties values must be Strings — java.util.Properties.getProperty() silently
-            // returns null for any other type, even though JavaMail's own PropUtil happens to
-            // tolerate raw booleans via a Hashtable.get() fallback; Strings are the documented,
-            // portable contract and what every property here should have been storing already.)
-            put("mail.smtp.ssl.enable", (requireTls && port == 465).toString())
-            put("mail.smtp.starttls.enable", (requireTls && port != 465).toString())
-            put("mail.smtp.starttls.required", (requireTls && port != 465).toString())
+            put("mail.smtp.ssl.enable", requireTls.toString())
+            put("mail.smtp.starttls.enable", requireTls.toString())
+            put("mail.smtp.starttls.required", requireTls.toString())
         },
         if (username != null && password != null)
             object : Authenticator() {

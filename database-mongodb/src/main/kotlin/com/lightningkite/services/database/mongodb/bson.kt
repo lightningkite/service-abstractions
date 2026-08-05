@@ -74,10 +74,6 @@ private fun <T> Condition<T>.dump(
         is Condition.Equal -> into.sub(key)["\$eq"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.NotEqual -> into.sub(key)["\$ne"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.SetAllElements<*> -> {
-            // Mirrors ListAllElements below: "all elements match condition" == NOT(some element does NOT
-            // match condition). Dumping `condition` directly (without this De Morgan negation) is wrong
-            // for compound And/Or inner conditions -- e.g. `$not: { $elemMatch: { $and: [...] } }` rejects
-            // any element that fails the whole And, not elements where the And doesn't hold overall.
             val innerSerializer = serializer.listElement()!! as KSerializer<Any?>
             val matchDoc = Document()
             (Condition.Not(condition as Condition<Any?>)).dump(
