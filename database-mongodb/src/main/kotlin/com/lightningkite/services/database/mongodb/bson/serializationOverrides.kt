@@ -14,8 +14,9 @@ import kotlin.time.Instant
 import kotlin.uuid.*
 
 @OptIn(ExperimentalSerializationApi::class)
-private val serializationOverrides = mapOf<SerialDescriptor, BsonConversion<*>>(
+internal val serializationOverrides = mapOf<SerialDescriptor, BsonConversion<*>>(
     Uuid.serializer().descriptor to object : BsonConversion<Uuid> {
+        override val bsonType: BsonType = BsonType.BINARY
         override fun toBson(value: Uuid): BsonBinary = BsonBinary(value.toJavaUuid())
         override fun toKotlin(value: BsonValue): Uuid = when (value.bsonType) {
             BsonType.STRING -> value.asString().value.let { Uuid.parse(it) }
@@ -25,6 +26,7 @@ private val serializationOverrides = mapOf<SerialDescriptor, BsonConversion<*>>(
         }
     },
     Instant.serializer().descriptor to object : BsonConversion<Instant> {
+        override val bsonType: BsonType = BsonType.DATE_TIME
         override fun toBson(value: Instant): BsonDateTime = BsonDateTime(value.toEpochMilliseconds())
         override fun toKotlin(value: BsonValue): Instant = when (value.bsonType) {
             BsonType.DATE_TIME -> Instant.fromEpochMilliseconds(value.asDateTime().value)
@@ -34,6 +36,7 @@ private val serializationOverrides = mapOf<SerialDescriptor, BsonConversion<*>>(
         }
     },
     LocalDate.serializer().descriptor to object : BsonConversion<LocalDate> {
+        override val bsonType: BsonType = BsonType.DATE_TIME
         override fun toBson(value: LocalDate): BsonDateTime =
             BsonDateTime(value.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds())
 
@@ -45,6 +48,7 @@ private val serializationOverrides = mapOf<SerialDescriptor, BsonConversion<*>>(
         }
     },
     LocalDateTime.serializer().descriptor to object : BsonConversion<LocalDateTime> {
+        override val bsonType: BsonType = BsonType.DATE_TIME
         override fun toBson(value: LocalDateTime): BsonDateTime =
             BsonDateTime(value.toInstant(TimeZone.UTC).toEpochMilliseconds())
 
@@ -56,6 +60,7 @@ private val serializationOverrides = mapOf<SerialDescriptor, BsonConversion<*>>(
         }
     },
     LocalTime.serializer().descriptor to object : BsonConversion<LocalTime> {
+        override val bsonType: BsonType = BsonType.DATE_TIME
         override fun toBson(value: LocalTime): BsonDateTime =
             BsonDateTime(value.atDate(LocalDate.fromEpochDays(0)).toInstant(TimeZone.UTC).toEpochMilliseconds())
 
@@ -69,6 +74,7 @@ private val serializationOverrides = mapOf<SerialDescriptor, BsonConversion<*>>(
         }
     },
     ByteArraySerializer().descriptor to object : BsonConversion<ByteArray> {
+        override val bsonType: BsonType = BsonType.BINARY
         override fun toBson(value: ByteArray): BsonBinary = BsonBinary(value)
         override fun toKotlin(value: BsonValue): ByteArray = when (value.bsonType) {
             BsonType.STRING -> Base64.decode(value.asString().value)
@@ -78,6 +84,7 @@ private val serializationOverrides = mapOf<SerialDescriptor, BsonConversion<*>>(
         }
     },
     Duration.serializer().descriptor to object : BsonConversion<Duration> {
+        override val bsonType: BsonType = BsonType.DOUBLE
         override fun toBson(value: Duration): BsonDouble = BsonDouble(value.toDouble(DurationUnit.MILLISECONDS))
         override fun toKotlin(value: BsonValue): Duration = when (value.bsonType) {
             BsonType.STRING -> Duration.parse(value.asString().value)
@@ -98,6 +105,7 @@ internal fun <T> serializationOverride(strategy: DeserializationStrategy<T>): Bs
     serializationOverrides[strategy.descriptor] as? BsonConversion<T>
 
 internal interface BsonConversion<KOTLIN> {
+    val bsonType: BsonType
     fun toBson(value: KOTLIN): BsonValue
     fun toKotlin(value: BsonValue): KOTLIN
 }
