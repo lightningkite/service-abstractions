@@ -3,6 +3,7 @@ package com.lightningkite.services.database.mongodb
 import com.lightningkite.services.data.TextIndex
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
+import com.lightningkite.services.database.mongodb.bson.serializationOverrides
 import com.lightningkite.services.database.mongodb.bson.toDocument
 import com.mongodb.client.model.UpdateOptions
 import kotlinx.datetime.*
@@ -422,42 +423,45 @@ internal fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, 
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-internal fun SerialDescriptor.bsonType(module: SerializersModule): BsonType = when (kind) {
-    SerialKind.ENUM -> BsonType.STRING
-    SerialKind.CONTEXTUAL -> when (this.capturedKClass) {
-        ObjectId::class -> BsonType.OBJECT_ID
-        BigDecimal::class -> BsonType.DECIMAL128
-        ByteArray::class -> BsonType.BINARY
-        Date::class -> BsonType.DATE_TIME
-        Calendar::class -> BsonType.DATE_TIME
-        GregorianCalendar::class -> BsonType.DATE_TIME
-        kotlin.time.Instant::class -> BsonType.DATE_TIME
-        LocalDate::class -> BsonType.DATE_TIME
-        LocalDateTime::class -> BsonType.DATE_TIME
-        LocalTime::class -> BsonType.DATE_TIME
-        BsonTimestamp::class -> BsonType.DATE_TIME
-        Locale::class -> BsonType.STRING
-        Binary::class -> BsonType.BINARY
-        Pattern::class -> BsonType.DOCUMENT
-        Regex::class -> BsonType.DOCUMENT
-        UUID::class -> BsonType.BINARY
-        Uuid::class -> BsonType.BINARY
-        else -> module.getContextualDescriptor(this)!!.bsonType(module)
-    }
+internal fun SerialDescriptor.bsonType(module: SerializersModule): BsonType = when {
+    isInline -> getElementDescriptor(0).bsonType(module)
+    else -> serializationOverrides[this]?.bsonType ?: when (kind) {
+        SerialKind.ENUM -> BsonType.STRING
+        SerialKind.CONTEXTUAL -> when (this.capturedKClass) {
+            ObjectId::class -> BsonType.OBJECT_ID
+            BigDecimal::class -> BsonType.DECIMAL128
+            ByteArray::class -> BsonType.BINARY
+            Date::class -> BsonType.DATE_TIME
+            Calendar::class -> BsonType.DATE_TIME
+            GregorianCalendar::class -> BsonType.DATE_TIME
+            kotlin.time.Instant::class -> BsonType.DATE_TIME
+            LocalDate::class -> BsonType.DATE_TIME
+            LocalDateTime::class -> BsonType.DATE_TIME
+            LocalTime::class -> BsonType.DATE_TIME
+            BsonTimestamp::class -> BsonType.DATE_TIME
+            Locale::class -> BsonType.STRING
+            Binary::class -> BsonType.BINARY
+            Pattern::class -> BsonType.DOCUMENT
+            Regex::class -> BsonType.DOCUMENT
+            UUID::class -> BsonType.BINARY
+            Uuid::class -> BsonType.BINARY
+            else -> module.getContextualDescriptor(this)!!.bsonType(module)
+        }
 
-    PrimitiveKind.BOOLEAN -> BsonType.BOOLEAN
-    PrimitiveKind.BYTE -> BsonType.INT32
-    PrimitiveKind.CHAR -> BsonType.SYMBOL
-    PrimitiveKind.SHORT -> BsonType.INT32
-    PrimitiveKind.INT -> BsonType.INT32
-    PrimitiveKind.LONG -> BsonType.INT64
-    PrimitiveKind.FLOAT -> BsonType.DOUBLE
-    PrimitiveKind.DOUBLE -> BsonType.DOUBLE
-    PrimitiveKind.STRING -> BsonType.STRING
-    StructureKind.CLASS -> BsonType.DOCUMENT
-    StructureKind.LIST -> BsonType.ARRAY
-    StructureKind.MAP -> BsonType.DOCUMENT
-    StructureKind.OBJECT -> BsonType.STRING
-    PolymorphicKind.SEALED -> TODO()
-    PolymorphicKind.OPEN -> TODO()
+        PrimitiveKind.BOOLEAN -> BsonType.BOOLEAN
+        PrimitiveKind.BYTE -> BsonType.INT32
+        PrimitiveKind.CHAR -> BsonType.SYMBOL
+        PrimitiveKind.SHORT -> BsonType.INT32
+        PrimitiveKind.INT -> BsonType.INT32
+        PrimitiveKind.LONG -> BsonType.INT64
+        PrimitiveKind.FLOAT -> BsonType.DOUBLE
+        PrimitiveKind.DOUBLE -> BsonType.DOUBLE
+        PrimitiveKind.STRING -> BsonType.STRING
+        StructureKind.CLASS -> BsonType.DOCUMENT
+        StructureKind.LIST -> BsonType.ARRAY
+        StructureKind.MAP -> BsonType.DOCUMENT
+        StructureKind.OBJECT -> BsonType.STRING
+        PolymorphicKind.SEALED -> TODO()
+        PolymorphicKind.OPEN -> TODO()
+    }
 }
