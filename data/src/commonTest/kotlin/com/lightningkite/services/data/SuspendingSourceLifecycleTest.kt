@@ -118,7 +118,7 @@ class SuspendingSourceLifecycleTest {
     @Test
     fun writeToCancelsSourceWhenSinkThrows() = runTest {
         val raw = TrackingRawSource("payload".encodeToByteArray())
-        val data = Data.Suspending(raw.asSuspendingSource())
+        val data = Data.SuspendingSource(raw.asSuspendingSource())
         val boom = IllegalStateException("client gone")
         val failingSink = object : SuspendingSink {
             override suspend fun write(from: Buffer): Unit = throw boom

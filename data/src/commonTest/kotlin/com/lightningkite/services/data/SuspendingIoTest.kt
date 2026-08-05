@@ -90,13 +90,13 @@ class SuspendingIoTest {
 
     @Test
     fun dataSuspendingRoundTrips() = runTest {
-        val data: Data = Data.Suspending(bufferOf("streamed").asSuspendingSource())
+        val data: Data = Data.SuspendingSource(bufferOf("streamed").asSuspendingSource())
         assertEquals("streamed", data.text())
     }
 
     @Test
     fun dataSuspendingProducerRoundTrips() = runTest {
-        val data: Data = Data.SuspendingProducer {
+        val data: Data = Data.SuspendingSink {
             it.write(bufferOf("produced "))
             it.write(bufferOf("in chunks"))
         }
@@ -115,7 +115,7 @@ class SuspendingIoTest {
     fun largePayloadThroughProducerToSuspendingData() = runTest {
         val chunk = ByteArray(64 * 1024) { 'a'.code.toByte() }
         val total = 40
-        val data: Data = Data.SuspendingProducer {
+        val data: Data = Data.SuspendingSink {
             repeat(total) { _ -> it.write(Buffer().also { b -> b.write(chunk) }) }
         }
         val bytes = data.bytes()
