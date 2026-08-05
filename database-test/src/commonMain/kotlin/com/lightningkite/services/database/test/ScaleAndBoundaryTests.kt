@@ -186,8 +186,14 @@ abstract class ScaleAndBoundaryTests {
         )
         collection.insert(listOf(min, max))
 
+        assertEquals(min, collection.findOne(condition { it.byte eq Byte.MIN_VALUE }))
+        assertEquals(max, collection.findOne(condition { it.byte eq Byte.MAX_VALUE }))
+        assertEquals(min, collection.findOne(condition { it.short eq Short.MIN_VALUE }))
+        assertEquals(max, collection.findOne(condition { it.short eq Short.MAX_VALUE }))
         assertEquals(min, collection.findOne(condition { it.int eq Int.MIN_VALUE }))
         assertEquals(max, collection.findOne(condition { it.int eq Int.MAX_VALUE }))
+        assertEquals(min, collection.findOne(condition { it.long eq Long.MIN_VALUE }))
+        assertEquals(max, collection.findOne(condition { it.long eq Long.MAX_VALUE }))
     }
 
     @Test
@@ -233,6 +239,14 @@ abstract class ScaleAndBoundaryTests {
         collection.insert(listOf(LargeTestModel(int = 1, string = awkward), LargeTestModel(int = 2, string = "other")))
         // Also a light check that special characters are parameterized rather than interpolated.
         assertEquals(listOf(1), collection.find(condition { it.string eq awkward }).toList().map { it.int })
+    }
+    @Test
+    fun awkwardStringsAreContainsCheckable() = runTest {
+        val collection = table("sbt_contains")
+        val awkward = "quotes ' \" and percent %_"
+        collection.insert(listOf(LargeTestModel(int = 1, string = awkward), LargeTestModel(int = 2, string = "other")))
+        // Also a light check that special characters are parameterized rather than interpolated.
+        assertEquals(listOf(1), collection.find(condition { it.string.contains("\" and percent %") }).toList().map { it.int })
     }
 
     @Test

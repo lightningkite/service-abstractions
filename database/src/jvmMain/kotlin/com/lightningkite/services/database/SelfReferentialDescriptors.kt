@@ -1,5 +1,6 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.data.ExperimentalLightningServer
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.SerialKind
@@ -76,7 +77,7 @@ public fun SerialDescriptor.isSelfReferential(serializersModule: SerializersModu
  * wrappers down to the concrete descriptor they represent - see [isSelfReferential]'s doc for why that
  * peeling is necessary.
  */
-@OptIn(ExperimentalSerializationApi::class)
+@OptIn(ExperimentalSerializationApi::class, ExperimentalLightningServer::class)
 private fun SerialDescriptor.resolveForSelfReferenceCheck(serializersModule: SerializersModule): SerialDescriptor {
     val contextResolved = if (this.kind == SerialKind.CONTEXTUAL)
         serializersModule.getContextualDescriptor(this) ?: this

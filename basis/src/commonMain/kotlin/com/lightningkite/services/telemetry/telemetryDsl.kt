@@ -1,6 +1,7 @@
 package com.lightningkite.services.telemetry
 
 import com.lightningkite.services.Namespaced
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
@@ -30,7 +31,7 @@ import kotlin.coroutines.coroutineContext
  */
 public suspend fun <T> telemetryAttributes(attributes: TelemetryAttributes, action: suspend () -> T): T {
     if (attributes.map.isEmpty()) return action()
-    val parent = coroutineContext[TelemetryAttributeElement]
+    val parent = currentCoroutineContext()[TelemetryAttributeElement]
     return withContext(TelemetryAttributeElement(attributes, parent)) { action() }
 }
 
