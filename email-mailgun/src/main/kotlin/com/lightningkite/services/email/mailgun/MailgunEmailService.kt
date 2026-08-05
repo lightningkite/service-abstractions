@@ -5,22 +5,28 @@ import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.email.*
+import com.lightningkite.services.http.client
 import com.lightningkite.services.telemetry.telemetryTrace
+import io.ktor.client.HttpClient
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.utils.io.jvm.javaio.*
 
+/**
+ * @param baseClient Base HTTP client to derive the Mailgun-authenticated client from. Defaults to
+ * the shared production client; tests can pass a `MockEngine`-backed client here instead.
+ */
 public class MailgunEmailService(
     override val name: String,
     override val context: SettingContext,
     private val key: String,
     private val domain: String,
+    baseClient: HttpClient = client,
 ) : EmailService {
 
-    private val client = com.lightningkite.services.http.client.config {
+    private val client = baseClient.config {
         install(Auth) {
             basic {
                 credentials {
@@ -49,20 +55,17 @@ public class MailgunEmailService(
     }
 
     private suspend fun sendImpl(email: Email) {
-        val parts = email.attachments.map {
-            // Read the attachment bytes here (suspend context); the ChannelProvider block itself is not suspend.
-            val bytes = it.typedData.data.bytes()
-            FormPart(
-                if (it.inline) "inline" else "attachment", ChannelProvider(
-                    size = bytes.size.toLong(),
-                    block = { bytes.inputStream().toByteReadChannel() }
-                ))
-        }
+        // Read attachment bytes here (suspend context); FormBuilder.append's bodyBuilder is not suspend.
+        val attachmentBytes = email.attachments.map { it to it.typedData.data.bytes() }
 
         val result = client.submitFormWithBinaryData(
             url = "https://api.mailgun.net/v3/$domain/messages",
             formData = formData {
-                append("from", email.from?.label?.let { "$it <noreply@$domain>" } ?: "<noreply@$domain>")
+                // email.from.value (the address the caller actually configured) must be honored when
+                // present — falling back to noreply@$domain unconditionally silently broke reply-to
+                // flows and DKIM/sender-alignment for any caller-specified sender.
+                val fromAddress = email.from?.value?.raw ?: "noreply@$domain"
+                append("from", email.from?.label?.let { "$it <$fromAddress>" } ?: fromAddress)
                 email.to.forEach {
                     append("to", it.value.raw)
                 }
@@ -73,7 +76,19 @@ public class MailgunEmailService(
                 email.customHeaders.entries.forEach {
                     append("h:${it.key}", it.value.joinToString())
                 }
-                parts.forEach { append(it) }
+                // Use ktor's filename/content-type-aware append() overload — the bare FormPart(...)
+                // constructor used previously defaulted to Headers.Empty, so attachments arrived at
+                // Mailgun with neither a filename nor a content type and were effectively unusable.
+                attachmentBytes.forEach { (attachment, bytes) ->
+                    append(
+                        key = if (attachment.inline) "inline" else "attachment",
+                        filename = attachment.filename,
+                        contentType = ContentType.parse(attachment.typedData.mediaType.toString()),
+                        size = bytes.size.toLong(),
+                    ) {
+                        write(bytes)
+                    }
+                }
             },
         )
         email.attachments.forEach { it.typedData.data.close() }

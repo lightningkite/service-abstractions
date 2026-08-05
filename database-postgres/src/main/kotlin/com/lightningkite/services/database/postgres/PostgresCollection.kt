@@ -164,9 +164,10 @@ public class PostgresCollection<T : Any>(
                 @Suppress("UNCHECKED_CAST")
                 val groupCol = table.col[groupBy.colName] as Column<Key>
                 val count = Count(stringLiteral("*"))
-                table.select(groupCol, count)
+                val groups = table.select(groupCol, count)
                     .where { condition(condition, serializer, table, format).asOp() }
                     .groupBy(table.col[groupBy.colName]!!).associate { it[groupCol] to it[count].toInt() }
+                if (groupBy.serializer.descriptor.isNullable) groups else groups.filterKeys { it != null }
             }
             span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.groups, result.size.toLong()) })
             result
@@ -225,9 +226,10 @@ public class PostgresCollection<T : Any>(
                 Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, AGGREGATE_SCALE)
                 Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, AGGREGATE_SCALE)
             }
-            table.select(groupCol, agg)
+            val groups = table.select(groupCol, agg)
                 .where { condition(condition, serializer, table, format).asOp() }
                 .groupBy(table.col[groupBy.colName]!!).associate { it[groupCol] to it[agg]?.toDouble() }
+            if (groupBy.serializer.descriptor.isNullable) groups else groups.filterKeys { it != null }
         }
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.groups, result.size.toLong()) })
         result

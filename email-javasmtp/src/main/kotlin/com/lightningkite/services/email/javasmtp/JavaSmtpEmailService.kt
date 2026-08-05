@@ -36,6 +36,10 @@ import java.util.*
  * Query parameters:
  * - `fromEmail` (required): Default sender email address
  * - `fromLabel` (optional): Default sender display name (defaults to context.projectName)
+ * - `insecure` (optional, default `false`): Explicit opt-out of TLS. TLS is required by default —
+ *   implicit SSL on port 465, STARTTLS on every other port — regardless of the port number, since
+ *   inferring security from the port silently sent credentials in cleartext on non-standard ports
+ *   (e.g. Mailtrap's 2525). Only set `insecure=true` for a trusted loopback/internal relay.
  *
  * ## Configuration Examples
  *
@@ -62,7 +66,8 @@ import java.util.*
  *
  * ## Implementation Notes
  *
- * - **Port-based TLS**: Automatically enables SSL on port 465, STARTTLS on port 587
+ * - **TLS required by default**: Implicit SSL on port 465, STARTTLS on every other port — opt out
+ *   explicitly with `?insecure=true` on the URL, never inferred from the port alone
  * - **Multipart emails**: Always sends both HTML and plain text alternatives
  * - **Attachment handling**: Closes attachment streams after sending (important for memory)
  * - **Bulk optimization**: Reuses SMTP connection for bulk sends (faster than individual)
@@ -95,6 +100,9 @@ import java.util.*
  * @property username SMTP authentication username (null for no auth)
  * @property password SMTP authentication password (null for no auth)
  * @property from Default sender address and name
+ * @property requireTls If true (the default), TLS is required — implicit SSL on port 465,
+ * STARTTLS on every other port. Set to false only for a trusted loopback/internal relay; this is
+ * an explicit opt-out, not inferred from the port number.
  */
 public class JavaSmtpEmailService(
     override val name: String,
@@ -104,6 +112,7 @@ public class JavaSmtpEmailService(
     public val username: String?,
     password: String?,
     public val from: EmailAddressWithName,
+    public val requireTls: Boolean = true,
 ) : EmailService {
 
     public companion object {
@@ -125,8 +134,9 @@ public class JavaSmtpEmailService(
             port: String,
             fromEmail: String,
             fromLabel: String? = null,
+            insecure: Boolean = false,
         ): EmailService.Settings =
-            EmailService.Settings("smtp://$username:$password@$host:$port?fromEmail=$fromEmail&fromLabel=$fromLabel")
+            EmailService.Settings("smtp://$username:$password@$host:$port?fromEmail=$fromEmail&fromLabel=$fromLabel" + if (insecure) "&insecure=true" else "")
 
         init {
             EmailService.Settings.register("smtp") { name, url, context ->
@@ -145,10 +155,13 @@ public class JavaSmtpEmailService(
                             from = EmailAddressWithName(
                                 value = params["fromEmail"]!!.first(),
                                 label = params["fromLabel"]?.first() ?: context.projectName,
-                            )
+                            ),
+                            // Explicit opt-out only — omitting the param must never silently downgrade to
+                            // no TLS, so this reads "insecure=true" and defaults to false (TLS required).
+                            requireTls = params["insecure"]?.first() != "true",
                         )
                     }
-                    ?: throw IllegalStateException("Invalid SMTP URL. The URL should match the pattern: smtp://[username]:[password]@[host]:[port]?[params]\nAvailable params are: fromEmail")
+                    ?: throw IllegalStateException("Invalid SMTP URL. The URL should match the pattern: smtp://[username]:[password]@[host]:[port]?[params]\nAvailable params are: fromEmail, fromLabel, insecure")
 
             }
         }
@@ -162,9 +175,9 @@ public class JavaSmtpEmailService(
             put("mail.smtp.host", hostName)
             put("mail.smtp.port", port)
             put("mail.smtp.auth", username != null && password != null)
-            put("mail.smtp.ssl.enable", port == 465)
-            put("mail.smtp.starttls.enable", port == 587)
-            put("mail.smtp.starttls.required", port == 587)
+            put("mail.smtp.ssl.enable", requireTls.toString())
+            put("mail.smtp.starttls.enable", requireTls.toString())
+            put("mail.smtp.starttls.required", requireTls.toString())
         },
         if (username != null && password != null)
             object : Authenticator() {

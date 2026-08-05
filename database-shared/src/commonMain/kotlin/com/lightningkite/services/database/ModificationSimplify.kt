@@ -68,13 +68,6 @@ public fun <T> Modification<T>.simplify(): Modification<T> {
             ) as Modification<T>
         }
 
-        is Modification.ModifyByKey<*> -> {
-            @Suppress("UNCHECKED_CAST")
-            Modification.ModifyByKey(
-                map = map.mapValues { it.value.simplify() }
-            ) as Modification<T>
-        }
-
         else -> this
     }
 }

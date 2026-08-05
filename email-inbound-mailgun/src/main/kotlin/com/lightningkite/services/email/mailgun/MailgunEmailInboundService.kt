@@ -14,6 +14,9 @@ import kotlin.time.Duration.Companion.milliseconds
 
 private val logger = KotlinLogging.logger("MailgunEmailInboundService")
 
+// The blank line (CRLF CRLF) that separates a multipart part's headers from its body per RFC 2046.
+private val HEADER_BODY_SEPARATOR = "\r\n\r\n".toByteArray()
+
 /**
  * Mailgun implementation of EmailInboundService for receiving inbound emails via webhooks.
  *
@@ -131,13 +134,13 @@ public class MailgunEmailInboundService(
             put(TelemetryKey.OfString("email.webhook.event_type"), "inbound")
         }) { span ->
             // Parse form data from body
-            val formData = parseFormData(body)
+            val parsedBody = parseFormData(body)
 
             // Verify signature (required for all webhooks)
-            verifySignature(formData, apiKey)
+            verifySignature(parsedBody.fields, apiKey)
 
             // Parse email fields
-            val receivedEmail = parseMailgunEmail(formData, body.mediaType)
+            val receivedEmail = parseMailgunEmail(parsedBody.fields, body.mediaType, parsedBody.attachmentParts)
 
             // Add email metadata to span (PII redacted: keep only domain for from/to, drop subject)
             span.enrich(TelemetryAttributes {
@@ -173,26 +176,62 @@ public class MailgunEmailInboundService(
         logger.info { "[$name] Mailgun inbound service disconnected" }
     }
 
+    /** Text form fields plus any file parts (attachments) extracted from the webhook body. */
+    internal data class ParsedMailgunBody(
+        val fields: Map<String, List<String>>,
+        val attachmentParts: List<MultipartPart>,
+    )
+
     /**
-     * Parses form-urlencoded data from the request body.
+     * One part of a `multipart/form-data` body. `data` is the raw, un-decoded part payload —
+     * kept as bytes throughout so binary attachments (images, PDFs, etc.) round-trip intact.
      */
-    private suspend fun parseFormData(body: TypedData): Map<String, List<String>> {
+    internal data class MultipartPart(
+        val name: String,
+        val filename: String?,
+        val contentType: String,
+        val data: ByteArray,
+    ) {
+        fun dataAsString(): String = String(data, Charsets.UTF_8)
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as MultipartPart
+            if (name != other.name) return false
+            if (filename != other.filename) return false
+            if (contentType != other.contentType) return false
+            if (!data.contentEquals(other.data)) return false
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = name.hashCode()
+            result = 31 * result + (filename?.hashCode() ?: 0)
+            result = 31 * result + contentType.hashCode()
+            result = 31 * result + data.contentHashCode()
+            return result
+        }
+    }
+
+    /**
+     * Parses form data from the request body.
+     */
+    private suspend fun parseFormData(body: TypedData): ParsedMailgunBody {
         val contentType = body.mediaType.toString()
 
         return when {
             contentType.startsWith("application/x-www-form-urlencoded", ignoreCase = true) -> {
-                parseUrlEncoded(body.data.text())
+                ParsedMailgunBody(parseUrlEncoded(body.data.text()), emptyList())
             }
 
             contentType.startsWith("multipart/form-data", ignoreCase = true) -> {
-                // For multipart, we'll parse the simpler fields first
-                // Attachments will be handled separately if needed
                 parseMultipartFormData(body)
             }
 
             else -> {
                 logger.warn { "[$name] Unexpected content type: $contentType, attempting urlencoded parsing" }
-                parseUrlEncoded(body.data.text())
+                ParsedMailgunBody(parseUrlEncoded(body.data.text()), emptyList())
             }
         }
     }
@@ -218,55 +257,105 @@ public class MailgunEmailInboundService(
     }
 
     /**
-     * Parses multipart form data.
-     * Note: This is a simplified parser. For production use with attachments,
-     * consider using a proper multipart parser library.
-     *
-     * TODO: replace with Jakarta Mail — current parser corrupts binary attachments
+     * Parses multipart/form-data into text fields and attachment parts, operating on raw bytes
+     * throughout. The previous implementation ran the whole body through `String.split`, which
+     * corrupts binary attachment content (non-UTF-8 byte sequences get mangled on decode) and
+     * unconditionally discarded every part named "attachment-*" — so attachments were reported
+     * (via `attachment-count`) but never delivered.
      */
-    private suspend fun parseMultipartFormData(body: TypedData): Map<String, List<String>> {
-        // For now, we'll parse the text fields only
-        // A full implementation would parse attachments as well
-        val result = mutableMapOf<String, MutableList<String>>()
-
+    internal suspend fun parseMultipartFormData(body: TypedData): ParsedMailgunBody {
         val contentType = body.mediaType.toString()
         val boundary = contentType.substringAfter("boundary=", "").trim().removeSurrounding("\"")
 
         if (boundary.isEmpty()) {
             logger.warn { "[$name] No boundary found in multipart content-type" }
-            return emptyMap()
+            return ParsedMailgunBody(emptyMap(), emptyList())
         }
 
-        val bodyText = body.data.text()
-        val parts = bodyText.split("--$boundary")
+        val parts = parseMultipartParts(body.data.bytes(), boundary)
 
-        for (part in parts) {
-            if (part.trim().isEmpty() || part.trim() == "--") continue
-
-            // Split headers and content
-            val sections = part.split("\r\n\r\n", "\n\n", limit = 2)
-            if (sections.size != 2) continue
-
-            val headersText = sections[0]
-            val content = sections[1].trim()
-
-            // Parse Content-Disposition header to get field name
-            val dispositionLine = headersText.lines().find {
-                it.trim().startsWith("Content-Disposition:", ignoreCase = true)
-            }
-
-            if (dispositionLine != null) {
-                val nameMatch = Regex("""name="([^"]+)"""").find(dispositionLine)
-                val name = nameMatch?.groupValues?.get(1)
-
-                if (name != null && !name.startsWith("attachment-")) {
-                    // Only process non-attachment fields for now
-                    result.getOrPut(name) { mutableListOf() }.add(content.trimEnd('-', '\r', '\n'))
-                }
+        // A part with a filename is an attachment; anything else is a text form field. This is
+        // the same signal RFC 7578 uses to distinguish files from ordinary fields, and it doesn't
+        // depend on Mailgun's "attachment-N" naming convention holding exactly.
+        val fields = mutableMapOf<String, MutableList<String>>()
+        val attachmentParts = mutableListOf<MultipartPart>()
+        parts.forEach { part ->
+            if (part.filename != null) {
+                attachmentParts.add(part)
+            } else {
+                fields.getOrPut(part.name) { mutableListOf() }.add(part.dataAsString())
             }
         }
 
-        return result
+        return ParsedMailgunBody(fields, attachmentParts)
+    }
+
+    /** Scans a multipart/form-data byte body for its parts, splitting on the boundary bytes. */
+    private fun parseMultipartParts(data: ByteArray, boundary: String): List<MultipartPart> {
+        val parts = mutableListOf<MultipartPart>()
+        val boundaryBytes = "--$boundary".toByteArray()
+        val endBoundaryBytes = "--$boundary--".toByteArray()
+
+        var position = findSequence(data, boundaryBytes, 0) ?: return emptyList()
+        position += boundaryBytes.size + 2 // Skip boundary and CRLF
+
+        while (position < data.size) {
+            if (data.size >= position + endBoundaryBytes.size &&
+                data.sliceArray(position until position + endBoundaryBytes.size).contentEquals(endBoundaryBytes)
+            ) {
+                break
+            }
+
+            val headersEnd = findSequence(data, HEADER_BODY_SEPARATOR, position) ?: break
+            val headersSection = String(data, position, headersEnd - position, Charsets.ISO_8859_1)
+            val partHeaders = parseHeaders(headersSection)
+
+            val disposition = partHeaders["content-disposition"] ?: ""
+            val fieldName = extractQuotedValue(disposition, "name") ?: "unknown"
+            val filename = extractQuotedValue(disposition, "filename")
+            val partContentType = partHeaders["content-type"] ?: "text/plain"
+
+            val bodyStart = headersEnd + HEADER_BODY_SEPARATOR.size
+            val bodyEnd = findSequence(data, boundaryBytes, bodyStart) ?: data.size
+
+            // Trailing CRLF before the next boundary is part of the multipart framing, not the part body.
+            val actualBodyEnd = if (bodyEnd >= 2 &&
+                data[bodyEnd - 2] == '\r'.code.toByte() && data[bodyEnd - 1] == '\n'.code.toByte()
+            ) bodyEnd - 2 else bodyEnd
+
+            parts.add(
+                MultipartPart(
+                    name = fieldName,
+                    filename = filename,
+                    contentType = partContentType,
+                    data = data.sliceArray(bodyStart until actualBodyEnd),
+                )
+            )
+
+            position = bodyEnd + boundaryBytes.size + 2 // Skip boundary and CRLF
+        }
+
+        return parts
+    }
+
+    private fun findSequence(data: ByteArray, sequence: ByteArray, startPos: Int): Int? {
+        for (i in startPos..data.size - sequence.size) {
+            if (data.sliceArray(i until i + sequence.size).contentEquals(sequence)) return i
+        }
+        return null
+    }
+
+    private fun parseHeaders(headersSection: String): Map<String, String> {
+        return headersSection.lines()
+            .filter { it.contains(":") }
+            .associate { line ->
+                val (headerName, value) = line.split(":", limit = 2)
+                headerName.trim().lowercase() to value.trim()
+            }
+    }
+
+    private fun extractQuotedValue(header: String, key: String): String? {
+        return Regex("""$key="([^"]+)"""").find(header)?.groupValues?.getOrNull(1)
     }
 
     /**
@@ -314,7 +403,11 @@ public class MailgunEmailInboundService(
     /**
      * Parses Mailgun form data into ReceivedEmail.
      */
-    private fun parseMailgunEmail(formData: Map<String, List<String>>, contentType: MediaType): ReceivedEmail {
+    internal fun parseMailgunEmail(
+        formData: Map<String, List<String>>,
+        contentType: MediaType,
+        attachmentParts: List<MultipartPart> = emptyList(),
+    ): ReceivedEmail {
         val messageId = formData["Message-Id"]?.firstOrNull()
             ?: formData["message-id"]?.firstOrNull()
             ?: "mailgun-${System.currentTimeMillis()}"
@@ -357,15 +450,16 @@ public class MailgunEmailInboundService(
             ?.filter { it.isNotBlank() }
             ?: emptyList()
 
-        // Parse attachments (basic support)
-        val attachments = parseAttachments(formData)
+        val attachments = parseAttachments(attachmentParts)
 
         return ReceivedEmail(
             messageId = messageId,
             from = from,
             to = to,
             cc = cc,
-            replyTo = parseEmailAddress(formData["Reply-To"]?.firstOrNull() ?: ""),
+            // Reply-To is genuinely optional; unlike `from` below there's no non-nullable field to
+            // paper over, so an absent header must yield null rather than a fabricated address.
+            replyTo = formData["Reply-To"]?.firstOrNull()?.let { parseEmailAddress(it) },
             subject = subject,
             html = html,
             plainText = plainText,
@@ -440,17 +534,20 @@ public class MailgunEmailInboundService(
     }
 
     /**
-     * Parses attachment metadata from form data.
-     * Note: Actual attachment content is not parsed in this basic implementation.
-     * In production, you'd want to handle multipart file uploads properly.
+     * Builds [ReceivedAttachment]s from the file parts extracted by [parseMultipartFormData].
+     * `attachmentParts` only ever contains parts that had a filename (see [parseMultipartFormData]),
+     * so `filename` is always present here.
      */
-    private fun parseAttachments(formData: Map<String, List<String>>): List<ReceivedAttachment> {
-        val attachmentCount = formData["attachment-count"]?.firstOrNull()?.toIntOrNull() ?: 0
-        if (attachmentCount == 0) return emptyList()
-
-        // In a real implementation, you'd parse the actual attachment files from multipart data
-        // For now, we'll just return empty list
-        logger.debug { "[$name] Email has $attachmentCount attachments (parsing not fully implemented)" }
-        return emptyList()
+    private fun parseAttachments(attachmentParts: List<MultipartPart>): List<ReceivedAttachment> {
+        return attachmentParts.map { part ->
+            ReceivedAttachment(
+                filename = part.filename!!,
+                contentType = MediaType(part.contentType.substringBefore(';').trim()),
+                size = part.data.size.toLong(),
+                contentId = null,
+                content = Data.Bytes(part.data),
+                contentUrl = null,
+            )
+        }
     }
 }

@@ -275,17 +275,9 @@ class PostgresModificationTests : ModificationTests() {
         ) { PooledDatabase(Database.connect(postgres.embeddedPostgres.postgresDatabase), null) }
     }
 
-    override fun test_Map_modifyField() {
-        // TODO: Make it work
-    }
-
-    override fun test_Map_setField() {
-        // TODO: Make it work
-    }
-
-    override fun test_Map_unsetField() {
-        // TODO: Make it work
-    }
+    // test_Map_setField (Combine) and test_Map_unsetField (RemoveKeys) are implemented via array
+    // unnest/rebuild against the parallel key/value array columns Maps are actually stored as -- see
+    // ConditionMapping.kt's Combine/RemoveKeys branches and PostgresMapModificationTest.
 }
 
 class PostgresSortTest : SortTest() {

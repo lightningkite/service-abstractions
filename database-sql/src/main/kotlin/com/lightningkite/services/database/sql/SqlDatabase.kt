@@ -65,6 +65,8 @@ public class SqlDatabase(
     internal fun materializePool(): PooledDatabase = _db.value
 
     override suspend fun disconnect() {
+        collections.values.forEach { if (it.isInitialized()) it.value.close() }
+        collections.clear()
         if (_db.isInitialized()) {
             val pooled = _db.value
             TransactionManager.closeAndUnregister(pooled.database)
@@ -110,34 +112,24 @@ public class SqlDatabase(
 
             // MySQL database
             com.lightningkite.services.database.Database.Settings.register("sql-mysql") { name, url, context ->
-                val destination = url.removePrefix("sql-mysql://")
-                Regex("""(?<user>[^:]*):(?<password>[^@]*)@(?<host>.+)""").matchEntire(destination)
-                    ?.let { match ->
-                        val user = match.groups["user"]!!.value
-                        val password = match.groups["password"]!!.value
-                        val split = splitPoolQuery(match.groups["host"]!!.value)
-                        val jdbcUrl = "jdbc:mysql://${split.base}" + (split.jdbcQuery?.let { "?$it" } ?: "")
-                        SqlDatabase(name = name, context = context) {
-                            makePooledDatabase(jdbcUrl, "com.mysql.cj.jdbc.Driver", user, password, split.pool)
-                        }
-                    }
+                val parsed = parseSqlAuthUrl(url)
                     ?: throw IllegalStateException("Invalid MySQL URL. Expected: sql-mysql://user:password@host:port/database")
+                val split = splitPoolQuery(parsed.destination)
+                val jdbcUrl = "jdbc:mysql://${split.base}" + (split.jdbcQuery?.let { "?$it" } ?: "")
+                SqlDatabase(name = name, context = context) {
+                    makePooledDatabase(jdbcUrl, "com.mysql.cj.jdbc.Driver", parsed.user, parsed.password, split.pool)
+                }
             }
 
             // MariaDB database
             com.lightningkite.services.database.Database.Settings.register("sql-mariadb") { name, url, context ->
-                val destination = url.removePrefix("sql-mariadb://")
-                Regex("""(?<user>[^:]*):(?<password>[^@]*)@(?<host>.+)""").matchEntire(destination)
-                    ?.let { match ->
-                        val user = match.groups["user"]!!.value
-                        val password = match.groups["password"]!!.value
-                        val split = splitPoolQuery(match.groups["host"]!!.value)
-                        val jdbcUrl = "jdbc:mariadb://${split.base}" + (split.jdbcQuery?.let { "?$it" } ?: "")
-                        SqlDatabase(name = name, context = context) {
-                            makePooledDatabase(jdbcUrl, "org.mariadb.jdbc.Driver", user, password, split.pool)
-                        }
-                    }
+                val parsed = parseSqlAuthUrl(url)
                     ?: throw IllegalStateException("Invalid MariaDB URL. Expected: sql-mariadb://user:password@host:port/database")
+                val split = splitPoolQuery(parsed.destination)
+                val jdbcUrl = "jdbc:mariadb://${split.base}" + (split.jdbcQuery?.let { "?$it" } ?: "")
+                SqlDatabase(name = name, context = context) {
+                    makePooledDatabase(jdbcUrl, "org.mariadb.jdbc.Driver", parsed.user, parsed.password, split.pool)
+                }
             }
         }
     }

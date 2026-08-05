@@ -21,7 +21,7 @@ import kotlin.time.Duration.Companion.seconds
 class RedisCacheEdgeCaseTest {
 
     private val cache: Cache by lazy {
-        RedisCache("test-edge-cases", RedisClient.create("redis://127.0.0.1:6379/0"), TestSettingContext())
+        RedisCache("test-edge-cases", { RedisClient.create("redis://127.0.0.1:6379/0") }, TestSettingContext())
     }
 
     companion object {
@@ -256,6 +256,32 @@ class RedisCacheEdgeCaseTest {
         cache.add(key, 10)
         cache.add(key, -3)
         assertEquals(7, cache.get<Int>(key))
+    }
+
+    /**
+     * `disconnect()` used to be a complete no-op (the default `Service` implementation), leaking the
+     * Lettuce connection and Netty event loop forever. This confirms disconnect() actually tears the
+     * connection/client down, that a subsequent operation transparently rebuilds them and keeps
+     * working, and that disconnecting twice in a row doesn't throw.
+     */
+    @Test
+    fun testDisconnectThenReconnectCycle() = runBlocking {
+        assumeTrue("Redis not available", serverAvailable)
+        val c = cache as RedisCache
+        val key = "redis-disconnect-reconnect-test-${System.currentTimeMillis()}"
+
+        c.set(key, TestData("before", 1))
+        assertEquals(TestData("before", 1), c.get<TestData>(key))
+
+        c.disconnect()
+        c.disconnect() // idempotent — must not throw even with nothing left to close
+
+        // A subsequent operation must transparently rebuild the client/connection rather than
+        // staying broken.
+        c.connect()
+        assertEquals(TestData("before", 1), c.get<TestData>(key), "data must still be visible after reconnecting")
+        c.set(key, TestData("after", 2))
+        assertEquals(TestData("after", 2), c.get<TestData>(key))
     }
 
     @Test

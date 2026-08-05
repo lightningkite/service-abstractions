@@ -1,6 +1,6 @@
 package com.lightningkite.services.database
 
-import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.toList
 
 /**
  * Runs after an item is created.
@@ -96,7 +96,8 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
         orderBy: List<SortPart<Model>>,
     ): Boolean = replaceOne(
         condition,
-        model
+        model,
+        orderBy
     ).new != null
 
     override suspend fun upsertOneIgnoringResult(
@@ -109,7 +110,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postChange(
         condition: Condition<Model>,
         modification: Modification<Model>,
         orderBy: List<SortPart<Model>>,
-    ): Boolean = updateOne(condition, modification).new != null
+    ): Boolean = updateOne(condition, modification, orderBy).new != null
 
     override suspend fun updateManyIgnoringResult(condition: Condition<Model>, modification: Modification<Model>): Int =
         updateMany(condition, modification).changes.size
@@ -165,7 +166,8 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
         orderBy: List<SortPart<Model>>,
     ): Boolean = replaceOne(
         condition,
-        model
+        model,
+        orderBy
     ).new != null
 
     override suspend fun upsertOneIgnoringResult(
@@ -178,7 +180,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.postNewValue(
         condition: Condition<Model>,
         modification: Modification<Model>,
         orderBy: List<SortPart<Model>>,
-    ): Boolean = updateOne(condition, modification).new != null
+    ): Boolean = updateOne(condition, modification, orderBy).new != null
 
     override suspend fun updateManyIgnoringResult(condition: Condition<Model>, modification: Modification<Model>): Int =
         updateMany(condition, modification).changes.size
@@ -678,7 +680,8 @@ public inline fun <Model : Any> Table<Model>.interceptChange(crossinline interce
 /**
  * Intercepts all changes sent to the database, including inserting, replacing, upserting, and updating.
  * Also gives you an instance of the model that will be changed.
- * This is significantly more expensive, as we must retrieve the data before we can calculate the change.
+ *
+ * **Warning**: These operations are not atomic, as we must retrieve the data before we can calculate the change. In addition, this makes all database calls more significantly more expensive.
  */
 public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptChangePerInstance(
     includeMassUpdates: Boolean = true,
@@ -694,7 +697,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
             model: Model,
             orderBy: List<SortPart<Model>>,
         ): EntryChange<Model> {
-            val current = wraps.findOne(condition) ?: return EntryChange(null, null)
+            val current = wraps.findOne(condition, orderBy) ?: return EntryChange(null, null)
             return wraps.replaceOne(
                 Condition.OnField(serializer._id(), Condition.Equal(current._id)),
                 interceptor(current, Modification.Assign(model))(model),
@@ -707,7 +710,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
             model: Model,
             orderBy: List<SortPart<Model>>,
         ): Boolean {
-            val current = wraps.findOne(condition) ?: return false
+            val current = wraps.findOne(condition, orderBy) ?: return false
             return wraps.replaceOneIgnoringResult(
                 Condition.OnField(serializer._id(), Condition.Equal(current._id)),
                 interceptor(current, Modification.Assign(model))(model),
@@ -750,7 +753,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
             modification: Modification<Model>,
             orderBy: List<SortPart<Model>>,
         ): EntryChange<Model> {
-            val current = wraps.findOne(condition) ?: return EntryChange(null, null)
+            val current = wraps.findOne(condition, orderBy) ?: return EntryChange(null, null)
             return wraps.updateOne(
                 Condition.OnField(serializer._id(), Condition.Equal(current._id)),
                 interceptor(current, modification),
@@ -763,7 +766,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
             modification: Modification<Model>,
             orderBy: List<SortPart<Model>>,
         ): Boolean {
-            val current = wraps.findOne(condition) ?: return false
+            val current = wraps.findOne(condition, orderBy) ?: return false
             return wraps.updateOneIgnoringResult(
                 Condition.OnField(serializer._id(), Condition.Equal(current._id)),
                 interceptor(current, modification),
@@ -804,29 +807,38 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
 
 
 /**
- * Runs before an item is deleted.
+ * Runs before an item is deleted, passing the row that was actually removed.
+ *
+ * **Warning**: These operations are not atomic, the intercept requires a separate [find] query.
  */
-public fun <Model : Any> Table<Model>.interceptDelete(
+public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptDelete(
     onDelete: suspend (Model) -> Unit,
 ): Table<Model> = object : Table<Model> by this@interceptDelete {
     override val wraps = this@interceptDelete
-    override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? {
-        wraps.find(condition, limit = 1, orderBy = orderBy).collect(FlowCollector(onDelete))
-        return wraps.deleteOne(condition, orderBy)
-    }
+
+    override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? =
+        wraps.findOne(condition, orderBy)
+            ?.also {
+                onDelete(it)
+                wraps.deleteOneById(it._id)
+            }
+            ?: wraps.deleteOne(condition, orderBy)
 
     override suspend fun deleteMany(condition: Condition<Model>): List<Model> {
-        wraps.find(condition).collect(FlowCollector(onDelete))
-        return wraps.deleteMany(condition)
+        val markedForDeath = wraps.find(condition).toList()
+
+        for (doomed in markedForDeath) onDelete(doomed)
+
+        wraps.deleteManyIgnoringOld(
+            Condition.OnField(
+                serializer._id(),
+                Condition.Inside(markedForDeath.map { it._id })
+            )
+        )
+
+        return markedForDeath
     }
 
-    override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int {
-        wraps.find(condition).collect(FlowCollector(onDelete))
-        return wraps.deleteManyIgnoringOld(condition)
-    }
-
-    override suspend fun deleteOneIgnoringOld(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Boolean {
-        wraps.find(condition, limit = 1, orderBy = orderBy).collect(FlowCollector(onDelete))
-        return wraps.deleteOneIgnoringOld(condition, orderBy)
-    }
+    override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int = deleteMany(condition).size
+    override suspend fun deleteOneIgnoringOld(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Boolean = deleteOne(condition, orderBy) != null
 }

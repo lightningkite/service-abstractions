@@ -46,6 +46,35 @@ internal data class SplitUrl(
     val pool: PoolParams,
 )
 
+/** The `[user[:password]]@destination` portion of a `postgresql://` settings URL, as parsed by [parsePostgresAuthUrl]. */
+internal data class ParsedAuthUrl(
+    val user: String?,
+    val password: String?,
+    val destination: String,
+)
+
+/**
+ * Parses a `postgresql://[user[:password]]@destination` settings URL using [java.net.URI] rather
+ * than a hand-rolled regex. A regex without a real grammar can't tell where the user-info ends and
+ * the host begins when the password itself contains `:` or `@` — [java.net.URI] does, and it
+ * percent-decodes the credentials for us. Returns null if the URL has no host (i.e. isn't a valid
+ * `postgresql://` URL at all).
+ */
+internal fun parsePostgresAuthUrl(url: String): ParsedAuthUrl? {
+    val uri = try {
+        java.net.URI(url)
+    } catch (e: java.net.URISyntaxException) {
+        return null
+    }
+    val host = uri.host ?: return null
+    val userInfo = uri.userInfo
+    val user = userInfo?.substringBefore(':')
+    val password = userInfo?.let { if (':' in it) it.substringAfter(':') else "" }
+    val port = if (uri.port != -1) ":${uri.port}" else ""
+    val destination = "$host$port${uri.rawPath}${uri.rawQuery?.let { "?$it" } ?: ""}"
+    return ParsedAuthUrl(user = user, password = password, destination = destination)
+}
+
 /**
  * Splits a URL remainder (everything after the scheme prefix) on a trailing `?query`, routing
  * pool-only params to [PoolParams] and forwarding any remaining JDBC params on [SplitUrl.jdbcQuery].

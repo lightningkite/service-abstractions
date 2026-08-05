@@ -68,7 +68,7 @@ class RedisTelemetryTest {
             )
             .build()
         val context = contextWith(sdk)
-        val cache = RedisCache("telemetry-test", plainClient(), context)
+        val cache = RedisCache("telemetry-test", { plainClient() }, context)
 
         val tracer = sdk.getTracer("test")
         val parent = tracer.spanBuilder("parent").startSpan()
@@ -110,7 +110,7 @@ class RedisTelemetryTest {
             )
             .build()
         val context = contextWith(sdk)
-        val cache = RedisCache("metrics-test", plainClient(), context)
+        val cache = RedisCache("metrics-test", { plainClient() }, context)
 
         val key = "metrics-key-${System.nanoTime()}"
         cache.remove(key)

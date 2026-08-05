@@ -150,12 +150,6 @@ class SerializationLoopTest {
 
         // --- Map Modifications ---
         "Combine" to modification { it -> it.map += mapOf("key1" to 1, "key2" to 2) },
-        "ModifyByKey" to modification { it ->
-            it.map modifyByKey mapOf(
-                "key1" to { e -> e += 10 },
-                "key2" to { e -> e assign 99 }
-            )
-        },
         "RemoveKeys" to modification { it -> it.map removeKeys setOf("key1", "key2") },
 
         // --- Nested Field Modification ---

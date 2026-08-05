@@ -101,22 +101,18 @@ public class PostgresDatabase(
         init {
             // postgresql://user:password@endpoint/database
             com.lightningkite.services.database.Database.Settings.register("postgresql") { name, url, context ->
-                Regex("""postgresql://(?<user>[^:]*)(?<password>[^@]*)@(?<destination>.+)""").matchEntire(url)
-                    ?.let { match ->
-                        val user = match.groups["user"]!!.value
-                        val password = match.groups["password"]!!.value
-                        val split = splitPoolQuery(match.groups["destination"]!!.value)
-                        val jdbcUrl = "jdbc:postgresql://${split.base}" + (split.jdbcQuery?.let { "?$it" } ?: "")
-                        if (user.isNotBlank() && password.isNotBlank())
-                            PostgresDatabase(name = name, context = context) {
-                                makePooledDatabase(jdbcUrl, "org.postgresql.Driver", user, password, split.pool)
-                            }
-                        else
-                            PostgresDatabase(name = name, context = context) {
-                                makePooledDatabase(jdbcUrl, "org.postgresql.Driver", pool = split.pool)
-                            }
-                    }
+                val parsed = parsePostgresAuthUrl(url)
                     ?: throw IllegalStateException("Invalid Postgres Url. The URL should match the pattern: postgresql://[user]:[password]@[destination]")
+                val split = splitPoolQuery(parsed.destination)
+                val jdbcUrl = "jdbc:postgresql://${split.base}" + (split.jdbcQuery?.let { "?$it" } ?: "")
+                if (!parsed.user.isNullOrBlank() && !parsed.password.isNullOrBlank())
+                    PostgresDatabase(name = name, context = context) {
+                        makePooledDatabase(jdbcUrl, "org.postgresql.Driver", parsed.user, parsed.password, split.pool)
+                    }
+                else
+                    PostgresDatabase(name = name, context = context) {
+                        makePooledDatabase(jdbcUrl, "org.postgresql.Driver", pool = split.pool)
+                    }
             }
         }
     }

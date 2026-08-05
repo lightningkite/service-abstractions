@@ -334,4 +334,22 @@ class FullTextSearchTest {
         // Empty query should match everything (vacuous truth)
         assertTrue(condition(article), "Empty search query should match (vacuous truth)")
     }
+
+    // ========== Tests for null values (FIX 35) ==========
+    // A null field value used to fall through to `on.toString()`, and the Kotlin stdlib returns the
+    // literal string "null" for a null receiver -- so a null field incorrectly matched a search for
+    // the word "null" instead of correctly never matching. Every other nullable-aware condition
+    // (e.g. IfNotNull) short-circuits instead of stringifying the null.
+
+    @Test
+    fun `FullTextSearch on a null value does not match a search for the literal word null`() {
+        val condition = Condition.FullTextSearch<String?>("null")
+        assertFalse(condition(null), "A null value must never match; it must not be stringified to \"null\"")
+    }
+
+    @Test
+    fun `FullTextSearch on a null value never matches, regardless of the search term`() {
+        val condition = Condition.FullTextSearch<String?>("anything")
+        assertFalse(condition(null), "A null value has nothing to search and must short-circuit to false")
+    }
 }

@@ -1,8 +1,10 @@
 package com.lightningkite.services.otel
 
 import com.lightningkite.services.errorFingerprint
+import com.lightningkite.services.telemetry.TelemetrySanitization
 import io.opentelemetry.api.OpenTelemetry
 import io.opentelemetry.api.common.AttributeKey
+import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.metrics.*
 import io.opentelemetry.api.trace.*
 import io.opentelemetry.extension.kotlin.asContextElement
@@ -14,12 +16,30 @@ import org.slf4j.event.Level
 import org.slf4j.spi.LoggingEventBuilder
 
 private val errorFingerprintKey: AttributeKey<String> = AttributeKey.stringKey("error.fingerprint")
+private val exceptionTypeKey: AttributeKey<String> = AttributeKey.stringKey("exception.type")
+private val exceptionMessageKey: AttributeKey<String> = AttributeKey.stringKey("exception.message")
+private val exceptionStacktraceKey: AttributeKey<String> = AttributeKey.stringKey("exception.stacktrace")
 
 /**
  * Records an exception on this span and sets an `error.fingerprint` attribute for stable error grouping.
+ *
+ * Builds the "exception" event by hand rather than delegating to [Span.recordException], because that
+ * SDK method embeds the raw exception message and stack trace verbatim. Both routinely contain secrets
+ * (e.g. a `mongodb://user:pass@host` connection string in a failure message) that [sanitization] exists
+ * to strip before anything reaches the telemetry backend.
  */
-public fun Span.recordExceptionWithFingerprint(t: Throwable) {
-    recordException(t)
+public fun Span.recordExceptionWithFingerprint(
+    t: Throwable,
+    sanitization: TelemetrySanitization = TelemetrySanitization.Strict,
+) {
+    addEvent(
+        "exception",
+        Attributes.builder()
+            .put(exceptionTypeKey, t.javaClass.name)
+            .put(exceptionMessageKey, sanitization.sanitizeExceptionMessage(t.message ?: t.javaClass.name))
+            .put(exceptionStacktraceKey, sanitization.sanitizeExceptionMessage(t.stackTraceToString()))
+            .build()
+    )
     setAttribute(errorFingerprintKey, t.errorFingerprint())
 }
 

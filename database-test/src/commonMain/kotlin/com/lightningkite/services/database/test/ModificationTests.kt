@@ -1181,23 +1181,6 @@ abstract class ModificationTests() {
     }
 
     @Test
-    open fun test_Map_modifyField() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_setField"))
-        val item = LargeTestModel(map = mapOf("a" to 1))
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> {
-            it.map.modifyByKey(
-                mapOf(
-                    "a" to { it += 1 }
-                ))
-        }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(mapOf("a" to 2), result.map)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
     open fun test_Map_unsetField() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_setField"))
         val item = LargeTestModel(map = mapOf("a" to 1, "b" to 2))

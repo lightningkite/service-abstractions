@@ -472,11 +472,6 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 it[0]
             )
         }
-        register(Modification.ModifyByKey.serializer(NothingSerializer()).descriptor.serialName) {
-            Modification.ModifyByKey.serializer(
-                it[0]
-            )
-        }
         register(Modification.RemoveKeys.serializer(NothingSerializer()).descriptor.serialName) {
             Modification.RemoveKeys.serializer(
                 it[0]

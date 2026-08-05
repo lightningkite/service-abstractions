@@ -9,6 +9,7 @@ import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryBackend
 import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryTrace
+import com.lightningkite.services.telemetry.TelemetrySanitization
 import com.lightningkite.services.telemetry.MetricUnit
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.telemetry.currentTelemetryAttributes
@@ -75,7 +76,10 @@ import kotlin.time.toJavaDuration
  * (e.g. `cache.hit`, supplied via [TelemetryTrace.enrich]) are included. Per-owner [OpenTelemetrySub]s
  * and RED instruments are created lazily and cached by [Namespaced.name].
  */
-public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBackend {
+public class OtelTelemetryBackend(
+    private val sdk: OpenTelemetry,
+    private val sanitization: TelemetrySanitization = TelemetrySanitization.Strict,
+) : TelemetryBackend {
     private val subs = ConcurrentHashMap<String, OpenTelemetrySub>()
     private val reds = ConcurrentHashMap<String, Red>()
 
@@ -166,12 +170,12 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
      */
     override fun reportError(throwable: Throwable, attributes: TelemetryAttributes) {
         val fingerprint = throwable.errorFingerprint()
+        val statusDescription = sanitization.sanitizeExceptionMessage(throwable.message ?: throwable.javaClass.name)
 
         val span = Span.current()
         if (span.spanContext.isValid) {
-            span.recordException(throwable)
-            span.setStatus(StatusCode.ERROR, throwable.message ?: throwable.javaClass.name)
-            span.setAttribute(errorFingerprintKey, fingerprint)
+            span.recordExceptionWithFingerprint(throwable, sanitization)
+            span.setStatus(StatusCode.ERROR, statusDescription)
             for ((key, value) in attributes.map) span.put(key, value)
             return
         }
@@ -181,12 +185,12 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
         logger.logRecordBuilder()
             .setSeverity(Severity.ERROR)
             .setSeverityText("ERROR")
-            .setBody(throwable.message ?: throwable.javaClass.name)
+            .setBody(statusDescription)
             .setAttribute(errorFingerprintKey, fingerprint)
             .apply {
                 setAttribute(AttributeKey.stringKey("exception.type"), throwable.javaClass.name)
-                throwable.message?.let { setAttribute(AttributeKey.stringKey("exception.message"), it) }
-                setAttribute(AttributeKey.stringKey("exception.stacktrace"), throwable.stackTraceToString())
+                throwable.message?.let { setAttribute(AttributeKey.stringKey("exception.message"), sanitization.sanitizeExceptionMessage(it)) }
+                setAttribute(AttributeKey.stringKey("exception.stacktrace"), sanitization.sanitizeExceptionMessage(throwable.stackTraceToString()))
                 for ((key, value) in attributes.map) setAttribute(AttributeKey.stringKey(key.name), value.toString())
             }
             .emit()
@@ -205,7 +209,7 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
                     .setLoggerProvider(settings.buildLoggerProvider(SystemOutLogRecordExporter.create()).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk, silenceConsole = true)
-                OtelTelemetryBackend(sdk)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization)
             }
             TelemetryBackend.Settings.register("console") { _, settings, context ->
                 val resource = resource(context.projectName)
@@ -216,7 +220,7 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
                     .setLoggerProvider(settings.buildLoggerProvider(PrintLogExporter).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk)
-                OtelTelemetryBackend(sdk)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization)
             }
             TelemetryBackend.Settings.register("otlp-grpc") { _, settings, context ->
                 val target = "http://${settings.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4317"}"
@@ -227,7 +231,7 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
                     .setLoggerProvider(settings.buildLoggerProvider(OtlpGrpcLogRecordExporter.builder().setEndpoint(target).build()).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk)
-                OtelTelemetryBackend(sdk)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization)
             }
             TelemetryBackend.Settings.register("otlp-http") { _, settings, context ->
                 val target = "http://${settings.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4318"}"
@@ -238,7 +242,7 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
                     .setLoggerProvider(settings.buildLoggerProvider(OtlpHttpLogRecordExporter.builder().setEndpoint("$target/v1/logs").build()).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk)
-                OtelTelemetryBackend(sdk)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization)
             }
             TelemetryBackend.Settings.register("otlp-https") { _, settings, context ->
                 val target = "https://${settings.url.substringAfter("://", "")}"
@@ -249,7 +253,7 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
                     .setLoggerProvider(settings.buildLoggerProvider(OtlpHttpLogRecordExporter.builder().setEndpoint("$target/v1/logs").build()).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk)
-                OtelTelemetryBackend(sdk)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization)
             }
             TelemetryBackend.Settings.register("dev") { _, settings, context ->
                 val urlWithoutScheme = settings.url.substringAfter("://", "").let {
@@ -270,7 +274,7 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
                     .setLoggerProvider(SdkLoggerProvider.builder().addLogRecordProcessor(SimpleLogRecordProcessor.create(DevLogExporter(config))).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk, silenceConsole = true)
-                OtelTelemetryBackend(sdk)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization)
             }
             TelemetryBackend.Settings.register("debounced-dev") { _, settings, context ->
                 val urlWithoutScheme = settings.url.substringAfter("://", "").let {
@@ -293,7 +297,7 @@ public class OtelTelemetryBackend(private val sdk: OpenTelemetry) : TelemetryBac
                     .setLoggerProvider(SdkLoggerProvider.builder().addLogRecordProcessor(SimpleLogRecordProcessor.create(DevLogExporter(config))).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk, silenceConsole = true)
-                OtelTelemetryBackend(sdk)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization)
             }
         }
 

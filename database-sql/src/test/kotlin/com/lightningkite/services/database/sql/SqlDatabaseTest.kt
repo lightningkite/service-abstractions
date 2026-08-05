@@ -55,10 +55,11 @@ class SqlModificationTests : ModificationTests() {
         }
     }
 
-    // Map modifications not yet implemented in SQL expressions
-    override fun test_Map_modifyField() {}
-    override fun test_Map_setField() {}
-    override fun test_Map_unsetField() {}
+    // The map modification tests (setField/unsetField) used to be overridden away here as "not yet
+    // implemented in SQL expressions". They pass: map fields live in subtables, so
+    // Modification.isScalarOnly returns false for them and SqlTable falls back to the read-modify-write
+    // path, which applies Modification.invoke in memory and therefore inherits the reference semantics
+    // for free. The disables were stale.
 }
 
 class SqlSortTest : SortTest() {

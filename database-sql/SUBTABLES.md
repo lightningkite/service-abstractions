@@ -299,7 +299,7 @@ All in `SqlCollection`:
   reassigned), it falls back to **read-modify-write**: load the entity, apply the modification in
   memory, then `writeEntity` (update main + delete/reinsert children).
 
-This is why collection modifications like `ListAppend`, `SetRemove`, `Combine`, `ModifyByKey`, etc.
+This is why collection modifications like `ListAppend`, `SetRemove`, `Combine`, etc.
 are reported as *not* scalar-only — they require the read-modify-write path.
 
 ---

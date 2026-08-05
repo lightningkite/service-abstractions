@@ -45,7 +45,6 @@ package com.lightningkite.services.cache.dynamodb
  *
  * ## Important Gotchas
  *
- * - **No CAS**: This implementation doesn't expose atomic compareAndSet to users (uses default retry-based modify)
  * - **Table creation latency**: First access may be slow (~10-30 seconds for table creation)
  * - **TTL delay**: DynamoDB TTL is best-effort, may take minutes to hours to expire items
  * - **get() checks expiration**: Manually filters expired items (don't rely solely on TTL deletion)
@@ -88,7 +87,10 @@ public class DynamoDbCache(
 ) : Cache {
     // PUBLICATION mode: multiple threads may race to build the client, but the AWS SDK async
     // client is thread-safe so concurrent init is harmless and avoids a global lock on every access.
-    public val client: DynamoDbAsyncClient by lazy(LazyThreadSafetyMode.PUBLICATION, makeClient)
+    // A `var` (rather than a plain `by lazy` delegate) so `disconnect()` can discard the built client
+    // and let the next access rebuild a fresh one from `makeClient` — see `disconnect()`/`connect()`.
+    private var _client = lazy(LazyThreadSafetyMode.PUBLICATION, makeClient)
+    public val client: DynamoDbAsyncClient get() = _client.value
 
     // Static, low-cardinality span attributes shared by every operation. The cache key is hashed so a
     // high-cardinality value never reaches telemetry.
@@ -158,6 +160,27 @@ public class DynamoDbCache(
                     ?: throw IllegalStateException("Invalid dynamodb URL. The URL should match the pattern: dynamodb://[access]:[secret]@[region]/[tableName]")
             }
         }
+    }
+
+    /**
+     * Establishes the underlying DynamoDB client and waits for the table to be ready. Optional —
+     * every operation already does this lazily — but useful to pre-warm connections and fail fast on
+     * misconfiguration during startup.
+     */
+    override suspend fun connect() {
+        ready.await()
+    }
+
+    /**
+     * Closes the underlying DynamoDB client and releases its connection pool. Idempotent: calling it
+     * multiple times in a row, or without ever having connected, is a no-op beyond the first call.
+     *
+     * A subsequent [connect] (or any operation) rebuilds the client from [makeClient], so this does
+     * not permanently disable the cache — see the `_client` var above.
+     */
+    override suspend fun disconnect() {
+        if (_client.isInitialized()) _client.value.close()
+        _client = lazy(LazyThreadSafetyMode.PUBLICATION, makeClient)
     }
 
     override suspend fun healthCheck(): HealthStatus {
@@ -289,6 +312,102 @@ public class DynamoDbCache(
         } catch (e: ConditionalCheckFailedException) {
             span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.added, false) })
             false
+        }
+    }
+
+    /**
+     * Atomic compare-and-set via a `ConditionExpression`, mirroring [add]'s use of conditional writes.
+     * Without this override, the interface's default `modify`/`compareAndSet` fall back to a separate
+     * `get()` then unconditional `set()`/`remove()` — a lost-update race under concurrent callers.
+     *
+     * A row counts as matching `expected == null` both when it's physically absent and when it's
+     * physically present but past its TTL, matching the manual expiration filtering [get] performs
+     * (DynamoDB's own TTL sweep is best-effort and may lag by minutes to hours).
+     */
+    override suspend fun <T> compareAndSet(
+        key: String,
+        serializer: KSerializer<T>,
+        expected: T?,
+        new: T?,
+        timeToLive: Duration?,
+    ): Boolean {
+        if (expected == new) return true
+        return telemetryTrace("compareAndSet", attributes = spanAttrs(key, timeToLive), dimensions = setOf(Cache.TelemetryKeys.casSuccess)) { span ->
+            ready.await()
+            // "Not live" = physically absent, or present with a numeric `expires` that has passed.
+            val notLiveCondition = "attribute_not_exists(#k) OR (attribute_exists(#exp) AND attribute_type(#exp, :nType) AND #exp <= :now)"
+            // "Live and matches" = physically present, not expired, and its value equals `expected`.
+            val liveMatchCondition = "attribute_exists(#k) AND (attribute_not_exists(#exp) OR #exp = :null OR #exp > :now) AND #v = :expected"
+            val result = try {
+                when {
+                    expected == null -> {
+                        client.putItem {
+                            it.tableName(tableName)
+                            it.conditionExpression(notLiveCondition)
+                            it.expressionAttributeNames(mapOf("#k" to "key", "#exp" to "expires"))
+                            it.expressionAttributeValues(
+                                mapOf(
+                                    ":nType" to AttributeValue.fromS("N"),
+                                    ":now" to AttributeValue.fromN(now().epochSeconds.toString()),
+                                )
+                            )
+                            it.item(
+                                mapOf(
+                                    "key" to AttributeValue.fromS(key),
+                                    // `expected == new` was ruled out above, so `expected == null` implies `new != null`.
+                                    "value" to serializer.toDynamo(new!!, context),
+                                ) + (timeToLive?.let {
+                                    mapOf("expires" to AttributeValue.fromN(now().plus(it).epochSeconds.toString()))
+                                } ?: mapOf())
+                            )
+                        }.await()
+                        true
+                    }
+                    new == null -> {
+                        client.deleteItem {
+                            it.tableName(tableName)
+                            it.key(mapOf("key" to AttributeValue.fromS(key)))
+                            it.conditionExpression(liveMatchCondition)
+                            it.expressionAttributeNames(mapOf("#k" to "key", "#exp" to "expires", "#v" to "value"))
+                            it.expressionAttributeValues(
+                                mapOf(
+                                    ":null" to AttributeValue.fromNul(true),
+                                    ":now" to AttributeValue.fromN(now().epochSeconds.toString()),
+                                    ":expected" to serializer.toDynamo(expected, context),
+                                )
+                            )
+                        }.await()
+                        true
+                    }
+                    else -> {
+                        client.putItem {
+                            it.tableName(tableName)
+                            it.conditionExpression(liveMatchCondition)
+                            it.expressionAttributeNames(mapOf("#k" to "key", "#exp" to "expires", "#v" to "value"))
+                            it.expressionAttributeValues(
+                                mapOf(
+                                    ":null" to AttributeValue.fromNul(true),
+                                    ":now" to AttributeValue.fromN(now().epochSeconds.toString()),
+                                    ":expected" to serializer.toDynamo(expected, context),
+                                )
+                            )
+                            it.item(
+                                mapOf(
+                                    "key" to AttributeValue.fromS(key),
+                                    "value" to serializer.toDynamo(new, context),
+                                ) + (timeToLive?.let {
+                                    mapOf("expires" to AttributeValue.fromN(now().plus(it).epochSeconds.toString()))
+                                } ?: mapOf())
+                            )
+                        }.await()
+                        true
+                    }
+                }
+            } catch (e: ConditionalCheckFailedException) {
+                false
+            }
+            span.enrich(TelemetryAttributes { put(Cache.TelemetryKeys.casSuccess, result) })
+            result
         }
     }
 

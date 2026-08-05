@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 class RedisCasScriptFlushTest {
 
     private val cache: RedisCache by lazy {
-        RedisCache("test-script-flush", RedisClient.create("redis://127.0.0.1:6379/0"), TestSettingContext())
+        RedisCache("test-script-flush", { RedisClient.create("redis://127.0.0.1:6379/0") }, TestSettingContext())
     }
 
     companion object {

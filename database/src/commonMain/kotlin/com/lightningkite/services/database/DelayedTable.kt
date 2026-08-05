@@ -20,6 +20,13 @@ public open class DelayedTable<Model : Any>(
     private val range: ClosedRange<Duration>,
 ) : Table<Model> {
     private suspend fun doDelay() {
+        // Random.nextDouble(from, until) requires from < until and throws otherwise, so a zero-width
+        // range (e.g. from `delay://100`, which has no "-" to parse a spread from) must be delayed
+        // directly rather than passed through as a random range.
+        if (range.start == range.endInclusive) {
+            delay(range.start)
+            return
+        }
         delay(
             Random.nextDouble(
                 range.start.toDouble(DurationUnit.SECONDS),

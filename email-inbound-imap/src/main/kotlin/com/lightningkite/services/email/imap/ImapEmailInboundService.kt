@@ -22,6 +22,11 @@ import kotlin.time.Instant
 
 private val logger = KotlinLogging.logger("ImapEmailInboundService")
 
+// Real mail clients never nest MIME parts more than a handful of levels deep. Inbound MIME is
+// fully attacker-controlled (anyone can send an email), so unbounded recursion over attacker
+// content is a stack-overflow DoS. Fail fast well before the JVM stack would actually overflow.
+private const val MAX_MIME_DEPTH = 30
+
 /**
  * IMAP email inbound implementation using Jakarta Mail for polling email servers.
  *
@@ -281,6 +286,11 @@ public class ImapEmailInboundService(
                         logger.error(e) { "[$name] Failed to parse message; leaving it unseen for retry" }
                         continue
                     }
+                    // Marked SEEN here, before the caller has done anything with `result` — this is
+                    // the at-most-once half of the tradeoff documented on WebhookAdapter.pull(): if
+                    // the caller crashes partway through processing the returned batch, whatever it
+                    // hadn't gotten to yet is already flagged and gone. Not an oversight; pull() has
+                    // no way to ack "the caller is done" after the fact, so there's no third option.
                     withContext(Dispatchers.IO) {
                         rawMessage.setFlag(Flags.Flag.SEEN, true)
                     }
@@ -359,13 +369,19 @@ public class ImapEmailInboundService(
         )
     }
 
-    private data class ContentResult(
+    internal data class ContentResult(
         val plainText: String?,
         val html: String?,
         val attachments: List<ReceivedAttachment>,
     )
 
-    private fun parseContent(part: Part): ContentResult {
+    // internal (not private) so the depth limit can be exercised directly from tests without
+    // going through a live IMAP round-trip.
+    internal fun parseContent(part: Part, depth: Int = 0): ContentResult {
+        if (depth > MAX_MIME_DEPTH) throw IllegalArgumentException(
+            "MIME message nesting exceeds maximum depth of $MAX_MIME_DEPTH; refusing to parse further"
+        )
+
         var plainText: String? = null
         var html: String? = null
         val attachments = mutableListOf<ReceivedAttachment>()
@@ -396,7 +412,7 @@ public class ImapEmailInboundService(
                 val multipart = part.content as Multipart
                 for (i in 0 until multipart.count) {
                     val bodyPart = multipart.getBodyPart(i)
-                    val result = parseContent(bodyPart)
+                    val result = parseContent(bodyPart, depth + 1)
 
                     plainText = plainText ?: result.plainText
                     html = html ?: result.html
