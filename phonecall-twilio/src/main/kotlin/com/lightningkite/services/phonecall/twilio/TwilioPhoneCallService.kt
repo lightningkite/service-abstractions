@@ -6,10 +6,12 @@ import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.http.SettingContextElement
+import com.lightningkite.services.http.client
 import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.phonecall.*
 import com.lightningkite.services.webhooksubservice.*
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.ktor.client.HttpClient
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -95,6 +97,8 @@ private val logger = KotlinLogging.logger("TwilioPhoneCallService")
  * @property authUser Authentication username - either Account SID (for auth token) or API Key SID (for API key)
  * @property authSecret Authentication secret - either Auth Token or API Key Secret
  * @property defaultFrom Default sender phone number in E.164 format
+ * @param baseClient Base HTTP client to derive the Twilio-authenticated client from. Defaults to
+ * the shared production client; tests can pass a `MockEngine`-backed client here instead.
  */
 public class TwilioPhoneCallService(
     override val name: String,
@@ -103,6 +107,7 @@ public class TwilioPhoneCallService(
     private val authUser: String,
     private val authSecret: String,
     private val defaultFrom: String,
+    baseClient: HttpClient = client,
 ) : PhoneCallService {
 
     /**
@@ -118,7 +123,7 @@ public class TwilioPhoneCallService(
 
     private val baseUrl = "https://api.twilio.com/2010-04-01/Accounts/$account"
 
-    private val client = com.lightningkite.services.http.client.config {
+    private val client = baseClient.config {
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true
@@ -539,8 +544,15 @@ public class TwilioPhoneCallService(
         put(TelemetryKey.OfString("phonecall.call_id"), callId)
         put(TelemetryKey.OfString("phonecall.provider"), "twilio")
     }) {
+        // Fail fast on anything outside Twilio's documented <Play digits> charset. Without this,
+        // caller-supplied digits (e.g. relayed from one call leg to another) could close the
+        // attribute early and inject arbitrary TwiML verbs into a live call.
+        require(digits.isNotEmpty() && digits.all { it in "0123456789*#w" }) {
+            "Invalid DTMF digits '$digits': only 0-9, *, #, and w (pause) are allowed."
+        }
+
         val twiml = buildTwimlInternal {
-            appendLine("""<Play digits="$digits"/>""")
+            appendLine("""<Play digits="${escapeXml(digits)}"/>""")
         }
 
         withContext(SettingContextElement(context)) {

@@ -127,6 +127,32 @@ public class MapCache(
     }
 
     @Suppress("UNCHECKED_CAST")
+    override suspend fun <T> compareAndSet(
+        key: String,
+        serializer: KSerializer<T>,
+        expected: T?,
+        new: T?,
+        timeToLive: Duration?,
+    ): Boolean {
+        if (expected == new) return true
+        assertValidTtl(timeToLive)
+        val clock = Clock.default()
+        // Single compute call: read, compare, and swap atomically per-key, same as modify()'s CAS loop.
+        var success = false
+        entries.compute(key) { _, cur ->
+            val live = cur?.takeIf { it.expires == null || it.expires > clock.now() }
+            val currentValue = live?.value as? T
+            if (currentValue != expected) {
+                cur
+            } else {
+                success = true
+                new?.let { Entry(it, timeToLive?.let { clock.now() + it }) }
+            }
+        }
+        return success
+    }
+
+    @Suppress("UNCHECKED_CAST")
     override suspend fun <T> modify(
         key: String,
         serializer: KSerializer<T>,
@@ -144,7 +170,9 @@ public class MapCache(
                 val existing = entries[key]?.takeIf { it.expires == null || it.expires > clock.now() }
                 val current = existing?.value as? T
                 val new = modification(current)
-                val newEntry = new?.let { Entry(it, timeToLive?.let { clock.now() + it } ?: existing?.expires) }
+                // Per the interface contract, a null `timeToLive` means "no expiration" — it must
+                // not fall back to the previous entry's expiry, matching Redis/Memcached/DynamoDB.
+                val newEntry = new?.let { Entry(it, timeToLive?.let { clock.now() + it }) }
                 val swapped: Boolean
                 if (newEntry != null) {
                     // Replace only if the stored entry is still the one we read.

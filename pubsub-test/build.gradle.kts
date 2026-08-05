@@ -40,6 +40,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(project(path = ":pubsub"))
+                api(project(path = ":test"))
             }
         }
         val commonTest by getting {

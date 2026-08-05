@@ -9,6 +9,30 @@ public interface WebhookAdapterWithResponse<Input, Output> : HttpAdapter<Input, 
 public interface WebhookAdapter<Input> : WebhookAdapterWithResponse<Input, Unit> {
     override suspend fun render(output: Unit): HttpAdapter.HttpResponseLike =
         HttpAdapter.HttpResponseLike(204, mapOf(), null)
+
+    /**
+     * Fetches and returns a batch of pending [Input]s for pull-based (as opposed to
+     * webhook-pushed) implementations.
+     *
+     * ## No acknowledgment mechanism (known limitation)
+     *
+     * This method has no way for the caller to signal "I successfully processed this batch" —
+     * consumption is implicitly acknowledged by the act of returning the items, not by the
+     * caller finishing whatever it does with them. That forces every pull-based implementation
+     * to choose between two bad options:
+     * - Mark items consumed *before* returning them (at-most-once): if the caller crashes or
+     *   throws partway through processing the batch, the unprocessed remainder is lost forever.
+     * - Mark items consumed *after* returning them, on the next call (at-least-once): items can
+     *   be redelivered indefinitely if the caller never calls [pull] again.
+     *
+     * `ImapEmailInboundService` (in `email-inbound-imap`), the one pull-based implementation
+     * today, takes the first option (marks messages SEEN inside `pull()`, before the caller
+     * processes them) and therefore risks message loss on downstream failure.
+     *
+     * Fixing this requires an API change here, not in the implementations — the candidate is a
+     * scoped form, `suspend fun <R> pull(process: suspend (Set<Input>) -> R): R`, which would
+     * mark items consumed only after `process` returns normally.
+     */
     public suspend fun pull(): Set<Input>
 }
 

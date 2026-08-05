@@ -215,10 +215,6 @@ public class ModificationBuilder<K>() {
         modifications.add(mapModification(Modification.Combine(map)))
     }
 
-    public inline infix fun <reified T> DataClassPath<K, Map<String, T>>.modifyByKey(byKey: Map<String, ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit>) {
-        modifications.add(mapModification(Modification.ModifyByKey(byKey.mapValues { modification(it.value) })))
-    }
-
     public infix fun <T> DataClassPath<K, Map<String, T>>.removeKeys(fields: Set<String>) {
         modifications.add(mapModification(Modification.RemoveKeys<T>(fields)))
     }

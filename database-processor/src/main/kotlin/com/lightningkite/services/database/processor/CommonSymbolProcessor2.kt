@@ -7,6 +7,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.io.Writer
+import java.security.MessageDigest
 
 abstract class CommonSymbolProcessor2(
     private val myCodeGenerator: CodeGenerator,
@@ -70,6 +71,33 @@ abstract class CommonSymbolProcessor2(
             outFolder.mkdirs()
 
             if (common) {
+                // DO NOT route the real generated output through myCodeGenerator.createNewFile -
+                // this is a deliberate deviation from the normal KSP pattern, not an oversight.
+                // Every consumer of this processor (database, database-test, ai, ai-bedrock,
+                // ai-embedded, database-shared, embedding, embedding-bedrock, voiceagent - see
+                // their build.gradle.kts) manually registers ONE shared folder,
+                // build/generated/ksp/common/common$flavor/kotlin, as a commonMain/commonTest
+                // srcDir, specifically because KSP has no built-in notion of "one output shared
+                // across every target's KSP task." myCodeGenerator.createNewFile instead writes
+                // into *this task's own per-target* generated folder (e.g. jvmMain's) - which
+                // Gradle compiles *alongside* that manually-registered shared folder. Writing the
+                // real declarations to both would be a duplicate-declaration compile error on
+                // every single target. The real content is written below via `this.file(...)`
+                // into the shared folder instead (see fileCreator + processFiles/syncInto).
+                //
+                // What we register here is a separate, harmless side-output whose only purpose is
+                // to give KSP's own incremental engine a genuine dependency edge from these real
+                // input files, as a second line of defense alongside the content hash in
+                // checksum() below - it is never read back and carries no generated code.
+                myCodeGenerator.createNewFile(
+                    Dependencies(false, *interestedIn.toTypedArray()),
+                    fileName = "$myId-common$flavor-dependencies",
+                    extensionName = "txt",
+                    packageName = "com.lightningkite.lightningserver"
+                ).writer().use {
+                    it.write("Tracked for KSP incremental invalidation only; the actual cache gate is checksum() below.")
+                }
+
                 processFiles(
                     version = version,
                     dependencies = interestedIn.asSequence().map { it.filePath.let(::File) },
@@ -125,7 +153,15 @@ abstract class CommonSymbolProcessor2(
 }
 
 
-fun Sequence<File>.checksum() = sumOf { it.readText().sumOf { it.code } }
+// A real content hash, not the additive character-code sum this replaced: that sum was
+// order-insensitive, so a same-line-count field reorder (same characters, different order)
+// produced an identical value and silently defeated cache invalidation below. SHA-256 over
+// the file bytes in a fixed (path-sorted) order changes on any content or ordering change.
+fun Sequence<File>.checksum(): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    sortedBy { it.absolutePath }.forEach { digest.update(it.readBytes()) }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
 interface FileGenerator {
     fun file(name: String): Writer
 }
@@ -139,7 +175,7 @@ fun processFiles(
 ) {
     lockFile.parentFile.mkdirs()
     File(lockFile.absolutePath + ".dependencies").writeText(dependencies.joinToString("\n"))
-    val hash = dependencies.checksum() + version
+    val hash = dependencies.checksum() + ":" + version
 
     // Every KSP task of every target runs this processor, so the lock is what makes exactly one of
     // them generate while the rest fall through to the up-to-date check below. Readers are safe
@@ -154,7 +190,7 @@ fun processFiles(
         "Timed out waiting for $runningFile. If no build is running, delete it."
     )
     try {
-        val hashFromFile = lockFile.takeIf { it.exists() }?.readText()?.toIntOrNull()
+        val hashFromFile = lockFile.takeIf { it.exists() }?.readText()
         val outputsFile = File(lockFile.absolutePath + ".outputs")
         val previousOutputs = outputsFile.takeIf { it.exists() }?.readLines()?.filter { it.isNotBlank() }.orEmpty()
         // Up to date when the inputs are unchanged and everything previously produced is still there.
@@ -188,7 +224,7 @@ fun processFiles(
         // Recorded only once the output is actually valid. Writing it up front meant a failed run
         // left an empty folder marked current, so every later build skipped regenerating it.
         outputsFile.writeText(written.joinToString("\n"))
-        lockFile.writeText(hash.toString())
+        lockFile.writeText(hash)
     } finally {
         runningFile.delete()
     }

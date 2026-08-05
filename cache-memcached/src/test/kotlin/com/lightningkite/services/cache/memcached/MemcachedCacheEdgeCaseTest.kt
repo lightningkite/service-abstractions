@@ -3,6 +3,8 @@ package com.lightningkite.services.cache.memcached
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.cache.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer
@@ -93,6 +95,40 @@ class MemcachedCacheEdgeCaseTest {
         )
         assertTrue(result, "CAS delete should succeed")
         assertNull(c.get<TestData>(key), "Key should be deleted after CAS with null new value")
+    }
+
+    /**
+     * The CAS-delete branch of [MemcachedCache.compareAndSet] used to call a bare, unconditional
+     * `client.delete(key)` and always return a hardcoded `true`, ignoring the real result. Racing two
+     * deletes that both observe the same matching value exercises this deterministically: Memcached's
+     * plain existence-based DELETE already guarantees only the first one physically removes anything
+     * (no CAS needed for that part — the second delete finds the key already gone and the server
+     * returns false), so under the old hardcoded-`true` code *both* calls would wrongly report
+     * success. The fix must report exactly one `true`.
+     *
+     * (Full CAS-guarded atomicity for this branch — rejecting a delete whose *value* has changed
+     * since it was read, as opposed to merely "does the key still exist" — needs the Memcached
+     * *binary* protocol; the classic text protocol this class speaks has no CAS argument on DELETE at
+     * all, so the CAS token passed here is silently dropped by XMemcached's TextCommandFactory before
+     * it reaches the server. See the comment on the `new == null` branch of `compareAndSet`.)
+     */
+    @Test
+    fun testCompareAndSetDeletePropagatesRealResultNotHardcodedTrue() = runBlocking {
+        assumeTrue("Memcached not available", cache != null)
+        val c = cache!!
+        val serializer = c.context.internalSerializersModule.serializer<TestData>()
+        val key = "cas-delete-guard-test-${System.currentTimeMillis()}"
+
+        c.set(key, TestData("initial", 1))
+        val observed = c.get<TestData>(key)
+
+        val results = listOf(
+            async { c.compareAndSet(key, serializer, observed, null) },
+            async { c.compareAndSet(key, serializer, observed, null) },
+        ).awaitAll()
+
+        assertEquals(1, results.count { it }, "only the delete that actually removed the key may report true")
+        assertNull(c.get<TestData>(key))
     }
 
     @Test
@@ -253,6 +289,31 @@ class MemcachedCacheEdgeCaseTest {
         c.add(key, 10)
         c.add(key, 5)
         assertEquals(15, c.get<Int>(key))
+    }
+
+    /**
+     * `disconnect()` used to be a complete no-op (the default `Service` implementation), leaking the
+     * XMemcached client's selector thread and socket pool forever. This confirms disconnect() actually
+     * tears the client down, that a subsequent operation transparently rebuilds it and keeps working,
+     * and that disconnecting twice in a row doesn't throw.
+     */
+    @Test
+    fun testDisconnectThenReconnectCycle() = runBlocking {
+        assumeTrue("Memcached not available", cache != null)
+        val c = cache as MemcachedCache
+        val key = "disconnect-reconnect-test-${System.currentTimeMillis()}"
+
+        c.set(key, TestData("before", 1))
+        assertEquals(TestData("before", 1), c.get<TestData>(key))
+
+        c.disconnect()
+        c.disconnect() // idempotent — must not throw even with nothing left to close
+
+        // A subsequent operation must transparently rebuild the client rather than staying broken.
+        c.connect()
+        assertEquals(TestData("before", 1), c.get<TestData>(key), "data must still be visible after reconnecting")
+        c.set(key, TestData("after", 2))
+        assertEquals(TestData("after", 2), c.get<TestData>(key))
     }
 
     @Test

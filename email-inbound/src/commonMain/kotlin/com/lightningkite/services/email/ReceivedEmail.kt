@@ -112,7 +112,11 @@ public data class EmailEnvelope(
  * }
  * ```
  *
- * @property filename Original filename of the attachment
+ * @property filename Original filename of the attachment, taken verbatim from the sender's
+ *   `Content-Disposition` header. **This value is attacker-controlled** — anyone can send an
+ *   email — and may contain path separators (`/`, `\`), `..` traversal segments, null bytes, or
+ *   be empty. Never use it directly as a filesystem path or storage key; sanitise or generate
+ *   your own key before writing it to disk or a bucket.
  * @property contentType MIME type of the attachment (e.g., "application/pdf")
  * @property size Size in bytes (-1 if unknown)
  * @property contentId Content-ID for inline attachments (used in HTML img src="cid:...")

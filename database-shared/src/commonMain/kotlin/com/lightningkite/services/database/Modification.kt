@@ -39,7 +39,6 @@ import kotlinx.serialization.Serializable
  * ## Map Modifications
  *
  * - [Combine] - Merge map entries (overwrites existing keys)
- * - [ModifyByKey] - Apply different modifications to specific keys
  * - [RemoveKeys] - Delete map entries
  *
  * ## Nested Modifications
@@ -254,11 +253,13 @@ public sealed class Modification<T> {
         override fun toString(): String = " += $map"
     }
 
-    @Serializable(ModificationModifyByKeySerializer::class)
-    public data class ModifyByKey<T>(val map: Map<String, Modification<T>>) : Modification<Map<String, T>>() {
-        override fun invoke(on: Map<String, T>): Map<String, T> =
-            on + map.mapValues { (on.getValue(it.key).let { e -> it.value(e) }) }
-    }
+    // ModifyByKey (apply a nested modification to an existing map entry) was removed in 1.3. No
+    // supported database could express it without reading the row first and applying the change
+    // locally -- Postgres was the sole exception, which made it atomic on exactly one backend and a
+    // read-modify-write race on every other. An operation that looks like a guarantee and silently
+    // becomes a race when you change backends is worse than no operation at all. Callers do the
+    // read-modify-write themselves now, at the same cost, or use [Combine] with a condition to get a
+    // real compare-and-swap. See BREAKING_CHANGES_1.3.md for the migration.
 
     @Serializable(ModificationRemoveKeysSerializer::class)
     public data class RemoveKeys<T>(val fields: Set<String>) : Modification<Map<String, T>>() {

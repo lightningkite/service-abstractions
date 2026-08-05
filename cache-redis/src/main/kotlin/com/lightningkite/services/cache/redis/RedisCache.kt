@@ -59,12 +59,14 @@ import kotlin.time.Duration
  * - **Connection pooling**: Managed by Lettuce client
  *
  * @property name Service name for logging/metrics
- * @property lettuceClient Lettuce Redis client instance
+ * @property makeLettuceClient Lazy factory for the Lettuce Redis client. Building it lazily and
+ *   re-invoking it on reconnect is what lets [disconnect] actually release the client's Netty event
+ *   loop and connection without permanently bricking the cache.
  * @property context Service context with serializers
  */
 public class RedisCache(
     override val name: String,
-    public val lettuceClient: RedisClient,
+    public val makeLettuceClient: () -> RedisClient,
     override val context: SettingContext,
 ) : Cache {
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
@@ -122,8 +124,7 @@ end
 
         init {
             Cache.Settings.register("redis") { name, url, context ->
-                val client = RedisClient.create(url)
-                RedisCache(name, client, context)
+                RedisCache(name, { RedisClient.create(url) }, context)
             }
         }
     }
@@ -157,7 +158,33 @@ end
         }
     }
 
-    public val lettuceConnection: RedisReactiveCommands<String, String> = lettuceClient.connect().reactive()
+    // `var`s (rather than plain `val`s) so `disconnect()` can tear down the built client/connection
+    // and let the next access rebuild fresh ones from `makeLettuceClient` — see `disconnect()`.
+    private var _lettuceClient = lazy(makeLettuceClient)
+    public val lettuceClient: RedisClient get() = _lettuceClient.value
+
+    private var _lettuceConnection = lazy { lettuceClient.connect().reactive() }
+    public val lettuceConnection: RedisReactiveCommands<String, String> get() = _lettuceConnection.value
+
+    /** Establishes the underlying Redis connection. Optional — every operation does this lazily. */
+    override suspend fun connect() {
+        lettuceConnection
+    }
+
+    /**
+     * Closes the underlying Redis connection and shuts down the Lettuce client, releasing its Netty
+     * event loop. Idempotent: repeated calls, or calling it without ever having connected, are a
+     * no-op beyond the first.
+     *
+     * A subsequent [connect] (or any operation) rebuilds both from [makeLettuceClient], so this does
+     * not permanently disable the cache — see the `_lettuceClient`/`_lettuceConnection` vars above.
+     */
+    override suspend fun disconnect() {
+        if (_lettuceConnection.isInitialized()) _lettuceConnection.value.statefulConnection.close()
+        if (_lettuceClient.isInitialized()) _lettuceClient.value.shutdown()
+        _lettuceConnection = lazy { lettuceClient.connect().reactive() }
+        _lettuceClient = lazy(makeLettuceClient)
+    }
 
     // Static, low-cardinality span attributes shared by every operation. The cache key is hashed so a
     // high-cardinality value never reaches telemetry.

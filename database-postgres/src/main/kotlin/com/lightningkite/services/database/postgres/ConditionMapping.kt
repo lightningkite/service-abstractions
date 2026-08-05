@@ -11,6 +11,25 @@ import org.jetbrains.exposed.v1.jdbc.*
 import org.jetbrains.exposed.v1.core.ops.SingleValueInListOp
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
+// The backslash used to escape literal `%`/`_` in `StringContains`/`RawStringContains` LIKE
+// patterns (see [escapeLikeValue]). Backslash is not a special character in Postgres's LIKE syntax
+// by default, so it's safe to reserve as the escape char here.
+private const val LIKE_ESCAPE_CHAR = '\\'
+
+/**
+ * Escapes a literal search value so it can be embedded inside a `%...%` LIKE pattern without its
+ * own `%`/`_` characters being interpreted as SQL wildcards. The in-memory reference for
+ * `StringContains`/`RawStringContains` is `on.contains(value)` — a literal substring search where
+ * every character of [value] is significant — so this (together with passing [LIKE_ESCAPE_CHAR] as
+ * the op's `escapeChar`, which emits `ESCAPE '\'`) is required to match that semantics.
+ */
+private fun escapeLikeValue(value: String): String = buildString(value.length) {
+    for (c in value) {
+        if (c == LIKE_ESCAPE_CHAR || c == '%' || c == '_') append(LIKE_ESCAPE_CHAR)
+        append(c)
+    }
+}
+
 internal data class FieldSet2<V>(
     val serializer: KSerializer<V>,
     val fields: Map<String, ExpressionWithColumnType<Any?>>,
@@ -219,7 +238,14 @@ private fun <T> condition(
 
         is Condition.NotInside -> {
             if (fieldSet.fields.size == 1)
-                NotOp(SingleValueInListOp(fieldSet.single, condition.values.map { fieldSet.formatSingle(it) }))
+                // `NOT (col IN (...))` is NULL (excluded by WHERE) when col is NULL, under SQL's
+                // three-valued logic — but the in-memory reference (!values.contains(on)) treats a
+                // null field as vacuously "not in the list" and includes it. OR in the null check to
+                // match; harmless on a NOT NULL column, where it's always false.
+                OrOp(listOf(
+                    fieldSet.notExists,
+                    NotOp(SingleValueInListOp(fieldSet.single, condition.values.map { fieldSet.formatSingle(it) })),
+                ))
             else
                 AndOp(condition.values.map { value ->
                     OrOp(fieldSet.format(value).entries.map { NeqOp(it.key, it.value) })
@@ -260,24 +286,24 @@ private fun <T> condition(
 
         is Condition.Not -> NotOp(condition(condition.condition, fieldSet))
         is Condition.GeoDistance -> TODO()
-        // by Claude - wrap value with % for substring matching
+        // Wrap value with % for substring matching. The value itself is escaped (see
+        // [escapeLikeValue]) so a literal '%'/'_' in the search value can't act as a SQL wildcard.
         is Condition.StringContains -> {
             val col = fieldSet.single
-            val pattern = "%${condition.value}%"
+            val pattern = "%${escapeLikeValue(condition.value)}%"
             if (condition.ignoreCase)
-                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
+                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
             else
-                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
+                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
         }
 
-        // by Claude - wrap value with % for substring matching
         is Condition.RawStringContains -> {
             val col = fieldSet.single
-            val pattern = "%${condition.value}%"
+            val pattern = "%${escapeLikeValue(condition.value)}%"
             if (condition.ignoreCase)
-                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
+                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
             else
-                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
+                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
         }
 
         is Condition.RegexMatches -> {
@@ -609,9 +635,45 @@ private fun <T> FieldModifier.modification(
             }
         }
 
-        is Modification.Combine<*> -> TODO()
-        is Modification.ModifyByKey<*> -> TODO()
-        is Modification.RemoveKeys<*> -> TODO()
+        is Modification.Combine<*> -> {
+            // Maps are stored as parallel arrays -- one per key-path segment of the key type, one
+            // (suffixed "value") per key-path segment of the value type; see
+            // SerialDescriptorTable.columnType's StructureKind.MAP branch. `on + map` means: entries
+            // whose key is being replaced are dropped from the old arrays (via the same key-array
+            // filter [MapOp] uses for RemoveKeys below), then the new entries are appended -- to
+            // every column in lockstep, so the key/value arrays stay aligned by position.
+            val newEntries = modification.map
+            val newColumnLiterals = fieldSet.format(modification.map as T)
+            fieldSet.fields.forEach { (colKey, colExpr) ->
+                modify(colKey) {
+                    @Suppress("UNCHECKED_CAST")
+                    ConcatOp(
+                        MapOp(
+                            fieldSet as FieldSet2<List<Any?>>,
+                            mapper = { fs -> fs.fields[colKey]!! },
+                            filter = { fs -> NotOp(SingleValueInListOp(fs.fields[""]!!, newEntries.keys.toList())) },
+                        ),
+                        newColumnLiterals[colExpr]!! as Expression<List<Any?>>,
+                    ) as Expression<Any?>
+                }
+            }
+        }
+
+        is Modification.RemoveKeys<*> -> {
+            // Same array-filter shape as the Combine branch above, minus the append: keep only the
+            // entries whose key isn't being removed, applied to every column (key + value arrays) in
+            // lockstep so they stay aligned by position.
+            val keysToRemove = modification.fields.toList()
+            fieldSet.fields.forEach { (colKey, _) ->
+                modify(colKey) {
+                    MapOp(
+                        fieldSet as FieldSet2<List<Any?>>,
+                        mapper = { fs -> fs.fields[colKey]!! },
+                        filter = { fs -> NotOp(SingleValueInListOp(fs.fields[""]!!, keysToRemove)) },
+                    ) as Expression<Any?>
+                }
+            }
+        }
         is Modification.OnField<*, *> -> {
             val key = modification.key as SerializableProperty<T, Any?>
             val d = fieldSet.serializer.descriptor

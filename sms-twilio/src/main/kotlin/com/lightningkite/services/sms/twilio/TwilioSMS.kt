@@ -7,9 +7,11 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.PhoneNumber
 import com.lightningkite.services.http.SettingContextElement
+import com.lightningkite.services.http.client
 import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
+import io.ktor.client.HttpClient
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -92,6 +94,8 @@ import kotlin.time.Duration.Companion.seconds
  * @property account Twilio Account SID (starts with AC)
  * @property key Twilio Auth Token
  * @property from Sender phone number in E.164 format (e.g., +15551234567)
+ * @param baseClient Base HTTP client to derive the Twilio-authenticated client from. Defaults to
+ * the shared production client; tests can pass a `MockEngine`-backed client here instead.
  */
 public class TwilioSMS(
     override val name: String,
@@ -99,9 +103,10 @@ public class TwilioSMS(
     private val account: String,
     private val key: String,
     private val from: String,
+    baseClient: HttpClient = client,
 ) : SMS {
 
-    private val client = com.lightningkite.services.http.client.config {
+    private val client = baseClient.config {
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true
@@ -128,7 +133,7 @@ public class TwilioSMS(
     override suspend fun send(to: PhoneNumber, message: String): Unit = telemetryTrace("send", attributes = TelemetryAttributes {
         put(TelemetryKey.OfString("sms.operation"), "send")
         put(TelemetryKeys.Messaging.system, "twilio")
-        put(TelemetryKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to.toString()))
+        put(TelemetryKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to.raw))
         put(TelemetryKey.OfString("sms.from"), context.telemetrySanitization.redactPhoneNumber(from))
         put(TelemetryKey.OfLong("sms.body_length"), message.length.toLong())
     }) { span ->
@@ -144,7 +149,7 @@ public class TwilioSMS(
                     url = "https://api.twilio.com/2010-04-01/Accounts/${account}/Messages.json",
                     formParameters = Parameters.build {
                         append("From", from)
-                        append("To", to.toString())
+                        append("To", to.raw)
                         append("Body", message)
                     }
                 )

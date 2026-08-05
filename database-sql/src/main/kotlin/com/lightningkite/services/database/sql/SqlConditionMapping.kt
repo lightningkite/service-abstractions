@@ -14,6 +14,25 @@ import org.jetbrains.exposed.v1.jdbc.*
 import org.jetbrains.exposed.v1.core.ops.SingleValueInListOp
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
+// The backslash used to escape literal `%`/`_` in `StringContains`/`RawStringContains` LIKE
+// patterns (see [escapeLikeValue]). Backslash is not a special character in either dialect's LIKE
+// syntax by default, so it's safe to reserve as the escape char here.
+private const val LIKE_ESCAPE_CHAR = '\\'
+
+/**
+ * Escapes a literal search value so it can be embedded inside a `%...%` LIKE pattern without its
+ * own `%`/`_` characters being interpreted as SQL wildcards. The in-memory reference for
+ * `StringContains`/`RawStringContains` is `on.contains(value)` — a literal substring search where
+ * every character of [value] is significant — so this (together with passing [LIKE_ESCAPE_CHAR] as
+ * the op's `escapeChar`, which emits `ESCAPE '\'`) is required to match that semantics.
+ */
+private fun escapeLikeValue(value: String): String = buildString(value.length) {
+    for (c in value) {
+        if (c == LIKE_ESCAPE_CHAR || c == '%' || c == '_') append(LIKE_ESCAPE_CHAR)
+        append(c)
+    }
+}
+
 // ==================== Field Set ====================
 
 internal data class SqlFieldSet<V>(
@@ -160,7 +179,14 @@ private fun <T> condition(
 
         is Condition.NotInside -> {
             if (fieldSet.fields.size == 1)
-                NotOp(SingleValueInListOp(fieldSet.single, condition.values.map { fieldSet.formatSingle(it) }))
+                // `NOT (col IN (...))` is NULL (excluded by WHERE) when col is NULL, under SQL's
+                // three-valued logic — but the in-memory reference (!values.contains(on)) treats a
+                // null field as vacuously "not in the list" and includes it. OR in the null check to
+                // match; harmless on a NOT NULL column, where it's always false.
+                OrOp(listOf(
+                    fieldSet.notExists,
+                    NotOp(SingleValueInListOp(fieldSet.single, condition.values.map { fieldSet.formatSingle(it) })),
+                ))
             else
                 AndOp(condition.values.map { value ->
                     OrOp(fieldSet.format(value).entries.map { NeqOp(it.key, it.value) })
@@ -199,20 +225,20 @@ private fun <T> condition(
         // String operations
         is Condition.StringContains -> {
             val col = fieldSet.single
-            val pattern = "%${condition.value}%"
+            val pattern = "%${escapeLikeValue(condition.value)}%"
             if (condition.ignoreCase)
-                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
+                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
             else
-                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
+                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
         }
 
         is Condition.RawStringContains -> {
             val col = fieldSet.single
-            val pattern = "%${condition.value}%"
+            val pattern = "%${escapeLikeValue(condition.value)}%"
             if (condition.ignoreCase)
-                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
+                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
             else
-                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, null)
+                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
         }
 
         // Bitwise operations
@@ -475,7 +501,6 @@ internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = 
     is Modification.SetDropFirst<*> -> false
     is Modification.SetDropLast<*> -> false
     is Modification.Combine<*> -> false
-    is Modification.ModifyByKey<*> -> false
     is Modification.RemoveKeys<*> -> false
 }
 

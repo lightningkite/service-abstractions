@@ -178,6 +178,12 @@ public interface Table<Model : Any> {
 
     /**
      * Count the number of matching items in each group.
+     *
+     * Whether a `null` group appears in the result is decided by [groupBy]'s value type, not by the
+     * driver: if [Key] is nullable, rows whose group value is null form their own null-keyed group;
+     * if [Key] is not nullable, those rows are omitted entirely rather than returned under a `null`
+     * key the map's own type forbids. See [dropUnrepresentableNullGroup], which every implementation
+     * applies.
      */
     public suspend fun <Key> groupCount(
         condition: Condition<Model> = Condition.Always,
@@ -195,6 +201,9 @@ public interface Table<Model : Any> {
 
     /**
      * Aggregate a particular numerical field on all matching items by group.
+     *
+     * The null-group rule is the same as [groupCount]'s: a `null` key survives only when [Key] is
+     * nullable.
      */
     public suspend fun <N : Number?, Key> groupAggregate(
         aggregate: Aggregate,

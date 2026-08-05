@@ -198,6 +198,10 @@ public sealed class Condition<in T> {
         Condition<T>() {
         @OptIn(ExperimentalSerializationApi::class)
         override fun invoke(on: T): Boolean {
+            // A null value has nothing to search: without this, `on` falls through to `on.toString()`
+            // below, and the Kotlin stdlib returns the literal string "null" for a null receiver -- so
+            // this would full-text-match against the word "null" instead of correctly never matching.
+            if (on == null) return false
             val ser = try {
                 if (on != null) {
                     kotlinx.serialization.serializer(on::class, listOf(), false)
@@ -231,12 +235,18 @@ public sealed class Condition<in T> {
         override fun toString(): String = ".fullTextSearch($value, $requireAllTermsPresent, $levenshteinDistance)"
     }
 
+    /**
+     * Matches if [pattern] is found anywhere within the value -- unanchored, like MongoDB's `$regex`,
+     * Postgres's `~`, and SQL's `REGEXP`, all of which search for the pattern anywhere in the string
+     * rather than requiring it to match the entire value. A caller that wants a full-string match can
+     * anchor the pattern themselves with `^…$`.
+     */
     @Serializable
     public data class RegexMatches(@DoesNotNeedLabel val pattern: String, val ignoreCase: Boolean = false) :
         Condition<String>() {
         @Transient
         private val regex = Regex(pattern, if (ignoreCase) setOf(RegexOption.IGNORE_CASE) else setOf())
-        override fun invoke(on: String): Boolean = regex.matches(on)
+        override fun invoke(on: String): Boolean = regex.containsMatchIn(on)
         override fun toString(): String = ".contains(Regex($pattern), $ignoreCase)"
     }
 

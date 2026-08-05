@@ -79,4 +79,69 @@ abstract class AggregationsTest() {
             }
         }
     }
+
+    // FIX 10: groupCount must not drop rows whose groupBy value is null -- they form their own group,
+    // matching MongoDB's $group and Postgres's GROUP BY. The test above only groups by `byte`, a
+    // non-nullable field, so it could never have caught a driver that special-cases away the null key.
+    @Test
+    fun test_groupCount_nullableKeyIncludesNullGroup() = runTest {
+        val c = database.prepare(DatabaseTableDefinition<LargeTestModel>("aggregationstest_nullablegroup"))
+        c.insertMany(
+            listOf(
+                LargeTestModel(stringNullable = "a"),
+                LargeTestModel(stringNullable = "a"),
+                LargeTestModel(stringNullable = "b"),
+                LargeTestModel(stringNullable = null),
+                LargeTestModel(stringNullable = null),
+                LargeTestModel(stringNullable = null),
+            )
+        )
+        val control = c.all().toList().groupingBy { it.stringNullable }.eachCount()
+        val test: Map<String?, Int> = c.groupCount(groupBy = path<LargeTestModel>().stringNullable)
+        assertEquals(control, test)
+        assertEquals(3, test[null])
+    }
+
+    // The other half of the contract. `embeddedNullable.notNull.value2` has declared value type Int,
+    // but DataClassPath.get() returns V? regardless -- DataClassPathNotNull yields null when the
+    // optional it wraps is absent, and every driver has the same behaviour via a NULL column or a
+    // missing document field. Returning those rows under a `null` key would put a null into a
+    // Map<Int, Int>, which the map's own type says is impossible. They must be dropped instead.
+    @Test
+    fun test_groupCount_nonNullableKeyDropsNullGroup() = runTest {
+        val c = database.prepare(DatabaseTableDefinition<LargeTestModel>("aggregationstest_nonnullablegroup"))
+        c.insertMany(
+            listOf(
+                LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 1)),
+                LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 1)),
+                LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 2)),
+                LargeTestModel(embeddedNullable = null),
+                LargeTestModel(embeddedNullable = null),
+            )
+        )
+        val test: Map<Int, Int> = c.groupCount(groupBy = path<LargeTestModel>().embeddedNullable.notNull.value2)
+        // Asserted as whole-map equality: a surviving null key fails this, and the message shows it.
+        assertEquals(mapOf(1 to 2, 2 to 1), test)
+    }
+
+    @Test
+    fun test_groupAggregate_nonNullableKeyDropsNullGroup() = runTest {
+        val c = database.prepare(DatabaseTableDefinition<LargeTestModel>("aggregationstest_nonnullablegroupagg"))
+        c.insertMany(
+            listOf(
+                LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 1), int = 10),
+                LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 1), int = 20),
+                LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 2), int = 30),
+                LargeTestModel(embeddedNullable = null, int = 40),
+            )
+        )
+        val test: Map<Int, Double?> = c.groupAggregate(
+            aggregate = Aggregate.Sum,
+            groupBy = path<LargeTestModel>().embeddedNullable.notNull.value2,
+            property = path<LargeTestModel>().int,
+        )
+        assertEquals(setOf(1, 2), test.keys)
+        assertEquals(30.0, test[1]!!, 0.0000001)
+        assertEquals(30.0, test[2]!!, 0.0000001)
+    }
 }

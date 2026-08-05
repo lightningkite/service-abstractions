@@ -1,5 +1,6 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.ConcurrentMutableMap
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.kfile.KFile
 import kotlinx.serialization.KSerializer
@@ -26,7 +27,7 @@ public class InMemoryDatabase(
     override val context: SettingContext,
     private val mapFactory: () -> MutableMap<Any?, Any> = { HashMap() },
 ) : Database {
-    public val collections: HashMap<DatabaseTableDefinition<*>, InMemoryTable<*>> = HashMap()
+    public val collections: ConcurrentMutableMap<DatabaseTableDefinition<*>, InMemoryTable<*>> = ConcurrentMutableMap()
 
     private val json = Json {
         serializersModule = context.internalSerializersModule
@@ -53,9 +54,13 @@ public class InMemoryDatabase(
         }
     }
 
+    // computeIfAbsent (unlike a plain getOrPut on a concurrent map) evaluates its factory atomically
+    // with respect to other callers racing on the same key, so two threads requesting the same table
+    // for the first time can never construct two divergent InMemoryTable instances and silently lose
+    // whichever one loses the race.
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> table(tableDef: DatabaseTableDefinition<T>): Table<T> =
-        (collections.getOrPut(tableDef) {
+        (collections.computeIfAbsent(tableDef) {
             val backing = mapFactory() as MutableMap<Any?, T>
             val made = InMemoryTable(
                 data = backing,

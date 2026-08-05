@@ -230,11 +230,29 @@ modification<Config> { it ->
     // Remove keys
     it.settings.removeKeys(setOf("deprecated_setting"))
 
-    // Modify specific keys
-    it.settings.modifyByKey(mapOf(
-        "timeout" to { timeout -> timeout.value *= 2 }
-    ))
 }
+```
+
+There is deliberately no operation for "apply a nested modification to an existing map
+entry" (the former `modifyByKey`, removed in 1.3). No supported database could express it
+without reading the row and applying the change locally, so it offered no efficiency over
+doing that yourself — while looking like an atomic operation. Read, compute, and write
+back instead:
+
+```kotlin
+val current = configTable.get(id)!!
+configTable.updateOneById(id, modification { it.settings += mapOf("timeout" to current.settings.getValue("timeout") * 2) })
+```
+
+If you need it to be safe under concurrency, make it a compare-and-swap by putting the
+value you read into the condition — which is stronger than the old `modifyByKey` gave you
+on most backends:
+
+```kotlin
+configTable.updateOne(
+    condition = condition { it._id eq id and (it.settings["timeout"] eq old) },
+    modification = modification { it.settings += mapOf("timeout" to old * 2) }
+)
 ```
 
 ### Chained Modifications

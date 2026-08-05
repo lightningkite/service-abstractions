@@ -192,8 +192,9 @@ public open class InMemoryTable<Model : Any>(
         groupBy: DataClassPath<Model, Key>,
     ): Map<Key, Int> = traced {
         lock.withLock {
-            data.values.asSequence().filter { condition(it) }
-                .groupingBy { groupBy.get(it) }.eachCount().minus(null) as Map<Key, Int>
+            val groups = data.values.asSequence().filter { condition(it) }
+                .groupingBy { groupBy.get(it) }.eachCount() as Map<Key, Int>
+            if (groupBy.serializer.descriptor.isNullable) groups else groups.filterKeys { it != null }
         }
     }
 
@@ -216,7 +217,7 @@ public open class InMemoryTable<Model : Any>(
         property: DataClassPath<Model, N>,
     ): Map<Key, Double?> = traced {
         lock.withLock {
-            data.values.asSequence()
+            val groups = data.values.asSequence()
                 .filter { condition(it) }
                 .groupAggregateNotNull(aggregate) {
                     @Suppress("UNCHECKED_CAST")
@@ -225,6 +226,7 @@ public open class InMemoryTable<Model : Any>(
                         property.get(it)?.toDouble() ?: return@groupAggregateNotNull null
                     )
                 }
+            if (groupBy.serializer.descriptor.isNullable) groups else groups.filterKeys { it != null }
         }
     }
 

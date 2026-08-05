@@ -5,6 +5,11 @@ import com.lightningkite.services.phonecall.*
 import com.lightningkite.services.webhooksubservice.WebsocketAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.*
+import java.security.MessageDigest
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 private val logger = KotlinLogging.logger("TwilioAudioStreamAdapter")
 
@@ -52,7 +57,21 @@ private val logger = KotlinLogging.logger("TwilioAudioStreamAdapter")
  * where each WebSocket message may be handled by a different Lambda instance. All necessary
  * information is extracted directly from each message's JSON payload.
  *
- * @property authToken Twilio auth token for signature validation (optional)
+ * ## Signature Validation
+ *
+ * When [authToken] is supplied, the WebSocket upgrade request is validated the same way Twilio's
+ * REST webhooks are: HMAC-SHA1 over the expected URL (plus any sorted query parameters) using
+ * [authToken] as the key, compared against the `X-Twilio-Signature` header in constant time. Since
+ * [CallInstructions.StreamAudio.websocketUrl] is a single static endpoint per app (Twilio does not
+ * forward query parameters on it — call-specific data travels via `customParameters` instead), the
+ * expected URL is configured once via [configureExpectedUrl] rather than derived per-request.
+ *
+ * Validation is mandatory and fails closed once [authToken] is provided: [configureExpectedUrl]
+ * must be called before [parseStart], or every connection attempt is rejected. If [authToken] is
+ * left `null`, no validation is performed and the endpoint is unauthenticated — callers should only
+ * omit it when the WebSocket endpoint is otherwise secured (e.g. not publicly reachable).
+ *
+ * @property authToken Twilio auth token for signature validation (optional; see above)
  * @see <a href="https://www.twilio.com/docs/voice/media-streams">Twilio Media Streams</a>
  */
 public class TwilioAudioStreamAdapter(
@@ -60,6 +79,50 @@ public class TwilioAudioStreamAdapter(
 ) : WebsocketAdapter<AudioStreamStart, AudioStreamEvent, AudioStreamCommand> {
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    // The static wss:// URL Twilio was configured to connect to, used to validate the signature.
+    // Set once via configureExpectedUrl(); see the class doc for why a single static URL suffices.
+    @Volatile
+    private var expectedUrl: String? = null
+
+    private val hmacKeySpec by lazy { SecretKeySpec(authToken!!.toByteArray(Charsets.UTF_8), "HmacSHA1") }
+
+    // Mac is NOT thread-safe, so use a ThreadLocal (mirrors TwilioPhoneCallService's approach).
+    private val threadLocalMac = ThreadLocal.withInitial<Mac> {
+        Mac.getInstance("HmacSHA1").also { it.init(hmacKeySpec) }
+    }
+
+    /**
+     * Configures the static WebSocket URL Twilio was given for [CallInstructions.StreamAudio],
+     * used to validate the `X-Twilio-Signature` header on incoming connections. Must be called
+     * before [parseStart] if this adapter was constructed with an [authToken].
+     */
+    public fun configureExpectedUrl(url: String) {
+        this.expectedUrl = url
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    private fun validateSignature(url: String, params: Map<String, String>, signature: String): Boolean {
+        val data = buildString {
+            append(url)
+            params.keys.sorted().forEach { key ->
+                append(key)
+                append(params[key] ?: "")
+            }
+        }
+        val mac = threadLocalMac.get()
+        mac.reset()
+        val rawHmac = mac.doFinal(data.toByteArray(Charsets.UTF_8))
+
+        // Decode and compare in constant time — string equality short-circuits and leaks
+        // timing information about the expected HMAC.
+        val provided = try {
+            Base64.decode(signature)
+        } catch (_: IllegalArgumentException) {
+            return false
+        }
+        return MessageDigest.isEqual(provided, rawHmac)
+    }
 
     override suspend fun parseStart(
         queryParameters: List<Pair<String, String>>,
@@ -70,8 +133,19 @@ public class TwilioAudioStreamAdapter(
         // The stream metadata comes in the first "start" message
         // For now, we return a placeholder that will be updated on "start" event
 
-        // TODO: Implement signature validation if authToken is provided
-        // Twilio signs WebSocket upgrade requests similar to webhooks
+        if (authToken != null) {
+            val url = expectedUrl
+                ?: throw SecurityException(
+                    "Cannot validate Twilio Media Streams signature: expected WebSocket URL not configured. " +
+                            "Call configureExpectedUrl() with the wss:// URL used for StreamAudio before processing connections."
+                )
+            val signature = headers["X-Twilio-Signature"]?.firstOrNull()
+                ?: headers["x-twilio-signature"]?.firstOrNull()
+                ?: throw SecurityException("Missing X-Twilio-Signature header")
+            if (!validateSignature(url, queryParameters.toMap(), signature)) {
+                throw SecurityException("Invalid Twilio Media Streams signature")
+            }
+        }
 
         logger.debug { "WebSocket connection initiated, awaiting start event" }
 

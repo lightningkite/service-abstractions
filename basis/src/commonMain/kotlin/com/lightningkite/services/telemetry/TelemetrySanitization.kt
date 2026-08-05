@@ -13,12 +13,20 @@ public interface TelemetrySanitization {
     public fun sanitizeFilePath(path: String): String
     public fun sanitizeFilePathWithDepth(path: String): String
 
+    /**
+     * Scrubs credential-bearing connection URLs (e.g. `mongodb://user:pass@host`) that may be embedded
+     * anywhere within free-form text, such as an exception message or stack trace. Unlike [sanitizeUrl],
+     * the input is not assumed to be a URL by itself.
+     */
+    public fun sanitizeExceptionMessage(message: String): String
+
     public object None: TelemetrySanitization {
         override fun redactPhoneNumber(phoneNumber: String): String = phoneNumber
         override fun sanitizeUrl(url: String): String = url
         override fun hashCacheKey(key: String): String = key
         override fun sanitizeFilePath(path: String): String = path
         override fun sanitizeFilePathWithDepth(path: String): String = path
+        override fun sanitizeExceptionMessage(message: String): String = message
     }
     public object Strict: TelemetrySanitization {
 
@@ -59,8 +67,15 @@ public interface TelemetrySanitization {
          */
         override fun sanitizeUrl(url: String): String {
             val schema = url.substringBefore("://")
-            val domainAndPath = url.substringAfter("://").substringAfter('@').substringBefore('?')
-            return "$schema://$domainAndPath"
+            val afterScheme = url.substringAfter("://").substringBefore('?')
+            val authorityEnd = afterScheme.indexOf('/').let { if (it == -1) afterScheme.length else it }
+            val authority = afterScheme.substring(0, authorityEnd)
+            val pathPart = afterScheme.substring(authorityEnd)
+            // The userinfo (user:pass) section is separated from the host by the LAST '@' in the
+            // authority, not the first: a password may legally contain a literal '@', and splitting on
+            // the first occurrence leaks the tail of the password into the "host" portion below.
+            val host = authority.substringAfterLast('@')
+            return "$schema://$host$pathPart"
         }
 
         override fun hashCacheKey(key: String): String {
@@ -85,29 +100,27 @@ public interface TelemetrySanitization {
          */
         override fun sanitizeFilePath(path: String): String {
             // Handle various path separators
-            return path.substringAfterLast('/')
-                .substringAfterLast('\\')
-                .ifEmpty { path }
+            val fileName = path.substringAfterLast('/').substringAfterLast('\\')
+            // Directory-style input (trailing separator) yields an empty filename here. Falling back to
+            // the original `path` (the old behavior) would return the full unredacted path for exactly
+            // the inputs this function exists to protect, so fall back to a fixed sentinel instead.
+            return fileName.ifEmpty { "(root)" }
         }
 
         /**
-         * Sanitizes a file path to only show the filename, not the full path.
-         *
-         * This prevents exposure of directory structure which may contain
-         * sensitive information (usernames, customer IDs, etc.)
-         *
-         * Examples:
-         * - `/users/john.doe/documents/secret.pdf` → `secret.pdf`
-         * - `s3://bucket/customer-123/data.json` → `data.json`
-         *
-         * @param path The file path to sanitize
-         * @return Just the filename without directory information
+         * Alias for [sanitizeFilePath]. There is no depth parameter on this function, so no
+         * depth-aware behavior can be implemented without an API change to callers outside this fix's
+         * scope (files/files-s3). Kept as a distinct method to avoid a breaking rename, but delegates
+         * to [sanitizeFilePath] so the two can't drift out of sync the way they previously did (both
+         * implementations shared the same unredacted-fallback bug).
          */
-        override fun sanitizeFilePathWithDepth(path: String): String {
-            // Handle various path separatorsurl.substringAfter("://")
-            return path.substringAfterLast('/')
-                .substringAfterLast('\\')
-                .ifEmpty { path }
-        }
+        override fun sanitizeFilePathWithDepth(path: String): String = sanitizeFilePath(path)
+
+        // Matches a scheme + "://" + the following run of non-whitespace characters, i.e. a URL-shaped
+        // token embedded anywhere in free text (an exception message, a stack trace line, ...).
+        private val embeddedUrlPattern = Regex("""[A-Za-z][A-Za-z0-9+.\-]*://\S+""")
+
+        override fun sanitizeExceptionMessage(message: String): String =
+            embeddedUrlPattern.replace(message) { sanitizeUrl(it.value) }
     }
 }

@@ -10,6 +10,7 @@ import com.lightningkite.services.files.ExternalPath
 import com.lightningkite.services.files.ExternalServerFileSerializer
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.get
+import com.lightningkite.services.kfile.temporary
 import com.lightningkite.services.http.client
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKey
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.future.await
 import kotlinx.io.*
+import kotlinx.io.files.SystemFileSystem
 import software.amazon.awssdk.auth.credentials.*
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.regions.Region
@@ -92,6 +94,11 @@ public class S3ExternalFileSystem(
         val token: String? = null,
     ) {
         public val tokenPreEncoded: String? = token?.let { java.net.URLEncoder.encode(it, Charsets.UTF_8) }
+
+        // The compiler-generated toString() would print the raw secret/token - override it so logging,
+        // exceptions, or a debugger view of this value never leak live AWS credentials.
+        override fun toString(): String =
+            "DirectAwsCredentials(access=$access, secret=***, token=${token?.let { "***" }})"
     }
 
     /**
@@ -231,13 +238,20 @@ public class S3ExternalFileSystem(
      */
     override suspend fun flow(path: ExternalPath): Flow<ExternalPath> {
         val unixPath = unixPathOf(path)
+        // S3's prefix match is a raw byte-prefix match, not a path-boundary match. Without a trailing
+        // "/", listing "reports" would also match an unrelated sibling key like "reportsBackup.zip" -
+        // and would fail to surface real children of "reports/" at all, since S3's delimiter logic
+        // collapses anything after "reports" + "/" into a single CommonPrefix rather than an entry in
+        // Contents. Appending "/" for every non-root path fixes both. Root stays "" (listing
+        // everything at the top level).
+        val prefix = if (unixPath.isEmpty()) "" else "$unixPath/"
         return kotlinx.coroutines.flow.flow {
             var token: String? = null
             while (true) {
                 val response = telemetryTrace("list", attributes = s3SpanAttrs("list", unixPath)) { span ->
                     s3Async.listObjectsV2 {
                         it.bucket(bucket)
-                        it.prefix(unixPath)
+                        it.prefix(prefix)
                         it.delimiter("/")
                         token?.let { t -> it.continuationToken(t) }
                     }.await().also {
@@ -249,7 +263,7 @@ public class S3ExternalFileSystem(
 
                 response.contents()
                     .asSequence()
-                    .filter { !it.key().substringAfter(unixPath).contains('/') }
+                    .filter { !it.key().substringAfter(prefix).contains('/') }
                     .map { pathFromUnix(it.key()) }
                     .forEach { emit(it) }
 
@@ -302,15 +316,34 @@ public class S3ExternalFileSystem(
             put(TelemetryKeys.File.contentType, content.mediaType.toString())
         }) {
             withContext(Dispatchers.IO) {
-                s3.putObject(PutObjectRequest.builder().also {
+                val request = PutObjectRequest.builder().also {
                     it.bucket(bucket)
                     it.key(unixPath)
                     it.contentType(content.mediaType.toString())
-                }.build(), content.data.size?.let { size ->
-                    RequestBody.fromInputStream(content.data.source().asInputStream(), size)
-                } ?: run {
-                    RequestBody.fromBytes(content.data.bytes())
-                })
+                }.build()
+                val knownSize = content.data.size
+                if (knownSize != null) {
+                    s3.putObject(request, RequestBody.fromInputStream(content.data.source().asInputStream(), knownSize))
+                } else {
+                    // The sync S3 client needs a known content length before it can start a
+                    // PutObject/UploadPart, for every size - there's no way around providing one up
+                    // front. Spool unknown-size content to a temp file first (a streaming copy, not a
+                    // single in-memory buffer) so its length is known without materializing the whole
+                    // object as a ByteArray on the heap, then upload from the file and clean it up.
+                    val spooled = SystemFileSystem.temporary()
+                    try {
+                        // Data.write() explicitly does not close the sink it's given (the caller owns
+                        // its lifecycle) - KFile.sink() is buffered, so without closing it here the
+                        // final, still-buffered segment (up to 8KB) would never reach disk, silently
+                        // truncating the spooled file.
+                        spooled.sink().use { sink -> content.data.write(sink) }
+                        val size = spooled.metadataOrNull()?.size
+                            ?: throw IllegalStateException("Failed to spool upload content to $spooled")
+                        s3.putObject(request, RequestBody.fromInputStream(spooled.source().asInputStream(), size))
+                    } finally {
+                        spooled.delete()
+                    }
+                }
             }
             Unit
         }

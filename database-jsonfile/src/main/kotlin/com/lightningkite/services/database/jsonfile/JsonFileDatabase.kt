@@ -6,6 +6,9 @@ import com.lightningkite.services.kfile.workingDirectory
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.DatabaseTableDefinition
 import com.lightningkite.services.database.Table
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.io.buffered
 import kotlinx.serialization.json.Json
 
@@ -20,7 +23,8 @@ import kotlinx.serialization.json.Json
  *
  * - **File-based storage**: Each table stored as a separate JSON file
  * - **In-memory operations**: All data loaded into memory for fast queries
- * - **Automatic persistence**: Changes written to disk periodically
+ * - **Flush on shutdown**: Changes are written to disk when [disconnect]/[close] is called, or
+ *   on normal JVM exit via a shutdown hook - not periodically or on every write
  * - **Development friendly**: Easy to inspect/edit data files manually
  * - **No server required**: Perfect for local development and CI tests
  * - **Migration support**: Automatically migrates old single-file format to new .json extension
@@ -108,16 +112,28 @@ public class JsonFileDatabase(
     public val folder: KFile,
     override val context: SettingContext,
 ) :
-    Database, java.io.Closeable {
+    Database {
 
     init {
         folder.createDirectories()
     }
 
-    /** Closes every open table, flushing each to disk and stopping its background save actor. */
-    override fun close(): Unit = synchronized(collections) {
-        collections.values.forEach { (it as? java.io.Closeable)?.close() }
-        collections.clear()
+    /**
+     * The documented shutdown/serverless-freeze path (see [com.lightningkite.services.Service.disconnect]):
+     * flushes every open table to disk and stops its background save resources. [close] is a
+     * thin JVM convenience that delegates here rather than the other way round, so callers that
+     * only know about the [Service] contract - including framework-driven shutdown and freeze
+     * handling - still get their writes flushed.
+     */
+    override suspend fun disconnect() {
+        // Snapshot-and-clear under the lock, then do the actual (IO-bound) flushing outside of
+        // it, so a slow flush doesn't hold up unrelated table() lookups on other tables.
+        val tables = synchronized(collections) {
+            collections.values.toList().also { collections.clear() }
+        }
+        withContext(Dispatchers.IO) {
+            tables.forEach { (it as? JsonFileTable<*>)?.disconnect() }
+        }
     }
 
     public companion object {

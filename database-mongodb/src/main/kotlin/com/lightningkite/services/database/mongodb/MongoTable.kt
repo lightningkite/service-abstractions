@@ -488,6 +488,22 @@ public class MongoTable<Model : Any>(
         }
     }
 
+    /**
+     * Builds the [FindOneAndUpdateOptions] this update's [UpdateWithOptions.options] describe. Both
+     * branches of every `findOneAndUpdate` call site below need the exact same translation, so it's
+     * factored out here rather than repeated.
+     */
+    private fun UpdateWithOptions.findOneAndUpdateOptions(sort: Bson? = null): FindOneAndUpdateOptions =
+        FindOneAndUpdateOptions()
+            .returnDocument(ReturnDocument.BEFORE)
+            .let { if (sort == null) it else it.sort(sort) }
+            .upsert(options.isUpsert)
+            .bypassDocumentValidation(options.bypassDocumentValidation)
+            .collation(options.collation)
+            .arrayFilters(options.arrayFilters)
+            .hint(options.hint)
+            .hintString(options.hintString)
+
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
@@ -498,35 +514,16 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
         val m = simplifiedModification.bson(serializer, bson = bson)
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
         return telemetryTrace("upsertOne") { access {
             // TODO: Ugly hack for handling weird upserts
             if (m.upsert(model, serializer, bson)) {
-                findOneAndUpdate(
-                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
-                    m.document,
-                    FindOneAndUpdateOptions()
-                        .returnDocument(ReturnDocument.BEFORE)
-                        .upsert(m.options.isUpsert)
-                        .bypassDocumentValidation(m.options.bypassDocumentValidation)
-                        .collation(m.options.collation)
-                        .arrayFilters(m.options.arrayFilters)
-                        .hint(m.options.hint)
-                        .hintString(m.options.hintString)
-                )?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                findOneAndUpdate(filter, m.document, m.findOneAndUpdateOptions())
+                    ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
                     ?: EntryChange(null, model)
             } else {
-                findOneAndUpdate(
-                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
-                    m.document,
-                    FindOneAndUpdateOptions()
-                        .returnDocument(ReturnDocument.BEFORE)
-                        .upsert(m.options.isUpsert)
-                        .bypassDocumentValidation(m.options.bypassDocumentValidation)
-                        .collation(m.options.collation)
-                        .arrayFilters(m.options.arrayFilters)
-                        .hint(m.options.hint)
-                        .hintString(m.options.hintString)
-                )?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                findOneAndUpdate(filter, m.document, m.findOneAndUpdateOptions())
+                    ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
                     ?: run {
                         insertOne(bson.stringify(serializer, model)); EntryChange(
                         null,
@@ -547,21 +544,13 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
         val m = simplifiedModification.bson(serializer, bson = bson)
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
         return telemetryTrace("upsertOneIgnoringResult") { access {
             // TODO: Ugly hack for handling weird upserts
             if (m.upsert(model, serializer, bson = bson)) {
-                updateOne(
-                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
-                    m.document,
-                    m.options
-                ).matchedCount > 0
+                updateOne(filter, m.document, m.options).matchedCount > 0
             } else {
-                if (updateOne(
-                        cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
-                        m.document,
-                        m.options
-                    ).matchedCount != 0L
-                ) {
+                if (updateOne(filter, m.document, m.options).matchedCount != 0L) {
                     true
                 } else {
                     insertOne(bson.stringify(serializer, model))
@@ -581,22 +570,15 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
         val m = simplifiedModification.bson(serializer, bson = bson)
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
         val before = telemetryTrace("updateOne") { access<Model?> {
             findOneAndUpdate(
-                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
+                filter,
                 m.document,
-                FindOneAndUpdateOptions()
-                    .returnDocument(ReturnDocument.BEFORE)
-                    .let { if (orderBy.isEmpty()) it else it.sort(sort(orderBy)) }
-                    .upsert(m.options.isUpsert)
-                    .bypassDocumentValidation(m.options.bypassDocumentValidation)
-                    .collation(m.options.collation)
-                    .arrayFilters(m.options.arrayFilters)
-                    .hint(m.options.hint)
-                    .hintString(m.options.hintString)
+                m.findOneAndUpdateOptions(if (orderBy.isEmpty()) null else sort(orderBy))
             )?.let { bson.parse(serializer, it) }
-        } } ?: return EntryChange(null, null)
-        val after = modification(before)
+        } }
+        val after = before?.let { modification(it) }
         return EntryChange(before, after)
     }
 
@@ -612,12 +594,9 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
         val m = simplifiedModification.bson(serializer, bson = bson)
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
         return telemetryTrace("updateOneIgnoringResult") { access {
-            updateOne(
-                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
-                m.document,
-                m.options
-            ).matchedCount != 0L
+            updateOne(filter, m.document, m.options).matchedCount != 0L
         } }
     }
 
@@ -634,11 +613,10 @@ public class MongoTable<Model : Any>(
         // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
         telemetryTrace("updateMany") { access {
             find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).collectChunked(1000) { list ->
+                val parsed = list.asSequence().map { bson.parse(serializer, it) }.toList()
+                val chunkChanges = parsed.map { EntryChange(it, modification(it)) }
                 updateMany(Filters.`in`("_id", list.map { it["_id"] }), m.document, m.options)
-                list.asSequence().map { bson.parse(serializer, it) }
-                    .forEach {
-                        changes.add(EntryChange(it, modification(it)))
-                    }
+                changes.addAll(chunkChanges)
             }
         } }
         return CollectionChanges(changes = changes)
@@ -653,12 +631,9 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return 0
         val m = simplifiedModification.bson(serializer, bson = bson)
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
         return telemetryTrace("updateManyIgnoringResult") { access {
-            updateMany(
-                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
-                m.document,
-                m.options
-            ).matchedCount.toInt()
+            updateMany(filter, m.document, m.options).matchedCount.toInt()
         } }
     }
 
@@ -852,6 +827,20 @@ public class MongoTable<Model : Any>(
         }
     }
 
+    /**
+     * Whether a `_id: null` bucket from a `$group` stage on [groupBy] is a legitimate group (kept) or an
+     * artifact of [DataClassPath.get] returning `V?` regardless of `V`'s own nullability -- e.g.
+     * `embeddedNullable.notNull.value2` has declared value type `Int` but nulls out (and Mongo groups
+     * under `_id: null`) when the optional wrapper is absent (dropped). Same rule as the shared
+     * `DataClassPath.dropUnrepresentableNullGroup` helper (`serializer.descriptor.isNullable`), applied
+     * here to exclude the bucket from the pipeline before it's ever parsed: `KeyHolder.serializer` binds
+     * `_id` as [Key], and parsing a BSON null into a non-nullable field throws
+     * (`BsonInvalidOperationException: Invalid numeric type, found: NULL`, confirmed empirically) rather
+     * than producing something a post-parse filter could catch.
+     */
+    private fun <Key> DataClassPath<Model, Key>.excludeNullGroupStage(): List<Bson> =
+        if (serializer.descriptor.isNullable) emptyList() else listOf(Aggregates.match(Filters.ne("_id", null)))
+
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
@@ -862,8 +851,8 @@ public class MongoTable<Model : Any>(
             aggregate<BsonDocument>(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
-                    Aggregates.group("\$" + groupBy.mongo, Accumulators.sum("count", 1))
-                )
+                    Aggregates.group("\$" + groupBy.mongo, Accumulators.sum("count", 1)),
+                ) + groupBy.excludeNullGroupStage()
             )
                 .toList()
                 .associate {
@@ -917,8 +906,8 @@ public class MongoTable<Model : Any>(
             aggregate(
                 listOf(
                     Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
-                    Aggregates.group("\$" + groupBy.mongo, aggregate.asValueBson(property.mongo))
-                )
+                    Aggregates.group("\$" + groupBy.mongo, aggregate.asValueBson(property.mongo)),
+                ) + groupBy.excludeNullGroupStage()
             )
                 .toList()
                 .associate {
