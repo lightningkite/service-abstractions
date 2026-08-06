@@ -9,12 +9,9 @@ import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.database.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.launch
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
@@ -37,7 +34,7 @@ public class JsonFileTable<Model : Any>(
 ) : InMemoryTable<Model>(
     data = ConcurrentHashMap<Any?, Model>(),
     serializer = serializer
-), Closeable, Namespaced {
+), Namespaced {
     public companion object {
         internal val logger = KotlinLogging.logger("com.lightningkite.services.database.jsonfile.JsonFileTable")
     }
@@ -58,13 +55,7 @@ public class JsonFileTable<Model : Any>(
         return telemetryTrace(operation, attributes = attrs, action = block)
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO)
     private val dumpLock = ReentrantLock()
-
-    @OptIn(ObsoleteCoroutinesApi::class)
-    private val saveScope = scope.actor<Unit>(start = CoroutineStart.LAZY) {
-        handleCollectionDump()
-    }
     private val shutdownHook = Thread {
         handleCollectionDump()
     }
@@ -79,12 +70,21 @@ public class JsonFileTable<Model : Any>(
         Runtime.getRuntime().addShutdownHook(shutdownHook)
     }
 
-    override fun close() {
-        scope.launch {
+    /**
+     * Flushes this table to disk and stops its background resources. Safe to call more than
+     * once - [handleCollectionDump] is already safe under concurrent/repeat invocation via
+     * [dumpLock], unlike the actor this replaced, which silently no-oped after its first send.
+     */
+    public suspend fun disconnect() {
+        withContext(Dispatchers.IO) {
+            // Flush before touching the shutdown hook: if this instance's disconnect() races an
+            // actual JVM shutdown, removeShutdownHook throws IllegalStateException, and the data
+            // must already be safely on disk before that can happen.
+            handleCollectionDump()
             Runtime.getRuntime().removeShutdownHook(shutdownHook)
-            saveScope.send(Unit)
         }
     }
+
 
     @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
     public fun handleCollectionDump() {

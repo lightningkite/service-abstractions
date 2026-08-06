@@ -13,6 +13,8 @@ dependencies {
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
+    testImplementation(libs.ktor.client.core)
+    testImplementation(libs.ktor.client.mock)
     testImplementation(project(":test"))
 }
 

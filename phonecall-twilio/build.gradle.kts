@@ -15,6 +15,8 @@ dependencies {
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
+    testImplementation(libs.ktor.client.core)
+    testImplementation(libs.ktor.client.mock)
     testImplementation(project(path = ":test"))
 
     // Lightning Server for live webhook testing

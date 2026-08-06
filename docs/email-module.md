@@ -42,7 +42,10 @@ val emailService: EmailService = settings.email("mailer", context)
 
 - `console` - Print emails to console (development)
 - `test` - Collect emails in memory for testing
-- `smtp://user:password@host:port` - SMTP provider (requires `email-javasmtp` module)
+- `smtp://user:password@host:port?fromEmail=...` - SMTP provider (requires `email-javasmtp` module).
+  TLS is required by default — implicit SSL on port 465, STARTTLS on every other port — regardless
+  of the port number; add `&insecure=true` only to explicitly opt out for a trusted loopback/internal
+  relay.
 
 ### 2. Send Simple Email
 
@@ -395,11 +398,13 @@ Sign up at mailtrap.io for a safe SMTP inbox:
 
 ```kotlin
 EmailService.Settings(
-    "smtp://username:password@smtp.mailtrap.io:2525"
+    "smtp://username:password@smtp.mailtrap.io:2525?fromEmail=test@example.com"
 )
 ```
 
-Emails are caught by Mailtrap instead of being delivered.
+Port 2525 isn't 465 or 587, but that no longer matters: TLS (STARTTLS) is required by default on
+every port, including this one — Mailtrap supports STARTTLS on 2525, so no extra configuration is
+needed. Emails are caught by Mailtrap instead of being delivered.
 
 ---
 

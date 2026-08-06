@@ -179,6 +179,31 @@ abstract class CacheTest {
         }
     }
 
+    /**
+     * `modify()`'s `timeToLive` parameter documents "Null means no expiration" — the same contract
+     * `set()` follows. A `modify()` call that omits it must therefore *clear* any TTL the key
+     * previously had, not silently preserve it. `MapCache` was the sole backend that got this wrong
+     * (it fell back to the pre-existing entry's expiry instead of stripping it); this test pins the
+     * contract down across all backends so the divergence can't reappear.
+     */
+    @Test
+    fun modifyOmittedTtlStripsExistingExpiry() {
+        val cache = cache ?: run {
+            println("Could not test because the cache is not supported on this system.")
+            return
+        }
+        runSuspendingTest {
+            val key = "modify-ttl-strip-${Uuid.random()}"
+            cache.set(key, 1, waitScale)
+            assertTrue(cache.modify<Int>(key) { (it ?: 0) + 1 })
+            assertEquals(2, cache.get<Int>(key))
+            // The modify() call above omitted timeToLive, so it must have cleared the TTL set by the
+            // initial set() — the value must survive past the window that TTL would have expired it.
+            delay(waitScale * 1.5)
+            assertEquals(2, cache.get<Int>(key), "modify() without timeToLive must strip a pre-existing TTL")
+        }
+    }
+
     @Test
     fun expirationTest() {
         val cache = cache ?: run {

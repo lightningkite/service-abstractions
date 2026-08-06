@@ -49,6 +49,13 @@ public class SqlCollection<T : Any>(
     public val exposedTables: List<org.jetbrains.exposed.v1.core.Table>
         get() = listOf(schema.mainTable) + schema.childTables.values.map { it.table }
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+    /** Cancels the internal scope, releasing the prepare job and its resources. Called by [SqlDatabase.disconnect]. */
+    internal fun close() {
+        scope.cancel()
+    }
+
     private suspend inline fun <T> t(noinline action: suspend JdbcTransaction.() -> T): T =
         withContext(Dispatchers.IO) {
             inTopLevelSuspendTransaction(db = db, transactionIsolation = TRANSACTION_READ_COMMITTED) {
@@ -82,8 +89,8 @@ public class SqlCollection<T : Any>(
         return telemetryTrace(operation, attributes = attrs, action = block)
     }
 
-    @OptIn(DelicateCoroutinesApi::class, ExperimentalSerializationApi::class)
-    internal val prepare = GlobalScope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
+    @OptIn(ExperimentalSerializationApi::class)
+    internal val prepare = scope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
         t {
             // Single combined call: per-table calls re-emit statements for FK-referenced tables,
             // producing duplicate CREATE INDEX errors that abort the whole transaction on Postgres.
@@ -393,13 +400,15 @@ public class SqlCollection<T : Any>(
         val result = t {
             val ctx = SqlConditionContext(schema, format)
             val condExpr = condition(condition, serializer, schema, format, ctx)
+
             @Suppress("UNCHECKED_CAST")
             val groupCol = schema.mainTable.col[groupBy.colName] as Column<Key>
             val count = Count(stringLiteral("*"))
-            schema.mainTable.select(groupCol, count)
+            val groups = schema.mainTable.select(groupCol, count)
                 .where { condExpr.asOp() }
                 .groupBy(schema.mainTable.col[groupBy.colName]!!)
                 .associate { it[groupCol] to it[count].toInt() }
+            if (groupBy.serializer.descriptor.isNullable) groups else groups.filterKeys { it != null }
         }
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.groups, result.size.toLong()) })
         result
@@ -451,8 +460,10 @@ public class SqlCollection<T : Any>(
         val result = t {
             val ctx = SqlConditionContext(schema, format)
             val condExpr = condition(condition, serializer, schema, format, ctx)
+
             @Suppress("UNCHECKED_CAST")
             val groupCol = schema.mainTable.col[groupBy.colName] as Column<Key>
+
             @Suppress("UNCHECKED_CAST")
             val valueCol = schema.mainTable.col[property.colName] as Column<Double>
             val agg = when (aggregate) {
@@ -461,10 +472,11 @@ public class SqlCollection<T : Any>(
                 Aggregate.StandardDeviationSample -> StdDevSamp(valueCol, AGGREGATE_SCALE)
                 Aggregate.StandardDeviationPopulation -> StdDevPop(valueCol, AGGREGATE_SCALE)
             }
-            schema.mainTable.select(groupCol, agg)
+            val groups = schema.mainTable.select(groupCol, agg)
                 .where { condExpr.asOp() }
                 .groupBy(schema.mainTable.col[groupBy.colName]!!)
                 .associate { it[groupCol] to it[agg]?.toDouble() }
+            if (groupBy.serializer.descriptor.isNullable) groups else groups.filterKeys { it != null }
         }
         span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.groups, result.size.toLong()) })
         result
@@ -634,7 +646,9 @@ public class SqlCollection<T : Any>(
     ) { span ->
         
         val result = t {
-            val olds = findManyInTransaction(condition)
+            // Locked: the modification is applied in memory below, so the read and write have to be
+            // one atomic act per row — see [findManyInTransaction]'s doc comment.
+            val olds = findManyInTransaction(condition, forUpdate = true)
             val changes = olds.map { old ->
                 val new = modification(old)
                 writeEntity(getId(old), new)
@@ -662,7 +676,8 @@ public class SqlCollection<T : Any>(
                     limit = null,
                 ) { it.modification(modification, serializer, schema, format) }
             } else {
-                val olds = findManyInTransaction(condition)
+                // Fallback: read-modify-write, so the read must hold every row's lock.
+                val olds = findManyInTransaction(condition, forUpdate = true)
                 for (old in olds) {
                     val new = modification(old)
                     writeEntity(getId(old), new)
@@ -833,12 +848,18 @@ public class SqlCollection<T : Any>(
         return decoded
     }
 
-    private fun JdbcTransaction.findManyInTransaction(condition: Condition<T>): List<T> {
+    /**
+     * @param forUpdate locks every selected row for the rest of the transaction. Required whenever
+     * the caller is going to write the rows back — see [findOneInTransaction]'s doc comment for why;
+     * the same lost-update race applies here, just across a whole result set instead of one row.
+     */
+    private fun JdbcTransaction.findManyInTransaction(condition: Condition<T>, forUpdate: Boolean = false): List<T> {
         val ctx = SqlConditionContext(schema, format)
         val condExpr = condition(condition, serializer, schema, format, ctx)
 
         val mainRows = schema.mainTable.selectAll()
             .where { condExpr.asOp() }
+            .apply { if (forUpdate) forUpdate(ForUpdateOption.ForUpdate) }
             .toList()
 
         if (mainRows.isEmpty()) return emptyList()

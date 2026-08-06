@@ -363,7 +363,14 @@ public class DynamoDbPubSub(
             logger.debug { "COLLECT channel=$key starting lastSeq=$lastSeq (from DynamoDB)" }
 
             while (coroutineContext.isActive) {
-                telemetryTrace(
+                // Polling (network I/O) and decoding are wrapped in error handling with backoff, but
+                // collector.emit() below runs OUTSIDE this try/catch. If it were inside, an exception
+                // thrown by the caller's own downstream collect{} logic would be indistinguishable from
+                // a genuine polling/deserialization failure: it would be swallowed, logged at debug/warn
+                // level, and the loop would silently back off and retry forever instead of propagating
+                // to terminate the subscriber - unlike RedisPubSub/LocalPubSub, where such an exception
+                // propagates out of collect() normally.
+                val decodedValues: List<T> = telemetryTrace(
                     "poll",
                     attributes = telemetryAttributesOf(
                         TelemetryKeys.Messaging.system to "dynamodb",
@@ -386,6 +393,7 @@ public class DynamoDbPubSub(
                         consecutiveErrors = 0 // Reset on success
                         pollSpan.enrich(TelemetryAttributes { put(TelemetryKeys.Messaging.batchMessageCount, response.count().toLong()) })
 
+                        val decoded = mutableListOf<T>()
                         for (item in response.items()) {
                             val message = item["message"]?.s() ?: continue
                             val seq = item["seq"]?.n() ?: continue
@@ -394,8 +402,7 @@ public class DynamoDbPubSub(
                             logger.trace { "RECV channel=$key seq=$seq" }
 
                             try {
-                                val value = decode(message)
-                                collector.emit(value)
+                                decoded.add(decode(message))
                             } catch (e: CancellationException) {
                                 // Rethrow CancellationException (includes AbortFlowException from first(), take(), etc.)
                                 throw e
@@ -407,6 +414,7 @@ public class DynamoDbPubSub(
                         }
 
                         delay(pollInterval)
+                        decoded
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -422,7 +430,12 @@ public class DynamoDbPubSub(
                             maxBackoff.inWholeMilliseconds
                         )
                         delay(backoffMs)
+                        emptyList()
                     }
+                }
+
+                for (value in decodedValues) {
+                    collector.emit(value)
                 }
             }
         }

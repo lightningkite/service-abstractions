@@ -65,14 +65,22 @@ import kotlin.time.Duration
  * - **ElastiCache auto-discovery**: AWS URL requires ElastiCache client with config endpoint
  *
  * @property name Service name for logging/metrics
- * @property client XMemcached client instance (supports both standard and ElastiCache)
+ * @property makeClient Lazy factory for the XMemcached client (supports both standard and
+ *   ElastiCache); building it lazily and re-invoking it on reconnect is what lets [disconnect]
+ *   actually release the client's selector thread and socket pool without permanently bricking
+ *   the cache.
  * @property context Service context with serializers
  */
 public class MemcachedCache(
     override val name: String,
-    public val client: MemcachedClient,
+    public val makeClient: () -> MemcachedClient,
     override val context: SettingContext,
 ) : Cache {
+
+    // A `var` (rather than a plain `by lazy` delegate) so `disconnect()` can discard the built
+    // client and let the next access rebuild a fresh one from `makeClient` — see `disconnect()`.
+    private var _client = lazy(makeClient)
+    public val client: MemcachedClient get() = _client.value
 
     public val json: Json = Json { this.serializersModule = context.internalSerializersModule }
 
@@ -90,7 +98,7 @@ public class MemcachedCache(
                 Runtime.getRuntime().addShutdownHook(Thread {
                     process.destroy()
                 })
-                MemcachedCache(name, XMemcachedClient("127.0.0.1", 11211), context)
+                MemcachedCache(name, { XMemcachedClient("127.0.0.1", 11211) }, context)
             }
 
             Cache.Settings.register("memcached") { name, url, context ->
@@ -101,7 +109,7 @@ public class MemcachedCache(
                             it.substringAfter(':', "").toIntOrNull() ?: 11211
                         )
                     }
-                MemcachedCache(name, XMemcachedClient(hosts), context)
+                MemcachedCache(name, { XMemcachedClient(hosts) }, context)
             }
 
             Cache.Settings.register("memcached-aws") { name, url, context ->
@@ -110,8 +118,7 @@ public class MemcachedCache(
                 val configHost = configFullHost.substringBefore(':')
                 // AWSElasticCacheClient is deprecated in favor of AutoDiscoveryCacheClient, which is
                 // the same auto-discovery implementation under a new (non-AWS-specific) name.
-                val client = AutoDiscoveryCacheClient(InetSocketAddress(configHost, configPort))
-                MemcachedCache(name, client, context)
+                MemcachedCache(name, { AutoDiscoveryCacheClient(InetSocketAddress(configHost, configPort)) }, context)
             }
         }
     }
@@ -125,6 +132,25 @@ public class MemcachedCache(
         put(Cache.TelemetryKeys.key, context.telemetrySanitization.hashCacheKey(key))
         put(Cache.TelemetryKeys.system, "memcached")
         timeToLive?.let { put(Cache.TelemetryKeys.ttl, it.inWholeSeconds) }
+    }
+
+    /** Establishes the underlying XMemcached client. Optional — every operation does this lazily. */
+    override suspend fun connect() {
+        client
+    }
+
+    /**
+     * Shuts down the XMemcached client, releasing its selector thread and socket pool. Idempotent:
+     * repeated calls, or calling it without ever having connected, are a no-op beyond the first.
+     *
+     * A subsequent [connect] (or any operation) rebuilds the client from [makeClient], so this does
+     * not permanently disable the cache — see the `_client` var above.
+     */
+    override suspend fun disconnect() {
+        withContext(Dispatchers.IO) {
+            if (_client.isInitialized()) _client.value.shutdown()
+        }
+        _client = lazy(makeClient)
     }
 
     override suspend fun <T> get(key: String, serializer: KSerializer<T>): T? =
@@ -222,9 +248,17 @@ public class MemcachedCache(
             // Now perform the CAS operation based on the state transition
             when {
                 new == null -> {
-                    // Delete the key (expected is not null, so key exists)
-                    client.delete(key)
-                    true
+                    // Delete guarded by the CAS token from the `gets()` above, rather than the old
+                    // unconditional client.delete(key) (which also always returned a hardcoded
+                    // `true`, ignoring whether the delete actually happened). This class talks the
+                    // classic Memcached *text* protocol (XMemcachedClient's default), whose DELETE
+                    // command has no CAS argument on the wire at all — so the CAS value passed here
+                    // is currently accepted by XMemcached's API but silently dropped by
+                    // TextCommandFactory before it reaches the server, same as passing none. Real
+                    // atomicity for this branch needs the binary protocol (BinaryCommandFactory);
+                    // until then this still fixes the always-`true` return value, and is forward
+                    // compatible with a future protocol switch at no extra cost.
+                    client.delete(key, getsResult!!.cas, client.opTimeout)
                 }
 
                 expected == null -> {

@@ -689,20 +689,23 @@ public class CassandraTable<Model : Any>(
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
     ): Map<Key, Int> {
         // Cassandra doesn't natively support GROUP BY with COUNT for arbitrary columns
-        // We have to materialize and count client-side
+        // We have to materialize and count client-side. groupBy.get() always returns Key?
+        // regardless of whether Key itself is nullable (see DataClassPath.dropUnrepresentableNullGroup's
+        // KDoc), so every row is counted here -- including a null key -- and
+        // dropUnrepresentableNullGroup decides afterward whether that null group is legitimate
+        // (nullable Key) or an artifact that must be dropped (non-nullable Key).
         val results = mutableMapOf<Key, Int>()
         find(condition).collect { model ->
-            val key = groupBy.get(model)
-            if (key != null) {
-                results[key] = (results[key] ?: 0) + 1
-            }
+            val key = groupBy.get(model) as Key
+            results[key] = (results[key] ?: 0) + 1
         }
-        return results
+        return groupBy.dropUnrepresentableNullGroup(results)
     }
 
     override suspend fun <N : Number?> aggregate(
@@ -745,19 +748,22 @@ public class CassandraTable<Model : Any>(
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
     override suspend fun <N : Number?, Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
         groupBy: DataClassPath<Model, Key>,
         property: DataClassPath<Model, N>,
     ): Map<Key, Double?> {
-        // Group-aggregate client-side
+        // Group-aggregate client-side. As in groupCount above, every row's key (including a null
+        // one) is accumulated here, and dropUnrepresentableNullGroup decides afterward whether a
+        // surviving null group is legitimate or must be dropped.
         data class Accumulator(var sum: Double = 0.0, var count: Int = 0, var sumSquares: Double = 0.0)
 
         val groups = mutableMapOf<Key, Accumulator>()
 
         find(condition).collect { model ->
-            val key = groupBy.get(model) ?: return@collect
+            val key = groupBy.get(model) as Key
             val value = property.get(model)?.toDouble() ?: return@collect
             val acc = groups.getOrPut(key) { Accumulator() }
             acc.sum += value
@@ -765,7 +771,7 @@ public class CassandraTable<Model : Any>(
             acc.sumSquares += value * value
         }
 
-        return groups.mapValues { (_, acc) ->
+        val result = groups.mapValues { (_, acc) ->
             if (acc.count == 0) return@mapValues null
             when (aggregate) {
                 Aggregate.Sum -> acc.sum
@@ -786,6 +792,7 @@ public class CassandraTable<Model : Any>(
                 }
             }
         }
+        return groupBy.dropUnrepresentableNullGroup(result)
     }
 
     override suspend fun insert(models: Iterable<Model>): List<Model> = traced("insert") {

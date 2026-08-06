@@ -652,6 +652,24 @@ abstract class ConditionTests() {
         assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
     }
 
+    // FIX 36: RegexMatches is unanchored (partial match), matching MongoDB's $regex, Postgres's ~, and
+    // SQL's REGEXP -- every backend is expected to find the pattern anywhere in the value, not require
+    // it to match the entire string. This condition previously had zero behavioural coverage, which is
+    // how the in-memory evaluator's full-string `Regex.matches` semantics diverged unnoticed.
+    @Test
+    fun test_String_regexMatches_isUnanchoredPartialMatch() = runTest {
+        val collection =
+            database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_String_regexMatches"))
+        val matchesInMiddle = LargeTestModel(string = "xxabcxx")
+        val noMatch = LargeTestModel(string = "xxxxxxx")
+        collection.insertOne(matchesInMiddle)
+        collection.insertOne(noMatch)
+        val condition = path<LargeTestModel>().string.mapCondition(Condition.RegexMatches("abc"))
+        val results = collection.find(condition).toList()
+        assertContains(results, matchesInMiddle)
+        assertTrue(noMatch !in results)
+    }
+
     @Test
     fun test_email_contains() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_email_contains"))

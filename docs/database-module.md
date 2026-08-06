@@ -254,6 +254,15 @@ val countsByAge: Map<Int, Int> = userTable.groupCount(
 )
 ```
 
+Whether a `null` group appears is decided by the group key's type, and every driver agrees:
+
+- **Nullable key** (`User.path.nickname`, type `String?`) — rows with a null value form their
+  own group under the `null` key, and the result is a `Map<String?, Int>`.
+- **Non-nullable key** (`User.path.age`, or a path through an optional such as
+  `User.path.address.notNull.city`) — rows that have no value are left out of the result
+  entirely. They are not a group; a `Map<Int, Int>` cannot hold a `null` key, so returning
+  one would break the type the call site is handed.
+
 ### Aggregate Functions
 
 ```kotlin
@@ -283,6 +292,9 @@ val avgScoreByCity: Map<String, Double?> = userTable.groupAggregate(
     property = User.path.score
 )
 ```
+
+The null-group rule is the same as `groupCount`'s: a `null` key survives only when the group
+key's type is nullable.
 
 ---
 

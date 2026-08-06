@@ -4,6 +4,12 @@ import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.phonecall.*
 import com.lightningkite.services.webhooksubservice.WebsocketAdapter
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.request.forms.FormDataContent
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
@@ -726,5 +732,58 @@ class TwilioPhoneCallServiceTest {
                 body = body
             )
         }
+    }
+
+    // ==================== sendDtmf Tests ====================
+
+    /** Builds a mock-backed client and captures the "Twiml" form parameter of every request sent. */
+    private fun mockTwimlClient(onUpdate: (twiml: String) -> Unit): HttpClient = HttpClient(MockEngine { request ->
+        val twiml = (request.body as FormDataContent).formData["Twiml"] ?: ""
+        onUpdate(twiml)
+        respond("""{"sid":"CA123"}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+    })
+
+    @Test
+    fun testSendDtmf_rejectsXmlInjectionAttempt() = runTest {
+        var callsMade = 0
+        val service = TwilioPhoneCallService(
+            name = "test",
+            context = testContext,
+            account = "AC1234567890",
+            authUser = "AC1234567890",
+            authSecret = "authtoken123",
+            defaultFrom = "+15551234567",
+            baseClient = mockTwimlClient { callsMade++ },
+        )
+
+        // Attempts to close the <Play digits="..."/> attribute and inject a <Dial> verb that would
+        // redirect the live call to an attacker-controlled (e.g. premium-rate) number.
+        val maliciousDigits = "1\"/><Dial>+19005551234</Dial><Play digits=\""
+
+        assertFailsWith<IllegalArgumentException> {
+            service.sendDtmf("CA123", maliciousDigits)
+        }
+        assertEquals(0, callsMade, "Invalid digits must be rejected before any Twilio API call is made")
+    }
+
+    @Test
+    fun testSendDtmf_validDigitsAreSent() = runTest {
+        var capturedTwiml: String? = null
+        val service = TwilioPhoneCallService(
+            name = "test",
+            context = testContext,
+            account = "AC1234567890",
+            authUser = "AC1234567890",
+            authSecret = "authtoken123",
+            defaultFrom = "+15551234567",
+            baseClient = mockTwimlClient { twiml -> capturedTwiml = twiml },
+        )
+
+        service.sendDtmf("CA123", "123w*#")
+
+        assertTrue(
+            capturedTwiml?.contains("""<Play digits="123w*#"/>""") == true,
+            "Valid DTMF digits (0-9, *, #, w) should be sent through unmodified. TwiML: $capturedTwiml"
+        )
     }
 }

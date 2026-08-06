@@ -47,6 +47,36 @@ internal data class SplitUrl(
     val pool: PoolParams,
 )
 
+/** The `user:password@destination` portion of a `sql-mysql://`/`sql-mariadb://` settings URL, as parsed by [parseSqlAuthUrl]. */
+internal data class ParsedAuthUrl(
+    val user: String,
+    val password: String,
+    val destination: String,
+)
+
+/**
+ * Parses a `<scheme>://user:password@destination` settings URL using [java.net.URI] rather than a
+ * hand-rolled regex. A regex without a real grammar can't disambiguate a `:` or `@` that's part of
+ * the password itself — e.g. a password containing `@` truncated the match at the wrong character,
+ * and there was no percent-decoding — [java.net.URI] handles both correctly. Returns null if the
+ * URL doesn't have the required `user:password@host` shape.
+ */
+internal fun parseSqlAuthUrl(url: String): ParsedAuthUrl? {
+    val uri = try {
+        java.net.URI(url)
+    } catch (e: java.net.URISyntaxException) {
+        return null
+    }
+    val host = uri.host ?: return null
+    val userInfo = uri.userInfo ?: return null
+    if (':' !in userInfo) return null
+    val user = userInfo.substringBefore(':')
+    val password = userInfo.substringAfter(':')
+    val port = if (uri.port != -1) ":${uri.port}" else ""
+    val destination = "$host$port${uri.rawPath}${uri.rawQuery?.let { "?$it" } ?: ""}"
+    return ParsedAuthUrl(user = user, password = password, destination = destination)
+}
+
 /**
  * Splits a JDBC URL remainder (everything after the scheme prefix) on a trailing `?query`, routing
  * pool-only params to [PoolParams] and forwarding any remaining JDBC params on [SplitUrl.jdbcQuery].

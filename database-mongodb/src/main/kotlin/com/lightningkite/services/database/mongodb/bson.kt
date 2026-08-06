@@ -74,13 +74,18 @@ private fun <T> Condition<T>.dump(
 
         is Condition.Equal -> into.sub(key)["\$eq"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.NotEqual -> into.sub(key)["\$ne"] = value.let { bson.stringifyAny(serializer, it) }
-        is Condition.SetAllElements<*> -> (condition as Condition<Any?>).dump(
-            serializer.listElement()!! as KSerializer<Any?>,
-            into.sub(key).sub("\$not").sub("\$elemMatch"),
-            key = "\$not",
-            atlasSearch = atlasSearch,
-            bson = bson
-        )
+        is Condition.SetAllElements<*> -> {
+            val innerSerializer = serializer.listElement()!! as KSerializer<Any?>
+            val matchDoc = Document()
+            (Condition.Not(condition as Condition<Any?>)).dump(
+                innerSerializer,
+                into = matchDoc,
+                key = null,
+                atlasSearch = atlasSearch,
+                bson = bson
+            )
+            into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
+        }
         // by Claude - Atlas $vectorSearch doesn't support $elemMatch in pre-filters.
         // When atlasSearch=true, dump the inner condition directly on the key instead;
         // MongoDB scalar operators ($eq, $in, etc.) on array fields already match element-wise.
@@ -333,15 +338,6 @@ private fun <T> Modification<T>.dump(
                 it.value.let { bson.stringifyAny(serializer.mapValueElement() as KSerializer<Any?>, it) }
         }
 
-        is Modification.ModifyByKey<*> -> map.forEach {
-            (it.value as Modification<Any?>).dump(
-                serializer.mapValueElement() as KSerializer<Any?>,
-                update,
-                if (key == null) it.key else "$key.${it.key}",
-                bson = bson
-            )
-        }
-
         is Modification.RemoveKeys<*> -> this.fields.forEach {
             into.sub("\$unset")[if (key == null) it else "$key.${it}"] = ""
         }
@@ -389,6 +385,26 @@ internal fun Document.pruneEmptyModifiers(): Document {
 internal fun <T> Modification<T>.bson(serializer: KSerializer<T>, bson: KBson): UpdateWithOptions =
     UpdateWithOptions().also { dump(serializer, it, null, bson); it.document.pruneEmptyModifiers() }
 
+/**
+ * Tries to turn this update into a single atomic upsert by adding a `$setOnInsert` of [model],
+ * returning false if it can't be proven equivalent to "insert [model] as-is" (the caller then falls
+ * back to findOneAndUpdate-then-insertOne).
+ *
+ * The dedup below has to establish that every key the update's operators write already holds the
+ * same value in [model] -- otherwise Mongo's upsert-insert, which applies `$set`/`$inc` to the new
+ * document too, would produce something other than [model].
+ *
+ * That check is only sound for **top-level** operator keys. A modification on a nested field
+ * produces a dotted path (`"embedded.value2"`), and the `$setOnInsert` source is a nested [Document]
+ * whose `get` does no path traversal -- so every dotted lookup misses. Worse, even a *successful*
+ * nested dedup would be wrong: removing a leaf leaves the parent object in `$setOnInsert`, and
+ * MongoDB rejects an update whose operators write overlapping paths ("would create a conflict at
+ * 'embedded'"). So a dotted key means we cannot prove equivalence, and false is the correct answer.
+ *
+ * Bailing out early also fixes two defects the old missed-lookup behaviour caused: `$inc` on a
+ * nested field force-cast the missing value and threw NullPointerException, and a dotted key in
+ * [restrict] silently read as "absent from the model" and let an unprovable upsert through.
+ */
 internal fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, bson: KBson): Boolean {
     val set: Document? = (document["\$set"] as? Document) ?: (document["\$set"] as? BsonDocument)?.toDocument()
     val inc = (document["\$inc"] as? Document) ?: (document["\$inc"] as? BsonDocument)?.toDocument()
@@ -398,6 +414,11 @@ internal fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, 
         .filterIsInstance<Document>()
         .flatMap { it.keys }
         .toSet()
+    // See the KDoc: dotted paths can't be resolved against the nested $setOnInsert document, and
+    // deduping one wouldn't be safe even if they could.
+    if (set?.keys.orEmpty().any { '.' in it } || inc?.keys.orEmpty().any { '.' in it } ||
+        restrict.any { '.' in it }
+    ) return false
     document["\$setOnInsert"] = bson.stringify(serializer, model).toDocument().also {
         set?.keys?.forEach { k ->
             if (it[k] == set[k]) it.remove(k)

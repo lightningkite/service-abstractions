@@ -262,7 +262,7 @@ public class KotlinxIoExternalFileSystem(
         crossinline block: suspend () -> T,
     ): T = withContext(Dispatchers.Io) {
         val spanAttributes = TelemetryAttributes {
-            put(TelemetryKeys.File.path, owner.context.telemetrySanitization.sanitizeFilePathWithDepth(path))
+            put(TelemetryKeys.File.path, owner.context.telemetrySanitization.sanitizeFilePath(path))
             put(TelemetryKey.OfString("storage.system"), storageSystem)
             put(TelemetryKeys.Rpc.system, "filesystem")
             putAll(attributes)

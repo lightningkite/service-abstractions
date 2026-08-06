@@ -240,6 +240,21 @@ public data class Email @Deprecated("Use KotlinX HTML to build HTML emails.") co
     public val attachments: List<Attachment> = listOf(),
     public val customHeaders: Map<String, List<String>> = mapOf(),
 ) {
+    init {
+        // customHeaders are written to the wire as raw "name: value" lines (see
+        // JavaSmtpEmailService.toJavaX's addHeader calls), unlike subject/display-name which are
+        // routed through JavaMail's MimeUtility.fold()/makesafe() RFC-822 folding. An embedded
+        // CR/LF here would inject an arbitrary extra header (e.g. a real "Bcc:" line), so reject
+        // it at construction time — this also covers copy(), since data class copy() re-invokes
+        // this constructor.
+        customHeaders.forEach { (key, values) ->
+            require(!key.containsCrOrLf()) { "Email custom header name \"$key\" must not contain CR or LF (SMTP header injection risk)" }
+            values.forEach { value ->
+                require(!value.containsCrOrLf()) { "Email custom header \"$key\" value must not contain CR or LF (SMTP header injection risk)" }
+            }
+        }
+    }
+
     @Suppress("DEPRECATION")
     public constructor(
         subject: String,
@@ -302,6 +317,13 @@ public data class Email @Deprecated("Use KotlinX HTML to build HTML emails.") co
         public val filename: String,
         public val typedData: TypedData,
     ) {
+        init {
+            // filename is written verbatim into the Content-Disposition/Content-ID header via
+            // addHeader (see JavaSmtpEmailService.toJavaX) with no RFC-822 folding, so an embedded
+            // CR/LF would inject an arbitrary extra header — same risk and fix as customHeaders above.
+            require(!filename.containsCrOrLf()) { "Attachment filename \"$filename\" must not contain CR or LF (header injection risk)" }
+        }
+
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (other == null || this::class != other::class) return false
@@ -423,6 +445,12 @@ public data class EmailPersonalization(
         )
     }
 }
+
+/**
+ * True if this string contains a carriage return or line feed — the two characters that let a
+ * value injected into a raw SMTP/MIME header (rather than a body) smuggle in an additional header.
+ */
+private fun String.containsCrOrLf(): Boolean = this.contains('\r') || this.contains('\n')
 
 /**
  * Converts plain text to HTML.

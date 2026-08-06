@@ -135,11 +135,6 @@ private fun <T> stringMapOptions(element: KSerializer<T>): List<MySealedClassSer
             priority = 45
         ) { it is Modification.Combine },
         MySealedClassSerializer.Option(
-            Modification.ModifyByKey.serializer(element),
-            "ModifyByKey",
-            priority = 45
-        ) { it is Modification.ModifyByKey },
-        MySealedClassSerializer.Option(
             Modification.RemoveKeys.serializer(element),
             "RemoveKeys",
             priority = 45
@@ -367,15 +362,6 @@ internal class ModificationCombineSerializer<T>(internal val inner: KSerializer<
     override fun getDeferred(): KSerializer<Map<String, T>> = MapSerializer(serializer<String>(), inner)
     override fun inner(it: Modification.Combine<T>): Map<String, T> = it.map
     override fun outer(it: Map<String, T>): Modification.Combine<T> = Modification.Combine(it)
-}
-
-internal class ModificationModifyByKeySerializer<T>(internal val inner: KSerializer<T>) :
-    WrappingSerializer<Modification.ModifyByKey<T>, Map<String, Modification<T>>>("com.lightningkite.services.database.Modification.ModifyByKey") {
-    override fun getDeferred(): KSerializer<Map<String, Modification<T>>> =
-        MapSerializer(serializer<String>(), Modification.serializer(inner))
-
-    override fun inner(it: Modification.ModifyByKey<T>): Map<String, Modification<T>> = it.map
-    override fun outer(it: Map<String, Modification<T>>): Modification.ModifyByKey<T> = Modification.ModifyByKey(it)
 }
 
 internal class ModificationRemoveKeysSerializer<T>(internal val inner: KSerializer<T>) :

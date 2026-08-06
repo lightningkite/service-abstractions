@@ -48,6 +48,7 @@ kotlin {
             dependencies {
                 implementation(libs.kotlin.test)
                 implementation(libs.coroutines.testing)
+                implementation(project(":pubsub-test"))
             }
         }
         val jvmMain by getting {}

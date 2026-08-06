@@ -117,6 +117,26 @@ public open class MapCacheUnsafe(
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
+    override suspend fun <T> compareAndSet(
+        key: String,
+        serializer: KSerializer<T>,
+        expected: T?,
+        new: T?,
+        timeToLive: Duration?,
+    ): Boolean {
+        if (expected == new) return true
+        assertValidTtl(timeToLive)
+        val existing = entries[key]?.takeIf { it.expires == null || it.expires > Clock.default().now() }
+        if (existing?.value as? T != expected) return false
+        if (new != null) {
+            set(key, new, serializer, timeToLive)
+        } else {
+            remove(key)
+        }
+        return true
+    }
+
     override suspend fun <T> modify(
         key: String,
         serializer: KSerializer<T>,

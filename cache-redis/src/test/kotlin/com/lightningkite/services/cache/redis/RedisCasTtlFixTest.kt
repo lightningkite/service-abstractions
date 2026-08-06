@@ -34,7 +34,7 @@ class RedisCasTtlFixTest {
 
     private val context = TestSettingContext()
     private val client: RedisClient by lazy { RedisClient.create("redis://127.0.0.1:6379/0") }
-    private val cache: RedisCache by lazy { RedisCache("test-cas-ttl", client, context) }
+    private val cache: RedisCache by lazy { RedisCache("test-cas-ttl", { client }, context) }
     private val syncConnection: StatefulRedisConnection<String, String> by lazy { client.connect() }
 
     @Serializable

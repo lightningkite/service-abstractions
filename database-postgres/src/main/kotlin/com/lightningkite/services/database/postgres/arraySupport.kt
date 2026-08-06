@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.postgres
 
 import com.lightningkite.services.database.listElement
+import com.lightningkite.services.database.mapValueElement
 import kotlinx.serialization.KSerializer
 import org.jetbrains.exposed.v1.core.*
 import org.jetbrains.exposed.v1.jdbc.*
@@ -143,7 +144,14 @@ internal class MapOp<A, B>(
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         @Suppress("UNCHECKED_CAST")
         val fs = FieldSet2<A>(
-            sources.serializer.listElement()!! as KSerializer<A>,
+            // List/Set-shaped sources (the original use case: ListPerElement, SetAppend, ...) have a
+            // real per-element serializer here. A Map field reused as MapOp's `sources` (Combine,
+            // RemoveKeys) has StructureKind.MAP, not LIST -- listElement() returns null for it, so
+            // fall back to the map's value-element serializer, and finally to the source serializer
+            // itself as a last resort. That placeholder is never actually exercised: mapper/filter
+            // lambdas that only read `fs.fields[...]` (as every current Map-based caller does) never
+            // call `fs.format`/`fs.formatSingle`, the only methods that would need a correct one.
+            (sources.serializer.listElement() ?: sources.serializer.mapValueElement() ?: sources.serializer) as KSerializer<A>,
             fields = sources.fields.mapValues {
                 object : ExpressionWithColumnType<Any?>() {
                     override val columnType: IColumnType<Any>

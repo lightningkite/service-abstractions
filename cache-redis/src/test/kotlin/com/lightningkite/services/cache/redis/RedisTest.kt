@@ -22,7 +22,7 @@ class RedisTest : CacheTest() {
 //    }
 
     override val cache: Cache? by lazy {
-        RedisCache("test", RedisClient.create("redis://127.0.0.1:6379/0"), TestSettingContext())
+        RedisCache("test", { RedisClient.create("redis://127.0.0.1:6379/0") }, TestSettingContext())
     }
 
     companion object {

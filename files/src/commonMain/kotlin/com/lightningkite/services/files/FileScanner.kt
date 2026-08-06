@@ -122,12 +122,14 @@ public suspend fun List<FileScanner>.scan(item: TypedData) {
     // TODO Splittable stream
     coroutineScope {
         val asFile = item.download()
-        val all = this@scan.map {
-            val t = launch { it.scan(item.mediaType, asFile.source().buffered()) }
-            t.start()
-            t
+        try {
+            val all = this@scan.map { launch { it.scan(item.mediaType, asFile.source().buffered()) } }
+            all.joinAll()
+        } finally {
+            // item.download() writes to a new OS temp file every call; it's ours to clean up once
+            // every scanner has finished reading it, regardless of whether scanning succeeded.
+            asFile.delete()
         }
-        all.joinAll()
     }
 }
 
@@ -172,28 +174,32 @@ public class CheckMimeFileScanner(
     override fun requires(claimedType: MediaType): FileScanner.Requires = FileScanner.Requires.FirstSixteenBytes
 
     override suspend fun scan(claimedType: MediaType, data: Source) {
-        val bytes = data.use {
-            data.readByteArray(16)
+        // Read up to 16 bytes without requiring them: files shorter than a format's magic-number
+        // signature are legitimate (an empty or few-byte file is not automatically invalid) and must
+        // not fail just for being short. `readAtMostTo` stops at end-of-stream instead of throwing,
+        // unlike `readByteArray(16)`.
+        val bytes = data.use { source ->
+            Buffer().also { source.readAtMostTo(it, 16) }.readByteArray()
         }
 
-        // Validate we have enough bytes to perform magic number checks
-        if (bytes.size < 16) {
-            throw FileScanException(
-                "File too small to validate (${bytes.size} bytes, need at least 16 bytes for magic number validation)"
-            )
-        }
+        // Bytes past what was actually read are represented by -1, a sentinel that can never equal a
+        // real magic-number byte (0-255). A format whose signature doesn't fit in what's available
+        // therefore fails its comparison below with the normal mismatch message, while a claimed type
+        // with no case below (e.g. text/plain) is never compared against bytes at all and always
+        // passes, regardless of file size.
+        fun byte(index: Int): Int = bytes.getOrNull(index)?.toUByte()?.toInt() ?: -1
 
-        val c1 = bytes[0].toUByte().toInt()
-        val c2 = bytes[1].toUByte().toInt()
-        val c3 = bytes[2].toUByte().toInt()
-        val c4 = bytes[3].toUByte().toInt()
-        val c5 = bytes[4].toUByte().toInt()
-        val c6 = bytes[5].toUByte().toInt()
-        val c7 = bytes[6].toUByte().toInt()
-        val c8 = bytes[7].toUByte().toInt()
-        val c9 = bytes[8].toUByte().toInt()
-        val c10 = bytes[9].toUByte().toInt()
-        val c11 = bytes[10].toUByte().toInt()
+        val c1 = byte(0)
+        val c2 = byte(1)
+        val c3 = byte(2)
+        val c4 = byte(3)
+        val c5 = byte(4)
+        val c6 = byte(5)
+        val c7 = byte(6)
+        val c8 = byte(7)
+        val c9 = byte(8)
+        val c10 = byte(9)
+        val c11 = byte(10)
         when (claimedType) {
             MediaType.Image.JPEG -> {
                 if (c1 == 0xFF && c2 == 0xD8 && c3 == 0xFF) {

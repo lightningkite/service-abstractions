@@ -17,6 +17,12 @@ internal object MimeParser {
     // Shared session — Session.getInstance with an empty Properties is stateless and safe to reuse.
     private val session = Session.getInstance(Properties())
 
+    // Real mail clients never nest MIME parts more than a handful of levels deep. Inbound MIME is
+    // fully attacker-controlled (anyone can send an email), and SES's payload size cap does nothing
+    // to bound nesting depth — a few hundred KB of empty multipart wrappers is enough to blow the
+    // JVM stack via unbounded recursion. Fail fast well before that point.
+    private const val MAX_MIME_DEPTH = 30
+
     /**
      * Parse a raw MIME message into a MimeMessage object.
      */
@@ -42,7 +48,11 @@ internal object MimeParser {
     /**
      * Extract a text part with the specified content type.
      */
-    private fun extractTextPart(part: Part, contentType: String): String? {
+    private fun extractTextPart(part: Part, contentType: String, depth: Int = 0): String? {
+        if (depth > MAX_MIME_DEPTH) throw IllegalArgumentException(
+            "MIME message nesting exceeds maximum depth of $MAX_MIME_DEPTH; refusing to parse further"
+        )
+
         val content = part.content
 
         if (part.isMimeType(contentType)) {
@@ -52,7 +62,7 @@ internal object MimeParser {
         if (content is Multipart) {
             for (i in 0 until content.count) {
                 val subPart = content.getBodyPart(i)
-                val text = extractTextPart(subPart, contentType)
+                val text = extractTextPart(subPart, contentType, depth + 1)
                 if (text != null) return text
             }
         }
@@ -69,12 +79,16 @@ internal object MimeParser {
         return attachments
     }
 
-    private fun extractAttachmentsFromPart(part: Part, attachments: MutableList<ReceivedAttachment>) {
+    private fun extractAttachmentsFromPart(part: Part, attachments: MutableList<ReceivedAttachment>, depth: Int = 0) {
+        if (depth > MAX_MIME_DEPTH) throw IllegalArgumentException(
+            "MIME message nesting exceeds maximum depth of $MAX_MIME_DEPTH; refusing to parse further"
+        )
+
         val content = part.content
 
         if (content is Multipart) {
             for (i in 0 until content.count) {
-                extractAttachmentsFromPart(content.getBodyPart(i), attachments)
+                extractAttachmentsFromPart(content.getBodyPart(i), attachments, depth + 1)
             }
         } else {
             val disposition = part.disposition

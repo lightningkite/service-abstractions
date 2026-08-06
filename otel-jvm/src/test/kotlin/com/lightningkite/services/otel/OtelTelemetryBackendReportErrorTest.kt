@@ -13,7 +13,9 @@ import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * Exercises [OtelTelemetryBackend.reportError] directly (the JVM telemetry path that used to live in
@@ -70,5 +72,60 @@ class OtelTelemetryBackendReportErrorTest {
         assertNotNull(attrs["error.fingerprint"])
         assertEquals("java.lang.IllegalStateException", attrs["exception.type"])
         assertEquals("users", attrs["table"])
+    }
+
+    /** A connection-failure message shaped like what a real driver produces: credentials embedded in a URL. */
+    private val credentialLeakingMessage = "Failed to connect to mongodb://admin:S3cr3t@db.internal:27017/mydb"
+
+    private fun assertNoCredentials(value: String?) {
+        assertNotNull(value)
+        assertFalse(value.contains("admin"), "leaked username: $value")
+        assertFalse(value.contains("S3cr3t"), "leaked password: $value")
+        assertTrue(value.contains("db.internal:27017/mydb"), "over-redacted, lost the host: $value")
+    }
+
+    @Test
+    fun recordsOnActiveSpan_sanitizesCredentialsInExceptionMessage() {
+        val spans = InMemorySpanExporter.create()
+        val tracerProvider = SdkTracerProvider.builder()
+            .addSpanProcessor(SimpleSpanProcessor.create(spans))
+            .build()
+        val sdk = OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build()
+        val backend = OtelTelemetryBackend(sdk)
+
+        val span = sdk.getTracer("test").spanBuilder("op").startSpan()
+        span.makeCurrent().use {
+            backend.reportError(RuntimeException(credentialLeakingMessage), TelemetryAttributes {})
+        }
+        span.end()
+
+        val data = spans.finishedSpanItems.single()
+        // Status description is derived from the exception message.
+        assertNoCredentials(data.status.description)
+
+        val exceptionEvent = data.events.single { it.name == "exception" }
+        val eventAttrs = exceptionEvent.attributes.asMap().mapKeys { it.key.key }
+        assertNoCredentials(eventAttrs["exception.message"] as? String)
+        // stackTraceToString() embeds the exception message on its first line too.
+        assertNoCredentials(eventAttrs["exception.stacktrace"] as? String)
+    }
+
+    @Test
+    fun emitsLogRecordWhenNoSpan_sanitizesCredentialsInExceptionMessage() {
+        val logs = InMemoryLogRecordExporter.create()
+        val loggerProvider = SdkLoggerProvider.builder()
+            .addLogRecordProcessor(SimpleLogRecordProcessor.create(logs))
+            .build()
+        val sdk = OpenTelemetrySdk.builder().setLoggerProvider(loggerProvider).build()
+        val backend = OtelTelemetryBackend(sdk)
+
+        backend.reportError(IllegalStateException(credentialLeakingMessage), TelemetryAttributes {})
+
+        val record = logs.finishedLogRecordItems.single()
+        @Suppress("DEPRECATION")
+        assertNoCredentials(record.body.asString())
+        val attrs = record.attributes.asMap().mapKeys { it.key.key }
+        assertNoCredentials(attrs["exception.message"] as? String)
+        assertNoCredentials(attrs["exception.stacktrace"] as? String)
     }
 }
