@@ -1,5 +1,8 @@
 package com.lightningkite.services.database
 
+import kotlinx.coroutines.flow.toList
+import kotlin.collections.map
+
 /**
  * Runs after an item is created.
  */
@@ -805,10 +808,9 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
 
 
 /**
- * Runs after an item is deleted, passing the row that was actually removed.
+ * Runs before an item is deleted, passing the row that was actually removed.
  *
- * The callback fires from the result of a single delete call, so it always reports the row
- * genuinely deleted -- never a separately-fetched, potentially stale [find] result.
+ * **Warning**: These operations are not atomic, the intercept requires a separate [find] query.
  */
 public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptDelete(
     onDelete: suspend (Model) -> Unit,
@@ -816,10 +818,27 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptDelete
     override val wraps = this@interceptDelete
 
     override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? =
-        wraps.deleteOne(condition, orderBy)?.also { onDelete(it) }
+        wraps.findOne(condition, orderBy)
+            ?.also {
+                onDelete(it)
+                wraps.deleteOneById(it._id)
+            }
+            ?: wraps.deleteOne(condition, orderBy)
 
-    override suspend fun deleteMany(condition: Condition<Model>): List<Model> =
-        wraps.deleteMany(condition).also { it.forEach { onDelete(it) } }
+    override suspend fun deleteMany(condition: Condition<Model>): List<Model> {
+        val markedForDeath = wraps.find(condition).toList()
+
+        for (doomed in markedForDeath) onDelete(doomed)
+
+        wraps.deleteManyIgnoringOld(
+            Condition.OnField(
+                serializer._id(),
+                Condition.Inside(markedForDeath.map { it._id })
+            )
+        )
+
+        return markedForDeath
+    }
 
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int = deleteMany(condition).size
     override suspend fun deleteOneIgnoringOld(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Boolean = deleteOne(condition, orderBy) != null

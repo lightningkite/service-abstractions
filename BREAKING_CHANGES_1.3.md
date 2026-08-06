@@ -42,25 +42,6 @@ behind other authentication.
 
 ---
 
-## 3. `interceptDelete` callback now fires *after* the delete, not before
-
-**Was:** a separate `find()` then `deleteOne()`, so under concurrent modification the
-`onDelete` callback could fire for a row that was not the one actually deleted.
-**Now:** a single delete call, with the callback receiving the model it returned.
-
-**Why:** there is no way to obtain "the row genuinely deleted" atomically while also
-firing the callback beforehand. Correctness required the timing change.
-
-**Impact:** no in-repo callers exist. External callers (lightning-server side) that
-depend on before-delete timing — e.g. to veto a delete, or to read related state before
-it disappears — will observe different behaviour. KDoc updated to state after-delete
-semantics.
-
-**Migration:** callers needing pre-delete work should do it explicitly before invoking
-the delete, rather than relying on the callback's old timing.
-
----
-
 ## 4. SMTP now requires TLS by default
 
 **Was:** TLS was inferred from the port — `ssl.enable = (port == 465)`,
