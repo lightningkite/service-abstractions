@@ -2,11 +2,11 @@ package com.lightningkite.services.data
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.Buffer
-import kotlinx.io.readByteArray
 import kotlinx.io.readString
 import kotlinx.io.writeString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -15,31 +15,40 @@ class SuspendingIoTest {
     private fun bufferOf(text: String) = Buffer().also { it.writeString(text) }
 
     @Test
-    fun readEnsuresCountAndReportsAvailable() = runTest {
+    fun readHandsOverWhateverIsAvailable() = runTest {
         val src = bufferOf("hello world").asSuspendingSource() // 11 bytes
         val into = Buffer()
-        // Ask for 5 — buffer-backed source moves everything available (read-ahead), so we get all 11.
-        assertTrue(src.read(into, 5))        // satisfied (>= 5)
+        assertEquals(11L, src.read(into))
+        assertEquals(11L, into.size)
+        assertEquals(-1L, src.read(into), "a drained source reports exhaustion, not a zero-length read")
+    }
+
+    @Test
+    fun requestSatisfiesFramingAndKeepsTheSurplus() = runTest {
+        val src = bufferOf("hello world").asSuspendingSource()
+        val into = Buffer()
+        // The buffer-backed source hands over everything at once; request() is satisfied and the extra stays put
+        // for the next frame, which is the whole point of a caller-owned buffer.
+        assertTrue(src.request(into, 5))
         assertEquals(11L, into.size)
     }
 
     @Test
-    fun alreadySatisfiedReadIsNoOp() = runTest {
+    fun requestIsANoOpWhenAlreadySatisfied() = runTest {
         val src = bufferOf("more data here").asSuspendingSource()
         val into = Buffer()
-        src.read(into, 4)            // pull some in
+        src.request(into, 4)
         val sizeAfterFirst = into.size
-        assertTrue(src.read(into, sizeAfterFirst - 1)) // ask for less than we already hold -> no-op, satisfied
-        assertEquals(sizeAfterFirst, into.size)        // nothing changed
+        assertTrue(src.request(into, sizeAfterFirst - 1)) // asking for less than we hold must not read again
+        assertEquals(sizeAfterFirst, into.size)
     }
 
     @Test
-    fun shortReadSignalsEndOfStream() = runTest {
+    fun requestSignalsEndOfStreamAndKeepsWhatItGot() = runTest {
         val src = bufferOf("abc").asSuspendingSource() // 3 bytes
         val into = Buffer()
-        assertFalse(src.read(into, 8))       // asked for more than exists -> EOF first
-        assertEquals(3L, into.size)          // the bytes read before EOF remain
-        assertEquals(StreamState.Complete, src.state)
+        assertFalse(src.request(into, 8))
+        assertEquals(3L, into.size, "the bytes read before the end must remain in the caller's buffer")
     }
 
     @Test
@@ -49,26 +58,47 @@ class SuspendingIoTest {
     }
 
     @Test
-    fun bufferSinkWriteAllAndClose() = runTest {
+    fun readAfterCancelThrowsRatherThanLookingLikeAnEnd() = runTest {
+        val src = bufferOf("x").asSuspendingSource()
+        src.cancel(IllegalStateException("boom"))
+        assertFailsWith<IllegalStateException> { src.read(Buffer()) }
+    }
+
+    @Test
+    fun useReturnsTheBlockResultAndReleasesAnExhaustedSourceCleanly() = runTest {
+        val src = bufferOf("payload").asSuspendingSource()
+        assertEquals("payload", src.use { it.readRemaining() }.readString())
+        // Reading to the end is a clean end; use()'s cancel afterward must not retroactively make it an abort.
+        assertEquals(-1L, src.read(Buffer()))
+    }
+
+    @Test
+    fun useAbandoningEarlyLeavesTheSourceUnreadable() = runTest {
+        val src = bufferOf("payload").asSuspendingSource()
+        src.use { /* walk away without reading */ }
+        assertFailsWith<IllegalStateException> { src.read(Buffer()) }
+    }
+
+    @Test
+    fun bufferSinkCollectsThenRefusesMoreOnceClosed() = runTest {
         val sink = BufferSuspendingSink()
-        sink.writeAll(bufferOf("payload"))
-        assertEquals(StreamState.Open, sink.state)
+        sink.write(bufferOf("payload"))
         sink.close()
-        assertEquals(StreamState.Complete, sink.state)
         assertEquals("payload", sink.buffer.readString())
+        assertFailsWith<IllegalStateException> { sink.write(bufferOf("late")) }
     }
 
     @Test
     fun dataSuspendingRoundTrips() = runTest {
-        val data: Data = Data.Suspending(bufferOf("streamed").asSuspendingSource())
+        val data: Data = Data.SuspendingSource(bufferOf("streamed").asSuspendingSource())
         assertEquals("streamed", data.text())
     }
 
     @Test
     fun dataSuspendingProducerRoundTrips() = runTest {
-        val data: Data = Data.SuspendingProducer {
-            it.writeAll(bufferOf("produced "))
-            it.writeAll(bufferOf("in chunks"))
+        val data: Data = Data.SuspendingSink {
+            it.write(bufferOf("produced "))
+            it.write(bufferOf("in chunks"))
         }
         assertEquals("produced in chunks", data.text())
     }
@@ -82,19 +112,11 @@ class SuspendingIoTest {
     }
 
     @Test
-    fun cancelMarksAbnormal() = runTest {
-        val src = bufferOf("x").asSuspendingSource()
-        val cause = IllegalStateException("boom")
-        src.cancel(cause)
-        assertEquals(StreamState.ClosedAbnormally(cause), src.state)
-    }
-
-    @Test
     fun largePayloadThroughProducerToSuspendingData() = runTest {
         val chunk = ByteArray(64 * 1024) { 'a'.code.toByte() }
         val total = 40
-        val data: Data = Data.SuspendingProducer {
-            repeat(total) { _ -> it.writeAll(Buffer().also { b -> b.write(chunk) }) }
+        val data: Data = Data.SuspendingSink {
+            repeat(total) { _ -> it.write(Buffer().also { b -> b.write(chunk) }) }
         }
         val bytes = data.bytes()
         assertEquals(chunk.size.toLong() * total, bytes.size.toLong())

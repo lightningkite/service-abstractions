@@ -10,134 +10,149 @@ import kotlinx.io.Sink
  * **Single-reader:** [read] and [cancel] must not be invoked concurrently.
  */
 public interface SuspendingSource {
-    /** Current lifecycle state. Read-only to consumers; the producer drives transitions. */
-    public val state: StreamState
 
     /**
-     * Ensures [into] holds at least [count] bytes — reading from the underlying stream (and possibly buffering
-     * further ahead) as needed — then reports whether that succeeded.
+     * Moves whatever bytes are available into [into], suspending until at least one is.
      *
-     * - Returns `true` when [into] holds at least [count] bytes.
-     * - Returns `false` when end-of-stream was reached first; the bytes read before the end are still present in
-     *   [into], and [state] distinguishes a clean end ([StreamState.Complete]) from an error
-     *   ([StreamState.ClosedAbnormally]).
-     * - If [into] already holds at least [count] bytes, this is a no-op and returns `true`.
+     * A single call may hand over an arbitrarily large batch — how much arrives at once is the producer's choice, not
+     * the reader's, so a consumer doing synchronous per-batch work should not assume a bounded size.
      *
-     * [into] is your **persistent** read buffer: pass the same buffer on every call and consume the bytes you use
-     * from it between calls. Implementations may leave more than [count] bytes in [into] (read-ahead). Pass
-     * `count = 1` for "give me whatever is available right now."
+     * @return the number of bytes moved (always > 0), or `-1` once the source is exhausted.
+     * @throws IllegalStateException if the source was already cancelled, or already failed with an error you caught.
+     * Reading on from either is a bug, and a silent `-1` there would be indistinguishable from a clean end — exactly
+     * the truncation-looks-complete failure this API exists to prevent.
+     *
+     * Implementations release their resources on the terminal transition, but the reader still owns the lifecycle:
+     * [cancel] the source if you stop reading before exhaustion (see [use]).
      */
-    public suspend fun read(into: Buffer, count: Long): Boolean
+    public suspend fun read(into: Buffer): Long
 
-    /** Abandon reading; the producer may stop and release resources. Idempotent. */
+    /**
+     * Abandon reading; the producer may stop and release resources. Idempotent, and safe on an already-terminal
+     * source.
+     *
+     * @param cause why reading stopped, or null for an ordinary "done with this". Implementations forward it to the
+     * producer, so a failed consumer can tell the far end this was not a clean finish.
+     */
     public fun cancel(cause: Throwable? = null)
 }
 
 /**
- * Base class that owns the [state] machine and the [read] loop, so implementations only provide a single primitive.
+ * Optional base for [SuspendingSource] implementations: owns the terminal transition, so a subclass supplies only the
+ * read primitive and its cleanup.
  *
  * Guarantees for implementations:
- * - [release] is called **exactly once**, on the first transition out of [StreamState.Open] — whether that is a clean
- *   end-of-stream, a [fill] that threw, or an explicit [cancel]. So resource cleanup lives in one place and never
- *   leaks on the happy path.
+ * - [release] runs **exactly once**, on the first terminal event — exhaustion, a [fill] that threw, or [cancel].
+ * - [fill] is never called on a terminal source, so it never has to guard against use-after-end.
  */
 public abstract class AbstractSuspendingSource : SuspendingSource {
-    final override var state: StreamState = StreamState.Open
-        private set
+    private var terminal: Terminal? = null
 
-    /**
-     * Reads more bytes into [into], making progress toward [count]. Called only while [state] is
-     * [StreamState.Open] and `into.size < count`.
-     *
-     * @return `true` if more bytes may still be available, `false` if the underlying stream has ended. Must move at
-     * least one byte into [into] whenever it returns `true`, otherwise it may throw to signal an error.
-     */
-    protected abstract suspend fun fill(into: Buffer, count: Long): Boolean
+    /** Moves at least one byte into [into], or returns -1 at end of stream. Throw to report an error. */
+    protected abstract suspend fun fill(into: Buffer): Long
 
-    /** Release underlying resources. [cause] is null for a clean end/cancel. Called at most once, on the terminal transition. */
+    /** Release underlying resources. [cause] is null for a clean end or a plain cancel. Called exactly once. */
     protected abstract fun release(cause: Throwable?)
 
-    private fun terminate(newState: StreamState, cause: Throwable?) {
-        if (state != StreamState.Open) return
-        state = newState
+    final override suspend fun read(into: Buffer): Long {
+        when (terminal) {
+            Terminal.Exhausted -> return -1L
+            Terminal.Aborted -> throw IllegalStateException("This source was cancelled or failed; it cannot be read again.")
+            null -> {}
+        }
+        val moved = try {
+            fill(into)
+        } catch (e: Throwable) {
+            terminate(Terminal.Aborted, e)
+            throw e
+        }
+        if (moved < 0L) {
+            terminate(Terminal.Exhausted, null)
+            return -1L
+        }
+        // Contract violation: no bytes moved and no end-of-stream reported. Every drain helper treats that as
+        // progress, so letting it through is a silent busy-loop on the caller's thread. Fail fast instead.
+        if (moved == 0L) {
+            val error = IllegalStateException("fill() moved no bytes without reporting end-of-stream; this would spin forever")
+            terminate(Terminal.Aborted, error)
+            throw error
+        }
+        return moved
+    }
+
+    final override fun cancel(cause: Throwable?): Unit = terminate(Terminal.Aborted, cause)
+
+    private fun terminate(state: Terminal, cause: Throwable?) {
+        if (terminal != null) return
+        terminal = state
         release(cause)
     }
 
-    final override suspend fun read(into: Buffer, count: Long): Boolean {
-        // A source that already ended abnormally keeps reporting the error, rather than masquerading as a clean EOF.
-        (state as? StreamState.ClosedAbnormally)?.let { throw it.cause }
-        while (into.size < count && state == StreamState.Open) {
-            val before = into.size
-            val more = try {
-                fill(into, count)
-            } catch (e: Throwable) {
-                terminate(StreamState.ClosedAbnormally(e), e)
-                throw e
-            }
-            if (!more) {
-                terminate(StreamState.Complete, null)
-            } else if (into.size <= before) {
-                // Contract violation: fill claimed progress without moving a byte. Fail fast, but still release.
-                val err = IllegalStateException("fill() returned true without moving any bytes; this would spin forever")
-                terminate(StreamState.ClosedAbnormally(err), err)
-                throw err
-            }
-        }
-        return into.size >= count
-    }
+    /** Exhaustion and abandonment are both terminal, but only exhaustion may report itself again as a clean `-1`. */
+    private enum class Terminal { Exhausted, Aborted }
+}
 
-    final override fun cancel(cause: Throwable?) {
-        terminate(cause?.let { StreamState.ClosedAbnormally(it) } ?: StreamState.Complete, cause)
+/**
+ * Runs [block] with this source, then cancels it — passing the failure as the cause if [block] threw, so the producer
+ * learns the read was abandoned rather than finished. Unlike a sink, a source that is dropped early is unremarkable,
+ * so cancelling on the success path is not an error signal.
+ *
+ * The cleanup is in a `finally`, so it survives a non-local `return` out of [block].
+ */
+public inline fun <T> SuspendingSource.use(block: (SuspendingSource) -> T): T {
+    var cause: Throwable? = null
+    try {
+        return block(this)
+    } catch (e: Throwable) {
+        cause = e
+        throw e
+    } finally {
+        cancel(cause)
     }
 }
 
-/** How many bytes the "drain everything" helpers pull per read. Only a batching hint; sources may read-ahead more. */
-private const val TRANSFER_CHUNK: Long = 8192
-
 /**
- * Reads the entire remaining stream into a new [Buffer].
+ * Ensures [into] holds at least [count] bytes, reading as needed; returns false if the source ended first, in which
+ * case the bytes read before the end are still in [into].
+ *
+ * For consumers that need framing — a length prefix, a fixed-size header, a multipart boundary. Pass the same buffer
+ * on every call and consume what you use between calls; on return [into] may hold considerably more than [count], and
+ * that surplus is yours to keep for the next frame.
  */
+public suspend fun SuspendingSource.request(into: Buffer, count: Long): Boolean {
+    while (into.size < count) if (read(into) < 0L) return false
+    return true
+}
+
+/** Reads the entire remaining stream into a new [Buffer]. */
 public suspend fun SuspendingSource.readRemaining(): Buffer {
     val out = Buffer()
-    val staging = Buffer()
-    while (read(staging, TRANSFER_CHUNK)) staging.transferTo(out)
-    staging.transferTo(out) // final partial left in staging once EOF was reached
+    while (read(out) >= 0L) { /* accumulate until exhausted */ }
     return out
 }
 
-/**
- * Streams the entire remaining source into a blocking [Sink], returning the number of bytes transferred.
- *
- * Uses `read(_, 1)` so each hop forwards whatever bytes are available immediately instead of stalling until a fixed
- * chunk fills — important for trickle/segmented streams being proxied through.
- */
+/** Streams everything remaining into a blocking [Sink], returning the number of bytes transferred. */
 public suspend fun SuspendingSource.transferTo(sink: Sink): Long {
     var total = 0L
     val staging = Buffer()
-    while (read(staging, 1)) {
-        total += staging.size
+    while (true) {
+        val moved = read(staging)
+        if (moved < 0L) return total
+        total += moved
         staging.transferTo(sink)
     }
-    total += staging.size
-    staging.transferTo(sink)
-    return total
 }
 
-/**
- * Streams the entire remaining source into a cooperative [SuspendingSink], returning the number of bytes transferred.
- *
- * Uses `read(_, 1)` so each hop forwards whatever bytes are available immediately (see [transferTo] above).
- */
+/** Streams everything remaining into a cooperative [SuspendingSink], returning the number of bytes transferred. */
 public suspend fun SuspendingSource.transferTo(sink: SuspendingSink): Long {
     var total = 0L
     val staging = Buffer()
-    while (read(staging, 1)) {
-        total += staging.size
-        sink.writeAll(staging)
+    while (true) {
+        val moved = read(staging)
+        if (moved < 0L) return total
+        total += moved
+        sink.write(staging)
     }
-    total += staging.size
-    sink.writeAll(staging)
-    return total
 }
 
 /**
@@ -147,15 +162,8 @@ public suspend fun SuspendingSource.transferTo(sink: SuspendingSink): Long {
 public fun Buffer.asSuspendingSource(): SuspendingSource = BufferSuspendingSource(this)
 
 internal class BufferSuspendingSource(private val buffer: Buffer) : AbstractSuspendingSource() {
-    override suspend fun fill(into: Buffer, count: Long): Boolean {
-        if (buffer.exhausted()) return false
-        buffer.transferTo(into) // move everything available (read-ahead is fine)
-        return !buffer.exhausted()
-    }
-
-    override fun release(cause: Throwable?) {
-        buffer.clear()
-    }
+    override suspend fun fill(into: Buffer): Long = if (buffer.exhausted()) -1L else buffer.transferTo(into)
+    override fun release(cause: Throwable?): Unit = buffer.clear()
 }
 
 /**
@@ -164,16 +172,17 @@ internal class BufferSuspendingSource(private val buffer: Buffer) : AbstractSusp
  * **Caution:** the underlying reads are blocking; if [source] can block a thread (a socket, pipe, or file), consume
  * the returned [SuspendingSource] on a blocking-capable dispatcher, never on an engine's event loop. Prefer a natively
  * non-blocking implementation for those cases.
+ *
+ * @param chunkSize how many bytes to request from [source] per read. This is the one place a size must be chosen,
+ * because this is where bytes are pulled into existence rather than handed over from an existing buffer.
  */
-public fun RawSource.asSuspendingSource(): SuspendingSource = RawSourceSuspendingSource(this)
+public fun RawSource.asSuspendingSource(chunkSize: Long = 8192): SuspendingSource =
+    RawSourceSuspendingSource(this, chunkSize)
 
-internal class RawSourceSuspendingSource(private val source: RawSource) : AbstractSuspendingSource() {
-    override suspend fun fill(into: Buffer, count: Long): Boolean {
-        val want = (count - into.size).coerceAtLeast(TRANSFER_CHUNK)
-        return source.readAtMostTo(into, want) != -1L
-    }
-
-    override fun release(cause: Throwable?) {
-        source.close()
-    }
+internal class RawSourceSuspendingSource(
+    private val source: RawSource,
+    private val chunkSize: Long,
+) : AbstractSuspendingSource() {
+    override suspend fun fill(into: Buffer): Long = source.readAtMostTo(into, chunkSize)
+    override fun release(cause: Throwable?): Unit = source.close()
 }
