@@ -140,6 +140,15 @@ private fun <T> condition(
         is Condition.NotEqual -> {
             if (condition.value == null) {
                 fieldSet.exists
+            } else if (fieldSet.fields.size == 1) {
+                // `col <> value` is NULL (excluded by WHERE) when col is NULL, under SQL's
+                // three-valued logic — but the in-memory reference (on != value) treats a null
+                // field as simply unequal and includes it. OR in the null check to match; harmless
+                // on a NOT NULL column, where it's always false.
+                OrOp(listOf(
+                    fieldSet.notExists,
+                    OrOp(fieldSet.format(condition.value).entries.map { NeqOp(it.key, it.value) }),
+                ))
             } else {
                 OrOp(fieldSet.format(condition.value).entries.map { NeqOp(it.key, it.value) })
             }
@@ -309,7 +318,7 @@ private fun <T> condition(
 
         is Condition.RegexMatches -> {
             val col = fieldSet.single
-            RegexpOp(col as Column<String>, sqlLiteralOfSomeKind(TextColumnType(), condition.pattern), true)
+            RegexpOp(col as Column<String>, sqlLiteralOfSomeKind(TextColumnType(), condition.pattern), !condition.ignoreCase)
         }
 
         is Condition.SetSizesEquals<*> -> {

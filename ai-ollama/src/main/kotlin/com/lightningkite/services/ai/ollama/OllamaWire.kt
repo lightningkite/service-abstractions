@@ -163,13 +163,21 @@ internal object OllamaWire {
 
     /**
      * Emit base64 image attachments into the `images` array. Throws if any URL attachments
-     * are present, since Ollama's native API does not support image URLs.
+     * are present, since Ollama's native API does not support image URLs, and if any
+     * attachment isn't an image — Ollama's `images` field only accepts image bytes, so a
+     * non-image attachment (e.g. a PDF) stuffed in there would be silently fed to the model
+     * as garbage rather than rejected.
      */
     private fun JsonObjectBuilder.emitAttachments(attachments: List<LlmAttachment>) {
         if (attachments.isEmpty()) return
         val base64s = attachments.mapNotNull {
             when (it) {
-                is LlmAttachment.Base64 -> it.base64
+                is LlmAttachment.Base64 -> {
+                    require(it.mediaType.type == "image") {
+                        "Ollama's native API only accepts image attachments; got media type ${it.mediaType}."
+                    }
+                    it.base64
+                }
                 is LlmAttachment.Url -> null
             }
         }

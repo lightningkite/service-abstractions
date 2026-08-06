@@ -160,7 +160,17 @@ private fun <T> condition(
 
         is Condition.NotEqual -> {
             if (condition.value == null) fieldSet.exists
-            else OrOp(fieldSet.format(condition.value).entries.map { NeqOp(it.key, it.value) })
+            else if (fieldSet.fields.size == 1)
+                // `col <> value` is NULL (excluded by WHERE) when col is NULL, under SQL's
+                // three-valued logic — but the in-memory reference (on != value) treats a null
+                // field as simply unequal and includes it. OR in the null check to match; harmless
+                // on a NOT NULL column, where it's always false.
+                OrOp(listOf(
+                    fieldSet.notExists,
+                    OrOp(fieldSet.format(condition.value).entries.map { NeqOp(it.key, it.value) }),
+                ))
+            else
+                OrOp(fieldSet.format(condition.value).entries.map { NeqOp(it.key, it.value) })
         }
 
         is Condition.GreaterThan -> op(condition.value, ::GreaterOp)
@@ -293,7 +303,7 @@ private fun <T> condition(
             try {
                 @Suppress("UNCHECKED_CAST")
                 val col = fieldSet.single as Column<String>
-                RegexpOp(col, stringLiteral(condition.pattern), true)
+                RegexpOp(col, stringLiteral(condition.pattern), !condition.ignoreCase)
             } catch (_: Exception) {
                 unsupported()
             }

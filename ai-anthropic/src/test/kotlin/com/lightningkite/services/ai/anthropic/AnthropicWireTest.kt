@@ -25,6 +25,7 @@ import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -271,6 +272,35 @@ class AnthropicWireTest {
             .jsonArray[0].jsonObject["source"]!!.jsonObject
         assertEquals("url", source["type"]!!.jsonPrimitive.content)
         assertEquals("https://example.com/cat.jpg", source["url"]!!.jsonPrimitive.content)
+    }
+
+    /**
+     * Anthropic needs a distinct `type: "document"` block for PDFs, which this codebase doesn't
+     * implement yet. Sending a non-image attachment must fail fast rather than build a malformed
+     * `{"type":"image","source":{"media_type":"application/pdf",...}}` request that Anthropic's
+     * API would reject anyway, with a much less helpful error.
+     */
+    @Test
+    fun nonImageAttachmentThrows() {
+        assertFailsWith<IllegalArgumentException> {
+            AnthropicWire.buildRequestBody(
+                modelId = "claude-haiku-4-5",
+                prompt = LlmPrompt(
+                    messages = listOf(
+                        LlmMessage.User(
+                            listOf(
+                                LlmPart.Attachment(
+                                    LlmAttachment.Base64(MediaType.Application.Pdf, "aGVsbG8="),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                module = EmptySerializersModule(),
+                stream = false,
+                defaultMaxTokens = 1024,
+            )
+        }
     }
 
     @Test

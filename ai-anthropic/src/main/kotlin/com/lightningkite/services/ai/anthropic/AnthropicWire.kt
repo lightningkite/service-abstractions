@@ -212,13 +212,25 @@ internal object AnthropicWire {
         is LlmPart.Attachment -> attachmentBlock(part.attachment)
     }
 
+    /**
+     * Anthropic's Messages API has a distinct `type: "document"` block for PDFs, separate from
+     * `type: "image"`; this codebase doesn't implement it yet (a feature for later). Fail fast on
+     * non-image media types rather than mislabeling them as `"image"`, which Anthropic rejects as
+     * a malformed request anyway — just with a much less helpful error.
+     */
     private fun attachmentBlock(attachment: LlmAttachment): JsonObject = buildJsonObject {
         put("type", "image")
         when (attachment) {
-            is LlmAttachment.Base64 -> putJsonObject("source") {
-                put("type", "base64")
-                put("media_type", attachment.mediaType.toString())
-                put("data", attachment.base64)
+            is LlmAttachment.Base64 -> {
+                require(attachment.mediaType.type == "image") {
+                    "Anthropic attachments only support image media types in this codebase " +
+                        "(no document/PDF block implemented yet); got media type ${attachment.mediaType}."
+                }
+                putJsonObject("source") {
+                    put("type", "base64")
+                    put("media_type", attachment.mediaType.toString())
+                    put("data", attachment.base64)
+                }
             }
 
             is LlmAttachment.Url -> putJsonObject("source") {

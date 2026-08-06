@@ -20,6 +20,7 @@ import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -224,6 +225,29 @@ class OllamaWireTest {
         val userMsg = body["messages"]!!.jsonArray[0].jsonObject
         val images = userMsg["images"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("abc123"), images)
+    }
+
+    /**
+     * Ollama's `images` field only accepts image bytes. A non-image attachment (e.g. a PDF)
+     * must fail loudly rather than be silently stuffed into `images` as garbage the model
+     * receives with no error.
+     */
+    @Test
+    fun nonImageAttachmentThrows() {
+        val attachment = com.lightningkite.services.ai.LlmAttachment.Base64(
+            mediaType = com.lightningkite.services.data.MediaType("application/pdf"),
+            base64 = "abc123",
+        )
+        val prompt = LlmPrompt(
+            messages = listOf(
+                LlmMessage.User(
+                    listOf(LlmPart.Attachment(attachment)),
+                ),
+            ),
+        )
+        assertFailsWith<IllegalArgumentException> {
+            OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = true)
+        }
     }
 
     @Test
