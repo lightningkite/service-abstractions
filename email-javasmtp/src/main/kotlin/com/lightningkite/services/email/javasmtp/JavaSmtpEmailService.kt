@@ -175,9 +175,14 @@ public class JavaSmtpEmailService(
             put("mail.smtp.host", hostName)
             put("mail.smtp.port", port)
             put("mail.smtp.auth", username != null && password != null)
-            put("mail.smtp.ssl.enable", requireTls.toString())
-            put("mail.smtp.starttls.enable", requireTls.toString())
-            put("mail.smtp.starttls.required", requireTls.toString())
+            // Port 465 is implicit SSL; every other port (when TLS is required) uses STARTTLS.
+            // Setting both flags true simultaneously is invalid/conflicting session config, not
+            // "extra secure" -- exactly one of the two mechanisms may be active at a time.
+            val useImplicitSsl = requireTls && port == 465
+            val useStartTls = requireTls && port != 465
+            put("mail.smtp.ssl.enable", useImplicitSsl.toString())
+            put("mail.smtp.starttls.enable", useStartTls.toString())
+            put("mail.smtp.starttls.required", useStartTls.toString())
         },
         if (username != null && password != null)
             object : Authenticator() {
