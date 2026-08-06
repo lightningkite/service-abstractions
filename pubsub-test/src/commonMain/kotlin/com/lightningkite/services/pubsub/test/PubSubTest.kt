@@ -6,6 +6,7 @@ import com.lightningkite.services.test.runTestWithClock
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.seconds
@@ -27,7 +28,7 @@ public abstract class PubSubTest {
      * fell behind.
      */
     @Test
-    public fun emitDoesNotBlockOnASlowSubscriber(): Unit = runTestWithClock {
+    public fun emitDoesNotBlockOnASlowSubscriber(): TestResult = runTestWithClock {
         val channel = pubsub.get<Int>("slow-subscriber-${Uuid.random()}")
 
         val subscriberReceivedFirstValue = CompletableDeferred<Unit>()
