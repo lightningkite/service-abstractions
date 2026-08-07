@@ -36,23 +36,18 @@ Version 1.3 has breaking changes that improve the ergonomics and safety, and is 
 
 ```kotlin
 fun main() {
-    val settingsFileVirtual = """
+    val settingsFile = """
         {
             "port": 8941,
             "host": "127.0.0.1",
-            "cache": "ram",
+            "cache": "ram"
         }
     """.trimIndent()
-    val context = object: SettingContext {
-        override val projectName = "my-app"
-        override val publicUrl = "http://localhost:8941"
-        override val internalSerializersModule: SerializersModule = EmptySerializersModule()
-        override val sharedResources = SharedResources()
-    }
-    val settings = Json.decodeFromString<MyServerSettings>(settingsFileVirtual)
+    val context = TestSettingContext()
+    val settings = Json.decodeFromString<MyServerSettings>(settingsFile)
 
     runBlocking {
-        val cache = settings.cache(context)
+        val cache = settings.cache("cache", context)
         repeat(5) {
             val currentValue = cache.get<Int>("counter")
             cache.set("counter", (currentValue ?: 0) + 1)
@@ -67,6 +62,12 @@ data class MyServerSettings(
     val cache: Cache.Settings = Cache.Settings(),
 )
 ```
+
+`TestSettingContext()` is a zero-dependency `SettingContext` meant for exactly this kind of
+local running/testing. See **[demo/](demo/README.md)** for a runnable version of this sample
+plus one for every other subsystem (database, email, sms, files, pubsub, phonecall, speech,
+subscription-payments, voiceagent, and more), each using a local/fake implementation so it
+needs no credentials.
 
 ## Database Sample (server library agnostic)
 
