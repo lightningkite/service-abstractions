@@ -27,14 +27,14 @@ public infix fun <K, T : Any> DataClassPath<K, T>.eqNn(value: T?): Condition<K> 
 public infix fun <K, T> DataClassPath<K, T>.neq(value: T): Condition<K> = mapCondition(Condition.NotEqual(value))
 
 @JsName("xDataClassPathNotInSet")
-public infix fun <K, T> DataClassPath<K, out T>.notInside(values: Set<T>): Condition<K> =
+public infix fun <K, T> DataClassPath<K, T>.notInside(values: Set<T>): Condition<K> =
     mapCondition(Condition.NotInside(values))
 
-public infix fun <K, T> DataClassPath<K, out T>.notInside(values: List<T>): Condition<K> =
+public infix fun <K, T> DataClassPath<K, T>.notInside(values: List<T>): Condition<K> =
     mapCondition(Condition.NotInside(values.toSet()))
 
 @JsName("xDataClassPathNotInVararg")
-public fun <K, T> DataClassPath<K, out T>.notInside(vararg values: T): Condition<K> =
+public fun <K, T> DataClassPath<K, T>.notInside(vararg values: T): Condition<K> =
     mapCondition(Condition.NotInside(values.toSet()))
 
 public infix fun <K, T : Comparable<T>> DataClassPath<K, T>.gt(value: T): Condition<K> =
@@ -119,14 +119,14 @@ public inline infix fun <K, reified T> DataClassPath<K, T>.condition(make: (Data
     mapCondition(make(path<T>()))
 
 @JsName("xDataClassPathInsideSet")
-public infix fun <K, T> DataClassPath<K, out T>.inside(values: Set<T>): Condition<K> =
+public infix fun <K, T> DataClassPath<K, T>.inside(values: Set<T>): Condition<K> =
     mapCondition(Condition.Inside(values))
 
-public infix fun <K, T> DataClassPath<K, out T>.inside(values: List<T>): Condition<K> =
+public infix fun <K, T> DataClassPath<K, T>.inside(values: List<T>): Condition<K> =
     mapCondition(Condition.Inside(values.toSet()))
 
 @JsName("xDataClassPathInsideVararg")
-public fun <K, T> DataClassPath<K, out T>.inside(vararg values: T): Condition<K> =
+public fun <K, T> DataClassPath<K, T>.inside(vararg values: T): Condition<K> =
     mapCondition(Condition.Inside(values.toSet()))
 
 @Deprecated("Size equals will be removed in the future in favor of something that detects empty specifically")
