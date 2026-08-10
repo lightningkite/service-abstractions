@@ -14,7 +14,7 @@ import kotlin.js.JsName
  *
  * ## Consumption is `suspend`
  *
- * All consumption ([bytes], [text], [write], [source], [writeTo]) is `suspend`. This lets streaming variants read/write
+ * All consumption ([bytes], [text], [write], [source], [writeSuspending]) is `suspend`. This lets streaming variants read/write
  * cooperatively instead of blocking a thread — consuming a [SuspendingSource] on an engine's event loop can never deadlock
  * the way a blocking [Source]/[Sink] can. In-memory variants ([Bytes], [Text]) never actually suspend.
  *
@@ -39,54 +39,68 @@ public sealed interface Data : AutoCloseable {
      * For in-memory variants this is a buffer over the bytes. For a blocking streaming [Source] it is the **live**
      * underlying stream (not materialized) — reading it blocks, so read it on a blocking-capable thread, never an
      * engine event loop. Cooperative streaming variants must materialize here, since a blocking [kotlinx.io.Source]
-     * cannot suspend; stream those via [writeTo] instead if you want to avoid buffering.
+     * cannot suspend; stream those via [writeSuspending] instead if you want to avoid buffering.
      */
-    public suspend fun source(): kotlinx.io.Source = Buffer().apply { write(bytes()) }
+    public suspend fun source(): kotlinx.io.Source
 
     /** Write all bytes to a blocking [Sink]. Does not close [to]. Consumes this instance. */
-    public suspend fun write(to: kotlinx.io.Sink) {
-        to.write(bytes())
-    }
+    public suspend fun write(to: kotlinx.io.Sink)
+
+    /** Get the data as a [SuspendingSource](com.lightningkite.services.data.SuspendingSource). Consumes this instance.*/
+    public suspend fun suspendingSource(): com.lightningkite.services.data.SuspendingSource
 
     /** Write all bytes to a cooperative [SuspendingSink]. Does not close [to]. Consumes this instance. */
-    public suspend fun writeTo(to: com.lightningkite.services.data.SuspendingSink) {
-        to.write(Buffer().apply { write(bytes()) })
-    }
-
-    override fun close() {}
+    public suspend fun writeSuspending(to: com.lightningkite.services.data.SuspendingSink)
 
     public class Bytes(public val data: ByteArray) : Data {
         public override val size: Long get() = data.size.toLong()
+
         public override suspend fun bytes(): ByteArray = data
         public override suspend fun text(): String = data.decodeToString()
-        public override suspend fun source(): kotlinx.io.Source = Buffer().also { it.write(data) }
-        public override suspend fun write(to: kotlinx.io.Sink) {
-            to.write(data)
+
+        public fun toBuffer(): Buffer = Buffer().apply { write(data) }
+
+        public override suspend fun source(): kotlinx.io.Source = toBuffer()
+        public override suspend fun write(to: kotlinx.io.Sink) { to.write(data) }
+
+        public override suspend fun suspendingSource(): com.lightningkite.services.data.SuspendingSource =
+            toBuffer().asSuspendingSource()
+
+        public override suspend fun writeSuspending(to: com.lightningkite.services.data.SuspendingSink) {
+            to.write(toBuffer())
         }
-        public override suspend fun writeTo(to: com.lightningkite.services.data.SuspendingSink) {
-            to.write(Buffer().also { it.write(data) })
-        }
+
+        override fun close() {}
     }
 
     public class Text(public val data: String) : Data {
         private val asBytes by lazy { data.encodeToByteArray() }
         public val encoding: String = "UTF-8"
+
         public override val size: Long get() = asBytes.size.toLong()
+
         public override suspend fun bytes(): ByteArray = asBytes
         public override suspend fun text(): String = data
-        public override suspend fun source(): kotlinx.io.Source = Buffer().also { it.writeString(data) }
-        public override suspend fun write(to: kotlinx.io.Sink) {
-            to.writeString(data)
+
+        public fun toBuffer(): Buffer = Buffer().apply { writeString(data) }
+
+        public override suspend fun source(): kotlinx.io.Source = toBuffer()
+        public override suspend fun write(to: kotlinx.io.Sink) { to.writeString(data) }
+
+        public override suspend fun suspendingSource(): com.lightningkite.services.data.SuspendingSource =
+            toBuffer().asSuspendingSource()
+
+        public override suspend fun writeSuspending(to: com.lightningkite.services.data.SuspendingSink) {
+            to.write(toBuffer())
         }
-        public override suspend fun writeTo(to: com.lightningkite.services.data.SuspendingSink) {
-            to.write(Buffer().also { it.writeString(data) })
-        }
+
+        override fun close() {}
     }
 
     /**
      * A blocking streaming source (a stream you read incrementally, not yet in memory — use [Bytes]/[Text] for
      * already-materialized data). Reading blocks a thread, so the materializing consumption methods ([bytes], [text],
-     * [write], [writeTo]) offload to [ioDispatcher] automatically; they are therefore safe to consume from any thread,
+     * [write], [writeSuspending]) offload to [ioDispatcher] automatically; they are therefore safe to consume from any thread,
      * including an engine event loop. You can only consume this once. Make sure you close it.
      *
      * The raw [source] property and [source] method are the **streaming escape hatch**: they hand back the live
@@ -122,7 +136,12 @@ public sealed interface Data : AutoCloseable {
             checkNotConsumed(); withContext(ioDispatcher) { source.use { it.transferTo(to) } }
         }
 
-        public override suspend fun writeTo(to: com.lightningkite.services.data.SuspendingSink) {
+        public override suspend fun suspendingSource(): com.lightningkite.services.data.SuspendingSource {
+            checkNotConsumed()
+            return source.asSuspendingSource()
+        }
+
+        public override suspend fun writeSuspending(to: com.lightningkite.services.data.SuspendingSink) {
             checkNotConsumed()
             withContext(ioDispatcher) {
                 source.use { s ->
@@ -150,15 +169,15 @@ public sealed interface Data : AutoCloseable {
         }
 
         public override suspend fun bytes(): ByteArray {
-            checkNotConsumed(); return withContext(ioDispatcher) { Buffer().also { emit(it) }.readByteArray() }
+            checkNotConsumed(); return withContext(ioDispatcher) { Buffer().also(emit) }.readByteArray()
         }
 
         public override suspend fun text(): String {
-            checkNotConsumed(); return withContext(ioDispatcher) { Buffer().also { emit(it) }.readString() }
+            checkNotConsumed(); return withContext(ioDispatcher) { Buffer().also(emit).readString() }
         }
 
         public override suspend fun source(): kotlinx.io.Source {
-            checkNotConsumed(); return withContext(ioDispatcher) { Buffer().also { emit(it) } }
+            checkNotConsumed(); return withContext(ioDispatcher) { Buffer().also(emit) }
         }
 
         public override suspend fun write(to: kotlinx.io.Sink) {
@@ -166,8 +185,12 @@ public sealed interface Data : AutoCloseable {
             checkNotConsumed(); withContext(ioDispatcher) { emit(to) }
         }
 
-        public override suspend fun writeTo(to: com.lightningkite.services.data.SuspendingSink) {
-            checkNotConsumed(); withContext(ioDispatcher) { to.write(Buffer().also { emit(it) }) }
+        public override suspend fun suspendingSource(): com.lightningkite.services.data.SuspendingSource {
+            checkNotConsumed(); return withContext(ioDispatcher) { Buffer().also(emit).asSuspendingSource() }
+        }
+
+        public override suspend fun writeSuspending(to: com.lightningkite.services.data.SuspendingSink) {
+            checkNotConsumed(); withContext(ioDispatcher) { to.write(Buffer().also(emit)) }
         }
 
         public override fun close() {}
@@ -206,7 +229,12 @@ public sealed interface Data : AutoCloseable {
             try { source.transferTo(to) } catch (e: Throwable) { source.cancel(e); throw e }
         }
 
-        public override suspend fun writeTo(to: com.lightningkite.services.data.SuspendingSink) {
+        public override suspend fun suspendingSource(): com.lightningkite.services.data.SuspendingSource {
+            checkNotConsumed()
+            return source
+        }
+
+        public override suspend fun writeSuspending(to: com.lightningkite.services.data.SuspendingSink) {
             checkNotConsumed()
             try { source.transferTo(to) } catch (e: Throwable) { source.cancel(e); throw e }
         }
@@ -256,10 +284,15 @@ public sealed interface Data : AutoCloseable {
         public override suspend fun write(to: kotlinx.io.Sink) {
             // Do not close the caller's sink — with closeUnderlying=false, finishing flushes it and nothing more.
             // Going through use() is what guarantees that flush happens even for a producer that never closes.
-            checkNotConsumed(); to.asSuspendingSink(closeUnderlying = false).use { emit(it) }
+            checkNotConsumed(); to.asSuspendingSink(closeUnderlying = false).use(emit)
         }
 
-        public override suspend fun writeTo(to: com.lightningkite.services.data.SuspendingSink) {
+        public override suspend fun suspendingSource(): com.lightningkite.services.data.SuspendingSource {
+            checkNotConsumed()
+            return EmitSuspendingSource(EmitSuspendingSource.SuspendMode.OnFlush, emit)
+        }
+
+        public override suspend fun writeSuspending(to: com.lightningkite.services.data.SuspendingSink) {
             checkNotConsumed(); emit(to)
         }
 
@@ -281,10 +314,10 @@ public class TypedData(public val data: Data, public val mediaType: MediaType) :
         public fun sink(mediaType: MediaType, size: Long? = null, emit: (Sink) -> Unit): TypedData =
             TypedData(Data.Sink(size, emit), mediaType)
 
-        public fun suspending(source: SuspendingSource, mediaType: MediaType, size: Long? = null): TypedData =
+        public fun suspendingSource(source: SuspendingSource, mediaType: MediaType, size: Long? = null): TypedData =
             TypedData(Data.SuspendingSource(source, size), mediaType)
 
-        public fun suspendingProducer(
+        public fun suspendingSink(
             mediaType: MediaType,
             size: Long? = null,
             emit: suspend (SuspendingSink) -> Unit,
@@ -293,7 +326,7 @@ public class TypedData(public val data: Data, public val mediaType: MediaType) :
 
     public suspend fun text(): String = data.text()
     public suspend fun write(to: kotlinx.io.Sink): Unit = data.write(to)
-    public suspend fun writeTo(to: SuspendingSink): Unit = data.writeTo(to)
+    public suspend fun writeTo(to: SuspendingSink): Unit = data.writeSuspending(to)
 
     override fun toString(): String {
         return "${data::class.simpleName}(${mediaType})"

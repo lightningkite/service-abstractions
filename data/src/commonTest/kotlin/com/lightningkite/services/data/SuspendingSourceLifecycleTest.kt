@@ -126,7 +126,7 @@ class SuspendingSourceLifecycleTest {
             override suspend fun close() {}
             override fun cancel(cause: Throwable) {}
         }
-        assertFailsWith<IllegalStateException> { data.writeTo(failingSink) }
+        assertFailsWith<IllegalStateException> { data.writeSuspending(failingSink) }
         assertTrue(raw.closed, "a failing destination sink must not leave the source's resource open")
     }
 

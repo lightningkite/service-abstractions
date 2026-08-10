@@ -107,7 +107,7 @@ class SuspendingIoTest {
     fun dataWriteToStreamsIntoSink() = runTest {
         val data: Data = Data.Bytes("copy this".encodeToByteArray())
         val sink = BufferSuspendingSink()
-        data.writeTo(sink)
+        data.writeSuspending(sink)
         assertEquals("copy this", sink.buffer.readString())
     }
 

@@ -84,7 +84,8 @@ public abstract class AbstractSuspendingSink : SuspendingSink {
     final override suspend fun close() {
         if (terminal) return
         try {
-            finish()
+            flush()   // Flush any buffered data before finishing
+            finish()  // Write trailers if any
         } catch (e: Throwable) {
             terminal = true
             release(e)
