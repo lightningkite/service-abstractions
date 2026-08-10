@@ -57,6 +57,14 @@ import kotlin.coroutines.resume
  * - When the source is canceled or exhausted, the producer coroutine is canceled.
  * - The sink is automatically closed when the [emit] lambda completes (normally or exceptionally).
  *
+ * ## Thread Safety
+ *
+ * - **Single-reader**: This source must be read by only one coroutine at a time. Concurrent calls to
+ *   [read], [cancel], or [close] from multiple coroutines are not supported.
+ * - **Single-writer**: The [SuspendingSink] provided to the [emit] lambda must be written by only one
+ *   coroutine at a time. Concurrent calls to [SuspendingSink.write], [SuspendingSink.flush], etc. are
+ *   not supported.
+ *
  * @param streamSuspendMode Controls when backpressure is applied. Defaults to [SuspendMode.OnFlush].
  * @param emit The producer lambda that writes data to the provided [SuspendingSink]. The sink is
  *             automatically closed when this lambda returns.
@@ -116,10 +124,7 @@ public class EmitSuspendingSource(
 
                 override fun release(cause: Throwable?) {
                     if (cause == null) resumeStream()
-                    else {
-                        println("Released with cause: $cause")
-                        stream.trySend(Result.failure(cause))
-                    }
+                    else stream.trySend(Result.failure(cause))
                 }
 
                 override suspend fun write(from: Buffer) {
