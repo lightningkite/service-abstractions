@@ -52,6 +52,9 @@ public sealed interface Data : AutoCloseable {
     /** Write all bytes to a cooperative [SuspendingSink]. Does not close [to]. Consumes this instance. */
     public suspend fun writeSuspending(to: com.lightningkite.services.data.SuspendingSink)
 
+    @Deprecated("Use writeSuspsending(to) instead", ReplaceWith("writeSuspending(to)"))
+    public suspend fun writeTo(to: com.lightningkite.services.data.SuspendingSink): Unit = writeSuspending(to)
+
     public class Bytes(public val data: ByteArray) : Data {
         public override val size: Long get() = data.size.toLong()
 
@@ -314,8 +317,20 @@ public class TypedData(public val data: Data, public val mediaType: MediaType) :
         public fun sink(mediaType: MediaType, size: Long? = null, emit: (Sink) -> Unit): TypedData =
             TypedData(Data.Sink(size, emit), mediaType)
 
+
+        @Deprecated("Use suspendingSource instead", ReplaceWith("suspendingSource"))
+        public fun suspending(source: SuspendingSource, mediaType: MediaType, size: Long? = null): TypedData = suspendingSource(source, mediaType, size)
+
+
         public fun suspendingSource(source: SuspendingSource, mediaType: MediaType, size: Long? = null): TypedData =
             TypedData(Data.SuspendingSource(source, size), mediaType)
+
+        @Deprecated("Use suspendingSink instead", ReplaceWith("suspendingSink"))
+        public fun suspendingProducer(
+            mediaType: MediaType,
+            size: Long? = null,
+            emit: suspend (SuspendingSink) -> Unit,
+        ): TypedData = suspendingSink(mediaType, size, emit)
 
         public fun suspendingSink(
             mediaType: MediaType,
