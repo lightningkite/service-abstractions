@@ -6,7 +6,7 @@ import org.junit.Test
 class TerraformJsonObjectTest {
     @Test
     fun testSpike() {
-        TerraformJsonObject().apply {
+        terraformJsonObject {
             "resource.aws_instance.example2" {
 //                "a" - 1
             }
@@ -31,8 +31,11 @@ class TerraformJsonObjectTest {
                     },
                 )
             }
+            "resource.aws_instance.example.other" - listOf(3)
             println(toString())
-        }.toJsonObject().toString().let(::println)
+        }
+            .toString()
+            .let(::println)
     }
 
     @Test

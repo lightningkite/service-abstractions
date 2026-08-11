@@ -1,6 +1,8 @@
 package com.lightningkite.services.terraform
 
 import com.lightningkite.services.terraform.TerraformJsonObject.Companion.expression
+import com.lightningkite.services.terraform.TerraformJsonObject.ObjectNode
+import com.lightningkite.services.terraform.TerraformJsonObject.ValueNode
 import kotlinx.serialization.json.*
 import kotlin.jvm.JvmName
 
@@ -72,7 +74,8 @@ import kotlin.jvm.JvmName
  * }
  * ```
  */
-public class TerraformJsonObject() {
+public class TerraformJsonObject private constructor(private val root: ObjectNode) {
+    public constructor() : this(root = ObjectNode())
 
     /**
      * Creates a Terraform expression string for variable interpolation.
@@ -100,7 +103,7 @@ public class TerraformJsonObject() {
         fun toJson(): JsonElement
     }
 
-    internal class ValueNode() : Node {
+    internal class ValueNode : Node {
         internal val values: ArrayList<JsonElement> = ArrayList()
         override fun toJson(): JsonElement = if (values.size == 1) values[0] else JsonArray(values)
         override fun toString(): String = values.toString()
@@ -112,12 +115,10 @@ public class TerraformJsonObject() {
         override fun toString(): String = children.toString()
     }
 
-    internal val root = ObjectNode()
-
     internal fun getObject(keys: List<String>): ObjectNode {
         var current = root
         for (key in keys) {
-            current = (current.children.getOrPut(key) { ObjectNode() } as ObjectNode)
+            current = current.children.getOrPut(key, ::ObjectNode) as ObjectNode
         }
         return current
     }
@@ -127,17 +128,20 @@ public class TerraformJsonObject() {
      */
     public operator fun String.minus(value: JsonElement) {
         val keys = this.split('.')
-        (getObject(keys.dropLast(1)).children.getOrPut(keys.last()) { ValueNode() } as ValueNode).values.add(value)
+        (getObject(keys.dropLast(1)).children.getOrPut(keys.last(), ::ValueNode) as ValueNode).values.add(value)
     }
 
     /** Assigns a string value to a path. */
-    public operator fun String.minus(value: String?): Unit = minus(JsonPrimitive(value))
+    public operator fun String.minus(value: String): Unit = minus(JsonPrimitive(value))
 
     /** Assigns a numeric value to a path. */
-    public operator fun String.minus(value: Number?): Unit = minus(JsonPrimitive(value))
+    public operator fun String.minus(value: Number): Unit = minus(JsonPrimitive(value))
 
     /** Assigns a boolean value to a path. */
-    public operator fun String.minus(value: Boolean?): Unit = minus(JsonPrimitive(value))
+    public operator fun String.minus(value: Boolean): Unit = minus(JsonPrimitive(value))
+
+    /** Assigns a `null` value to a path. */
+    public operator fun String.minus(value: Nothing?): Unit = minus(JsonNull)
 
     /** Assigns a list of strings to a path. */
     @JvmName("minusListString")
@@ -161,8 +165,8 @@ public class TerraformJsonObject() {
     /**
      * Scopes assignments within a path. Example: `"resource.aws_instance" { "name" - "value" }`
      */
-    public operator fun String.invoke(builder: Subpath.() -> Unit) {
-        Subpath(getObject(split('.'))).apply(builder)
+    public operator fun String.invoke(builder: TerraformJsonObject.() -> Unit) {
+        TerraformJsonObject(getObject(split('.'))).apply(builder)
     }
 
     override fun toString(): String = root.toString()
@@ -178,51 +182,6 @@ public class TerraformJsonObject() {
     public fun include(other: JsonObject) {
         for ((key, value) in other) {
             key - value
-        }
-    }
-
-    /**
-     * Scoped builder for assignments within a specific path. Same operators as parent class.
-     */
-    public inner class Subpath internal constructor(private val root: ObjectNode) {
-        internal fun getObject(keys: List<String>): ObjectNode {
-            var current = root
-            for (key in keys) {
-                current = (current.children.getOrPut(key) { ObjectNode() } as ObjectNode)
-            }
-            return current
-        }
-
-        public operator fun String.minus(value: JsonElement) {
-            val keys = this.split('.')
-            (getObject(keys.dropLast(1)).children.getOrPut(keys.last()) { ValueNode() } as ValueNode).values.add(value)
-        }
-
-        public operator fun String.minus(value: String?): Unit = minus(JsonPrimitive(value))
-        public operator fun String.minus(value: Number?): Unit = minus(JsonPrimitive(value))
-        public operator fun String.minus(value: Boolean?): Unit = minus(JsonPrimitive(value))
-        @JvmName("minusListString")
-        public operator fun String.minus(value: List<String?>): Unit =
-            minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
-
-        @JvmName("minusListNumber")
-        public operator fun String.minus(value: List<Number?>): Unit =
-            minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
-
-        @JvmName("minusListBoolean")
-        public operator fun String.minus(value: List<Boolean?>): Unit =
-            minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
-
-        @JvmName("minusListJson")
-        public operator fun String.minus(value: List<JsonElement>): Unit = minus(JsonArray(value) as JsonElement)
-        public operator fun String.invoke(builder: Subpath.() -> Unit) {
-            Subpath(getObject(split('.'))).apply(builder)
-        }
-
-        public fun include(other: JsonObject) {
-            for ((key, value) in other) {
-                key - value
-            }
         }
     }
 }
