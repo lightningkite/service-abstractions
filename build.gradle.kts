@@ -84,3 +84,17 @@ subprojects {
         }
     }
 }
+
+tasks.register("test") {
+    group = "custom"
+
+    // Run for root multi-project subprojects
+    dependsOn(provider {
+        subprojects.mapNotNull { it.tasks.findByName("test") }
+    })
+
+    // Safely trigger for composite builds
+    gradle.includedBuilds.forEach { included ->
+        dependsOn(included.task(":test"))
+    }
+}
