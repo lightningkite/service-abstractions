@@ -74,7 +74,7 @@ import kotlin.jvm.JvmName
  * }
  * ```
  */
-public class TerraformJsonObject private constructor(private val root: ObjectNode) {
+public class TerraformJsonObject @PublishedApi internal constructor(private val root: ObjectNode) {
     public constructor() : this(root = ObjectNode())
 
     /**
@@ -115,6 +115,7 @@ public class TerraformJsonObject private constructor(private val root: ObjectNod
         override fun toString(): String = children.toString()
     }
 
+    @PublishedApi
     internal fun getObject(keys: List<String>): ObjectNode {
         var current = root
         for (key in keys) {
@@ -165,7 +166,7 @@ public class TerraformJsonObject private constructor(private val root: ObjectNod
     /**
      * Scopes assignments within a path. Example: `"resource.aws_instance" { "name" - "value" }`
      */
-    public operator fun String.invoke(builder: TerraformJsonObject.() -> Unit) {
+    public inline operator fun String.invoke(builder: TerraformJsonObject.() -> Unit) {
         TerraformJsonObject(getObject(split('.'))).apply(builder)
     }
 
