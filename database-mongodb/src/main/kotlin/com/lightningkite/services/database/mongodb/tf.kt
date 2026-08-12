@@ -5,17 +5,34 @@ import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+public data class TierRange(
+    val minSize: String = "M10",
+    val maxSize: String = "M40",
+)
+
 public data class MongoAutoScale(
     val minSize: String = "M10",
     val maxSize: String = "M40",
 )
 
-public enum class ElectableNodeCount(internal val count: Int){
+public data class AutoScale(
+    val tierRange: TierRange? = null,
+    val diskScaling: Boolean = false,
+)
+
+public data class AnalyticNodes(
+    val scaling: AutoScale? = null,
+    val count: Int,
+)
+
+public enum class ElectableNodeCount(internal val count: Int) {
     `3`(3),
     `5`(5),
     `7`(7)
 }
 
+
+@Deprecated("Use the new Autoscale and AnalyticNodes classes in the constructor")
 context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     orgId: String,
@@ -26,6 +43,31 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     autoScale: MongoAutoScale? = null,
     electableNodeCount: ElectableNodeCount = ElectableNodeCount.`3`,
     analyticNodeCount: Int = 1,
+    existingProjectId: String? = null,
+): Unit = mongodbAtlas(
+    orgId = orgId,
+    backupEnabled = backupEnabled,
+    atlasSearch = atlasSearch,
+    zoneName = zoneName,
+    instanceSize = instanceSize,
+    autoScale = autoScale
+        ?.let { AutoScale(TierRange(it.minSize, it.maxSize), true) }
+        ?: AutoScale(),
+    electableNodeCount = electableNodeCount,
+    analyticNodes = AnalyticNodes(null, analyticNodeCount),
+    existingProjectId = existingProjectId
+)
+
+context(emitter: TerraformEmitterAws)
+public fun TerraformNeed<Database.Settings>.mongodbAtlas(
+    orgId: String,
+    backupEnabled: Boolean = true,
+    atlasSearch: Boolean = true,
+    zoneName: String? = null,
+    instanceSize: String = "M10",
+    autoScale: AutoScale = AutoScale(),
+    electableNodeCount: ElectableNodeCount = ElectableNodeCount.`3`,
+    analyticNodes: AnalyticNodes? = null,
     existingProjectId: String? = null,
 ): Unit {
     if (!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
@@ -70,32 +112,43 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
             "name" - projectName
             "cluster_type" - "REPLICASET"
             "backup_enabled" - backupEnabled
-            if (autoScale != null)
-                "use_effective_fields" - true
+            "use_effective_fields" - true
 
             "replication_specs" - listOf(
                 terraformJsonObject {
                     "zone_name" - zoneName
                     "region_configs" - listOf(
                         terraformJsonObject {
-                            if (autoScale != null) {
-                                "auto_scaling" {
-                                    "compute_enabled" - true
-                                    "compute_min_instance_size" - autoScale.minSize
-                                    "compute_max_instance_size" - autoScale.maxSize
+                            "auto_scaling" {
+                                "compute_enabled" - (autoScale.tierRange != null)
+                                autoScale.tierRange?.also {
+                                    "compute_min_instance_size" - autoScale.tierRange.minSize
+                                    "compute_max_instance_size" - autoScale.tierRange.maxSize
                                     "compute_scale_down_enabled" - true
-                                    "disk_gb_enabled" - true
                                 }
+                                "disk_gb_enabled" - autoScale.diskScaling
                             }
                             "electable_specs" {
                                 "instance_size" - instanceSize
                                 "node_count" - electableNodeCount.count
                             }
-                            if (analyticNodeCount > 0)
+                            if (analyticNodes != null) {
                                 "analytics_specs" {
                                     "instance_size" - instanceSize
-                                    "node_count" - analyticNodeCount
+                                    "node_count" - analyticNodes.count
                                 }
+                                analyticNodes.scaling?.also { scaling ->
+                                    "analytics_auto_scaling" {
+                                        "compute_enabled" - (scaling.tierRange != null)
+                                        scaling.tierRange?.also {
+                                            "compute_min_instance_size" - it.minSize
+                                            "compute_max_instance_size" - it.maxSize
+                                            "compute_scale_down_enabled" - true
+                                        }
+                                        "disk_gb_enabled" - scaling.diskScaling
+                                    }
+                                }
+                            }
                             "priority" - 7
                             "provider_name" - "AWS"
                             "region_name" - region
