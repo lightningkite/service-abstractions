@@ -9,12 +9,34 @@ import kotlinx.coroutines.flow.*
 public suspend fun <Model : Any> Table<Model>.all(): Flow<Model> = find(condition = Condition.Always)
 
 /**
+ * Query for items in the collection.
+ */
+public suspend inline fun <Model : Any> Table<Model>.find(
+    orderBy: List<SortPart<Model>> = listOf(),
+    skip: Int = 0,
+    limit: Int = Int.MAX_VALUE,
+    maxQueryMs: Long = 15_000,
+    condition: (DataClassPath<Model, Model>) -> Condition<Model>
+): Flow<Model> = find(condition(path(serializer)), orderBy, skip, limit, maxQueryMs)
+
+/**
  * Will find a single instance of *Model* from the collection and return it.
  * @param condition The condition used to find an instance of Model.
  * @return The first instance of *Model* that matches the provided condition or null if nothing in the collection matches the condition.
  */
 public suspend fun <Model : Any> Table<Model>.findOne(condition: Condition<Model>, orderBy: List<SortPart<Model>> = emptyList()): Model? =
     find(condition = condition, orderBy = orderBy, limit = 1).firstOrNull()
+
+/**
+ * Will find a single instance of *Model* from the collection and return it.
+ * @param condition The condition used to find an instance of Model.
+ * @return The first instance of *Model* that matches the provided condition or null if nothing in the collection matches the condition.
+ */
+public suspend inline fun <Model : Any> Table<Model>.findOne(
+    orderBy: List<SortPart<Model>> = emptyList(),
+    condition: (DataClassPath<Model, Model>) -> Condition<Model>
+): Model? =
+    find(condition = condition(path(serializer)), orderBy = orderBy, limit = 1).firstOrNull()
 
 /**
  * Inserts and then returns a single instance of *Model* into the database.
@@ -41,7 +63,8 @@ public suspend fun <Model : Any> Table<Model>.insertMany(models: Iterable<Model>
  */
 public suspend fun <Model : Any> Table<Model>.updateManyIgnoringResult(
     mass: MassModification<Model>,
-): Int = updateManyIgnoringResult(mass.condition, mass.modification)
+): Int =
+    updateManyIgnoringResult(mass.condition, mass.modification)
 
 
 /**
@@ -50,12 +73,28 @@ public suspend fun <Model : Any> Table<Model>.updateManyIgnoringResult(
  * @param modification The modification describing how you which to update the instance.
  * @return A boolean indicating whether an item was updated in the collection.
  */
-public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
-        Table<Model>.updateOneByIdIgnoringResult(
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.updateOneByIdIgnoringResult(
     id: ID,
     modification: Modification<Model>,
 ): Boolean {
     return updateOneIgnoringResult(Condition.OnField(serializer._id(), Condition.Equal(id)), modification)
+}
+
+
+/**
+ * Will update a single instance of *Model* using the _id field to determine which to update.
+ * @param id The id of the object you want to update.
+ * @param modification The modification describing how you which to update the instance.
+ * @return A boolean indicating whether an item was updated in the collection.
+ */
+public suspend inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.updateOneByIdIgnoringResult(
+    id: ID,
+    modification: ModificationBuilder<Model>.(DataClassPath<Model, Model>) -> Unit,
+): Boolean {
+    return updateOneIgnoringResult(
+        Condition.OnField(serializer._id(), Condition.Equal(id)),
+        ModificationBuilder<Model>().apply { modification(path(serializer)) }.build()
+    )
 }
 
 /**
@@ -64,12 +103,27 @@ public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
  * @param modification The modification describing how you which to update the instance.
  * @return An Entry change which includes the value before the update and the value after the update.
  */
-public suspend fun <Model : HasId<ID>, ID : Comparable<ID>>
-        Table<Model>.updateOneById(
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.updateOneById(
     id: ID,
     modification: Modification<Model>,
 ): EntryChange<Model> {
     return updateOne(Condition.OnField(serializer._id(), Condition.Equal(id)), modification)
+}
+
+/**
+ * Will update a single instance of *Model* using the _id field to determine which to update.
+ * @param id The id of the object you want to update.
+ * @param modification The modification describing how you which to update the instance.
+ * @return An Entry change which includes the value before the update and the value after the update.
+ */
+public suspend fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.updateOneById(
+    id: ID,
+    modification: ModificationBuilder<Model>.(DataClassPath<Model, Model>) -> Unit,
+): EntryChange<Model> {
+    return updateOne(
+        Condition.OnField(serializer._id(), Condition.Equal(id)),
+        ModificationBuilder<Model>().apply { modification(path(serializer)) }.build()
+    )
 }
 
 /**
