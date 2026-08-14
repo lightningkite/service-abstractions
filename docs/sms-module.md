@@ -13,7 +13,7 @@ or Twilio via configuration.
 
 ### Key Features
 
-- **Multiple providers** - Twilio, console, test mode
+- **Multiple providers** - Twilio, AWS End User Messaging SMS, console, test mode
 - **E.164 format** - International phone number support
 - **Simple API** - Just phone number and message
 - **Error handling** - Clear exceptions for common failures
@@ -41,6 +41,7 @@ val smsService: SMS = settings.sms("sms", context)
 - `console` - Print SMS to console (development)
 - `test` - Collect SMS in memory for testing
 - `twilio://accountSid:authToken@fromNumber` - Twilio provider (requires `sms-twilio` module)
+- `awssms://accessKey:secretKey@region?originationIdentity=fromNumber` -  AWS SMS provider (requires `sms-aws` module)
 
 ### 2. Send SMS
 
@@ -145,6 +146,25 @@ SMS.Settings("twilio://AC1234567890abcdef:your-auth-token@+15551234567")
 - Messages are prefixed with "Sent from your Twilio trial account"
 - Limited to specific countries
 
+### AWS End User Messaging SMS
+```kotlin
+SMS.Settings("awssms://AC1234567890abcdef:your-secret-key@region?originationIdentity=+15551234567")
+```
+
+**Components:**
+
+- `AC1234567890abcdef` - IAM user Access key (from AWS IAM console)
+- `your-auth-token` - IAM user Secret key (from AWS IAM console)
+- `+15551234567` - A phone number configured from AWS End User Messaging SMS (must be approved)
+
+**Setup steps:**
+1. Create an account a aws account
+2. Setup End User Messaging SMS 
+3. Get Phone number from End User Messaging SMS
+3. Setup IAM user for sending SMS 
+4. Find Access and Secret Key from IAM console
+5. Configure URL with these credentials
+
 ---
 
 ## Pricing
@@ -165,6 +185,32 @@ SMS.Settings("twilio://AC1234567890abcdef:your-auth-token@+15551234567")
 - **Short code**: $1,000+/month
 
 Check current pricing at: https://www.twilio.com/sms/pricing
+
+### AWS End User Messaging SMS Pricing (as of August 2026)
+
+**Outbound SMS costs per message (United States):**
+
+- **10DLC / Long Code / Toll-free**: $0.01195 ($0.00774 base + $0.00421 carrier fee)
+- **Short Code**: $0.01191 ($0.00774 base + $0.00417 carrier fee)
+
+**Inbound SMS costs per message (United States):**
+
+- **All Networks**: $0.0075
+
+**Phone number rental (United States):**
+
+- **10DLC phone number**: $1.00/month
+- **Toll-free number**: $2.00/month
+- **Dedicated Short code**: $995.00/month (plus $650 one-time setup fee)
+
+**Additional 10DLC Registration & Campaign Fees (US only):**
+
+- **Company registration**: $4.50 one-time fee
+- **Company authentication/vetting**: $12.50 to $41.50 one-time fees (depending on brand type/vetting request)
+- **Campaign monthly fees**: $10.00/month per regular campaign ($2.00/month for low-volume)
+
+Check current pricing at: https://aws.amazon.com/end-user-messaging/pricing/
+
 
 ### Cost Estimation
 
