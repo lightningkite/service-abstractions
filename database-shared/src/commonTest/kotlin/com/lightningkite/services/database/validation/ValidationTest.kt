@@ -3,6 +3,8 @@
 package com.lightningkite.services.database.validation
 
 import com.lightningkite.services.data.*
+import com.lightningkite.services.database.Modification
+import com.lightningkite.services.database.modification
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
@@ -108,6 +110,14 @@ class ValidationTest {
         println(AnnotationValidators(SerializersModule { }))
         println(AnnotationValidators(SerializersModule { }).prettyPrint(qualified = true))
         println(AnnotationValidators(SerializersModule { }).prettyPrint(qualified = false))
+    }
+
+    @Test
+    fun testModificationValidation() {
+        assertPasses(Modification.Assign(Sample("ASDFA")))
+        assertFails(Modification.Assign(Sample("ASDFAB")))
+        assertPasses(modification<Sample> { it.x assign "ASDFA" })
+        assertFails(modification<Sample> { it.x assign "ASDFAB" })
     }
 
     @Test
