@@ -272,10 +272,20 @@ internal class ModificationIfNotNullSerializer<T>(internal val inner: KSerialize
 }
 
 internal class ModificationAssignSerializer<T>(internal val inner: KSerializer<T>) :
-    WrappingSerializer<Modification.Assign<T>, T>("com.lightningkite.services.database.Modification.Assign") {
+    WrappingSerializer<Modification.Assign<T>, T>("com.lightningkite.services.database.Modification.Assign"),
+    ShouldValidateSub<Modification.Assign<T>>
+{
     override fun getDeferred(): KSerializer<T> = inner
     override fun inner(it: Modification.Assign<T>): T = it.value
     override fun outer(it: T): Modification.Assign<T> = Modification.Assign(it)
+
+    override fun validate(
+        value: Modification.Assign<T>,
+        annotations: List<Annotation>,
+        defer: (value: ShouldValidateSub.SerializerAndValue<*>, annotations: List<Annotation>) -> Unit
+    ) {
+        defer(ShouldValidateSub.SerializerAndValue(inner, value.value), annotations)
+    }
 }
 
 internal class ModificationCoerceAtMostSerializer<T : Comparable<T>>(internal val inner: KSerializer<T>) :
