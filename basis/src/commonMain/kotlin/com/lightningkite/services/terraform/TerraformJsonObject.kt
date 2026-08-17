@@ -1,8 +1,5 @@
 package com.lightningkite.services.terraform
 
-import com.lightningkite.services.terraform.TerraformJsonObject.Companion.expression
-import com.lightningkite.services.terraform.TerraformJsonObject.ObjectNode
-import com.lightningkite.services.terraform.TerraformJsonObject.ValueNode
 import kotlinx.serialization.json.*
 import kotlin.jvm.JvmName
 
@@ -133,13 +130,13 @@ public class TerraformJsonObject @PublishedApi internal constructor(private val 
     }
 
     /** Assigns a string value to a path. */
-    public operator fun String.minus(value: String): Unit = minus(JsonPrimitive(value))
+    public operator fun String.minus(value: String?): Unit = minus(JsonPrimitive(value))
 
     /** Assigns a numeric value to a path. */
-    public operator fun String.minus(value: Number): Unit = minus(JsonPrimitive(value))
+    public operator fun String.minus(value: Number?): Unit = minus(JsonPrimitive(value))
 
     /** Assigns a boolean value to a path. */
-    public operator fun String.minus(value: Boolean): Unit = minus(JsonPrimitive(value))
+    public operator fun String.minus(value: Boolean?): Unit = minus(JsonPrimitive(value))
 
     /** Assigns a `null` value to a path. */
     public operator fun String.minus(value: Nothing?): Unit = minus(JsonNull)
@@ -157,6 +154,11 @@ public class TerraformJsonObject @PublishedApi internal constructor(private val 
     /** Assigns a list of booleans to a path. */
     @JvmName("minusListBoolean")
     public operator fun String.minus(value: List<Boolean?>): Unit =
+        minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
+
+    /** Assigns a list of null values to a path. */
+    @JvmName("minusListBoolean")
+    public operator fun String.minus(value: List<Nothing?>): Unit =
         minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
 
     /** Assigns a list of JSON elements to a path. */

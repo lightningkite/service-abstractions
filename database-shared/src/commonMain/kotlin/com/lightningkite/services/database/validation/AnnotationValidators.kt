@@ -3,6 +3,7 @@ package com.lightningkite.services.database.validation
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.childAndTypeParameterSerializersOrNull
 import com.lightningkite.services.data.StringArrayFormat
+import com.lightningkite.services.database.LazySerialDescriptor
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -270,6 +271,7 @@ public class AnnotationValidators private constructor(
 
     // Implementation
 
+    @OptIn(ExperimentalLightningServer::class)
     private class ValidationMap<T : Any> {
         // map of qualified annotation name to possible type/validation pairs
         private val map = HashMap<String, ArrayList<Pair<SerialKType, T>>>()
@@ -305,10 +307,10 @@ public class AnnotationValidators private constructor(
             val forAnnotation = map[annotation.normalizedTypeName()] ?: return null
             val found = forAnnotation.firstOrNull { it.first.matches(type) }?.second
             if (found == null && printWarnings &&
-                type.listMapOrNullElements()
-                    ?.none { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
-                        forAnnotation.any { it.first.matches(e) }
-                    } != false
+                type.listMapOrNullElements()?.none { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
+                    forAnnotation.any { it.first.matches(e) }
+                } != false &&
+                (type as? SerialKType.Specified)?.descriptor !is LazySerialDescriptor       // Modification serializers defer to annotations from the original field, which prints unnecessary warnings
             ) {
                 println(
                     "${annotation::class.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [${
@@ -330,10 +332,10 @@ public class AnnotationValidators private constructor(
             val secondFound = second?.firstOrNull { it.first.matches(type) }?.second
 
             if (firstFound == null && secondFound == null && printWarnings &&
-                type.listMapOrNullElements()
-                    ?.none { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
-                        first?.any { it.first.matches(e) } == true || second?.any { it.first.matches(e) } == true
-                    } != false
+                type.listMapOrNullElements()?.any { e ->   // suppress this warning when the annotation applies to the list/map/null elements, if not the list itself.
+                    first?.any { it.first.matches(e) } == true || second?.any { it.first.matches(e) } == true
+                } != true &&
+                (type as? SerialKType.Specified)?.descriptor !is LazySerialDescriptor   // Modification serializers defer to annotations from the original field, which prints unnecessary warnings
             ) println(buildString {
                 append("${annotation::class.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type. Valid types: [")
                 first?.joinTo(this) { it.first.toString() }
@@ -376,7 +378,7 @@ public class AnnotationValidators private constructor(
                 }
 
                 if (list1.isNotEmpty() && !overwrite)
-                    IllegalArgumentException("AnnotationValidators encountered conflicting validators for $k1 : [${list1.joinToString { it.first.toString() }}]. To overwrite validators use the `overwriteWith` infix function.")
+                    throw IllegalArgumentException("AnnotationValidators encountered conflicting validators for $k1 : [${list1.joinToString { it.first.toString() }}]. To overwrite validators use the `overwriteWith` infix function.")
 
                 out.map[k1] = dest
             }
