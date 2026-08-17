@@ -1,7 +1,6 @@
 package com.lightningkite.services.sms.twilio
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
@@ -131,11 +130,11 @@ public class TwilioSMS(
      * backoff (3 attempts: 1s, 2s, 4s delays).
      */
     override suspend fun send(to: PhoneNumber, message: String): Unit = telemetryTrace("send", attributes = TelemetryAttributes {
-        put(TelemetryKey.OfString("sms.operation"), "send")
+        put(TelemetryKeys.Sms.operation, "send")
         put(TelemetryKeys.Messaging.system, "twilio")
-        put(TelemetryKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to.raw))
-        put(TelemetryKey.OfString("sms.from"), context.telemetrySanitization.redactPhoneNumber(from))
-        put(TelemetryKey.OfLong("sms.body_length"), message.length.toLong())
+        put(TelemetryKeys.Sms.to, context.telemetrySanitization.redactPhoneNumber(to.raw))
+        put(TelemetryKeys.Sms.from, context.telemetrySanitization.redactPhoneNumber(from))
+        put(TelemetryKeys.Sms.bodyLength, message.length.toLong())
     }) { span ->
         val maxAttempts = 3
         val retryDelays = listOf(1.seconds, 2.seconds, 4.seconds)

@@ -6,13 +6,13 @@ import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.AccountAttributeName
 import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.MessageType
 import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.SendTextMessageRequest
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
+import kotlinx.coroutines.CancellationException
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.PhoneNumber
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
 import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.telemetry.telemetryTrace
 
@@ -109,11 +109,11 @@ public class AwsSms(
     override suspend fun send(to: PhoneNumber, message: String): Unit = telemetryTrace(
         "send",
         attributes = TelemetryAttributes {
-            put(TelemetryKey.OfString("sms.operation"), "send")
+            put(TelemetryKeys.Sms.operation, "send")
             put(TelemetryKeys.Messaging.system, "aws_end_user_messaging")
-            put(TelemetryKey.OfString("sms.to"), context.telemetrySanitization.redactPhoneNumber(to.raw))
-            put(TelemetryKey.OfString("sms.from"), context.telemetrySanitization.redactPhoneNumber(originationIdentity))
-            put(TelemetryKey.OfLong("sms.body_length"), message.length.toLong())
+            put(TelemetryKeys.Sms.to, context.telemetrySanitization.redactPhoneNumber(to.raw))
+            put(TelemetryKeys.Sms.from, context.telemetrySanitization.redactPhoneNumber(originationIdentity))
+            put(TelemetryKeys.Sms.bodyLength, message.length.toLong())
         }
     ) { span ->
         try {
@@ -130,27 +130,21 @@ public class AwsSms(
             val response = client.sendTextMessage(request)
 
             span.enrich(TelemetryAttributes {
-                put(TelemetryKey.OfString("aws.sms.message_id"), response.messageId ?: "unknown")
+                put(TelemetryKeys.Sms.awsMessageId, response.messageId ?: "unknown")
             })
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             throw SMSException("Failed to send AWS SMS via End User Messaging: ${e.message}")
         }
     }
 
-    override suspend fun healthCheck(): HealthStatus {
-//        return try {
-//            client.describeAccountAttributes(
-//                aws.sdk.kotlin.services.pinpointsmsvoicev2.model.DescribeAccountAttributesRequest {}
-//            )
-//            HealthStatus(
-//                HealthStatus.Level.OK,
-//                additionalMessage = "AWS End User Messaging SMS - Region: $region, Identity: $originationIdentity"
-//            )
-//        } catch (e: Exception) {
-//            HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "AWS configuration error: ${e.message}")
-//        }
+    override suspend fun disconnect() {
+        client.close()
+    }
 
+    override suspend fun healthCheck(): HealthStatus {
         return try {
             val response = client.describeAccountAttributes(aws.sdk.kotlin.services.pinpointsmsvoicev2.model.DescribeAccountAttributesRequest {})
 
