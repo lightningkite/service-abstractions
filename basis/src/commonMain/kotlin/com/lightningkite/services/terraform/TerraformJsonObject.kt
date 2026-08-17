@@ -157,7 +157,7 @@ public class TerraformJsonObject @PublishedApi internal constructor(private val 
         minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
 
     /** Assigns a list of null values to a path. */
-    @JvmName("minusListBoolean")
+    @JvmName("minusListNothing")
     public operator fun String.minus(value: List<Nothing?>): Unit =
         minus(JsonArray(value.map(::JsonPrimitive)) as JsonElement)
 
