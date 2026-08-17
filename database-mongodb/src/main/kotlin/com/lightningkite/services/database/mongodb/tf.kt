@@ -38,7 +38,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     orgId: String,
     backupEnabled: Boolean = true,
     atlasSearch: Boolean = true,
-    zoneName: String,
+    zoneName: String? = null,
     instanceSize: String = "M10",
     autoScale: MongoAutoScale? = null,
     electableNodeCount: ElectableNodeCount = ElectableNodeCount.`3`,
@@ -63,7 +63,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     orgId: String,
     backupEnabled: Boolean = true,
     atlasSearch: Boolean = true,
-    zoneName: String,
+    zoneName: String? = null,
     instanceSize: String = "M10",
     autoScale: AutoScale = AutoScale(),
     electableNodeCount: ElectableNodeCount = ElectableNodeCount.`3`,
@@ -238,7 +238,7 @@ context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
     orgId: String,
     atlasSearch: Boolean = true,
-    zoneName: String,
+    zoneName: String? = null,
     existingProjectId: String? = null,
 ): Unit {
     if (!Database.Settings.supports("mongodb+srv")) throw IllegalArgumentException("You need to reference MongoDatabase in your server definition to use this.")
@@ -433,7 +433,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
     orgId: String,
     atlasSearch: Boolean = true,
     backupEnabled: Boolean = true,
-    zoneName: String,
+    zoneName: String? = null,
     existingProjectId: String? = null,
 ): Unit {
     val projectName = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}$name"
