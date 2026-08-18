@@ -3,8 +3,11 @@ package com.lightningkite.services.sms.aws
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import aws.sdk.kotlin.services.pinpointsmsvoicev2.PinpointSmsVoiceV2Client
 import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.AccountAttributeName
+import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.DescribeAccountAttributesRequest
+import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.DescribeAccountAttributesResponse
 import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.MessageType
 import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.SendTextMessageRequest
+import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.SendTextMessageResponse
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import kotlinx.coroutines.CancellationException
 import com.lightningkite.services.SettingContext
@@ -15,6 +18,8 @@ import com.lightningkite.services.sms.SMSException
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.telemetry.telemetryTrace
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * AWS End User Messaging SMS implementation.
@@ -83,16 +88,20 @@ import com.lightningkite.services.telemetry.telemetryTrace
  * @property originationIdentity aws sender phone number.  The origination identity of the message. This can be either the PhoneNumber, PhoneNumberId, PhoneNumberArn, RcsAgentId, RcsAgentArn, SenderId, SenderIdArn, PoolId, or PoolArn.
  * If you are using a shared End User Messaging SMS resource then you must use the full Amazon Resource Name(ARN).
  */
-public class AwsSms(
-    override val name: String,
-    override val context: SettingContext,
+
+public interface AwsSmsEngine {
+    public suspend fun sendTextMessage(request: SendTextMessageRequest): SendTextMessageResponse
+    public suspend fun describeAccountAttributes(request: DescribeAccountAttributesRequest): DescribeAccountAttributesResponse
+    public suspend fun close()
+}
+
+public class LiveAwsSmsEngine(
     private val region: String,
     private val accessKeyId: String? = null,
-    private val secretAccessKey: String? = null,
-    private val originationIdentity: String
-) : SMS {
+    private val secretAccessKey: String? = null
+) : AwsSmsEngine {
     private val client = PinpointSmsVoiceV2Client {
-        this.region = this@AwsSms.region
+        this.region = this@LiveAwsSmsEngine.region
         if (accessKeyId != null && secretAccessKey != null) {
             credentialsProvider = StaticCredentialsProvider(
                 Credentials(accessKeyId = accessKeyId, secretAccessKey = secretAccessKey)
@@ -100,12 +109,36 @@ public class AwsSms(
         }
     }
 
+    override suspend fun sendTextMessage(request: SendTextMessageRequest): SendTextMessageResponse =
+        client.sendTextMessage(request)
+
+    override suspend fun describeAccountAttributes(request: DescribeAccountAttributesRequest): DescribeAccountAttributesResponse =
+        client.describeAccountAttributes(request)
+
+    override suspend fun close() {
+        withContext(Dispatchers.IO) {
+            client.close()
+        }
+    }
+}
+
+
+
+public class AwsSms(
+    override val name: String,
+    override val context: SettingContext,
+    private val region: String,
+    private val accessKeyId: String? = null,
+    private val secretAccessKey: String? = null,
+    private val originationIdentity: String,
+    private val engine: AwsSmsEngine = LiveAwsSmsEngine(region, accessKeyId, secretAccessKey)
+) : SMS {
+
     /**
      * Sends SMS message using the AWS PinpointSmsVoiceV2Client
      *
      *
      */
-
     override suspend fun send(to: PhoneNumber, message: String): Unit = telemetryTrace(
         "send",
         attributes = TelemetryAttributes {
@@ -127,7 +160,7 @@ public class AwsSms(
                 this.messageType = MessageType.Transactional
             }
 
-            val response = client.sendTextMessage(request)
+            val response = engine.sendTextMessage(request)
 
             span.enrich(TelemetryAttributes {
                 put(TelemetryKeys.Sms.awsMessageId, response.messageId ?: "unknown")
@@ -141,12 +174,12 @@ public class AwsSms(
     }
 
     override suspend fun disconnect() {
-        client.close()
+        engine.close()
     }
 
     override suspend fun healthCheck(): HealthStatus {
         return try {
-            val response = client.describeAccountAttributes(aws.sdk.kotlin.services.pinpointsmsvoicev2.model.DescribeAccountAttributesRequest {})
+            val response = engine.describeAccountAttributes(aws.sdk.kotlin.services.pinpointsmsvoicev2.model.DescribeAccountAttributesRequest {})
 
             // Find if the account is in Sandbox or Production
             println("DEBUG response.accountAttributes ${response.accountAttributes}")

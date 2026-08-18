@@ -1,5 +1,7 @@
 package com.lightningkite.services.sms.aws
 
+import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.DescribeAccountAttributesRequest
+import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.DescribeAccountAttributesResponse
 import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.SendTextMessageRequest
 import aws.sdk.kotlin.services.pinpointsmsvoicev2.model.SendTextMessageResponse
 import com.lightningkite.services.TestSettingContext
@@ -14,6 +16,16 @@ import kotlin.test.assertFailsWith
  * Exercises [AwsSms]'s real request-building using internal hooks,
  * so the exact SDK parameters sent to AWS can be asserted without live calls or mock libraries.
  */
+
+class MockAwsSmsEngine(
+    private val onSend: suspend (SendTextMessageRequest) -> SendTextMessageResponse = { SendTextMessageResponse {} },
+    private val onDescribe: suspend (DescribeAccountAttributesRequest) -> DescribeAccountAttributesResponse = { DescribeAccountAttributesResponse {} }
+) : AwsSmsEngine {
+    override suspend fun sendTextMessage(request: SendTextMessageRequest): SendTextMessageResponse = onSend(request)
+    override suspend fun describeAccountAttributes(request: DescribeAccountAttributesRequest): DescribeAccountAttributesResponse = onDescribe(request)
+    override suspend fun close() {}
+}
+
 class AwsSmsTest {
 
     /** Builds the service and captures the outgoing request for testing. */
@@ -24,7 +36,8 @@ class AwsSmsTest {
             name = "aws-test",
             context = TestSettingContext(),
             region = "us-east-1",
-            originationIdentity = "+15551234567" // Set to match test requirements
+            originationIdentity = "+15551234567", // Set to match test requirements
+            engine = MockAwsSmsEngine(onSend = onSend),
         )
     }
 
