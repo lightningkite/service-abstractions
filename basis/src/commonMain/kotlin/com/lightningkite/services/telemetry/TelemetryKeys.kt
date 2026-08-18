@@ -1074,4 +1074,12 @@ public object TelemetryKeys {
     public object Text {
         public val charCount: TelemetryKey.OfLong = TelemetryKey.OfLong("text.char_count")
     }
+    public object Sms {
+        public val operation: TelemetryKey.OfString = TelemetryKey.OfString("sms.operation")
+        public val system: TelemetryKey.OfString = TelemetryKey.OfString("sms.system")
+        public val to: TelemetryKey.OfString = TelemetryKey.OfString("sms.to")
+        public val from: TelemetryKey.OfString = TelemetryKey.OfString("sms.from")
+        public val bodyLength: TelemetryKey.OfLong = TelemetryKey.OfLong("sms.body_length")
+        public val awsMessageId: TelemetryKey.OfString = TelemetryKey.OfString("aws.sms.message_id")
+    }
 }

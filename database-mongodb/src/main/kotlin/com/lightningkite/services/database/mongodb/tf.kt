@@ -38,7 +38,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
     orgId: String,
     backupEnabled: Boolean = true,
     atlasSearch: Boolean = true,
-    zoneName: String? = null,
+    zoneName: String,
     instanceSize: String = "M10",
     autoScale: MongoAutoScale? = null,
     electableNodeCount: ElectableNodeCount = ElectableNodeCount.`3`,
