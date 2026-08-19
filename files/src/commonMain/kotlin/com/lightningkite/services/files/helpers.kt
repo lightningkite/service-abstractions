@@ -14,7 +14,7 @@ import kotlin.uuid.Uuid
  */
 public suspend fun FileObject.download(
     file: KFile?,
-): KFile? = get()?.let { download(file ?: SystemFileSystem.temporary(extension = it.mediaType.extension)) }
+): KFile? = get()?.let { it.download(file ?: SystemFileSystem.temporary(extension = it.mediaType.extension)) }
 
 /**
  * Downloads TypedData to a local file.
@@ -25,7 +25,7 @@ public suspend fun FileObject.download(
 public fun TypedData.download(
     file: KFile = SystemFileSystem.temporary(extension = mediaType.extension),
 ): KFile {
-    write(file.sink())
+    file.sink().use { write(it) }
     return file
 }
 
