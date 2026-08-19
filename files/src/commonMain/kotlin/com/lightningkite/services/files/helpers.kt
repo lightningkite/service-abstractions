@@ -14,14 +14,14 @@ import kotlin.uuid.Uuid
  * @param file KFile to download to.
  * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
  */
-public suspend fun ExternalFile.download(file: KFile): KFile? = get()?.let { download(file) }
+public suspend fun ExternalFile.download(file: KFile): KFile? = get()?.let { it.download(file) }
 
 /**
  * Downloads a FileObject to a local temporary file with the correct extension.
  *
  * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
  */
-public suspend fun ExternalFile.downloadToTemporaryFile(): KFile? = get()?.let { download(SystemFileSystem.temporary(extension = it.mediaType.extension)) }
+public suspend fun ExternalFile.downloadToTemporaryFile(): KFile? = get()?.let { it.download(SystemFileSystem.temporary(extension = it.mediaType.extension)) }
 
 
 /**
@@ -33,7 +33,7 @@ public suspend fun ExternalFile.downloadToTemporaryFile(): KFile? = get()?.let {
 public suspend fun TypedData.download(
     file: KFile = SystemFileSystem.temporary(extension = mediaType.extension),
 ): KFile {
-    write(file.sink())
+    file.sink().use { write(it) }
     return file
 }
 
