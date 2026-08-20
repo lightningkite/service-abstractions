@@ -649,17 +649,19 @@ public class AnnotationValidators private constructor(
             annotations: List<Annotation>,
         ) {
             // Type? does not match validators for Type, but if we know the value is not null then we can assert non-null on the type.
-            val type = when (type) {
-                is SerialKType.Specified -> if (type.nullable && value != null) type.copy(nullable = false) else type
-                SerialKType.Wildcard -> type
-            }
+            val type = if (value != null) type.notNull() else type
 
             annotations.forEach { annotation ->
                 if (doSuspendingChecks) {
                     // Get both fast and suspending validators for this annotation+type
                     val (fast, slow) = validators.getJoint(suspendingValidators, annotation, type) ?: return@forEach
 
-                    if (fast != null || slow != null) markAnnotationUsed(annotation)
+                    if (fast == null && slow == null) {
+                        markUsedIfOnlyNullMismatch(annotation, type, value)
+                        return@forEach
+                    }
+
+                    markAnnotationUsed(annotation)
 
                     // Pre-calculate path since suspending validators run later (path will change)
                     val path = path.joinToString(".")
@@ -671,17 +673,53 @@ public class AnnotationValidators private constructor(
                     if (slow != null) queuedSuspendingChecks.add { slow(annotation, value)?.let { issues[path] = it } }
                 } else {
                     // Only run synchronous validators (skip suspending)
-                    validators.get(annotation, type)
-                        ?.also { markAnnotationUsed(annotation) }
-                        ?.invoke(annotation, value)
-                        ?.let { issues[path.joinToString(".")] = it }
+                    val fast = validators.get(annotation, type)
+
+                    if (fast == null) {
+                        markUsedIfOnlyNullMismatch(annotation, type, value)
+                        return@forEach
+                    }
+
+                    markAnnotationUsed(annotation)
+                    fast(annotation, value)?.let { issues[path.joinToString(".")] = it }
                 }
             }
+        }
+
+        /**
+         * Covers the one case where no validator matched but the annotation is still correctly
+         * applied: the value is null and the validator targets the non-null type.
+         *
+         * A validator for `T` must never be handed a null, so it can't run here - but its existence
+         * means `@Ann val x: T?` was intentional, and reporting it as applied to an invalid type
+         * would be wrong. Marking it used suppresses that warning without running anything.
+         *
+         * This costs a second lookup, but only on the path that would otherwise print a warning,
+         * and only for a nullable type actually holding null - never for a non-null value.
+         */
+        private fun markUsedIfOnlyNullMismatch(annotation: Annotation, type: SerialKType, value: Any?) {
+            if (value != null || !printInvalidTypeWarnings) return
+
+            val nonNull = type.notNull()
+            if (nonNull === type) return  // not nullable, so the lookup above already covered this type
+
+            val matched =
+                if (doSuspendingChecks) validators.getJoint(suspendingValidators, annotation, nonNull)
+                    ?.let { (fast, slow) -> fast != null || slow != null } == true
+                else validators.get(annotation, nonNull) != null
+
+            if (matched) markAnnotationUsed(annotation)
         }
     }
 }
 
 private fun Annotation.normalizedTypeName(): String = toString().removePrefix("@").substringBefore('(')
+
+/** This type with nullability stripped; `T?` -> `T`. Returns the same instance if already non-null. */
+private fun SerialKType.notNull(): SerialKType = when (this) {
+    is SerialKType.Specified -> if (nullable) copy(nullable = false) else this
+    SerialKType.Wildcard -> this
+}
 
 // I'm not sure if this works on anything other than JVM
 internal fun KClass<*>.normalizedTypeName(): String? = toString().let { str ->
