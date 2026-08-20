@@ -48,6 +48,7 @@ data class CustomSample(
     @EnumNotEqualTo(TestEnum.First) val enum: TestEnum = TestEnum.Second,
     @EnumNotEqualTo(TestEnum.First) val enumList: List<TestEnum> = emptyList(),
     @IntegerRange(0, 100) val nullableInt: Int? = 3,
+    @SampleXNotContains("xyz") val sample: Sample? = null
 )
 
 @SerialInfo
@@ -57,6 +58,10 @@ annotation class StringListContainsAll(vararg val values: String)
 @SerialInfo
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
 annotation class EnumNotEqualTo(val value: TestEnum)
+
+@SerialInfo
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+annotation class SampleXNotContains(val value: String)
 
 class ValidationTest {
     var validators = AnnotationValidators(Json.serializersModule)
@@ -121,10 +126,29 @@ class ValidationTest {
     }
 
     @Test
+    fun testNullableValidation() {
+        validators += AnnotationValidators {
+            validate<SampleXNotContains, Sample> {
+                if (it.x.contains(value, ignoreCase = true)) "x Cannot contain '$value'"
+                else null
+            }
+        }
+
+        assertPasses<Sample?>(Sample("ASDFA"))
+        assertFails<Sample?>(Sample("ASDFAB"))
+
+        assertPasses(CustomSample(sample = Sample()))
+        assertFails(CustomSample(sample = Sample("xyz")))
+
+        assertPasses(modification<CustomSample> { it.sample assign Sample() })
+        assertFails(modification<CustomSample> { it.sample assign Sample("xyz") })
+    }
+
+    @Test
     fun testCustomValidators() {
         validators += AnnotationValidators {
             validate<StringListContainsAll, List<String>> {
-                if (!it.containsAll(values.toList())) "Does not contain all values: $it !in $values"
+                if (!it.containsAll(values.toList())) "Does not contain all values: $it !in ${values.contentToString()}"
                 else null
             }
             validate<EnumNotEqualTo, TestEnum> {
