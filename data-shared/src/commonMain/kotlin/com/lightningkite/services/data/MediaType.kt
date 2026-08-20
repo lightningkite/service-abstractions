@@ -2,9 +2,7 @@ package com.lightningkite.services.data
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
@@ -20,7 +18,9 @@ import kotlinx.serialization.encoding.Encoder
 public data class MediaType(val type: String, val subtype: String, val parameters: Map<String, String> = mapOf()) {
 
     public object Serializer : KSerializer<MediaType> {
-        override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("com.lightningkite.services.data.MediaType", PrimitiveKind.STRING)
+        override val descriptor: SerialDescriptor =
+            PrimitiveSerialDescriptor("com.lightningkite.services.data.MediaType", PrimitiveKind.STRING)
+
         override fun serialize(encoder: Encoder, value: MediaType): Unit =
             encoder.encodeString(value.toString())
 
@@ -111,42 +111,32 @@ public data class MediaType(val type: String, val subtype: String, val parameter
          */
         public val Any: MediaType = MediaType("application", "*")
         public val Atom: MediaType = MediaType("application", "atom+xml")
-        public val Cbor: MediaType = MediaType("application", "cbor")
-        public val Json: MediaType = MediaType("application", "json")
         public val Bson: MediaType = MediaType("application", "bson")
+        public val Cbor: MediaType = MediaType("application", "cbor")
+        public val Docx: MediaType =
+            MediaType("application", "vnd.openxmlformats-officedocument.wordprocessingml.document")
+        public val FontWoff: MediaType = MediaType("application", "font-woff")
+        public val FormUrlEncoded: MediaType = MediaType("application", "x-www-form-urlencoded")
+        public val GZip: MediaType = MediaType("application", "gzip")
         public val HalJson: MediaType = MediaType("application", "hal+json")
         public val JavaScript: MediaType = MediaType("application", "javascript")
+        public val Json: MediaType = MediaType("application", "json")
         public val OctetStream: MediaType = MediaType("application", "octet-stream")
-        public val StructuredBytes: MediaType = MediaType("application", "x-structured-bytes")
-        public val FontWoff: MediaType = MediaType("application", "font-woff")
+        public val Pdf: MediaType = MediaType("application", "pdf")
+        public val Pptx: MediaType =
+            MediaType("application", "vnd.openxmlformats-officedocument.presentationml.presentation")
+        public val ProblemJson: MediaType = MediaType("application", "problem+json")
+        public val ProblemXml: MediaType = MediaType("application", "problem+xml")
+        public val ProtoBuf: MediaType = MediaType("application", "protobuf")
+        public val ProtoBufDeclaration: MediaType = MediaType("application", "x-protobuf-declaration")
+        public val ProtoBufText: MediaType = MediaType("application", "x-protobuf-text")
         public val Rss: MediaType = MediaType("application", "rss+xml")
+        public val StructuredBytes: MediaType = MediaType("application", "x-structured-bytes")
+        public val Wasm: MediaType = MediaType("application", "wasm")
+        public val Xlsx: MediaType = MediaType("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         public val Xml: MediaType = MediaType("application", "xml")
         public val Xml_Dtd: MediaType = MediaType("application", "xml-dtd")
         public val Zip: MediaType = MediaType("application", "zip")
-        public val GZip: MediaType = MediaType("application", "gzip")
-
-        public val FormUrlEncoded: MediaType =
-            MediaType("application", "x-www-form-urlencoded")
-
-        public val Pdf: MediaType = MediaType("application", "pdf")
-        public val Xlsx: MediaType = MediaType(
-            "application",
-            "vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        public val Docx: MediaType = MediaType(
-            "application",
-            "vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-        public val Pptx: MediaType = MediaType(
-            "application",
-            "vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
-        public val ProtoBuf: MediaType = MediaType("application", "protobuf")
-        public val ProtoBufText: MediaType = MediaType("application", "x-protobuf-text")
-        public val ProtoBufDeclaration: MediaType = MediaType("application", "x-protobuf-declaration")
-        public val Wasm: MediaType = MediaType("application", "wasm")
-        public val ProblemJson: MediaType = MediaType("application", "problem+json")
-        public val ProblemXml: MediaType = MediaType("application", "problem+xml")
     }
 
     /**
@@ -155,11 +145,14 @@ public data class MediaType(val type: String, val subtype: String, val parameter
     @Suppress("KDocMissingDocumentation", "unused")
     public object Audio {
         public val Any: MediaType = MediaType("audio", "*")
-        public val WAV: MediaType = MediaType("audio", "wav")
+        public val AAC: MediaType = MediaType("audio", "aac")
+        public val FLAC: MediaType = MediaType("audio", "flac")
+        public val MP3: MediaType = MediaType("audio", "mpeg")
         public val MP4: MediaType = MediaType("audio", "mp4")
         public val MPEG: MediaType = MediaType("audio", "mpeg")
-        public val MP3: MediaType = MediaType("audio", "mpeg")
         public val OGG: MediaType = MediaType("audio", "ogg")
+        public val OPUS: MediaType = MediaType("audio", "opus")
+        public val WAV: MediaType = MediaType("audio", "wav")
     }
 
     /**
@@ -170,15 +163,15 @@ public data class MediaType(val type: String, val subtype: String, val parameter
         public val Any: MediaType = MediaType("image", "*")
         public val APNG: MediaType = MediaType("image", "apng")
         public val AVIF: MediaType = MediaType("image", "avif")
+        public val BMP: MediaType = MediaType("image", "bmp")
         public val GIF: MediaType = MediaType("image", "gif")
         public val JPEG2000: MediaType = MediaType("image", "jp2")
         public val JPEG: MediaType = MediaType("image", "jpeg")
         public val PNG: MediaType = MediaType("image", "png")
         public val SVG: MediaType = MediaType("image", "svg+xml")
+        public val Tiff: MediaType = MediaType("image", "tiff")
         public val WebP: MediaType = MediaType("image", "webp")
         public val XIcon: MediaType = MediaType("image", "x-icon")
-        public val Tiff: MediaType = MediaType("image", "tiff")
-        public val BMP: MediaType = MediaType("image", "bmp")
     }
 
     /**
@@ -196,13 +189,13 @@ public data class MediaType(val type: String, val subtype: String, val parameter
     @Suppress("KDocMissingDocumentation", "unused")
     public object MultiPart {
         public val Any: MediaType = MediaType("multipart", "*")
-        public val Mixed: MediaType = MediaType("multipart", "mixed")
         public val Alternative: MediaType = MediaType("multipart", "alternative")
-        public val Related: MediaType = MediaType("multipart", "related")
-        public val FormData: MediaType = MediaType("multipart", "form-data")
-        public val Signed: MediaType = MediaType("multipart", "signed")
-        public val Encrypted: MediaType = MediaType("multipart", "encrypted")
         public val ByteRanges: MediaType = MediaType("multipart", "byteranges")
+        public val Encrypted: MediaType = MediaType("multipart", "encrypted")
+        public val FormData: MediaType = MediaType("multipart", "form-data")
+        public val Mixed: MediaType = MediaType("multipart", "mixed")
+        public val Related: MediaType = MediaType("multipart", "related")
+        public val Signed: MediaType = MediaType("multipart", "signed")
     }
 
     /**
@@ -211,15 +204,15 @@ public data class MediaType(val type: String, val subtype: String, val parameter
     @Suppress("KDocMissingDocumentation", "unused")
     public object Text {
         public val Any: MediaType = MediaType("text", "*")
-        public val Plain: MediaType = MediaType("text", "plain", mapOf("charset" to "UTF-8"))
         public val CSS: MediaType = MediaType("text", "css", mapOf("charset" to "UTF-8"))
         public val CSV: MediaType = MediaType("text", "csv", mapOf("charset" to "UTF-8"))
+        public val EventStream: MediaType = MediaType("text", "event-stream", mapOf("charset" to "UTF-8"))
         public val Html: MediaType = MediaType("text", "html", mapOf("charset" to "UTF-8"))
         public val JavaScript: MediaType = MediaType("text", "javascript", mapOf("charset" to "UTF-8"))
+        public val Plain: MediaType = MediaType("text", "plain", mapOf("charset" to "UTF-8"))
+        public val UriList: MediaType = MediaType("text", "uri-list", mapOf("charset" to "UTF-8"))
         public val VCard: MediaType = MediaType("text", "vcard", mapOf("charset" to "UTF-8"))
         public val Xml: MediaType = MediaType("text", "xml", mapOf("charset" to "UTF-8"))
-        public val EventStream: MediaType = MediaType("text", "event-stream", mapOf("charset" to "UTF-8"))
-        public val UriList: MediaType = MediaType("text", "uri-list", mapOf("charset" to "UTF-8"))
         public val Yaml: MediaType = MediaType("text", "vnd.yaml", mapOf("charset" to "UTF-8"))
     }
 
@@ -229,9 +222,12 @@ public data class MediaType(val type: String, val subtype: String, val parameter
     @Suppress("KDocMissingDocumentation", "unused")
     public object Video {
         public val Any: MediaType = MediaType("video", "*")
-        public val MPEG: MediaType = MediaType("video", "mpeg")
+        public val AVI: MediaType = MediaType("video", "avi")
+        public val MKV: MediaType = MediaType("video", "matroska")
         public val MP4: MediaType = MediaType("video", "mp4")
+        public val MPEG: MediaType = MediaType("video", "mpeg")
         public val OGG: MediaType = MediaType("video", "ogg")
         public val QuickTime: MediaType = MediaType("video", "quicktime")
+        public val WEBM: MediaType = MediaType("video", "webm")
     }
 }
