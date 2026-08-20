@@ -101,6 +101,13 @@ class ValidationTest {
         else println("Found issues: $issues")
     }
 
+    /** The paths that [item] produces invalid-annotation-type warnings for. */
+    internal inline fun <reified T> warningPaths(item: T): Set<String> =
+        validators.validateSkipSuspendingCollectingWarnings(validators.serializersModule.serializer<T>(), item)
+            .warnings
+            .filterIsInstance<EncodingWarning.InvalidAnnotationType>()
+            .mapTo(mutableSetOf()) { it.path }
+
     @Test
     fun testTypeNameNormalization() {
         fun test(k1: KClass<*>, k2: KClass<*>) {
@@ -135,6 +142,54 @@ class ValidationTest {
     @Test
     fun testWarnings() {
         assertPasses(TestWarnings())
+
+        assertEquals(
+            setOf("warn", "shouldWarnCascading"),
+            warningPaths(TestWarnings()),
+            "Expected warnings only for the annotation with no matching validator and the cascade that " +
+                    "bottoms out in the wrong type."
+        )
+    }
+
+    @Test
+    fun testNullValueDoesNotWarn() {
+        // A validator registered for `Int` legitimately applies to an `Int?` field - it simply has
+        // nothing to check when the value is null, which is not a mistaken application.
+        assertFalse("shouldNotWarn" in warningPaths(TestWarnings(shouldNotWarn = null)))
+        assertFalse("shouldNotWarn" in warningPaths(TestWarnings(shouldNotWarn = 50)))
+    }
+
+    @Test
+    fun testCollectWarningsFlag() {
+        assertTrue(validators.collectWarnings, "Warnings should be collected by default")
+
+        val quiet = validators.withWarnings(false)
+        assertFalse(quiet.collectWarnings)
+        assertSame(quiet, quiet.withWarnings(false), "Setting the current value should not copy")
+
+        // Turning warnings off must not change what validation itself reports.
+        val serializer = validators.serializersModule.serializer<TestWarnings>()
+        assertEquals(
+            validators.validateSkipSuspending(serializer, TestWarnings()),
+            quiet.validateSkipSuspending(serializer, TestWarnings())
+        )
+    }
+
+    @Test
+    fun testCollectWarningsCombination() {
+        // Empty sets, so combining can't trip the duplicate-validator check and we observe the flag alone.
+        val loud = EmptyAnnotationValidators()
+        val quiet = loud.withWarnings(false)
+
+        // `+` is conservative - warnings survive if either side wants them.
+        assertTrue((quiet + loud).collectWarnings)
+        assertTrue((loud + quiet).collectWarnings)
+        assertTrue((loud + loud).collectWarnings)
+        assertFalse((quiet + quiet).collectWarnings)
+
+        // `overwriteWith` takes the right-hand setting, like every other part of the merge.
+        assertFalse((loud overwriteWith quiet).collectWarnings)
+        assertTrue((quiet overwriteWith loud).collectWarnings)
     }
 
     @Test
