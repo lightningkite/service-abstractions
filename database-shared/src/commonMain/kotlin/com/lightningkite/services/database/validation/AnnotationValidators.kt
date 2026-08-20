@@ -3,11 +3,9 @@ package com.lightningkite.services.database.validation
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.childAndTypeParameterSerializersOrNull
 import com.lightningkite.services.data.StringArrayFormat
-import com.lightningkite.services.database.LazySerialDescriptor
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.modules.*
@@ -44,9 +42,21 @@ public class AnnotationValidators private constructor(
     public val serializersModule: SerializersModule,
     private val validators: ValidationMap<(Annotation, Any?) -> String?>,
     private val suspendingValidators: ValidationMap<suspend (Annotation, Any?) -> String?>,
+    /**
+     * Whether to report annotations that were applied to a type no validator accepts.
+     *
+     * Such an annotation is a no-op rather than an error, so this is a development aid for catching
+     * unintentional applications. Collecting them costs a small amount of bookkeeping per annotated
+     * field during encoding, so it can be turned off for validators on a hot path.
+     *
+     * See [withWarnings] to derive a copy with a different setting.
+     */
+    public val collectWarnings: Boolean = true,
 ) {
     /**
      * Combines this set of [AnnotationValidators] with [other], throwing an exception if there are any overlapping definitions.
+     *
+     * [collectWarnings] is conservative: the result collects warnings if either operand does.
      *
      * To overwrite validators without throwing see [overwriteWith].
      * */
@@ -54,16 +64,31 @@ public class AnnotationValidators private constructor(
         if (this === other) this else AnnotationValidators(
             serializersModule + other.serializersModule,
             validators.combineWith(other.validators, overwrite = false),
-            suspendingValidators.combineWith(other.suspendingValidators, overwrite = false)
+            suspendingValidators.combineWith(other.suspendingValidators, overwrite = false),
+            collectWarnings || other.collectWarnings
         )
 
-    /** Combines this set of [AnnotationValidators] with [other], any overlapping definitions will be taken from [other] */
+    /**
+     * Combines this set of [AnnotationValidators] with [other], any overlapping definitions will be taken from [other]
+     *
+     * [collectWarnings] is taken from [other], consistent with the rest of the merge.
+     */
     public infix fun overwriteWith(other: AnnotationValidators): AnnotationValidators =
         if (this === other) this else AnnotationValidators(
             serializersModule overwriteWith other.serializersModule,
             validators.combineWith(other.validators, overwrite = true),
-            suspendingValidators.combineWith(other.suspendingValidators, overwrite = true)
+            suspendingValidators.combineWith(other.suspendingValidators, overwrite = true),
+            other.collectWarnings
         )
+
+    /**
+     * Returns a copy of this set of [AnnotationValidators] with [collectWarnings] set to [collect].
+     *
+     * Returns this instance unchanged if the setting already matches.
+     */
+    public fun withWarnings(collect: Boolean): AnnotationValidators =
+        if (collect == collectWarnings) this
+        else AnnotationValidators(serializersModule, validators, suspendingValidators, collect)
 
     /**
      * Validates the provided [value] recursively using applied property annotations.
@@ -75,6 +100,7 @@ public class AnnotationValidators private constructor(
         val e = ValidationEncoder(doSuspendingChecks = true)
         e.encodeSerializableValue(serializer, value)
         e.runQueuedSuspendingChecks()
+        e.encodingWarnings.forEach(::println)
         return e.issues
     }
 
@@ -90,14 +116,29 @@ public class AnnotationValidators private constructor(
     public fun <T> validateSkipSuspending(serializer: KSerializer<T>, value: T): Map<String, String> {
         val e = ValidationEncoder(doSuspendingChecks = false)
         e.encodeSerializableValue(serializer, value)
-        if (printInvalidTypeWarnings) e.encodingIssues.forEach(::println)
+        e.encodingWarnings.forEach(::println)
         return e.issues
     }
 
-    internal fun <T> validateSkipSuspendingGetEncodingIssues(serializer: KSerializer<T>, value: T): Pair<Map<String, String>, List<String>> {
-        val e = ValidationEncoder(doSuspendingChecks = false)
+    /**
+     * As [validate], but returns the collected [EncodingWarning]s alongside the issues instead of
+     * printing them. Warnings are always collected, regardless of [collectWarnings].
+     */
+    internal suspend fun <T> validateCollectingWarnings(serializer: KSerializer<T>, value: T): ValidationResult {
+        val e = ValidationEncoder(doSuspendingChecks = true, collectWarnings = true)
         e.encodeSerializableValue(serializer, value)
-        return e.issues to e.encodingIssues
+        e.runQueuedSuspendingChecks()
+        return ValidationResult(e.issues, e.encodingWarnings)
+    }
+
+    /**
+     * As [validateSkipSuspending], but returns the collected [EncodingWarning]s alongside the issues
+     * instead of printing them. Warnings are always collected, regardless of [collectWarnings].
+     */
+    internal fun <T> validateSkipSuspendingCollectingWarnings(serializer: KSerializer<T>, value: T): ValidationResult {
+        val e = ValidationEncoder(doSuspendingChecks = false, collectWarnings = true)
+        e.encodeSerializableValue(serializer, value)
+        return ValidationResult(e.issues, e.encodingWarnings)
     }
 
     override fun toString(): String =
@@ -153,6 +194,9 @@ public class AnnotationValidators private constructor(
 
 
     public class Builder(public val serializersModule: SerializersModule) {
+        /** See [AnnotationValidators.collectWarnings]. */
+        public var collectWarnings: Boolean = true
+
         private val used = HashSet<Pair<String, SerialKType>>()
         private val validators = ValidationMap<(Annotation, Any?) -> String?>()
         private val suspendingValidators = ValidationMap<suspend (Annotation, Any?) -> String?>()
@@ -198,14 +242,12 @@ public class AnnotationValidators private constructor(
         }
 
         public fun build(): AnnotationValidators =
-            AnnotationValidators(serializersModule, validators, suspendingValidators)
+            AnnotationValidators(serializersModule, validators, suspendingValidators, collectWarnings)
     }
 
     public companion object {
         private val regexCache = HashMap<String, Regex>()
         private fun cachedRegex(pattern: String): Regex = regexCache.getOrPut(pattern) { Regex(pattern) }
-
-        public var printInvalidTypeWarnings: Boolean = true
 
         /**
          * The standard set of validators for common validation annotations.
@@ -375,14 +417,18 @@ public class AnnotationValidators private constructor(
      * 4. Path is built up as we go (e.g., "user.address.city") for error messages
      * 5. Annotations are stacked and flattened so nested types can inherit validations
      */
-    @OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
-    internal inner class ValidationEncoder(val doSuspendingChecks: Boolean) : AbstractEncoder() {
+    @OptIn(ExperimentalSerializationApi::class)
+    internal inner class ValidationEncoder(
+        val doSuspendingChecks: Boolean,
+        val collectWarnings: Boolean = this@AnnotationValidators.collectWarnings,
+    ) : AbstractEncoder() {
         override val serializersModule: SerializersModule get() = this@AnnotationValidators.serializersModule
 
         /** Map of field paths to validation error messages. */
         val issues = HashMap<String, String>()
 
-        val encodingIssues = ArrayList<String>()
+        /** Annotations found applied to types no validator accepts. Only populated when [collectWarnings]. */
+        val encodingWarnings = ArrayList<EncodingWarning>()
 
         /** Suspending validators are queued and run after encoding completes. */
         private val queuedSuspendingChecks = ArrayList<suspend () -> Unit>()
@@ -408,7 +454,7 @@ public class AnnotationValidators private constructor(
         private var unusedAnnotations = ArrayList<MutableList<Annotation>>()
 
         private fun markAnnotationUsed(annotation: Annotation) {
-            if (!printInvalidTypeWarnings) return
+            if (!collectWarnings) return
 
             // walk through the stack in reverse, removing the first matching annotation
 
@@ -492,7 +538,7 @@ public class AnnotationValidators private constructor(
                 }
 
             annotationStack.add(annotations)
-            if (printInvalidTypeWarnings) unusedAnnotations.add(annotations.toMutableList())
+            if (collectWarnings) unusedAnnotations.add(annotations.toMutableList())
 
             return true
         }
@@ -504,16 +550,15 @@ public class AnnotationValidators private constructor(
 
                 if (unused.isNullOrEmpty()) return
 
-                val path = path.joinToString(".")
-
-                for (annotation in unused) {
-                    val valid = validators.validTypes(annotation).orEmpty() +
-                            suspendingValidators.validTypes(annotation).orEmpty()
-
-                    println(
-                        "${annotation::class.simpleName ?: annotation.normalizedTypeName()} applied to invalid type: $type ($path). Valid types: $valid. Ignoring validation.   (Set AnnotationValidators.printInvalidTypeWarnings = false to suppress this warning)"
+                for (annotation in unused) encodingWarnings.add(
+                    EncodingWarning.InvalidAnnotationType(
+                        annotation = annotation,
+                        appliedTo = type,
+                        path = path.joinToString("."),
+                        validTypes = validators.validTypes(annotation).orEmpty() +
+                                suspendingValidators.validTypes(annotation).orEmpty()
                     )
-                }
+                )
             } finally {
                 annotationStack.removeLastOrNull()
                 path.removeLastOrNull()
@@ -575,7 +620,9 @@ public class AnnotationValidators private constructor(
             }
 
             if (serializer == null) {
-                if (printInvalidTypeWarnings) encodingIssues.add("WARN!! Could not determine a serializer for enum ${enumDescriptor.serialName}, skipping validation.")
+                if (collectWarnings) encodingWarnings.add(
+                    EncodingWarning.EnumSerializerNotFound(type = type, path = path.joinToString("."))
+                )
                 elementEncoded(type)
                 return
             }
@@ -698,7 +745,7 @@ public class AnnotationValidators private constructor(
          * and only for a nullable type actually holding null - never for a non-null value.
          */
         private fun markUsedIfOnlyNullMismatch(annotation: Annotation, type: SerialKType, value: Any?) {
-            if (value != null || !printInvalidTypeWarnings) return
+            if (value != null || !collectWarnings) return
 
             val nonNull = type.notNull()
             if (nonNull === type) return  // not nullable, so the lookup above already covered this type
@@ -710,6 +757,34 @@ public class AnnotationValidators private constructor(
 
             if (matched) markAnnotationUsed(annotation)
         }
+    }
+}
+
+/** The issues and warnings produced by a single validation pass. */
+internal data class ValidationResult(
+    /** Validation failures, keyed by `.` separated path to the offending value. */
+    val issues: Map<String, String>,
+    /** Problems found with the validation setup itself, rather than with the value. */
+    val warnings: List<EncodingWarning>,
+)
+
+internal sealed interface EncodingWarning {
+    abstract override fun toString(): String
+
+    data class InvalidAnnotationType(
+        val annotation: Annotation,
+        val appliedTo: SerialKType,
+        val path: String,
+        val validTypes: List<SerialKType>
+    ) : EncodingWarning {
+        override fun toString(): String = "${annotation::class.simpleName ?: annotation.normalizedTypeName()} applied to invalid type $appliedTo at path '$path'. Valid types: $validTypes. Ignoring validation."
+    }
+
+    data class EnumSerializerNotFound(
+        val type: SerialKType,
+        val path: String
+    ) : EncodingWarning {
+        override fun toString(): String = "Serializer for enum $type at path '$path' could not be found. Ignoring validation."
     }
 }
 
