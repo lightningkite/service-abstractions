@@ -224,32 +224,10 @@ public data class ModificationSerializer<T>(public val inner: KSerializer<T>) :
 
 public class ModificationOnFieldSerializer<K : Any, V>(
     private val field: SerializableProperty<K, V>,
-) : WrappingSerializer<Modification.OnField<K, V>, Modification<V>>(field.name),
-    ShouldValidateSub<Modification.OnField<K, V>> {
+) : WrappingSerializer<Modification.OnField<K, V>, Modification<V>>(field.name) {
     override fun getDeferred(): KSerializer<Modification<V>> = Modification.serializer(field.serializer)
     override fun inner(it: Modification.OnField<K, V>): Modification<V> = it.modification
     override fun outer(it: Modification<V>): Modification.OnField<K, V> = Modification.OnField(field, it)
-    override fun validate(
-        value: Modification.OnField<K, V>,
-        annotations: List<Annotation>,
-        defer: (value: ShouldValidateSub.SerializerAndValue<*>, annotations: List<Annotation>) -> Unit,
-    ) {
-        fun Modification<V>.check() {
-            when (this) {
-                is Modification.Assign<V> -> defer(
-                    ShouldValidateSub.SerializerAndValue(
-                        serializer = field.serializer,
-                        value = this.value
-                    ),
-                    annotations
-                )
-
-                is Modification.Chain<V> -> modifications.forEach { it.check() }
-                else -> {}
-            }
-        }
-        value.modification.check()
-    }
 }
 
 internal class ModificationChainSerializer<T>(internal val inner: KSerializer<T>) :
