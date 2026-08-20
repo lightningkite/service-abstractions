@@ -81,6 +81,15 @@ annotation class SampleXNotContains(val value: String)
 annotation class AlwaysPrintsMismatchedTypesWarning
 
 @Serializable
+data class EmptyCollectionSample(
+    // MaxLength only matches String, so it cascades to the elements rather than applying to the list.
+    @MaxLength(5) val empty: List<String> = emptyList(),
+    @MaxLength(5) val full: List<String> = listOf("ok"),
+    @MaxLength(5) val emptyMap: Map<String, String> = emptyMap(),
+    @MaxLength(5) val nullEmpty: List<String>? = null,
+)
+
+@Serializable
 class NeverUsed
 
 class ValidationTest {
@@ -172,6 +181,18 @@ class ValidationTest {
         assertEquals(
             validators.validateSkipSuspending(serializer, TestWarnings()),
             quiet.validateSkipSuspending(serializer, TestWarnings())
+        )
+    }
+
+    @Test
+    fun testEmptyCollectionDoesNotWarn() {
+        // A cascaded annotation with no elements to cascade to had nothing to check - exactly like a
+        // null value. That isn't a mistaken application and shouldn't be reported as one.
+        assertEquals(
+            emptySet(),
+            warningPaths(EmptyCollectionSample()),
+            "No field here misapplies @MaxLength - each one either cascades to a String element or " +
+                    "has no elements to cascade to at all."
         )
     }
 

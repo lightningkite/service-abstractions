@@ -6,6 +6,7 @@ import com.lightningkite.services.data.StringArrayFormat
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.modules.*
@@ -336,7 +337,16 @@ public class AnnotationValidators private constructor(
         }
 
         fun supports(annotation: Annotation): Boolean = map.containsKey(annotation.normalizedTypeName())
-        fun validTypes(annotation: Annotation): List<SerialKType>? = map[annotation.normalizedTypeName()]?.map { it.first }
+        fun validTypesJoint(other: ValidationMap<*>, annotation: Annotation): List<SerialKType>? {
+            val key = annotation.normalizedTypeName()
+            val a = map[key]
+            val b = other.map[key]
+            if (a == null && b == null) return null
+            val out = ArrayList<SerialKType>((a?.size ?: 0) + (b?.size ?: 0))
+            a?.mapTo(out) { it.first }
+            b?.mapTo(out) { it.first }
+            return out
+        }
 
         fun get(annotation: Annotation, type: SerialKType): T? {
             val forAnnotation = map[annotation.normalizedTypeName()] ?: return null
@@ -550,15 +560,27 @@ public class AnnotationValidators private constructor(
 
                 if (unused.isNullOrEmpty()) return
 
-                for (annotation in unused) encodingWarnings.add(
-                    EncodingWarning.InvalidAnnotationType(
-                        annotation = annotation,
-                        appliedTo = type,
-                        path = path.joinToString("."),
-                        validTypes = validators.validTypes(annotation).orEmpty() +
-                                suspendingValidators.validTypes(annotation).orEmpty()
+                for (annotation in unused) {
+                    val validTypes = validators.validTypesJoint(suspendingValidators, annotation).orEmpty()
+
+                    // Nothing marked this annotation used, but usage is only observed when a value
+                    // actually reaches a validator - and a container that was empty or null never
+                    // produced one. Since the annotation cascades into the type arguments, it is
+                    // only genuinely misapplied if it matches nothing anywhere in the type.
+                    if (
+                        (type as? SerialKType.Specified)?.descriptor?.kind in setOf(StructureKind.MAP, StructureKind.LIST) &&
+                        validTypes.any { type.argumentMatched(it) }
+                    ) continue
+
+                    encodingWarnings.add(
+                        EncodingWarning.InvalidAnnotationType(
+                            annotation = annotation,
+                            appliedTo = type,
+                            path = path.joinToString("."),
+                            validTypes = validTypes
+                        )
                     )
-                )
+                }
             } finally {
                 annotationStack.removeLastOrNull()
                 path.removeLastOrNull()
@@ -789,6 +811,18 @@ internal sealed interface EncodingWarning {
 }
 
 private fun Annotation.normalizedTypeName(): String = toString().removePrefix("@").substringBefore('(')
+
+/**
+ * Whether [valid] matches any type nested within this one, at any depth of type argument.
+ *
+ * Annotations cascade into type arguments, so `@MaxLength val x: List<String>` is a correct
+ * application even though nothing accepts `List<String>` itself. Only consulted when an annotation
+ * would otherwise be reported as misapplied, so the recursion never runs on the validation path.
+ */
+private fun SerialKType.argumentMatched(valid: SerialKType): Boolean = when (this) {
+    is SerialKType.Specified -> arguments.any { valid.matches(it) || it.argumentMatched(valid) }
+    SerialKType.Wildcard -> true
+}
 
 /** This type with nullability stripped; `T?` -> `T`. Returns the same instance if already non-null. */
 private fun SerialKType.notNull(): SerialKType = when (this) {
