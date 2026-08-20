@@ -42,13 +42,26 @@ data class ArgSample<T>(
 
 @Serializable
 @GenerateDataClassPaths
+data class Box<T>(val value: T)
+
+@Serializable
+@GenerateDataClassPaths
 data class CustomSample(
     @StringListContainsAll("hello", "world") val list: List<String> = listOf("hello", "world"),
     @StringListContainsAll("unapplied") val intList: List<Int> = listOf(1, 2, 3),
     @EnumNotEqualTo(TestEnum.First) val enum: TestEnum = TestEnum.Second,
     @EnumNotEqualTo(TestEnum.First) val enumList: List<TestEnum> = emptyList(),
     @IntegerRange(0, 100) val nullableInt: Int? = 3,
-    @SampleXNotContains("xyz") val sample: Sample? = null
+    @SampleXNotContains("xyz") val sample: Sample? = null,
+)
+
+@Serializable
+@GenerateDataClassPaths
+data class TestWarnings(
+    @AlwaysPrintsMismatchedTypesWarning val warn: Int = 5,
+    @IntegerRange(0, 100) val shouldNotWarn: Int? = null,
+    @IntegerRange(0, 100) val shouldNotWarnCascading: Box<Box<Box<Box<Int>>>> = Box(Box(Box(Box(50)))),
+    @IntegerRange(0, 100) val shouldWarnCascading: Box<Box<Box<Box<String>>>> = Box(Box(Box(Box("50")))),
 )
 
 @SerialInfo
@@ -63,8 +76,19 @@ annotation class EnumNotEqualTo(val value: TestEnum)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
 annotation class SampleXNotContains(val value: String)
 
+@SerialInfo
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+annotation class AlwaysPrintsMismatchedTypesWarning
+
+@Serializable
+class NeverUsed
+
 class ValidationTest {
-    var validators = AnnotationValidators(Json.serializersModule)
+    var validators = AnnotationValidators(Json.serializersModule) + AnnotationValidators {
+        validate<AlwaysPrintsMismatchedTypesWarning, NeverUsed> {
+            null
+        }
+    }
 
     inline fun <reified T> assertPasses(item: T) {
         val issues = validators.validateSkipSuspending(validators.serializersModule.serializer<T>(), item)
@@ -73,7 +97,7 @@ class ValidationTest {
 
     inline fun <reified T> assertFails(item: T, failures: Int = 1) {
         val issues = validators.validateSkipSuspending(validators.serializersModule.serializer<T>(), item)
-        if (issues.size != failures) fail("Validation did not fail. Expected $failures, got ${issues.size}. Found issues: $issues")
+        if (issues.size != failures) fail("Validation did not fail as expected. Expected $failures, got ${issues.size}. Found issues: $issues")
         else println("Found issues: $issues")
     }
 
@@ -106,6 +130,11 @@ class ValidationTest {
         // annotations cascade through nullability
         assertPasses(Sample(yNullable = null))
         assertFails(Sample(yNullable = 101))
+    }
+
+    @Test
+    fun testWarnings() {
+        assertPasses(TestWarnings())
     }
 
     @Test
