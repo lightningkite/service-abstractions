@@ -506,8 +506,11 @@ public class AnnotationValidators private constructor(
             validate(serializer, value)
 
             // Continue serialization - this will recursively encode all fields of this value
+            //
+            // Encoding primitives calls 'elementEncoded' twice without this depth check, kinda hacky but it works and doesn't cost much.
+            val depth = path.size
             serializer.serialize(this, value)
-            elementEncoded(SerialKType(serializer))
+            if (path.size == depth) elementEncoded(SerialKType(serializer))
         }
 
         override fun <T : Any> encodeNullableSerializableValue(serializer: SerializationStrategy<T>, value: T?) {
@@ -563,14 +566,12 @@ public class AnnotationValidators private constructor(
                 for (annotation in unused) {
                     val validTypes = validators.validTypesJoint(suspendingValidators, annotation).orEmpty()
 
-                    // Nothing marked this annotation used, but usage is only observed when a value
-                    // actually reaches a validator - and a container that was empty or null never
-                    // produced one. Since the annotation cascades into the type arguments, it is
-                    // only genuinely misapplied if it matches nothing anywhere in the type.
-                    if (
-                        (type as? SerialKType.Specified)?.descriptor?.kind in setOf(StructureKind.MAP, StructureKind.LIST) &&
-                        validTypes.any { type.argumentMatched(it) }
-                    ) continue
+                    // Empty collections have no elements to encode, which prevents unused annotations from being swept.
+                    //
+                    // Not gated on LIST/MAP kind: a wrapper like Modification<List<String>> is a sealed
+                    // class, so a kind check skips the scan and an empty collection inside a modification
+                    // warns anyway. Costs nothing to always scan - types with no arguments exit immediately.
+                    if (validTypes.any { type.argumentMatched(it) }) continue
 
                     encodingWarnings.add(
                         EncodingWarning.InvalidAnnotationType(
