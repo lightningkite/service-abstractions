@@ -98,7 +98,7 @@ public sealed interface SerialKType {
     /**
      * A concrete type specification with type parameters and nullability.
      *
-     * @property type The base type, either by exact serial name or by SerialKind
+     * @property descriptor The base type descriptor
      * @property arguments Type parameters (e.g., `String` in `List<String>`)
      * @property nullable Whether this type is nullable
      */

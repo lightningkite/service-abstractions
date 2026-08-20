@@ -681,6 +681,12 @@ public class AnnotationValidators private constructor(
             value: Any?,
             annotations: List<Annotation>,
         ) {
+            // Type? does not match validators for Type, but if we know the value is not null then we can assert non-null on the type.
+            val type = when (type) {
+                is SerialKType.Specified -> if (type.nullable && value != null) type.copy(nullable = false) else type
+                SerialKType.Wildcard -> type
+            }
+
             annotations.forEach { annotation ->
                 if (doSuspendingChecks) {
                     // Get both fast and suspending validators for this annotation+type
