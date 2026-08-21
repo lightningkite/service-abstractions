@@ -197,7 +197,7 @@ public annotation class Hint(val text: String)
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
 @ValidationAnnotation
-public annotation class MimeType(vararg val types: String, val maxSize: Long = Long.MAX_VALUE)
+public annotation class MimeType(vararg val whitelist: String, val blacklist: Array<String> = [], val maxSize: Long = Long.MAX_VALUE)
 
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
