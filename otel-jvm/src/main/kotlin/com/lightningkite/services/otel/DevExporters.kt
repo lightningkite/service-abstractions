@@ -442,7 +442,7 @@ internal class DevLogExporter(private val config: DevExporterConfig = DevExporte
  * - When window expires: Prints aggregate summary of additional occurrences
  *
  * This provides immediate feedback for new operations while preventing spam from
- * high-frequency operations like websocket messages.
+ * high-frequency operations like webSocket messages.
  *
  * Features:
  * - Aggregation by root span name
@@ -450,9 +450,9 @@ internal class DevLogExporter(private val config: DevExporterConfig = DevExporte
  * - Statistics: count, min/avg/max duration, error rate
  * - Automatic window expiration and flushing
  *
- * Example with 30s window and websocket messages firing every second:
- * - t=0s: First websocket.message prints immediately
- * - t=1-29s: 29 more websocket.message spans aggregate silently
+ * Example with 30s window and webSocket messages firing every second:
+ * - t=0s: First webSocket.message prints immediately
+ * - t=1-29s: 29 more webSocket.message spans aggregate silently
  * - t=30s: Aggregate summary prints: "29 additional occurrences"
  */
 internal class DebouncedDevSpanExporter(private val config: DevExporterConfig = DevExporterConfig()) : SpanExporter {

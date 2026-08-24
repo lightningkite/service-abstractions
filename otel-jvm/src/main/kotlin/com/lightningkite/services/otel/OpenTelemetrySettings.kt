@@ -68,7 +68,7 @@ import kotlin.time.toJavaDuration
  * // Development: immediate hierarchical trace output
  * OpenTelemetrySettings(url = "dev://")
  *
- * // Development: debounced traces for high-frequency operations (e.g. websocket messages)
+ * // Development: debounced traces for high-frequency operations (e.g. webSocket messages)
  * // First occurrence prints immediately, subsequent occurrences aggregate over window
  * OpenTelemetrySettings(url = "debounced-dev://?debounce=30000") // 30s window
  *

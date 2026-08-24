@@ -3137,5 +3137,68 @@ abstract class ConditionTests() {
         assertTrue(higher !in results)
     }
 
+    // region bitwise conditions
+    //
+    // The four bitwise conditions had zero behavioural coverage, which is how three drivers shipped
+    // mappings that disagree with the reference: MongoDB had All/Any transposed, and SQL/Postgres
+    // compared `col & mask` against the column instead of against the mask. An in-memory-only test
+    // could never have caught it, so these run the full truth table through the engine and compare
+    // against the authoritative in-memory `Condition.invoke` for exactly the same inputs.
 
+    private val bitFieldValues = listOf(0b0000, 0b0001, 0b0011, 0b0101, 0b1111)
+    private val bitMasks = listOf(0b0001, 0b0011, 0b0101)
+
+    /**
+     * Inserts one row per value in [bitFieldValues], then for each mask in [bitMasks] asserts the rows
+     * the engine returns for `conditionForMask(mask)` are exactly the rows the in-memory reference
+     * accepts.
+     */
+    private suspend fun assertBitsConditionMatchesReference(
+        tableName: String,
+        conditionForMask: (mask: Int) -> Condition<LargeTestModel>,
+    ) {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>(tableName))
+        val models = bitFieldValues.map { LargeTestModel(int = it) }
+        models.forEach { collection.insertOne(it) }
+        for (mask in bitMasks) {
+            val condition = conditionForMask(mask)
+            val results = collection.find(condition).toList().sortedBy { it._id }
+            val expected = models.filter { condition(it) }.sortedBy { it._id }
+            assertEquals(
+                expected.map { it.int },
+                results.map { it.int },
+                "mask=0b${mask.toString(2)} condition=$condition",
+            )
+            assertEquals(expected, results, "mask=0b${mask.toString(2)} condition=$condition")
+        }
+    }
+
+    @Test
+    fun test_Int_bits_allClear() = runTest {
+        assertBitsConditionMatchesReference("LargeTestModel_test_Int_bits_allClear") { mask ->
+            path<LargeTestModel>().int allClear mask
+        }
+    }
+
+    @Test
+    fun test_Int_bits_allSet() = runTest {
+        assertBitsConditionMatchesReference("LargeTestModel_test_Int_bits_allSet") { mask ->
+            path<LargeTestModel>().int allSet mask
+        }
+    }
+
+    @Test
+    fun test_Int_bits_anyClear() = runTest {
+        assertBitsConditionMatchesReference("LargeTestModel_test_Int_bits_anyClear") { mask ->
+            path<LargeTestModel>().int anyClear mask
+        }
+    }
+
+    @Test
+    fun test_Int_bits_anySet() = runTest {
+        assertBitsConditionMatchesReference("LargeTestModel_test_Int_bits_anySet") { mask ->
+            path<LargeTestModel>().int anySet mask
+        }
+    }
+    // endregion
 }

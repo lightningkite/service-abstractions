@@ -69,7 +69,7 @@ public interface HttpAdapter<Input, Output> {
     ) : Exception("Special case response: ${intendedResponse.status}")
 }
 
-public interface WebsocketAdapter<Startup, Inbound, Outbound> {
+public interface WebSocketAdapter<Startup, Inbound, Outbound> {
     public suspend fun parseStart(
         queryParameters: List<Pair<String, String>>,
         headers: Map<String, List<String>>,

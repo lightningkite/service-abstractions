@@ -268,9 +268,9 @@ class OpenTelemetrySettingsTest {
 
         println("\n=== Testing debounced-dev:// mode ===\n")
 
-        // Generate many similar spans rapidly (simulating websocket messages)
+        // Generate many similar spans rapidly (simulating webSocket messages)
         repeat(50) { i ->
-            telemetry["websocket"].spanBuilder("websocket.message").useBlocking {
+            telemetry["webSocket"].spanBuilder("webSocket.message").useBlocking {
                 logger.info { "Message $i" }
                 Thread.sleep(10) // Brief pause between messages
             }
@@ -285,7 +285,7 @@ class OpenTelemetrySettingsTest {
             Thread.sleep(50)
         }
 
-        println("\n=== Debounced mode test complete - should see aggregated websocket.message spans ===\n")
+        println("\n=== Debounced mode test complete - should see aggregated webSocket.message spans ===\n")
         Thread.sleep(500)
     }
 
@@ -336,9 +336,9 @@ class OpenTelemetrySettingsTest {
         println("\n=== Testing multiple debounce windows ===\n")
 
         // First window - 10 spans
-        println("--- Window 1: Generating 10 websocket.send spans ---")
+        println("--- Window 1: Generating 10 webSocket.send spans ---")
         repeat(10) { i ->
-            telemetry["ws"].spanBuilder("websocket.send").useBlocking {
+            telemetry["ws"].spanBuilder("webSocket.send").useBlocking {
                 logger.info { "Send $i" }
                 Thread.sleep(5)
             }
@@ -348,9 +348,9 @@ class OpenTelemetrySettingsTest {
         println("--- First window should have printed aggregate ---\n")
 
         // Second window - 15 spans
-        println("--- Window 2: Generating 15 websocket.send spans ---")
+        println("--- Window 2: Generating 15 webSocket.send spans ---")
         repeat(15) { i ->
-            telemetry["ws"].spanBuilder("websocket.send").useBlocking {
+            telemetry["ws"].spanBuilder("webSocket.send").useBlocking {
                 logger.info { "Send ${i + 10}" }
                 Thread.sleep(5)
             }

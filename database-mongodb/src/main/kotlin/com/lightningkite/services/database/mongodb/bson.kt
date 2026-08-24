@@ -148,10 +148,12 @@ private fun <T> Condition<T>.dump(
         is Condition.NotInside -> into.sub(key)["\$nin"] =
             values.let { bson.stringifyAny(SetSerializer(serializer), it) }
 
-        is Condition.IntBitsAnyClear -> into.sub(key)["\$bitsAllClear"] = mask
-        is Condition.IntBitsAnySet -> into.sub(key)["\$bitsAllSet"] = mask
-        is Condition.IntBitsClear -> into.sub(key)["\$bitsAnyClear"] = mask
-        is Condition.IntBitsSet -> into.sub(key)["\$bitsAnySet"] = mask
+        // The All/Any in the Mongo operator name must match the All/Any in the condition name:
+        // `IntBitsClear` means every mask bit is clear, so it is `$bitsAllClear`, and so on.
+        is Condition.IntBitsAnyClear -> into.sub(key)["\$bitsAnyClear"] = mask
+        is Condition.IntBitsAnySet -> into.sub(key)["\$bitsAnySet"] = mask
+        is Condition.IntBitsClear -> into.sub(key)["\$bitsAllClear"] = mask
+        is Condition.IntBitsSet -> into.sub(key)["\$bitsAllSet"] = mask
         is Condition.Not -> {
             val inner = condition.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson)
             val isOperatorDocument =

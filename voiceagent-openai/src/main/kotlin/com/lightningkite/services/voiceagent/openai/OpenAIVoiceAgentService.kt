@@ -277,7 +277,7 @@ internal class OpenAIVoiceAgentSession(
                     throw e
                 } catch (e: Exception) {
                     logger.error(e) { "[$serviceName] Error receiving WebSocket messages" }
-                    eventChannel.send(VoiceAgentEvent.Error("websocket_error", e.message ?: "WebSocket error"))
+                    eventChannel.send(VoiceAgentEvent.Error("webSocket_error", e.message ?: "WebSocket error"))
                 }
             }
         } catch (e: CancellationException) {

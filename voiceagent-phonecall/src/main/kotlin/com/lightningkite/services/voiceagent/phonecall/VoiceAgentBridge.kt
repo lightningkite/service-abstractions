@@ -19,17 +19,17 @@ private val logger = KotlinLogging.logger("VoiceAgentBridge")
 /**
  * Creates phone call instructions to connect to a voice agent via WebSocket.
  *
- * @param websocketUrl The WebSocket URL for the voice agent
+ * @param webSocketUrl The WebSocket URL for the voice agent
  * @param greeting Optional greeting to say before connecting (if using TTS before LLM)
  * @param customParameters Custom parameters to include in the stream request
  */
 public fun createVoiceAgentStreamInstructions(
-    websocketUrl: String,
+    webSocketUrl: String,
     greeting: String? = null,
     customParameters: Map<String, String> = emptyMap(),
 ): com.lightningkite.services.phonecall.CallInstructions {
     val streamInstruction = com.lightningkite.services.phonecall.CallInstructions.StreamAudio(
-        websocketUrl = websocketUrl,
+        webSocketUrl = webSocketUrl,
         track = com.lightningkite.services.phonecall.AudioTrack.INBOUND,
         customParameters = customParameters,
     )
@@ -66,7 +66,7 @@ public data class TranscriptEntry(
  *
  * This is a simplified bridge function that connects phone audio streams to voice agents.
  * All the complexity of PubSub routing and Lambda coordination is handled by the caller
- * (using CoroutineWebsocketHandler).
+ * (using CoroutineWebSocketHandler).
  *
  * @param voiceAgentService The voice agent service to create sessions from
  * @param sessionConfig Configuration for the voice agent session

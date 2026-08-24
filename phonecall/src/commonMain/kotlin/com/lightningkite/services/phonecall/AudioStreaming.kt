@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 /**
  * Information about an established audio stream connection.
  *
- * Returned from [WebsocketAdapter.parseStart] after validating the WebSocket
+ * Returned from [WebSocketAdapter.parseStart] after validating the WebSocket
  * connection request from the provider. This contains connection metadata
  * that may be useful for routing or logging.
  *

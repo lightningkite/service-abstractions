@@ -1072,7 +1072,7 @@ public class TwilioPhoneCallService(
             is CallInstructions.StreamAudio -> {
                 appendLine("  <Connect>")
                 append("    <Stream")
-                append(""" url="${escapeXml(inst.websocketUrl)}"""")
+                append(""" url="${escapeXml(inst.webSocketUrl)}"""")
                 val trackValue = when (inst.track) {
                     AudioTrack.INBOUND -> "inbound_track"
                     AudioTrack.OUTBOUND -> "outbound_track"

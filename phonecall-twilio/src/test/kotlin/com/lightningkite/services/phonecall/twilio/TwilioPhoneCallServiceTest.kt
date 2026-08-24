@@ -3,7 +3,7 @@ package com.lightningkite.services.phonecall.twilio
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.phonecall.*
-import com.lightningkite.services.webhooksubservice.WebsocketAdapter
+import com.lightningkite.services.webhooksubservice.WebSocketAdapter
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -426,7 +426,7 @@ class TwilioPhoneCallServiceTest {
         )
 
         val instructions = CallInstructions.StreamAudio(
-            websocketUrl = "wss://myserver.com/audio-stream",
+            webSocketUrl = "wss://myserver.com/audio-stream",
             track = AudioTrack.BOTH
         )
 
@@ -449,7 +449,7 @@ class TwilioPhoneCallServiceTest {
         )
 
         val instructions = CallInstructions.StreamAudio(
-            websocketUrl = "wss://myserver.com/audio-stream",
+            webSocketUrl = "wss://myserver.com/audio-stream",
             track = AudioTrack.INBOUND,
             customParameters = mapOf("userId" to "123", "sessionId" to "abc")
         )
@@ -478,7 +478,7 @@ class TwilioPhoneCallServiceTest {
         val instructions = CallInstructions.Say(
             text = "Connecting you to our AI assistant.",
             then = CallInstructions.StreamAudio(
-                websocketUrl = "wss://ai.example.com/voice",
+                webSocketUrl = "wss://ai.example.com/voice",
                 track = AudioTrack.BOTH
             )
         )
@@ -503,7 +503,7 @@ class TwilioPhoneCallServiceTest {
 
         // Test custom parameter with a URL containing ? in its value
         val instructions = CallInstructions.StreamAudio(
-            websocketUrl = "wss://myserver.com/audio-stream",
+            webSocketUrl = "wss://myserver.com/audio-stream",
             track = AudioTrack.BOTH,
             customParameters = mapOf(
                 "redirectUrl" to "https://other.example.com/callback?param=value&other=123"
@@ -536,7 +536,7 @@ class TwilioPhoneCallServiceTest {
         // Test customParameter with a URL value containing ? and & characters
         // This is a common use case: passing a callback URL with its own query params
         val instructions = CallInstructions.StreamAudio(
-            websocketUrl = "wss://myserver.com/stream",
+            webSocketUrl = "wss://myserver.com/stream",
             track = AudioTrack.BOTH,
             customParameters = mapOf(
                 "callbackUrl" to "https://api.example.com/callback?token=abc123&session=xyz789&redirect=https://other.com?foo=bar"
@@ -591,7 +591,7 @@ class TwilioPhoneCallServiceTest {
             }
         """.trimIndent()
 
-        val frame = WebsocketAdapter.Frame.Text(startEventJson)
+        val frame = WebSocketAdapter.Frame.Text(startEventJson)
         val event = adapter.parse(frame)
 
         assertTrue(event is AudioStreamEvent.Connected, "Expected Connected event, got $event")

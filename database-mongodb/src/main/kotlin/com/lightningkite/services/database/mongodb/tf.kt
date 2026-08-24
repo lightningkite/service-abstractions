@@ -116,7 +116,9 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
 
             "replication_specs" - listOf(
                 terraformJsonObject {
-                    "zone_name" - zoneName
+                    // Nullable: JsonPrimitive(null) is JsonNull. There is deliberately no String?
+                    // overload - it made a literal null ambiguous (372b037c).
+                    "zone_name" - JsonPrimitive(zoneName)
                     "region_configs" - listOf(
                         terraformJsonObject {
                             "auto_scaling" {
@@ -286,7 +288,9 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
 
             "replication_specs" - listOf(
                 terraformJsonObject {
-                    "zone_name" - zoneName
+                    // Nullable: JsonPrimitive(null) is JsonNull. There is deliberately no String?
+                    // overload - it made a literal null ambiguous (372b037c).
+                    "zone_name" - JsonPrimitive(zoneName)
                     "region_configs" - listOf(
                         terraformJsonObject {
                             "electable_specs" {
@@ -477,7 +481,9 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
 
             "replication_specs" - listOf(
                 terraformJsonObject {
-                    "zone_name" - zoneName
+                    // Nullable: JsonPrimitive(null) is JsonNull. There is deliberately no String?
+                    // overload - it made a literal null ambiguous (372b037c).
+                    "zone_name" - JsonPrimitive(zoneName)
                     "region_configs" - listOf(
                         terraformJsonObject {
                             "provider_name" - "FLEX"

@@ -2,7 +2,7 @@ package com.lightningkite.services.phonecall.twilio
 
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.phonecall.*
-import com.lightningkite.services.webhooksubservice.WebsocketAdapter
+import com.lightningkite.services.webhooksubservice.WebSocketAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.*
 import java.security.MessageDigest
@@ -62,7 +62,7 @@ private val logger = KotlinLogging.logger("TwilioAudioStreamAdapter")
  * When [authToken] is supplied, the WebSocket upgrade request is validated the same way Twilio's
  * REST webhooks are: HMAC-SHA1 over the expected URL (plus any sorted query parameters) using
  * [authToken] as the key, compared against the `X-Twilio-Signature` header in constant time. Since
- * [CallInstructions.StreamAudio.websocketUrl] is a single static endpoint per app (Twilio does not
+ * [CallInstructions.StreamAudio.webSocketUrl] is a single static endpoint per app (Twilio does not
  * forward query parameters on it — call-specific data travels via `customParameters` instead), the
  * expected URL is configured once via [configureExpectedUrl] rather than derived per-request.
  *
@@ -76,7 +76,7 @@ private val logger = KotlinLogging.logger("TwilioAudioStreamAdapter")
  */
 public class TwilioAudioStreamAdapter(
     private val authToken: String? = null,
-) : WebsocketAdapter<AudioStreamStart, AudioStreamEvent, AudioStreamCommand> {
+) : WebSocketAdapter<AudioStreamStart, AudioStreamEvent, AudioStreamCommand> {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -156,10 +156,10 @@ public class TwilioAudioStreamAdapter(
         )
     }
 
-    override suspend fun parse(frame: WebsocketAdapter.Frame): AudioStreamEvent {
+    override suspend fun parse(frame: WebSocketAdapter.Frame): AudioStreamEvent {
         val text = when (frame) {
-            is WebsocketAdapter.Frame.Text -> frame.text
-            is WebsocketAdapter.Frame.Binary -> frame.bytes.decodeToString()
+            is WebSocketAdapter.Frame.Text -> frame.text
+            is WebSocketAdapter.Frame.Binary -> frame.bytes.decodeToString()
         }
 
         val jsonObj = json.parseToJsonElement(text).jsonObject
@@ -257,7 +257,7 @@ public class TwilioAudioStreamAdapter(
         }
     }
 
-    override suspend fun render(output: AudioStreamCommand): WebsocketAdapter.Frame {
+    override suspend fun render(output: AudioStreamCommand): WebSocketAdapter.Frame {
         val jsonStr = when (output) {
             is AudioStreamCommand.Audio -> {
                 buildJsonObject {
@@ -287,7 +287,7 @@ public class TwilioAudioStreamAdapter(
             }
         }
 
-        return WebsocketAdapter.Frame.Text(jsonStr)
+        return WebSocketAdapter.Frame.Text(jsonStr)
     }
 
     public companion object {

@@ -21,3 +21,6 @@ database-mongodb/src/test/kotlin/com/lightningkite/services/database/mongodb/exp
 tmp
 .aider*
 .agentbridge
+
+# Live-test credentials. Never checked in; see docs/geocoding-module.md.
+/secrets/

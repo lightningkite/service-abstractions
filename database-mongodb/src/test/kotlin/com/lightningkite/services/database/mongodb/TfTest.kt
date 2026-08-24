@@ -37,7 +37,7 @@ class TfTest {
             with(emitter) {
                 TerraformNeed<Database.Settings>("fullpeeringttest").mongodbAtlas(
                     orgId = "6323a65c43d66b56a2ea5aea",
-                    autoScale = null,
+                    analyticNodes = null,
                 )
             }
             emitter.bastion()
@@ -52,7 +52,7 @@ class TfTest {
             fulfill = {
                 it.mongodbAtlas(
                     orgId = "test-org-id",
-                    autoScale = null,
+                    analyticNodes = null,
                 )
             }
         )

@@ -271,29 +271,29 @@ public sealed class CallInstructions {
      * CallInstructions.Say(
      *     text = "Connecting you to our AI assistant.",
      *     then = CallInstructions.StreamAudio(
-     *         websocketUrl = "wss://myserver.com/voice-ai",
+     *         webSocketUrl = "wss://myserver.com/voice-ai",
      *         track = AudioTrack.BOTH
      *     )
      * )
      * ```
      *
-     * @property websocketUrl WebSocket URL for the audio stream (wss://)
+     * @property webSocketUrl WebSocket URL for the audio stream (wss://)
      * @property track Which audio track(s) to stream
      * @property customParameters Additional parameters passed to the WebSocket connection
      * @property then Instructions to execute after streaming ends
      */
     @Serializable
     public data class StreamAudio(
-        val websocketUrl: String,
+        val webSocketUrl: String,
         val track: AudioTrack = AudioTrack.INBOUND,
         val customParameters: Map<String, String> = emptyMap(),
         val then: CallInstructions? = null,
     ) : CallInstructions() {
         init {
-            require(websocketUrl.startsWith("wss://")) { "WebSocket URL (${websocketUrl}) must start with wss://" }
+            require(webSocketUrl.startsWith("wss://")) { "WebSocket URL (${webSocketUrl}) must start with wss://" }
             // Twilio does NOT pass query parameters from the WebSocket URL to the server.
             // Use customParameters instead - they are sent in the "start" event.
-            require(!websocketUrl.contains('?')) {
+            require(!webSocketUrl.contains('?')) {
                 "WebSocket URL cannot contain query parameters - Twilio strips them. Use customParameters instead."
             }
         }

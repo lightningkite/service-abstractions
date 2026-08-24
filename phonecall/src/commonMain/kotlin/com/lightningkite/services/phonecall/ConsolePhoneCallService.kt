@@ -248,7 +248,7 @@ public class ConsolePhoneCallService(
             }
 
             is CallInstructions.StreamAudio -> {
-                appendLine("$indent<StreamAudio url=\"${instructions.websocketUrl}\" track=\"${instructions.track}\"/>")
+                appendLine("$indent<StreamAudio url=\"${instructions.webSocketUrl}\" track=\"${instructions.track}\"/>")
                 instructions.then?.let { appendInstructions(it, indent) }
             }
 

@@ -2,6 +2,7 @@ package com.lightningkite.services.cache.memcached
 
 import com.lightningkite.services.cache.memcached.EmbeddedMemcached.available
 import com.lightningkite.services.cache.memcached.EmbeddedMemcached.start
+import net.rubyeye.xmemcached.XMemcachedClient
 import java.io.File
 
 /**
@@ -46,5 +47,18 @@ public object EmbeddedMemcached {
      * Starts a memcached process.
      * @return The process that was started.
      */
-    public fun start(): Process = ProcessBuilder().command("memcached").start()
+    public fun start(): Process {
+        val p = ProcessBuilder().command("memcached").start()
+        for(i in 0..20) {
+            Thread.sleep(500)
+            try {
+                val c = XMemcachedClient("127.0.0.1", 11211)
+                println("Embedded ready at version " + c.getVersions(1000).entries.joinToString { "${it.key}: ${it.value}" })
+                break
+            } catch(e: Exception) {
+                continue
+            }
+        }
+        return p
+    }
 }

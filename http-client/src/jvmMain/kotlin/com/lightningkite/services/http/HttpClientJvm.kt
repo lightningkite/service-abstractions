@@ -6,6 +6,7 @@ import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.serialization.json.Json
 import okhttp3.Dispatcher
 import org.crac.*
 import java.util.concurrent.atomic.AtomicReference
@@ -65,7 +66,7 @@ private object HttpClientHolder : Resource {
 
     private fun createClient() = HttpClient(OkHttp) {
         install(ContentNegotiation) {
-            json()
+            json(Json { ignoreUnknownKeys = true; isLenient = true })
         }
         install(WebSockets)
         install(OpenTelemetryPlugin)

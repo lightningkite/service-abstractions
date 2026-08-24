@@ -35,6 +35,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(project(":basis"))
                 api(libs.ktor.client.cio)
                 api(libs.ktor.client.websockets)
                 api(libs.ktor.contentNegotiation)
@@ -52,7 +53,6 @@ kotlin {
         val jsMain by getting {}
         val jvmMain by getting {
             dependencies {
-                implementation(project(":basis"))
                 // OkHttp engine: gives the shared JVM client HTTP/2 (multiplexing), which CIO lacks.
                 // High-fanout services (FCM push) and connection reuse across all services benefit.
                 implementation(libs.ktor.client.okhttp)

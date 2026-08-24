@@ -30,11 +30,11 @@ class VoiceAgentBridgeTest {
     @Test
     fun `createVoiceAgentStreamInstructions without greeting returns StreamAudio`() {
         val instructions = createVoiceAgentStreamInstructions(
-            websocketUrl = "wss://example.com/audio",
+            webSocketUrl = "wss://example.com/audio",
         )
 
         assertIs<CallInstructions.StreamAudio>(instructions)
-        assertEquals("wss://example.com/audio", instructions.websocketUrl)
+        assertEquals("wss://example.com/audio", instructions.webSocketUrl)
         assertEquals(AudioTrack.INBOUND, instructions.track)
         assertTrue(instructions.customParameters.isEmpty())
     }
@@ -42,7 +42,7 @@ class VoiceAgentBridgeTest {
     @Test
     fun `createVoiceAgentStreamInstructions with greeting returns Say then StreamAudio`() {
         val instructions = createVoiceAgentStreamInstructions(
-            websocketUrl = "wss://example.com/audio",
+            webSocketUrl = "wss://example.com/audio",
             greeting = "Hello, please hold.",
         )
 
@@ -51,13 +51,13 @@ class VoiceAgentBridgeTest {
 
         val streamInstruction = instructions.then
         assertIs<CallInstructions.StreamAudio>(streamInstruction)
-        assertEquals("wss://example.com/audio", streamInstruction.websocketUrl)
+        assertEquals("wss://example.com/audio", streamInstruction.webSocketUrl)
     }
 
     @Test
     fun `createVoiceAgentStreamInstructions passes custom parameters`() {
         val instructions = createVoiceAgentStreamInstructions(
-            websocketUrl = "wss://example.com/audio",
+            webSocketUrl = "wss://example.com/audio",
             customParameters = mapOf("callId" to "123", "userId" to "456"),
         )
 

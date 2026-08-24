@@ -4,7 +4,7 @@ import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.phonecall.AudioStreamCommand
 import com.lightningkite.services.phonecall.AudioStreamEvent
-import com.lightningkite.services.webhooksubservice.WebsocketAdapter
+import com.lightningkite.services.webhooksubservice.WebSocketAdapter
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
@@ -22,7 +22,7 @@ class TwilioAudioStreamAdapterTest {
         // The "connected" event doesn't contain useful info, so it returns NoOp
         // We need to wait for the "start" event for actual stream metadata
         val json = """{"event":"connected","protocol":"Call","version":"1.0.0"}"""
-        val frame = WebsocketAdapter.Frame.Text(json)
+        val frame = WebSocketAdapter.Frame.Text(json)
 
         val event = adapter.parse(frame)
 
@@ -44,7 +44,7 @@ class TwilioAudioStreamAdapterTest {
                 }
             }
         }""".trimIndent()
-        val frame = WebsocketAdapter.Frame.Text(json)
+        val frame = WebSocketAdapter.Frame.Text(json)
 
         val event = adapter.parse(frame)
 
@@ -68,7 +68,7 @@ class TwilioAudioStreamAdapterTest {
                 "chunk": "42"
             }
         }"""
-        val frame = WebsocketAdapter.Frame.Text(json)
+        val frame = WebSocketAdapter.Frame.Text(json)
 
         val event = adapter.parse(frame)
 
@@ -90,7 +90,7 @@ class TwilioAudioStreamAdapterTest {
                 "digit": "5"
             }
         }"""
-        val frame = WebsocketAdapter.Frame.Text(json)
+        val frame = WebSocketAdapter.Frame.Text(json)
 
         val event = adapter.parse(frame)
 
@@ -104,7 +104,7 @@ class TwilioAudioStreamAdapterTest {
     fun testParse_stopEvent() = runTest {
         // Adapter is stateless - each event is parsed independently
         val json = """{"event":"stop","streamSid":"MZ1234567890"}"""
-        val frame = WebsocketAdapter.Frame.Text(json)
+        val frame = WebSocketAdapter.Frame.Text(json)
 
         val event = adapter.parse(frame)
 
@@ -124,7 +124,7 @@ class TwilioAudioStreamAdapterTest {
 
         val frame = adapter.render(command)
 
-        assertTrue(frame is WebsocketAdapter.Frame.Text)
+        assertTrue(frame is WebSocketAdapter.Frame.Text)
         val text = frame.text
 
         assertTrue(text.contains("\"event\":\"media\""), "Missing event:media. Got: $text")
@@ -138,7 +138,7 @@ class TwilioAudioStreamAdapterTest {
 
         val frame = adapter.render(command)
 
-        assertTrue(frame is WebsocketAdapter.Frame.Text)
+        assertTrue(frame is WebSocketAdapter.Frame.Text)
         val text = frame.text
 
         assertTrue(text.contains("\"event\":\"clear\""), "Missing event:clear. Got: $text")
@@ -154,7 +154,7 @@ class TwilioAudioStreamAdapterTest {
 
         val frame = adapter.render(command)
 
-        assertTrue(frame is WebsocketAdapter.Frame.Text)
+        assertTrue(frame is WebSocketAdapter.Frame.Text)
         val text = frame.text
 
         assertTrue(text.contains("\"event\":\"mark\""), "Missing event:mark. Got: $text")

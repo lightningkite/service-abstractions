@@ -282,7 +282,7 @@ public interface PhoneCallService : Service {
      *
      * When audio streaming is enabled on a call (via [CallInstructions.StreamAudio]),
      * the provider connects to your WebSocket endpoint. Use this adapter to:
-     * - Validate the initial connection via [WebsocketAdapter.parseStart]
+     * - Validate the initial connection via [WebSocketAdapter.parseStart]
      * - Parse incoming audio frames from the provider's format
      * - Render outgoing audio frames to the provider's format
      *
@@ -313,12 +313,12 @@ public interface PhoneCallService : Service {
      * val frame = phoneService.audioStream!!.render(
      *     AudioStreamCommand.Audio(streamId, base64Audio)
      * )
-     * websocket.send(frame)
+     * webSocket.send(frame)
      * ```
      *
      * @return WebSocket adapter, or null if the provider doesn't support audio streaming
      */
-    public val audioStream: WebsocketAdapter<AudioStreamStart, AudioStreamEvent, AudioStreamCommand>?
+    public val audioStream: WebSocketAdapter<AudioStreamStart, AudioStreamEvent, AudioStreamCommand>?
         get() = null
 
     // ==================== Response Rendering ====================

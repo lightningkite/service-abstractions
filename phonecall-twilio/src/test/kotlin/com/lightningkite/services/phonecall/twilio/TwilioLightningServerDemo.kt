@@ -16,7 +16,7 @@ import com.lightningkite.lightningserver.websockets.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.kfile.workingDirectory
 import com.lightningkite.services.phonecall.*
-import com.lightningkite.services.webhooksubservice.WebsocketAdapter
+import com.lightningkite.services.webhooksubservice.WebSocketAdapter
 import kotlinx.coroutines.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
@@ -275,7 +275,7 @@ object PhoneServer : ServerBuilder() {
                 CallInstructions.Say(
                     text = "Starting audio stream demo. Speak and you'll hear your voice echoed back. Press any key to stop.",
                     then = CallInstructions.StreamAudio(
-                        websocketUrl = wsUrl,
+                        webSocketUrl = wsUrl,
                         track = AudioTrack.INBOUND,
                         customParameters = mapOf("callSid" to callSid),
                         then = CallInstructions.Say(
@@ -365,7 +365,7 @@ object PhoneServer : ServerBuilder() {
      * State tracked for each audio stream WebSocket connection.
      */
     data class AudioStreamState(
-        val adapter: WebsocketAdapter<AudioStreamStart, AudioStreamEvent, AudioStreamCommand>,
+        val adapter: WebSocketAdapter<AudioStreamStart, AudioStreamEvent, AudioStreamCommand>,
         var streamId: String? = null,
         var callId: String? = null,
     )
@@ -391,7 +391,7 @@ object PhoneServer : ServerBuilder() {
         },
         messageFromClient = { frameData ->
             val adapter = currentState.adapter
-            val frame = WebsocketAdapter.Frame.Text(frameData.text)
+            val frame = WebSocketAdapter.Frame.Text(frameData.text)
 
             try {
                 val event = adapter.parse(frame)
@@ -413,7 +413,7 @@ object PhoneServer : ServerBuilder() {
                                 payload = event.payload
                             )
                             val responseFrame = adapter.render(echoCommand)
-                            send((responseFrame as WebsocketAdapter.Frame.Text).text)
+                            send((responseFrame as WebSocketAdapter.Frame.Text).text)
                         }
                     }
 

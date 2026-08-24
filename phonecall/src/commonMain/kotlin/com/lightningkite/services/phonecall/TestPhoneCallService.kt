@@ -360,7 +360,7 @@ public class TestPhoneCallService(
             }
 
             is CallInstructions.StreamAudio -> {
-                appendLine("$indent<StreamAudio url=\"${inst.websocketUrl}\" track=\"${inst.track}\"/>")
+                appendLine("$indent<StreamAudio url=\"${inst.webSocketUrl}\" track=\"${inst.track}\"/>")
                 inst.then?.let { appendInstruction(it, indent) }
             }
         }
