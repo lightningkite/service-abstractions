@@ -7,14 +7,9 @@ import com.lightningkite.services.kfile.workingDirectory
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.HMAC
 import kotlinx.coroutines.runBlocking
-import kotlinx.io.Source
 import kotlinx.serialization.json.*
 import kotlinx.serialization.modules.serializersModuleOf
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 
@@ -27,8 +22,7 @@ private class RecordingScanner(override val context: SettingContext) : FileScann
         private set
 
     override val name: String = "recording-scanner"
-    override fun requires(claimedType: MediaType): FileScanner.Requires = FileScanner.Requires.Nothing
-    override suspend fun scan(claimedType: MediaType, data: Source) {
+    override suspend fun scan(file: ExternalFile) {
         scanCalled = true
     }
 
@@ -229,7 +223,10 @@ class ExternalServerFileSerializerTest {
             val encoded = json.encodeToJsonElement(ser, knownRootFile(ser)).jsonPrimitive.content
             // Known-root files always produce a non-blank, non-foreign signed url regardless of mode.
             assertTrue(encoded.isNotBlank(), "Known-root file should serialize to a url in mode $entry")
-            assertTrue(encoded.contains("known.txt"), "Known-root file should serialize to its own url in mode $entry: $encoded")
+            assertTrue(
+                encoded.contains("known.txt"),
+                "Known-root file should serialize to its own url in mode $entry: $encoded"
+            )
         }
     }
 }

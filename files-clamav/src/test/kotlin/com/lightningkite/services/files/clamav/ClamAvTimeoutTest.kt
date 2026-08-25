@@ -3,10 +3,14 @@ package com.lightningkite.services.files.clamav
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.files.ExternalFile
+import com.lightningkite.services.files.ExternalPath
 import com.lightningkite.services.files.FileScanException
 import com.lightningkite.services.files.FileScanner
+import com.lightningkite.services.files.KotlinxIoExternalFileSystem
 import com.lightningkite.services.files.clamav.ClamAvFileScanner.Companion.clamav
 import com.lightningkite.services.files.scan
+import com.lightningkite.services.kfile.KFile
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import xyz.capybara.clamav.ClamavClient
@@ -23,6 +27,10 @@ import kotlin.time.Duration.Companion.seconds
  * `clamav-client` library opens a plain blocking socket with no read timeout of its own.
  */
 class ClamAvTimeoutTest {
+
+    val context = TestSettingContext()
+    val system = KotlinxIoExternalFileSystem("name", context, KFile("build/test-files/"))
+
     @Test
     fun scanFailsWithinTimeoutOnUnresponsiveDaemon(): Unit = runBlocking {
         // Accepts the connection (so the socket connect succeeds) but never writes a response,
@@ -40,9 +48,11 @@ class ClamAvTimeoutTest {
             // Outer bound proves scan() actually returns (with a failure) instead of hanging forever -
             // without FIX 40, this would never complete, since clamd never responds and the underlying
             // socket read has no timeout of its own.
+            val file = ExternalFile(system, ExternalPath("ClamAvTimeoutTest-test-file"))
+            file.put(TypedData.text("hello", MediaType.Text.Plain))
             withTimeout(5.seconds) {
                 assertFailsWith<FileScanException> {
-                    scanner.scan(TypedData.text("hello", MediaType.Text.Plain))
+                    scanner.scan(file)
                 }
             }
         } finally {

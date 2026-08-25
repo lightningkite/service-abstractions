@@ -1,15 +1,15 @@
 package com.lightningkite.services.files
 
-import com.lightningkite.services.data.Description
-import com.lightningkite.services.data.ExperimentalLightningServer
-import com.lightningkite.services.data.MediaType
-import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.data.*
 import com.lightningkite.services.database.PrimitiveDescriptorWithAnnotations
 import dev.whyoleg.cryptography.algorithms.HMAC
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.*
-import kotlinx.serialization.descriptors.*
+import kotlinx.io.bytestring.ByteString
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import org.jetbrains.annotations.TestOnly
@@ -97,7 +97,6 @@ public class ExternalServerFileSerializer(
     private val knownSystemsString: String get() = fileSystems.joinToString { it.name }
 
     private val uploadFile: suspend (data: TypedData) -> ExternalFile = {
-        scanners.scan(it)
         val d = primary.root.thenRandom("uploaded", "file")
         d.put(it)
         d
@@ -238,8 +237,14 @@ public class ExternalServerFileSerializer(
                 val data = Base64.decode(base64)
                 return runBlocking {
                     val typedData = TypedData.bytes(data, type)
-                    scanners.scan(typedData)
-                    uploadFile(typedData)
+                    val file = uploadFile(typedData)
+                    try {
+                        scanners.scan(file)
+                    } catch (e: Exception){
+                        file.delete()
+                        throw e
+                    }
+                    file
                 }.serverFile
             }
 
