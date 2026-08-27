@@ -63,6 +63,7 @@ open class TerraformEmitterAwsTest<S>(
     }
 
     val files = mutableMapOf<String, TerraformJsonObject>()
+    val extraFiles = mutableMapOf<String, String>()
     val settings = mutableMapOf<String, JsonElement>()
 
     override fun emit(
@@ -70,6 +71,12 @@ open class TerraformEmitterAwsTest<S>(
         action: TerraformJsonObject.() -> Unit,
     ) {
         files.getOrPut(context ?: "unclassified") { TerraformJsonObject() }.action()
+    }
+
+    override fun emitExtra(fileName: String, content: String) {
+        if(extraFiles.containsKey(fileName))
+            throw IllegalStateException("$fileName already exists in configuration")
+        extraFiles[fileName] = content
     }
 
     override fun fulfillSetting(settingName: String, element: JsonElement) {
