@@ -34,6 +34,7 @@ internal object DefaultDecoder : Decoder {
         defaults[LocalDate.serializer().descriptor.serialName] = LocalDate(1970, 1, 1)
         defaults[LocalDateTime.serializer().descriptor.serialName] =
             LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
+        defaults[YearMonth.serializer().descriptor.serialName] = YearMonth(0, 0)
         defaults[Duration.serializer().descriptor.serialName] = 0.seconds
         defaults[DurationMsSerializer.descriptor.serialName] = 0.seconds
         defaults[ZonedDateTimeIso8601Serializer.descriptor.serialName] =
