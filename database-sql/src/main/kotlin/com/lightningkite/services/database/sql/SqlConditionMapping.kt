@@ -271,9 +271,11 @@ private fun <T> condition(
             )
         }
 
+        // Stated as inequality rather than an ordered comparison: `col & mask` is signed, so a mask
+        // containing bit 31 is negative and `<` / `> 0` give the wrong answer for the highest bit.
         is Condition.IntBitsAnyClear -> {
             val col = fieldSet.single(condition.mask as T)
-            LessOp(
+            NeqOp(
                 AndBitOp(col.first as Expression<Int>, col.second as Expression<Int>, IntegerColumnType()),
                 col.second
             )
@@ -281,7 +283,7 @@ private fun <T> condition(
 
         is Condition.IntBitsAnySet -> {
             val col = fieldSet.single(condition.mask as T)
-            GreaterOp(
+            NeqOp(
                 AndBitOp(col.first as Expression<Int>, col.second as Expression<Int>, IntegerColumnType()),
                 sqlLiteralOfSomeKind(IntegerColumnType(), 0)
             )

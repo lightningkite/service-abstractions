@@ -150,10 +150,13 @@ private fun <T> Condition<T>.dump(
 
         // The All/Any in the Mongo operator name must match the All/Any in the condition name:
         // `IntBitsClear` means every mask bit is clear, so it is `$bitsAllClear`, and so on.
-        is Condition.IntBitsAnyClear -> into.sub(key)["\$bitsAnyClear"] = mask
-        is Condition.IntBitsAnySet -> into.sub(key)["\$bitsAnySet"] = mask
-        is Condition.IntBitsClear -> into.sub(key)["\$bitsAllClear"] = mask
-        is Condition.IntBitsSet -> into.sub(key)["\$bitsAllSet"] = mask
+        //
+        // The mask is passed as a list of bit positions rather than as a number because Mongo rejects
+        // a negative numeric bitmask, and any mask containing bit 31 is negative as a signed Int.
+        is Condition.IntBitsAnyClear -> into.sub(key)["\$bitsAnyClear"] = mask.bitPositions()
+        is Condition.IntBitsAnySet -> into.sub(key)["\$bitsAnySet"] = mask.bitPositions()
+        is Condition.IntBitsClear -> into.sub(key)["\$bitsAllClear"] = mask.bitPositions()
+        is Condition.IntBitsSet -> into.sub(key)["\$bitsAllSet"] = mask.bitPositions()
         is Condition.Not -> {
             val inner = condition.dump(serializer, key = key, atlasSearch = atlasSearch, bson = bson)
             val isOperatorDocument =
@@ -488,3 +491,7 @@ internal fun SerialDescriptor.bsonType(module: SerializersModule): BsonType = wh
         PolymorphicKind.OPEN -> TODO()
     }
 }
+
+
+/** The indices of the set bits, which is how Mongo's `$bits*` operators accept a mask unambiguously. */
+private fun Int.bitPositions(): List<Int> = (0 until Int.SIZE_BITS).filter { this and (1 shl it) != 0 }

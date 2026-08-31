@@ -264,13 +264,17 @@ public sealed class Condition<in T> {
 
     @Serializable(ConditionIntBitsAnyClearSerializer::class)
     public data class IntBitsAnyClear(val mask: Int) : Condition<Int>() {
-        override fun invoke(on: Int): Boolean = on and mask < mask
+        // Stated as the exact negation of IntBitsSet rather than `on and mask < mask`. Ordered
+        // comparison is signed, so a mask containing bit 31 is negative and `<` gives the wrong
+        // answer for the very highest bit of the field.
+        override fun invoke(on: Int): Boolean = on and mask != mask
         override fun toString(): String = ".bitsAnyClear(${mask.toString(16)})"
     }
 
     @Serializable(ConditionIntBitsAnySetSerializer::class)
     public data class IntBitsAnySet(val mask: Int) : Condition<Int>() {
-        override fun invoke(on: Int): Boolean = on and mask > 0
+        // The exact negation of IntBitsClear; see IntBitsAnyClear for why not `on and mask > 0`.
+        override fun invoke(on: Int): Boolean = on and mask != 0
         override fun toString(): String = ".bitsAnySet(${mask.toString(16)})"
     }
 

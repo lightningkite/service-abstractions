@@ -3145,8 +3145,10 @@ abstract class ConditionTests() {
     // could never have caught it, so these run the full truth table through the engine and compare
     // against the authoritative in-memory `Condition.invoke` for exactly the same inputs.
 
-    private val bitFieldValues = listOf(0b0000, 0b0001, 0b0011, 0b0101, 0b1111)
-    private val bitMasks = listOf(0b0001, 0b0011, 0b0101)
+    // The sign bit is included on both sides: any mask reaching bit 31 is a negative Int, which is
+    // where an ordered comparison in a driver's emitted SQL stops agreeing with the reference.
+    private val bitFieldValues = listOf(0b0000, 0b0001, 0b0011, 0b0101, 0b1111, 1 shl 31, (1 shl 31) or 0b0001)
+    private val bitMasks = listOf(0b0001, 0b0011, 0b0101, 1 shl 31, (1 shl 31) or 0b0001)
 
     /**
      * Inserts one row per value in [bitFieldValues], then for each mask in [bitMasks] asserts the rows

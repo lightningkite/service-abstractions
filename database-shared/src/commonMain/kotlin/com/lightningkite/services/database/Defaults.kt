@@ -32,6 +32,7 @@ internal object DefaultDecoder : Decoder {
         defaults[Instant.serializer().descriptor.serialName] = Instant.fromEpochMilliseconds(0)
         defaults[LocalTime.serializer().descriptor.serialName] = LocalTime(0, 0, 0)
         defaults[LocalDate.serializer().descriptor.serialName] = LocalDate(1970, 1, 1)
+        defaults[YearMonth.serializer().descriptor.serialName] = YearMonth(1970, 1)
         defaults[LocalDateTime.serializer().descriptor.serialName] =
             LocalDateTime(LocalDate(1970, 1, 1), LocalTime(0, 0, 0))
         defaults[Duration.serializer().descriptor.serialName] = 0.seconds
