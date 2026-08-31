@@ -5,6 +5,7 @@ package com.lightningkite.services.database.validation
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.modification
+import com.lightningkite.services.database.notNull
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.ListSerializer
@@ -86,6 +87,24 @@ annotation class AlwaysPrintsMismatchedTypesWarning
 @Serializable
 class NeverUsed
 
+@SerialInfo
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+annotation class MimeTypeCheck(val type: String)
+
+@Serializable
+data class File(val type: String)
+
+@Serializable
+@GenerateDataClassPaths
+data class FileWithMetadata(val file: File, val metadata: List<Int> = emptyList())
+
+@Serializable
+@GenerateDataClassPaths
+data class SampleWithFile(
+    @MimeTypeCheck("text") val file: File = File("text"),
+    @MimeTypeCheck("text") val fileWithMetadata: FileWithMetadata? = FileWithMetadata(File("text")),
+)
+
 class ValidationTest {
     var validators = AnnotationValidators(Json.serializersModule) + AnnotationValidators {
         validate<AlwaysPrintsMismatchedTypesWarning, NeverUsed> {
@@ -102,6 +121,49 @@ class ValidationTest {
         val issues = validators.validateSkipSuspending(validators.serializersModule.serializer<T>(), item)
         if (issues.size != failures) fail("Validation did not fail as expected. Expected $failures, got ${issues.size}. Found issues: $issues")
         else println("Found issues: $issues")
+    }
+
+    @Test
+    fun testCascadingAnnotationsThatApplyToMultipleTypes() {
+        validators += AnnotationValidators {
+            validate<MimeTypeCheck, File> {
+                if (it.type != type) "File MimeType does not match $type"
+                else null
+            }
+            validate<MimeTypeCheck, FileWithMetadata> {
+                if (it.file.type != type) "FileWithMetadata MimeType does not match $type"
+                else null
+            }
+        }
+
+        assertPasses(SampleWithFile())
+        assertFails(SampleWithFile(file = File("nottext")))
+        assertFails(SampleWithFile(fileWithMetadata = FileWithMetadata(File("nottext"))), failures = 2)
+
+        assertPasses(modification<SampleWithFile> { it.file assign File("text") })
+        assertFails(modification<SampleWithFile> { it.file assign File("nottext") })
+
+        assertPasses(modification<SampleWithFile> { it.fileWithMetadata.notNull.file assign File("text") })
+        assertFails(modification<SampleWithFile> { it.fileWithMetadata.notNull.file assign File("nottext") })
+        assertFails(
+            Modification.Chain<SampleWithFile>(
+                listOf(
+                    Modification.OnField(
+                        SampleWithFile_fileWithMetadata,
+                        Modification.IfNotNull(
+                            Modification.Chain(
+                                listOf(
+                                    Modification.OnField(
+                                        FileWithMetadata_file,
+                                        Modification.Assign(File("nottext"))
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
     }
 
     @Test
