@@ -4,8 +4,6 @@ import com.lightningkite.services.*
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.MediaType
 import kotlinx.coroutines.*
-import kotlinx.io.Buffer
-import kotlinx.io.readByteArray
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
@@ -117,14 +115,15 @@ public class CheckMimeFileScanner(
 ) : FileScanner {
 
     override suspend fun scan(file: ExternalFile) {
-        // Read up to 16 bytes without requiring them: files shorter than a format's magic-number
-        // signature are legitimate (an empty or few-byte file is not automatically invalid) and must
-        // not fail just for being short. `readAtMostTo` stops at end-of-stream instead of throwing,
-        // unlike `readByteArray(16)`.
-        val item = file.get() ?: throw FileScanException("File does not exist")
-        val bytes = item.data.source().use { source ->
-            Buffer().also { source.readAtMostTo(it, 16) }.readByteArray()
-        }
+        // A magic number lives in the first 16 bytes, so a ranged read keeps this from pulling a
+        // multi-gigabyte object across the network just to look at its header.
+        //
+        // The range is a maximum, not a requirement: files shorter than a format's signature are
+        // legitimate (an empty or few-byte file is not automatically invalid), so `getRange` clamps at
+        // end-of-file and the signature match below fails cleanly when the bytes available cannot
+        // complete a signature.
+        val item = file.getRange(0L..15L) ?: throw FileScanException("File does not exist")
+        val bytes = item.use { it.data.bytes() }
 
         if (signatures[item.mediaType]?.none { it.matches(bytes) } == true) {
             throw FileScanException("Mime type mismatch; doesn't fit the ${item.mediaType.subtype} format")

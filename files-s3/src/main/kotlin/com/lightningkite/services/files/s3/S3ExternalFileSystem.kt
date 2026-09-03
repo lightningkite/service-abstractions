@@ -384,6 +384,52 @@ public class S3ExternalFileSystem(
     }
 
     /**
+     * Downloads a byte window of the file at [path], letting S3 do the slicing so that only the
+     * requested bytes cross the network.
+     */
+    override suspend fun getRange(path: ExternalPath, range: LongRange): TypedData? {
+        ExternalFileSystem.requireValidRange(range)
+        val unixPath = unixPathOf(path)
+        return telemetryTrace("getRange", attributes = s3SpanAttrs("getRange", unixPath)) { span ->
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val response = s3.getObject(
+                        GetObjectRequest.builder().also {
+                            it.bucket(bucket)
+                            it.key(unixPath)
+                            // Inclusive at both ends, which is what an ExternalFileSystem range means too.
+                            it.range("bytes=${range.first}-${range.last}")
+                        }.build()
+                    )
+
+                    val rr = response.response()
+                    TypedData.source(
+                        source = response.asSource().buffered(),
+                        mediaType = MediaType(rr.contentType() ?: "application/octet-stream"),
+                        size = rr.contentLength()
+                    )
+                } catch (e: NoSuchKeyException) {
+                    null
+                } catch (e: S3Exception) {
+                    // A range starting at or past the end of the object (an empty object included)
+                    // comes back as 416 rather than an empty body. The contract calls that an empty
+                    // window, so answer with one - and re-head the object, since a 416 response
+                    // carries no content type of its own.
+                    if (e.statusCode() != 416) throw e
+                    head(path)?.let { TypedData.bytes(ByteArray(0), it.type) }
+                }
+            }
+            result?.let {
+                span.enrich(TelemetryAttributes {
+                    put(TelemetryKeys.File.size, it.data.size ?: -1L)
+                    put(TelemetryKeys.File.contentType, it.mediaType.toString())
+                })
+            }
+            result
+        }
+    }
+
+    /**
      * Copies the file at [path] to [other].
      *
      * If the destination is also an S3 file in the same bucket, this performs a server-side copy
