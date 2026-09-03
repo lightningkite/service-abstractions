@@ -163,6 +163,9 @@ public class KotlinxIoExternalFileSystem(
      * @throws IllegalArgumentException if signature verification fails, URL has expired,
      *         URL doesn't match this file system, or URL is for upload (not read)
      */
+    /** Signed URLs carry a signature this service verifies; unsigned ones are just paths. */
+    override val referencesAreUnforgeable: Boolean get() = signedUrlDuration != null
+
     override fun parseExternalUrl(url: String): ExternalFile? {
         if (!url.startsWith(serveUrl)) return null
         return if (signedUrlDuration != null) {

@@ -58,21 +58,6 @@ public interface FileScanner : Service {
 public open class FileScanException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 /**
- * Scans a file and copies it to the destination if it passes validation.
- *
- * This is useful for safely processing uploaded files - if they fail validation,
- * they won't be copied to the destination location and a FileScanException thrown.
- *
- * @param source The source file to copy
- * @param destination The destination file location
- * @throws FileScanException if scanning fails
- */
-public suspend fun FileScanner.copyAndScan(source: ExternalFile, destination: ExternalFile) {
-    scan(source)
-    source.copyTo(destination)
-}
-
-/**
  * Scans the ExternalFile using multiple file scanners in parallel.
  *
  * @param file The ExternalFile to scan
@@ -84,20 +69,6 @@ public suspend fun List<FileScanner>.scan(file: ExternalFile) {
             .map { launch { it.scan(file) } }
             .joinAll()
     }
-}
-
-/**
- * Scans a file with multiple scanners and copies it to the destination if it passes validation.
- *
- * All scanners run in parallel. If any scanner fails, the file is not copied and a FileScanException thrown
- *
- * @param source The source file to copy
- * @param destination The destination file location
- * @throws FileScanException if any scanner fails validation
- */
-public suspend fun List<FileScanner>.copyAndScan(source: ExternalFile, destination: ExternalFile) {
-    scan(source)
-    source.copyTo(destination)
 }
 
 /**

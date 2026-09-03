@@ -7,7 +7,6 @@ import com.lightningkite.services.data.DataSize.Companion.bytes
 import com.lightningkite.services.files.ExternalFile
 import com.lightningkite.services.files.ExternalFileSystem
 import com.lightningkite.services.files.ExternalPath
-import com.lightningkite.services.files.ExternalServerFileSerializer
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.get
 import com.lightningkite.services.kfile.temporary
@@ -659,6 +658,9 @@ public class S3ExternalFileSystem(
         return ExternalFile(this, pathFromUnix(relative))
     }
 
+    /** Signed URLs carry a signature this service verifies; unsigned ones are just paths. */
+    override val referencesAreUnforgeable: Boolean get() = signedUrlDuration != null
+
     override fun parseExternalUrl(url: String): ExternalFile? {
         // Signed URLs are percent-encoded by signUrl/encodedUrl, so decode the path before matching.
         val decodedPath = url.substringBefore('?').decodeURLPart()
@@ -676,9 +678,8 @@ public class S3ExternalFileSystem(
      * none is performed on the default path. A signature we did not produce - whether tampered or
      * simply foreign - is rejected.
      *
-     * Only when [ExternalServerFileSerializer.inlineScanOnDeserialize] is enabled (the shared
-     * backward-compat flag, disabled by default) do we fall back to the legacy behavior of issuing
-     * an HTTP request to S3 to validate the URL when local recomputation does not match.
+     * When local recomputation does not match - or cannot be performed, because the query parameters
+     * are missing or malformed - verification falls back to asking S3 directly over the network.
      *
      * @throws IllegalArgumentException if the signature is invalid
      */
@@ -758,8 +759,8 @@ public class S3ExternalFileSystem(
     }
 
     /**
-     * Legacy fallback: validates the signed URL by asking S3 directly. Performs a blocking network
-     * round-trip and is only reachable when the backward-compat flag is enabled.
+     * Fallback: validates the signed URL by asking S3 directly, for URLs this backend cannot verify
+     * locally. Performs a blocking network round-trip, so local recomputation is always tried first.
      */
     private fun verifySignatureOverNetwork(path: ExternalPath, queryParams: String) {
         // The shared client applies a 60s engine timeout.

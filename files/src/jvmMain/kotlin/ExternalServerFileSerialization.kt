@@ -2,39 +2,14 @@ package com.lightningkite.services.files
 
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.PrimitiveDescriptorWithAnnotations
-import dev.whyoleg.cryptography.algorithms.HMAC
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.runBlocking
-import kotlinx.io.bytestring.ByteString
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
-import org.jetbrains.annotations.TestOnly
-import kotlin.io.encoding.Base64
-import kotlin.time.*
 
-/**
- * A KSerializer for ServerFile that provides secure file upload handling with scanning and validation.
- *
- * This serializer handles three types of file references during deserialization:
- * 1. `future:` URLs - Files uploaded to a jail directory that need scanning before use
- * 2. `future-prescanned:` URLs - Files already scanned and ready for use
- * 3. `data:` URLs - Base64-encoded inline data that will be uploaded and scanned
- * 4. Regular URLs - Files from known file systems that will be validated
- *
- * During serialization, it converts internal file URLs to signed URLs for secure client access.
- *
- * @param clock Clock for timestamp validation
- * @param scanners List of file scanners to run on uploaded files
- * @param fileSystems List of file systems to check for file ownership
- * @param jail Directory for uploaded files awaiting scanning (quarantine area)
- * @param ready Directory for scanned and approved files
- * @param onUse Callback invoked when a file is used
- * @param key HMAC key for signing "future:" URLs
- */
 /**
  * Controls how [ExternalServerFileSerializer.serialize] handles a [ServerFile] whose location does
  * not belong to any known file-system root (a "foreign" URL).
@@ -54,53 +29,50 @@ public enum class ForeignUrlHandling {
     ERROR,
 }
 
+/**
+ * A [KSerializer] for [ServerFile] that translates between stored file references and the signed URLs
+ * clients see.
+ *
+ * This type does one job - translation. It runs no scan, copy, or upload of its own; the upload
+ * workflow that produces safe files lives in the server framework's upload endpoint, which supplies
+ * [resolveUpload].
+ *
+ * It is not free of I/O, though, and [deserialize] runs on whatever thread is deserializing (often a
+ * server event loop): [resolveUpload] and [ExternalFileSystem.parseExternalUrl] are both free to
+ * block there, and today both do - the upload endpoint's hook deletes a database row, and the S3
+ * backend falls back to a network round trip for a signature it cannot recompute locally.
+ *
+ * **Serializing** converts a stored location into a signed URL, subject to [foreignUrlHandling].
+ *
+ * **Deserializing** accepts either a reference the upload endpoint issued (resolved by
+ * [resolveUpload]) or a signed URL belonging to one of [fileSystems]. Anything else is rejected.
+ *
+ * @param fileSystems The file systems whose files this serializer will resolve and sign
+ * @param foreignUrlHandling What [serialize] does with a location belonging to no known file system
+ * @param resolveUpload Resolves a reference issued by the upload endpoint
+ */
 public class ExternalServerFileSerializer(
-    public val clock: Clock,
-    public val scanners: List<FileScanner>,
     public val fileSystems: List<ExternalFileSystem>,
-    /**
-     * Backward-compatibility flag for the OLD `deserialize` behavior that performed blocking
-     * I/O (scanning, copying, and uploading) inline on the deserializing thread via
-     * `runBlocking`.
-     *
-     * Default is `false`: `deserialize` ONLY parses and validates the incoming URL string. It
-     * performs no scan, copy, upload, network call, or `runBlocking`. File validation/scanning
-     * is expected to happen via a separate explicit endpoint instead.
-     *
-     * Set to `true` ONLY to restore the legacy inline-scan/upload behavior for code that has not
-     * yet migrated to the explicit-endpoint model. This re-introduces blocking I/O on whatever
-     * thread runs deserialization (often a Netty event loop) and should be avoided.
-     */
-    public val inlineScanOnDeserialize: Boolean = false,
-    /**
-     * Controls what [serialize] does when a [ServerFile]'s location does not match any known
-     * file-system root (a foreign URL).
-     *
-     * Default is [ForeignUrlHandling.ERROR]: foreign URLs are rejected outright, because passing
-     * an attacker-controlled URL through to the client is an open-redirect / malware-distribution
-     * risk.
-     *
-     * Set to [ForeignUrlHandling.WARN] to restore the legacy pass-through behavior if a server
-     * legitimately serves external URLs. Use [ForeignUrlHandling.CENSOR] to silently blank them.
-     */
     public val foreignUrlHandling: ForeignUrlHandling = ForeignUrlHandling.ERROR,
-    public val jail: ExternalFile = fileSystems.first().root.then("upload-jail"),
-    public val ready: ExternalFile = fileSystems.first().root.then("uploaded"),
-    public val onUse: (ExternalFile) -> Unit,
-    public val key: HMAC.Key,
+    /**
+     * Resolves a reference issued by the server's upload endpoint into the file it names.
+     *
+     * - Returns `null` when the string is not one of the endpoint's references at all, so that
+     *   deserialization falls through to the signed-URL handling for [fileSystems].
+     * - Throws when the string *is* one of them but must not be honored - forged, expired, or naming a
+     *   file that has not passed scanning yet.
+     *
+     * The default resolves nothing, which is correct for a server with no upload endpoint mounted.
+     * Because this serializer is the only thing that turns client input into a [ServerFile], an
+     * implementation that returns a file for an unscanned upload defeats file scanning entirely.
+     */
+    public val resolveUpload: (String) -> ExternalFile? = { null },
 ) : KSerializer<ServerFile> {
-    private val primary = fileSystems.first()
-    private val logger = KotlinLogging.logger("com.lightningkite.lightningserver.files.ExternalServerFileSerializer")
+    private val logger = KotlinLogging.logger("com.lightningkite.services.files.ExternalServerFileSerializer")
 
     /** Resolves stored locations: canonical `sf://` references, or legacy absolute URLs. */
     private val storedReferences = ExternalFile.Parser(fileSystems)
     private val knownSystemsString: String get() = fileSystems.joinToString { it.name }
-
-    private val uploadFile: suspend (data: TypedData) -> ExternalFile = {
-        val d = primary.root.thenRandom("uploaded", "file")
-        d.put(it)
-        d
-    }
 
     @OptIn(ExperimentalSerializationApi::class, ExperimentalLightningServer::class)
     override val descriptor: SerialDescriptor = PrimitiveDescriptorWithAnnotations(
@@ -141,205 +113,35 @@ public class ExternalServerFileSerializer(
     }
 
     /**
-     * Creates a "future:" URL for a file in the jail directory.
+     * Deserializes a client-supplied string into a [ServerFile].
      *
-     * This URL can be used to reference a file that has been uploaded but not yet scanned.
-     * The URL includes an expiration and signature.
+     * Accepts a reference issued by the upload endpoint, or a URL belonging to one of [fileSystems].
      *
-     * @param jailPath The relative path within the jail directory
-     * @param expiration How long the URL should remain valid
-     * @return A signed "future:" URL
+     * Whether that is enough to stop a client naming a file it was never given is the file system's
+     * call, not this class's: [ExternalFileSystem.parseExternalUrl] checks a signature only where the
+     * backend has signing configured. A backend with signing off accepts any path under its serve
+     * URL, which defeats [resolveUpload] - a client that knows a path can name it directly rather
+     * than going through whatever the hook enforces.
+     *
+     * @throws IllegalArgumentException if the string is not an accepted form, or is one whose
+     * signature, expiration, or scan state makes it unusable
      */
-    public fun certifyForUse(jailPath: String, expiration: Duration): String =
-        signUrl("future:$jailPath", expiration)
-
-    /**
-     * Creates a "future-prescanned:" URL for a file in the ready directory.
-     *
-     * This URL references a file that has already been scanned and approved.
-     *
-     * @param readyPath The relative path within the ready directory
-     * @param expiration How long the URL should remain valid
-     * @return A signed "future-prescanned:" URL
-     */
-    public fun certifyAlreadyScannedForUse(readyPath: String, expiration: Duration): String =
-        signUrl("future-prescanned:$readyPath", expiration)
-
-    /**
-     * Scans a file from the jail directory and moves it to the ready directory.
-     *
-     * @param value A "future:" URL referencing the file to scan
-     * @param expiration How long the resulting "future-prescanned:" URL should remain valid
-     * @return A "future-prescanned:" URL for the scanned file
-     * @throws IllegalArgumentException if the URL is invalid or has wrong scheme
-     * @throws FileScanException if scanning fails
-     */
-    public suspend fun scan(value: String, expiration: Duration): String {
-        val raw = value
-        if (raw.startsWith("future-prescanned:")) return value
-        if (!raw.startsWith("future:")) throw IllegalArgumentException("URL scheme is not 'future'")
-        if (!verifyUrl(raw)) throw IllegalArgumentException("URL is not valid")
-        val withoutFuture = raw.substringAfter("future:").substringBefore('?')
-        val safe = ready.then(withoutFuture)
-        val source = jail.then(withoutFuture)
-        scanners.copyAndScan(source, safe)
-        return certifyAlreadyScannedForUse(withoutFuture, expiration)
-    }
-
-    /**
-     * Deserializes a string into a ServerFile, handling various URL schemes securely.
-     *
-     * Supports four input formats:
-     * 1. `future:` - Scans the file from jail and moves to ready directory
-     * 2. `future-prescanned:` - Uses already-scanned file from ready directory
-     * 3. `data:` - Decodes base64 data, scans it, and uploads
-     * 4. Regular URLs - Validates against known file systems
-     *
-     * All URLs are verified with signatures to prevent unauthorized file access.
-     *
-     * @param decoder The decoder containing the serialized string
-     * @return A ServerFile with an internal URL
-     * @throws IllegalArgumentException if URL validation fails or URL doesn't match known file systems
-     */
-    @Suppress("DEPRECATION")
     override fun deserialize(decoder: Decoder): ServerFile {
         val raw = decoder.decodeString()
-        when {
-            raw.startsWith("future:") -> {
-                if (!verifyUrl(raw)) throw IllegalArgumentException("URL is not valid")
-                val relativePath = raw.substringAfter("future:").substringBefore('?')
-                val safe = ready.then(relativePath)
-                // Default: parse/validate only. The actual scan+copy from jail to ready is performed
-                // by a separate explicit endpoint, not here on the deserializing thread.
-                if (inlineScanOnDeserialize) {
-                    val source = jail.then(relativePath)
-                    runBlocking { scanners.copyAndScan(source, safe) }
-                }
-                return safe.serverFile
-            }
 
-            raw.startsWith("future-prescanned:") -> {
-                if (!verifyUrl(raw)) throw IllegalArgumentException("URL is not valid")
-                val safe = ready.then(raw.substringAfter("future-prescanned:").substringBefore('?'))
-                onUse(safe)
-                return safe.serverFile
-            }
+        resolveUpload(raw)?.let { return it.serverFile }
 
-            raw.startsWith("data:") -> {
-                // Inline base64 data cannot be stored without uploading, which is blocking I/O.
-                // The new model requires inline uploads to go through a separate explicit endpoint,
-                // so reject them here unless the backward-compat flag re-enables the old behavior.
-                if (!inlineScanOnDeserialize) throw IllegalArgumentException(
-                    "Inline 'data:' URLs are not accepted during deserialization. Upload the file via the dedicated upload endpoint and submit the resulting 'future:' URL instead."
-                )
-                val type = MediaType(raw.removePrefix("data:").substringBefore(';'))
-                val base64 = raw.substringAfter("base64,")
-                val data = Base64.decode(base64)
-                return runBlocking {
-                    val typedData = TypedData.bytes(data, type)
-                    val file = uploadFile(typedData)
-                    try {
-                        scanners.scan(file)
-                    } catch (e: Exception){
-                        file.delete()
-                        throw e
-                    }
-                    file
-                }.serverFile
-            }
-
-            else -> {
-                val file = fileSystems.firstNotNullOfOrNull {
-                    it.parseExternalUrl(raw)
-                } ?: throw IllegalArgumentException(
-                    "The given url (${raw.substringBefore('?')}) belongs to no known file system. Known file systems: $knownSystemsString"
-                )
-                return file.serverFile
-            }
-        }
-    }
-
-    /**
-     * Signs a URL with expiration timestamp.
-     *
-     * @param url The URL to sign (must not contain query parameters)
-     * @param expiration How long the URL should remain valid
-     * @return The signed URL with useUntil and token parameters
-     * @throws IllegalArgumentException if the URL already contains query parameters
-     */
-    @TestOnly
-    internal fun signUrl(url: String, expiration: Duration): String {
-        if (url.contains('?')) throw IllegalArgumentException("URL cannot contain query parameters.")
-        return url.plus("?useUntil=${clock.now().plus(expiration).toEpochMilliseconds()}").let {
-            it + "&token=" + key.signatureGenerator().generateSignatureBlocking(it.toByteArray())
-                .let { Base64.UrlSafe.encode(it) }
-        }
-    }
-
-    /**
-     * Verifies a signed URL by checking its signature and expiration.
-     *
-     * @param url The signed URL to verify
-     * @return true if signature is valid and URL hasn't expired, false otherwise
-     * @throws IllegalArgumentException if required parameters are missing
-     */
-    @TestOnly
-    internal fun verifyUrl(url: String): Boolean {
-        val params = url.substringAfter('?')
-            .split('&')
-            .associate { it.substringBefore('=') to it.substringAfter('=') }
-        return verifyUrl(
-            url.substringBefore('?'),
-            params["useUntil"]?.toLong() ?: throw IllegalArgumentException("Parameter 'useUntil' is missing in '$url'"),
-            params["token"] ?: throw IllegalArgumentException("Parameter 'token' is missing in '$url'")
+        // Storing an inline data URL means uploading it, which is I/O this serializer deliberately
+        // does not do. Called out separately so the client gets an actionable error rather than the
+        // generic "belongs to no known file system" below.
+        if (raw.startsWith("data:")) throw IllegalArgumentException(
+            "Inline 'data:' URLs are not accepted. Upload the file via the dedicated upload endpoint and submit the token it returns instead."
         )
-    }
 
-    /**
-     * Verifies a signed URL with explicit parameters.
-     *
-     * @param url The base URL (without query parameters)
-     * @param exp The expiration timestamp in epoch milliseconds
-     * @param token The URL-safe base64 encoded signature token
-     * @return true if signature is valid and URL hasn't expired, false otherwise
-     */
-    @TestOnly
-    internal fun verifyUrl(url: String, exp: Long, token: String): Boolean {
-        return (Instant.fromEpochMilliseconds(exp) > clock.now()) && key.signatureVerifier().tryVerifySignatureBlocking(
-            data = (url.substringBefore('?') + "?useUntil=$exp").toByteArray(),
-            signature = Base64.UrlSafe.decode(token)
-        )
+        val file = fileSystems.firstNotNullOfOrNull { it.parseExternalUrl(raw) }
+            ?: throw IllegalArgumentException(
+                "The given url (${raw.substringBefore('?')}) belongs to no known file system. Known file systems: $knownSystemsString"
+            )
+        return file.serverFile
     }
 }
-
-/*
- * TODO: API Recommendations
- *
- * 1. The serialize() method has a security concern - it allows unknown URLs to pass through
- *    with only a warning. Consider:
- *    - Making this behavior configurable (strict vs permissive mode)
- *    - Throwing an exception in strict mode
- *    - Providing a whitelist of allowed external domains
- *
- * 2. deserialize() uses runBlocking which can block threads. Consider:
- *    - Making this an async serializer if the serialization framework supports it
- *    - Documenting the blocking behavior
- *    - Providing configuration for timeouts
- *
- * 3. The "jail" and "ready" directory pattern is powerful but not documented for users.
- *    Consider adding comprehensive documentation about:
- *    - The upload workflow (client -> jail -> scan -> ready)
- *    - How to integrate with upload endpoints
- *    - Cleanup strategies for failed uploads
- *
- * 4. Error handling could be more granular. Consider different exception types for:
- *    - Signature validation failures
- *    - Expiration failures
- *    - Scanning failures
- *    - Unknown file system failures
- *
- * 5. The onUse callback is called only for future-prescanned URLs. Consider:
- *    - Documenting when and why this is called
- *    - Calling it for other URL types if appropriate
- *    - Making callback exceptions not break deserialization
- */

@@ -228,6 +228,20 @@ public interface ExternalFileSystem : Service {
     public fun parseExternalUrl(url: String): ExternalFile?
 
     /**
+     * Whether [parseExternalUrl] can tell a reference this file system issued from one a client
+     * invented - by signature, or by any other means.
+     *
+     * When false, [parseExternalUrl] accepts any path under this file system's own root, so a
+     * client-supplied reference is worth no more than the path string inside it. Callers whose
+     * security depends on a client only being able to name files it was given must check this and
+     * refuse to run without it.
+     *
+     * The default is false so that a backend which has not considered the question is treated as the
+     * unsafe case rather than silently vouching for itself.
+     */
+    public val referencesAreUnforgeable: Boolean get() = false
+
+    /**
      * The root file for this file system. All file paths are resolved relative to this root.
      */
     public val root: ExternalFile get() = ExternalFile(this, ExternalPath(emptyList()))
