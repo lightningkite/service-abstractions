@@ -45,6 +45,11 @@ import kotlin.time.toJavaDuration
 import kotlin.time.toKotlinInstant
 import kotlin.uuid.Uuid
 
+// Attributes these operations emit that no OpenTelemetry semantic convention covers.
+private val fileOperation: TelemetryKey.OfString = TelemetryKey.OfString("file.operation")
+private val awsS3DestinationKey: TelemetryKey.OfString = TelemetryKey.OfString("aws.s3.destination.key")
+private val fileCopyServerSide: TelemetryKey.OfBoolean = TelemetryKey.OfBoolean("file.copy.server_side")
+
 /**
  * An implementation of [ExternalFileSystem] that uses AWS S3 for storage.
  *
@@ -215,7 +220,7 @@ public class S3ExternalFileSystem(
         ExternalPath(unixPath.split("/").filter { it.isNotEmpty() })
 
     private fun s3SpanAttrs(operation: String, unixPath: String): TelemetryAttributes = TelemetryAttributes {
-        put(TelemetryKey.OfString("file.operation"), operation)
+        put(fileOperation, operation)
         put(TelemetryKeys.Aws.s3Key, context.telemetrySanitization.sanitizeFilePath(unixPath))
         put(TelemetryKeys.Aws.s3Bucket, bucket)
         put(TelemetryKeys.Rpc.system, "aws.s3")
@@ -442,11 +447,11 @@ public class S3ExternalFileSystem(
         telemetryTrace("copy", attributes = TelemetryAttributes {
             putAll(s3SpanAttrs("copy", unixPath))
             put(
-                TelemetryKey.OfString("aws.s3.destination.key"),
+                awsS3DestinationKey,
                 if (otherSystem != null) context.telemetrySanitization.sanitizeFilePath(unixPathOf(other.path))
                 else context.telemetrySanitization.sanitizeFilePath(other.toString())
             )
-            put(TelemetryKey.OfBoolean("file.copy.server_side"), isServerSideCopy)
+            put(fileCopyServerSide, isServerSideCopy)
         }) {
             if (isServerSideCopy) {
                 withContext(Dispatchers.IO) {

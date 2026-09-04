@@ -25,6 +25,9 @@ import kotlinx.io.files.Path
 import kotlin.time.Duration
 import kotlin.time.Instant
 
+/** Which storage backend served the operation. No OpenTelemetry semantic convention covers this. */
+internal val storageSystemKey: TelemetryKey.OfString = TelemetryKey.OfString("storage.system")
+
 /**
  * A [ExternalFileSystem] implementation that uses kotlinx.io for local file system access.
  *
@@ -276,7 +279,7 @@ public class KotlinxIoExternalFileSystem(
     ): T = withContext(Dispatchers.Io) {
         val spanAttributes = TelemetryAttributes {
             put(TelemetryKeys.File.path, owner.context.telemetrySanitization.sanitizeFilePath(path))
-            put(TelemetryKey.OfString("storage.system"), storageSystem)
+            put(storageSystemKey, storageSystem)
             put(TelemetryKeys.Rpc.system, "filesystem")
             putAll(attributes)
         }
