@@ -2,18 +2,9 @@ package com.lightningkite.services.files.clamav
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
-import com.lightningkite.services.data.MediaType
-import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryKey
-import com.lightningkite.services.files.FileScanException
-import com.lightningkite.services.files.FileScanner
-import com.lightningkite.services.telemetry.telemetryTrace
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.runInterruptible
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import kotlinx.io.Source
+import com.lightningkite.services.files.*
+import com.lightningkite.services.telemetry.*
+import kotlinx.coroutines.*
 import kotlinx.io.asInputStream
 import xyz.capybara.clamav.ClamavClient
 import xyz.capybara.clamav.Platform
@@ -102,10 +93,10 @@ public class ClamAvFileScanner(
     private val get: () -> ClamavClient,
     private val scanTimeout: Duration = 30.seconds,
 ) : FileScanner {
-    override fun requires(claimedType: MediaType): FileScanner.Requires = FileScanner.Requires.Whole
 
     /** Cached client instance. Recreated on ScannerException or connection error. */
-    @Volatile private var cachedClient: ClamavClient? = null
+    @Volatile
+    private var cachedClient: ClamavClient? = null
 
     private fun client(): ClamavClient = cachedClient ?: get().also { cachedClient = it }
 
@@ -149,42 +140,49 @@ public class ClamAvFileScanner(
         }
     }
 
-    override suspend fun scan(claimedType: MediaType, data: Source): Unit = telemetryTrace(
+    override suspend fun scan(file: ExternalFile): Unit = telemetryTrace(
         "scan",
-        attributes = TelemetryAttributes { put(TelemetryKey.OfString("content_type"), claimedType.toString()) },
     ) { span ->
         val startedAt = TimeSource.Monotonic.markNow()
-        val result = try {
-            withTimeout(scanTimeout) {
-                // runInterruptible, not withContext: the clamav-client performs a *blocking*
-                // SocketChannel read with no timeout of its own. withTimeout can only abandon a
-                // coroutine at a cancellable suspension point, and a blocking read offers none — so
-                // withContext(Dispatchers.IO) would leave scan() hanging forever despite the timeout
-                // firing. runInterruptible interrupts the worker thread, and SocketChannel is an
-                // InterruptibleChannel, so the read aborts with ClosedByInterruptException.
-                runInterruptible(Dispatchers.IO) {
-                    data.use { source -> client().scan(source.asInputStream()) }
+
+        val result = file.get()?.use { item ->
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("content_type"), item.mediaType.toString()) })
+            try {
+                withTimeout(scanTimeout) {
+                    // runInterruptible, not withContext: the clamav-client performs a *blocking*
+                    // SocketChannel read with no timeout of its own. withTimeout can only abandon a
+                    // coroutine at a cancellable suspension point, and a blocking read offers none — so
+                    // withContext(Dispatchers.IO) would leave scan() hanging forever despite the timeout
+                    // firing. runInterruptible interrupts the worker thread, and SocketChannel is an
+                    // InterruptibleChannel, so the read aborts with ClosedByInterruptException.
+                    item.data.source().let { source ->
+                        runInterruptible(Dispatchers.IO) {
+                            client().scan(source.asInputStream())
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                // Invalidate the cached client - clamd may still be mid-response on that connection.
+                invalidateClient()
+                // A timeout does NOT reliably surface as TimeoutCancellationException here: our interrupt
+                // aborts the blocking socket read with ClosedByInterruptException, which clamav-client
+                // catches and re-wraps as its own CommunicationException before cancellation can
+                // propagate. So the elapsed time, not the exception type, is what identifies a timeout.
+                if (e is TimeoutCancellationException || startedAt.elapsedNow() >= scanTimeout) {
+                    // Fail-closed: a scanner that can't be reached within the timeout must never be
+                    // treated as "file is clean". FileScanException makes this an unambiguous scan
+                    // failure rather than something mistakable for routine coroutine cancellation.
+                    throw FileScanException("ClamAV scan timed out after $scanTimeout", e)
+                }
+                throw e
             }
-        } catch (e: Exception) {
-            // Invalidate the cached client - clamd may still be mid-response on that connection.
-            invalidateClient()
-            // A timeout does NOT reliably surface as TimeoutCancellationException here: our interrupt
-            // aborts the blocking socket read with ClosedByInterruptException, which clamav-client
-            // catches and re-wraps as its own CommunicationException before cancellation can
-            // propagate. So the elapsed time, not the exception type, is what identifies a timeout.
-            if (e is TimeoutCancellationException || startedAt.elapsedNow() >= scanTimeout) {
-                // Fail-closed: a scanner that can't be reached within the timeout must never be
-                // treated as "file is clean". FileScanException makes this an unambiguous scan
-                // failure rather than something mistakable for routine coroutine cancellation.
-                throw FileScanException("ClamAV scan timed out after $scanTimeout", e)
-            }
-            throw e
-        }
+        } ?: throw FileScanException("File does not exist")
+
         when (result) {
             ScanResult.OK -> {
                 span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("clamav.result"), "OK") })
             }
+
             is ScanResult.VirusFound -> {
                 val viruses = result.foundViruses.keys.joinToString()
                 span.enrich(TelemetryAttributes {

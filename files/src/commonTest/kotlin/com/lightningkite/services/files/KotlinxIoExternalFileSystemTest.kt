@@ -56,6 +56,7 @@ class KotlinxIoExternalFileSystemTest : FileSystemTests() {
         val content = TypedData(Data.Text("x"), MediaType.Text.Plain)
         for (path in escaping) {
             assertFailsWith<IllegalArgumentException>("get $path") { kfileSystem.get(path) }
+            assertFailsWith<IllegalArgumentException>("getRange $path") { kfileSystem.getRange(path, 0L..1L) }
             assertFailsWith<IllegalArgumentException>("put $path") { kfileSystem.put(path, content) }
             assertFailsWith<IllegalArgumentException>("delete $path") { kfileSystem.delete(path) }
             assertFailsWith<IllegalArgumentException>("head $path") { kfileSystem.head(path) }

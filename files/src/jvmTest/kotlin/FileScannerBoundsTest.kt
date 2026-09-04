@@ -2,41 +2,45 @@ package com.lightningkite.services.files
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.MediaType
+import com.lightningkite.services.data.TypedData
+import com.lightningkite.services.kfile.KFile
+import kotlinx.coroutines.runBlocking
 import kotlinx.io.Buffer
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertFailsWith
 
 /**
  * Tests for edge cases in FileScanner implementations.
  */
 class FileScannerBoundsTest {
 
+    val context = TestSettingContext()
+    val system = KotlinxIoExternalFileSystem("name", context, KFile("build/test-files/"))
+
     @Test
-    fun testCheckMimeFileScannerWithSmallFile() {
-        val scanner = CheckMimeFileScanner("test", TestSettingContext())
-        val buffer = Buffer()
-        buffer.write(ByteArray(5) { it.toByte() }) // Only 5 bytes
+    fun testCheckMimeFileScannerWithSmallFile(): Unit = runBlocking {
+        val scanner = CheckMimeFileScanner("test", context)
+        val file = ExternalFile(system, ExternalPath("FileScannerBoundsTest-test-file"))
+        file.put(TypedData.bytes(ByteArray(5) { it.toByte() }, MediaType.Image.JPEG))
 
         // JPEG has a magic-number signature that can't fit in 5 bytes, so this must fail cleanly
         // with FileScanException (not an EOFException) - the file genuinely cannot be a JPEG.
         assertFailsWith<FileScanException> {
-            kotlinx.coroutines.runBlocking {
-                scanner.scan(MediaType.Image.JPEG, buffer)
-            }
+            scanner.scan(file)
         }
     }
 
     @Test
-    fun testCheckMimeFileScannerWithEmptyFile() {
-        val scanner = CheckMimeFileScanner("test", TestSettingContext())
-        val buffer = Buffer()
+    fun testCheckMimeFileScannerWithEmptyFile(): Unit = runBlocking {
+        val scanner = CheckMimeFileScanner("test", context)
+        val file = ExternalFile(system, ExternalPath("FileScannerBoundsTest-test-file"))
         // Empty file
+        file.put(TypedData.bytes(ByteArray(0), MediaType.Image.PNG))
 
         // PNG's 8-byte signature can't fit in an empty file, so this must fail cleanly with
         // FileScanException (not an EOFException) - the file genuinely cannot be a PNG.
         assertFailsWith<FileScanException> {
-            kotlinx.coroutines.runBlocking {
-                scanner.scan(MediaType.Image.PNG, buffer)
-            }
+            scanner.scan(file)
         }
     }
 
@@ -45,45 +49,45 @@ class FileScannerBoundsTest {
     // of size, while a declared type whose signature is longer than the available bytes must fail.
 
     @Test
-    fun testUnsignedTypePassesForEmptyFile() = kotlinx.coroutines.runBlocking {
-        val scanner = CheckMimeFileScanner("test", TestSettingContext())
+    fun testUnsignedTypePassesForEmptyFile(): Unit = runBlocking {
+        val scanner = CheckMimeFileScanner("test", context)
+        val file = ExternalFile(system, ExternalPath("FileScannerBoundsTest-test-file"))
+        file.put(TypedData.bytes(ByteArray(0), MediaType.Text.Plain))
         // text/plain has no magic-number check in CheckMimeFileScanner, so an empty file must pass.
-        scanner.scan(MediaType.Text.Plain, Buffer())
+        scanner.scan(file)
     }
 
     @Test
-    fun testUnsignedTypePassesForThreeByteFile() = kotlinx.coroutines.runBlocking {
-        val scanner = CheckMimeFileScanner("test", TestSettingContext())
-        val buffer = Buffer().apply { write(byteArrayOf(1, 2, 3)) }
-        scanner.scan(MediaType.Text.CSV, buffer)
+    fun testUnsignedTypePassesForThreeByteFile(): Unit = runBlocking {
+        val scanner = CheckMimeFileScanner("test", context)
+        val file = ExternalFile(system, ExternalPath("FileScannerBoundsTest-test-file"))
+        file.put(TypedData.bytes(byteArrayOf(1, 2, 3), MediaType.Text.CSV))
+        scanner.scan(file)
     }
 
     @Test
-    fun testSignedTypeFailsWhenFileShorterThanSignature() {
-        val scanner = CheckMimeFileScanner("test", TestSettingContext())
+    fun testSignedTypeFailsWhenFileShorterThanSignature(): Unit = runBlocking {
+        val scanner = CheckMimeFileScanner("test", context)
+        val file = ExternalFile(system, ExternalPath("FileScannerBoundsTest-test-file"))
         // PNG's signature is 8 bytes; 5 bytes - even ones matching the start of the real signature -
         // can never complete it, so this must fail.
-        val buffer = Buffer().apply { write(byteArrayOf(137.toByte(), 80, 78, 71, 13)) }
+        file.put(TypedData.bytes(byteArrayOf(137.toByte(), 80, 78, 71, 13), MediaType.Image.PNG))
 
         assertFailsWith<FileScanException> {
-            kotlinx.coroutines.runBlocking {
-                scanner.scan(MediaType.Image.PNG, buffer)
-            }
+            scanner.scan(file)
         }
     }
 
     @Test
-    fun testNormalSizeFileBehaviorIsUnchanged(): Unit = kotlinx.coroutines.runBlocking {
-        val scanner = CheckMimeFileScanner("test", TestSettingContext())
-        val validPng = Buffer().apply {
-            write(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10))
-            write(ByteArray(100)) // trailing "image data"
-        }
-        scanner.scan(MediaType.Image.PNG, validPng) // must not throw
+    fun testNormalSizeFileBehaviorIsUnchanged(): Unit = runBlocking {
+        val scanner = CheckMimeFileScanner("test", context)
+        val file = ExternalFile(system, ExternalPath("FileScannerBoundsTest-test-file"))
+        file.put(TypedData.bytes(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10) + ByteArray(100), MediaType.Image.PNG))
+        scanner.scan(file) // must not throw
 
-        val invalidPng = Buffer().apply { write(ByteArray(116)) } // wrong signature, plenty of bytes
+        file.put(TypedData.bytes(ByteArray(116), MediaType.Image.PNG))
         assertFailsWith<FileScanException> {
-            scanner.scan(MediaType.Image.PNG, invalidPng)
+            scanner.scan(file)
         }
     }
 }

@@ -47,6 +47,7 @@ public data class ExternalFile(public val fileSystem: ExternalFileSystem, public
     public suspend fun head(): FileInfo? = fileSystem.head(path)
     public suspend fun put(content: TypedData): Unit = fileSystem.put(path, content)
     public suspend fun get(): TypedData? = fileSystem.get(path)
+    public suspend fun getRange(range: LongRange): TypedData? = fileSystem.getRange(path, range)
     public suspend fun copyTo(other: ExternalFile): Unit = fileSystem.copyTo(path, other)
     public suspend fun moveTo(other: ExternalFile): Unit = fileSystem.moveTo(path, other)
     public suspend fun delete(): Unit = fileSystem.delete(path)

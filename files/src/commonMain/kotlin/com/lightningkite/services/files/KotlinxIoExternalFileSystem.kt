@@ -25,6 +25,9 @@ import kotlinx.io.files.Path
 import kotlin.time.Duration
 import kotlin.time.Instant
 
+/** Which storage backend served the operation. No OpenTelemetry semantic convention covers this. */
+internal val storageSystemKey: TelemetryKey.OfString = TelemetryKey.OfString("storage.system")
+
 /**
  * A [ExternalFileSystem] implementation that uses kotlinx.io for local file system access.
  *
@@ -163,6 +166,9 @@ public class KotlinxIoExternalFileSystem(
      * @throws IllegalArgumentException if signature verification fails, URL has expired,
      *         URL doesn't match this file system, or URL is for upload (not read)
      */
+    /** Signed URLs carry a signature this service verifies; unsigned ones are just paths. */
+    override val referencesAreUnforgeable: Boolean get() = signedUrlDuration != null
+
     override fun parseExternalUrl(url: String): ExternalFile? {
         if (!url.startsWith(serveUrl)) return null
         return if (signedUrlDuration != null) {
@@ -247,6 +253,16 @@ public class KotlinxIoExternalFileSystem(
     )
 
     /**
+     * The media type recorded for [path] when it was written, falling back to what its extension
+     * implies for files stored before the sidecar existed.
+     */
+    private fun mediaTypeOf(path: ExternalPath): MediaType {
+        val contentTypeFile = contentTypeFileFor(path)
+        return if (contentTypeFile.exists()) contentTypeFile.source().buffered().use { MediaType(it.readString()) }
+        else MediaType.fromExtension(path.extension)
+    }
+
+    /**
      * Internal tracing helper for file operations.
      *
      * This provides telemetry tracing on JVM (via [com.lightningkite.services.telemetry.telemetryTrace] on [owner])
@@ -263,7 +279,7 @@ public class KotlinxIoExternalFileSystem(
     ): T = withContext(Dispatchers.Io) {
         val spanAttributes = TelemetryAttributes {
             put(TelemetryKeys.File.path, owner.context.telemetrySanitization.sanitizeFilePath(path))
-            put(TelemetryKey.OfString("storage.system"), storageSystem)
+            put(storageSystemKey, storageSystem)
             put(TelemetryKeys.Rpc.system, "filesystem")
             putAll(attributes)
         }
@@ -311,17 +327,9 @@ public class KotlinxIoExternalFileSystem(
     ) {
         val kfile = kfileFor(path)
         val metadata = kfile.metadataOrNull() ?: return@traceFileOperation null
-        val contentTypeFile = contentTypeFileFor(path)
-        val mediaType = if (contentTypeFile.exists()) {
-            contentTypeFile.source().use { source ->
-                MediaType(source.buffered().readString())
-            }
-        } else {
-            MediaType.fromExtension(path.extension)
-        }
 
         FileInfo(
-            type = mediaType,
+            type = mediaTypeOf(path),
             size = metadata.size.bytes,
             lastModified = null,
         )
@@ -384,19 +392,56 @@ public class KotlinxIoExternalFileSystem(
             return@traceFileOperation null
         }
 
-        val contentTypeFile = contentTypeFileFor(path)
-        val mediaType = if (contentTypeFile.exists()) {
-            contentTypeFile.source().buffered().use { s ->
-                MediaType(s.readString())
-            }
-        } else {
-            MediaType.fromExtension(path.extension)
-        }
-
         TypedData(
             Data.Source(source, kfile.fileSystem.metadataOrNull(kfile.path)?.size ?: -1),
-            mediaType
+            mediaTypeOf(path)
         )
+    }
+
+    /**
+     * Reads only the requested window: the bytes before it are skipped and the bytes after it are
+     * never touched, so a small range out of a large file costs a small read rather than a full one.
+     */
+    override suspend fun getRange(path: ExternalPath, range: LongRange): TypedData? = traceFileOperation(
+        owner = this,
+        operation = "getRange",
+        path = path.parts.joinToString("/"),
+        storageSystem = "file",
+    ) {
+        ExternalFileSystem.requireValidRange(range)
+        val kfile = kfileFor(path)
+
+        // Try-open avoids a redundant exists() syscall before open.
+        val source = try {
+            kfile.source().buffered()
+        } catch (e: FileNotFoundException) {
+            return@traceFileOperation null
+        }
+
+        val window = Buffer()
+        source.use { s ->
+            // skip() throws once the file runs out, which is exactly the case where the caller asked
+            // to start at or past the end - an empty window, not a failure.
+            val startedInsideFile = try {
+                s.skip(range.first)
+                true
+            } catch (e: EOFException) {
+                false
+            }
+            if (startedInsideFile) {
+                // `a..Long.MAX_VALUE` is how an open-ended `bytes=a-` maps, and its length is one
+                // more than the difference - which overflows to negative when the range starts at 0.
+                // Saturate instead; the loop below stops at end of file either way.
+                var remaining = (range.last - range.first).let { if (it == Long.MAX_VALUE) it else it + 1 }
+                while (remaining > 0) {
+                    val read = s.readAtMostTo(window, remaining)
+                    if (read == -1L) break
+                    remaining -= read
+                }
+            }
+        }
+
+        TypedData(Data.Bytes(window.readByteArray()), mediaTypeOf(path))
     }
 
     /**

@@ -32,6 +32,9 @@ public interface TerraformEmitter {
     /** Emits Terraform configuration into a named context. */
     public fun emit(context: String? = null, action: TerraformJsonObject.() -> Unit)
 
+    /** Emits an extra configuration file. */
+    public fun emitExtra(fileName: String, content: String)
+
     /** Records a configuration value that was determined/generated. */
     public fun fulfillSetting(settingName: String, element: JsonElement)
 

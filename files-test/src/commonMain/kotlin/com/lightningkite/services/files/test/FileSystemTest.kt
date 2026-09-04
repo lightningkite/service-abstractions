@@ -51,6 +51,135 @@ abstract class FileSystemTests {
         }
     }
 
+    @Test
+    fun testGetRange() {
+        val system = system ?: run {
+            println("Could not test because the file system isn't supported here.")
+            return
+        }
+        runSuspendingTest {
+            val testFile = system.root.then("range.txt")
+            val message = "0123456789ABCDEF"  // 16 bytes, one per index, so a window reads as its own bounds
+            testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
+            try {
+                val middle = testFile.getRange(4L..6L)!!
+                assertEquals(MediaType.Text.Plain, middle.mediaType)
+                // The size must describe what was returned, not the whole object.
+                assertEquals(3L, middle.data.size)
+                assertEquals("456", middle.data.text())
+
+                // Both ends inclusive, as in HTTP's `bytes=a-b`: 0..15 is all 16 bytes.
+                assertEquals(message, testFile.getRange(0L..15L)!!.data.text())
+                assertEquals("F", testFile.getRange(15L..15L)!!.data.text())
+                assertEquals("0", testFile.getRange(0L..0L)!!.data.text())
+            } finally {
+                testFile.delete()
+            }
+        }
+    }
+
+    /**
+     * A caller reading in fixed-size chunks can't know where the end falls without asking, so
+     * overrunning it is an ordinary result rather than an error.
+     */
+    @Test
+    fun testGetRangeClampsToEndOfFile() {
+        val system = system ?: run {
+            println("Could not test because the file system isn't supported here.")
+            return
+        }
+        runSuspendingTest {
+            val testFile = system.root.then("range-clamp.txt")
+            val message = "short"
+            testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
+            try {
+                val overrun = testFile.getRange(0L..15L)!!
+                assertEquals(message, overrun.data.text())
+                assertEquals(message.length.toLong(), overrun.data.size)
+
+                assertEquals("ort", testFile.getRange(2L..99L)!!.data.text())
+
+                // Starting at or past the end yields nothing, and must not throw.
+                assertEquals("", testFile.getRange(5L..15L)!!.data.text())
+                assertEquals("", testFile.getRange(500L..600L)!!.data.text())
+            } finally {
+                testFile.delete()
+            }
+        }
+    }
+
+    /**
+     * `a..Long.MAX_VALUE` is how an open-ended `bytes=a-` maps. Computing its length naively
+     * overflows to a negative and silently yields nothing, which every implementation guards
+     * against - so every implementation should be held to it.
+     */
+    @Test
+    fun testGetRangeToEndOfLong() {
+        val system = system ?: run {
+            println("Could not test because the file system isn't supported here.")
+            return
+        }
+        runSuspendingTest {
+            val testFile = system.root.then("range-to-end-of-long.txt")
+            val message = "0123456789"
+            testFile.put(TypedData(Data.Text(message), MediaType.Text.Plain))
+            try {
+                assertEquals(message, testFile.getRange(0L..Long.MAX_VALUE)!!.data.text())
+                assertEquals("456789", testFile.getRange(4L..Long.MAX_VALUE)!!.data.text())
+            } finally {
+                testFile.delete()
+            }
+        }
+    }
+
+    @Test
+    fun testGetRangeOfEmptyFile() {
+        val system = system ?: run {
+            println("Could not test because the file system isn't supported here.")
+            return
+        }
+        runSuspendingTest {
+            val testFile = system.root.then("range-empty.txt")
+            testFile.put(TypedData(Data.Bytes(ByteArray(0)), MediaType.Text.Plain))
+            try {
+                val empty = testFile.getRange(0L..15L)!!
+                assertEquals("", empty.data.text())
+                assertEquals(0L, empty.data.size)
+            } finally {
+                testFile.delete()
+            }
+        }
+    }
+
+    @Test
+    fun testGetRangeOfMissingFile() {
+        val system = system ?: run {
+            println("Could not test because the file system isn't supported here.")
+            return
+        }
+        runSuspendingTest {
+            assertNull(system.root.then("range-does-not-exist.txt").getRange(0L..15L))
+        }
+    }
+
+    @Test
+    fun testGetRangeRejectsNonsensicalRange() {
+        val system = system ?: run {
+            println("Could not test because the file system isn't supported here.")
+            return
+        }
+        runSuspendingTest {
+            val testFile = system.root.then("range-invalid.txt")
+            testFile.put(TypedData(Data.Text("0123456789"), MediaType.Text.Plain))
+            try {
+                assertFailsWith<IllegalArgumentException> { testFile.getRange(-1L..5L) }
+                assertFailsWith<IllegalArgumentException> { testFile.getRange(5L..1L) }
+            } finally {
+                testFile.delete()
+            }
+        }
+    }
+
     /**
      * The canonical `sf://<name>/<path>` form is what gets persisted to a database, and it must
      * round-trip back to the same file through [ExternalFile.Parser] (the path the file serializer

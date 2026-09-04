@@ -7,7 +7,6 @@ import com.lightningkite.services.data.DataSize.Companion.bytes
 import com.lightningkite.services.files.ExternalFile
 import com.lightningkite.services.files.ExternalFileSystem
 import com.lightningkite.services.files.ExternalPath
-import com.lightningkite.services.files.ExternalServerFileSerializer
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.get
 import com.lightningkite.services.kfile.temporary
@@ -45,6 +44,11 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 import kotlin.time.toKotlinInstant
 import kotlin.uuid.Uuid
+
+// Attributes these operations emit that no OpenTelemetry semantic convention covers.
+private val fileOperation: TelemetryKey.OfString = TelemetryKey.OfString("file.operation")
+private val awsS3DestinationKey: TelemetryKey.OfString = TelemetryKey.OfString("aws.s3.destination.key")
+private val fileCopyServerSide: TelemetryKey.OfBoolean = TelemetryKey.OfBoolean("file.copy.server_side")
 
 /**
  * An implementation of [ExternalFileSystem] that uses AWS S3 for storage.
@@ -216,7 +220,7 @@ public class S3ExternalFileSystem(
         ExternalPath(unixPath.split("/").filter { it.isNotEmpty() })
 
     private fun s3SpanAttrs(operation: String, unixPath: String): TelemetryAttributes = TelemetryAttributes {
-        put(TelemetryKey.OfString("file.operation"), operation)
+        put(fileOperation, operation)
         put(TelemetryKeys.Aws.s3Key, context.telemetrySanitization.sanitizeFilePath(unixPath))
         put(TelemetryKeys.Aws.s3Bucket, bucket)
         put(TelemetryKeys.Rpc.system, "aws.s3")
@@ -384,6 +388,52 @@ public class S3ExternalFileSystem(
     }
 
     /**
+     * Downloads a byte window of the file at [path], letting S3 do the slicing so that only the
+     * requested bytes cross the network.
+     */
+    override suspend fun getRange(path: ExternalPath, range: LongRange): TypedData? {
+        ExternalFileSystem.requireValidRange(range)
+        val unixPath = unixPathOf(path)
+        return telemetryTrace("getRange", attributes = s3SpanAttrs("getRange", unixPath)) { span ->
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val response = s3.getObject(
+                        GetObjectRequest.builder().also {
+                            it.bucket(bucket)
+                            it.key(unixPath)
+                            // Inclusive at both ends, which is what an ExternalFileSystem range means too.
+                            it.range("bytes=${range.first}-${range.last}")
+                        }.build()
+                    )
+
+                    val rr = response.response()
+                    TypedData.source(
+                        source = response.asSource().buffered(),
+                        mediaType = MediaType(rr.contentType() ?: "application/octet-stream"),
+                        size = rr.contentLength()
+                    )
+                } catch (e: NoSuchKeyException) {
+                    null
+                } catch (e: S3Exception) {
+                    // A range starting at or past the end of the object (an empty object included)
+                    // comes back as 416 rather than an empty body. The contract calls that an empty
+                    // window, so answer with one - and re-head the object, since a 416 response
+                    // carries no content type of its own.
+                    if (e.statusCode() != 416) throw e
+                    head(path)?.let { TypedData.bytes(ByteArray(0), it.type) }
+                }
+            }
+            result?.let {
+                span.enrich(TelemetryAttributes {
+                    put(TelemetryKeys.File.size, it.data.size ?: -1L)
+                    put(TelemetryKeys.File.contentType, it.mediaType.toString())
+                })
+            }
+            result
+        }
+    }
+
+    /**
      * Copies the file at [path] to [other].
      *
      * If the destination is also an S3 file in the same bucket, this performs a server-side copy
@@ -397,11 +447,11 @@ public class S3ExternalFileSystem(
         telemetryTrace("copy", attributes = TelemetryAttributes {
             putAll(s3SpanAttrs("copy", unixPath))
             put(
-                TelemetryKey.OfString("aws.s3.destination.key"),
+                awsS3DestinationKey,
                 if (otherSystem != null) context.telemetrySanitization.sanitizeFilePath(unixPathOf(other.path))
                 else context.telemetrySanitization.sanitizeFilePath(other.toString())
             )
-            put(TelemetryKey.OfBoolean("file.copy.server_side"), isServerSideCopy)
+            put(fileCopyServerSide, isServerSideCopy)
         }) {
             if (isServerSideCopy) {
                 withContext(Dispatchers.IO) {
@@ -613,6 +663,9 @@ public class S3ExternalFileSystem(
         return ExternalFile(this, pathFromUnix(relative))
     }
 
+    /** Signed URLs carry a signature this service verifies; unsigned ones are just paths. */
+    override val referencesAreUnforgeable: Boolean get() = signedUrlDuration != null
+
     override fun parseExternalUrl(url: String): ExternalFile? {
         // Signed URLs are percent-encoded by signUrl/encodedUrl, so decode the path before matching.
         val decodedPath = url.substringBefore('?').decodeURLPart()
@@ -630,9 +683,8 @@ public class S3ExternalFileSystem(
      * none is performed on the default path. A signature we did not produce - whether tampered or
      * simply foreign - is rejected.
      *
-     * Only when [ExternalServerFileSerializer.inlineScanOnDeserialize] is enabled (the shared
-     * backward-compat flag, disabled by default) do we fall back to the legacy behavior of issuing
-     * an HTTP request to S3 to validate the URL when local recomputation does not match.
+     * When local recomputation does not match - or cannot be performed, because the query parameters
+     * are missing or malformed - verification falls back to asking S3 directly over the network.
      *
      * @throws IllegalArgumentException if the signature is invalid
      */
@@ -712,8 +764,8 @@ public class S3ExternalFileSystem(
     }
 
     /**
-     * Legacy fallback: validates the signed URL by asking S3 directly. Performs a blocking network
-     * round-trip and is only reachable when the backward-compat flag is enabled.
+     * Fallback: validates the signed URL by asking S3 directly, for URLs this backend cannot verify
+     * locally. Performs a blocking network round-trip, so local recomputation is always tried first.
      */
     private fun verifySignatureOverNetwork(path: ExternalPath, queryParams: String) {
         // The shared client applies a 60s engine timeout.

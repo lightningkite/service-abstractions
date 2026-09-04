@@ -113,7 +113,36 @@ public interface ExternalFileSystem : Service {
     public suspend fun get(path: ExternalPath): TypedData?
     public suspend fun delete(path: ExternalPath)
 
-
+    /**
+     * Reads the bytes of the file at [path] between [range]'s bounds, **both ends inclusive**, so
+     * `0L..15L` asks for 16 bytes. This matches HTTP's `bytes=a-b`, which is where these ranges
+     * almost always come from.
+     *
+     * The window is clamped to what the file actually holds: asking for `0L..15L` of a 5-byte file
+     * yields those 5 bytes, and a range starting at or past the end yields empty data. Neither is an
+     * error - a caller reading a file in fixed-size chunks cannot know where the end falls without
+     * asking. The returned [TypedData.data]'s size is therefore the number of bytes actually read,
+     * not the size of the file.
+     *
+     * The default implementation reads the whole file and slices it; backends that can ask for the
+     * window directly override this.
+     *
+     * The result is the caller's to close, as with [get] - a backend that fetches the window over the
+     * network hands back a live response body, so dropping it unclosed leaks the connection.
+     *
+     * @return the requested window, or null if the file does not exist (as [get])
+     * @throws IllegalArgumentException if [range] starts before 0 or ends before it starts
+     */
+    public suspend fun getRange(path: ExternalPath, range: LongRange): TypedData? {
+        requireValidRange(range)
+        val whole = get(path) ?: return null
+        val bytes = whole.data.bytes()
+        // A start at or past the end is an empty window; below here the start is a valid index.
+        if (range.first >= bytes.size) return TypedData(Data.Bytes(ByteArray(0)), whole.mediaType)
+        // Clamp before the +1 so that an open-ended `a..Long.MAX_VALUE` doesn't overflow.
+        val lastIndex = minOf(range.last, bytes.size - 1L).toInt()
+        return TypedData(Data.Bytes(bytes.copyOfRange(range.first.toInt(), lastIndex + 1)), whole.mediaType)
+    }
 
     /**
      * Copies the file at [path] to [other].
@@ -197,6 +226,20 @@ public interface ExternalFileSystem : Service {
      * @throws IllegalArgumentException if signature validation fails or URL has expired
      */
     public fun parseExternalUrl(url: String): ExternalFile?
+
+    /**
+     * Whether [parseExternalUrl] can tell a reference this file system issued from one a client
+     * invented - by signature, or by any other means.
+     *
+     * When false, [parseExternalUrl] accepts any path under this file system's own root, so a
+     * client-supplied reference is worth no more than the path string inside it. Callers whose
+     * security depends on a client only being able to name files it was given must check this and
+     * refuse to run without it.
+     *
+     * The default is false so that a backend which has not considered the question is treated as the
+     * unsafe case rather than silently vouching for itself.
+     */
+    public val referencesAreUnforgeable: Boolean get() = false
 
     /**
      * The root file for this file system. All file paths are resolved relative to this root.
@@ -326,6 +369,18 @@ public interface ExternalFileSystem : Service {
 
         override fun invoke(name: String, context: SettingContext): ExternalFileSystem {
             return parse(name, url, context)
+        }
+    }
+
+    public companion object {
+        /**
+         * The precondition shared by every [getRange] implementation. It lives here because an
+         * override never runs the default implementation, and a backend that silently accepted a
+         * backwards range would hand back a plausible-looking window of the wrong bytes.
+         */
+        public fun requireValidRange(range: LongRange) {
+            require(range.first >= 0) { "Range must not start before the file: ${range.first}" }
+            require(range.last >= range.first) { "Range must not end before it starts: $range" }
         }
     }
 }
