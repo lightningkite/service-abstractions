@@ -14,11 +14,15 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.reactive.awaitFirst
 import kotlinx.coroutines.reactive.awaitFirstOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 import reactor.core.publisher.Flux
+import reactor.core.publisher.Flux.usingWhen
 import reactor.core.publisher.Mono
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Redis implementation of PubSub (Publish/Subscribe) messaging using Lettuce client.
@@ -56,14 +60,23 @@ import reactor.core.publisher.Mono
  * PubSub.Settings.Companion.redis("localhost:6379")
  * ```
  *
- * ## Implementation Notes
+ * ## Connection Model
  *
- * - **Lettuce reactive**: Uses Lettuce reactive API (built on Project Reactor)
- * - **Separate connections**: One for subscribe, one for publish (Redis requirement)
- * - **Shared observables**: Multiple subscribers share the same Redis subscription
- * - **Backpressure**: Reactor Flux provides backpressure to slow consumers
- * - **Error handling**: Errors printed to stderr (doOnError)
- * - **Channel lifecycle**: Channels auto-subscribe on first collect, auto-unsubscribe when done
+ * A single shared pub/sub connection carries every channel. [subscription] builds a per-channel hot
+ * [Flux] with [Flux.share], so all collectors of a channel see every message but Redis holds a single
+ * SUBSCRIBE for it. [Flux.share] refcounts that upstream: the first collector SUBSCRIBEs, the last
+ * one UNSUBSCRIBEs, and a later collector re-SUBSCRIBEs after the refcount drops to zero.
+ * [Flux.usingWhen] scopes that SUBSCRIBE/UNSUBSCRIBE to a single resource lifetime.
+ *
+ * The connection opens lazily on first use and is recreated by [disconnect], so a serverless handler
+ * can release the socket before its execution context freezes without permanently disabling the
+ * service. Dropping the connection ends any live collectors (their flows complete), which is the
+ * intended teardown.
+ *
+ * __Note on caching:__ [channels] holds one entry per currently-subscribed channel key. Each entry is
+ * removed when its last collector leaves (see [subscription]), so a key is only retained while it is
+ * actively in use and no accumulation happens across short-lived uses. [disconnect] additionally
+ * clears the whole map when it drops the connection.
  *
  * ## Important Gotchas
  *
@@ -71,8 +84,10 @@ import reactor.core.publisher.Mono
  * - **No delivery guarantees**: At-most-once delivery (fire-and-forget)
  * - **No message history**: New subscribers don't receive past messages
  * - **Pattern subscriptions**: Not implemented (only exact channel names)
- * - **Backpressure limits**: Fast publishers can overwhelm slow subscribers
- * - **Connection stability**: Network issues can drop messages silently
+ * - **Backpressure limits**: Fast publishers can overwhelm slow subscribers; [Flux.share] keeps each
+ *   collector independently-buffered, so a slow collector grows heap rather than blocking others
+ * - **Connection stability**: Network issues can drop messages silently, though Lettuce reconnects
+ *   and replays SUBSCRIBE for every channel still being collected
  * - **Ordering**: Message order preserved per channel, but not across channels
  * - **No acknowledgment**: Publishers don't know if anyone received the message
  *
@@ -130,62 +145,57 @@ import reactor.core.publisher.Mono
  * @property context Service context with serializers
  * @property client Lettuce Redis client for connections
  */
-/**
- * Stateless Redis PubSub implementation suitable for serverless environments.
- *
- * Each call to [get] creates a fresh subscription - no caching is done at the service level.
- * This ensures that different Lambda invocations don't share stale subscriptions and
- * prevents memory leaks from unbounded caches.
- *
- * Redis natively handles pub/sub fan-out, so multiple subscribers (even across different
- * processes/Lambda instances) will all receive published messages.
- */
 public class RedisPubSub(
     override val name: String,
     override val context: SettingContext,
     private val client: RedisClient
 ) : PubSub {
-    private val redisPubSubLogger = LoggerFactory.getLogger("RedisPubSub")
+    private val logger = LoggerFactory.getLogger("RedisPubSub")
     private val json = Json { serializersModule = context.internalSerializersModule }
 
-    // Shared publish connection. Lettuce connections are thread-safe and pipeline commands.
-    // Opening a connection per emit caused TLS handshake storms that pegged Netty event loops.
-    private val publishConnection: StatefulRedisPubSubConnection<String, String> by lazy {
-        client.connectPubSub()
-    }
+    /**
+     * One shared connection for both publishing and subscribing, rebuilt after [disconnect].
+     *
+     * `var` + `lazy` (rather than a plain `val`) so [disconnect] can drop the built connection and
+     * let the next use rebuild it. Volatile because the getter reads it outside [lifecycleLock].
+     */
+    @Volatile
+    private var _connection = lazy { client.connectPubSub() }
+    private val connection: StatefulRedisPubSubConnection<String, String> get() = _connection.value
+
+    /**
+     * Per-channel hot Flux, created on first use and evicted when its last collector leaves. Internal
+     * so tests can assert eviction directly.
+     */
+    internal val channels = ConcurrentHashMap<String, Flux<String>>()
+
+    /** Guards connection recreation so [disconnect] cannot race a live [connection] use. */
+    private val lifecycleLock = Mutex()
 
     public companion object {
         public fun PubSub.Settings.Companion.redis(url: String): PubSub.Settings = PubSub.Settings("redis://$url")
         init {
             PubSub.Settings.register("redis") { name, url, context ->
-                val client = RedisClient.create(url)
-                RedisPubSub(name, context, client)
+                RedisPubSub(name, context, RedisClient.create(url))
             }
         }
     }
 
     /**
-     * Creates a fresh Redis subscription for the given key.
-     * No caching - each call creates a new subscription that will be cleaned up
-     * when the collector completes or cancels.
+     * The hot Flux for [key]. First collector (per connection) subscribes and the last unsubscribes,
+     * thanks to [Flux.share]; re-SUBSCRIBE happens automatically once the refcount returns to zero.
+     * [Flux.usingWhen] makes the (un)subscribe a single subscription resource. When the last collector
+     * leaves, the entry is evicted so a high cardinality of channel keys does not accumulate without
+     * bound.
      */
-    private fun createSubscription(key: String): Flux<String> {
-        val statefulConnection = client.connectPubSub()
-        val reactiveConnection = statefulConnection.reactive()
-        return Flux.usingWhen<String, io.lettuce.core.pubsub.api.reactive.RedisPubSubReactiveCommands<String, String>>(
-            reactiveConnection.subscribe(key).then(Mono.just(reactiveConnection)),
-            { conn ->
-                conn.observeChannels()
-                    .filter { it.channel == key }
-                    .map { it.message }
-            },
-            { _ ->
-                // Cleanup: unsubscribe and close the connection
-                reactiveConnection.unsubscribe(key).doFinally { statefulConnection.close() }.then()
-            }
-        ).doOnError { error ->
-            redisPubSubLogger.error("Error in Redis subscription for channel $key", error)
-        }
+    private fun subscription(key: String): Flux<String> = channels.computeIfAbsent(key) {
+        val reactive = connection.reactive()
+        usingWhen(
+            reactive.subscribe(key).then(Mono.just(reactive)),
+            { it.observeChannels().filter { c -> c.channel == key }.map { c -> c.message } },
+            { channels.remove(key); it.unsubscribe(key).then() }
+        ).doOnError { e -> logger.error("Redis subscription for channel '$key' failed", e) }
+            .share()
     }
 
     /**
@@ -206,10 +216,9 @@ public class RedisPubSub(
             put(TelemetryKey.OfString("messaging.destination"), key)
             put(TelemetryKeys.Messaging.system, "redis")
         }) {
-            // Create fresh subscription - no caching for serverless compatibility
-            // Per-message spans created in the coroutine context (after asFlow()) so
-            // makeCurrent() works correctly and child spans get the right parent.
-            createSubscription(key).asFlow().collect { message ->
+            // Per-message spans created in the collecting coroutine (after asFlow()) so makeCurrent()
+            // works correctly and child spans get the right parent.
+            subscription(key).asFlow().collect { message ->
                 telemetryTrace("receive", attributes = TelemetryAttributes {
                     put(TelemetryKey.OfString("pubsub.operation"), "receive")
                     put(TelemetryKey.OfString("messaging.destination"), key)
@@ -228,7 +237,7 @@ public class RedisPubSub(
         }) { span ->
             val message = encode(value)
             span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("message.size"), message.length.toLong()) })
-            val result = publishConnection.reactive().publish(key, message).awaitFirst()
+            val result = connection.reactive().publish(key, message).awaitFirst()
             span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("pubsub.subscribers_reached"), result) })
         }
     }
@@ -239,9 +248,30 @@ public class RedisPubSub(
     override fun string(key: String): PubSubChannel<String> =
         channelImpl(key, { it }, { it })
 
+    /** Opens the shared connection. Optional -- every operation opens it lazily. */
+    override suspend fun connect() {
+        connection
+    }
+
     /**
-     * Verifies Redis connectivity and credentials with a non-mutating PING on the shared publish
-     * connection.
+     * Closes the shared connection, ending any live collectors (their flows complete), and drops the
+     * cached per-channel fluxes. Idempotent: repeated calls, or calling it without ever having
+     * connected, are a no-op beyond the first.
+     *
+     * The next use rebuilds the connection, so this does not permanently disable the service. The
+     * [client] is left running because it is constructor-injected and may be shared with other
+     * services.
+     */
+    override suspend fun disconnect() {
+        lifecycleLock.withLock {
+            if (_connection.isInitialized()) _connection.value.close()
+            channels.clear()
+            _connection = lazy { client.connectPubSub() }
+        }
+    }
+
+    /**
+     * Verifies Redis connectivity and credentials with a non-mutating PING on the shared connection.
      *
      * Overrides the abstraction's default (which PUBLISHes a test message): PING exercises the full
      * connection including AUTH on authenticated/TLS URLs without broadcasting a stray message to
@@ -250,7 +280,7 @@ public class RedisPubSub(
     override suspend fun healthCheck(): HealthStatus =
         try {
             val reply = telemetryTrace("ping") {
-                publishConnection.reactive().ping().awaitFirstOrNull()
+                connection.reactive().ping().awaitFirstOrNull()
             }
             if (reply == "PONG") HealthStatus(HealthStatus.Level.OK)
             else HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Unexpected PING reply: $reply")
