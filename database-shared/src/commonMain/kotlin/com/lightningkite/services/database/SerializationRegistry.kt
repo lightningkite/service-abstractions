@@ -227,6 +227,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
             Temperature.serializer(),
             RelativeTemperature.serializer(),
             DataSize.serializer(),
+            Cents.serializer(),
         ).forEach {
             register(it)
             register(it, it.descriptor.serialName.replace("com.lightningkite.services.data", "com.lightningkite"))

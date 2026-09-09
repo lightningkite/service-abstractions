@@ -253,7 +253,7 @@ public annotation class DoesNotNeedLabel
 
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
-@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD, AnnotationTarget.CLASS)
 public annotation class Group(val name: String)
 
 /**

@@ -3,13 +3,11 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
-    id("org.jetbrains.kotlinx.atomicfu") version "0.32.1"
 }
 
 kotlin {
@@ -33,7 +31,6 @@ kotlin {
     js(IR) {
         browser()
     }
-
     iosX64()
     iosArm64()
     iosSimulatorArm64()
@@ -42,48 +39,19 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(project(path = ":data-shared"))
-                api(project(path = ":currency"))
-                implementation(libs.kotlinx.json)
-            }
-            kotlin {
-                srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
+                api(project(":data"))
             }
         }
         val commonTest by getting {
             dependencies {
-                implementation(project(":test"))
                 implementation(libs.kotlin.test)
-                implementation(libs.coroutines.testing)
-            }
-            kotlin {
-                srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
+                implementation(libs.kotlinx.serialization.json)
             }
         }
-        val nonJvmMain by creating {
-            dependsOn(commonMain)
-        }
-        val jvmCommonMain by creating {
-            dependsOn(commonMain)
-        }
-        val androidMain by getting {
-            dependsOn(jvmCommonMain)
-        }
-        val jvmMain by getting {
-            dependsOn(jvmCommonMain)
-        }
+        val androidMain by getting {}
+        val jsMain by getting {}
+        val jvmMain by getting {}
         val jvmTest by getting {}
-        val jsMain by getting { dependsOn(nonJvmMain) }
-        val iosX64Main by getting { dependsOn(nonJvmMain) }
-        val iosArm64Main by getting { dependsOn(nonJvmMain) }
-        val iosSimulatorArm64Main by getting { dependsOn(nonJvmMain) }
-        val macosArm64Main by getting { dependsOn(nonJvmMain) }
-    }
-}
-
-dependencies {
-    configurations.filter { it.name.startsWith("ksp") && it.name != "ksp" }.forEach {
-        add(it.name, project(":database-processor"))
     }
 }
 
@@ -109,5 +77,5 @@ lkLibrary(
     "service-abstractions",
     mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
 ) {
-    description.set("A set of classes used in querying and modifying databases.")
+    description.set("A set of classes and functions that represent common measurements, data, or add lacking functionality.")
 }
