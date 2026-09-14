@@ -1,0 +1,21 @@
+# Publishing configuration shared by every published module in this repo.
+# Kept in its own template so the version below is the single place the
+# rolling-deploy chain has to rewrite.
+
+# The Toolchain has no built-in mavenLocal; `url: mavenLocal` is its magic value for
+# ~/.m2/repository. Only mavenCentral and mavenGoogle exist without being declared.
+repositories:
+  - id: mavenLocal
+    url: mavenLocal
+    publish: true
+
+settings:
+  publishing:
+    # Without this, `kotlin publish` reports "No publish tasks were found".
+    enabled: true
+    group: com.lightningkite.services
+    # Single source of truth for the published version; the rolling-deploy chain rewrites it.
+    # artifactId is left to default to the module name, matching the Gradle artifact names.
+    version: 1.3.0-local
+    # Defaults to false, unlike Gradle, which publishes a sources jar for every target.
+    publishSources: true

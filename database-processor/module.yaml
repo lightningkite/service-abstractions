@@ -1,0 +1,26 @@
+apply: [ //jvm.module-template.yaml, //no-explicit-api.module-template.yaml, //publishing.module-template.yaml ]
+
+product: jvm/lib
+
+settings:
+  kotlin:
+    serialization: enabled
+
+dependencies:
+  - com.google.devtools.ksp:symbol-processing-api:2.3.10
+
+test-dependencies:
+  - org.jetbrains.kotlin:kotlin-test:2.4.10
+  - org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0
+
+# Gradle names the Kotlin module "<group>:<artifact>", which determines the
+# META-INF/*.kotlin_module entry on JVM and the module name baked into JS and Klib output.
+# The Toolchain defaults to the module directory name, so it is restated per platform here.
+# This value is per-module and cannot be shared through a template.
+settings@jvm:
+  kotlin:
+    freeCompilerArgs: [ -module-name, "com.lightningkite.services:database-processor" ]
+
+test-settings@jvm:
+  kotlin:
+    freeCompilerArgs: [ -module-name, database-processor_test ]

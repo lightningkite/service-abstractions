@@ -1,0 +1,41 @@
+apply: [ //jvm.module-template.yaml, //publishing.module-template.yaml ]
+
+product: jvm/lib
+
+settings:
+  kotlin:
+    serialization: enabled
+
+dependencies:
+  - //database: exported
+  - org.jetbrains.kotlin:kotlin-reflect:2.4.10
+  - de.flapdoodle.embed:de.flapdoodle.embed.mongo:4.24.0
+  - org.mongodb:mongodb-driver-kotlin-coroutine:5.7.0
+
+test-dependencies:
+  - //database-test
+  - org.jetbrains.kotlin:kotlin-test:2.4.10
+  - org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0
+  - org.testcontainers:testcontainers:1.21.4
+  - org.testcontainers:mongodb:1.21.4
+  - org.testcontainers:junit-jupiter:1.21.4
+  - //otel-jvm
+  - io.opentelemetry:opentelemetry-sdk:1.62.0
+  - io.opentelemetry:opentelemetry-sdk-testing:1.62.0
+
+# Gradle names the Kotlin module "<group>:<artifact>", which determines the
+# META-INF/*.kotlin_module entry on JVM and Android and the module name baked into JS and Klib
+# output. The Toolchain defaults to the module directory name, so it is restated per platform
+# here. This value is per-module and cannot be shared through a template: module.yaml does not
+# interpolate ${module.name}.
+settings@jvm:
+  kotlin:
+    freeCompilerArgs: [ -module-name, "com.lightningkite.services:database-mongodb" ]
+
+# settings@<platform> applies to test compilations too, so the module name above would other-
+# wise be given to the test output as well. On Apple targets that is fatal: main and test klibs
+# end up with the same `unique_name` and the KLIB resolver refuses to load both. These restore
+# the Toolchain's default test module name; test output is never published.
+test-settings@jvm:
+  kotlin:
+    freeCompilerArgs: [ -module-name, database-mongodb_test ]

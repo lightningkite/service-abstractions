@@ -1,0 +1,34 @@
+# Shared configuration for every multiplatform module in this repo.
+# `product.platforms` cannot live here (templates may not set `product`), so each
+# module repeats its platform list.
+settings:
+  kotlin:
+    optIns:
+      - kotlin.time.ExperimentalTime
+      - kotlin.uuid.ExperimentalUuidApi
+    # Restores Gradle's explicitApi(). Toolchain 0.12.1 has no settings.kotlin.explicitApi,
+    # so the raw flag is used. It would otherwise apply to test sources too, which
+    # explicitApi() never did -- hence the test-settings counter-flag below.
+    freeCompilerArgs: [ -Xexplicit-api=strict ]
+  jvm:
+    release: 8
+  android:
+    namespace: com.lightningkite.services
+    compileSdk: 36
+    minSdk: 21
+  # Gradle's KMP jvm target defaults to kotlin-test-junit (JUnit 4); the Toolchain
+  # defaults to JUnit 5. Match Gradle so existing org.junit.Test imports still resolve.
+  junit: junit-4
+
+# test-settings appends to settings rather than replacing it, so the mode is turned
+# back off for test sources by a later -Xexplicit-api flag.
+test-settings:
+  kotlin:
+    freeCompilerArgs: [ -Xexplicit-api=disable ]
+
+# Mirrors the repositories Gradle declared once in the root allprojects block. mavenCentral and
+# mavenGoogle are available without being declared; mavenLocal comes from the publishing
+# template. These two carry the Lightning Kite artifacts and the jitpack-hosted test deps.
+repositories:
+  - https://lightningkite-maven.s3.us-west-2.amazonaws.com
+  - https://jitpack.io

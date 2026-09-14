@@ -1,0 +1,25 @@
+# Build-only module: not published, not a library. Hosts the task action that drives
+# `database-processor` over a module's common sources.
+product: jvm/amper-plugin
+
+# Needed even though this module is never published: the Toolchain resolves the publish
+# repository id against every module in the project before publishing any of them.
+repositories:
+  - id: mavenLocal
+    url: mavenLocal
+    publish: true
+
+settings:
+  jvm:
+    # Without this the plugin emits bytecode for the running JDK, which no JDK 17 consumer reads.
+    release: 17
+
+pluginInfo:
+  id: ksp-common
+  settingsClass: kspcommon.KspCommonSettings
+
+dependencies:
+  - //database-processor
+  - com.google.devtools.ksp:symbol-processing-api:2.3.10
+  - com.google.devtools.ksp:symbol-processing-common-deps:2.3.10
+  - com.google.devtools.ksp:symbol-processing-aa-embeddable:2.3.10

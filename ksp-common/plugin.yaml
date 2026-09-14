@@ -1,0 +1,26 @@
+tasks:
+  kspCommon:
+    action: !kspcommon.runKspOverCommon
+      sourceDir: ${module.rootDir}/src
+      classpath: ${module.compileClasspath}
+      localDependencies: ${pluginSettings.localDependencies}
+      outputDir: ${taskOutputDir}/build/generated/ksp/common/commonMain/kotlin
+
+  kspCommonTest:
+    action: !kspcommon.runKspOverCommon
+      sourceDir: ${module.rootDir}/test
+      classpath: ${module.compileClasspath}
+      localDependencies: ${pluginSettings.testLocalDependencies}
+      outputDir: ${taskOutputDir}/build/generated/ksp/common/commonTest/kotlin
+
+generated:
+  sources:
+    # No `fragment` clause, so this lands in the COMMON fragment. That is the whole point: the
+    # processor emits `@JvmName`, which only compiles in common sources, while the Toolchain's
+    # built-in KSP integration wires output into per-platform fragments.
+    - language: kotlin
+      directory: ${tasks.kspCommon.action.outputDir}
+    - language: kotlin
+      fragment:
+        isTest: true
+      directory: ${tasks.kspCommonTest.action.outputDir}

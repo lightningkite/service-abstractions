@@ -1,0 +1,71 @@
+apply: [ //kmp.module-template.yaml, //publishing.module-template.yaml ]
+
+product:
+  type: kmp/lib
+  platforms: [ jvm, android, js, iosX64, iosArm64, iosSimulatorArm64, macosArm64 ]
+
+dependencies:
+  - //basis: exported
+  - io.ktor:ktor-client-cio:3.4.3: exported
+  - io.ktor:ktor-client-websockets:3.4.3: exported
+  - io.ktor:ktor-client-content-negotiation:3.4.3: exported
+  - io.ktor:ktor-serialization-kotlinx-json:3.4.3: exported
+  - io.ktor:ktor-client-auth:3.4.3: exported
+
+dependencies@jvm:
+  - io.ktor:ktor-client-okhttp:3.4.3
+  - io.opentelemetry:opentelemetry-api:1.62.0: compile-only
+  - io.opentelemetry.instrumentation:opentelemetry-ktor-3.0:2.21.0-alpha: compile-only
+  - org.crac:crac:1.5.0
+
+# The Toolchain does not add kotlin-dom-api-compat the way the Kotlin Gradle plugin does, so
+# without this every org.w3c.dom type is unresolvable on JS. Declared per module rather than in
+# the shared template: a `dependencies@js` block in a template was observed reaching the
+# iosArm64 and macosArm64 resolutions too, which this modifier is meant to exclude.
+dependencies@js:
+  - org.jetbrains.kotlin:kotlin-dom-api-compat:2.4.10
+
+test-dependencies:
+  - org.jetbrains.kotlin:kotlin-test:2.4.10: exported
+  - org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0: exported
+
+# Gradle names the Kotlin module "<group>:<artifact>", which determines the
+# META-INF/*.kotlin_module entry on JVM and Android and the module name baked into JS and Klib
+# output. The Toolchain defaults to the module directory name, so it is restated per platform
+# here. This value is per-module and cannot be shared through a template: module.yaml does not
+# interpolate ${module.name}.
+settings@jvm:
+  kotlin:
+    freeCompilerArgs: [ -module-name, "com.lightningkite.services:http-client" ]
+
+settings@android:
+  kotlin:
+    freeCompilerArgs: [ -module-name, "com.lightningkite.services:http-client" ]
+
+settings@js:
+  kotlin:
+    freeCompilerArgs: [ -Xir-module-name=com.lightningkite.services:http-client ]
+
+settings@apple:
+  kotlin:
+    freeCompilerArgs: [ -module-name, "com.lightningkite.services:http-client", -Xexport-kdoc ]
+
+# settings@<platform> applies to test compilations too, so the module name above would other-
+# wise be given to the test output as well. On Apple targets that is fatal: main and test klibs
+# end up with the same `unique_name` and the KLIB resolver refuses to load both. These restore
+# the Toolchain's default test module name; test output is never published.
+test-settings@jvm:
+  kotlin:
+    freeCompilerArgs: [ -module-name, http-client_test ]
+
+test-settings@android:
+  kotlin:
+    freeCompilerArgs: [ -module-name, http-client_test ]
+
+test-settings@js:
+  kotlin:
+    freeCompilerArgs: [ -Xir-module-name=http-client_test ]
+
+test-settings@apple:
+  kotlin:
+    freeCompilerArgs: [ -module-name, http-client_test ]

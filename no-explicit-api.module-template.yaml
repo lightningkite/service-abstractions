@@ -1,0 +1,7 @@
+# Applied by the handful of modules that deliberately do NOT enforce explicit API --
+# test-helper libraries and the KSP processor. Their Gradle build files omit
+# explicitApi() (files-test has it explicitly commented out), and that is intent.
+# Applied after the base template, so this flag wins.
+settings:
+  kotlin:
+    freeCompilerArgs: [ -Xexplicit-api=disable ]

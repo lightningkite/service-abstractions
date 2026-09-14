@@ -1,0 +1,36 @@
+apply: [ //jvm.module-template.yaml, //publishing.module-template.yaml ]
+
+product: jvm/lib
+
+settings:
+  kotlin:
+    serialization: enabled
+
+dependencies:
+  - //notifications: exported
+  - //http-client
+  - org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0
+
+test-dependencies:
+  - org.jetbrains.kotlin:kotlin-test:2.4.10
+  - org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0
+  - io.ktor:ktor-client-core:3.4.3
+  - io.ktor:ktor-client-mock:3.4.3
+  - //test
+
+# Gradle names the Kotlin module "<group>:<artifact>", which determines the
+# META-INF/*.kotlin_module entry on JVM and Android and the module name baked into JS and Klib
+# output. The Toolchain defaults to the module directory name, so it is restated per platform
+# here. This value is per-module and cannot be shared through a template: module.yaml does not
+# interpolate ${module.name}.
+settings@jvm:
+  kotlin:
+    freeCompilerArgs: [ -module-name, "com.lightningkite.services:notifications-fcm" ]
+
+# settings@<platform> applies to test compilations too, so the module name above would other-
+# wise be given to the test output as well. On Apple targets that is fatal: main and test klibs
+# end up with the same `unique_name` and the KLIB resolver refuses to load both. These restore
+# the Toolchain's default test module name; test output is never published.
+test-settings@jvm:
+  kotlin:
+    freeCompilerArgs: [ -module-name, notifications-fcm_test ]

@@ -1,0 +1,28 @@
+# Shared configuration for every JVM-only module in this repo.
+# `maven-like` keeps the existing src/main/kotlin + src/test/kotlin layout.
+layout: maven-like
+
+settings:
+  kotlin:
+    optIns:
+      - kotlin.time.ExperimentalTime
+      - kotlin.uuid.ExperimentalUuidApi
+    # Restores Gradle's explicitApi(). Toolchain 0.12.1 has no settings.kotlin.explicitApi,
+    # so the raw flag is used. It would otherwise apply to test sources too, which
+    # explicitApi() never did -- hence the test-settings counter-flag below.
+    freeCompilerArgs: [ -Xexplicit-api=strict ]
+  jvm:
+    release: 17
+
+# test-settings appends to settings rather than replacing it, so the mode is turned
+# back off for test sources by a later -Xexplicit-api flag.
+test-settings:
+  kotlin:
+    freeCompilerArgs: [ -Xexplicit-api=disable ]
+
+# Mirrors the repositories Gradle declared once in the root allprojects block. mavenCentral and
+# mavenGoogle are available without being declared; mavenLocal comes from the publishing
+# template. These two carry the Lightning Kite artifacts and the jitpack-hosted test deps.
+repositories:
+  - https://lightningkite-maven.s3.us-west-2.amazonaws.com
+  - https://jitpack.io
