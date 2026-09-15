@@ -77,11 +77,9 @@ class FieldGenerationTest {
 
     @Test
     fun sealedVariantChecks() {
-        val isFoo = condition<Polymorphic> { it.isFoo() }
-        assertEquals(condition<Polymorphic> { it isType Polymorphic.Foo.serializer() }, isFoo)
+        val isFoo = condition<Polymorphic> { it isType Polymorphic.Foo.serializer() }
         assertTrue(isFoo(Polymorphic.Foo("a")))
         assertFalse(isFoo(Polymorphic.Bar(1)))
-        assertTrue(condition<Polymorphic> { it.isBar() }(Polymorphic.Bar(1)))
     }
 
     @Test

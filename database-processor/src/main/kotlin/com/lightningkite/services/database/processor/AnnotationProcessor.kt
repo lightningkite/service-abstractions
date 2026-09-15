@@ -50,7 +50,7 @@ import java.util.Locale.getDefault
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 13) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 14) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("DatabaseModel") != null || annotation("GenerateDataClassPaths") != null
 
@@ -183,13 +183,10 @@ class TableGenerator(
                 .forEach { variant ->
                     val variantReference = variant.safeLocalReference()
                     val propName = "as${variant.simpleName.asString()}"
-                    val checkName = "is${variant.simpleName.asString()}"
                     if (variant.typeParameters.isNotEmpty()) {
                         appendLine("// Skipped $classReference.$propName: generic sealed variants are not supported")
                     } else {
-                        appendLine("@get:JvmName(\"path${simpleName}_$propName\") public val <ROOT> DataClassPath<ROOT, $classReference>.$propName: DataClassPathOfType<ROOT, $classReference, $variantReference> get() = this.asType($variantReference.serializer())")
-                        appendLine("@JvmName(\"path${simpleName}_$checkName\") public fun <ROOT> DataClassPath<ROOT, $classReference>.$checkName(): Condition<ROOT> = this isType $variantReference.serializer()")
-                    }
+                        appendLine("@get:JvmName(\"path${simpleName}_$propName\") public val <ROOT> DataClassPath<ROOT, $classReference>.$propName: DataClassPathOfType<ROOT, $classReference, $variantReference> get() = this.asType($variantReference.serializer())")                    }
                 }
         }
     } catch (e: Exception) {
