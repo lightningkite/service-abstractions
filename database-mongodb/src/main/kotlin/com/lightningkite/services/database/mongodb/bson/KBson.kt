@@ -11,7 +11,7 @@ import org.bson.codecs.*
 @OptIn(ExperimentalSerializationApi::class)
 internal class KBson(
     override val serializersModule: SerializersModule = EmptySerializersModule(),
-    private val configuration: BsonConfiguration = BsonConfiguration(explicitNulls = true),
+    val configuration: BsonConfiguration = BsonConfiguration(explicitNulls = true),
 ) : SerialFormat, BinaryFormat {
     fun <T> stringify(serializer: SerializationStrategy<T>, obj: T): BsonDocument {
         val doc = BsonDocument()

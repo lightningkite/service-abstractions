@@ -50,7 +50,7 @@ import java.util.Locale.getDefault
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 10) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 13) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("DatabaseModel") != null || annotation("GenerateDataClassPaths") != null
 
@@ -59,7 +59,7 @@ class TableGenerator(
             .filter {
                 it.declarations
                     .filterIsInstance<KSClassDeclaration>()
-                    .flatMap { sequenceOf(it) + it.declarations.filterIsInstance<KSClassDeclaration>() }
+                    .flattenNestedDeclarations()
                     .any { it.needsDcp() }
             }
             .toSet()
@@ -92,154 +92,201 @@ class TableGenerator(
                     packageName = packageName,
                     fileName = "ModelFields${classes.mapTo(HashSet()) { it.simpleName.asString() }.hashCode()}"
                 ).use { out ->
-                    with(TabAppendable(out)) {
-                        appendLine("""// Automatically generated from classes ${classes.joinToString { it.simpleName.asString() }}. Do not modify!""")
-                        appendLine("""@file:OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)""")
-                        appendLine("""@file:Suppress("UNCHECKED_CAST", "UNUSED_PARAMETER", "UnusedImport")""")
-                        appendLine()
-                        if (packageName.isNotEmpty()) appendLine("package ${packageName}")
-                        appendLine()
-                        try {
-                            files.flatMap { it.imports }
-                                .plus(
-                                    listOf(
-                                        "com.lightningkite.services.database.*",
-                                        "com.lightningkite.services.data.*",
-                                        "kotlin.reflect.*",
-                                        "kotlinx.serialization.*",
-                                        "kotlinx.serialization.builtins.*",
-                                        "kotlinx.serialization.internal.GeneratedSerializer",
-                                        "kotlinx.datetime.*",
-                                        "com.lightningkite.*",
-                                        "kotlin.jvm.JvmName",
-                                    )
-                                )
-                                .distinct()
-                                .filter {
-                                    it.substringAfterLast('.').let {
-                                        !(it.startsWith("prepare") && it.endsWith("Fields")
-                                                || it.startsWith("prepareModels"))
-                                    }
-                                }
-                                .forEach { appendLine("import $it") }
-                        } catch (e: Exception) {
-                            appendLine("/*" + e.stackTraceToString() + "*/")
-                        }
-                        appendLine()
-                        val contextualTypes = files.flatMap {
-                            it.annotation(
-                                "UseContextualSerialization",
-                                "kotlinx.serialization"
-                            )?.arguments?.firstOrNull()
-                                ?.value
-                                ?.let {
-                                    @Suppress("UNCHECKED_CAST")
-                                    it as? List<KSType>
-                                }
-                                ?.map { it.declaration }
-                                ?: listOf()
-                        }
-                        appendLine("// Contextual types: ${contextualTypes.joinToString { it.qualifiedName?.asString() ?: "-" }}")
-
-                        for (declaration in classes) {
-                            try {
-                                val classReference: String = declaration.safeLocalReference()
-                                val fields = declaration.fields()
-                                val typeReference: String =
-                                    declaration.safeLocalReference() + (declaration.typeParameters.takeUnless { it.isEmpty() }
-                                        ?.joinToString(", ", "<", ">") { it.name.asString() } ?: "")
-                                val simpleName: String = classReference.replace('.', '_')
-
-                                fun appendInlinePropertyAnnotation() {
-                                    if (declaration.modifiers.contains(Modifier.VALUE)) appendLine("@InlineProperty")
-                                }
-
-                                if (declaration.typeParameters.isNotEmpty()) {
-                                    appendLine(
-                                        "public inline fun <${
-                                            declaration.typeParameters.joinToString(", ") {
-                                                "reified " + it.name.asString() + ": " + (it.bounds.firstOrNull()
-                                                    ?.toKotlin() ?: "Any?")
-                                            }
-                                        }> $classReference.Companion.path(): DataClassPath<$typeReference, $typeReference> = com.lightningkite.services.database.path<$typeReference>()"
-                                    )
-
-                                    listOf(
-                                        "public fun",
-                                        declaration.typeParameters.joinToString(
-                                            ", ",
-                                            prefix = " <",
-                                            postfix = "> "
-                                        ) { param ->
-                                            param.name.asString() + (param.bounds.firstOrNull()?.toKotlin()
-                                                ?.let { ": $it" } ?: "")
-                                        },
-                                        "$classReference.Companion.path(",
-                                        declaration.typeParameters.joinToString(", ") { param ->
-                                            "${
-                                                param.name.asString().lowercase()
-                                            }: KSerializer<${param.name.asString()}>"
-                                        },
-                                        "): DataClassPath<$typeReference, $typeReference>",
-                                        " = ",
-                                        "com.lightningkite.services.database.path",
-                                        declaration.typeParameters.joinToString(
-                                            ", ",
-                                            prefix = "($classReference.Companion.serializer(",
-                                            postfix = "))"
-                                        ) {
-                                            it.name.asString().lowercase()
-                                        },
-                                        "\n"
-                                    ).forEach(::append)
-
-                                    for ((index, field) in fields.withIndex()) {
-                                        val propName = field.name.replaceFirstChar {
-                                            if (it.isLowerCase()) it.titlecase(getDefault()) else it.toString()
-                                        }
-                                        val serPropName = "field$propName"
-
-                                        val prefix = declaration.safeLocalReference().camelCase().replace('.', '_')
-
-                                        appendInlinePropertyAnnotation()
-                                        appendLine(
-                                            "@get:JvmName(\"${prefix}_field_$propName\") public val <${
-                                                declaration.typeParameters.joinToString(", ") {
-                                                    it.name.asString() + ": " + (it.bounds.firstOrNull()
-                                                        ?.toKotlin() ?: "Any?")
-                                                }
-                                            }> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(this as GeneratedSerializer<$typeReference>, $index)"
-                                        )
-                                        appendInlinePropertyAnnotation()
-                                        appendLine(
-                                            "@get:JvmName(\"${prefix}_path_$propName\") public val <ROOT, ${
-                                                declaration.typeParameters.joinToString(", ") {
-                                                    it.name.asString() + ": " + (it.bounds.firstOrNull()
-                                                        ?.toKotlin() ?: "Any?")
-                                                }
-                                            }> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[this.serializer.$serPropName]"
-                                        )
-                                    }
-                                } else {
-                                    appendLine("public inline val $typeReference.Companion.path: DataClassPath<$typeReference, $typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
-                                    appendLine("private val ${simpleName}__properties = $classReference.serializer().serializableProperties!!")
-                                    for ((index, field) in fields.withIndex()) {
-                                        val serPropName = "${simpleName}_${field.name}"
-                                        appendInlinePropertyAnnotation()
-                                        appendLine("public val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = ${simpleName}__properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
-                                        appendInlinePropertyAnnotation()
-                                        appendLine("@get:JvmName(\"path$serPropName\") public val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[$serPropName]")
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                appendLine("/*" + e.stackTraceToString() + "*/")
-                            }
-                        }
-                    }
+                    TabAppendable(out).writeModelFields(packageName, files, classes)
                 }
             }
 
         logger.info("Complete.")
+    }
+
+    private fun TabAppendable.writeModelFields(
+        packageName: String,
+        files: Sequence<KSFile>,
+        classes: List<KSClassDeclaration>
+    ) {
+        appendLine("""// Automatically generated from classes ${classes.joinToString { it.simpleName.asString() }}. Do not modify!""")
+        appendLine("""@file:OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)""")
+        appendLine("""@file:Suppress("UNCHECKED_CAST", "UNUSED_PARAMETER", "UnusedImport")""")
+        appendLine()
+        if (packageName.isNotEmpty()) appendLine("package ${packageName}")
+        appendLine()
+        try {
+            files
+                .flatMap { it.imports }
+                .plus(
+                    listOf(
+                        "com.lightningkite.services.database.*",
+                        "com.lightningkite.services.data.*",
+                        "kotlin.reflect.*",
+                        "kotlinx.serialization.*",
+                        "kotlinx.serialization.builtins.*",
+                        "kotlinx.serialization.internal.GeneratedSerializer",
+                        "kotlinx.datetime.*",
+                        "com.lightningkite.*",
+                        "kotlin.jvm.JvmName",
+                    )
+                )
+                .distinct()
+                .filter {
+                    it.substringAfterLast('.').let {
+                        !(it.startsWith("prepare") && it.endsWith("Fields")
+                                || it.startsWith("prepareModels"))
+                    }
+                }
+                .forEach { appendLine("import $it") }
+        } catch (e: Exception) {
+            appendLine("/*" + e.stackTraceToString() + "*/")
+        }
+        appendLine()
+        val contextualTypes = files.flatMap {
+            it.annotation(
+                "UseContextualSerialization",
+                "kotlinx.serialization"
+            )?.arguments?.firstOrNull()
+                ?.value
+                ?.let {
+                    @Suppress("UNCHECKED_CAST")
+                    it as? List<KSType>
+                }
+                ?.map { it.declaration }
+                ?: listOf()
+        }
+        appendLine("// Contextual types: ${contextualTypes.joinToString { it.qualifiedName?.asString() ?: "-" }}")
+
+        for (declaration in classes) {
+            when (declaration.classKind) {
+                ClassKind.INTERFACE -> {
+                    if (!declaration.modifiers.contains(Modifier.SEALED)) throw IllegalArgumentException("@GenerateDataClassPaths can only be applied to classes and sealed interfaces")
+                    writeSealedFields(declaration)
+                }
+                ClassKind.CLASS -> {
+                    if (declaration.modifiers.contains(Modifier.SEALED)) writeSealedFields(declaration)
+                    else writeClassFields(declaration)
+                }
+                ClassKind.ENUM_CLASS -> {}
+                ClassKind.OBJECT -> {}
+                else -> throw IllegalArgumentException("@GenerateDataClassPaths applied to invalid type: ${declaration.classKind}")
+            }
+        }
+    }
+
+    private fun TabAppendable.writeSealedFields(declaration: KSClassDeclaration) = try {
+        val classReference: String = declaration.safeLocalReference()
+        val simpleName: String = classReference.replace('.', '_')
+
+        if (declaration.typeParameters.isNotEmpty()) {
+            appendLine("// Skipped $classReference: generic sealed types are not supported")
+        } else {
+            appendLine("public inline val $classReference.Companion.path: DataClassPath<$classReference, $classReference> get() = com.lightningkite.services.database.path<$classReference>()")
+            declaration.getSealedSubclasses()
+                .filter { it.needsDcp() && it.annotation("Serializable", "kotlinx.serialization") != null }
+                .forEach { variant ->
+                    val variantReference = variant.safeLocalReference()
+                    val propName = "as${variant.simpleName.asString()}"
+                    val checkName = "is${variant.simpleName.asString()}"
+                    if (variant.typeParameters.isNotEmpty()) {
+                        appendLine("// Skipped $classReference.$propName: generic sealed variants are not supported")
+                    } else {
+                        appendLine("@get:JvmName(\"path${simpleName}_$propName\") public val <ROOT> DataClassPath<ROOT, $classReference>.$propName: DataClassPathOfType<ROOT, $classReference, $variantReference> get() = this.asType($variantReference.serializer())")
+                        appendLine("@JvmName(\"path${simpleName}_$checkName\") public fun <ROOT> DataClassPath<ROOT, $classReference>.$checkName(): Condition<ROOT> = this isType $variantReference.serializer()")
+                    }
+                }
+        }
+    } catch (e: Exception) {
+        appendLine("/*" + e.stackTraceToString() + "*/")
+    }
+
+    private fun TabAppendable.writeClassFields(declaration: KSClassDeclaration) = try {
+        val classReference: String = declaration.safeLocalReference()
+        val fields = declaration.fields()
+        val typeReference: String =
+            declaration.safeLocalReference() + (declaration.typeParameters.takeUnless { it.isEmpty() }
+                ?.joinToString(", ", "<", ">") { it.name.asString() } ?: "")
+        val simpleName: String = classReference.replace('.', '_')
+
+        fun appendInlinePropertyAnnotation() {
+            if (declaration.modifiers.contains(Modifier.VALUE)) appendLine("@InlineProperty")
+        }
+
+        if (declaration.typeParameters.isNotEmpty()) {
+            appendLine(
+                "public inline fun <${
+                    declaration.typeParameters.joinToString(", ") {
+                        "reified " + it.name.asString() + ": " + (it.bounds.firstOrNull()
+                            ?.toKotlin() ?: "Any?")
+                    }
+                }> $classReference.Companion.path(): DataClassPath<$typeReference, $typeReference> = com.lightningkite.services.database.path<$typeReference>()"
+            )
+
+            listOf(
+                "public fun",
+                declaration.typeParameters.joinToString(
+                    ", ",
+                    prefix = " <",
+                    postfix = "> "
+                ) { param ->
+                    param.name.asString() + (param.bounds.firstOrNull()?.toKotlin()
+                        ?.let { ": $it" } ?: "")
+                },
+                "$classReference.Companion.path(",
+                declaration.typeParameters.joinToString(", ") { param ->
+                    "${
+                        param.name.asString().lowercase()
+                    }: KSerializer<${param.name.asString()}>"
+                },
+                "): DataClassPath<$typeReference, $typeReference>",
+                " = ",
+                "com.lightningkite.services.database.path",
+                declaration.typeParameters.joinToString(
+                    ", ",
+                    prefix = "($classReference.Companion.serializer(",
+                    postfix = "))"
+                ) {
+                    it.name.asString().lowercase()
+                },
+                "\n"
+            ).forEach(::append)
+
+            for ((index, field) in fields.withIndex()) {
+                val propName = field.name.replaceFirstChar {
+                    if (it.isLowerCase()) it.titlecase(getDefault()) else it.toString()
+                }
+                val serPropName = "field$propName"
+
+                val prefix = declaration.safeLocalReference().camelCase().replace('.', '_')
+
+                appendInlinePropertyAnnotation()
+                appendLine(
+                    "@get:JvmName(\"${prefix}_field_$propName\") public val <${
+                        declaration.typeParameters.joinToString(", ") {
+                            it.name.asString() + ": " + (it.bounds.firstOrNull()
+                                ?.toKotlin() ?: "Any?")
+                        }
+                    }> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(this as GeneratedSerializer<$typeReference>, $index)"
+                )
+                appendInlinePropertyAnnotation()
+                appendLine(
+                    "@get:JvmName(\"${prefix}_path_$propName\") public val <ROOT, ${
+                        declaration.typeParameters.joinToString(", ") {
+                            it.name.asString() + ": " + (it.bounds.firstOrNull()
+                                ?.toKotlin() ?: "Any?")
+                        }
+                    }> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[this.serializer.$serPropName]"
+                )
+            }
+        } else {
+            appendLine("public inline val $typeReference.Companion.path: DataClassPath<$typeReference, $typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
+            appendLine("private val ${simpleName}__properties = $classReference.serializer().serializableProperties!!")
+            for ((index, field) in fields.withIndex()) {
+                val serPropName = "${simpleName}_${field.name}"
+                appendInlinePropertyAnnotation()
+                appendLine("public val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = ${simpleName}__properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
+                appendInlinePropertyAnnotation()
+                appendLine("@get:JvmName(\"path$serPropName\") public val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[$serPropName]")
+            }
+        }
+    } catch (e: Exception) {
+        appendLine("/*" + e.stackTraceToString() + "*/")
     }
 }
 

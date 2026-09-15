@@ -22,7 +22,7 @@ private fun toField(owner: KSClassDeclaration, param: KSValueParameter, property
         default = param.defaultText?.takeUnless {
             regexes.any { r ->
                 r.find(it) != null
-            } == true
+            }
         },
     )
 }

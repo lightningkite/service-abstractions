@@ -168,3 +168,6 @@ public infix fun <K, T : Enum<T>> DataClassPath<K, T>.gte(value: T): Condition<K
 
 public infix fun <K, T : Enum<T>> DataClassPath<K, T>.lte(value: T): Condition<K> =
     mapCondition(Condition.Inside(serializer.entries().filter { it <= value }))
+
+public infix fun <K, T, V : T> DataClassPath<K, T>.isType(type: KSerializer<V>): Condition<K> =
+    mapCondition(Condition.IfIsType(type, Condition.Always))
