@@ -122,12 +122,16 @@ public suspend fun List<FileScanner>.scan(item: TypedData) {
     // TODO Splittable stream
     coroutineScope {
         val asFile = item.download()
-        val all = this@scan.map {
-            val t = launch { it.scan(item.mediaType, asFile.source().buffered()) }
-            t.start()
-            t
+        try {
+            val all = this@scan.map {
+                val t = launch { it.scan(item.mediaType, asFile.source().buffered()) }
+                t.start()
+                t
+            }
+            all.joinAll()
+        } finally {
+            asFile.delete()
         }
-        all.joinAll()
     }
 }
 
