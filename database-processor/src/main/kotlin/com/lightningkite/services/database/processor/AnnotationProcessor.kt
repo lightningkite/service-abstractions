@@ -189,7 +189,7 @@ class TableGenerator(
                         if (variant.typeParameters.isNotEmpty()) {
                             appendLine("// Skipped $classReference.$propName: generic sealed variants are not supported")
                         } else {
-                            appendLine("@get:JvmName(\"path${simpleName}_$propName\") public val <ROOT> DataClassPath<ROOT, $classReference>.$propName: DataClassPathOfType<ROOT, $classReference, $variantReference> get() = this.asType($variantReference.serializer())")
+                            appendLine("@get:JvmName(\"path${simpleName}_$propName\") public val <ROOT> DataClassPath<ROOT, $classReference>.$propName: DataClassPath<ROOT, $variantReference> get() = this.asType($variantReference.serializer())")
                         }
                     }
             }

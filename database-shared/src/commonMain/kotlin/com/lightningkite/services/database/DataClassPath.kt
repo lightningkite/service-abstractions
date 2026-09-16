@@ -259,3 +259,6 @@ public val <K, V> DataClassPath<K, Set<V>>.elements: DataClassPathSet<K, V>
 
 public fun <K, T, V : T> DataClassPath<K, T>.asType(serializer: KSerializer<V>): DataClassPathOfType<K, T, V> =
     DataClassPathOfType(this, serializer)
+
+public inline fun <K, T, reified V : T> DataClassPath<K, T>.asType(): DataClassPathOfType<K, T, V> =
+    DataClassPathOfType(this, serializer())

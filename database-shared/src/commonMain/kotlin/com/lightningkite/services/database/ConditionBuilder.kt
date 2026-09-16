@@ -171,3 +171,5 @@ public infix fun <K, T : Enum<T>> DataClassPath<K, T>.lte(value: T): Condition<K
 
 public infix fun <K, T, V : T> DataClassPath<K, T>.isType(type: KSerializer<V>): Condition<K> =
     mapCondition(Condition.IfIsType(type, Condition.Always))
+
+public inline fun <K, T, reified V : T> DataClassPath<K, T>.isType(): Condition<K> = isType(serializer<V>())
