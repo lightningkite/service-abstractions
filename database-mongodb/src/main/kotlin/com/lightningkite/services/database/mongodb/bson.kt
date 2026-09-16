@@ -320,6 +320,28 @@ private fun <T> Modification<T>.dump(
             bson = bson
         )
 
+        // Like IfNotNull, the check isn't enforced: the inner modification is applied at the same key as the variant.
+        is Modification.IfIsType<*, *> -> when (val inner = modification) {
+            // Encoding with the outer (polymorphic) serializer keeps the discriminator on the stored value.
+            is Modification.Assign -> (inner as Modification<T>).dump(serializer, update, key, bson = bson)
+            is Modification.Chain -> inner.modifications.forEach {
+                (Modification.IfIsType(
+                    discriminator as SealedTypeDiscriminator<Any?>,
+                    it as Modification<Any?>
+                ) as Modification<T>).dump(serializer, update, key, bson = bson)
+            }
+
+            else -> (inner as Modification<Any?>).dump(
+                serializer.polymorphicSubSerializer(discriminator.serialName, bson.serializersModule)
+                    ?: throw IllegalArgumentException(
+                        "Could not find a serializer for '${discriminator.serialName}' as a subtype of '${serializer.descriptor.serialName}'."
+                    ),
+                update,
+                key,
+                bson = bson
+            )
+        }
+
         is Modification.OnField<*, *> -> (modification as Modification<Any?>).dump(
             this.key.serializer as KSerializer<Any?>,
             update,

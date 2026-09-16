@@ -2,6 +2,7 @@ package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.data.GenerateDataClassPaths
 import com.lightningkite.services.database.Condition
+import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.serializableProperties
 import org.bson.BsonDocument
@@ -102,6 +103,57 @@ class BsonTest {
                 Condition.NotEqual(Polymorphic.Class(5))
             ).bson(Polymorphic.serializer(), bson = bson)
         }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    @Test
+    fun testIfIsTypeModification() {
+        val bson = KBson()
+        val holderSer = PolymorphicHolder.serializer()
+        val valueProp = holderSer.serializableProperties!!
+            .first { it.name == "value" } as SerializableProperty<PolymorphicHolder, Polymorphic>
+        val innerProp = Polymorphic.Class.serializer().serializableProperties!!
+            .first { it.name == "inner" } as SerializableProperty<Polymorphic.Class, Int>
+        val classSerialName = Polymorphic.Class.serializer().descriptor.serialName
+
+        // Field modifications apply at the same key using the variant's serializer.
+        assertEquals(
+            Document("\$inc", Document("value.inner", BsonInt32(1))),
+            Modification.OnField(
+                valueProp,
+                Modification.IfIsType(
+                    Polymorphic.Class.serializer(),
+                    Modification.OnField(innerProp, Modification.Increment(1))
+                )
+            ).bson(holderSer, bson = bson).document
+        )
+
+        // Whole-value assignment keeps the discriminator.
+        assertEquals(
+            Document("\$set", Document("value", BsonDocument("_t", BsonString(classSerialName)).append("inner", BsonInt32(5)))),
+            Modification.OnField(
+                valueProp,
+                Modification.IfIsType(Polymorphic.Class.serializer(), Modification.Assign(Polymorphic.Class(5)))
+            ).bson(holderSer, bson = bson).document
+        )
+
+        // Each part of a chain is handled on its own, so an assignment inside one still keeps the discriminator.
+        assertEquals(
+            Document("\$inc", Document("value.inner", BsonInt32(1)))
+                .append("\$max", Document("value.inner", BsonInt32(3))),
+            Modification.OnField(
+                valueProp,
+                Modification.IfIsType(
+                    Polymorphic.Class.serializer(),
+                    Modification.Chain(
+                        listOf(
+                            Modification.OnField(innerProp, Modification.Increment(1)),
+                            Modification.OnField(innerProp, Modification.CoerceAtLeast(3)),
+                        )
+                    )
+                )
+            ).bson(holderSer, bson = bson).document
+        )
     }
 }
 

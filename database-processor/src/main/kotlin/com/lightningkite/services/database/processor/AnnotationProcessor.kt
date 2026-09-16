@@ -50,7 +50,7 @@ import java.util.Locale.getDefault
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 14) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 15) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("DatabaseModel") != null || annotation("GenerateDataClassPaths") != null
 
@@ -170,27 +170,83 @@ class TableGenerator(
         }
     }
 
-    private fun TabAppendable.writeSealedFields(declaration: KSClassDeclaration) = try {
-        val classReference: String = declaration.safeLocalReference()
-        val simpleName: String = classReference.replace('.', '_')
+    private fun TabAppendable.writeSealedFields(declaration: KSClassDeclaration) {
+        // Outside the try below, which would otherwise turn the failure into a comment in the generated file.
+        validateVariantShortNames(declaration)
+        try {
+            val classReference: String = declaration.safeLocalReference()
+            val simpleName: String = classReference.replace('.', '_')
 
-        if (declaration.typeParameters.isNotEmpty()) {
-            appendLine("// Skipped $classReference: generic sealed types are not supported")
-        } else {
-            appendLine("public inline val $classReference.Companion.path: DataClassPath<$classReference, $classReference> get() = com.lightningkite.services.database.path<$classReference>()")
-            declaration.getSealedSubclasses()
-                .filter { it.needsDcp() && it.annotation("Serializable", "kotlinx.serialization") != null }
-                .forEach { variant ->
-                    val variantReference = variant.safeLocalReference()
-                    val propName = "as${variant.simpleName.asString()}"
-                    if (variant.typeParameters.isNotEmpty()) {
-                        appendLine("// Skipped $classReference.$propName: generic sealed variants are not supported")
-                    } else {
-                        appendLine("@get:JvmName(\"path${simpleName}_$propName\") public val <ROOT> DataClassPath<ROOT, $classReference>.$propName: DataClassPathOfType<ROOT, $classReference, $variantReference> get() = this.asType($variantReference.serializer())")                    }
-                }
+            if (declaration.typeParameters.isNotEmpty()) {
+                appendLine("// Skipped $classReference: generic sealed types are not supported")
+            } else {
+                appendLine("public inline val $classReference.Companion.path: DataClassPath<$classReference, $classReference> get() = com.lightningkite.services.database.path<$classReference>()")
+                declaration.getSealedSubclasses()
+                    .filter { it.needsDcp() && it.annotation("Serializable", "kotlinx.serialization") != null }
+                    .forEach { variant ->
+                        val variantReference = variant.safeLocalReference()
+                        val propName = "as${variant.simpleName.asString()}"
+                        if (variant.typeParameters.isNotEmpty()) {
+                            appendLine("// Skipped $classReference.$propName: generic sealed variants are not supported")
+                        } else {
+                            appendLine("@get:JvmName(\"path${simpleName}_$propName\") public val <ROOT> DataClassPath<ROOT, $classReference>.$propName: DataClassPathOfType<ROOT, $classReference, $variantReference> get() = this.asType($variantReference.serializer())")
+                        }
+                    }
+            }
+        } catch (e: Exception) {
+            appendLine("/*" + e.stackTraceToString() + "*/")
         }
-    } catch (e: Exception) {
-        appendLine("/*" + e.stackTraceToString() + "*/")
+    }
+
+    private fun KSClassDeclaration.serialName(): String =
+        annotation("SerialName", "kotlinx.serialization")?.arguments?.firstOrNull()?.value as? String
+            ?: qualifiedName!!.asString()
+
+    /** The variants kotlinx.serialization lists for this sealed type: serializable subclasses, with nested sealed types flattened. */
+    private fun KSClassDeclaration.sealedOptions(): Sequence<KSClassDeclaration> = getSealedSubclasses().flatMap {
+        when {
+            Modifier.SEALED in it.modifiers -> it.sealedOptions()
+            Modifier.ABSTRACT in it.modifiers -> emptySequence()
+            it.annotation("Serializable", "kotlinx.serialization") != null -> sequenceOf(it)
+            else -> emptySequence()
+        }
+    }
+
+    /**
+     * Fails the build when a variant's short name - its serial name relative to the sealed type's, as computed by
+     * `variantShortName` in database-shared - is shared with another variant or matches another variant's full
+     * serial name. Either would break JSON decoding for the whole sealed type and make path strings resolve to the
+     * wrong variant.
+     */
+    private fun validateVariantShortNames(declaration: KSClassDeclaration) {
+        val supertypeSerialName = declaration.serialName()
+        val serialNames = declaration.sealedOptions().distinct().associateWith { it.serialName() }
+        val shortNames = serialNames
+            .mapValues { (_, serialName) -> serialName.removePrefix("$supertypeSerialName.").takeIf { it != serialName } }
+        val problems = ArrayList<String>()
+
+        shortNames.entries
+            .filter { it.value != null }
+            .groupBy({ it.value!! }, { it.key })
+            .filterValues { it.size > 1 }
+            .forEach { (shortName, sharing) ->
+                problems += "'$shortName' is the short name of ${sharing.joinToString(" and ") { it.qualifiedName!!.asString() }}."
+            }
+        for ((variant, shortName) in shortNames) {
+            if (shortName == null) continue
+            val matching = serialNames.entries.firstOrNull { (other, serialName) -> other != variant && serialName == shortName }
+            if (matching != null) {
+                problems += "'$shortName' is the short name of ${variant.qualifiedName!!.asString()} and the serial name of ${matching.key.qualifiedName!!.asString()}."
+            }
+        }
+
+        if (problems.isNotEmpty()) {
+            val message = "Conflicting variant short names in sealed type ${declaration.qualifiedName!!.asString()}:\n" +
+                    problems.joinToString("\n") { "  - $it" } +
+                    "\nChange the @SerialName of one of the conflicting variants so the names are distinct."
+            logger.error(message, declaration)
+            throw IllegalStateException(message)
+        }
     }
 
     private fun TabAppendable.writeClassFields(declaration: KSClassDeclaration) = try {

@@ -16,6 +16,8 @@ public value class SealedTypeDiscriminator<T> private constructor(public val ser
 /**
  * The name of a variant relative to this sealed supertype, e.g. "Bar" for "com.example.Polymorphic.Bar" under
  * "com.example.Polymorphic". Null when the variant's serial name isn't nested under the supertype's.
+ *
+ * The DataClassPaths processor rejects sealed types where these names conflict (`TableGenerator.validateVariantShortNames`).
  */
 internal fun <T, V : T> KSerializer<T>.variantShortName(discriminator: SealedTypeDiscriminator<V>): String? =
     discriminator.serialName.removePrefix(descriptor.serialName + ".").takeIf { it != discriminator.serialName }
