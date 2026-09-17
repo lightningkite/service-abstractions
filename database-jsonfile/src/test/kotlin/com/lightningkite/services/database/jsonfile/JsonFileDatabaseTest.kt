@@ -31,6 +31,10 @@ class JsonFileModificationTests : ModificationTests() {
     override val database: Database = db()
 }
 
+class JsonFileSealedPathTests : SealedPathTests() {
+    override val database: Database = db()
+}
+
 class JsonFileOperationsTests : OperationsTests() {
     override val database: Database = db()
 }

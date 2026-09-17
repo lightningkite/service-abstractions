@@ -200,6 +200,17 @@ private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySeal
         priority = 55
     ) { it is Condition.FullTextSearch<*> })
 
+private fun <T> polymorphicOptions(supertype: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> =
+    commonOptions(supertype) + supertype.serializableOptions!!.map { option ->
+        val discriminator = SealedTypeDiscriminator(option.serializer)
+        MySealedClassSerializer.Option(
+            serializer = ConditionIfIsTypeSerializer(supertype, option.serializer),
+            baseName = discriminator.serialName,
+            alternativeNames = option.secondaryNames + listOfNotNull(supertype.variantShortName(discriminator)),
+            priority = 80
+        ) { it is Condition.IfIsType<*, *> && it.discriminator == discriminator }
+    }
+
 private val cache = HashMap<KSerializerKey, MySealedClassSerializerInterface<*>>()
 
 @Suppress("UNCHECKED_CAST")
@@ -219,6 +230,7 @@ public class ConditionSerializer<T>(public val inner: KSerializer<T>) :
                 }
 
                 inner.serializableProperties != null -> classOptionsReflective(inner as KSerializer<Any>)
+                inner.serializableOptions != null -> polymorphicOptions(inner)
                 else -> comparableOptions(inner as KSerializer<String>)
             }
             r as List<MySealedClassSerializer.Option<Condition<T>, out Condition<T>>>
@@ -393,4 +405,13 @@ internal class ConditionIfNotNullSerializer<T>(private val inner: KSerializer<T>
     override fun getDeferred(): KSerializer<Condition<T>> = Condition.serializer(inner)
     override fun inner(it: Condition.IfNotNull<T>): Condition<T> = it.condition
     override fun outer(it: Condition<T>): Condition.IfNotNull<T> = Condition.IfNotNull(it)
+}
+
+internal class ConditionIfIsTypeSerializer<T, V : T>(
+    private val outer: KSerializer<T>,
+    private val inner: KSerializer<V>
+) : WrappingSerializer<Condition.IfIsType<T, V>, Condition<V>>("com.lightningkite.services.database.Condition.IfIsType") {
+    override fun getDeferred(): KSerializer<Condition<V>> = Condition.serializer(inner)
+    override fun inner(it: Condition.IfIsType<T, V>): Condition<V> = it.condition
+    override fun outer(it: Condition<V>): Condition.IfIsType<T, V> = Condition.IfIsType(inner, it)
 }

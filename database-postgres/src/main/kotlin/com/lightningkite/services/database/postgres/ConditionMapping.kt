@@ -347,6 +347,11 @@ private fun <T> condition(
             fieldSet.sub(condition.key as SerializableProperty<T, Any?>)
         )
 
+        // Postgres doesn't support sealed types yet; see the planned design at PolymorphicKind.SEALED in SerialDescriptorTable.kt.
+        is Condition.IfIsType<*, *> -> throw UnsupportedOperationException(
+            "Condition.IfIsType (sealed type projection) is not yet supported by the Postgres driver."
+        )
+
         else -> throw IllegalArgumentException()
     }
 }
@@ -441,6 +446,11 @@ private fun <T> FieldModifier.modification(
         is Modification.IfNotNull<*> -> modification<Any?>(
             modification.modification as Modification<Any?>,
             fieldSet as FieldSet2<Any?>
+        )
+
+        // Postgres doesn't support sealed types yet; see the planned design at PolymorphicKind.SEALED in SerialDescriptorTable.kt.
+        is Modification.IfIsType<*, *> -> throw UnsupportedOperationException(
+            "Modification.IfIsType (sealed type projection) is not yet supported by the Postgres driver."
         )
 
         is Modification.CoerceAtMost -> modifySingle(fieldSet) { type, old ->

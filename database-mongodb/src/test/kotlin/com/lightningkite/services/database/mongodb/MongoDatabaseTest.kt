@@ -92,6 +92,14 @@ class MongodbModificationTests : ModificationTests() {
     }
 }
 
+class MongodbSealedPathTests : SealedPathTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
 class MongodbOperationsTests : OperationsTests() {
     override val database: Database = db()
 

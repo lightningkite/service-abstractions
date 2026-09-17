@@ -149,7 +149,19 @@ internal fun SerialDescriptor.columnType(serializersModule: SerializersModule): 
     return when (kind) {
         SerialKind.CONTEXTUAL -> throw Error()
         PolymorphicKind.OPEN -> throw NotImplementedError()
-        PolymorphicKind.SEALED -> throw NotImplementedError()
+        // Sealed types aren't supported yet, so neither are the type projection paths built on them
+        // (DataClassPathOfType, Condition.IfIsType, Modification.IfIsType - see ConditionMapping.kt).
+        //
+        // Planned design: flatten the sealed data into a discriminated union of columns.
+        // - A discriminator column holds the variant's serial name.
+        // - Each variant's fields become columns alongside it, null whenever a row holds a different variant.
+        // - Fields with the same name and the same type across variants are merged into a single shared column.
+        // - If variants have fields with the same name but conflicting types, or the flattened columns grow too
+        //   numerous, a through-model (a separate table keyed to this row) is created automatically instead.
+        //
+        // With that layout, IfIsType becomes a check on the discriminator column combined with the inner
+        // condition/modification applied to the variant's columns.
+        PolymorphicKind.SEALED -> throw NotImplementedError("Sealed types are not yet supported by the Postgres driver.")
         PrimitiveKind.BOOLEAN -> listOf(
             ColumnTypeInfo(
                 listOf<String>(),
