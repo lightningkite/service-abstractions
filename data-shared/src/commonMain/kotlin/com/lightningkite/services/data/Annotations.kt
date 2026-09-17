@@ -322,3 +322,30 @@ public annotation class TextIndex(val fields: Array<String>)
     AnnotationTarget.TYPEALIAS
 )
 public annotation class ExperimentalLightningServer(val explanation: String)
+
+@RequiresOptIn(level = RequiresOptIn.Level.ERROR)
+@MustBeDocumented
+@Retention(AnnotationRetention.BINARY)
+@Target(
+    AnnotationTarget.CONSTRUCTOR,
+    AnnotationTarget.FUNCTION,
+    AnnotationTarget.PROPERTY_SETTER,
+)
+/**
+ * When a function or constructor is marked as [Unsafe] it means that it bypasses some invariant,
+ * and it is the user or caller's responsibility to ensure the invariant is upheld.
+ * Failure to uphold the invariant can and will result in undefined behavior.
+ *
+ * This annotation is meant to mimic `unsafe` block behavior in Rust.
+ *
+ * ## Opt-In
+ *
+ * Using [Unsafe] functions requires opt-in to make sure the caller is aware of the requirements.
+ * When opting in to an [Unsafe] function it is best practice to leave a comment explaining how the invariant is upheld.
+ *
+ * ## Usage
+ *
+ * Code applying this annotation should explain exactly what invariant is that it breaks, and
+ * what the caller must do to ensure the invariant is upheld in the docstring.
+ * */
+public annotation class Unsafe(val invariant: String)
