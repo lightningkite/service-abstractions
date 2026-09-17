@@ -7,11 +7,15 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Conditions and modifications that project a sealed field onto one of its variants via `asType`.
+ * Conditions, modifications, and sorts that project a sealed field onto one of its variants via `asType`.
  *
  * Modifications through a variant path follow the same standard as [DataClassPathNotNull]: backends aren't required
  * to enforce the type check, so modification tests only apply them to values that already are that variant (or
  * select those values with a condition first).
+ *
+ * Sorts follow the same standard. A backend may sort on the variant's field wherever it's stored, so another variant
+ * storing a field of the same name can sort by that value instead of as null. Tests that sort on such a field select
+ * the variant with a condition first.
  */
 abstract class SealedPathTests {
     abstract val database: Database
@@ -197,6 +201,99 @@ abstract class SealedPathTests {
             ),
             condition { it.payments.any { it.asCard.amount eq 20 } }
         )
+    }
+
+    // endregion
+
+    // region sorting
+
+    // `_id` breaks ties between values that sort as null so the order is fully defined.
+    private suspend fun sortTest(
+        name: String,
+        items: List<SealedPathTestModel>,
+        orderBy: List<SortPart<SealedPathTestModel>>,
+        condition: Condition<SealedPathTestModel> = Condition.Always,
+    ) {
+        val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_$name"))
+        collection.insert(items)
+        val fullOrder = orderBy + SortPart(path<SealedPathTestModel>()._id)
+        val expected = items.filter { condition(it) }.sortedWith(fullOrder.comparator!!)
+        assertEquals(expected, collection.find(condition, orderBy = fullOrder).toList())
+    }
+
+    @Test
+    fun test_sort_asType_field() = runTest {
+        sortTest(
+            "test_sort_asType_field",
+            shapes.map { SealedPathTestModel(shape = it) },
+            listOf(SortPart(path<SealedPathTestModel>().shape.asCircle.radius))
+        )
+    }
+
+    @Test
+    fun test_sort_asType_field_descending() = runTest {
+        sortTest(
+            "test_sort_asType_field_descending",
+            shapes.map { SealedPathTestModel(shape = it) },
+            listOf(SortPart(path<SealedPathTestModel>().shape.asCircle.radius, ascending = false))
+        )
+    }
+
+    @Test
+    fun test_sort_asType_sharedFieldName() = runTest {
+        sortTest(
+            "test_sort_asType_sharedFieldName",
+            payments.map { SealedPathTestModel(payment = it) },
+            listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount)),
+            condition { it.payment isType Payment.Card.serializer() }
+        )
+    }
+
+    @Test
+    fun test_sort_asType_sharedFieldName_descending() = runTest {
+        sortTest(
+            "test_sort_asType_sharedFieldName_descending",
+            payments.map { SealedPathTestModel(payment = it) },
+            listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false)),
+            condition { it.payment isType Payment.Card.serializer() }
+        )
+    }
+
+    @Test
+    fun test_sort_notNull_asType_field() = runTest {
+        sortTest(
+            "test_sort_notNull_asType_field",
+            (shapes + null).map { SealedPathTestModel(shapeNullable = it) },
+            listOf(SortPart(path<SealedPathTestModel>().shapeNullable.notNull.asCircle.radius, ascending = false))
+        )
+    }
+
+    @Test
+    fun test_updateOne_sorted_asType_sharedFieldName() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_test_updateOne_sorted_asType_sharedFieldName"))
+        val items = payments.map { SealedPathTestModel(payment = it) }
+        collection.insert(items)
+        val orderBy = listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false))
+        val modification = modification<SealedPathTestModel> { it.payment.asCard.last4 assign "9999" }
+        // Only Cards are selected, so the unchecked modification only reaches the matching variant.
+        val condition = condition<SealedPathTestModel> { it.payment isType Payment.Card.serializer() }
+        val target = items.filter { condition(it) }.sortedWith(orderBy.comparator!!).first()
+        val change = collection.updateOne(condition, modification, orderBy)
+        assertEquals(target, change.old)
+        assertEquals(modification(target), collection.get(target._id))
+    }
+
+    @Test
+    fun test_deleteOne_sorted_asType_sharedFieldName() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_test_deleteOne_sorted_asType_sharedFieldName"))
+        val items = payments.map { SealedPathTestModel(payment = it) }
+        collection.insert(items)
+        // CashPayment(30) has the largest amount, but the condition leaves only Cards to sort.
+        val orderBy = listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false))
+        val condition = condition<SealedPathTestModel> { it.payment isType Payment.Card.serializer() }
+        val target = items.filter { condition(it) }.sortedWith(orderBy.comparator!!).first()
+        assertEquals(target, collection.deleteOne(condition, orderBy))
+        assertEquals(null, collection.get(target._id))
     }
 
     // endregion
