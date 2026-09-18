@@ -289,7 +289,7 @@ public class S3ExternalFileSystem(
                         it.key(unixPath)
                     }.await().let {
                         FileInfo(
-                            type = MediaType(it.contentType()),
+                            type = MediaType(it.contentType() ?: "application/octet-stream"),
                             size = it.contentLength().bytes,
                             lastModified = it.lastModified().toKotlinInstant()
                         )
