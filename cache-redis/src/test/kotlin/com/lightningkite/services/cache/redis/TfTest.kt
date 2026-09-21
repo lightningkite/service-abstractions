@@ -15,6 +15,7 @@ class TfTest {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun test() {
         assertPlannableAwsVpc<Cache.Settings>(
             name = "redis",
@@ -25,11 +26,41 @@ class TfTest {
     }
 
     @Test
+    fun testReplicationGroup() {
+        assertPlannableAwsVpc<Cache.Settings>(
+            name = "redis-rg",
+            fulfill = {
+                it.awsElasticacheRedisReplicationGroup()
+            }
+        )
+    }
+
+    @Test
     fun testServerless() {
         assertPlannableAwsVpc<Cache.Settings>(
             name = "redis-sls",
             fulfill = {
                 it.awsElasticacheRedisServerless()
+            }
+        )
+    }
+
+    @Test
+    fun testValkey() {
+        assertPlannableAwsVpc<Cache.Settings>(
+            name = "valkey",
+            fulfill = {
+                it.awsElasticacheValkey()
+            }
+        )
+    }
+
+    @Test
+    fun testValkeyServerless() {
+        assertPlannableAwsVpc<Cache.Settings>(
+            name = "valkey-sls",
+            fulfill = {
+                it.awsElasticacheValkeyServerless()
             }
         )
     }
