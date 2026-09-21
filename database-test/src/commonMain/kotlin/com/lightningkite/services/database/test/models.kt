@@ -326,3 +326,53 @@ data class UniqueNullSparseIndexTestModel(
     val set1: String? = String.random(),
     val set2: String? = String.random(),
 ) : HasId<Uuid>
+
+@GenerateDataClassPaths
+@Serializable
+data class SealedPathTestModel(
+    override val _id: Uuid = Uuid.random(),
+    val shape: Shape = Shape.Empty,
+    val shapeNullable: Shape? = null,
+    val shapes: List<Shape> = listOf(),
+    val payment: Payment = Payment.Pending,
+    val payments: List<Payment> = listOf(),
+) : HasId<Uuid> {
+    companion object
+}
+
+@GenerateDataClassPaths
+@Serializable
+sealed interface Shape {
+    @GenerateDataClassPaths
+    @Serializable
+    data class Circle(val radius: Int = 1) : Shape
+
+    @GenerateDataClassPaths
+    @Serializable
+    data class Square(val side: Int = 1, val label: String = "") : Shape
+
+    @GenerateDataClassPaths
+    @Serializable
+    data object Empty : Shape
+}
+
+@GenerateDataClassPaths
+@Serializable
+sealed class Payment {
+    abstract val amount: Int
+
+    @GenerateDataClassPaths
+    @Serializable
+    data class Card(override val amount: Int = 0, val last4: String = "") : Payment()
+
+    @GenerateDataClassPaths
+    @Serializable
+    data object Pending : Payment() {
+        override val amount: Int get() = 0
+    }
+}
+
+/** Declared outside [Payment], so its serial name isn't nested under the sealed class's. */
+@GenerateDataClassPaths
+@Serializable
+data class CashPayment(override val amount: Int = 0, val currency: String = "USD") : Payment()

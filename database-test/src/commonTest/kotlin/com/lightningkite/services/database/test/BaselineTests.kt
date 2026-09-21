@@ -17,6 +17,10 @@ class RamModificationTests : ModificationTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
 
+class RamSealedPathTests : SealedPathTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
 class RamOperationsTests : OperationsTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }

@@ -300,6 +300,10 @@ private fun <T> condition(
         is Condition.Exists<*> -> unsupported()
         is Condition.OnKey<*> -> unsupported()
 
+        is Condition.IfIsType<*, *> -> throw UnsupportedOperationException(
+            "Condition.IfIsType (sealed type projection) is not yet supported by the SQL driver."
+        )
+
         // Unsupported: table scan fallback
         is Condition.FullTextSearch -> unsupported()
         is Condition.GeoDistance -> unsupported()
@@ -488,6 +492,9 @@ internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = 
     is Modification.Chain -> modifications.all { it.isScalarOnly(schema, path) }
     is Modification.Assign -> !schema.childTables.keys.any { it == path || it.startsWith("${path}__") || path.isEmpty() && schema.childTables.isNotEmpty() }
     is Modification.IfNotNull<*> -> (modification as Modification<Any?>).isScalarOnly(schema, path)
+    is Modification.IfIsType<*, *> -> throw UnsupportedOperationException(
+        "Modification.IfIsType (sealed type projection) is not yet supported by the SQL driver."
+    )
     is Modification.Increment -> true
     is Modification.Multiply -> true
     is Modification.CoerceAtMost -> true

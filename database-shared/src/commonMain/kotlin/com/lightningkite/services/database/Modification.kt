@@ -1,7 +1,11 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.data.IsRawString
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.serializer
 
 /**
  * Represents an update operation that transforms a value of type T.
@@ -112,6 +116,23 @@ public sealed class Modification<T> {
     public data class IfNotNull<T>(val modification: Modification<T>) : Modification<T?>() {
         override fun invoke(on: T?): T? = on?.let { modification(it) }
         override fun toString(): String = "?$modification"
+    }
+
+    public data class IfIsType<T, V : T>(
+        val discriminator: SealedTypeDiscriminator<V>,
+        val modification: Modification<V>
+    ) : Modification<T>() {
+        public constructor(
+            serializer: KSerializer<V>,
+            modification: Modification<V>
+        ) : this(SealedTypeDiscriminator(serializer), modification)
+
+        override fun invoke(on: T): T = discriminator.handle(on,
+            matchFail = { on },
+            matchSuccess = { modification(it) }
+        )
+
+        override fun toString(): String = " as? ${discriminator.serialName} $modification"
     }
 
     @Serializable(ModificationAssignSerializer::class)
