@@ -199,7 +199,8 @@ public inline fun String.trimmedCaseless(): TrimmedCaselessString = TrimmedCasel
 
 /** Serializer for [EmailAddress]. */
 public object EmailAddressSerializer : KSerializer<EmailAddress> {
-    override fun deserialize(decoder: Decoder): EmailAddress = decoder.decodeString().toEmailAddress()
+    override fun deserialize(decoder: Decoder): EmailAddress =
+        deserializing { decoder.decodeString().toEmailAddress() }
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("com.lightningkite.services.data.EmailAddress", PrimitiveKind.STRING)
 
@@ -324,7 +325,8 @@ public fun String.toEmailAddressOrNull(): EmailAddress? {
 
 /** Serializer for [PhoneNumber]. */
 public object PhoneNumberSerializer : KSerializer<PhoneNumber> {
-    override fun deserialize(decoder: Decoder): PhoneNumber = decoder.decodeString().toPhoneNumber()
+    override fun deserialize(decoder: Decoder): PhoneNumber =
+        deserializing { decoder.decodeString().toPhoneNumber() }
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("com.lightningkite.services.data.PhoneNumber", PrimitiveKind.STRING)
 

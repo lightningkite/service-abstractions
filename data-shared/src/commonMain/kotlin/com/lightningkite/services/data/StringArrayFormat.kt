@@ -188,10 +188,20 @@ public class StringArrayFormat(override val serializersModule: SerializersModule
         override fun decodeNotNullMark(): Boolean = decodeBoolean()
     }
 
-    public fun <T> decodeFromStringList(deserializer: DeserializationStrategy<T>, list: List<String>): T {
-        var index = 0
-        return DataInputDecoder({ list[index++] }).decodeSerializableValue(deserializer)
-    }
+    /**
+     * Decodes one value from [list], one string per primitive the value is made of.
+     *
+     * Everything this format decodes is raw client input - a path segment, a query parameter - so a
+     * failure is reported as a [SerializationException] no matter how the failing serializer chose
+     * to signal it. Third-party serializers that validate by throwing (kotlin's `Uuid`, kotlinx's
+     * `LocalDate`) would otherwise look like server faults to the caller and answer a malformed
+     * request with a 500.
+     */
+    public fun <T> decodeFromStringList(deserializer: DeserializationStrategy<T>, list: List<String>): T =
+        deserializer.deserializing {
+            var index = 0
+            DataInputDecoder({ list[index++] }).decodeSerializableValue(deserializer)
+        }
 
     public fun <T> encodeToStringList(serializer: SerializationStrategy<T>, value: T): List<String> = buildList {
         DataOutputEncoder { add(it) }.encodeSerializableValue(serializer, value)
@@ -222,8 +232,10 @@ public class StringArrayFormat(override val serializersModule: SerializersModule
             }
             add(current.toString())
         }
-        var index = 0
-        return DataInputDecoder({ list[index++] }).decodeSerializableValue(deserializer)
+        return deserializer.deserializing {
+            var index = 0
+            DataInputDecoder({ list[index++] }).decodeSerializableValue(deserializer)
+        }
     }
 
     override fun <T> encodeToString(serializer: SerializationStrategy<T>, value: T): String = buildString {

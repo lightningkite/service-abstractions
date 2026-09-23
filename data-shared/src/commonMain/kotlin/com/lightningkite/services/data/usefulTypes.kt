@@ -109,9 +109,9 @@ public class Ratio private constructor(public val numerator: Long, public val de
 public object RatioSerializer : KSerializer<Ratio> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("com.lightningkite.services.data.Ratio", PrimitiveKind.STRING)
     override fun serialize(encoder: Encoder, value: Ratio): Unit = encoder.encodeString("${value.numerator}/${value.denominator}")
-    override fun deserialize(decoder: Decoder): Ratio {
+    override fun deserialize(decoder: Decoder): Ratio = deserializing {
         val (n, d) = decoder.decodeString().split("/")
-        return Ratio.of(n.toLong(), d.toLong())
+        Ratio.of(n.toLong(), d.toLong())
     }
 }
 
