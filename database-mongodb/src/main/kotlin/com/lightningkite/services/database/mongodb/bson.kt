@@ -10,6 +10,9 @@ import kotlinx.datetime.*
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.SetSerializer
 import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.AbstractDecoder
+import kotlinx.serialization.encoding.CompositeDecoder
+import kotlinx.serialization.internal.AbstractPolymorphicSerializer
 import kotlinx.serialization.modules.SerializersModule
 import org.bson.*
 import org.bson.types.Binary
@@ -241,8 +244,55 @@ private fun <T> Condition<T>.dump(
             atlasSearch = atlasSearch,
             bson = bson
         )
+
+        // Polymorphic values are encoded flat - `{ _t: "SerialName", ...subtypeFields }` - so the type check is
+        // a match on the discriminator field, and the subtype condition applies at the same key.
+        is Condition.IfIsType<*, *> -> {
+            if (condition is Condition.Equal) {
+                // Encoding the value with the outer (polymorphic) serializer includes the discriminator, so a whole-value
+                // match already implies the type check.
+                (condition as Condition<Any?>).dump(serializer, into, key, atlasSearch, bson)
+            } else {
+                if (key == null && condition is Condition.NotEqual) throw IllegalArgumentException(
+                    "Condition.IfIsType with Condition.NotEqual cannot be applied to a whole element (such as inside \$elemMatch), " +
+                            "since Mongo can't combine the discriminator field check with a whole-value \$ne."
+                )
+                into[if (key == null) bson.configuration.classDiscriminator else "$key.${bson.configuration.classDiscriminator}"] =
+                    documentOf("\$eq" to discriminator.serialName)
+                if (condition is Condition.NotEqual) {
+                    // The outer serializer is used so the compared value includes the discriminator, matching the stored layout.
+                    (condition as Condition<Any?>).dump(serializer, into, key, atlasSearch, bson)
+                } else if (condition !is Condition.Always) {
+                    (condition as Condition<Any?>).dump(
+                        serializer.polymorphicSubSerializer(discriminator.serialName, bson.serializersModule)
+                            ?: throw IllegalArgumentException(
+                                "Could not find a serializer for '${discriminator.serialName}' as a subtype of '${serializer.descriptor.serialName}'."
+                            ),
+                        into,
+                        key,
+                        atlasSearch = atlasSearch,
+                        bson = bson
+                    )
+                }
+            }
+        }
     }
     return into
+}
+
+@OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
+private fun KSerializer<*>.polymorphicSubSerializer(
+    serialName: String,
+    serializersModule: SerializersModule
+): KSerializer<Any?>? {
+    val base = if (descriptor.isNullable) nullElement() ?: return null else this
+    val poly = base as? AbstractPolymorphicSerializer<*> ?: return null
+    val lookup = object : AbstractDecoder() {
+        override val serializersModule: SerializersModule = serializersModule
+        override fun decodeElementIndex(descriptor: SerialDescriptor): Int = CompositeDecoder.DECODE_DONE
+    }
+    @Suppress("UNCHECKED_CAST")
+    return poly.findPolymorphicSerializerOrNull(lookup, serialName) as? KSerializer<Any?>
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -269,6 +319,28 @@ private fun <T> Modification<T>.dump(
             key,
             bson = bson
         )
+
+        // Like IfNotNull, the check isn't enforced: the inner modification is applied at the same key as the variant.
+        is Modification.IfIsType<*, *> -> when (val inner = modification) {
+            // Encoding with the outer (polymorphic) serializer keeps the discriminator on the stored value.
+            is Modification.Assign -> (inner as Modification<T>).dump(serializer, update, key, bson = bson)
+            is Modification.Chain -> inner.modifications.forEach {
+                (Modification.IfIsType(
+                    discriminator as SealedTypeDiscriminator<Any?>,
+                    it as Modification<Any?>
+                ) as Modification<T>).dump(serializer, update, key, bson = bson)
+            }
+
+            else -> (inner as Modification<Any?>).dump(
+                serializer.polymorphicSubSerializer(discriminator.serialName, bson.serializersModule)
+                    ?: throw IllegalArgumentException(
+                        "Could not find a serializer for '${discriminator.serialName}' as a subtype of '${serializer.descriptor.serialName}'."
+                    ),
+                update,
+                key,
+                bson = bson
+            )
+        }
 
         is Modification.OnField<*, *> -> (modification as Modification<Any?>).dump(
             this.key.serializer as KSerializer<Any?>,

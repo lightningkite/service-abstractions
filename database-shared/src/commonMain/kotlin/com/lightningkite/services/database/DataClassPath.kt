@@ -165,6 +165,51 @@ public data class DataClassPathNotNull<K, V>(val wraps: DataClassPath<K, V?>) :
     override val serializer: KSerializer<V> get() = wraps.serializer.nullElement()!! as KSerializer<V>
 }
 
+public data class DataClassPathOfType<K, T, V : T>(
+    val wraps: DataClassPath<K, T>,
+    override val serializer: KSerializer<V>
+) : DataClassPath<K, V>() {
+    public val discriminator: SealedTypeDiscriminator<V> = SealedTypeDiscriminator(serializer)
+
+    override val properties: List<SerializableProperty<*, *>>
+        get() = wraps.properties
+
+    override fun get(key: K): V? = wraps.get(key)?.let { supertype ->
+        discriminator.handle(
+            supertype,
+            matchFail = { null },
+            matchSuccess = { it }
+        )
+    }
+
+    // Matches mapModification: only replaces the value when it's already this variant.
+    override fun set(key: K, value: V): K = wraps.get(key)?.let { supertype ->
+        discriminator.handle(
+            supertype,
+            matchFail = { key },
+            matchSuccess = { wraps.set(key, value) }
+        )
+    } ?: key
+
+    override fun mapCondition(condition: Condition<V>): Condition<K> =
+        wraps.mapCondition(Condition.IfIsType(discriminator, condition))
+
+    override fun mapModification(modification: Modification<V>): Modification<K> =
+        wraps.mapModification(Modification.IfIsType(discriminator, modification))
+
+    // Bracketed so DataClassPathSerializer can split on '.' without breaking up the variant's serial name.
+    override fun toString(): String {
+        val name = wraps.serializer.variantShortName(discriminator) ?: discriminator.serialName
+        return if (wraps is DataClassPathSelf<*>) "[$name]" else "$wraps.[$name]"
+    }
+
+    // The serializer instance isn't stable for generic variants, so compare by discriminator instead.
+    override fun equals(other: Any?): Boolean =
+        other is DataClassPathOfType<*, *, *> && other.wraps == wraps && other.discriminator == discriminator
+
+    override fun hashCode(): Int = wraps.hashCode() * 31 + discriminator.hashCode()
+}
+
 public data class DataClassPathList<K, V>(val wraps: DataClassPath<K, List<V>>) :
     DataClassPath<K, V>() {
     override val properties: List<SerializableProperty<*, *>>
@@ -202,9 +247,7 @@ public data class DataClassPathSet<K, V>(val wraps: DataClassPath<K, Set<V>>) :
 }
 
 public val <K, V> DataClassPath<K, V?>.notNull: DataClassPathNotNull<K, V>
-    get() = DataClassPathNotNull(
-        this
-    )
+    get() = DataClassPathNotNull(this)
 
 @get:JvmName("getListElements")
 public val <K, V> DataClassPath<K, List<V>>.elements: DataClassPathList<K, V>
@@ -213,3 +256,9 @@ public val <K, V> DataClassPath<K, List<V>>.elements: DataClassPathList<K, V>
 @get:JvmName("getSetElements")
 public val <K, V> DataClassPath<K, Set<V>>.elements: DataClassPathSet<K, V>
     get() = DataClassPathSet(this)
+
+public fun <K, T, V : T> DataClassPath<K, T>.asType(serializer: KSerializer<V>): DataClassPathOfType<K, T, V> =
+    DataClassPathOfType(this, serializer)
+
+public inline fun <K, T, reified V : T> DataClassPath<K, T>.asType(): DataClassPathOfType<K, T, V> =
+    DataClassPathOfType(this, serializer())

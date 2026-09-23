@@ -25,7 +25,8 @@ class JsonFileDisconnectTest {
         val table = db.prepare(DatabaseTableDefinition<LargeTestModel>("disconnectTest"))
         table.insert(listOf(LargeTestModel(string = "persisted")))
 
-        val storage = dir.then("disconnecttest.json")
+        // File names keep the table name's casing; a lowercase name only matched on case-insensitive filesystems.
+        val storage = dir.then("disconnectTest.json")
         assertFalse(storage.exists(), "Nothing should be on disk before disconnect() flushes it")
 
         db.disconnect()

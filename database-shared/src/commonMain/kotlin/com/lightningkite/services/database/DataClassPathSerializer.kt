@@ -32,6 +32,27 @@ private class SerializablePropertyParser<T>(val serializer: KSerializer<T>) {
     }
 }
 
+/** Splits a path string on '.', except inside `[...]` variant segments, whose serial names contain dots. */
+private fun String.splitPathSegments(): List<String> {
+    val parts = ArrayList<String>()
+    val current = StringBuilder()
+    var depth = 0
+    for (c in this) {
+        when {
+            c == '[' -> depth++
+            c == ']' -> depth--
+            c == '.' && depth == 0 -> {
+                parts.add(current.toString())
+                current.clear()
+                continue
+            }
+        }
+        current.append(c)
+    }
+    parts.add(current.toString())
+    return parts
+}
+
 public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) :
     KSerializerWithDefault<DataClassPathPartial<T>> {
     override val default: DataClassPathPartial<T>
@@ -55,10 +76,26 @@ public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) :
     public fun fromString(value: String): DataClassPathPartial<T> {
         var current: DataClassPathPartial<T>? = null
         var currentSerializer: KSerializer<*> = inner
-        val valueParts = value.split('.')
+        val valueParts = value.splitPathSegments()
         for ((index, part) in valueParts.withIndex()) {
             val name = part.removeSuffix("?")
             if (name == "this") continue
+            if (name.startsWith('[') && name.endsWith(']')) {
+                val typeName = name.substring(1, name.length - 1)
+                val option = currentSerializer.serializableOptions?.find {
+                    val discriminator = SealedTypeDiscriminator(it.serializer)
+                    val serialName = discriminator.serialName
+                    @Suppress("UNCHECKED_CAST")
+                    serialName == typeName || (currentSerializer as KSerializer<Any?>).variantShortName(discriminator) == typeName || typeName in it.secondaryNames
+                } ?: throw SerializationException("'$typeName' is not a variant of ${currentSerializer.descriptor.serialName}")
+                @Suppress("UNCHECKED_CAST")
+                current = DataClassPathOfType(
+                    (current ?: DataClassPathSelf(inner)) as DataClassPath<T, Any?>,
+                    option.serializer as KSerializer<Any?>
+                )
+                currentSerializer = option.serializer
+                continue
+            }
             if (name == "*") {
                 val c = current ?: throw SerializationException("'*' cannot be the root of a path")
                 when {

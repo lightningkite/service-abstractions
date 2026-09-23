@@ -24,7 +24,14 @@ import kotlin.time.Duration
  * @param forceDestroy Whether to force destroy the bucket when the Terraform resource is deleted,
  *                     even if the bucket contains objects. Default is true for easier cleanup in development.
  *                     Set to false in production to prevent accidental data loss.
- * @throws IllegalArgumentException if S3PublicFileSystem is not registered in the settings parser
+ * @param versioning Whether to enable S3 bucket versioning, keeping noncurrent versions of objects
+ *                   around after they're overwritten or deleted, for data protection and audit trails.
+ * @param noncurrentVersionExpirationDays When set, adds a lifecycle rule that permanently deletes
+ *                   noncurrent object versions after this duration - otherwise, with [versioning]
+ *                   enabled, they're kept (and billed for) forever. Requires [versioning]. A common
+ *                   choice is 30-90 days, balancing recovery/audit needs against storage cost.
+ * @throws IllegalArgumentException if S3PublicFileSystem is not registered in the settings parser,
+ *                   or if [noncurrentVersionExpirationDays] is set without [versioning]
  */
 context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<ExternalFileSystem.Settings>.awsS3Bucket(
@@ -32,8 +39,13 @@ public fun TerraformNeed<ExternalFileSystem.Settings>.awsS3Bucket(
     forceDestroy: Boolean = true,
     corsOrigins: Set<String> = setOf("*"),
     kmsKey: KmsKeySource? = null,
+    versioning: Boolean = false,
+    noncurrentVersionExpiration: Duration? = null,
 ): Unit {
     if (!ExternalFileSystem.Settings.supports("s3")) throw IllegalArgumentException("You need to reference S3PublicFileSystem in your server definition to use this.")
+    require(noncurrentVersionExpiration == null || versioning) {
+        "noncurrentVersionExpirationDays requires versioning to be enabled"
+    }
     // null falls back to the deployment-wide default; objects stay private (signed URLs), so KMS is transparent.
     val kmsKeyArn = (kmsKey ?: emitter.encryptionKey).resolveKeyArn(name)
     emitter.fulfillSetting(
@@ -52,6 +64,35 @@ public fun TerraformNeed<ExternalFileSystem.Settings>.awsS3Bucket(
             // We can't really remove this at this time.
             "bucket_prefix" - "${emitter.projectPrefix.lowercase().replace("_", "")}-${name.lowercase()}"
             "force_destroy" - forceDestroy
+        }
+        if (versioning) {
+            "resource.aws_s3_bucket_versioning.${name}" {
+                "bucket" - expression("aws_s3_bucket.${name}.id")
+                "versioning_configuration" {
+                    "status" - "Enabled"
+                }
+            }
+        }
+        if (noncurrentVersionExpiration != null) {
+            "resource.aws_s3_bucket_lifecycle_configuration.${name}" {
+                // Lifecycle rules that reference noncurrent versions need versioning to already be
+                // enabled, so make the dependency explicit rather than relying on apply ordering.
+                "depends_on" - listOf<String>("aws_s3_bucket_versioning.${name}")
+                "bucket" - expression("aws_s3_bucket.${name}.id")
+                "rule" - listOf(
+                    terraformJsonObject {
+                        "id" - "expire-noncurrent-versions"
+                        "status" - "Enabled"
+                        // Empty prefix: applies to every object in the bucket.
+                        "filter" {
+                            "prefix" - ""
+                        }
+                        "noncurrent_version_expiration" {
+                            "noncurrent_days" - noncurrentVersionExpiration.inWholeDays
+                        }
+                    }
+                )
+            }
         }
         if (signedUrlDuration == null) {
             "resource.aws_s3_bucket_public_access_block.${name}" {
@@ -153,11 +194,8 @@ public fun TerraformNeed<ExternalFileSystem.Settings>.awsS3Bucket(
  *    with specific actions like s3:GetObject, s3:PutObject, s3:DeleteObject, s3:ListBucket for better security
  *    following the principle of least privilege.
  *
- * 4. Bucket Lifecycle: Consider adding optional lifecycle policies for automatic deletion of old files
- *    or transitioning to cheaper storage classes (e.g., Glacier) after a certain period.
- *
- * 5. Versioning: Consider adding an optional parameter to enable S3 versioning for data protection
- *    and audit trails.
+ * 4. Bucket Lifecycle: noncurrentVersionExpirationDays only covers noncurrent-version cleanup.
+ *    Still no way to transition current objects to cheaper storage classes (e.g., Glacier).
  *
  * 6. Encryption: Consider adding server-side encryption configuration (SSE-S3 or SSE-KMS) as a parameter
  *    for security compliance.

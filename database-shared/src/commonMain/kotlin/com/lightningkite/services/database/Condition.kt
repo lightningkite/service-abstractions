@@ -350,6 +350,23 @@ public sealed class Condition<in T> {
         override fun invoke(on: T?): Boolean = on != null && condition(on)
         override fun toString(): String = "? $condition"
     }
+
+    public data class IfIsType<T, V : T>(
+        val discriminator: SealedTypeDiscriminator<V>,
+        val condition: Condition<V>
+    ) : Condition<T>() {
+        public constructor(
+            type: KSerializer<V>,
+            condition: Condition<V>
+        ) : this(SealedTypeDiscriminator(type), condition)
+
+        override fun invoke(on: T): Boolean = discriminator.handle(on,
+            matchFail = { false },
+            matchSuccess = { condition(it) }
+        )
+
+        override fun toString(): String = " as? ${discriminator.serialName} $condition"
+    }
 }
 
 public infix fun <T> Condition<T>.and(other: Condition<T>): Condition.And<T> = Condition.And(listOf(this, other))

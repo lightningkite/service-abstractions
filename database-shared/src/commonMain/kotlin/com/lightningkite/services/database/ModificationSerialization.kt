@@ -189,6 +189,19 @@ private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySeal
         }
     }
 
+private fun <T> polymorphicOptions(supertype: KSerializer<T>): List<MySealedClassSerializer.Option<Modification<T>, *>> =
+    commonOptions(supertype) + supertype.serializableOptions!!.let {
+        it.map { option ->
+            val discriminator = SealedTypeDiscriminator(option.serializer)
+            MySealedClassSerializer.Option(
+                serializer = ModificationIfIsTypeSerializer(supertype, option.serializer),
+                baseName = discriminator.serialName,
+                priority = 70,
+                alternativeNames = option.secondaryNames + listOfNotNull(supertype.variantShortName(discriminator))
+            ) { it is Modification.IfIsType<*, *> && it.discriminator == discriminator }
+        }
+    }
+
 private val cache = HashMap<KSerializerKey, MySealedClassSerializerInterface<*>>()
 private val numlist = setOf(
     "kotlin.Byte",
@@ -215,6 +228,7 @@ public data class ModificationSerializer<T>(public val inner: KSerializer<T>) :
                 }
 
                 inner.serializableProperties != null -> classOptionsReflective(inner as KSerializer<Any>)
+                inner.serializableOptions != null -> polymorphicOptions(inner as KSerializer<Any>)
                 else -> comparableOptions(inner as KSerializer<String>)
             }
             r as List<MySealedClassSerializer.Option<Modification<T>, out Modification<T>>>
@@ -242,6 +256,15 @@ internal class ModificationIfNotNullSerializer<T>(internal val inner: KSerialize
     override fun getDeferred(): KSerializer<Modification<T>> = Modification.serializer(inner)
     override fun inner(it: Modification.IfNotNull<T>): Modification<T> = it.modification
     override fun outer(it: Modification<T>): Modification.IfNotNull<T> = Modification.IfNotNull(it)
+}
+
+internal class ModificationIfIsTypeSerializer<T, V : T>(
+    internal val supertype: KSerializer<T>,
+    internal val type: KSerializer<V>
+) : WrappingSerializer<Modification.IfIsType<T, V>, Modification<V>>("com.lightningkite.services.database.Modification.IfIsType") {
+    override fun getDeferred(): KSerializer<Modification<V>> = Modification.serializer(type)
+    override fun inner(it: Modification.IfIsType<T, V>): Modification<V> = it.modification
+    override fun outer(it: Modification<V>): Modification.IfIsType<T, V> = Modification.IfIsType(type, it)
 }
 
 internal class ModificationAssignSerializer<T>(internal val inner: KSerializer<T>) :
