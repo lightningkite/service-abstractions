@@ -28,8 +28,8 @@ public fun awsSesDomainConfiguration(
     if (emailDomain != emitter.domain) {
         require(emitter.domain.endsWith(".$emailDomain")) {
             "emailDomain '$emailDomain' must be a parent of the application domain '${emitter.domain}' " +
-            "so both reside in the same Route53 zone. " +
-            "To use an unrelated domain, create a separate TerraformEmitterAwsDomain for it."
+                    "so both reside in the same Route53 zone. " +
+                    "To use an unrelated domain, create a separate TerraformEmitterAwsDomain for it."
         }
     }
 
@@ -119,8 +119,8 @@ public fun awsSesDomainConfiguration(
         if (emailDomain != emitter.domain) {
             require(emitter.domain.endsWith(".$emailDomain")) {
                 "emailDomain '$emailDomain' must be a parent of the application domain '${emitter.domain}' " +
-                "so both reside in the same Route53 zone. " +
-                "To use an unrelated domain, create a separate TerraformEmitterAwsDomain for it."
+                        "so both reside in the same Route53 zone. " +
+                        "To use an unrelated domain, create a separate TerraformEmitterAwsDomain for it."
             }
             val emailName = "${name}_email"
 
@@ -194,6 +194,7 @@ public fun awsSesDomainConfiguration(
 context(emitter: TerraformEmitterAwsDomain)
 public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
     sesDomainConfiguration: AwsSesDomainConfiguration,
+    createVpcEndpoints: Boolean = false, // VPC Endpoints cost money, so make sure you really need it.
 ): Unit {
     if (!EmailService.Settings.supports("smtp")) {
         throw IllegalArgumentException("You need to reference JavaSmtpEmailService in your server definition to use this.")
@@ -255,15 +256,21 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
                 // Only instances inside the VPC ever reach this endpoint; don't expose it to the world.
                 "cidr_ipv4" - vpcInfo.cidr
             }
-            "resource.aws_vpc_endpoint.$name" {
-                "vpc_id" - vpcInfo.id
-                "service_name" - "com.amazonaws.${emitter.applicationRegion}.email-smtp"
-                "security_group_ids" - listOf(expression("aws_security_group.$name.id"))
-                "vpc_endpoint_type" - "Interface"
-                // Place ENIs in the private subnets and enable private DNS so the standard SMTP hostname
-                // resolves to the endpoint instead of egressing via the NAT gateway.
-                "subnet_ids" - vpcInfo.privateSubnets
-                "private_dns_enabled" - true
+            if (createVpcEndpoints) {
+                // VPC Endpoints not of type Gateway cost money and charged per endpoint, per availability zone, per hour.
+                // So adding in all three azs with cost about $22 a month. If you don't have a public subnet or NAT Gateway
+                // or you absolutely need to for security purposes and keeping everything on a private network then turn
+                // this on
+                "resource.aws_vpc_endpoint.$name" {
+                    "vpc_id" - vpcInfo.id
+                    "service_name" - "com.amazonaws.${emitter.applicationRegion}.email-smtp"
+                    "security_group_ids" - listOf(expression("aws_security_group.$name.id"))
+                    "vpc_endpoint_type" - "Interface"
+                    // Place ENIs in the private subnets and enable private DNS so the standard SMTP hostname
+                    // resolves to the endpoint instead of egressing via the NAT gateway.
+                    "subnet_ids" - vpcInfo.privateSubnets
+                    "private_dns_enabled" - true
+                }
             }
         }
 
