@@ -103,7 +103,7 @@ public open class ModelPermissionsTable<Model : Any>(
 
     override suspend fun insert(models: Iterable<Model>): List<Model> {
         val passingModels = models.filter { permissions.create(it) }
-        return wraps.insertMany(passingModels).map { permissions.mask(it) }
+        return wraps.insert(passingModels).map { permissions.mask(it) }
     }
 
     override suspend fun count(condition: Condition<Model>): Int =

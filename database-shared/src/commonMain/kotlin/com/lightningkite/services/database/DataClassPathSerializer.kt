@@ -91,7 +91,7 @@ public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) :
                 @Suppress("UNCHECKED_CAST")
                 current = DataClassPathOfType(
                     (current ?: DataClassPathSelf(inner)) as DataClassPath<T, Any?>,
-                    option.serializer as KSerializer<Any?>
+                    option.serializer
                 )
                 currentSerializer = option.serializer
                 continue

@@ -5,7 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
@@ -18,7 +18,12 @@ kotlin {
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
-    androidTarget {
+    android {
+        namespace = "com.lightningkite.services.embedding"
+        compileSdk = 36
+        minSdk = 21
+        enableCoreLibraryDesugaring = true
+        withHostTest {}
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
@@ -83,19 +88,6 @@ kotlin {
 
 lkLibrary("lightningkite", "service-abstractions") {}
 
-android {
-    namespace = "com.lightningkite.services.embedding"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 21
-    }
-    compileOptions {
-        isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-    dependencies {
-        coreLibraryDesugaring(libs.androidDesugaring)
-    }
+dependencies {
+    coreLibraryDesugaring(libs.androidDesugaring)
 }

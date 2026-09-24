@@ -163,8 +163,9 @@ end
     private var _lettuceClient = lazy(makeLettuceClient)
     public val lettuceClient: RedisClient get() = _lettuceClient.value
 
-    private var _lettuceConnection = lazy { lettuceClient.connect().reactive() }
-    public val lettuceConnection: RedisReactiveCommands<String, String> get() = _lettuceConnection.value
+    private var _statefulConnection = lazy { lettuceClient.connect() }
+    public val lettuceConnection: RedisReactiveCommands<String, String>
+        get() = _statefulConnection.value.commands(RedisReactiveCommands.factory())
 
     /** Establishes the underlying Redis connection. Optional — every operation does this lazily. */
     override suspend fun connect() {
@@ -177,12 +178,12 @@ end
      * no-op beyond the first.
      *
      * A subsequent [connect] (or any operation) rebuilds both from [makeLettuceClient], so this does
-     * not permanently disable the cache — see the `_lettuceClient`/`_lettuceConnection` vars above.
+     * not permanently disable the cache — see the `_lettuceClient`/`_statefulConnection` vars above.
      */
     override suspend fun disconnect() {
-        if (_lettuceConnection.isInitialized()) _lettuceConnection.value.statefulConnection.close()
+        if (_statefulConnection.isInitialized()) _statefulConnection.value.close()
         if (_lettuceClient.isInitialized()) _lettuceClient.value.shutdown()
-        _lettuceConnection = lazy { lettuceClient.connect().reactive() }
+        _statefulConnection = lazy { lettuceClient.connect() }
         _lettuceClient = lazy(makeLettuceClient)
     }
 

@@ -19,9 +19,9 @@ dependencies {
     api(libs.exposed.jdbc)
     api(libs.exposed.migrationJdbc)
     api(libs.hikariCP)
-    testImplementation("com.h2database:h2:2.2.224")
+    testImplementation(libs.h2)
     // SQLite JDBC driver is consumer-provided at runtime; needed here to exercise the sql-sqlite scheme.
-    testImplementation("org.xerial:sqlite-jdbc:3.45.3.0")
+    testImplementation(libs.sqlite.jdbc)
     // Postgres is the only backend that sorts nulls last by default, so it guards the
     // ASC_NULLS_FIRST/DESC_NULLS_LAST ordering contract that H2/SQLite cannot detect.
     testImplementation(libs.embedded.postgres)

@@ -24,7 +24,7 @@ abstract class IndexTests {
     fun testNotUniqueIndexes() = runTest {
         val table = database.prepare(DatabaseTableDefinition<NotUniqueIndexTestModel>())
 
-        table.insertMany(
+        table.insert(
             listOf(
                 NotUniqueIndexTestModel(),
                 NotUniqueIndexTestModel()
@@ -58,7 +58,7 @@ abstract class IndexTests {
 
         // all different
 
-        table.insertMany(
+        table.insert(
             listOf(
                 UniqueIndexTestModel(
                     value = "first",
@@ -76,7 +76,7 @@ abstract class IndexTests {
         println("unique value violation")
 
         assertUniqueViolation {
-            table.insertMany(
+            table.insert(
                 listOf(
                     UniqueIndexTestModel(
                         value = "unique",
@@ -91,7 +91,7 @@ abstract class IndexTests {
         println("unique set violation")
 
         assertUniqueViolation {
-            table.insertMany(
+            table.insert(
                 listOf(
                     UniqueIndexTestModel(
                         set1 = "unique1",
@@ -108,7 +108,7 @@ abstract class IndexTests {
         // unique null value violation
 
         assertUniqueViolation {
-            table.insertMany(
+            table.insert(
                 listOf(
                     UniqueIndexTestModel(
                         value = null,
@@ -123,7 +123,7 @@ abstract class IndexTests {
         // unique null set violation
 
         assertUniqueViolation {
-            table.insertMany(
+            table.insert(
                 listOf(
                     UniqueIndexTestModel(
                         set1 = null,
@@ -138,7 +138,7 @@ abstract class IndexTests {
         }
 
         assertUniqueViolation {
-            table.insertMany(
+            table.insert(
                 listOf(
                     UniqueIndexTestModel(
                         set1 = "unique",
@@ -159,7 +159,7 @@ abstract class IndexTests {
 
         // all different
 
-        table.insertMany(
+        table.insert(
             listOf(
                 UniqueNullSparseIndexTestModel(
                     value = "first",
@@ -177,7 +177,7 @@ abstract class IndexTests {
         //  unique value violations
 
         assertUniqueViolation {
-            table.insertMany(
+            table.insert(
                 listOf(
                     UniqueNullSparseIndexTestModel(
                         value = "unique",
@@ -192,7 +192,7 @@ abstract class IndexTests {
         // unique set violations
 
         assertUniqueViolation {
-            table.insertMany(
+            table.insert(
                 listOf(
                     UniqueNullSparseIndexTestModel(
                         set1 = "unique1",
@@ -208,7 +208,7 @@ abstract class IndexTests {
 
         // null values aren't unique
 
-        table.insertMany(
+        table.insert(
             listOf(
                 UniqueNullSparseIndexTestModel(
                     value = null,
@@ -221,7 +221,7 @@ abstract class IndexTests {
 
         // null in sets aren't unique
 
-        table.insertMany(
+        table.insert(
             listOf(
                 UniqueNullSparseIndexTestModel(
                     set1 = null,
@@ -234,7 +234,7 @@ abstract class IndexTests {
             )
         )
 
-        table.insertMany(
+        table.insert(
             listOf(
                 UniqueNullSparseIndexTestModel(
                     set1 = "unique",

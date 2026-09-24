@@ -72,6 +72,12 @@ public open class InMemoryTable<Model : Any>(
         lock.withLock { uniqueIndexChecks.value.forEach { it(changes) } }
 
     init {
+        registerUniqueIndexChecks()
+    }
+
+    // Kept out of the init block: the atomicfu compiler plugin cannot transform atomic operations
+    // inside lambdas that have no enclosing function.
+    private fun registerUniqueIndexChecks() {
         serializer.descriptor.indexes().plus(NeededIndex(fields = listOf("_id"), IndexUniqueness.Unique, "primary key"))
             .forEach { index: NeededIndex ->
                 if (index.unique in
