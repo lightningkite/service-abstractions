@@ -21,7 +21,7 @@ pluginManagement {
 
         versionCatalogs {
             create("awssdk") {
-                from("aws.sdk.kotlin:version-catalog:1.5.39")
+                from("aws.sdk.kotlin:version-catalog:1.9.8")
             }
         }
     }

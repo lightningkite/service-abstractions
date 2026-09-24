@@ -4,11 +4,11 @@ plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.multiplatform) apply false
     alias(libs.plugins.androidApp) apply false
-    alias(libs.plugins.androidLibrary) apply false
+    alias(libs.plugins.androidKmpLibrary) apply false
     alias(libs.plugins.graalVmNative) apply false
     alias(libs.plugins.shadow) apply false
     alias(libs.plugins.versionCatalogUpdate)
-    id("org.jetbrains.kotlinx.atomicfu") version "0.32.1"
+    id("org.jetbrains.kotlinx.atomicfu") version "0.33.0"
 }
 
 buildscript {

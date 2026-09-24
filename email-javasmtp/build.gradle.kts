@@ -15,7 +15,7 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
     testImplementation((libs.kotlinx.html))
-    testApi(project(":test"))
+    testImplementation(project(":test"))
 }
 
 kotlin {
