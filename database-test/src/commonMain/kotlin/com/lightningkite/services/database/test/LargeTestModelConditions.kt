@@ -103,23 +103,23 @@ object LargeTestModelConditions {
     )
 
     val types: List<ComparableType<*>> = listOf(
-        ComparableType<Byte>(LargeTestModel_byte, LargeTestModel_byteNullable, 0.toByte(), 1.toByte(), 2.toByte()),
+        ComparableType<Byte>(LargeTestModel.byte, LargeTestModel.byteNullable, 0.toByte(), 1.toByte(), 2.toByte()),
         ComparableType<Short>(
-            LargeTestModel_short,
-            LargeTestModel_shortNullable,
+            LargeTestModel.short,
+            LargeTestModel.shortNullable,
             0.toShort(),
             1.toShort(),
             2.toShort()
         ),
-        ComparableType<Int>(LargeTestModel_int, LargeTestModel_intNullable, 0, 1, 2),
-        ComparableType<Long>(LargeTestModel_long, LargeTestModel_longNullable, 0.toLong(), 1.toLong(), 2.toLong()),
-        ComparableType<Float>(LargeTestModel_float, LargeTestModel_floatNullable, 0f, 1f, 2f),
-        ComparableType<Double>(LargeTestModel_double, LargeTestModel_doubleNullable, 0.0, 1.0, 2.0),
-        ComparableType<Char>(LargeTestModel_char, LargeTestModel_charNullable, 'a', 'b', 'c'),
-        ComparableType<String>(LargeTestModel_string, LargeTestModel_stringNullable, "aa", "ab", "ac"),
+        ComparableType<Int>(LargeTestModel.int, LargeTestModel.intNullable, 0, 1, 2),
+        ComparableType<Long>(LargeTestModel.long, LargeTestModel.longNullable, 0.toLong(), 1.toLong(), 2.toLong()),
+        ComparableType<Float>(LargeTestModel.float, LargeTestModel.floatNullable, 0f, 1f, 2f),
+        ComparableType<Double>(LargeTestModel.double, LargeTestModel.doubleNullable, 0.0, 1.0, 2.0),
+        ComparableType<Char>(LargeTestModel.char, LargeTestModel.charNullable, 'a', 'b', 'c'),
+        ComparableType<String>(LargeTestModel.string, LargeTestModel.stringNullable, "aa", "ab", "ac"),
         ComparableType<Instant>(
-            LargeTestModel_instant,
-            LargeTestModel_instantNullable,
+            LargeTestModel.instant,
+            LargeTestModel.instantNullable,
             Clock.System.now().minus(1.seconds),
             Clock.System.now(),
             Clock.System.now().plus(1.seconds)

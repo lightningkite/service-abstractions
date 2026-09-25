@@ -865,14 +865,14 @@ abstract class InlinePropertiesTests {
     @Test
     fun test_serializableProperty_get_valueclass() {
         val instance = ValueClassContainingTest(direct = ValueClass("test"))
-        val value = ValueClassContainingTest_direct.get(instance)
+        val value = ValueClassContainingTest.direct.get(instance)
         assertEquals(ValueClass("test"), value)
     }
 
     @Test
     fun test_serializableProperty_setCopy_valueclass() {
         val instance = ValueClassContainingTest(direct = ValueClass("old"))
-        val newInstance = ValueClassContainingTest_direct.setCopy(instance, ValueClass("new"))
+        val newInstance = ValueClassContainingTest.direct.setCopy(instance, ValueClass("new"))
         assertEquals(ValueClass("new"), newInstance.direct)
         assertEquals(ValueClass("old"), instance.direct)  // Original unchanged
     }
@@ -880,14 +880,14 @@ abstract class InlinePropertiesTests {
     @Test
     fun test_serializableProperty_get_wrappedInt() {
         val instance = ValueClassContainingTest(wrappedInt = IntWrapper(42))
-        val value = ValueClassContainingTest_wrappedInt.get(instance)
+        val value = ValueClassContainingTest.wrappedInt.get(instance)
         assertEquals(IntWrapper(42), value)
     }
 
     @Test
     fun test_serializableProperty_setCopy_wrappedInt() {
         val instance = ValueClassContainingTest(wrappedInt = IntWrapper(10))
-        val newInstance = ValueClassContainingTest_wrappedInt.setCopy(instance, IntWrapper(99))
+        val newInstance = ValueClassContainingTest.wrappedInt.setCopy(instance, IntWrapper(99))
         assertEquals(IntWrapper(99), newInstance.wrappedInt)
         assertEquals(IntWrapper(10), instance.wrappedInt)  // Original unchanged
     }
@@ -896,7 +896,7 @@ abstract class InlinePropertiesTests {
     fun test_serializableProperty_get_wrappedUuid() {
         val testUuid = Uuid.random()
         val instance = ExtendedValueClassTest(wrappedUuid = UuidWrapper(testUuid))
-        val value = ExtendedValueClassTest_wrappedUuid.get(instance)
+        val value = ExtendedValueClassTest.wrappedUuid.get(instance)
         assertEquals(UuidWrapper(testUuid), value)
     }
 
@@ -905,7 +905,7 @@ abstract class InlinePropertiesTests {
         val originalUuid = Uuid.random()
         val newUuid = Uuid.random()
         val instance = ExtendedValueClassTest(wrappedUuid = UuidWrapper(originalUuid))
-        val newInstance = ExtendedValueClassTest_wrappedUuid.setCopy(instance, UuidWrapper(newUuid))
+        val newInstance = ExtendedValueClassTest.wrappedUuid.setCopy(instance, UuidWrapper(newUuid))
         assertEquals(UuidWrapper(newUuid), newInstance.wrappedUuid)
         assertEquals(UuidWrapper(originalUuid), instance.wrappedUuid)  // Original unchanged
     }
@@ -913,7 +913,7 @@ abstract class InlinePropertiesTests {
     @Test
     fun test_serializableProperty_get_set() {
         val instance = ValueClassContainingTest(set = setOf(ValueClass("a"), ValueClass("b")))
-        val value = ValueClassContainingTest_set.get(instance)
+        val value = ValueClassContainingTest.set.get(instance)
         assertEquals(setOf(ValueClass("a"), ValueClass("b")), value)
     }
 
@@ -921,7 +921,7 @@ abstract class InlinePropertiesTests {
     fun test_serializableProperty_setCopy_set() {
         val instance = ValueClassContainingTest(set = setOf(ValueClass("old")))
         val newSet = setOf(ValueClass("new1"), ValueClass("new2"))
-        val newInstance = ValueClassContainingTest_set.setCopy(instance, newSet)
+        val newInstance = ValueClassContainingTest.set.setCopy(instance, newSet)
         assertEquals(newSet, newInstance.set)
         assertEquals(setOf(ValueClass("old")), instance.set)  // Original unchanged
     }
@@ -933,14 +933,14 @@ abstract class InlinePropertiesTests {
     @Test
     fun test_serializableProperty_inline_get_ValueClass_value() {
         val instance = ValueClass("test string")
-        val value = ValueClass_value.get(instance)
+        val value = ValueClass.value.get(instance)
         assertEquals("test string", value)
     }
 
     @Test
     fun test_serializableProperty_inline_setCopy_ValueClass_value() {
         val instance = ValueClass("old")
-        val newInstance = ValueClass_value.setCopy(instance, "new")
+        val newInstance = ValueClass.value.setCopy(instance, "new")
         assertEquals(ValueClass("new"), newInstance)
         assertEquals(ValueClass("old"), instance)  // Original unchanged (value class is immutable anyway)
     }
@@ -948,14 +948,14 @@ abstract class InlinePropertiesTests {
     @Test
     fun test_serializableProperty_inline_get_IntWrapper_int() {
         val instance = IntWrapper(42)
-        val value = IntWrapper_int.get(instance)
+        val value = IntWrapper.int.get(instance)
         assertEquals(42, value)
     }
 
     @Test
     fun test_serializableProperty_inline_setCopy_IntWrapper_int() {
         val instance = IntWrapper(10)
-        val newInstance = IntWrapper_int.setCopy(instance, 99)
+        val newInstance = IntWrapper.int.setCopy(instance, 99)
         assertEquals(IntWrapper(99), newInstance)
         assertEquals(IntWrapper(10), instance)  // Original unchanged
     }
@@ -964,7 +964,7 @@ abstract class InlinePropertiesTests {
     fun test_serializableProperty_inline_get_UuidWrapper_uuid() {
         val testUuid = Uuid.random()
         val instance = UuidWrapper(testUuid)
-        val value = UuidWrapper_uuid.get(instance)
+        val value = UuidWrapper.uuid.get(instance)
         assertEquals(testUuid, value)
     }
 
@@ -973,7 +973,7 @@ abstract class InlinePropertiesTests {
         val originalUuid = Uuid.random()
         val newUuid = Uuid.random()
         val instance = UuidWrapper(originalUuid)
-        val newInstance = UuidWrapper_uuid.setCopy(instance, newUuid)
+        val newInstance = UuidWrapper.uuid.setCopy(instance, newUuid)
         assertEquals(UuidWrapper(newUuid), newInstance)
         assertEquals(UuidWrapper(originalUuid), instance)  // Original unchanged
     }
@@ -981,17 +981,17 @@ abstract class InlinePropertiesTests {
     @Test
     fun test_serializableProperty_inline_name() {
         // Verify the property names are correct
-        assertEquals("value", ValueClass_value.name)
-        assertEquals("int", IntWrapper_int.name)
-        assertEquals("uuid", UuidWrapper_uuid.name)
+        assertEquals("value", ValueClass.value.name)
+        assertEquals("int", IntWrapper.int.name)
+        assertEquals("uuid", UuidWrapper.uuid.name)
     }
 
     @Test
     fun test_serializableProperty_inline_isInline() {
         // Verify the inline flag is set correctly for inline properties
-        assertTrue(ValueClass_value.inline)
-        assertTrue(IntWrapper_int.inline)
-        assertTrue(UuidWrapper_uuid.inline)
+        assertTrue(ValueClass.value.inline)
+        assertTrue(IntWrapper.int.inline)
+        assertTrue(UuidWrapper.uuid.inline)
     }
 
     // endregion
