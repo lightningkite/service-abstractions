@@ -98,17 +98,11 @@ public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) :
             }
             if (name == "*") {
                 val c = current ?: throw SerializationException("'*' cannot be the root of a path")
-                when {
-                    currentSerializer.listElement() != null -> {
-                        @Suppress("UNCHECKED_CAST")
-                        current = DataClassPathList(c as DataClassPath<T, List<Any?>>)
-                        currentSerializer = currentSerializer.listElement()!!
-                    }
-
-                    else -> {
-                        throw SerializationException("'*' used on non-collection type ${currentSerializer.descriptor.serialName}")
-                    }
-                }
+                currentSerializer.listElement()?.let {
+                    @Suppress("UNCHECKED_CAST")
+                    current = DataClassPathList(c as DataClassPath<T, List<Any?>>)
+                    currentSerializer = it
+                } ?: throw SerializationException("'*' used on non-collection type ${currentSerializer.descriptor.serialName}")
                 continue
             }
 

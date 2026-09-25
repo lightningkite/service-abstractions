@@ -50,7 +50,7 @@ import java.util.Locale.getDefault
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 15) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 16) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("DatabaseModel") != null || annotation("GenerateDataClassPaths") != null
 
@@ -159,10 +159,12 @@ class TableGenerator(
                     if (!declaration.modifiers.contains(Modifier.SEALED)) throw IllegalArgumentException("@GenerateDataClassPaths can only be applied to classes and sealed interfaces")
                     writeSealedFields(declaration)
                 }
+
                 ClassKind.CLASS -> {
                     if (declaration.modifiers.contains(Modifier.SEALED)) writeSealedFields(declaration)
                     else writeClassFields(declaration)
                 }
+
                 ClassKind.ENUM_CLASS -> {}
                 ClassKind.OBJECT -> {}
                 else -> throw IllegalArgumentException("@GenerateDataClassPaths applied to invalid type: ${declaration.classKind}")
@@ -222,7 +224,9 @@ class TableGenerator(
         val supertypeSerialName = declaration.serialName()
         val serialNames = declaration.sealedOptions().distinct().associateWith { it.serialName() }
         val shortNames = serialNames
-            .mapValues { (_, serialName) -> serialName.removePrefix("$supertypeSerialName.").takeIf { it != serialName } }
+            .mapValues { (_, serialName) ->
+                serialName.removePrefix("$supertypeSerialName.").takeIf { it != serialName }
+            }
         val problems = ArrayList<String>()
 
         shortNames.entries
@@ -234,16 +238,18 @@ class TableGenerator(
             }
         for ((variant, shortName) in shortNames) {
             if (shortName == null) continue
-            val matching = serialNames.entries.firstOrNull { (other, serialName) -> other != variant && serialName == shortName }
+            val matching =
+                serialNames.entries.firstOrNull { (other, serialName) -> other != variant && serialName == shortName }
             if (matching != null) {
                 problems += "'$shortName' is the short name of ${variant.qualifiedName!!.asString()} and the serial name of ${matching.key.qualifiedName!!.asString()}."
             }
         }
 
         if (problems.isNotEmpty()) {
-            val message = "Conflicting variant short names in sealed type ${declaration.qualifiedName!!.asString()}:\n" +
-                    problems.joinToString("\n") { "  - $it" } +
-                    "\nChange the @SerialName of one of the conflicting variants so the names are distinct."
+            val message =
+                "Conflicting variant short names in sealed type ${declaration.qualifiedName!!.asString()}:\n" +
+                        problems.joinToString("\n") { "  - $it" } +
+                        "\nChange the @SerialName of one of the conflicting variants so the names are distinct."
             logger.error(message, declaration)
             throw IllegalStateException(message)
         }
@@ -271,34 +277,41 @@ class TableGenerator(
                 }> $classReference.Companion.path(): DataClassPath<$typeReference, $typeReference> = com.lightningkite.services.database.path<$typeReference>()"
             )
 
-            listOf(
-                "public fun",
-                declaration.typeParameters.joinToString(
+            fun appendGenericCompanionHelper(name: String) {
+                +"public fun"
+                +declaration.typeParameters.joinToString(
                     ", ",
                     prefix = " <",
                     postfix = "> "
                 ) { param ->
                     param.name.asString() + (param.bounds.firstOrNull()?.toKotlin()
                         ?.let { ": $it" } ?: "")
-                },
-                "$classReference.Companion.path(",
-                declaration.typeParameters.joinToString(", ") { param ->
+                }
+                +"$classReference.Companion.$name("
+                +declaration.typeParameters.joinToString(", ") { param ->
                     "${
                         param.name.asString().lowercase()
                     }: KSerializer<${param.name.asString()}>"
-                },
-                "): DataClassPath<$typeReference, $typeReference>",
-                " = ",
-                "com.lightningkite.services.database.path",
-                declaration.typeParameters.joinToString(
-                    ", ",
-                    prefix = "($classReference.Companion.serializer(",
-                    postfix = "))"
-                ) {
-                    it.name.asString().lowercase()
-                },
-                "\n"
-            ).forEach(::append)
+                }
+                +"): "
+            }
+
+            appendGenericCompanionHelper("path")
+            +"DataClassPath<$typeReference, $typeReference>"
+            +" = "
+            +"com.lightningkite.services.database.path($classReference.Companion.serializer("
+            +declaration.typeParameters.joinToString { it.name.asString().lowercase() }
+            +"))"
+            appendLine()
+
+            appendGenericCompanionHelper("properties")
+            +"Array<SerializableProperty<$typeReference, *>> {\n"
+            +"  val serializer = $classReference.Companion.serializer("
+                +declaration.typeParameters.joinToString { it.name.asString().lowercase() }
+                +") as GeneratedSerializer<$typeReference>\n"
+            +"  return Array(${fields.size}) { index -> SerializableProperty.Generated<$typeReference, Any?>(serializer, index) }\n"
+            +"}"
+            appendLine()
 
             for ((index, field) in fields.withIndex()) {
                 val propName = field.name.replaceFirstChar {
@@ -329,19 +342,22 @@ class TableGenerator(
             }
         } else {
             appendLine("public inline val $typeReference.Companion.path: DataClassPath<$typeReference, $typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
-            appendLine("private val ${simpleName}__properties = $classReference.serializer().serializableProperties!!")
+            appendLine("public val ${typeReference}.Companion.properties: Array<SerializableProperty<$typeReference, *>> get() = serializer().serializableProperties!!")
             for ((index, field) in fields.withIndex()) {
+                appendInlinePropertyAnnotation()
+                appendLine("public val ${typeReference}.Companion.${field.name}: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(serializer() as GeneratedSerializer<$typeReference>, $index)")
+                appendInlinePropertyAnnotation()
                 val serPropName = "${simpleName}_${field.name}"
-                appendInlinePropertyAnnotation()
-                appendLine("public val $serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> = ${simpleName}__properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
-                appendInlinePropertyAnnotation()
-                appendLine("@get:JvmName(\"path$serPropName\") public val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[$serPropName]")
+                appendLine("@get:JvmName(\"path$serPropName\") public val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[${typeReference}.${field.name}]")
             }
         }
     } catch (e: Exception) {
         appendLine("/*" + e.stackTraceToString() + "*/")
     }
 }
+
+context(appendable: TabAppendable)
+private operator fun String.unaryPlus() = appendable.append(this)
 
 class MyProvider : SymbolProcessorProvider {
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor {
