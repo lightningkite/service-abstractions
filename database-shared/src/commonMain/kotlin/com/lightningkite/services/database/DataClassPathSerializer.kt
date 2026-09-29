@@ -2,6 +2,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.internal.ConcurrentMap
+import com.lightningkite.services.database.internal.getOrPutConcurrent
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
@@ -15,10 +17,10 @@ private class SerializablePropertyParser<T>(val serializer: KSerializer<T>) {
     }
 
     companion object {
-        val existing = HashMap<KSerializerKey, SerializablePropertyParser<*>>()
+        val existing = ConcurrentMap<KSerializerKey, SerializablePropertyParser<*>>()
 
         @Suppress("UNCHECKED_CAST")
-        operator fun <T> get(serializer: KSerializer<T>): SerializablePropertyParser<T> = existing.getOrPut(
+        operator fun <T> get(serializer: KSerializer<T>): SerializablePropertyParser<T> = existing.getOrPutConcurrent(
             KSerializerKey(serializer)
         ) {
             SerializablePropertyParser(serializer)

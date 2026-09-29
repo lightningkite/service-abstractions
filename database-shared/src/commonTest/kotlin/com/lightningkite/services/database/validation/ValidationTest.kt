@@ -149,12 +149,12 @@ class ValidationTest {
             Modification.Chain<SampleWithFile>(
                 listOf(
                     Modification.OnField(
-                        SampleWithFile_fileWithMetadata,
+                        SampleWithFile.fileWithMetadata,
                         Modification.IfNotNull(
                             Modification.Chain(
                                 listOf(
                                     Modification.OnField(
-                                        FileWithMetadata_file,
+                                        FileWithMetadata.file,
                                         Modification.Assign(File("nottext"))
                                     )
                                 )

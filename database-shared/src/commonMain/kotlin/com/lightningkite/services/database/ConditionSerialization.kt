@@ -2,6 +2,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.internal.ConcurrentMap
+import com.lightningkite.services.database.internal.getOrPutConcurrent
 import com.lightningkite.services.data.GeoCoordinate
 import com.lightningkite.services.data.IsRawString
 import com.lightningkite.services.data.serialNameFQN
@@ -211,11 +213,11 @@ private fun <T> polymorphicOptions(supertype: KSerializer<T>): List<MySealedClas
         ) { it is Condition.IfIsType<*, *> && it.discriminator == discriminator }
     }
 
-private val cache = HashMap<KSerializerKey, MySealedClassSerializerInterface<*>>()
+private val cache = ConcurrentMap<KSerializerKey, MySealedClassSerializerInterface<*>>()
 
 @Suppress("UNCHECKED_CAST")
 public class ConditionSerializer<T>(public val inner: KSerializer<T>) :
-    MySealedClassSerializerInterface<Condition<T>> by (cache.getOrPut(KSerializerKey(inner)) {
+    MySealedClassSerializerInterface<Condition<T>> by (cache.getOrPutConcurrent(KSerializerKey(inner)) {
         MySealedClassSerializer<Condition<T>>("com.lightningkite.services.database.Condition", {
             val r = when {
                 inner.descriptor.isNullable -> nullableOptions(inner.innerElement() as KSerializer<Any>)

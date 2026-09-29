@@ -2,6 +2,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.internal.ConcurrentMap
+import com.lightningkite.services.database.internal.getOrPutConcurrent
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.*
@@ -134,7 +136,7 @@ public fun <T> KSerializer<T>.tryFindAnnotations(propertyName: String): List<Ann
     else return descriptor.getElementAnnotations(i)
 }
 
-private val serNameToProperties = HashMap<String, Array<SerializableProperty<*, *>>>()
+private val serNameToProperties = ConcurrentMap<String, Array<SerializableProperty<*, *>>>()
 
 @OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
@@ -142,7 +144,7 @@ public val <T> KSerializer<T>.serializableProperties: Array<SerializableProperty
     get() {
         if (this is VirtualStruct.Concrete) return this.serializableProperties as Array<SerializableProperty<T, *>>
         return if (this !is GeneratedSerializer<*>) null
-        else if (this.typeParametersSerializers().isEmpty()) serNameToProperties.getOrPut(this.descriptor.serialName) {
+        else if (this.typeParametersSerializers().isEmpty()) serNameToProperties.getOrPutConcurrent(this.descriptor.serialName) {
             (0..<descriptor.elementsCount).map<Int, SerializableProperty<T, *>> { index ->
                 SerializableProperty.Generated<T, Any?>(
                     this as GeneratedSerializer<T>,
