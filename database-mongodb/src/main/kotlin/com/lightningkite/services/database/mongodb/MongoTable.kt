@@ -990,6 +990,65 @@ public class MongoTable<Model : Any>(
         if (it.ascending) Sorts.ascending(fieldName) else Sorts.descending(fieldName)
     } + listOfNotNull(lastly))
 
+    override suspend fun fullTextSearch(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> {
+        if (limit <= 0) return emptyFlow()
+        val cs = condition.simplify()
+        if (cs is Condition.Never) return emptyFlow()
+        val textQuery = TextQuery.fromString(query)
+        val anyField = documentOf("wildcard" to "*")
+        return recordingFlow("fullTextSearch") { access {
+            val pipeline = if (atlasSearch) listOf(
+                // $search must be the first stage.
+                documentOf(
+                    "\$search" to documentOf(
+                        "index" to "default",
+                        "compound" to documentOf(
+                            "must" to textQuery.loose.map {
+                                documentOf("text" to documentOf("query" to it, "path" to anyField, "fuzzy" to documentOf()))
+                            } + textQuery.exact.map {
+                                documentOf("phrase" to documentOf("query" to it, "path" to anyField))
+                            },
+                            "mustNot" to textQuery.reject.map {
+                                documentOf("phrase" to documentOf("query" to it, "path" to anyField))
+                            },
+                        )
+                    )
+                ),
+                Aggregates.match(cs.bson(serializer, atlasSearch = true, bson = bson)),
+                Aggregates.skip(skip),
+                Aggregates.limit(limit),
+                Aggregates.addFields(Field("text_search_score", documentOf("\$meta" to "searchScore"))),
+            ) else {
+                // A bare term in $text matches if any term does; phrases must all be present.
+                val allTermsRequired = (textQuery.exact + textQuery.loose).map { "\"$it\"" } +
+                        textQuery.reject.map { "-\"$it\"" }
+                val text = documentOf("\$text" to documentOf("\$search" to allTermsRequired.joinToString(" ")))
+                listOf(
+                    Aggregates.match(
+                        if (cs is Condition.Always) text
+                        else Filters.and(text, cs.bson(serializer, bson = bson))
+                    ),
+                    Aggregates.sort(Sorts.metaTextScore("text_search_score")),
+                    Aggregates.skip(skip),
+                    Aggregates.limit(limit),
+                    Aggregates.addFields(Field("text_search_score", documentOf("\$meta" to "textScore"))),
+                )
+            }
+            aggregate<BsonDocument>(pipeline)
+                .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
+                .map { doc ->
+                    val score = doc.remove("text_search_score")!!.asNumber().doubleValue().toFloat()
+                    ScoredResult(bson.parse(serializer, doc), score)
+                }
+        } }
+    }
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<Model, Embedding>,
         params: DenseVectorSearchParams,

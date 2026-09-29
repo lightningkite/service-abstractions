@@ -101,7 +101,7 @@ fun Application.configureRouting(inboundService: EmailInboundService) {
 }
 
 suspend fun processInboundEmail(email: ReceivedEmail) {
-    println("Received email from: ${email.from.value}")
+    println("Received email from: ${email.fromUnverified.value}")
     println("Subject: ${email.subject}")
     println("Body: ${email.plainText ?: email.html}")
 
@@ -230,7 +230,8 @@ val testService = EmailInboundService.Settings("test")("test", context)
 // Manually create test emails
 val testEmail = ReceivedEmail(
     messageId = "test-123",
-    from = EmailAddressWithName("sender@example.com"),
+    from = "sender@example.com".toEmailAddress(),
+    fromUnverified = EmailAddressWithName("sender@example.com".toEmailAddress()),
     to = listOf(EmailAddressWithName("recipient@example.com")),
     subject = "Test Email",
     plainText = "This is a test",

@@ -1199,6 +1199,16 @@ public class CassandraTable<Model : Any>(
         return SimpleStatement.newInstance(cql, *params.toTypedArray())
     }
 
+    override suspend fun fullTextSearch(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> = throw UnsupportedOperationException(
+        "Full-text search is not supported by Apache Cassandra"
+    )
+
     // ===== Vector Search (Not natively supported by Cassandra) =====
 
     override suspend fun findSimilar(

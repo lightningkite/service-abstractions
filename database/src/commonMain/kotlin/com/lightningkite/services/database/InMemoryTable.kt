@@ -180,6 +180,30 @@ public open class InMemoryTable<Model : Any>(
         result.forEach { emit(it) }
     }
 
+    override suspend fun fullTextSearch(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> = flow {
+        val textQuery = TextQuery.fromString(query)
+        val result = traced {
+            lock.withLock {
+                candidatesFor(condition)
+                    .filter { condition(it) }
+                    .mapNotNull { model ->
+                        textQuery.relevance(textIndexContent(serializer, model))?.let { ScoredResult(model, it) }
+                    }
+                    .sortedByDescending { it.score }
+                    .drop(skip)
+                    .take(limit)
+                    .toList()
+            }
+        }
+        result.forEach { emit(it) }
+    }
+
     override suspend fun count(condition: Condition<Model>): Int = traced {
         lock.withLock {
             candidatesFor(condition).count { condition(it) }

@@ -3,6 +3,7 @@ package com.lightningkite.services.email.ses
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.EmailInboundService
+import com.lightningkite.services.email.ReceivedEmail
 import com.lightningkite.services.webhooksubservice.HttpAdapter
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.test.runTest
@@ -141,7 +142,7 @@ class SesEmailInboundServiceTest {
             body = body
         )
 
-        assertEquals("sender@example.com", email.from.value.raw)
+        assertEquals("sender@example.com".toEmailAddress(), email.from)
         assertEquals("Test Email", email.subject)
     }
 
@@ -383,7 +384,7 @@ class SesEmailInboundServiceTest {
             body = body
         )
 
-        assertEquals("sender@example.com", email.from.value.raw)
+        assertEquals("sender@example.com".toEmailAddress(), email.from)
         assertTrue(email.to.any { it.value.raw == "recipient@test.local" })
         assertEquals("Test Subject", email.subject)
         assertEquals("Hello, this is the body of the email.", email.plainText?.trim())
@@ -568,6 +569,43 @@ class SesEmailInboundServiceTest {
             name = "test-ses",
             context = testContext
         )
+    }
+
+    // ==================== Sender Authentication Tests ====================
+
+    private suspend fun parseSigned(sesMessage: String): ReceivedEmail {
+        val notification = SnsTestUtils.createSignedNotification(
+            type = "Notification",
+            message = sesMessage,
+            privateKey = keyPair.private,
+            certUrl = certUrl
+        )
+        return createServiceWithCachedCert().onReceived.parse(
+            queryParameters = emptyList(),
+            headers = emptyMap(),
+            body = TypedData.text(json.encodeToString(notification), MediaType.Application.Json)
+        )
+    }
+
+    @Test
+    fun testFrom_dmarcFail_isNull() = runTest {
+        val email = parseSigned(SnsTestUtils.createSesNotificationMessage(from = "ceo@bank.com", dmarcVerdict = SesVerdict("FAIL")))
+        assertNull(email.from)
+        assertEquals("ceo@bank.com", email.fromUnverified.value.raw)
+    }
+
+    @Test
+    fun testFrom_dmarcMissing_isNull() = runTest {
+        val email = parseSigned(SnsTestUtils.createSesNotificationMessage(dmarcVerdict = null))
+        assertNull(email.from)
+    }
+
+    @Test
+    fun testFrom_dmarcPassWithMultipleFromAddresses_isNull() = runTest {
+        val single = json.decodeFromString<SesNotification>(SnsTestUtils.createSesNotificationMessage(from = "a@example.com"))
+        val multiple = single.copy(mail = single.mail.copy(commonHeaders = single.mail.commonHeaders.copy(from = listOf("a@example.com", "b@evil.com"))))
+        val email = parseSigned(json.encodeToString(multiple))
+        assertNull(email.from)
     }
 
     /**

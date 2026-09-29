@@ -68,6 +68,8 @@ private val logger = KotlinLogging.logger("SendGridEmailInboundService")
  * 2. Click edit on your webhook, go to Security features
  * 3. Copy the public verification key (PEM format without headers)
  *
+ * Sender is not authenticated: SendGrid reports SPF and DKIM but not DMARC, so [ReceivedEmail.from] is always null.
+ *
  * @see EmailInboundService
  * @see ReceivedEmail
  */
@@ -168,7 +170,7 @@ public class SendGridEmailInboundService(
             span.enrich(TelemetryAttributes {
                 put(
                     TelemetryKey.OfString("email.from"),
-                    receivedEmail.from.value.raw.let { addr -> addr.substringAfter('@', addr) })
+                    receivedEmail.fromUnverified.value.raw.let { addr -> addr.substringAfter('@', addr) })
                 put(
                     TelemetryKey.OfString("email.to"),
                     receivedEmail.to.joinToString(",") { it.value.raw.let { addr -> addr.substringAfter('@', addr) } })
@@ -373,7 +375,8 @@ public class SendGridEmailInboundService(
 
         return ReceivedEmail(
             messageId = messageId.trim('<', '>'),
-            from = from,
+            from = null,
+            fromUnverified = from,
             to = to,
             cc = cc,
             replyTo = null,  // SendGrid doesn't expose Reply-To directly in webhook

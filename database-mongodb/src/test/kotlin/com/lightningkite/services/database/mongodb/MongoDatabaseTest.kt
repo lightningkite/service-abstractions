@@ -76,6 +76,10 @@ class MongodbAggregationsTest : AggregationsTest() {
     }
 }
 
+class MongodbFullTextSearchTests : FullTextSearchTests() {
+    override val database: Database = db()
+}
+
 class MongodbConditionTests : ConditionTests() {
     override val database: Database = db()
 

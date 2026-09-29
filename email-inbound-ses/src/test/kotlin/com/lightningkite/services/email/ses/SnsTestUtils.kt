@@ -222,6 +222,7 @@ object SnsTestUtils {
         html: String? = null,
         messageId: String = "test-message-id@example.com",
         includeContent: Boolean = true,
+        dmarcVerdict: SesVerdict? = SesVerdict("PASS"),
     ): String {
         val mimeContent = if (includeContent) {
             buildMimeMessage(from, to, subject, plainText, html, messageId)
@@ -257,7 +258,7 @@ object SnsTestUtils {
                 virusVerdict = SesVerdict("PASS"),
                 spfVerdict = SesVerdict("PASS"),
                 dkimVerdict = SesVerdict("PASS"),
-                dmarcVerdict = SesVerdict("PASS")
+                dmarcVerdict = dmarcVerdict
             ),
             content = mimeContent
         )

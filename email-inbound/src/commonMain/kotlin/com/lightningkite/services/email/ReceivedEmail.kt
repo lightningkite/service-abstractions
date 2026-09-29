@@ -24,7 +24,7 @@ import kotlin.time.Instant
  * // Parse from webhook
  * val email = inboundService.onReceived.parse(queryParams, headers, body)
  *
- * println("From: ${email.from}")
+ * println("From: ${email.from ?: "unverified: ${email.fromUnverified}"}")
  * println("Subject: ${email.subject}")
  * println("Body: ${email.plainText ?: email.html}")
  *
@@ -35,7 +35,11 @@ import kotlin.time.Instant
  * ```
  *
  * @property messageId Unique identifier assigned by the email provider or extracted from Message-ID header
- * @property from Sender email address with optional display name
+ * @property from Sender address, present only when the provider reported a DMARC pass for it, so it is
+ *   safe to treat as the sender's identity.  `null` means unauthenticated, not missing.  DMARC proves the
+ *   domain, not the mailbox: trusting `bob@company.com` means trusting company.com to stop others sending as bob.
+ * @property fromUnverified The `From` header with display name, exactly as the sender wrote it.  Anyone can
+ *   put any address here; never use it for identity or authorization.
  * @property to Primary recipients from the To header
  * @property cc Carbon copy recipients from the Cc header
  * @property replyTo Reply-To address if different from sender
@@ -52,7 +56,8 @@ import kotlin.time.Instant
  */
 public data class ReceivedEmail(
     val messageId: String,
-    val from: EmailAddressWithName,
+    val from: EmailAddress?,
+    val fromUnverified: EmailAddressWithName,
     val to: List<EmailAddressWithName>,
     val cc: List<EmailAddressWithName> = emptyList(),
     val replyTo: EmailAddressWithName? = null,

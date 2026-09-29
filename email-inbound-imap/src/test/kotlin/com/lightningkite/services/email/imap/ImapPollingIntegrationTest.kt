@@ -63,7 +63,8 @@ class ImapPollingIntegrationTest {
         assertEquals(1, emails.size)
         val email = emails.first()
 
-        assertEquals("sender@example.com", email.from.value.raw)
+        assertEquals("sender@example.com", email.fromUnverified.value.raw)
+        assertNull(email.from)
         assertTrue(email.to.any { it.value.raw == "inbox@test.local" })
         assertEquals("Test Subject", email.subject)
         assertEquals("Hello, this is a test email!", email.plainText?.trim())

@@ -129,7 +129,7 @@ object EmailServer : ServerBuilder() {
                     } else {
                         println("Received emails (${receivedEmails.size}):")
                         receivedEmails.forEachIndexed { index, email ->
-                            println("  ${index + 1}. From: ${email.from.value.raw} ${email.from.label?.let { "($it)" } ?: ""}")
+                            println("  ${index + 1}. From: ${email.fromUnverified.value.raw} ${email.fromUnverified.label?.let { "($it)" } ?: ""}")
                             println("     To: ${email.to.joinToString { it.value.raw }}")
                             if (email.cc.isNotEmpty()) {
                                 println("     Cc: ${email.cc.joinToString { it.value.raw }}")
@@ -220,7 +220,7 @@ object EmailServer : ServerBuilder() {
             // Store the email
             receivedEmails.add(inboundEmail)
 
-            println("From: ${inboundEmail.from.value.raw} ${inboundEmail.from.label?.let { "($it)" } ?: ""}")
+            println("From: ${inboundEmail.fromUnverified.value.raw} ${inboundEmail.fromUnverified.label?.let { "($it)" } ?: ""}")
             println("To: ${inboundEmail.to.joinToString { it.value.raw }}")
             println("Subject: ${inboundEmail.subject}")
             println("Time: ${inboundEmail.receivedAt}")
@@ -296,7 +296,7 @@ object EmailServer : ServerBuilder() {
             "(none)"
         } else {
             receivedEmails.joinToString("\n") { email ->
-                "From: ${email.from.value.raw}, Subject: ${email.subject}, Attachments: ${email.attachments.size}"
+                "From: ${email.fromUnverified.value.raw}, Subject: ${email.subject}, Attachments: ${email.attachments.size}"
             }
         }
         HttpResponse(

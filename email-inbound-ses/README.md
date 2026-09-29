@@ -139,7 +139,7 @@ routing {
             )
 
             // Process the email
-            println("Received email from: ${email.from.value}")
+            println("Received email from: ${email.fromUnverified.value}")
             println("Subject: ${email.subject}")
             println("Body: ${email.plainText ?: email.html}")
 
@@ -221,7 +221,7 @@ class WebhookController(
 ```kotlin
 fun processEmail(email: ReceivedEmail) {
     // Basic information
-    println("From: ${email.from.label} <${email.from.value}>")
+    println("From: ${email.fromUnverified.label} <${email.fromUnverified.value}>")
     println("To: ${email.to.joinToString { it.value.toString() }}")
     println("Subject: ${email.subject}")
 
@@ -302,13 +302,11 @@ emails under 150KB.
 
 ### 2. Webhook Security
 
-This implementation does **not** verify SNS message signatures. For production use, you should:
-
-1. Verify the SNS signature
-2. Validate the signing certificate URL
-3. Check the message timestamp
-
+Every SNS message's signature is verified against an AWS-hosted signing certificate, and stale messages are rejected.
 See [AWS SNS Message Signature Verification](https://docs.aws.amazon.com/sns/latest/dg/sns-verify-signature-of-message.html).
+
+`ReceivedEmail.from` is set only when SES reports a DMARC pass for a single `From` address; otherwise it is `null`.
+`fromUnverified` is whatever the sender wrote and must never be used for identity.
 
 ### 3. Subscription Confirmation
 

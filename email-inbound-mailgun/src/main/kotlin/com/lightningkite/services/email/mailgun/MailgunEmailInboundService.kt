@@ -45,6 +45,8 @@ private val HEADER_BODY_SEPARATOR = "\r\n\r\n".toByteArray()
  * The API key is REQUIRED for signature verification - all webhooks without valid
  * signatures will be rejected.
  *
+ * Sender is not authenticated: Mailgun reports SPF and DKIM but not DMARC, so [ReceivedEmail.from] is always null.
+ *
  * ## Mailgun Webhook Format
  *
  * Mailgun sends the following fields (form-urlencoded or multipart):
@@ -146,7 +148,7 @@ public class MailgunEmailInboundService(
             span.enrich(TelemetryAttributes {
                 put(
                     TelemetryKey.OfString("email.from"),
-                    receivedEmail.from.value.toString().let { addr -> addr.substringAfter('@', addr) })
+                    receivedEmail.fromUnverified.value.toString().let { addr -> addr.substringAfter('@', addr) })
                 put(
                     TelemetryKey.OfString("email.to"),
                     receivedEmail.to.joinToString(", ") {
@@ -454,7 +456,8 @@ public class MailgunEmailInboundService(
 
         return ReceivedEmail(
             messageId = messageId,
-            from = from,
+            from = null,
+            fromUnverified = from,
             to = to,
             cc = cc,
             // Reply-To is genuinely optional; unlike `from` below there's no non-nullable field to

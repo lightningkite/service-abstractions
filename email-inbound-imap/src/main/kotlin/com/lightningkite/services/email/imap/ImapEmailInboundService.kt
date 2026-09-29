@@ -83,6 +83,7 @@ private const val MAX_MIME_DEPTH = 30
  *   any unprocessed messages unseen so the next pull retries them
  * - **Large attachments**: All attachment data is loaded into memory
  * - **Threading**: Not all emails include proper In-Reply-To/References headers
+ * - **No sender authentication**: IMAP gives no trustworthy DMARC verdict, so [ReceivedEmail.from] is always null.
  */
 public class ImapEmailInboundService(
     override val name: String,
@@ -352,7 +353,8 @@ public class ImapEmailInboundService(
 
         return ReceivedEmail(
             messageId = messageId.trim('<', '>'),
-            from = from,
+            from = null,
+            fromUnverified = from,
             to = to,
             cc = cc,
             replyTo = replyTo,

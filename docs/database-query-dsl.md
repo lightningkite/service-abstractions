@@ -80,14 +80,23 @@ User.path.email contains "@example.com"
 
 // Case-sensitive search
 User.path.name.contains("Alice", ignoreCase = false)
-
-// Full-text search with fuzzy matching
-User.path.bio.fullTextSearch(
-    value = "software engineer",
-    levenshteinDistance = 2,
-    requireAllTermsPresent = true
-)
 ```
+
+### Full-Text Search
+
+Full-text search ranks results by relevance, so it's a `Table` method rather than a `Condition`.
+It searches the model's `@TextIndex` fields; every term must be present, `"quoted phrases"` must appear exactly, and `-terms` must not appear.
+
+```kotlin
+val results: List<ScoredResult<User>> = userTable.fullTextSearch(
+    query = "software engineer",
+    condition = User.path.active eq true,  // filter applied alongside the search
+    limit = 20,
+).toList()
+```
+
+Supported by MongoDB (text index or Atlas Search) and the in-memory and JSON-file databases; other backends throw `UnsupportedOperationException`.
+`Condition.FullTextSearch` and `DataClassPath.fullTextSearch` are deprecated.
 
 ### Boolean Logic
 
@@ -331,7 +340,6 @@ Not all database backends support all operations:
 |-------------------|---------|---------------|----------------|
 | Basic comparisons | ✅       | ✅             | ✅              |
 | String contains   | ✅       | ✅             | ✅              |
-| Full-text search  | ✅       | ✅             | ~approximation |
 | Regex matches     | ✅       | ✅             | ✅              |
 | Geo queries       | ✅       | ✅ (PostGIS)   | ✅              |
 | Bitwise ops       | ✅       | ✅             | ✅              |

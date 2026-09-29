@@ -434,6 +434,16 @@ public class PostgresCollection<T : Any>(
         count
     }
 
+    override suspend fun fullTextSearch(
+        query: String,
+        condition: Condition<T>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException(
+        "Full-text search is not yet supported by the Postgres driver"
+    )
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<T, Embedding>,
         params: DenseVectorSearchParams,

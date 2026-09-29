@@ -264,9 +264,14 @@ public class SesEmailInboundService(
         val attachments = MimeParser.extractAttachments(mimeMessage)
 
         // Parse sender - use From header, fallback to envelope
-        val from = mail.commonHeaders.from?.firstOrNull()?.let { MimeParser.parseEmailAddress(it) }
+        val fromHeaders = mail.commonHeaders.from.orEmpty()
+        val fromUnverified = fromHeaders.firstOrNull()?.let { MimeParser.parseEmailAddress(it) }
             ?: MimeParser.parseEmailAddress(mail.source)
             ?: throw IllegalArgumentException("No sender address found in email")
+        // DMARC authenticates the From header's domain; with several From addresses it's ambiguous which one passed.
+        val from = fromUnverified.value.takeIf {
+            receipt.dmarcVerdict?.status == "PASS" && fromHeaders.size == 1
+        }
 
         // Parse recipients - prefer headers, fallback to envelope
         val to = MimeParser.parseEmailAddresses(mail.commonHeaders.to).takeIf { it.isNotEmpty() }
@@ -308,11 +313,12 @@ public class SesEmailInboundService(
             else -> null
         }
 
-        logger.info { "[$name] Parsed email: messageId=$messageId, from=${from.value}, subject=$subject" }
+        logger.info { "[$name] Parsed email: messageId=$messageId, from=${fromUnverified.value}, dmarcVerified=${from != null}, subject=$subject" }
 
         return ReceivedEmail(
             messageId = messageId,
             from = from,
+            fromUnverified = fromUnverified,
             to = to,
             cc = cc,
             replyTo = replyTo,

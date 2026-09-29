@@ -22,7 +22,8 @@ import kotlinx.coroutines.flow.*
  * // Simulate receiving an email
  * testService.simulateReceive(ReceivedEmail(
  *     messageId = "test-123",
- *     from = EmailAddressWithName("sender@example.com"),
+ *     from = "sender@example.com".toEmailAddress(),
+ *     fromUnverified = EmailAddressWithName("sender@example.com".toEmailAddress()),
  *     to = listOf(EmailAddressWithName("recipient@example.com")),
  *     subject = "Test Email",
  *     plainText = "Hello, World!",

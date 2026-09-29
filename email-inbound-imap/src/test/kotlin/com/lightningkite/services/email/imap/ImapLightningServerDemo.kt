@@ -192,7 +192,7 @@ object ImapServer : ServerBuilder() {
                             println()
                             println("--- Email ${index + 1} ---")
                             println("Message-ID: ${email.messageId}")
-                            println("From: ${email.from.label ?: ""} <${email.from.value.raw}>")
+                            println("From: ${email.fromUnverified.label ?: ""} <${email.fromUnverified.value.raw}>")
                             println("To: ${email.to.joinToString { it.value.raw }}")
                             println("Subject: ${email.subject}")
                             println("Date: ${email.receivedAt}")

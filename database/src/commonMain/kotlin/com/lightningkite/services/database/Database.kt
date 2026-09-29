@@ -361,6 +361,16 @@ public class PrepareFirstTable<MODEL : Any>(
         return prepare.await().deleteManyIgnoringOld(condition)
     }
 
+    override suspend fun fullTextSearch(
+        query: String,
+        condition: Condition<MODEL>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long
+    ): Flow<ScoredResult<MODEL>> {
+        return prepare.await().fullTextSearch(query, condition, skip, limit, maxQueryMs)
+    }
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<MODEL, Embedding>,
         params: DenseVectorSearchParams,

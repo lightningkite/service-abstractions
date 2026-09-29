@@ -5,6 +5,7 @@ import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmModelId
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
+import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
 import com.lightningkite.services.ai.LlmToolCall
@@ -183,6 +184,18 @@ class BedrockWireTest {
         assertEquals(0.3, (inf["temperature"] as JsonPrimitive).content.toDouble())
         val stops = inf["stopSequences"] as JsonArray
         assertEquals("STOP", (stops[0] as JsonPrimitive).content)
+    }
+
+    @Test fun novaReasoningUsesReasoningConfig() {
+        val prompt = LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
+            reasoningEffort = LlmReasoningEffort.Medium,
+        )
+        val nova2 = BedrockWire.bedrockReasoningFields("us.amazon.nova-2-lite-v1:0", prompt)!!
+        val config = nova2["reasoningConfig"] as JsonObject
+        assertEquals("enabled", (config["type"] as JsonPrimitive).content)
+        assertEquals("medium", (config["maxReasoningEffort"] as JsonPrimitive).content)
+        assertEquals(null, BedrockWire.bedrockReasoningFields("amazon.nova-lite-v1:0", prompt))
     }
 
     @Test fun urlImageRejected() {

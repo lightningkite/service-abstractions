@@ -124,7 +124,7 @@ val service = ImapEmailInboundService(
     useSsl = true,
     onEmail = { receivedEmail ->
         // Process the email
-        println("From: ${receivedEmail.from.value}")
+        println("From: ${receivedEmail.fromUnverified.value}")
         println("Subject: ${receivedEmail.subject}")
         println("Body: ${receivedEmail.plainText ?: receivedEmail.html}")
 

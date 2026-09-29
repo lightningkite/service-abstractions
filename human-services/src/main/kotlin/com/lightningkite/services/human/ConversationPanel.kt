@@ -103,7 +103,8 @@ internal class EmailConversationPanel(
         val messageId = "<${Uuid.random()}@human-services>"
         val email = ReceivedEmail(
             messageId = messageId,
-            from = EmailAddressWithName(from.toEmailAddress()),
+            from = from.toEmailAddress(),
+            fromUnverified = EmailAddressWithName(from.toEmailAddress()),
             to = listOf(EmailAddressWithName(to.toEmailAddress())),
             subject = subject,
             html = if (isHtml) body else null,
@@ -154,7 +155,7 @@ internal class EmailConversationPanel(
         messageId = messageId,
         inReplyTo = inReplyTo,
         references = references,
-        from = from.display(),
+        from = fromUnverified.display(),
         to = to.joinToString(", ") { it.display() },
         subject = subject,
         html = html,

@@ -26,7 +26,7 @@ fun main() {
         smsOutbound.send(inbound.from, "Auto-reply: got \"${inbound.body}\"")
     }
     emailInbound.onMessage { inbound ->
-        println("Received email from ${inbound.from.value}: ${inbound.subject}")
+        println("Received email from ${inbound.fromUnverified.value}: ${inbound.subject}")
 
         // Build threading headers like a real mail server would
         val replyMessageId = "<${Uuid.random()}@human-services>"
@@ -36,14 +36,14 @@ fun main() {
         val originalText = inbound.plainText ?: inbound.html?.emailApproximatePlainText() ?: ""
         val quotedLines = originalText.lines().joinToString("\n") { "> $it" }
         val replyBody = "Thank you for your message.\n\n" +
-                "On ${inbound.receivedAt}, ${inbound.from.let { if (it.label != null) "${it.label} <${it.value}>" else it.value.toString() }} wrote:\n" +
+                "On ${inbound.receivedAt}, ${inbound.fromUnverified.let { if (it.label != null) "${it.label} <${it.value}>" else it.value.toString() }} wrote:\n" +
                 quotedLines
 
         emailOutbound.send(
             Email(
                 subject = if (inbound.subject.startsWith("Re:")) inbound.subject else "Re: ${inbound.subject}",
                 from = EmailAddressWithName(emailInbound.defaultEmailAddress, "Support Bot"),
-                to = listOf(inbound.from),
+                to = listOf(inbound.fromUnverified),
                 plainText = replyBody,
                 customHeaders = mapOf(
                     "Message-ID" to listOf(replyMessageId),

@@ -53,7 +53,8 @@ public class HumanEmailInboundService(
         ): ReceivedEmail {
             val email = ReceivedEmail(
                 messageId = Uuid.random().toString(),
-                from = EmailAddressWithName("unknown@example.com".toEmailAddress()),
+                from = null,
+                fromUnverified = EmailAddressWithName("unknown@example.com".toEmailAddress()),
                 to = listOf(EmailAddressWithName("unknown@example.com".toEmailAddress())),
                 subject = "(parsed from webhook)",
                 plainText = body.text(),

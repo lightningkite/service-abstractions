@@ -298,8 +298,8 @@ internal object BedrockWire {
      *   Budget comes from [LlmPrompt.reasoningBudgetTokens] or is bucketed from
      *   [LlmPrompt.reasoningEffort]. Minimum 1024 enforced by Anthropic.
      * - DeepSeek (`*deepseek*`): same shape as Claude.
-     * - Nova (`amazon.nova-*`): `reasoning_config: { type: "enabled" }` —
-     *   Nova doesn't take effort/budget granularity, just on/off.
+     * - Nova 2 (`*nova-2*`): `reasoningConfig: { type: "enabled", maxReasoningEffort }`.
+     *   Nova 1 models reject any reasoning field, so they're ignored like other models.
      * - Other models: ignored.
      */
     fun bedrockReasoningFields(modelId: String, prompt: LlmPrompt): JsonObject? {
@@ -325,9 +325,22 @@ internal object BedrockWire {
                     }
                 }
             }
-            lower.contains("nova") -> buildJsonObject {
-                putJsonObject("reasoning_config") {
-                    put("type", "enabled")
+            lower.contains("nova-2") -> {
+                val level = when (effort) {
+                    LlmReasoningEffort.Minimal, LlmReasoningEffort.Low -> "low"
+                    LlmReasoningEffort.Medium -> "medium"
+                    LlmReasoningEffort.High -> "high"
+                    null, LlmReasoningEffort.Off -> when {
+                        budget!! <= 2048 -> "low"
+                        budget <= 8192 -> "medium"
+                        else -> "high"
+                    }
+                }
+                buildJsonObject {
+                    putJsonObject("reasoningConfig") {
+                        put("type", "enabled")
+                        put("maxReasoningEffort", level)
+                    }
                 }
             }
             else -> null

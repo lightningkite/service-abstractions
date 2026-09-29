@@ -92,7 +92,7 @@ routing {
 }
 
 suspend fun processInboundEmail(email: ReceivedEmail) {
-    println("From: ${email.from}")
+    println("From: ${email.fromUnverified}")
     println("Subject: ${email.subject}")
     println("Body: ${email.plainText ?: email.html}")
 

@@ -15,9 +15,10 @@ public open class ModelPermissionsTable<Model : Any>(
     private val permissions: ModelPermissions<Model>,
 ) : Table<Model> {
     override val serializer: KSerializer<Model> get() = wraps.serializer
-    private val textIndexPaths = serializer.descriptor.annotations.filterIsInstance<TextIndex>()
-        .firstOrNull()?.fields?.map { DataClassPathSerializer(serializer).fromString(it).properties }
+    private val textIndexFields = serializer.descriptor.annotations.filterIsInstance<TextIndex>()
+        .firstOrNull()?.fields?.map { DataClassPathSerializer(serializer).fromString(it) }
         ?: listOf()
+    private val textIndexPaths = textIndexFields.map { it.properties }
 
     override suspend fun find(
         condition: Condition<Model>,
@@ -37,6 +38,26 @@ public open class ModelPermissionsTable<Model : Any>(
             limit = limit,
             maxQueryMs = maxQueryMs
         ).map { permissions.mask(it) }
+    }
+
+    override suspend fun fullTextSearch(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> {
+        // Matching a row reveals what its text fields contain, so every one must be readable.
+        val textFieldsReadable = textIndexFields.fold<_, Condition<Model>>(Condition.Always) { acc, field ->
+            acc and permissions.readMask(field)
+        }
+        return wraps.fullTextSearch(
+            query = query,
+            condition = condition and permissions.read and permissions.readMask(condition, textIndexPaths) and textFieldsReadable,
+            skip = skip,
+            limit = limit,
+            maxQueryMs = maxQueryMs,
+        ).map { it.copy(model = permissions.mask(it.model)) }
     }
 
     override suspend fun findSimilar(

@@ -31,7 +31,8 @@ private val logger = KotlinLogging.logger("ConsoleEmailInboundService")
  * ```kotlin
  * service.simulateReceive(ReceivedEmail(
  *     messageId = "test-123",
- *     from = EmailAddressWithName("sender@example.com"),
+ *     from = "sender@example.com".toEmailAddress(),
+ *     fromUnverified = EmailAddressWithName("sender@example.com".toEmailAddress()),
  *     to = listOf(EmailAddressWithName("recipient@example.com")),
  *     subject = "Test Email",
  *     plainText = "Hello from console!",

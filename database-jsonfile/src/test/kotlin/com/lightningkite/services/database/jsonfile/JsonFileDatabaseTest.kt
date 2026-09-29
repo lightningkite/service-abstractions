@@ -27,6 +27,10 @@ class JsonFileConditionTests : ConditionTests() {
     override val database: Database = db()
 }
 
+class JsonFileFullTextSearchTests : FullTextSearchTests() {
+    override val database: Database = db()
+}
+
 class JsonFileModificationTests : ModificationTests() {
     override val database: Database = db()
 }

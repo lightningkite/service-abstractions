@@ -17,6 +17,7 @@ import kotlinx.serialization.KSerializer
  * - [find] - Stream matching records with sorting and pagination
  * - [count] - Count matching records
  * - [aggregate] - Compute statistics (sum, average, etc.)
+ * - [fullTextSearch] - Stream records matching a text search, most relevant first
  *
  * ### Writes
  * - [insert] - Insert new records
@@ -351,6 +352,25 @@ public interface Table<Model : Any> {
     public suspend fun deleteManyIgnoringOld(
         condition: Condition<Model>,
     ): Int
+
+    /**
+     * Find records matching a full-text [query] over the model's [com.lightningkite.services.data.TextIndex]
+     * fields, most relevant first.
+     *
+     * Every term in [query] must be present.  Quoted phrases must appear exactly, and terms prefixed
+     * with `-` must not appear.  How loosely a term matches (stemming, typo tolerance) and the
+     * scale of [ScoredResult.score] depend on the backend.
+     *
+     * @param condition Filter applied alongside the search
+     * @throws UnsupportedOperationException if the backend does not support full-text search
+     */
+    public suspend fun fullTextSearch(
+        query: String,
+        condition: Condition<Model> = Condition.Always,
+        skip: Int = 0,
+        limit: Int = 100,
+        maxQueryMs: Long = 15_000,
+    ): Flow<ScoredResult<Model>>
 
     // ===== Vector Search Methods =====
 
