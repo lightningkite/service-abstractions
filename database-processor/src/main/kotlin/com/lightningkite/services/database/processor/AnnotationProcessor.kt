@@ -50,7 +50,7 @@ import java.util.Locale.getDefault
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 16) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 17) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("DatabaseModel") != null || annotation("GenerateDataClassPaths") != null
 
@@ -157,12 +157,16 @@ class TableGenerator(
             when (declaration.classKind) {
                 ClassKind.INTERFACE -> {
                     if (!declaration.modifiers.contains(Modifier.SEALED)) throw IllegalArgumentException("@GenerateDataClassPaths can only be applied to classes and sealed interfaces")
+                    appendLine("// ${declaration.safeLocalReference()}")
                     writeSealedFields(declaration)
+                    appendLine()
                 }
 
                 ClassKind.CLASS -> {
+                    appendLine("// ${declaration.safeLocalReference()}")
                     if (declaration.modifiers.contains(Modifier.SEALED)) writeSealedFields(declaration)
                     else writeClassFields(declaration)
+                    appendLine()
                 }
 
                 ClassKind.ENUM_CLASS -> {}
@@ -345,7 +349,7 @@ class TableGenerator(
             appendLine("public val ${typeReference}.Companion.properties: Array<SerializableProperty<$typeReference, *>> get() = serializer().serializableProperties!!")
             for ((index, field) in fields.withIndex()) {
                 appendInlinePropertyAnnotation()
-                appendLine("public val ${typeReference}.Companion.${field.name}: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(serializer() as GeneratedSerializer<$typeReference>, $index)")
+                appendLine("public val ${typeReference}.Companion.${field.name}: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
                 appendInlinePropertyAnnotation()
                 val serPropName = "${simpleName}_${field.name}"
                 appendLine("@get:JvmName(\"path$serPropName\") public val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[${typeReference}.${field.name}]")
