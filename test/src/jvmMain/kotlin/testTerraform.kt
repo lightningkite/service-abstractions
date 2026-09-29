@@ -358,7 +358,7 @@ fun TerraformEmitterAws.bastion(
                     vpcInfo.securityGroup,
                     expression("aws_security_group.bastion.id")
                 )
-                "subnet_id" - vpcInfo.applicationSubnet
+                "subnet_id" - expression("${vpcInfo.publicSubnets.removePrefix("\${").removeSuffix("}")}[0]")
             }
 
             "tags" {
@@ -542,7 +542,7 @@ internal class TFManaged(
     override val securityGroup: String = expression("aws_security_group.internal.id")
     override val privateSubnets: String = expression("module.vpc.private_subnets")
     override val publicSubnets: String = expression("module.vpc.public_subnets")
-    override val applicationSubnet: String = expression("module.vpc.public_subnets[0]")
+    override val applicationRouteTables: String = expression("module.vpc.public_route_table_ids")
     override val natGatewayIps: String = expression("module.vpc.nat_public_ips")
     override val cidr: String = "$ipPrefix.0.0/16"
 }

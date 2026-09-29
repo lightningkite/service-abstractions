@@ -53,7 +53,7 @@ public sealed interface AwsVpc {
         public val securityGroup: String
         public val privateSubnets: String
         public val publicSubnets: String
-        public val applicationSubnet: String
+        public val applicationRouteTables: String
         public val natGatewayIps: String
         public val cidr: String
     }

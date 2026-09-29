@@ -202,12 +202,11 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                 "vpc_peering_connection_id" - expression("mongodbatlas_network_peering.atlas_network_peering.connection_id")
                 "auto_accept" - true
             }
-            "data.aws_route_table.application_subnets_route_table" {
-                "subnet_id" - vpcInfo.applicationSubnet
-            }
-            // VPC Peer Device to ATLAS Route Table Association on AWS
+            // VPC Peer Device to ATLAS Route Table Association on AWS, one route per application route table
+            val routeTables = vpcInfo.applicationRouteTables.removePrefix("\${").removeSuffix("}")
             "resource.aws_route.aws_peer_to_atlas_route_1" {
-                "route_table_id" - expression("data.aws_route_table.application_subnets_route_table.id")
+                "count" - expression("length($routeTables)")
+                "route_table_id" - expression("$routeTables[count.index]")
                 "destination_cidr_block" - expression("mongodbatlas_network_peering.atlas_network_peering.atlas_cidr_block")
                 "vpc_peering_connection_id" - expression("aws_vpc_peering_connection_accepter.peer.id")
             }
