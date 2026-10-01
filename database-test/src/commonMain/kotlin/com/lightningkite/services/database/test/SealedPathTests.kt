@@ -9,9 +9,7 @@ import kotlin.test.assertEquals
 /**
  * Conditions, modifications, and sorts that project a sealed field onto one of its variants via `asType`.
  *
- * Modifications through a variant path follow the same standard as [DataClassPathNotNull]: backends aren't required
- * to enforce the type check, so modification tests only apply them to values that already are that variant (or
- * select those values with a condition first).
+ * Modifications through a variant path must leave a value of any other variant untouched, exactly as they do in memory.
  *
  * Sorts follow the same standard. A backend may sort on the variant's field wherever it's stored, so another variant
  * storing a field of the same name can sort by that value instead of as null. Tests that sort on such a field select
@@ -106,6 +104,66 @@ abstract class SealedPathTests {
             "test_asType_neq",
             shapes.map { SealedPathTestModel(shape = it) },
             condition { it.shape.asCircle neq Shape.Circle(2) }
+        )
+    }
+
+    // neq, notInside and not accept a value that doesn't have the field at all, so only the type check excludes other variants.
+    @Test
+    fun test_asType_field_neq() = runTest {
+        conditionTest(
+            "test_asType_field_neq",
+            shapes.map { SealedPathTestModel(shape = it) },
+            condition { it.shape.asCircle.radius neq 2 }
+        )
+    }
+
+    @Test
+    fun test_asType_field_notInside() = runTest {
+        conditionTest(
+            "test_asType_field_notInside",
+            shapes.map { SealedPathTestModel(shape = it) },
+            condition { it.shape.asSquare.label notInside listOf("a") }
+        )
+    }
+
+    @Test
+    fun test_asType_field_not() = runTest {
+        conditionTest(
+            "test_asType_field_not",
+            shapes.map { SealedPathTestModel(shape = it) },
+            condition { it.shape.asCircle.radius.mapCondition(Condition.Not(Condition.Equal(1))) }
+        )
+    }
+
+    @Test
+    fun test_not_asType_field() = runTest {
+        conditionTest(
+            "test_not_asType_field",
+            shapes.map { SealedPathTestModel(shape = it) },
+            condition { !(it.shape.asCircle.radius eq 1) }
+        )
+    }
+
+    @Test
+    fun test_notNull_asType_field_neq() = runTest {
+        conditionTest(
+            "test_notNull_asType_field_neq",
+            (shapes + null).map { SealedPathTestModel(shapeNullable = it) },
+            condition { it.shapeNullable.notNull.asCircle.radius neq 2 }
+        )
+    }
+
+    @Test
+    fun test_list_all_asType_field_neq() = runTest {
+        conditionTest(
+            "test_list_all_asType_field_neq",
+            listOf(
+                SealedPathTestModel(shapes = listOf(Shape.Circle(3), Shape.Circle(1))),
+                SealedPathTestModel(shapes = listOf(Shape.Square(1), Shape.Circle(3))),
+                SealedPathTestModel(shapes = listOf(Shape.Empty)),
+                SealedPathTestModel(shapes = listOf()),
+            ),
+            condition { it.shapes.all { it.asCircle.radius neq 1 } }
         )
     }
 
@@ -275,7 +333,6 @@ abstract class SealedPathTests {
         collection.insert(items)
         val orderBy = listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false))
         val modification = modification<SealedPathTestModel> { it.payment.asCard.last4 assign "9999" }
-        // Only Cards are selected, so the unchecked modification only reaches the matching variant.
         val condition = condition<SealedPathTestModel> { it.payment isType Payment.Card.serializer() }
         val target = items.filter { condition(it) }.sortedWith(orderBy.comparator!!).first()
         val change = collection.updateOne(condition, modification, orderBy)
@@ -350,7 +407,6 @@ abstract class SealedPathTests {
 
     @Test
     fun test_list_forEachIf_asType() = runTest {
-        // The per-element condition selects the variant, so the unchecked modification only reaches matching elements.
         modificationTest(
             SealedPathTestModel(shapes = listOf(Shape.Circle(1), Shape.Square(1), Shape.Circle(5), Shape.Empty)),
             "test_list_forEachIf_asType",
@@ -358,6 +414,84 @@ abstract class SealedPathTests {
                 it.shapes.forEachIf(
                     condition = { it isType Shape.Circle.serializer() },
                     modification = { it.asCircle.radius += 1 }
+                )
+            }
+        )
+    }
+
+    @Test
+    fun test_asType_field_increment_otherVariant() = runTest {
+        modificationTest(
+            SealedPathTestModel(shape = Shape.Square(2, "a")),
+            "test_asType_field_increment_otherVariant",
+            modification { it.shape.asCircle.radius += 2 }
+        )
+    }
+
+    @Test
+    fun test_asType_assign_otherVariant() = runTest {
+        modificationTest(
+            SealedPathTestModel(shape = Shape.Empty),
+            "test_asType_assign_otherVariant",
+            modification { it.shape.asCircle assign Shape.Circle(9) }
+        )
+    }
+
+    @Test
+    fun test_notNull_asType_increment_null() = runTest {
+        modificationTest(
+            SealedPathTestModel(shapeNullable = null),
+            "test_notNull_asType_increment_null",
+            modification { it.shapeNullable.notNull.asCircle.radius += 1 }
+        )
+    }
+
+    @Test
+    fun test_notNull_asType_increment_otherVariant() = runTest {
+        modificationTest(
+            SealedPathTestModel(shapeNullable = Shape.Square(2, "a")),
+            "test_notNull_asType_increment_otherVariant",
+            modification { it.shapeNullable.notNull.asCircle.radius += 1 }
+        )
+    }
+
+    @Test
+    open fun test_asType_chain_otherVariant() = runTest {
+        modificationTest(
+            SealedPathTestModel(shape = Shape.Square(2, "a"), payment = Payment.Card(10, "1111")),
+            "test_asType_chain_otherVariant",
+            modification {
+                it.shape.asCircle.radius += 1
+                it.shape.asSquare.label assign "changed"
+                it.payment.asCard.amount += 5
+                it.payment.asCashPayment.currency assign "EUR"
+            }
+        )
+    }
+
+    @Test
+    fun test_list_forEach_asType() = runTest {
+        modificationTest(
+            SealedPathTestModel(shapes = listOf(Shape.Circle(1), Shape.Square(1), Shape.Circle(5), Shape.Empty)),
+            "test_list_forEach_asType",
+            modification {
+                it.shapes.forEach {
+                    it.asCircle.radius += 1
+                    it.asSquare.label assign "changed"
+                }
+            }
+        )
+    }
+
+    @Test
+    fun test_list_forEachIf_asType_partlySelected() = runTest {
+        modificationTest(
+            SealedPathTestModel(shapes = listOf(Shape.Circle(1), Shape.Square(1), Shape.Circle(5), Shape.Square(5), Shape.Empty)),
+            "test_list_forEachIf_asType_partlySelected",
+            modification {
+                it.shapes.forEachIf(
+                    condition = { it neq Shape.Circle(1) },
+                    modification = { it.asSquare.side += 1 }
                 )
             }
         )

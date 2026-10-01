@@ -5,6 +5,7 @@ package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
+import com.lightningkite.services.database.test.ClassUsedForEmbedding
 import com.lightningkite.services.database.test.LargeTestModel
 import org.bson.Document
 import kotlin.test.*
@@ -168,5 +169,20 @@ class BsonConditionAtlasSearchTest {
             withoutAtlas.toJson(),
             "Scalar conditions should be identical regardless of atlasSearch flag"
         )
+    }
+
+    @Test
+    fun searchStage_onlySearchesTextIndexFields() {
+        val stage = atlasSearchStage(serializer, Condition.FullTextSearch<LargeTestModel>("secret"))
+        val text = (stage["\$search"] as Document)["text"] as Document
+        assertEquals(listOf("string", "embedded.value1"), text["path"])
+    }
+
+    @Test
+    fun searchStage_withoutTextIndex_searchesEverything() {
+        // ModelPermissionsTable counts such a search as reading every field, so masked users only reach unmasked rows.
+        val stage = atlasSearchStage(ClassUsedForEmbedding.serializer(), Condition.FullTextSearch<ClassUsedForEmbedding>("secret"))
+        val text = (stage["\$search"] as Document)["text"] as Document
+        assertEquals(Document("wildcard", "*"), text["path"])
     }
 }

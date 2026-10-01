@@ -220,6 +220,19 @@ modification<User> { it ->
 }
 ```
 
+### Nullable and Sealed Fields
+
+```kotlin
+modification<User> { it ->
+    it.address.notNull.city assign "Provo"   // no change when address is null
+    it.payment.asCard.last4 assign "4242"     // no change when payment isn't a Card
+}
+```
+
+Every backend leaves a null (or missing) value untouched, and memory and MongoDB leave another variant
+untouched (Postgres and SQL don't support `asType` yet). On MongoDB, a row where some `notNull`/`asType`
+step fails isn't matched, so none of the modification applies to it.
+
 ### Map Modifications
 
 ```kotlin

@@ -4,6 +4,8 @@ import com.lightningkite.services.data.GenerateDataClassPaths
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -25,6 +27,14 @@ enum class Role {
     Moderator,
     Admin
 }
+
+@Serializable
+@GenerateDataClassPaths
+data class Span(val start: Int = 0, val endInclusive: Int? = null)
+
+@Serializable
+@GenerateDataClassPaths
+data class Holder(val span: Span = Span(), val thing: Polymorphic = Polymorphic.Foo("a"))
 
 class UpdateRestrictionsTest {
 
@@ -275,17 +285,14 @@ class UpdateRestrictionsTest {
     }
 
     @Test
-    fun `whitelist mode - cannotBeModified is no-op`() {
+    fun `whitelist mode - cannotBeModified on an unlisted field still blocks it`() {
         val restrictions = updateRestrictions<TestUser>(mode = UpdateRestrictions.Mode.Whitelist) { user ->
             user.email.canBeModified()
-            user.role.cannotBeModified() // This should have no effect in whitelist mode
+            user.role.cannotBeModified()
         }
 
-        val emailMod = modification<TestUser> { it.email assign "new@example.com" }
-        val roleMod = modification<TestUser> { it.role assign Role.Admin }
-
-        assertEquals(Condition.Always, restrictions(emailMod))
-        assertEquals(Condition.Never, restrictions(roleMod)) // Blocked by whitelist, not by cannotBeModified
+        assertEquals(Condition.Always, restrictions(modification<TestUser> { it.email assign "new@example.com" }))
+        assertEquals(Condition.Never, restrictions(modification<TestUser> { it.role assign Role.Admin }))
     }
 
     // ==================== COMPOSITION TESTS ====================
@@ -563,5 +570,300 @@ class UpdateRestrictionsTest {
 
         val creditsMod = modification<TestUser> { it.credits assign 500 }
         assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(creditsMod))
+    }
+
+    // ==================== PARENT / CHILD PATHS ====================
+
+    private fun <T> assertNever(restrictions: UpdateRestrictions<T>, modification: Modification<T>) =
+        assertEquals(Condition.Never, restrictions(modification), "$modification should be refused")
+
+    @Test
+    fun `whitelist - a rule on a child does not allow writing the parent`() {
+        val restrictions = whitelistRestrictions<LargeTestModel> {
+            it.embedded.value1.canBeModified()
+            it.embeddedNullable.notNull.value1.canBeModified()
+        }
+        val writeChildThenParent = path<LargeTestModel>().embedded.mapModification(
+            Modification.Chain(
+                listOf(
+                    path<ClassUsedForEmbedding>().value1.mapModification(Modification.Assign("x")),
+                    Modification.Assign(ClassUsedForEmbedding("y", 99)),
+                )
+            )
+        )
+
+        assertEquals(Condition.Always, restrictions(modification { it.embedded.value1 assign "x" }))
+        assertEquals(Condition.Always, restrictions(modification { it.embeddedNullable.notNull.value1 assign "x" }))
+        assertNever(restrictions, modification { it.embedded assign ClassUsedForEmbedding("x", 99) })
+        assertNever(restrictions, modification { it.embeddedNullable assign ClassUsedForEmbedding("x", 5) })
+        assertNever(restrictions, modification { it.embeddedNullable assign null })
+        assertNever(restrictions, writeChildThenParent)
+        assertNever(restrictions, modification { it.embedded.value2 assign 99 })
+    }
+
+    @Test
+    fun `whitelist - a rule on a parent allows writing its children`() {
+        val restrictions = whitelistRestrictions<LargeTestModel> { it.embedded.canBeModified() }
+
+        assertEquals(Condition.Always, restrictions(modification { it.embedded.value1 assign "x" }))
+        assertEquals(Condition.Always, restrictions(modification { it.embedded assign ClassUsedForEmbedding() }))
+        assertNever(restrictions, modification { it.int assign 1 })
+    }
+
+    @Test
+    fun `whitelist - a rule on list elements' field does not allow rewriting whole elements`() {
+        val restrictions = whitelistRestrictions<LargeTestModel> { it.listEmbedded.elements.value2.canBeModified() }
+
+        assertEquals(Condition.Always, restrictions(modification { it.listEmbedded.forEach { it.value2 assign 3 } }))
+        assertNever(restrictions, modification { it.listEmbedded.forEach { it.value1 assign "x" } })
+        assertNever(restrictions, modification { it.listEmbedded.forEach { it assign ClassUsedForEmbedding() } })
+        assertNever(restrictions, modification { it.listEmbedded assign listOf() })
+        assertNever(restrictions, modification { it.listEmbedded += ClassUsedForEmbedding() })
+        assertNever(restrictions, modification { it.listEmbedded.removeAll { it.value2 eq 1 } })
+        assertNever(restrictions, modification { it.listEmbedded.dropFirst() })
+        assertNever(restrictions, modification { it.listEmbedded.dropLast() })
+    }
+
+    @Test
+    fun `whitelist - map modifications write the map field`() {
+        val allowed = whitelistRestrictions<LargeTestModel> { it.map.canBeModified() }
+        val other = whitelistRestrictions<LargeTestModel> { it.int.canBeModified() }
+
+        assertEquals(Condition.Always, allowed(modification { it.map += mapOf("a" to 1) }))
+        assertEquals(Condition.Always, allowed(modification { it.map.removeKeys(setOf("a")) }))
+        assertNever(other, modification { it.map += mapOf("a" to 1) })
+        assertNever(other, modification { it.map.removeKeys(setOf("a")) })
+    }
+
+    @Test
+    fun `whitelist - writes through a sealed variant use the variant's field path`() {
+        val restrictions = whitelistRestrictions<Holder> { it.thing.asFoo.name.canBeModified() }
+
+        assertEquals(Condition.Always, restrictions(modification { it.thing.asFoo.name assign "b" }))
+        assertNever(restrictions, modification { it.thing.asFoo assign Polymorphic.Foo("b") })
+        assertNever(restrictions, modification { it.thing assign Polymorphic.Bar(1) })
+    }
+
+    @Test
+    fun `whitelist - a root assign is refused unless the root is allowed`() {
+        val restrictions = whitelistRestrictions<TestUser> { it.email.canBeModified() }
+        assertNever(restrictions, Modification.Assign(TestUser()))
+    }
+
+    @Test
+    fun `whitelist - cannotBeModified carves a field out of an allowed parent`() {
+        val restrictions = whitelistRestrictions<LargeTestModel> {
+            it.embedded.canBeModified()
+            it.embedded.value1.cannotBeModified()
+        }
+
+        assertEquals(Condition.Always, restrictions(modification { it.embedded.value2 assign 3 }))
+        assertNever(restrictions, modification { it.embedded.value1 assign "x" })
+        assertNever(restrictions, modification { it.embedded assign ClassUsedForEmbedding() })
+    }
+
+    @Test
+    fun `whitelist - a rule on a child applies when writing its allowed parent`() {
+        val admin = condition<LargeTestModel> { it.boolean eq true }
+        val restrictions = whitelistRestrictions<LargeTestModel> {
+            it.embedded.canBeModified()
+            it.embedded.value2 requires admin
+        }
+
+        assertEquals(Condition.Always, restrictions(modification { it.embedded.value1 assign "x" }))
+        assertEquals(admin, restrictions(modification { it.embedded assign ClassUsedForEmbedding() }))
+    }
+
+    @Test
+    fun `whitelist - nullable end date that must be in the future or open`() {
+        val admin = condition<Holder> { it.thing.asFoo.name eq "admin" }
+        val restrictions = whitelistRestrictions<Holder> {
+            it.span.endInclusive.requires(admin) { it.notNull.gte(10) or it.eq(null) }
+        }
+
+        assertEquals(admin, restrictions(modification { it.span.endInclusive assign 12 }))
+        assertEquals(admin, restrictions(modification { it.span.endInclusive assign null }))
+        assertNever(restrictions, modification { it.span.endInclusive assign 5 })
+        assertNever(restrictions, modification { it.span assign Span(0, 12) })
+        assertNever(restrictions, modification { it.span.start assign 1 })
+    }
+
+    // ==================== VALUE CONSTRAINTS ON SUB-FIELD WRITES ====================
+
+    @Test
+    fun `mustBe with And on a parent checks the written child`() {
+        val restrictions = updateRestrictions<LargeTestModel> {
+            it.embedded.mustBe { (it.value1 eq "CO") and (it.value2 neq 0) }
+        }
+
+        assertNever(restrictions, modification { it.embedded.value1 assign "TX" })
+        assertNever(restrictions, modification { it.embedded.value2 assign 0 })
+        assertNever(restrictions, modification { it.embedded assign ClassUsedForEmbedding("TX", 1) })
+        // The part a write leaves alone must already hold, so a write can fix one part of a row that breaks the rule.
+        assertEquals(condition { it.embedded.value2 neq 0 }, restrictions(modification { it.embedded.value1 assign "CO" }))
+        assertEquals(condition { it.embedded.value1 eq "CO" }, restrictions(modification { it.embedded.value2 assign 5 }))
+        assertEquals(Condition.Always, restrictions(modification { it.embedded assign ClassUsedForEmbedding("CO", 1) }))
+    }
+
+    @Test
+    fun `mustBe with Or on a parent refuses child writes it cannot prove`() {
+        val restrictions = updateRestrictions<LargeTestModel> {
+            it.embedded.mustBe { (it.value1 eq "CO") or (it.value2 eq 0) }
+        }
+
+        assertNever(restrictions, modification { it.embedded.value1 assign "TX" })
+        assertNever(restrictions, modification { it.embedded.value1 assign "CO" })
+        assertEquals(Condition.Always, restrictions(modification { it.embedded assign ClassUsedForEmbedding("TX", 0) }))
+    }
+
+    @Test
+    fun `mustBe on a nullable object checks writes inside it`() {
+        val restrictions = updateRestrictions<LargeTestModel> {
+            it.embeddedNullable.notNull.mustBe { it.value1 eq "CO" }
+        }
+
+        assertNever(restrictions, modification { it.embeddedNullable.notNull.value1 assign "TX" })
+        assertNever(restrictions, modification { it.embeddedNullable.notNull.value1 += "X" })
+        assertEquals(condition { it.embeddedNullable neq null }, restrictions(modification { it.embeddedNullable.notNull.value1 assign "CO" }))
+        assertEquals(condition { it.embeddedNullable.notNull.value1 eq "CO" }, restrictions(modification { it.embeddedNullable.notNull.value2 assign 3 }))
+    }
+
+    @Test
+    fun `guaranteedAfter fails closed on shapes it cannot prove`() {
+        val embeddedValue1 = modification<LargeTestModel> { it.embedded.value1 assign "x" }
+        assertEquals(false, Condition.Never.guaranteedAfter(embeddedValue1))
+        assertEquals(false, Condition.Not(condition<LargeTestModel> { it.embedded.value1 neq "x" }).guaranteedAfter(embeddedValue1))
+        assertEquals(true, condition<LargeTestModel> { it.embedded.value1 eq "x" }.guaranteedAfter(embeddedValue1))
+        assertEquals(true, condition<LargeTestModel> { it.embedded.value2 eq 1 }.guaranteedAfter(embeddedValue1))
+    }
+
+    // ==================== asType AND Nothing ====================
+
+    @Test
+    fun `affects descends asType and ignores Nothing`() {
+        val fooName = modification<Holder> { it.thing.asFoo.name assign "b" }
+        val nothing = Modification.Nothing.invoke<Holder>()
+
+        assertTrue(fooName.affects(path<Holder>().thing))
+        assertTrue(fooName.affects(path<Holder>().thing.asFoo.name))
+        assertFalse(fooName.affects(path<Holder>().thing.asBar.id))
+        assertFalse(fooName.affects(path<Holder>().span))
+        assertTrue(modification<Holder> { it.thing assign Polymorphic.Bar(1) }.affects(path<Holder>().thing.asFoo.name))
+        assertFalse(nothing.affects(path<Holder>()))
+        assertFalse(nothing.affects(path<Holder>().span))
+        assertFalse(modification<Holder> { it.span.start assign 1 }.let { Modification.Chain(listOf(nothing, it)) }.affects(path<Holder>().thing))
+    }
+
+    @Test
+    fun `whitelist - writes through asType and Nothing no longer trip unrelated rules`() {
+        val restrictions = whitelistRestrictions<Holder> {
+            it.thing.asFoo.name.canBeModified()
+            it.thing.asBar.id.cannotBeModified()
+        }
+
+        assertEquals(Condition.Always, restrictions(modification { it.thing.asFoo.name assign "b" }))
+        assertEquals(Condition.Always, restrictions(Modification.Nothing.invoke()))
+        assertNever(restrictions, modification { it.thing.asBar.id assign 2 })
+    }
+
+    @Test
+    fun `a mask under one variant restricts only reads of that variant's fields`() {
+        val admin = condition<Holder> { it.span.start eq 1 }
+        val hidden = mask<Holder> { it.thing.asFoo.name.mask("", unless = admin) }
+
+        assertEquals(Condition.Always, hidden(condition { it.thing.asBar.id eq 1 }))
+        assertEquals(admin, hidden(condition { it.thing.asFoo.name eq "x" }))
+        assertEquals(admin, hidden(condition { it.thing eq Polymorphic.Foo("x") }))
+        assertEquals(Condition.Always, hidden.permitSort(listOf(SortPart(path<Holder>().thing.asBar.id))))
+        assertEquals(admin, hidden.permitSort(listOf(SortPart(path<Holder>().thing.asFoo.name))))
+        assertEquals(admin, hidden(path<Holder>().thing))
+        assertEquals(Condition.Always, mask<Holder> { always(Modification.Nothing.invoke()) }(condition { it.span.start eq 1 }))
+    }
+
+    // ==================== guaranteedAfter OVER UNREAD PARTS ====================
+
+    @Test
+    fun `neq null on an object survives writes inside it but not assigning null`() {
+        val restrictions = updateRestrictions<LargeTestModel> { it.embeddedNullable.mustBe { it neq null } }
+
+        val nonNull = condition<LargeTestModel> { it.embeddedNullable neq null }
+        assertEquals(nonNull, restrictions(modification { it.embeddedNullable.notNull.value1 assign "x" }))
+        assertEquals(nonNull, restrictions(modification { it.embeddedNullable.notNull assign ClassUsedForEmbedding() }))
+        assertEquals(Condition.Always, restrictions(modification { it.embeddedNullable assign ClassUsedForEmbedding() }))
+        assertNever(restrictions, modification { it.embeddedNullable assign null })
+    }
+
+    @Test
+    fun `eq null on an object still refuses writes inside it`() {
+        val restrictions = updateRestrictions<LargeTestModel> { it.embeddedNullable.mustBe { it eq null } }
+
+        assertNever(restrictions, modification { it.embeddedNullable.notNull.value1 assign "x" })
+        assertEquals(Condition.Always, restrictions(modification { it.embeddedNullable assign null }))
+    }
+
+    @Test
+    fun `Or and Not rules allow writes to fields they do not read`() {
+        val or = updateRestrictions<LargeTestModel> { it.embedded.mustBe { (it.value1 eq "CO") or (it.value1 eq "TX") } }
+        val not = updateRestrictions<LargeTestModel> { it.embedded.mustBe { !(it.value1 eq "x") } }
+
+        assertEquals(or.fields.single().limitedTo, or(modification { it.embedded.value2 assign 5 }))
+        assertNever(or, modification { it.embedded.value1 assign "CO" })
+        assertEquals(not.fields.single().limitedTo, not(modification { it.embedded.value2 assign 5 }))
+        assertNever(not, modification { it.embedded.value1 assign "y" })
+    }
+
+    // ==================== RULES A WRITE LEAVES ALONE ====================
+
+    @Test
+    fun `a rule pinning one variant is checked before writes under another`() {
+        val restrictions = updateRestrictions<Holder> { it.thing.mustBe { it.asFoo.name eq "a" } }
+        val writeBar = restrictions(modification { it.thing.asBar.id assign 999 })
+
+        assertTrue(writeBar(Holder(thing = Polymorphic.Foo("a"))))
+        assertFalse(writeBar(Holder(thing = Polymorphic.Bar(1))))
+        assertNever(restrictions, modification { it.thing assign Polymorphic.Bar(1) })
+        assertEquals(Condition.Always, restrictions(modification { it.thing assign Polymorphic.Foo("a") }))
+    }
+
+    @Test
+    fun `writes under asType require the variant`() {
+        val restrictions = updateRestrictions<Holder> { it.thing.mustBe { it.asFoo.name neq "" } }
+        val writeName = restrictions(modification { it.thing.asFoo.name assign "b" })
+
+        assertTrue(writeName(Holder(thing = Polymorphic.Foo(""))))
+        assertFalse(writeName(Holder(thing = Polymorphic.Bar(1))))
+        assertNever(restrictions, modification { it.thing.asFoo.name assign "" })
+    }
+
+    @Test
+    fun `a chain is checked last write first`() {
+        val restrictions = updateRestrictions<LargeTestModel> {
+            it.embedded.mustBe { (it.value1 eq "CO") and (it.value2 neq 0) }
+        }
+
+        assertEquals(Condition.Always, restrictions(modification {
+            it.embedded.value1 assign "CO"
+            it.embedded.value2 assign 5
+        }))
+        assertNever(restrictions, modification {
+            it.embedded.value1 assign "CO"
+            it.embedded.value1 assign "TX"
+        })
+        assertEquals(condition { it.embedded.value2 neq 0 }, restrictions(modification {
+            it.embedded.value1 assign "TX"
+            it.embedded.value1 assign "CO"
+        }))
+    }
+
+    @Test
+    fun `forEachIf keeps skipped elements under the rule`() {
+        val restrictions = updateRestrictions<LargeTestModel> { it.listEmbedded.mustBe { it.all { it.value2 gt 2 } } }
+
+        assertEquals(Condition.Always, restrictions(modification { it.listEmbedded.forEach { it.value2 assign 3 } }))
+        assertEquals(
+            restrictions.fields.single().limitedTo,
+            restrictions(modification { it.listEmbedded.forEachIf({ it.value1 eq "x" }) { it.value2 assign 3 } })
+        )
+        assertNever(restrictions, modification { it.listEmbedded.forEach { it.value2 assign 1 } })
     }
 }
