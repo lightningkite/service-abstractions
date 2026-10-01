@@ -11,7 +11,7 @@ public fun <Model : Any> Table<Model>.postCreate(
 ): Table<Model> = object : Table<Model> by this@postCreate {
     override val wraps = this@postCreate
     override suspend fun insert(models: Iterable<Model>): List<Model> {
-        val result = wraps.insertMany(models)
+        val result = wraps.insert(models)
         result.forEach { onCreate(it) }
         return result
     }
@@ -480,7 +480,7 @@ public inline fun <Model : Any> Table<Model>.interceptCreate(crossinline interce
     object : Table<Model> by this {
         override val wraps = this@interceptCreate
         override suspend fun insert(models: Iterable<Model>): List<Model> =
-            wraps.insertMany(models.map { interceptor(it) })
+            wraps.insert(models.map { interceptor(it) })
 
         override suspend fun upsertOne(
             condition: Condition<Model>,
@@ -503,7 +503,7 @@ public inline fun <Model : Any> Table<Model>.interceptCreates(crossinline interc
     object : Table<Model> by this {
         override val wraps = this@interceptCreates
         override suspend fun insert(models: Iterable<Model>): List<Model> =
-            wraps.insertMany(models.let { interceptor(it) })
+            wraps.insert(models.let { interceptor(it) })
 
         override suspend fun upsertOne(
             condition: Condition<Model>,

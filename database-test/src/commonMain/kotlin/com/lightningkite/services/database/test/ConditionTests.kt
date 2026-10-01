@@ -2679,7 +2679,7 @@ abstract class ConditionTests() {
                 ClassUsedForEmbedding(value1 = "five", value2 = 3)
             )
         )
-        collection.insertMany(listOf(item1, item2))
+        collection.insert(listOf(item1, item2))
         var condition = path<LargeTestModel>().listEmbedded.any { it.value1 eq "five" }
         var results = collection.find(condition).toList()
         assertEquals(1, results.size)
@@ -2758,7 +2758,7 @@ abstract class ConditionTests() {
                 ClassUsedForEmbedding(value1 = "five", value2 = 3)
             )
         )
-        collection.insertMany(listOf(item1, item2))
+        collection.insert(listOf(item1, item2))
         var condition = path<LargeTestModel>().setEmbedded.any { it.value1 eq "five" }
         var results = collection.find(condition).toList()
         assertEquals(1, results.size)
@@ -2837,7 +2837,7 @@ abstract class ConditionTests() {
 
         val notNullItem = LargeTestModel(stringNullable = "Not Null String")
         val nullItem = LargeTestModel(stringNullable = null)
-        collection.insertMany(listOf(notNullItem, nullItem))
+        collection.insert(listOf(notNullItem, nullItem))
 
         var condition = path<LargeTestModel>().stringNullable neq null
         var result = collection.find(condition).toList()

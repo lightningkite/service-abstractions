@@ -4,7 +4,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
@@ -24,7 +24,12 @@ kotlin {
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
-    androidTarget {
+    android {
+        namespace = "com.lightningkite.services.basis"
+        compileSdk = 36
+        minSdk = 21
+        enableCoreLibraryDesugaring = true
+        withHostTest {}
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
@@ -35,9 +40,7 @@ kotlin {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
     }
-    js(IR) {
-        browser()
-    }
+    js { browser() }
 
     iosX64()
     iosArm64()
@@ -45,7 +48,7 @@ kotlin {
     macosArm64()
 
     sourceSets {
-        val commonMain by getting {
+        val commonMain = getByName("commonMain") {
             dependencies {
                 api(libs.kotlinx.serialization.json)
                 api(libs.kotlinx.datetime)
@@ -55,20 +58,20 @@ kotlin {
                 api(project(path = ":kfile"))
             }
         }
-        val commonTest by getting {
+        val commonTest = getByName("commonTest") {
             dependencies {
                 implementation(libs.kotlin.test)
                 implementation(libs.coroutines.testing)
             }
         }
-        val notJvmMain by creating {
+        val notJvmMain = create("notJvmMain") {
             dependsOn(commonMain)
         }
-        val nativeMain by getting { dependsOn(notJvmMain) }
-        val jsMain by getting { dependsOn(notJvmMain) }
-        val androidMain by getting { dependsOn(notJvmMain) }
+        val nativeMain = getByName("nativeMain") { dependsOn(notJvmMain) }
+        val jsMain = getByName("jsMain") { dependsOn(notJvmMain) }
+        val androidMain = getByName("androidMain") { dependsOn(notJvmMain) }
 
-        val jvmTest by getting {
+        val jvmTest = getByName("jvmTest") {
             dependencies {
                 // basis is below :test in the dependency graph, so it can't reuse :test's logging
                 // binding. Provide one directly so kotlin-logging has an slf4j backend at test runtime.
@@ -78,21 +81,8 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.lightningkite.services"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 21
-    }
-    compileOptions {
-        isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-    dependencies {
-        coreLibraryDesugaring(libs.androidDesugaring)
-    }
+dependencies {
+    coreLibraryDesugaring(libs.androidDesugaring)
 }
 
 lkLibrary(

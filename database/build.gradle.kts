@@ -5,11 +5,11 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
-    id("org.jetbrains.kotlinx.atomicfu") version "0.32.1"
+    id("org.jetbrains.kotlinx.atomicfu") version "0.33.0"
 }
 
 kotlin {
@@ -18,7 +18,12 @@ kotlin {
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
-    androidTarget {
+    android {
+        namespace = "com.lightningkite.services.database"
+        compileSdk = 36
+        minSdk = 21
+        enableCoreLibraryDesugaring = true
+        withHostTest {}
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
@@ -29,9 +34,7 @@ kotlin {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
     }
-    js(IR) {
-        browser()
-    }
+    js { browser() }
 
     iosX64()
     iosArm64()
@@ -39,7 +42,7 @@ kotlin {
     macosArm64()
 
     sourceSets {
-        val commonMain by getting {
+        val commonMain = getByName("commonMain") {
             dependencies {
                 api(project(path = ":basis"))
                 api(project(path = ":database-shared"))
@@ -49,7 +52,7 @@ kotlin {
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
-        val commonTest by getting {
+        val commonTest = getByName("commonTest") {
             dependencies {
                 implementation(project(":test"))
                 implementation(libs.kotlin.test)
@@ -62,19 +65,19 @@ kotlin {
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
-        val nonJvmMain by creating {
+        val nonJvmMain = create("nonJvmMain") {
             dependsOn(commonMain)
         }
-        val nativeMain by getting {
+        val nativeMain = getByName("nativeMain") {
             dependsOn(nonJvmMain)
         }
-        val jsMain by getting {
+        val jsMain = getByName("jsMain") {
             dependsOn(nonJvmMain)
         }
-        val androidMain by getting {
+        val androidMain = getByName("androidMain") {
             dependsOn(nonJvmMain)
         }
-        val jvmMain by getting {
+        val jvmMain = getByName("jvmMain") {
             dependencies {
                 api(libs.openTelemetry.api)
                 api(libs.openTelemetry.kotlin)
@@ -89,21 +92,8 @@ dependencies {
     }
 }
 
-android {
-    namespace = "com.lightningkite.services"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 21
-    }
-    compileOptions {
-        isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-    dependencies {
-        coreLibraryDesugaring(libs.androidDesugaring)
-    }
+dependencies {
+    coreLibraryDesugaring(libs.androidDesugaring)
 }
 
 lkLibrary(

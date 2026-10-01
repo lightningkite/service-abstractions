@@ -5,11 +5,10 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
-    id("org.jetbrains.kotlinx.atomicfu") version "0.32.1"
 }
 
 kotlin {
@@ -19,7 +18,12 @@ kotlin {
     }
     explicitApi()
     applyDefaultHierarchyTemplate()
-    androidTarget {
+    android {
+        namespace = "com.lightningkite.services.database.shared"
+        compileSdk = 36
+        minSdk = 21
+        enableCoreLibraryDesugaring = true
+        withHostTest {}
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
@@ -30,9 +34,7 @@ kotlin {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
     }
-    js(IR) {
-        browser()
-    }
+    js { browser() }
 
     iosX64()
     iosArm64()
@@ -40,17 +42,17 @@ kotlin {
     macosArm64()
 
     sourceSets {
-        val commonMain by getting {
+        val commonMain = getByName("commonMain") {
             dependencies {
                 api(project(path = ":data-shared"))
                 api(project(path = ":currency"))
-                implementation(libs.kotlinx.json)
+                implementation(libs.kotlinx.serialization.json)
             }
             kotlin {
                 srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
             }
         }
-        val commonTest by getting {
+        val commonTest = getByName("commonTest") {
             dependencies {
                 implementation(project(":test"))
                 implementation(libs.kotlin.test)
@@ -60,24 +62,24 @@ kotlin {
                 srcDir(file("build/generated/ksp/common/commonTest/kotlin"))
             }
         }
-        val nonJvmMain by creating {
+        val nonJvmMain = create("nonJvmMain") {
             dependsOn(commonMain)
         }
-        val jvmCommonMain by creating {
+        val jvmCommonMain = create("jvmCommonMain") {
             dependsOn(commonMain)
         }
-        val androidMain by getting {
+        val androidMain = getByName("androidMain") {
             dependsOn(jvmCommonMain)
         }
-        val jvmMain by getting {
+        val jvmMain = getByName("jvmMain") {
             dependsOn(jvmCommonMain)
         }
-        val jvmTest by getting {}
-        val jsMain by getting { dependsOn(nonJvmMain) }
-        val iosX64Main by getting { dependsOn(nonJvmMain) }
-        val iosArm64Main by getting { dependsOn(nonJvmMain) }
-        val iosSimulatorArm64Main by getting { dependsOn(nonJvmMain) }
-        val macosArm64Main by getting { dependsOn(nonJvmMain) }
+        val jvmTest = getByName("jvmTest") {}
+        val jsMain = getByName("jsMain") { dependsOn(nonJvmMain) }
+        val iosX64Main = getByName("iosX64Main") { dependsOn(nonJvmMain) }
+        val iosArm64Main = getByName("iosArm64Main") { dependsOn(nonJvmMain) }
+        val iosSimulatorArm64Main = getByName("iosSimulatorArm64Main") { dependsOn(nonJvmMain) }
+        val macosArm64Main = getByName("macosArm64Main") { dependsOn(nonJvmMain) }
     }
 }
 
@@ -87,21 +89,8 @@ dependencies {
     }
 }
 
-android {
-    namespace = "com.lightningkite.services"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 21
-    }
-    compileOptions {
-        isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-    dependencies {
-        coreLibraryDesugaring(libs.androidDesugaring)
-    }
+dependencies {
+    coreLibraryDesugaring(libs.androidDesugaring)
 }
 
 lkLibrary(

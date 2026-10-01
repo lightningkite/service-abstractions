@@ -69,7 +69,7 @@ abstract class InlinePropertiesTests {
 
         val items = List(10) { ValueClassContainingTest(wrappedInt = IntWrapper(it), direct = ValueClass("Item $it")) }
 
-        collection.insertMany(items)
+        collection.insert(items)
 
         val id = items.first()._id
         collection.updateOneById(
@@ -105,7 +105,7 @@ abstract class InlinePropertiesTests {
         )
         val sortedPosts = items.sortedBy { it.wrappedInt.int }
         val reversePosts = items.sortedByDescending { it.wrappedInt.int }
-        collection.insertMany(items)
+        collection.insert(items)
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 = collection.find(
             Condition.Always,
@@ -128,7 +128,7 @@ abstract class InlinePropertiesTests {
 
         val ints = List(10) { it }
 
-        c.insertMany(
+        c.insert(
             ints.map { ValueClassContainingTest(wrappedInt = IntWrapper(it)) }
         )
 
@@ -527,7 +527,7 @@ abstract class InlinePropertiesTests {
         val lowItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(10))
         val highItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(100))
         val manualList = listOf(nullItem, lowItem, highItem)
-        collection.insertMany(listOf(nullItem, lowItem, highItem))
+        collection.insert(listOf(nullItem, lowItem, highItem))
         val condition = condition<ExtendedValueClassTest> { it.wrappedIntNullable.notNull gt IntWrapper(50) }
         val results = collection.find(condition).toList()
         assertContains(results, highItem)
@@ -543,7 +543,7 @@ abstract class InlinePropertiesTests {
         val lowItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(10))
         val highItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(100))
         val manualList = listOf(nullItem, lowItem, highItem)
-        collection.insertMany(listOf(nullItem, lowItem, highItem))
+        collection.insert(listOf(nullItem, lowItem, highItem))
         val condition = condition<ExtendedValueClassTest> { it.wrappedIntNullable.notNull lt IntWrapper(50) }
         val results = collection.find(condition).toList()
         assertContains(results, lowItem)
@@ -560,7 +560,7 @@ abstract class InlinePropertiesTests {
         val matchingItem = ExtendedValueClassTest(wrappedUuidNullable = UuidWrapper(testUuid))
         val otherItem = ExtendedValueClassTest(wrappedUuidNullable = UuidWrapper(Uuid.random()))
         val manualList = listOf(nullItem, matchingItem, otherItem)
-        collection.insertMany(listOf(nullItem, matchingItem, otherItem))
+        collection.insert(listOf(nullItem, matchingItem, otherItem))
         val condition = condition<ExtendedValueClassTest> { it.wrappedUuidNullable.notNull eq UuidWrapper(testUuid) }
         val results = collection.find(condition).toList()
         assertContains(results, matchingItem)

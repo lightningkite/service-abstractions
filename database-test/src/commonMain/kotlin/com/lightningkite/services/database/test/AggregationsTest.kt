@@ -13,7 +13,7 @@ abstract class AggregationsTest() {
     fun test() = runTest {
 
         val c = database.prepare(DatabaseTableDefinition<LargeTestModel>("aggregationstest"))
-        c.insertMany(
+        c.insert(
             listOf(
                 LargeTestModel(int = 32, byte = 0, embedded = ClassUsedForEmbedding(value2 = 32)),
                 LargeTestModel(int = 42, byte = 0, embedded = ClassUsedForEmbedding(value2 = 42)),
@@ -86,7 +86,7 @@ abstract class AggregationsTest() {
     @Test
     fun test_groupCount_nullableKeyIncludesNullGroup() = runTest {
         val c = database.prepare(DatabaseTableDefinition<LargeTestModel>("aggregationstest_nullablegroup"))
-        c.insertMany(
+        c.insert(
             listOf(
                 LargeTestModel(stringNullable = "a"),
                 LargeTestModel(stringNullable = "a"),
@@ -110,7 +110,7 @@ abstract class AggregationsTest() {
     @Test
     fun test_groupCount_nonNullableKeyDropsNullGroup() = runTest {
         val c = database.prepare(DatabaseTableDefinition<LargeTestModel>("aggregationstest_nonnullablegroup"))
-        c.insertMany(
+        c.insert(
             listOf(
                 LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 1)),
                 LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 1)),
@@ -127,7 +127,7 @@ abstract class AggregationsTest() {
     @Test
     fun test_groupAggregate_nonNullableKeyDropsNullGroup() = runTest {
         val c = database.prepare(DatabaseTableDefinition<LargeTestModel>("aggregationstest_nonnullablegroupagg"))
-        c.insertMany(
+        c.insert(
             listOf(
                 LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 1), int = 10),
                 LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value2 = 1), int = 20),
