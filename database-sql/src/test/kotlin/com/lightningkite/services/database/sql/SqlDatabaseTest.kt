@@ -46,6 +46,13 @@ class SqlConditionTests : ConditionTests() {
     // Unsupported in generic SQL
     override fun test_geodistance_1() {}
     override fun test_geodistance_2() {}
+
+    // Inserting a list of objects with a nullable object field, or a list of nullable objects, fails
+    // ("columns don't have default values").
+    override fun test_notNull_inListElement_any() {}
+    override fun test_notNull_inListElement_all() {}
+    override fun test_notNull_listElement_any_field_neq() {}
+    override fun test_notNull_listElement_all_field_neq() {}
 }
 
 class SqlModificationTests : ModificationTests() {
@@ -60,6 +67,9 @@ class SqlModificationTests : ModificationTests() {
     // Modification.isScalarOnly returns false for them and SqlTable falls back to the read-modify-write
     // path, which applies Modification.invoke in memory and therefore inherits the reference semantics
     // for free. The disables were stale.
+
+    // Inserting a list of objects with a nullable object field fails ("columns don't have default values").
+    override fun test_notNull_inList() {}
 }
 
 class SqlSortTest : SortTest() {

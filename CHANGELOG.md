@@ -16,6 +16,10 @@
 - **voiceagent-openai**: Event channel `UNLIMITED` → `Channel(64, DROP_OLDEST)`; tool-call/audio events may drop under back-pressure.
 
 ### Security
+- **database-mongodb, database-postgres, database-sql (LIB-2)**: `notNull` modifications now leave a null or missing value untouched on every backend, and `asType` another variant on MongoDB, as in memory; on MongoDB a row failing any such check isn't written or matched. See BREAKING_CHANGES_1.3.md §7.
+- **database (LIB-4)**: `ModelPermissions.readMask` fails closed: conditions (including those of writes and deletes) that read a masked path, what a write's modification reads (`forEachIf`/`removeAll` conditions, `-=` and a set's `+=`), aggregates over a masked property, and nested `findPartial` fields are all masked; writes and deletes only reach readable rows. Server-defined `requires`/`mustBe` conditions are not masked. See BREAKING_CHANGES_1.3.md §6.
+- **database-shared (LIB-11, LIB-13)**: `UpdateRestrictions` whitelist rules cover only their own path and its children (a rule on `a.b` no longer allows writing `a`, nor a rule on list elements' fields whole-list writes), `cannotBeModified()` works in whitelist mode, and `mustBe`/`limitedTo` refuse sub-field writes they can't prove, and only allow the rest on rows that already meet the parts the write leaves alone (new `Condition.requiredBefore`). See BREAKING_CHANGES_1.3.md §8.
+- **database-mongodb, database-postgres, database-sql, database-cassandra (LIB-16)**: `notNull` and map-key conditions no longer match a null or missing value (MongoDB, Postgres, Cassandra negation), so permission conditions like `it.owner.notNull neq bannedId` don't over-grant; SQL no longer throws on map-key conditions over non-`String` values. See BREAKING_CHANGES_1.3.md §9.
 - **database-postgres**: Removed `addLogger(StdOutSqlLogger)` and a `println("list is ...")` debug line that leaked all SQL and result rows.
 - **email-mailgun**: `verifySignature` uses constant-time `MessageDigest.isEqual` (was case-insensitive `String` equality — timing-attackable).
 - **email-inbound-ses**: `verifySnsSignature` hardened — requires `CN=sns.amazonaws.com`, requires URL path matching `^/SimpleNotificationService-[a-z0-9]+\.pem$`, rejects timestamps outside ±1h, cert download wrapped in `withTimeout(10s)` on `Dispatchers.IO`, auto-confirm connect timeout 10s → 5s.
@@ -30,6 +34,7 @@
 - **email-inbound-imap**: Webhook POST retried 3× with 1s/2s/4s backoff.
 
 ### Bug Fixes
+- **database-mongodb**: `forEach` (a per-element modification with no condition) produced an empty array filter, which MongoDB rejects; it now uses `$[]`.
 - **cache-redis**: CAS Lua script — sentinel for "no TTL" changed `nil` → `""`, and `if ARGV[2] then` (always true in Lua) fixed to `if ARGV[2] ~= ''`. Previously CAS-without-TTL called `PSETEX` with a bad arg.
 - **database-mongodb**: `MongoTable.findOneAndDelete` is now atomic (was non-atomic find-then-delete; could double-process under contention).
 - **database-postgres**: `PostgresDatabase.disconnect()` closes per-collection scopes (was leaking `GlobalScope` async).

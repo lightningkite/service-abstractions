@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.Instant
 
 abstract class ModificationTests() {
@@ -1191,6 +1192,200 @@ abstract class ModificationTests() {
         assertEquals(mapOf("b" to 2), result.map)
         assertEquals(modification(item), result)
     }
+
+    // region notNull
+    // A `notNull` modification must leave a null value alone on every backend, exactly as it does in memory.
+    // Guards that predict the stored result with `modification(old)` rely on this.
+
+    private suspend fun notNullTest(name: String, items: List<LargeTestModel>, modification: Modification<LargeTestModel>) {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_$name"))
+        collection.insert(items)
+        for (item in items) {
+            val change = collection.updateOneById(item._id, modification)
+            val stored = collection.get(item._id)
+            assertEquals(modification(item), stored)
+            // MongoDB reports a row failing the check as unmatched; see test_notNull_unchangedRowsStillMatch.
+            if (change.old != null) assertEquals(stored, change.new)
+        }
+    }
+
+    @Test
+    fun test_notNull_field_assign() = runTest {
+        notNullTest(
+            "test_notNull_field_assign",
+            listOf(LargeTestModel(embeddedNullable = null), LargeTestModel(embeddedNullable = ClassUsedForEmbedding("a", 2))),
+            modification { it.embeddedNullable.notNull.value1 assign "changed" }
+        )
+    }
+
+    @Test
+    fun test_notNull_assign() = runTest {
+        notNullTest(
+            "test_notNull_assign",
+            listOf(LargeTestModel(embeddedNullable = null), LargeTestModel(embeddedNullable = ClassUsedForEmbedding("a", 2))),
+            modification { it.embeddedNullable.notNull assign ClassUsedForEmbedding("forged", 9) }
+        )
+    }
+
+    @Test
+    fun test_notNull_increment() = runTest {
+        notNullTest(
+            "test_notNull_increment",
+            listOf(LargeTestModel(intNullable = null), LargeTestModel(intNullable = 5)),
+            modification { it.intNullable.notNull += 1 }
+        )
+    }
+
+    @Test
+    fun test_notNull_listAppend() = runTest {
+        notNullTest(
+            "test_notNull_listAppend",
+            listOf(LargeTestModel(listNullable = null), LargeTestModel(listNullable = listOf(1))),
+            modification { it.listNullable.notNull += listOf(2, 3) }
+        )
+    }
+
+    @Test
+    open fun test_notNull_chain() = runTest {
+        notNullTest(
+            "test_notNull_chain",
+            listOf(
+                LargeTestModel(embeddedNullable = null, intNullable = null),
+                LargeTestModel(embeddedNullable = ClassUsedForEmbedding("a", 2), intNullable = 5),
+            ),
+            modification {
+                it.int assign 7
+                it.embeddedNullable.notNull.value1 assign "changed"
+                it.embeddedNullable.notNull.value2 += 1
+                it.intNullable.notNull coerceAtMost 3
+            }
+        )
+    }
+
+    @Test
+    fun test_notNull_updateMany() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_notNull_updateMany"))
+        val items = listOf(LargeTestModel(intNullable = null), LargeTestModel(intNullable = 5))
+        collection.insert(items)
+        val modification = modification<LargeTestModel> { it.intNullable.notNull += 1 }
+        val changes = collection.updateMany(Condition.Always, modification)
+        val expected = items.map { modification(it) }.sortedBy { it._id }
+        assertEquals(expected, collection.find(Condition.Always).toList().sortedBy { it._id })
+        // MongoDB leaves out the row failing the check; see test_notNull_unchangedRowsStillMatch.
+        for (change in changes.changes) assertEquals(modification(change.old!!), change.new)
+        assertTrue(changes.changes.any { it.old!!.intNullable != null })
+    }
+
+    @Test
+    fun test_notNull_updateManyIgnoringResult() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_notNull_updateManyIgnoringResult"))
+        val items = listOf(
+            LargeTestModel(embeddedNullable = null, intNullable = null),
+            LargeTestModel(embeddedNullable = ClassUsedForEmbedding("a", 2), intNullable = 5),
+        )
+        collection.insert(items)
+        val modification = modification<LargeTestModel> {
+            it.embeddedNullable.notNull.value1 assign "changed"
+            it.intNullable.notNull coerceAtMost 3
+        }
+        collection.updateManyIgnoringResult(Condition.Always, modification)
+        assertEquals(items.map { modification(it) }.sortedBy { it._id }, collection.find(Condition.Always).toList().sortedBy { it._id })
+    }
+
+    @Test
+    fun test_notNull_upsertOne_existing() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_notNull_upsertOne_existing"))
+        val item = LargeTestModel(intNullable = null)
+        collection.insertOne(item)
+        val modification = modification<LargeTestModel> { it.intNullable.notNull += 1 }
+        collection.upsertOne(condition { it._id eq item._id }, modification, item)
+        assertEquals(item, collection.get(item._id))
+    }
+
+    // The check sees the value after the earlier parts of the same modification, not the stored one.
+    @Test
+    fun test_notNull_afterAssign() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<NullableIntTestModel>("NullableIntTestModel_test_notNull_afterAssign"))
+        val item = NullableIntTestModel(value = null)
+        collection.insertOne(item)
+        val modification = modification<NullableIntTestModel> {
+            it.value assign 3
+            it.value.notNull += 1
+        }
+        val change = collection.updateOneById(item._id, modification)
+        val stored = collection.get(item._id)
+        assertEquals(modification(item), stored)
+        assertEquals(stored, change.new)
+    }
+
+    // MongoDB compares an array with null element by element, so the null check mustn't reject [null].
+    @Test
+    fun test_notNull_listWithNullElements_append() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<NullableIntsTestModel>("NullableIntsTestModel_test_notNull_listWithNullElements_append"))
+        val items = listOf(null, listOf(null), listOf(1)).map { NullableIntsTestModel(intsNullable = it) }
+        collection.insert(items)
+        val modification = modification<NullableIntsTestModel> { it.intsNullable.notNull += listOf(3) }
+        for (item in items) {
+            val change = collection.updateOneById(item._id, modification)
+            val stored = collection.get(item._id)
+            assertEquals(modification(item), stored)
+            if (change.old != null) assertEquals(stored, change.new)
+        }
+    }
+
+    @Test
+    open fun test_notNull_forEach() = runTest {
+        notNullTest(
+            "test_notNull_forEach",
+            listOf(LargeTestModel(listNullable = null), LargeTestModel(listNullable = listOf(1, 2))),
+            modification { it.listNullable.notNull.forEach { it += 1 } }
+        )
+    }
+
+    // A row whose value fails the check still matches; it's just left unchanged.
+    @Test
+    open fun test_notNull_unchangedRowsStillMatch() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_notNull_unchangedRowsStillMatch"))
+        val item = LargeTestModel(intNullable = null)
+        collection.insert(listOf(item, LargeTestModel(intNullable = 5)))
+        val modification = modification<LargeTestModel> { it.intNullable.notNull += 1 }
+        val byId = condition<LargeTestModel> { it._id eq item._id }
+
+        assertEquals(EntryChange(item, item), collection.updateOne(byId, modification))
+        assertTrue(collection.updateOneIgnoringResult(byId, modification))
+        assertEquals(2, collection.updateManyIgnoringResult(Condition.Always, modification))
+        assertEquals(EntryChange(item, item), collection.upsertOne(byId, modification, item))
+        assertTrue(collection.upsertOneIgnoringResult(byId, modification, item))
+        assertEquals(item, collection.get(item._id))
+        assertEquals(2, collection.count(Condition.Always))
+    }
+
+    @Test
+    open fun test_notNull_inList() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<NullableInListTestModel>("NullableInListTestModel_test_notNull_inList"))
+        val item = NullableInListTestModel(
+            items = listOf(
+                EmbeddedNullable(name = "a", embed1 = null),
+                EmbeddedNullable(name = "a", embed1 = ClassUsedForEmbedding("x", 1)),
+                EmbeddedNullable(name = "b", embed1 = ClassUsedForEmbedding("y", 2)),
+            )
+        )
+        collection.insertOne(item)
+        val modification = modification<NullableInListTestModel> {
+            it.items.forEach { it.embed1.notNull.value2 += 1 }
+            it.items.forEachIf(
+                condition = { it.name eq "a" },
+                modification = {
+                    it.name assign "changed"
+                    it.embed1.notNull.value1 assign "changed"
+                }
+            )
+        }
+        collection.updateOneById(item._id, modification)
+        assertEquals(modification(item), collection.get(item._id))
+    }
+
+    // endregion
 
     @Test
     fun san() {

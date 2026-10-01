@@ -104,16 +104,19 @@ public data class UpdateRestrictions<T>(
      * @param limitedTo Restricts what values the field can be changed *to*.
      *   - [Condition.Always]: Field can be changed to any value (subject to [requires])
      *   - [Condition.Never]: Field cannot be changed (used internally when modification is blocked)
-     *   - Custom condition: The new value must satisfy this condition after the update
+     *   - Custom condition: The new value must satisfy this condition after the update.  A write that doesn't set
+     *     every part it reads (e.g. a sub-field write, or one under `notNull`, `asType` or `forEachIf`) is only allowed
+     *     on rows that already satisfy it, which is added to the update's condition (see [requiredBefore]).
+     *     Read masks don't apply to that condition.
      *
      * ## Example
      *
      * ```kotlin
-     * // Credits can only be increased, and only by admins
+     * // Credits can't go negative, and only admins can change them
      * Part(
      *     property = User.path.credits,
      *     requires = User.path.role eq Role.Admin,  // Must be admin to modify
-     *     limitedTo = User.path.credits greaterThan oldValue  // Can only increase
+     *     limitedTo = User.path.credits gte 0
      * )
      * ```
      */
@@ -131,8 +134,8 @@ public data class UpdateRestrictions<T>(
      * for the modification to be allowed.
      *
      * This operator analyzes which fields are affected by the [Modification] and combines the [Part.requires]
-     * conditions for those fields. It also validates that any [Part.limitedTo] constraints can be satisfied
-     * by the modification.
+     * conditions for those fields. It also checks any [Part.limitedTo] constraints against the modification, adding
+     * those it can only keep holding (see [requiredBefore]).
      *
      * ## Return Values
      *
@@ -142,8 +145,11 @@ public data class UpdateRestrictions<T>(
      *
      * ## Behavior by Mode
      *
+     * In both modes, every rule whose field the modification writes (including by writing a parent of it) applies.
+     *
      * - **[Mode.Blacklist]**: If no restricted fields are affected, returns [Condition.Always] (modification allowed)
-     * - **[Mode.Whitelist]**: If no allowed fields are affected, returns [Condition.Never] (modification blocked)
+     * - **[Mode.Whitelist]**: Every path the modification writes must have a rule on it or on one of its parents,
+     *   or this returns [Condition.Never].  A rule on `a` allows writing `a.b`; a rule on `a.b` doesn't allow writing `a`.
      *
      * ## Usage
      *
@@ -166,45 +172,25 @@ public data class UpdateRestrictions<T>(
      * @return The condition that must be met for this modification to be allowed
      */
     public operator fun invoke(on: Modification<T>): Condition<T> {
+        if (mode == Mode.Whitelist && on.affectsPaths().any { written ->
+                fields.none { written.take(it.property.properties.size) == it.property.properties }
+            }) return Condition.Never
+
         val appliedConditions = LinkedHashSet<Condition<T>>()
-
-        when (mode) {
-            Mode.Blacklist -> {
-                for (field in fields) {
-                    if (on.affects(field.property)) {
-                        if (field.limitedTo != Condition.Always) {
-                            if (!field.limitedTo.guaranteedAfter(on)) return Condition.Never
-                        }
-                        appliedConditions.add(field.requires)
-                    }
-                }
-            }
-
-            Mode.Whitelist -> {
-                for (path in on.affectsPaths()) {
-                    val affected = fields.filter { field ->
-                        field.property.properties.zip(path).all { it.first == it.second }
-                    }
-                    // whitelist mode - the modification is affecting a path that is unspecified: block it
-                    if (affected.isEmpty()) return Condition.Never
-                    for (field in affected) {
-                        if (field.limitedTo != Condition.Always) {
-                            if (!field.limitedTo.guaranteedAfter(on)) return Condition.Never
-                        }
-                        appliedConditions.add(field.requires)
-                    }
-                }
+        for (field in fields) {
+            if (on.affects(field.property)) {
+                val limitedToBefore = field.limitedTo.requiredBefore(on)
+                if (limitedToBefore == Condition.Never) return Condition.Never
+                if (limitedToBefore != Condition.Always) appliedConditions.add(limitedToBefore)
+                if (field.requires == Condition.Never) return Condition.Never
+                if (field.requires != Condition.Always) appliedConditions.add(field.requires)
             }
         }
 
         val distinct = appliedConditions.toList()
 
         return when (distinct.size) {
-            0 -> when (mode) {
-                Mode.Whitelist -> Condition.Never
-                Mode.Blacklist -> Condition.Always
-            }
-
+            0 -> Condition.Always
             1 -> distinct[0]
             else -> Condition.And(distinct)
         }
@@ -233,8 +219,9 @@ public data class UpdateRestrictions<T>(
         /**
          * Completely blocks modifications to this field.
          *
-         * In [Mode.Blacklist], this prevents any modification to the field.
-         * In [Mode.Whitelist], this is a no-op (fields are already blocked by default).
+         * Blocks any modification that writes this field, in either mode.  In [Mode.Whitelist], use it to carve a
+         * field out of an allowed parent: with `it.a.canBeModified(); it.a.secret.cannotBeModified()`, writes to
+         * `a.other` are allowed, while writes to `a.secret` or to `a` as a whole are blocked.
          *
          * ## Example
          * ```kotlin
@@ -248,7 +235,6 @@ public data class UpdateRestrictions<T>(
          * ```
          */
         public fun DataClassPath<T, *>.cannotBeModified() {
-            if (mode == Mode.Whitelist) return
             fields.add(Part(property = this, requires = Condition.Never, limitedTo = Condition.Always))
         }
 
@@ -278,6 +264,7 @@ public data class UpdateRestrictions<T>(
          *
          * The [condition] is evaluated against the *current* state of the record before the update.
          * If the condition is not met, the update will not affect any records.
+         * Read masks don't apply to [condition], so whether an update matched can reveal a masked value it tests.
          *
          * ## Example
          * ```kotlin
@@ -289,7 +276,7 @@ public data class UpdateRestrictions<T>(
          *     user.email requires (user._id eq currentUserId)
          *
          *     // Suspended users cannot modify their profile
-         *     user.displayName requires (user.status ne Status.Suspended)
+         *     user.displayName requires (user.status neq Status.Suspended)
          * }
          * ```
          *
@@ -303,7 +290,8 @@ public data class UpdateRestrictions<T>(
          * Restricts what values this field can be changed to, without restricting who can change it.
          *
          * The [valueMust] lambda receives a path to the field's value and returns a condition
-         * that the new value must satisfy.
+         * that the new value must satisfy.  A write that doesn't set the whole field is only allowed on rows that
+         * already satisfy it; see [Part.limitedTo].
          *
          * ## Example
          * ```kotlin
@@ -314,11 +302,11 @@ public data class UpdateRestrictions<T>(
          *     // Age must be reasonable
          *     user.age.mustBe { (it gte 0) and (it lt 150) }
          *
-         *     // Status can only progress forward
-         *     user.status.mustBe { it ne Status.Deleted }
+         *     // Status can't be set to Deleted
+         *     user.status.mustBe { it neq Status.Deleted }
          *
-         *     // Credits can only increase (never decrease)
-         *     user.credits.mustBe { it gte user.credits }
+         *     // Credits can't go negative.  The condition sees only the new value, not the old one.
+         *     user.credits.mustBe { it gte 0 }
          * }
          * ```
          *
@@ -347,7 +335,7 @@ public data class UpdateRestrictions<T>(
          *     // Moderators can change status, but not to Admin
          *     user.role.requires(
          *         requires = user.role eq Role.Moderator,
-         *         valueMust = { it ne Role.Admin }
+         *         valueMust = { it neq Role.Admin }
          *     )
          * }
          * ```
@@ -443,12 +431,12 @@ public data class UpdateRestrictions<T>(
  *
  *     // Status changes require approval, and can't be set to Deleted
  *     account.status.requires(
- *         requires = account.approvedBy ne null,
- *         valueMust = { it ne Status.Deleted }
+ *         requires = account.approvedBy neq null,
+ *         valueMust = { it neq Status.Deleted }
  *     )
  *
- *     // Credit limit can only increase, never decrease
- *     account.creditLimit.mustBe { it greaterThanOrEq account.creditLimit }
+ *     // Credit limit can't go negative
+ *     account.creditLimit.mustBe { it gte 0 }
  * }
  * ```
  *
@@ -550,7 +538,7 @@ public inline fun <reified T> whitelistRestrictions(
  *     // Now also prevent modifying creation date
  *     user.createdAt.cannotBeModified()
  *     // And require approval for role changes
- *     user.role requires (user.approvedBy ne null)
+ *     user.role requires (user.approvedBy neq null)
  * }
  * // Result has both original restrictions (_id) AND new ones (createdAt, role)
  * ```

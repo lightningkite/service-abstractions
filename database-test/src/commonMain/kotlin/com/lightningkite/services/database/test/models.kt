@@ -108,6 +108,44 @@ data class EmbeddedNullable(
 
 @GenerateDataClassPaths
 @Serializable
+data class NullableInListTestModel(
+    override val _id: Uuid = Uuid.random(),
+    var items: List<EmbeddedNullable> = listOf(),
+) : HasId<Uuid> {
+    companion object
+}
+
+@GenerateDataClassPaths
+@Serializable
+data class NullableIntsTestModel(
+    override val _id: Uuid = Uuid.random(),
+    var ints: List<Int?> = listOf(),
+    var intsNullable: List<Int?>? = null,
+) : HasId<Uuid> {
+    companion object
+}
+
+// No lists, sets or maps, so the SQL backend updates it with a single UPDATE rather than read-modify-write.
+@GenerateDataClassPaths
+@Serializable
+data class NullableIntTestModel(
+    override val _id: Uuid = Uuid.random(),
+    var value: Int? = null,
+) : HasId<Uuid> {
+    companion object
+}
+
+@GenerateDataClassPaths
+@Serializable
+data class NullableEmbedsTestModel(
+    override val _id: Uuid = Uuid.random(),
+    var embeds: List<ClassUsedForEmbedding?> = listOf(),
+) : HasId<Uuid> {
+    companion object
+}
+
+@GenerateDataClassPaths
+@Serializable
 @TextIndex(["string", "embedded.value1"])
 data class LargeTestModel(
     override val _id: Uuid = Uuid.random(),

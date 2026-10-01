@@ -3203,4 +3203,192 @@ abstract class ConditionTests() {
         }
     }
     // endregion
+
+    // region notNull and missing keys
+    // A notNull step (and a map key lookup) must fail for a null or missing value even when the condition after it
+    // would accept null, like neq/notInside/not/always do. Permission conditions rely on the database agreeing with
+    // the in-memory result.
+
+    private suspend inline fun <reified T : HasId<Uuid>> assertMatchesInMemory(
+        name: String,
+        items: List<T>,
+        condition: Condition<T>,
+    ) {
+        val collection = database.prepare(DatabaseTableDefinition<T>(name))
+        items.forEach { collection.insertOne(it) }
+        val expected = items.filter { condition(it) }.map { it._id }.sorted()
+        val results = collection.find(condition).toList().map { it._id }.sorted()
+        assertEquals(expected, results, "condition=$condition")
+    }
+
+    private val nullableInts = listOf(null, 1, 2).map { LargeTestModel(intNullable = it) }
+
+    @Test
+    fun test_notNull_neq() = runTest {
+        assertMatchesInMemory("LargeTestModel_test_notNull_neq", nullableInts, path<LargeTestModel>().intNullable.notNull neq 1)
+    }
+
+    @Test
+    fun test_notNull_notInside() = runTest {
+        assertMatchesInMemory(
+            "LargeTestModel_test_notNull_notInside",
+            nullableInts,
+            path<LargeTestModel>().intNullable.notNull notInside listOf(1)
+        )
+    }
+
+    @Test
+    fun test_notNull_not() = runTest {
+        assertMatchesInMemory(
+            "LargeTestModel_test_notNull_not",
+            nullableInts,
+            path<LargeTestModel>().intNullable.notNull.mapCondition(Condition.Not(Condition.Equal(1)))
+        )
+    }
+
+    @Test
+    fun test_not_notNull() = runTest {
+        assertMatchesInMemory("LargeTestModel_test_not_notNull", nullableInts, !(path<LargeTestModel>().intNullable.notNull gt 1))
+    }
+
+    @Test
+    fun test_notNull_always() = runTest {
+        assertMatchesInMemory(
+            "LargeTestModel_test_notNull_always",
+            nullableInts,
+            path<LargeTestModel>().intNullable.notNull.mapCondition(Condition.Always)
+        )
+    }
+
+    @Test
+    fun test_notNull_nested_neq() = runTest {
+        assertMatchesInMemory(
+            "LargeTestModel_test_notNull_nested_neq",
+            listOf(null, ClassUsedForEmbedding("x"), ClassUsedForEmbedding("y")).map { LargeTestModel(embeddedNullable = it) },
+            path<LargeTestModel>().embeddedNullable.notNull.value1 neq "x"
+        )
+    }
+
+    private val nullableInList = listOf(
+        NullableInListTestModel(items = listOf()),
+        NullableInListTestModel(items = listOf(EmbeddedNullable(embed1 = null))),
+        NullableInListTestModel(items = listOf(EmbeddedNullable(embed1 = ClassUsedForEmbedding(value2 = 1)))),
+        NullableInListTestModel(items = listOf(EmbeddedNullable(embed1 = ClassUsedForEmbedding(value2 = 2)))),
+        NullableInListTestModel(items = listOf(EmbeddedNullable(embed1 = null), EmbeddedNullable(embed1 = ClassUsedForEmbedding(value2 = 2)))),
+    )
+
+    @Test
+    open fun test_notNull_inListElement_any() = runTest {
+        assertMatchesInMemory(
+            "NullableInListTestModel_test_notNull_inListElement_any",
+            nullableInList,
+            condition { it.items.any { it.embed1.notNull.value2 neq 1 } }
+        )
+    }
+
+    @Test
+    open fun test_notNull_inListElement_all() = runTest {
+        assertMatchesInMemory(
+            "NullableInListTestModel_test_notNull_inListElement_all",
+            nullableInList,
+            condition { it.items.all { it.embed1.notNull.value2 neq 1 } }
+        )
+    }
+
+    private val nullableIntElements = listOf(listOf(), listOf(null), listOf(1), listOf(2), listOf(null, 2))
+        .map { NullableIntsTestModel(ints = it) }
+
+    private val nullableEmbedElements = listOf(
+        listOf(),
+        listOf(null),
+        listOf(ClassUsedForEmbedding(value2 = 1)),
+        listOf(ClassUsedForEmbedding(value2 = 2)),
+        listOf(null, ClassUsedForEmbedding(value2 = 2)),
+    ).map { NullableEmbedsTestModel(embeds = it) }
+
+    @Test
+    fun test_notNull_listElement_any_gt() = runTest {
+        assertMatchesInMemory(
+            "NullableIntsTestModel_test_notNull_listElement_any_gt",
+            nullableIntElements,
+            condition { it.ints.any { it.notNull gt 1 } }
+        )
+    }
+
+    @Test
+    fun test_notNull_listElement_any_neq() = runTest {
+        assertMatchesInMemory(
+            "NullableIntsTestModel_test_notNull_listElement_any_neq",
+            nullableIntElements,
+            condition { it.ints.any { it.notNull neq 1 } }
+        )
+    }
+
+    @Test
+    fun test_notNull_listElement_all_neq() = runTest {
+        assertMatchesInMemory(
+            "NullableIntsTestModel_test_notNull_listElement_all_neq",
+            nullableIntElements,
+            condition { it.ints.all { it.notNull neq 1 } }
+        )
+    }
+
+    @Test
+    open fun test_notNull_listElement_any_field_neq() = runTest {
+        assertMatchesInMemory(
+            "NullableEmbedsTestModel_test_notNull_listElement_any_field_neq",
+            nullableEmbedElements,
+            condition { it.embeds.any { it.notNull.value2 neq 1 } }
+        )
+    }
+
+    @Test
+    open fun test_notNull_listElement_all_field_neq() = runTest {
+        assertMatchesInMemory(
+            "NullableEmbedsTestModel_test_notNull_listElement_all_field_neq",
+            nullableEmbedElements,
+            condition { it.embeds.all { it.notNull.value2 neq 1 } }
+        )
+    }
+
+    // MongoDB compares an array with null element by element, so a null check on the list mustn't reject [null, 7].
+    private val nullableListOfNullables = listOf(null, listOf(), listOf(null), listOf(null, 7), listOf(5))
+        .map { NullableIntsTestModel(intsNullable = it) }
+
+    @Test
+    fun test_notNull_listWithNullElements_always() = runTest {
+        assertMatchesInMemory(
+            "NullableIntsTestModel_test_notNull_listWithNullElements_always",
+            nullableListOfNullables,
+            path<NullableIntsTestModel>().intsNullable.notNull.mapCondition(Condition.Always)
+        )
+    }
+
+    @Test
+    fun test_notNull_listWithNullElements_any_neq() = runTest {
+        assertMatchesInMemory(
+            "NullableIntsTestModel_test_notNull_listWithNullElements_any_neq",
+            nullableListOfNullables,
+            condition { it.intsNullable.notNull.any { it neq 5 } }
+        )
+    }
+
+    @Test
+    fun test_notNull_listWithNullElements_all_neq() = runTest {
+        assertMatchesInMemory(
+            "NullableIntsTestModel_test_notNull_listWithNullElements_all_neq",
+            nullableListOfNullables,
+            condition { it.intsNullable.notNull.all { it neq 5 } }
+        )
+    }
+
+    @Test
+    fun test_mapKey_neq() = runTest {
+        assertMatchesInMemory(
+            "LargeTestModel_test_mapKey_neq",
+            listOf(mapOf(), mapOf("a" to 1), mapOf("a" to 2), mapOf("b" to 1)).map { LargeTestModel(map = it) },
+            path<LargeTestModel>().map.mapCondition(Condition.OnKey("a", Condition.NotEqual(1)))
+        )
+    }
+    // endregion
 }
