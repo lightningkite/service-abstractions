@@ -63,6 +63,8 @@ aws-nettyNioClient = { module = "software.amazon.awssdk:netty-nio-client", versi
 aws-urlConnectionClient = { module = "software.amazon.awssdk:url-connection-client", version = { ref = "awsVersion" } }
 aws-otel = { module = "io.opentelemetry.instrumentation:opentelemetry-aws-sdk-2.2", version = { ref = "openTelemetryInstrumentationAlpha" } }
 aws-s3 = { module = "software.amazon.awssdk:s3", version = { ref = "awsVersion" } }
+azure-storage-blob = { module = "com.azure:azure-storage-blob", version = "12.35.1" }
+azure-identity = { module = "com.azure:azure-identity", version = "1.18.6" }
 bouncyCastle = { module = "org.bouncycastle:bcpkix-jdk18on", version = { ref = "bouncyCastle" } }
 clamAv = { module = "xyz.capybara:clamav-client", version = { ref = "clamAv" } }
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = { ref = "coroutines" } }
