@@ -3,6 +3,7 @@
 package com.lightningkite.services.data
 
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.MetaSerializable
 import kotlinx.serialization.SerialInfo
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialKind
@@ -224,10 +225,16 @@ public annotation class Denormalized(val calculationId: String = "")
 @Target(AnnotationTarget.CLASS, AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
 public annotation class Description(val text: String)
 
+@Deprecated("Use @Queryable instead, which applies both @Serializable and @GenerateDataClassPaths at the same time", replaceWith = ReplaceWith("Queryable", "com.lightningkite.services.data.Queryable"))
 @Retention(AnnotationRetention.BINARY)
 @Target(AnnotationTarget.CLASS)
 public annotation class GenerateDataClassPaths
 
+@OptIn(ExperimentalSerializationApi::class)
+@Retention(AnnotationRetention.BINARY)
+@Target(AnnotationTarget.CLASS)
+@MetaSerializable
+public annotation class Queryable
 
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)
@@ -236,7 +243,6 @@ public annotation class References(
     val references: KClass<*>,
     val reverseName: String = "",
 )
-
 
 @SerialInfo
 @Retention(AnnotationRetention.BINARY)

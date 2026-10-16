@@ -50,9 +50,9 @@ import java.util.Locale.getDefault
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 17) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 18) {
     fun KSClassDeclaration.needsDcp(): Boolean =
-        annotation("DatabaseModel") != null || annotation("GenerateDataClassPaths") != null
+        annotation("Queryable") != null || annotation("GenerateDataClassPaths") != null
 
     override fun interestedIn(resolver: Resolver): Set<KSFile> {
         return resolver.getAllFiles()

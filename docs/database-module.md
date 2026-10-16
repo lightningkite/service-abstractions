@@ -27,8 +27,7 @@ between MongoDB, PostgreSQL, in-memory storage, and other backends via configura
 ### 1. Define Your Model
 
 ```kotlin
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class User(
     override val _id: UUID = UUID.random(),
     @Index(unique = true) val email: String,
@@ -348,8 +347,7 @@ val page2 = userTable.find(
 Add `@Index` to frequently queried fields:
 
 ```kotlin
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class User(
     override val _id: UUID = UUID.random(),
     @Index(unique = true) val email: String,  // Unique index

@@ -1,14 +1,13 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Sample(
     val x: Int,
     val y: String? = null,
@@ -23,8 +22,7 @@ data class Sample(
     }
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class SampleGeneric<A, B : Comparable<B>>(
     val x: A,
     val y: B,
@@ -39,8 +37,7 @@ data class SampleGeneric<A, B : Comparable<B>>(
     }
 }
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 sealed interface Polymorphic {
     @Serializable
     @GenerateDataClassPaths
@@ -51,8 +48,7 @@ sealed interface Polymorphic {
     data class Bar(val id: Int) : Polymorphic
 }
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 sealed class PolymorphicClass {
     @Serializable
     @GenerateDataClassPaths
@@ -64,8 +60,7 @@ sealed class PolymorphicClass {
 }
 
 /** Declared outside [PolymorphicClass], so its serial name isn't nested under the sealed class's. */
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class PolymorphicClassTopLevel(val id: Int) : PolymorphicClass()
 
 class FieldGenerationTest {

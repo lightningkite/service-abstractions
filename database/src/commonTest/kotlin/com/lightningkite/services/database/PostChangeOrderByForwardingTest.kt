@@ -1,7 +1,7 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
@@ -9,8 +9,7 @@ import kotlin.test.assertEquals
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class ForwardingTestModel(
     override val _id: Uuid = Uuid.random(),
     val order: Int = 0,

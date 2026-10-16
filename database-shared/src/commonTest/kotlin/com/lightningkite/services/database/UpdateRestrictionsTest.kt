@@ -1,13 +1,12 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.uuid.Uuid
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class TestUser(
     val _id: Uuid = Uuid.random(),
     val email: String = "user@example.com",

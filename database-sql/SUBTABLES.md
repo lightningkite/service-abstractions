@@ -90,8 +90,7 @@ it does not rely on `ON DELETE CASCADE` being honored by every backend.
 ### The model
 
 ```kotlin
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Author(
     override val _id: Uuid = Uuid.random(),
     val name: String,

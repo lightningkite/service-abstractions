@@ -23,8 +23,7 @@ All components are:
 To use the DSL with your models, annotate them with `@GenerateDataClassPaths`:
 
 ```kotlin
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class User(
     override val _id: UUID = UUID.random(),
     @Index(unique = true) val email: String,
@@ -34,8 +33,7 @@ data class User(
     val address: Address?
 ) : HasId<UUID>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Address(
     val city: String,
     val state: String

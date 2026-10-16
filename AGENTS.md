@@ -149,8 +149,7 @@ The database abstraction provides **type-safe queries** via KSP code generation:
 
 **Model Definition:**
 ```kotlin
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class User(
     override val _id: UUID = UUID.random(),
     @Index(unique = true) val email: String,

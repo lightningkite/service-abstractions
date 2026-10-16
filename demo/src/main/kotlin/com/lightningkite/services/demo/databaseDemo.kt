@@ -1,7 +1,7 @@
 package com.lightningkite.services.demo
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -38,8 +38,7 @@ fun main() = runBlocking {
     println("Deleted ${removed.size} completed tasks; remaining: ${tasks.find(Condition.Always).toList()}")
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Task(
     override val _id: Uuid = Uuid.random(),
     val title: String,

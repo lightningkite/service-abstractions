@@ -2,7 +2,7 @@
 
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -10,8 +10,7 @@ import kotlin.jvm.JvmInline
 import kotlin.test.*
 import kotlin.uuid.Uuid
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class DualTypeParamTestModel<T, Y>(
     val t: T,
     val y: Y,
@@ -21,8 +20,7 @@ data class DualTypeParamTestModel<T, Y>(
     val otherValue: String,
 )
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class DualTypeParamTestModelPart2<T, Y>(
     val t: T,
     val y: Y,
@@ -42,8 +40,7 @@ value class LongWrapper(val long: Long)
 @GenerateDataClassPaths
 value class IdWrapper(override val raw: Uuid) : TypedId<Uuid, IdWrapper>
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class ClassWithWrappedValue(
     val long: LongWrapper = LongWrapper(0),
     override val _id: IdWrapper = IdWrapper(Uuid.random()),
