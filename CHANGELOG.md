@@ -22,6 +22,7 @@
   - `GeoDistance` takes `greaterThan`/`lessThan: Length` instead of `greaterThanKilometers`/`lessThanKilometers: Double`.
   - `condition(Boolean)` is no longer generic; it returns `Condition<Any?>`.
 - **basis**: `TelemetryBackend` gains abstract `suspend fun flush()`; custom backends must implement it. Serverless engines call it at the end of each invocation (`OtelTelemetryBackend` force-flushes its SDK).
+- **basis**: `TelemetryBackend` gains abstract `fun ingest(batch: TelemetryBatch)` for telemetry recorded by clients (new serializable `TelemetryBatch`/`RecordedSpan`/`RecordedLog`/`RecordedMetric`; `TelemetryAttributes` is now `@Serializable`). `OtelTelemetryBackend` exports client spans/logs with their own ids and clock-skew-corrected timestamps; it needs its exporters (`spanExporter`/`logExporter` constructor params, passed by every registered URL scheme) and throws otherwise. New `TraceParent` coroutine element parents the next root span to a W3C `traceparent` header. `TelemetryAttributeElement` is now public.
 
 ### Security
 - **database-mongodb, database-postgres, database-sql (LIB-2)**: `notNull` modifications now leave a null or missing value untouched on every backend, and `asType` another variant on MongoDB, as in memory; on MongoDB a row failing any such check isn't written or matched. See BREAKING_CHANGES_1.3.md §7.

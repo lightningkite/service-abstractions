@@ -1,5 +1,6 @@
 package com.lightningkite.services.telemetry
 
+import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
 
@@ -15,6 +16,7 @@ import kotlin.jvm.JvmInline
  * }
  * ```
  */
+@Serializable(with = TelemetryAttributesSerializer::class)
 @JvmInline
 public value class TelemetryAttributes private constructor(public val map: Map<TelemetryKey<*>, Any>) {
     public constructor(entries: List<TelemetryKey.Entry<*>>) : this(

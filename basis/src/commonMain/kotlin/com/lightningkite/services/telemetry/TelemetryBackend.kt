@@ -41,6 +41,12 @@ public interface TelemetryBackend {
      */
     public suspend fun flush()
 
+    /**
+     * Records telemetry captured elsewhere (e.g. a client app, via an ingest endpoint), keeping its ids
+     * and timestamps.
+     */
+    public fun ingest(batch: TelemetryBatch)
+
     @Serializable
     public data class Settings(
         override val url: String = "noop",
@@ -119,6 +125,7 @@ public interface TelemetryBackend {
         override fun gauge(owner: Namespaced, name: String, unit: MetricUnit, attributes: TelemetryAttributes, sample: () -> Long): AutoCloseable = AutoCloseable {}
         override fun reportError(throwable: Throwable, attributes: TelemetryAttributes) {}
         override suspend fun flush() {}
+        override fun ingest(batch: TelemetryBatch) {}
     }
 }
 
