@@ -485,11 +485,8 @@ private fun buildResolvedMap(base: TelemetryAttributes, enriched: Map<TelemetryK
     return result
 }
 
-/** OTel key cache: maps a [TelemetryKey] to the corresponding [AttributeKey], allocated once per process. */
-private val keyCache = ConcurrentHashMap<TelemetryKey<*>, AttributeKey<*>>()
-
-@Suppress("UNCHECKED_CAST")
-private fun TelemetryKey<*>.toOtelKey(): AttributeKey<*> = keyCache.getOrPut(this) {
+// Not cached: ingested client telemetry brings arbitrary key names, and a cache would grow with every one.
+private fun TelemetryKey<*>.toOtelKey(): AttributeKey<*> =
     when (this) {
         is TelemetryKey.OfString      -> AttributeKey.stringKey(name)
         is TelemetryKey.OfLong        -> AttributeKey.longKey(name)
@@ -500,7 +497,6 @@ private fun TelemetryKey<*>.toOtelKey(): AttributeKey<*> = keyCache.getOrPut(thi
         is TelemetryKey.OfDoubleList  -> AttributeKey.doubleArrayKey(name)
         is TelemetryKey.OfBooleanList -> AttributeKey.booleanArrayKey(name)
     }
-}
 
 /** Records `enrich`ed attributes onto the span and remembers them so RED dimensions can read them.
  *  Log calls are routed through [logger] (SLF4J), which the OTel Logback appender will automatically
