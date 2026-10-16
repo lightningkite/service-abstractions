@@ -501,7 +501,6 @@ public fun Condition<*>.walk(action: (Condition<*>) -> Unit) {
         is Condition.Not -> this.condition.walk(action)
         is Condition.CollectionAllElements<*, *> -> this.condition.walk(action)
         is Condition.CollectionAnyElements<*, *> -> this.condition.walk(action)
-        is Condition.OnKey<*> -> this.condition.walk(action)
         is Condition.OnField<*, *> -> this.condition.walk(action)
         is Condition.IfNotNull -> this.condition.walk(action)
         else -> {}

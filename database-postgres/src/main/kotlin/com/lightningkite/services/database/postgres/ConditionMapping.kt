@@ -166,50 +166,6 @@ private fun <T> condition(
             }))
         }
 
-        is Condition.Exists<*> -> {
-            val keyValue =
-                fieldSet.format.encode(fieldSet.serializer.mapKeyElement()!! as KSerializer<Any?>, condition.key)[""]
-            ContainsOp(fieldSet.single, sqlLiteralOfSomeKind(fieldSet.single.columnType, listOf(keyValue)))
-        }
-
-        // The key check is needed because a missing key reads as null, which conditions like NotEqual accept.
-        is Condition.OnKey<*> -> {
-            val keyValue =
-                fieldSet.format.encode(fieldSet.serializer.mapKeyElement()!! as KSerializer<Any?>, condition.key)[""]
-            val onValue = condition(
-                condition = condition.condition as Condition<Any?>,
-                fieldSet = FieldSet2<Any?>(
-                    serializer = fieldSet.serializer.mapValueElement()!! as KSerializer<Any?>,
-                    fields = fieldSet.fields.entries.asSequence()
-                        .filter { it.key.startsWith("value") }
-                        .associate {
-                            it.key.removePrefix("value").removePrefix("__") to object :
-                                ExpressionWithColumnType<Any?>() {
-                                override val columnType: IColumnType<Any>
-                                    get() = (it.value.columnType as ArrayColumnType<Any>).type
-
-                                override fun toQueryBuilder(queryBuilder: QueryBuilder) {
-                                    GetOp(
-                                        it.value as Expression<List<Any?>>,
-                                        CustomFunction<Int>(
-                                            "array_position",
-                                            IntegerColumnType(),
-                                            fieldSet.single,
-                                            sqlLiteralOfSomeKind(
-                                                (fieldSet.fields[""]!!.columnType as ArrayColumnType<Any>).type,
-                                                keyValue
-                                            )
-                                        )
-                                    ).toQueryBuilder(queryBuilder)
-                                }
-                            }
-                        },
-                    format = fieldSet.format,
-                )
-            )
-            AndOp(listOf(ContainsOp(fieldSet.single, sqlLiteralOfSomeKind(fieldSet.single.columnType, listOf(keyValue))), onValue))
-        }
-
         is Condition.GreaterThan -> op(condition.value, ::GreaterOp)
         is Condition.LessThan -> op(condition.value, ::LessOp)
         is Condition.GreaterThanOrEqual -> op(condition.value, ::GreaterEqOp)
@@ -524,28 +480,6 @@ private fun <T> FieldModifier.modification(
             }
         }
 
-        is Modification.ListDropFirst<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old ->
-                SliceOp(
-                    old as Expression<List<Any?>>,
-                    from = sqlLiteralOfSomeKind(IntegerColumnType(), 2)
-                ) as Expression<Any?>
-            }
-        }
-
-        is Modification.ListDropLast<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old ->
-                SliceOp(
-                    old as Expression<List<Any?>>,
-                    to = MinusOp(
-                        ArrayLengthOp(old as Expression<List<Any?>>),
-                        sqlLiteralOfSomeKind(IntegerColumnType(), 1),
-                        IntegerColumnType()
-                    )
-                ) as Expression<Any?>
-            }
-        }
-
         is Modification.SetAppend<*> -> {
             if (fieldSet.fields.size == 1) {
                 modifySingle(fieldSet) { type, old ->
@@ -608,45 +542,6 @@ private fun <T> FieldModifier.modification(
             }
         }
 
-        is Modification.Combine<*> -> {
-            // Maps are stored as parallel arrays -- one per key-path segment of the key type, one
-            // (suffixed "value") per key-path segment of the value type; see
-            // SerialDescriptorTable.columnType's StructureKind.MAP branch. `on + map` means: entries
-            // whose key is being replaced are dropped from the old arrays (via the same key-array
-            // filter [MapOp] uses for RemoveKeys below), then the new entries are appended -- to
-            // every column in lockstep, so the key/value arrays stay aligned by position.
-            val newEntries = modification.map
-            val newColumnLiterals = fieldSet.format(modification.map as T)
-            fieldSet.fields.forEach { (colKey, colExpr) ->
-                modify(colKey) {
-                    @Suppress("UNCHECKED_CAST")
-                    ConcatOp(
-                        MapOp(
-                            fieldSet as FieldSet2<List<Any?>>,
-                            mapper = { fs -> fs.fields[colKey]!! },
-                            filter = { fs -> NotOp(SingleValueInListOp(fs.fields[""]!!, newEntries.keys.toList())) },
-                        ),
-                        newColumnLiterals[colExpr]!! as Expression<List<Any?>>,
-                    ) as Expression<Any?>
-                }
-            }
-        }
-
-        is Modification.RemoveKeys<*> -> {
-            // Same array-filter shape as the Combine branch above, minus the append: keep only the
-            // entries whose key isn't being removed, applied to every column (key + value arrays) in
-            // lockstep so they stay aligned by position.
-            val keysToRemove = modification.fields.toList()
-            fieldSet.fields.forEach { (colKey, _) ->
-                modify(colKey) {
-                    MapOp(
-                        fieldSet as FieldSet2<List<Any?>>,
-                        mapper = { fs -> fs.fields[colKey]!! },
-                        filter = { fs -> NotOp(SingleValueInListOp(fs.fields[""]!!, keysToRemove)) },
-                    ) as Expression<Any?>
-                }
-            }
-        }
         is Modification.OnField<*, *> -> {
             val key = modification.key as SerializableProperty<T, Any?>
             val d = fieldSet.serializer.descriptor

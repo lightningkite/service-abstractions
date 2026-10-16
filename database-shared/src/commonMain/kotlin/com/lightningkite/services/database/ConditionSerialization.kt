@@ -99,22 +99,6 @@ private fun <T> setOptions(element: KSerializer<T>): List<MySealedClassSerialize
         ) { it is Condition.CollectionAnyElements<*, *> },
     )
 
-private fun <T> stringMapOptions(element: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<Map<String, T>>, *>> =
-    commonOptions(
-        MapSerializer(String.serializer(), element)
-    ) + listOf(
-        MySealedClassSerializer.Option(
-            Condition.Exists.serializer(element),
-            "Exists",
-            priority = 60
-        ) { it is Condition.Exists },
-        MySealedClassSerializer.Option(
-            Condition.OnKey.serializer(element),
-            "OnKey",
-            priority = 60
-        ) { it is Condition.OnKey },
-    )
-
 private val intOptions: List<MySealedClassSerializer.Option<Condition<Int>, *>> =
     comparableOptions(Int.serializer()) + listOf(
         MySealedClassSerializer.Option(
@@ -200,7 +184,7 @@ public class ConditionSerializer<T>(public val inner: KSerializer<T>) :
                 inner.descriptor.serialNameFQN() == "kotlin.String" -> stringOptions
                 inner.descriptor.serialName == "kotlin.Int" -> intOptions
                 inner.descriptor.serialNameFQN() == "com.lightningkite.services.data.GeoCoordinate" -> geocoordinateOptions
-                inner.descriptor.kind == StructureKind.MAP -> stringMapOptions(inner.innerElement2())
+//                inner.descriptor.kind == StructureKind.MAP -> stringMapOptions(inner.innerElement2())
                 inner.descriptor.kind == StructureKind.LIST -> {
                     if (inner.descriptor.serialName.contains("Set")) setOptions(inner.innerElement())
                     else listOptions(inner.innerElement())
@@ -340,13 +324,6 @@ internal class ConditionCollectionAnyElementsSerializer<C: Collection<T>, T>(pri
     override fun getDeferred(): KSerializer<Condition<T>> = Condition.serializer(inner)
     override fun inner(it: Condition.CollectionAnyElements<C, T>): Condition<T> = it.condition
     override fun outer(it: Condition<T>): Condition.CollectionAnyElements<C, T> = Condition.CollectionAnyElements(it)
-}
-
-internal class ConditionExistsSerializer<T>(private val inner: KSerializer<T>) :
-    WrappingSerializer<Condition.Exists<T>, String>("com.lightningkite.services.database.Condition.Exists") {
-    override fun getDeferred(): KSerializer<String> = serializer<String>()
-    override fun inner(it: Condition.Exists<T>): String = it.key
-    override fun outer(it: String): Condition.Exists<T> = Condition.Exists(it)
 }
 
 internal class ConditionIfNotNullSerializer<T>(private val inner: KSerializer<T>) :

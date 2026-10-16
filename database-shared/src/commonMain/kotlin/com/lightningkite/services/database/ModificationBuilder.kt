@@ -123,16 +123,6 @@ public class ModificationBuilder<K>() {
         modifications.add(mapModification(Modification.SetRemoveInstances(items)))
     }
 
-    @JvmName("dropLastList")
-    public fun <T> DataClassPath<K, List<T>>.dropLast() {
-        modifications.add(mapModification(Modification.ListDropLast<T>()))
-    }
-
-    @JvmName("dropFirstList")
-    public fun <T> DataClassPath<K, List<T>>.dropFirst() {
-        modifications.add(mapModification(Modification.ListDropFirst<T>()))
-    }
-
     @JvmName("forEachList")
     public inline infix fun <reified T> DataClassPath<K, List<T>>.forEach(modification: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit) {
         val builder = ModificationBuilder<T>()
@@ -193,14 +183,6 @@ public class ModificationBuilder<K>() {
                 )
             )
         )
-    }
-
-    public infix operator fun <T> DataClassPath<K, Map<String, T>>.plusAssign(map: Map<String, T>) {
-        modifications.add(mapModification(Modification.Combine(map)))
-    }
-
-    public infix fun <T> DataClassPath<K, Map<String, T>>.removeKeys(fields: Set<String>) {
-        modifications.add(mapModification(Modification.RemoveKeys<T>(fields)))
     }
 }
 

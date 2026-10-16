@@ -2754,51 +2754,6 @@ abstract class ConditionTests() {
         assertEquals(item1, results.first())
     }
 
-
-    @Test
-    fun test_Map_exists() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_exists"))
-        val matching = LargeTestModel(map = mapOf("a" to 42))
-        val notMatching = LargeTestModel(map = mapOf("b" to 24))
-        val manualList = listOf(matching, notMatching)
-        collection.insertOne(matching)
-        collection.insertOne(notMatching)
-        val condition = path<LargeTestModel>().map.containsKey("a")
-        val results = collection.find(condition).toList()
-        println(results.joinToString("\n"))
-        assertContains(results, matching)
-        assertTrue(notMatching !in results)
-        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-    }
-    @Test fun test_Map_onField() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_onField"))
-        val matching = LargeTestModel(map = mapOf("a" to 42))
-        val notMatching = LargeTestModel(map = mapOf("b" to 24))
-        val manualList = listOf(matching, notMatching)
-        collection.insertOne(matching)
-        collection.insertOne(notMatching)
-        val condition = path<LargeTestModel>().map.containsKey("a")
-        val results = collection.find(condition).toList()
-        println(results.joinToString("\n"))
-        assertContains(results, matching)
-        assertTrue(notMatching !in results)
-        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-    }
-//    @Test fun test_Map_onField() = runTest {
-//        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_onField"))
-//        val matching = LargeTestModel(map = mapOf("a" to 42))
-//        val notMatching = LargeTestModel(map = mapOf("a" to 24))
-//        val manualList = listOf(matching, notMatching)
-//        collection.insertOne(matching)
-//        collection.insertOne(notMatching)
-//        val condition = startChain<LargeTestModel>().map["a"] gt 32
-//        val results = collection.find(condition).toList()
-//        assertContains(results, matching)
-//        assertTrue(notMatching !in results)
-//        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-//        Unit
-//    }
-
     @Test
     fun test_not_null_condition() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_notNull_condition"))
@@ -3349,14 +3304,4 @@ abstract class ConditionTests() {
             condition { it.intsNullable.notNull.all { it neq 5 } }
         )
     }
-
-    @Test
-    fun test_mapKey_neq() = runTest {
-        assertMatchesInMemory(
-            "LargeTestModel_test_mapKey_neq",
-            listOf(mapOf(), mapOf("a" to 1), mapOf("a" to 2), mapOf("b" to 1)).map { LargeTestModel(map = it) },
-            path<LargeTestModel>().map.mapCondition(Condition.OnKey("a", Condition.NotEqual(1)))
-        )
-    }
-    // endregion
 }

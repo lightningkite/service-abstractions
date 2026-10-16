@@ -108,9 +108,6 @@ private fun <T> Condition<T>.dump(
             if (innerSerializer.descriptor.isNullable && !(condition as Condition<Any?>)(null)) into.sub(key)["\$ne"] = null
         }
 
-        is Condition.Exists<*> -> into[if (key == null) this.key else "$key.${this.key}"] =
-            documentOf("\$exists" to true)
-
         is Condition.GreaterThan -> into.sub(key)["\$gt"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.LessThan -> into.sub(key)["\$lt"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.GreaterThanOrEqual -> into.sub(key)["\$gte"] = value.let { bson.stringifyAny(serializer, it) }
@@ -168,21 +165,6 @@ private fun <T> Condition<T>.dump(
                 into["\$not"] = inner
             } else {
                 into["\$nor"] = listOf(inner)
-            }
-        }
-
-        // Like IfNotNull: OnKey never matches a missing key in memory, but $ne, $nin and $not do.
-        is Condition.OnKey<*> -> {
-            val path = if (key == null) this.key else "$key.${this.key}"
-            val valueSerializer = serializer.mapValueElement() as KSerializer<Any?>
-            if (!condition.matchesNullInMongo(atlasSearch)) {
-                (condition as Condition<Any?>).dump(valueSerializer, into, path, atlasSearch = atlasSearch, bson = bson)
-            } else {
-                into["\$and"] = listOfNotNull(
-                    documentOf(path to documentOf("\$exists" to true)),
-                    (condition as Condition<Any?>).takeUnless { it is Condition.Always }
-                        ?.dump(valueSerializer, key = path, atlasSearch = atlasSearch, bson = bson),
-                )
             }
         }
 
@@ -259,7 +241,6 @@ private fun Condition<*>.matchesNullInMongo(atlasSearch: Boolean): Boolean = whe
     is Condition.Never, is Condition.GreaterThan, is Condition.LessThan, is Condition.GreaterThanOrEqual,
     is Condition.LessThanOrEqual, is Condition.StringContains, is Condition.RegexMatches,
     is Condition.IntBitsClear, is Condition.IntBitsSet, is Condition.IntBitsAnyClear, is Condition.IntBitsAnySet,
-    is Condition.Exists<*>, is Condition.OnKey<*>,
     is Condition.IfNotNull<*>, is Condition.IfIsType<*, *>, is Condition.GeoDistance -> false
     is Condition.Equal -> value == null
     is Condition.Inside -> values.any { it == null }
@@ -346,8 +327,6 @@ private fun <T> Modification<T>.dump(
         is Modification.ListRemoveInstances<*> -> into["\$pullAll", key] =
             items.let { bson.stringifyAny(serializer as KSerializer<List<Any?>>, it) }
 
-        is Modification.ListDropFirst<*> -> into["\$pop", key] = -1
-        is Modification.ListDropLast<*> -> into["\$pop", key] = 1
         is Modification.ListPerElement<*> -> perElement(
             condition as Condition<Any?>,
             modification as Modification<Any?>,
@@ -374,15 +353,6 @@ private fun <T> Modification<T>.dump(
             key,
             bson
         )
-
-        is Modification.Combine<*> -> map.forEach {
-            into.sub("\$set")[if (key == null) it.key else "$key.${it.key}"] =
-                it.value.let { bson.stringifyAny(serializer.mapValueElement() as KSerializer<Any?>, it) }
-        }
-
-        is Modification.RemoveKeys<*> -> this.fields.forEach {
-            into.sub("\$unset")[if (key == null) it else "$key.${it}"] = ""
-        }
     }
     return update
 }

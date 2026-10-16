@@ -284,8 +284,6 @@ private fun <T> condition(
         // If they ARE reached, it means the condition is on a non-child-table field → unsupported
         is Condition.CollectionAllElements<*, *> -> unsupported()
         is Condition.CollectionAnyElements<*, *> -> unsupported()
-        is Condition.Exists<*> -> unsupported()
-        is Condition.OnKey<*> -> unsupported()
 
         is Condition.IfIsType<*, *> -> throw UnsupportedOperationException(
             "Condition.IfIsType (sealed type projection) is not yet supported by the SQL driver."
@@ -367,56 +365,6 @@ private fun conditionOnChildTable(
         is Condition.CollectionAllElements<*, *> ->
             NotOp(existsSubquery(NotOp(condition(condition.condition as Condition<Any?>, elementFieldSet(), ctx, negated))))
 
-        is Condition.Exists<*> -> {
-            // Map: check if key exists
-            if (!childDef.isMap) {
-                ctx.isExact = false
-                if (negated) Op.FALSE else Op.TRUE
-            } else {
-                val keyCol = childTable.keyColumns.values.firstOrNull() as? ExpressionWithColumnType<Any?>
-                if (keyCol != null) {
-                    existsSubquery(
-                        EqOp(keyCol, sqlLiteralOfSomeKind(keyCol.columnType, condition.key))
-                    )
-                } else {
-                    ctx.isExact = false
-                    if (negated) Op.FALSE else Op.TRUE
-                }
-            }
-        }
-
-        is Condition.OnKey<*> -> {
-            if (!childDef.isMap) {
-                ctx.isExact = false
-                if (negated) Op.FALSE else Op.TRUE
-            } else {
-                val keyCol = childTable.keyColumns.values.firstOrNull() as? ExpressionWithColumnType<Any?>
-                if (keyCol != null) {
-                    // Remap value columns (strip "value" prefix)
-                    val valueFields = childTable.elementColumns
-                        .filter { it.key.startsWith("value") }
-                        .mapKeys { it.key.removePrefix("value").removePrefix("__") }
-                        .mapValues { it.value as ExpressionWithColumnType<Any?> }
-                    val valueFieldSet = SqlFieldSet<Any?>(
-                        serializer = elementSerializer,
-                        fields = valueFields,
-                        format = format,
-                        schema = schema,
-                        fieldPath = childDef.fieldPath,
-                    )
-                    existsSubquery(
-                        AndOp(listOf(
-                            EqOp(keyCol, sqlLiteralOfSomeKind(keyCol.columnType, condition.key)),
-                            condition(condition.condition as Condition<Any?>, valueFieldSet, ctx, negated)
-                        ))
-                    )
-                } else {
-                    ctx.isExact = false
-                    if (negated) Op.FALSE else Op.TRUE
-                }
-            }
-        }
-
         // If we reach Equal/NotEqual/etc. on a whole collection, fall back to table scan
         is Condition.Equal -> {
             ctx.isExact = false
@@ -470,14 +418,10 @@ internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = 
     is Modification.ListRemove<*> -> false
     is Modification.ListRemoveInstances<*> -> false
     is Modification.ListPerElement<*> -> false
-    is Modification.ListDropFirst<*> -> false
-    is Modification.ListDropLast<*> -> false
     is Modification.SetAppend<*> -> false
     is Modification.SetRemove<*> -> false
     is Modification.SetRemoveInstances<*> -> false
     is Modification.SetPerElement<*> -> false
-    is Modification.Combine<*> -> false
-    is Modification.RemoveKeys<*> -> false
 }
 
 internal interface FieldModifier {

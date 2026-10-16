@@ -185,8 +185,10 @@ public sealed class Condition<in T> {
      * anchor the pattern themselves with `^…$`.
      */
     @Serializable
-    public data class RegexMatches(@DoesNotNeedLabel val pattern: String, val ignoreCase: Boolean = false) :
-        Condition<String>() {
+    public data class RegexMatches(
+        @DoesNotNeedLabel val pattern: String,
+        val ignoreCase: Boolean = false
+    ) : Condition<String>() {
         @Transient
         private val regex = Regex(pattern, if (ignoreCase) setOf(RegexOption.IGNORE_CASE) else setOf())
         override fun invoke(on: String): Boolean = regex.containsMatchIn(on)
@@ -231,21 +233,6 @@ public sealed class Condition<in T> {
     public data class CollectionAnyElements<C: Collection<E>, E>(val condition: Condition<E>) : Condition<C>() {
         override fun invoke(on: C): Boolean = on.any { condition(it) }
         override fun toString(): String = ".any { it$condition }"
-    }
-
-    // TODO: Allow alternate keys once Khrysalis is fully deprecated
-    @Serializable(ConditionExistsSerializer::class)
-    public data class Exists<V>(val key: String) : Condition<Map<String, V>>() {
-        override fun invoke(on: Map<String, V>): Boolean = on.containsKey(key)
-        override fun toString(): String = ".containsKey($key)"
-    }
-
-    @Serializable
-    public data class OnKey<V>(val key: String, val condition: Condition<V>) :
-        Condition<Map<String, V>>() {
-        @Suppress("UNCHECKED_CAST")
-        override fun invoke(on: Map<String, V>): Boolean = on.containsKey(key) && condition(on[key] as V)
-        override fun toString(): String = "[$key]$condition"
     }
 
     public data class OnField<K, V>(

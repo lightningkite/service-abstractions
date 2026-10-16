@@ -307,12 +307,6 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 it[1],
             )
         }
-        register(Condition.Exists.serializer(NothingSerializer()).descriptor.serialName) {
-            Condition.Exists.serializer(
-                it[0]
-            )
-        }
-        register(Condition.OnKey.serializer(NothingSerializer()).descriptor.serialName) { Condition.OnKey.serializer(it[0]) }
         register(Condition.IfNotNull.serializer(NothingSerializer()).descriptor.serialName) {
             Condition.IfNotNull.serializer(
                 it[0]
@@ -391,16 +385,6 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 it[0]
             )
         }
-        register(Modification.ListDropFirst.serializer(NothingSerializer()).descriptor.serialName) {
-            Modification.ListDropFirst.serializer(
-                it[0]
-            )
-        }
-        register(Modification.ListDropLast.serializer(NothingSerializer()).descriptor.serialName) {
-            Modification.ListDropLast.serializer(
-                it[0]
-            )
-        }
         register(Modification.ListPerElement.serializer(NothingSerializer()).descriptor.serialName) {
             Modification.ListPerElement.serializer(
                 it[0]
@@ -423,16 +407,6 @@ public class SerializationRegistry(public val module: SerializersModule) {
         }
         register(Modification.SetPerElement.serializer(NothingSerializer()).descriptor.serialName) {
             Modification.SetPerElement.serializer(
-                it[0]
-            )
-        }
-        register(Modification.Combine.serializer(NothingSerializer()).descriptor.serialName) {
-            Modification.Combine.serializer(
-                it[0]
-            )
-        }
-        register(Modification.RemoveKeys.serializer(NothingSerializer()).descriptor.serialName) {
-            Modification.RemoveKeys.serializer(
                 it[0]
             )
         }

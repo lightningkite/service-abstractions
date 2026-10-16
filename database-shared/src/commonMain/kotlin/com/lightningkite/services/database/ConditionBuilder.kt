@@ -81,9 +81,6 @@ public inline infix fun <K, C: Collection<T>, reified T> DataClassPath<K, C>.all
 public inline infix fun <K, C: Collection<T>, reified T> DataClassPath<K, C>.any(condition: (DataClassPath<T, T>) -> Condition<T>): Condition<K> =
     mapCondition(Condition.CollectionAnyElements(path<T>().let(condition)))
 
-public infix fun <K, T> DataClassPath<K, Map<String, T>>.containsKey(key: String): Condition<K> =
-    mapCondition(Condition.Exists(key))
-
 public inline infix fun <K, reified T> DataClassPath<K, T>.condition(make: (DataClassPath<T, T>) -> Condition<T>): Condition<K> =
     mapCondition(make(path<T>()))
 

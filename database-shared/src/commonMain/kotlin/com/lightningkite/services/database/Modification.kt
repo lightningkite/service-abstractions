@@ -193,31 +193,13 @@ public sealed class Modification<T> {
         override fun toString(): String = " -= $items"
     }
 
-    @Serializable(ModificationListDropFirstSerializer::class)
-    public class ListDropFirst<T> : Modification<List<T>>() {
-        override fun invoke(on: List<T>): List<T> = on.drop(1)
-        override fun hashCode(): Int = 1
-
-        @Suppress("UNCHECKED_CAST")
-        override fun equals(other: Any?): Boolean = (other as? ListDropFirst<T>) != null
-        override fun toString(): String = ".removeFirst()"
-    }
-
-    @Serializable(ModificationListDropLastSerializer::class)
-    public class ListDropLast<T> : Modification<List<T>>() {
-        override fun invoke(on: List<T>): List<T> = on.dropLast(1)
-        override fun hashCode(): Int = 1
-
-        @Suppress("UNCHECKED_CAST")
-        override fun equals(other: Any?): Boolean = (other as? ListDropLast<T>) != null
-        override fun toString(): String = ".removeLast()"
-    }
-
-    @Serializable()
-    public data class ListPerElement<T>(val condition: Condition<T>, val modification: Modification<T>) :
-        Modification<List<T>>() {
+    @Serializable
+    public data class ListPerElement<T>(
+        val condition: Condition<T>,
+        val modification: Modification<T>
+    ) : Modification<List<T>>() {
         override fun invoke(on: List<T>): List<T> = on.map { if (condition(it)) modification(it) else it }
-        override fun toString(): String = ".onEach { if (it.$condition) it.$modification }"
+        override fun toString(): String = ".map { if (it.$condition) it.$modification }"
     }
 
     @Serializable(ModificationSetAppendSerializer::class)
@@ -239,30 +221,12 @@ public sealed class Modification<T> {
     }
 
     @Serializable
-    public data class SetPerElement<T>(val condition: Condition<T>, val modification: Modification<T>) :
-        Modification<Set<T>>() {
+    public data class SetPerElement<T>(
+        val condition: Condition<T>,
+        val modification: Modification<T>
+    ) : Modification<Set<T>>() {
         override fun invoke(on: Set<T>): Set<T> = on.map { if (condition(it)) modification(it) else it }.toSet()
-        override fun toString(): String = ".onEach { if ($condition) $modification }"
-    }
-
-    @Serializable(ModificationCombineSerializer::class)
-    public data class Combine<T>(val map: Map<String, T>) : Modification<Map<String, T>>() {
-        override fun invoke(on: Map<String, T>): Map<String, T> = on + map
-        override fun toString(): String = " += $map"
-    }
-
-    // ModifyByKey (apply a nested modification to an existing map entry) was removed in 1.3. No
-    // supported database could express it without reading the row first and applying the change
-    // locally -- Postgres was the sole exception, which made it atomic on exactly one backend and a
-    // read-modify-write race on every other. An operation that looks like a guarantee and silently
-    // becomes a race when you change backends is worse than no operation at all. Callers do the
-    // read-modify-write themselves now, at the same cost, or use [Combine] with a condition to get a
-    // real compare-and-swap. See BREAKING_CHANGES_1.3.md for the migration.
-
-    @Serializable(ModificationRemoveKeysSerializer::class)
-    public data class RemoveKeys<T>(val fields: Set<String>) : Modification<Map<String, T>>() {
-        override fun invoke(on: Map<String, T>): Map<String, T> = on.filterKeys { it !in fields }
-        override fun toString(): String = " -= $fields"
+        override fun toString(): String = ".map { if (it.$condition) it.$modification }"
     }
 
     public data class OnField<K, V>(val key: SerializableProperty<K, V>, val modification: Modification<V>) :

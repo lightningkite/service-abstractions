@@ -741,30 +741,6 @@ abstract class InlinePropertiesTests {
     }
 
     @Test
-    fun test_valueclassList_dropFirst() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_dropFirst"))
-        val item = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
-        collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.list.dropFirst() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(listOf(ValueClass("b"), ValueClass("c")), result.list)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
-    fun test_valueclassList_dropLast() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_dropLast"))
-        val item = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
-        collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.list.dropLast() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(listOf(ValueClass("a"), ValueClass("b")), result.list)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
     fun test_intWrapperList_addAll() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_intWrapperList_addAll"))
         val item = ExtendedValueClassTest(listInt = listOf(IntWrapper(1)))
