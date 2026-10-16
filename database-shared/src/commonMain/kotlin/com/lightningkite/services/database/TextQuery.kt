@@ -1,6 +1,33 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.data.TextIndex
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.math.min
+
+/**
+ * The text a full-text search looks at on [model]: its [TextIndex] fields joined by spaces,
+ * or its `toString()` if the type has no [TextIndex].
+ */
+public fun <T> textIndexContent(serializer: KSerializer<T>, model: T): String {
+    val fieldPaths = serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
+        ?: return model.toString()
+    val element = Json.encodeToJsonElement(serializer, model) as? JsonObject ?: return model.toString()
+    return fieldPaths.joinToString(" ") { fieldPath ->
+        var current: JsonElement? = element
+        for (part in fieldPath.split(".")) {
+            current = (current as? JsonObject)?.get(part)
+        }
+        when (val p = current) {
+            is JsonPrimitive -> p.content
+            null -> ""
+            else -> p.toString()
+        }
+    }
+}
 
 
 public data class TextQuery(
@@ -66,6 +93,24 @@ public data class TextQuery(
         } && reject.none {
             input.contains(it, true)
         }
+    }
+
+    /**
+     * How relevant [input] is to this query, or null if it doesn't match at all.
+     * Counts the words of [input] that match a loose term, plus each exact phrase present.
+     */
+    public fun relevance(input: String, off: Int = 2): Float? {
+        if (!fuzzyPresent(input, off)) return null
+        val words = input.split(' ', '\n', '\t')
+        val looseHits = words.count { w ->
+            loose.any { l ->
+                if (l.termShouldUseFuzzySearch())
+                    levenshtein(l.lowercase(), w.lowercase()) <= off
+                else
+                    w.contains(l, true)
+            }
+        }
+        return (looseHits + exact.size).toFloat()
     }
 
     private fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {

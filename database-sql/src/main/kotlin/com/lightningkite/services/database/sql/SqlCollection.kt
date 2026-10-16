@@ -789,6 +789,16 @@ public class SqlCollection<T : Any>(
         count
     }
 
+    override suspend fun fullTextSearch(
+        query: String,
+        condition: Condition<T>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException(
+        "Full-text search is not supported by the generic SQL driver"
+    )
+
     // ====================== Vector Search (Not Supported) ======================
 
     override suspend fun findSimilar(

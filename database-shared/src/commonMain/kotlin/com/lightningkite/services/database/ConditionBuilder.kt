@@ -80,6 +80,8 @@ public fun <K> DataClassPath<K, String>.contains(value: String, ignoreCase: Bool
 public fun <K, T : IsRawString> DataClassPath<K, T>.contains(value: String, ignoreCase: Boolean): Condition<K> =
     mapCondition(Condition.RawStringContains(value, ignoreCase = ignoreCase))
 
+@Deprecated("Full-text search ranks results and can't be combined like a filter. Use Table.fullTextSearch.")
+@Suppress("DEPRECATION")
 public fun <K, V> DataClassPath<K, V>.fullTextSearch(
     value: String,
     levenshteinDistance: Int = 2,

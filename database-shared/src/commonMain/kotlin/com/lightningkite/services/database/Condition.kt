@@ -24,7 +24,6 @@ import kotlinx.serialization.json.*
  * ## Special Conditions
  *
  * - [StringContains]/[RawStringContains] - Substring search (case-insensitive by default)
- * - [FullTextSearch] - Full-text search with fuzzy matching and Levenshtein distance
  * - [RegexMatches] - Regular expression matching (may not be supported by all backends)
  * - [GeoDistance] - Geospatial queries by distance
  * - [IntBitsClear]/[IntBitsSet] etc. - Bitwise operations
@@ -189,6 +188,7 @@ public sealed class Condition<in T> {
         override fun toString(): String = ".distanceToKilometers(value) in $greaterThanKilometers..$lessThanKilometers"
     }
 
+    @Deprecated("Full-text search ranks results and can't be combined like a filter. Use Table.fullTextSearch.")
     @Serializable
     public data class FullTextSearch<T>(
         @DoesNotNeedLabel val value: String,
@@ -198,38 +198,18 @@ public sealed class Condition<in T> {
         Condition<T>() {
         @OptIn(ExperimentalSerializationApi::class)
         override fun invoke(on: T): Boolean {
-            // A null value has nothing to search: without this, `on` falls through to `on.toString()`
-            // below, and the Kotlin stdlib returns the literal string "null" for a null receiver -- so
-            // this would full-text-match against the word "null" instead of correctly never matching.
+            // Without this, a null `on` would be searched as its toString(), the literal word "null".
             if (on == null) return false
             val ser = try {
-                if (on != null) {
-                    kotlinx.serialization.serializer(on::class, listOf(), false)
-                } else null
+                kotlinx.serialization.serializer(on::class, listOf(), false)
             } catch (e: Exception) {
                 null
             }
-            if (ser != null && ser.descriptor.kind == StructureKind.CLASS) {
-                val fieldNames = ser.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
-                val element = Json.encodeToJsonElement(ser, on) as? JsonObject
-                val fromString = element?.let { e ->
-                    fieldNames?.joinToString(" ") { fieldPath ->
-                        // by Claude: Handle nested field paths like "metadata.category" by traversing the JSON structure
-                        val pathParts = fieldPath.split(".")
-                        var current: kotlinx.serialization.json.JsonElement? = e
-                        for (part in pathParts) {
-                            current = (current as? JsonObject)?.get(part)
-                            if (current == null) break
-                        }
-                        when (val p = current) {
-                            is JsonPrimitive -> p.content
-                            null -> ""
-                            else -> p.toString()
-                        }
-                    }
-                } ?: on.toString()
-                return TextQuery.fromString(value).fuzzyPresent(fromString, levenshteinDistance)
-            } else return TextQuery.fromString(value).fuzzyPresent(on.toString(), levenshteinDistance)
+            @Suppress("UNCHECKED_CAST")
+            val content = if (ser != null && ser.descriptor.kind == StructureKind.CLASS)
+                textIndexContent(ser as KSerializer<T>, on)
+            else on.toString()
+            return TextQuery.fromString(value).fuzzyPresent(content, levenshteinDistance)
         }
 
         override fun toString(): String = ".fullTextSearch($value, $requireAllTermsPresent, $levenshteinDistance)"
