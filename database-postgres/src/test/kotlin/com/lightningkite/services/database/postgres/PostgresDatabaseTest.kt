@@ -443,3 +443,16 @@ class PostgresIndexTests : IndexTests() {
         ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
     }
 }
+
+class PostgresTextSearchTests : TextSearchTests() {
+    override val database: com.lightningkite.services.database.Database by lazy {
+        PostgresDatabase(
+            "test",
+            TestSettingContext(EmptySerializersModule())
+        ) { PooledDatabase(Database.connect(SharedEmbeddedPostgres.instance.postgresDatabase), null) }
+    }
+
+    // Claude: Postgres full-text search stems words but has no typo tolerance, and ts_rank ignores word rarity.
+    override val supportsTypoTolerance: Boolean = false
+    override val supportsBm25Ranking: Boolean = false
+}

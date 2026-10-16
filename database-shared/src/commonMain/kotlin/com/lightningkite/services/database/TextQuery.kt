@@ -1,5 +1,6 @@
 package com.lightningkite.services.database
 
+import kotlin.math.ln
 import kotlin.math.min
 
 /**
@@ -59,26 +60,59 @@ public data class TextQuery(
     }
 
     /**
-     * Returns how well [text] matches this query, from just above `0` to `1`, or `null` if it doesn't match.
+     * Returns the relevance of each of [documents] to this query, or `null` for each one that doesn't match.
      *
-     * A match needs every word and phrase present and no exclusion present. An exact word scores `1`, and a word
-     * matched with typos scores less the more edits it took. A query with no words or phrases matches nothing.
+     * Each document is the list of its field values, in the same order for every document. A match needs every word
+     * and phrase present in some field and no exclusion present in any field. A query with no words or phrases
+     * matches nothing.
+     *
+     * Scores follow Lucene's BM25, as MongoDB Atlas Search does: each field is scored separately and the scores are
+     * added. Words rarer across [documents] count for more, repeats count for less each time, and a field shorter
+     * than that field's average scores higher. A word matched with typos counts for less the more edits it took.
      */
-    public fun score(text: String): Float? {
-        if (exact.isEmpty() && fuzzy.isEmpty()) return null
-        val textWords = words(text)
-        if (reject.any { textWords.containsPhrase(words(it)) }) return null
-        if (!exact.all { textWords.containsPhrase(words(it)) }) return null
-        val terms = fuzzy.flatMap { words(it) }
-        if (terms.isEmpty()) return 1f
-        var total = 0f
-        for (term in terms) {
-            val allowed = allowedEdits(term)
-            val edits = textWords.minOfOrNull { levenshtein(term, it) } ?: return null
-            if (edits > allowed) return null
-            total += 1f - edits.toFloat() / term.length
+    public fun scores(documents: List<List<String>>): List<Float?> {
+        val terms = fuzzy.flatMap { words(it) }.distinct()
+        val phrases = exact.map { words(it) }.filter { it.isNotEmpty() }
+        val rejects = reject.map { words(it) }.filter { it.isNotEmpty() }
+        if (terms.isEmpty() && phrases.isEmpty()) return documents.map { null }
+
+        val tokens = documents.map { fields -> fields.map { words(it) } }
+        val totals = DoubleArray(documents.size)
+        val matched = Array(documents.size) { BooleanArray(terms.size + phrases.size) }
+        for (field in 0 until (documents.firstOrNull()?.size ?: 0)) {
+            val fieldTokens = tokens.map { it[field] }
+            val docCount = fieldTokens.count { it.isNotEmpty() }
+            if (docCount == 0) continue
+            val averageLength = fieldTokens.sumOf { it.size }.toDouble() / docCount
+            fun idf(docFreq: Int) = ln(1 + (docCount - docFreq + 0.5) / (docFreq + 0.5))
+
+            // Claude: one (frequency in each document, idf) pair per clause; a phrase's idf is its words' summed, as in Lucene.
+            val clauses = terms.map { term ->
+                val frequencies = fieldTokens.map { words ->
+                    words.sumOf { word ->
+                        val edits = levenshtein(term, word)
+                        if (edits <= allowedEdits(term)) 1.0 - edits.toDouble() / term.length else 0.0
+                    }
+                }
+                frequencies to idf(frequencies.count { it > 0 })
+            } + phrases.map { phrase ->
+                val frequencies = fieldTokens.map { words -> words.windowed(phrase.size).count { it == phrase }.toDouble() }
+                frequencies to phrase.sumOf { word -> idf(fieldTokens.count { word in it }) }
+            }
+            clauses.forEachIndexed { clause, (frequencies, idf) ->
+                frequencies.forEachIndexed { doc, frequency ->
+                    if (frequency > 0) {
+                        matched[doc][clause] = true
+                        val lengthNorm = 1 - BM25_B + BM25_B * fieldTokens[doc].size / averageLength
+                        totals[doc] += idf * frequency * (BM25_K1 + 1) / (frequency + BM25_K1 * lengthNorm)
+                    }
+                }
+            }
         }
-        return (total + exact.size) / (terms.size + exact.size)
+        return documents.indices.map { doc ->
+            val excluded = rejects.any { phrase -> tokens[doc].any { words -> words.windowed(phrase.size).any { it == phrase } } }
+            if (excluded || !matched[doc].all { it }) null else totals[doc].toFloat()
+        }
     }
 
     /**
@@ -95,9 +129,6 @@ public data class TextQuery(
 
     private fun words(text: String): List<String> =
         text.lowercase().split(nonWordCharacters).filter { it.isNotEmpty() }
-
-    private fun List<String>.containsPhrase(phrase: List<String>): Boolean =
-        phrase.isEmpty() || windowed(phrase.size).any { it == phrase }
 
     private fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {
         if (lhs == rhs) {
@@ -137,5 +168,9 @@ public data class TextQuery(
         return cost[lhsLength - 1]
     }
 }
+
+// Claude: Lucene's defaults, which Atlas Search uses.
+private const val BM25_K1 = 1.2
+private const val BM25_B = 0.75
 
 private val nonWordCharacters = Regex("[^\\p{L}\\p{N}]+")

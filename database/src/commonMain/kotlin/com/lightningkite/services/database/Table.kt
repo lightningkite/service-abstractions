@@ -175,7 +175,10 @@ public interface Table<Model : Any> {
      * relevant first.
      *
      * [query] uses search-box syntax: every word must match, `"quoted phrases"` match exactly, and `-word` excludes.
-     * Matching ignores case. Stemming (`running` finds `run`) and typo tolerance vary by backend. Scores are only
+     * Matching ignores case. Stemming (`running` finds `run`) and typo tolerance vary by backend.
+     *
+     * Text with more occurrences of the query's words ranks higher, then shorter text. Rows with equal scores come
+     * back in no particular order, so paging through them with [skip] may repeat or miss rows. Scores are only
      * comparable within one result set.
      *
      * @throws IllegalStateException if the model has no [TextIndex].

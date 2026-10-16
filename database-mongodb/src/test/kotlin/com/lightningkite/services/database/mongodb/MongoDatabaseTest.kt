@@ -8,6 +8,10 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.firstOrNull
+import com.mongodb.MongoCommandException
+import org.bson.Document
 import org.junit.Assume.assumeTrue
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -262,16 +266,39 @@ class MongodbVectorSearchTests : VectorSearchTests() {
 class MongodbTextSearchTests : TextSearchTests() {
     override val database: Database = db()
 
-    // Claude: classic $text stems words but has no typo tolerance.
+    // Claude: classic $text stems words but has no typo tolerance, and its fixed scoring formula isn't BM25.
     override val supportsTypoTolerance: Boolean = false
+    override val supportsBm25Ranking: Boolean = false
 }
 
 class MongodbAtlasTextSearchTests : TextSearchTests() {
     override val database: Database = vectorDb()
 
-    // Claude: mongot syncs documents via change streams, so searches lag behind inserts.
-    override suspend fun waitForIndex() {
-        withContext(Dispatchers.Default) { delay(3.seconds) }
+    // Claude: mongot syncs documents via change streams, so searches lag behind writes.
+    override suspend fun waitForIndex(table: Table<*>, count: Int) {
+        table as MongoTable<*>
+        val collection = (database as MongoDatabase).database.getCollection<Document>(table.name)
+        // Claude: counts rows whose first text field is indexed, so every test row needs a non-empty one.
+        val firstTextField = table.indexedTextFields!!.first().mongo
+        val countIndexed = Document(
+            "\$searchMeta",
+            Document("index", "default").append("exists", Document("path", firstTextField)).append("count", Document("type", "total"))
+        )
+        // Claude: on Dispatchers.Default so runTest's virtual time doesn't skip the polling delays.
+        withContext(Dispatchers.Default) {
+            withTimeout(30.seconds) {
+                while (true) {
+                    val indexed = try {
+                        collection.aggregate<Document>(listOf(countIndexed)).firstOrNull()
+                            ?.getEmbedded(listOf("count", "total"), Number::class.java)?.toInt()
+                    } catch (e: MongoCommandException) {
+                        null // Claude: the search index may still be building.
+                    }
+                    if (indexed == count) break
+                    delay(100)
+                }
+            }
+        }
     }
 
     @BeforeTest

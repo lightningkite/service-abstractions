@@ -203,12 +203,11 @@ public open class InMemoryTable<Model : Any>(
         return flow {
             val results = traced {
                 lock.withLock {
-                    candidatesFor(condition)
-                        .filter { condition(it) }
-                        .mapNotNull { model ->
-                            val text = fields.joinToString(" ") { it.getAny(model)?.toString() ?: "" }
-                            textQuery.score(text)?.let { ScoredResult(model, it) }
-                        }
+                    // Claude: scored against every row, since word rarity and average length are table-wide.
+                    val models = data.values.toList()
+                    val scores = textQuery.scores(models.map { model -> fields.map { it.getAny(model)?.toString() ?: "" } })
+                    models.zip(scores)
+                        .mapNotNull { (model, score) -> if (score != null && condition(model)) ScoredResult(model, score) else null }
                         .sortedByDescending { it.score }
                         .drop(skip)
                         .take(limit)

@@ -15,14 +15,21 @@ abstract class TextSearchTests {
     /** Whether a word with a typo or two still matches, e.g. `kotlinn` finding `kotlin`. */
     open val supportsTypoTolerance: Boolean = true
 
-    /** Called after inserting, for backends whose search index catches up asynchronously. */
-    protected open suspend fun waitForIndex() {}
+    /**
+     * Whether results rank as MongoDB Atlas Search ranks them (Lucene's BM25): rarer words count for more and repeats
+     * count for less each time. Atlas is the reference; other backends match it where they can.
+     */
+    open val supportsBm25Ranking: Boolean = true
+
+    /** Waits until [table]'s search index holds [count] rows, for backends whose index catches up asynchronously. */
+    protected open suspend fun waitForIndex(table: Table<*>, count: Int) {}
 
     private suspend fun table(name: String, vararg models: TextSearchTestModel): Table<TextSearchTestModel> {
         val table = database.prepare(DatabaseTableDefinition<TextSearchTestModel>(name))
         table.deleteManyIgnoringOld(Condition.Always)
+        waitForIndex(table, 0)
         table.insert(models.toList())
-        waitForIndex()
+        waitForIndex(table, models.size)
         return table
     }
 
@@ -122,6 +129,84 @@ abstract class TextSearchTests {
         assertEquals(all.drop(1).take(2).map { it.score }, table.findByTextIndex("kotlin", skip = 1, limit = 2).toList().map { it.score })
     }
 
+    private suspend fun Table<TextSearchTestModel>.titlesInOrder(query: String): List<String> =
+        findByTextIndex(query).toList().map { it.model.title }
+
+    @Test
+    fun ranksMoreOccurrencesHigher() = runTest {
+        val table = table(
+            "textSearchRankOccurrences",
+            TextSearchTestModel(title = "kotlin java scala guide"),
+            TextSearchTestModel(title = "kotlin kotlin kotlin guide"),
+            TextSearchTestModel(title = "kotlin kotlin scala guide"),
+        )
+        assertEquals(
+            listOf("kotlin kotlin kotlin guide", "kotlin kotlin scala guide", "kotlin java scala guide"),
+            table.titlesInOrder("kotlin"),
+        )
+    }
+
+    @Test
+    fun ranksShorterTextHigher() = runTest {
+        val table = table(
+            "textSearchRankLength",
+            TextSearchTestModel(title = "kotlin coroutines flows channels"),
+            TextSearchTestModel(title = "kotlin"),
+            TextSearchTestModel(title = "kotlin coroutines"),
+        )
+        assertEquals(
+            listOf("kotlin", "kotlin coroutines", "kotlin coroutines flows channels"),
+            table.titlesInOrder("kotlin"),
+        )
+    }
+
+    @Test
+    fun ranksOccurrencesOfEveryWord() = runTest {
+        val table = table(
+            "textSearchRankEveryWord",
+            TextSearchTestModel(title = "kotlin coroutines java scala"),
+            TextSearchTestModel(title = "kotlin coroutines kotlin coroutines"),
+            TextSearchTestModel(title = "kotlin coroutines kotlin scala"),
+        )
+        assertEquals(
+            listOf("kotlin coroutines kotlin coroutines", "kotlin coroutines kotlin scala", "kotlin coroutines java scala"),
+            table.titlesInOrder("kotlin coroutines"),
+        )
+    }
+
+    @Test
+    fun ranksRarerWordsHigher() = runTest {
+        if (!supportsBm25Ranking) return@runTest
+        val table = table(
+            "textSearchRankRarity",
+            TextSearchTestModel(title = "kotlin kotlin coroutines"),
+            TextSearchTestModel(title = "kotlin coroutines coroutines"),
+            TextSearchTestModel(title = "kotlin guide"),
+            TextSearchTestModel(title = "kotlin java"),
+            TextSearchTestModel(title = "kotlin scala"),
+        )
+        assertEquals(
+            listOf("kotlin coroutines coroutines", "kotlin kotlin coroutines"),
+            table.titlesInOrder("kotlin coroutines"),
+            "coroutines is rarer than kotlin, so it counts for more",
+        )
+    }
+
+    @Test
+    fun ranksRepeatsLowerEachTime() = runTest {
+        if (!supportsBm25Ranking) return@runTest
+        val table = table(
+            "textSearchRankSaturation",
+            TextSearchTestModel(title = "kotlin kotlin kotlin kotlin kotlin coroutines"),
+            TextSearchTestModel(title = "kotlin kotlin kotlin coroutines coroutines coroutines"),
+        )
+        assertEquals(
+            listOf("kotlin kotlin kotlin coroutines coroutines coroutines", "kotlin kotlin kotlin kotlin kotlin coroutines"),
+            table.titlesInOrder("kotlin coroutines"),
+            "a fifth kotlin adds less than a second or third coroutines",
+        )
+    }
+
     @Test
     fun throwsWithoutTextIndex() = runTest {
         val table = database.prepare(DatabaseTableDefinition<VectorTestModel>("textSearchNoIndex"))
@@ -132,8 +217,9 @@ abstract class TextSearchTests {
     fun skipsRowsWhoseTextFieldsAreMasked() = runTest {
         val raw = database.prepare(DatabaseTableDefinition<LargeTestModel>("textSearchMasked"))
         raw.deleteManyIgnoringOld(Condition.Always)
+        waitForIndex(raw, 0)
         raw.insert(listOf(LargeTestModel(string = "secret plan", byte = 0), LargeTestModel(string = "secret plan", byte = 1)))
-        waitForIndex()
+        waitForIndex(raw, 2)
         val table = raw.withPermissions(
             ModelPermissions(
                 all = Condition.Always,

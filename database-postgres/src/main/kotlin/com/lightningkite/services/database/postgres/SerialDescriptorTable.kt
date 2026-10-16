@@ -84,9 +84,6 @@ internal class SerialDescriptorTable(
                         columns = it.fields.flatMap { columnsByDotPath[it.split('.')]!! }
                     )
 
-                    is TextIndex -> {
-                        // TODO
-                    }
                 }
             }
             (0 until descriptor.elementsCount).forEach { index ->
