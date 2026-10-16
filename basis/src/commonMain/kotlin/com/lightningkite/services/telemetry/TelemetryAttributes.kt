@@ -34,6 +34,8 @@ public value class TelemetryAttributes private constructor(public val map: Map<T
 
     public operator fun minus(other: TelemetryAttributes): TelemetryAttributes = TelemetryAttributes(this.map.minus(other.map.keys))
 
+    public fun filterKeys(predicate: (TelemetryKey<*>) -> Boolean): TelemetryAttributes = TelemetryAttributes(map.filterKeys(predicate))
+
     @Suppress("UNCHECKED_CAST")
     public operator fun <T : Any> get(key: TelemetryKey<T>): T? = map[key] as? T
 
