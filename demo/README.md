@@ -9,7 +9,7 @@ Run any of them with `./gradlew :demo:<task>`:
 | Task | Subsystem | Shows |
 |---|---|---|
 | `runCombinedDemo` | all of the above | One `AppSettings` data class, one JSON config, one `TestSettingContext` - the real-world wiring pattern for a whole app |
-| `runDatabaseDemo` | database | Insert/query/update/delete via `ram://`, using a `@GenerateDataClassPaths` model for type-safe conditions/modifications |
+| `runDatabaseDemo` | database | Insert/query/update/delete via `ram://`, using a `@Queryable` model for type-safe conditions/modifications |
 | `runCacheDemo` | cache | `get`/`set`/`setIfNotExists`/`remove` and TTL expiry via `ram://` |
 | `runEmailDemo` | email | Send via `test://`, then read back what was captured |
 | `runSmsDemo` | sms | Send via `test://`, then read back what was captured |

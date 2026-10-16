@@ -1,6 +1,6 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -8,8 +8,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.uuid.Uuid
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class TestUser(
     val _id: Uuid = Uuid.random(),
     val email: String = "user@example.com",
@@ -28,12 +27,10 @@ enum class Role {
     Admin
 }
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Span(val start: Int = 0, val endInclusive: Int? = null)
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Holder(val span: Span = Span(), val thing: Polymorphic = Polymorphic.Foo("a"))
 
 class UpdateRestrictionsTest {

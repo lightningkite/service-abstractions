@@ -149,8 +149,7 @@ The database abstraction provides **type-safe queries** via KSP code generation:
 
 **Model Definition:**
 ```kotlin
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class User(
     override val _id: UUID = UUID.random(),
     @Index(unique = true) val email: String,
@@ -201,7 +200,7 @@ This ensures all implementations satisfy the same contract.
 
 ### Working with Database Models
 
-1. Define your model with `@GenerateDataClassPaths`
+1. Define your model with `@Queryable`
 2. Run `./gradlew :database:kspCommonMainKotlinMetadata` to generate field paths
 3. Use generated paths for type-safe queries
 

@@ -10,20 +10,15 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 
 public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializer<Partial<T>> {
-    private val childSerializers by lazy {
+    // Claude: each field's serializer before nullable composites are wrapped in `.nullable`. The descriptor is built
+    // from this, because `.nullable` reads the wrapped descriptor, which for a recursive type is still being built.
+    private val unwrappedChildSerializers: List<KSerializer<*>> by lazy {
         this.source.serializableProperties?.map {
-            if (it.serializer.descriptor.isNullable) {
-                val nn = it.serializer.nullElement()!!
-                if (nn.serializableProperties != null && !nn.descriptor.isInline) {
-                    if (nn == source) this.nullable
-                    else PartialSerializer(nn).nullable
-                } else it.serializer
-            } else {
-                if (it.serializer.serializableProperties != null && !it.serializer.descriptor.isInline) {
-                    if (it.serializer == source) this
-                    else PartialSerializer(it.serializer)
-                } else it.serializer
-            }
+            val nonNull = if (it.serializer.descriptor.isNullable) it.serializer.nullElement()!! else it.serializer
+            if (nonNull.serializableProperties != null && !nonNull.descriptor.isInline) {
+                if (nonNull == source) this
+                else PartialSerializer(nonNull)
+            } else it.serializer
         }
             // A Partial of an unknown type carries no fields. This happens for Partial<Nothing> and, during
             // metadata/KSchema generation, for Partial<A> where A is an unsubstituted generic placeholder. In
@@ -31,16 +26,21 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
             ?: if (source.descriptor.serialName == "kotlin.Nothing" || source is SerializationRegistry.GenericPlaceholderSerializer) listOf()
             else throw IllegalArgumentException("Failed to make partial serializer: ${source.descriptor.serialName} has no serializableProperties")
     }
+    private val childSerializers by lazy {
+        unwrappedChildSerializers.mapIndexed { index, it ->
+            if (it is PartialSerializer<*> && source.descriptor.getElementDescriptor(index).isNullable) it.nullable else it
+        }
+    }
     private val innerDescriptor: SerialDescriptor by lazy {
         try {
             val sourceDescriptor = source.descriptor
             buildClassSerialDescriptor("com.lightningkite.services.database.Partial", sourceDescriptor) {
-                if (sourceDescriptor.elementsCount != childSerializers.size) {
-                    throw IllegalStateException("Mismatch in child serializer count; ${sourceDescriptor.elementsCount} vs ${childSerializers.size}; ${sourceDescriptor.elementNames.joinToString()} vs ${childSerializers.joinToString { it.descriptor.serialName }}")
+                if (sourceDescriptor.elementsCount != unwrappedChildSerializers.size) {
+                    throw IllegalStateException("Mismatch in child serializer count; ${sourceDescriptor.elementsCount} vs ${unwrappedChildSerializers.size}; ${sourceDescriptor.elementNames.joinToString()} vs ${unwrappedChildSerializers.joinToString { it.descriptor.serialName }}")
                 }
                 for (index in 0 until sourceDescriptor.elementsCount) {
-                    val s = childSerializers[index]
-                    if (s is PartialSerializer<*>) {
+                    val s = unwrappedChildSerializers[index]
+                    if (s is PartialSerializer<*> && !sourceDescriptor.getElementDescriptor(index).isNullable) {
                         element(
                             elementName = sourceDescriptor.getElementName(index),
                             descriptor = s.descriptor,

@@ -10,7 +10,7 @@ plugins {
 }
 
 dependencies {
-    // KSP generates DataClassPath objects (@GenerateDataClassPaths) for the database demo -
+    // KSP generates DataClassPath objects (@Queryable) for the database demo -
     // this must be `ksp(...)`, not `api(...)`, or the generator never runs.
     ksp(project(":database-processor"))
 
@@ -58,7 +58,7 @@ data class DemoRun(val taskName: String, val mainClass: String, val demoDescript
 
 val demoRuns = listOf(
     DemoRun("runCacheDemo", "SampleKt", "Cache: get/set/add/remove and TTL expiry via ram://"),
-    DemoRun("runDatabaseDemo", "DatabaseDemoKt", "Database: insert/query/update/delete via ram:// with a @GenerateDataClassPaths model"),
+    DemoRun("runDatabaseDemo", "DatabaseDemoKt", "Database: insert/query/update/delete via ram:// with a @Queryable model"),
     DemoRun("runEmailDemo", "EmailDemoKt", "Email: send via test:// and read back what was captured"),
     DemoRun("runSmsDemo", "SmsDemoKt", "SMS: send via test:// and read back what was captured"),
     DemoRun("runFilesDemo", "FilesDemoKt", "Files: write/read/signUrl/delete via file:// in a temp directory"),

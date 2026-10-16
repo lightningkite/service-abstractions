@@ -98,8 +98,8 @@ class RamConformanceTest {
 class MetadataTest {
     @Test
     fun check() {
-        println(LargeTestModel_uuid.serializer.descriptor.serialName)
-        println(LargeTestModel_uuidNullable.serializer.descriptor.serialName)
+        println(LargeTestModel.uuid.serializer.descriptor.serialName)
+        println(LargeTestModel.uuidNullable.serializer.descriptor.serialName)
     }
 }
 class RamMaskedPermissionsTests : MaskedPermissionsTests() {

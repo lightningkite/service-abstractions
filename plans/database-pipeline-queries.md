@@ -246,7 +246,7 @@ This is what makes the design tractable. The user's `UnknownData` is literally `
 
 Inside a stage lambda the user references fields by:
 
-- A generated `DataClassPath` from `@GenerateDataClassPaths` when still working in the model type
+- A generated `DataClassPath` from `@Queryable` when still working in the model type
 - A `def<V>(name)` handle for new virtual fields
 - A `field("name")` accessor for previously declared virtual fields
 

@@ -2,6 +2,9 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.internal.ConcurrentMap
+import com.lightningkite.services.database.internal.getOrPutConcurrent
+import com.lightningkite.services.data.IsRawString
 import com.lightningkite.services.database.validation.ShouldValidateSub
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
@@ -184,7 +187,7 @@ private fun <T> polymorphicOptions(supertype: KSerializer<T>): List<MySealedClas
         }
     }
 
-private val cache = HashMap<KSerializerKey, MySealedClassSerializerInterface<*>>()
+private val cache = ConcurrentMap<KSerializerKey, MySealedClassSerializerInterface<*>>()
 private val numlist = setOf(
     "kotlin.Byte",
     "kotlin.Short",
@@ -196,7 +199,7 @@ private val numlist = setOf(
 
 @Suppress("UNCHECKED_CAST")
 public data class ModificationSerializer<T>(public val inner: KSerializer<T>) :
-    MySealedClassSerializerInterface<Modification<T>> by (cache.getOrPut(KSerializerKey(inner)) {
+    MySealedClassSerializerInterface<Modification<T>> by (cache.getOrPutConcurrent(KSerializerKey(inner)) {
         MySealedClassSerializer<Modification<T>>("com.lightningkite.services.database.Modification", {
             val r = when {
                 inner.nullElement() != null -> nullableOptions(inner.nullElement()!! as KSerializer<Any>)

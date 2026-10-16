@@ -7,8 +7,7 @@ import kotlin.jvm.JvmInline
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
-@GenerateDataClassPaths()
-@Serializable
+@Queryable
 data class User(
     override val _id: Uuid = Uuid.random(),
     @Index(unique = IndexUniqueness.Unique) override var email: String,
@@ -19,28 +18,24 @@ data class User(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class ValidatedModel(
     @ExpectedPattern("[a-zA-Z ]+") @MaxLength(15) val name: String,
 )
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class HasWeirdMap(
     override val _id: Uuid = Uuid.random(),
     val map: Map<TestEnum, String> = mapOf(TestEnum.One to "One", TestEnum.Two to "Two"),
 ) : HasId<Uuid>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class CompoundKeyTestModel(
     override val _id: CompoundTestKey = CompoundTestKey("first", "second"),
     val value: Int = 0,
 ) : HasId<CompoundTestKey>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class CompoundTestKey(
     val first: String,
     val second: String,
@@ -52,8 +47,7 @@ data class CompoundTestKey(
     override fun compareTo(other: CompoundTestKey): Int = comparator.compare(this, other)
 }
 
-@GenerateDataClassPaths()
-@Serializable
+@Queryable
 data class Post(
     override val _id: Uuid = Uuid.random(),
     var author: Uuid,
@@ -63,8 +57,7 @@ data class Post(
     companion object
 }
 
-@GenerateDataClassPaths()
-@Serializable
+@Queryable
 data class Employee(
     override val _id: Uuid = Uuid.random(),
     var dictionary: Map<String, Int> = mapOf(),
@@ -72,8 +65,7 @@ data class Employee(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class EmbeddedObjectTest(
     override val _id: Uuid = Uuid.random(),
     var name: String = "",
@@ -83,8 +75,7 @@ data class EmbeddedObjectTest(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class ClassUsedForEmbedding(
     var value1: String = "default",
     var value2: Int = 1,
@@ -96,8 +87,7 @@ data class RecursiveEmbed(
     var value2: String = "value2",
 )
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class EmbeddedNullable(
     override val _id: Uuid = Uuid.random(),
     var name: String = "",
@@ -106,8 +96,7 @@ data class EmbeddedNullable(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class NullableInListTestModel(
     override val _id: Uuid = Uuid.random(),
     var items: List<EmbeddedNullable> = listOf(),
@@ -115,8 +104,7 @@ data class NullableInListTestModel(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class NullableIntsTestModel(
     override val _id: Uuid = Uuid.random(),
     var ints: List<Int?> = listOf(),
@@ -126,8 +114,7 @@ data class NullableIntsTestModel(
 }
 
 // No lists, sets or maps, so the SQL backend updates it with a single UPDATE rather than read-modify-write.
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class NullableIntTestModel(
     override val _id: Uuid = Uuid.random(),
     var value: Int? = null,
@@ -135,8 +122,7 @@ data class NullableIntTestModel(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class NullableEmbedsTestModel(
     override val _id: Uuid = Uuid.random(),
     var embeds: List<ClassUsedForEmbedding?> = listOf(),
@@ -144,8 +130,7 @@ data class NullableEmbedsTestModel(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 @TextIndex(["string", "embedded.value1"])
 data class LargeTestModel(
     override val _id: Uuid = Uuid.random(),
@@ -185,8 +170,7 @@ data class LargeTestModel(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class ValueClassContainingTest(
     override val _id: Uuid = Uuid.random(),
     val direct: ValueClass = ValueClass("direct"),
@@ -195,27 +179,23 @@ data class ValueClassContainingTest(
     val length: Length = Length(1.0),
 ) : HasId<Uuid>
 
-@Serializable
+@Queryable
 @JvmInline
-@GenerateDataClassPaths
 value class ValueClass(val value: String)
 
-@Serializable
+@Queryable
 @JvmInline
-@GenerateDataClassPaths
 value class IntWrapper(val int: Int) : Comparable<IntWrapper> {
     override fun compareTo(other: IntWrapper): Int = int.compareTo(other.int)
 }
 
 // by Claude - UuidWrapper value class for testing UUID-wrapped value classes
-@Serializable
+@Queryable
 @JvmInline
-@GenerateDataClassPaths
 value class UuidWrapper(val uuid: Uuid)
 
 // by Claude - Extended test model with nullable value classes and list fields
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class ExtendedValueClassTest(
     override val _id: Uuid = Uuid.random(),
     val directNullable: ValueClass? = null,
@@ -226,8 +206,7 @@ data class ExtendedValueClassTest(
     val listInt: List<IntWrapper> = listOf(),
 ) : HasId<Uuid>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class SimpleLargeTestModel(
     override val _id: Uuid = Uuid.random(),
     var boolean: Boolean = false,
@@ -246,8 +225,7 @@ data class SimpleLargeTestModel(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class NestedEnumTestModel(
     override val _id: Uuid = Uuid.random(),
     val thing: NestedEnumHolder = NestedEnumHolder(),
@@ -255,8 +233,7 @@ data class NestedEnumTestModel(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class NestedEnumHolder(
     val enumValue: TestEnum = TestEnum.One,
 )
@@ -264,8 +241,7 @@ data class NestedEnumHolder(
 @Serializable
 enum class TestEnum { One, Two }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class GeoTest(
     override val _id: Uuid = Uuid.random(),
     @Index val geo: GeoCoordinate = GeoCoordinate(41.727019, -111.8443002),
@@ -273,15 +249,13 @@ data class GeoTest(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class EmbeddedMap(
     override val _id: Uuid = Uuid.random(),
     var map: Map<String, RecursiveEmbed>,
 ) : HasId<Uuid>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class MetaTestModel(
     override val _id: Uuid = Uuid.random(),
     val condition: Condition<LargeTestModel>,
@@ -289,22 +263,19 @@ data class MetaTestModel(
 ) : HasId<Uuid> {
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class HasGenerics<T>(
     override val _id: Uuid,
     val value: T,
 ) : HasId<Uuid>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class HasGenerics2<T>(
     override val _id: Uuid,
     val value: T,
 ) : HasId<Uuid>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class VectorTestModel(
     override val _id: Uuid = Uuid.random(),
     val title: String = "",
@@ -315,8 +286,7 @@ data class VectorTestModel(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class SparseVectorTestModel(
     override val _id: Uuid = Uuid.random(),
     val title: String = "",
@@ -325,8 +295,7 @@ data class SparseVectorTestModel(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 @IndexSet(["set1", "set2"], unique = IndexUniqueness.NotUnique)
 data class NotUniqueIndexTestModel(
     override val _id: Uuid = Uuid.random(),
@@ -339,8 +308,7 @@ data class NotUniqueIndexTestModel(
 
 private fun String.Companion.random() = Uuid.random().toString()
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 @IndexSet(["set1", "set2"], unique = IndexUniqueness.Unique, name = "uniqueSet")
 data class UniqueIndexTestModel(
     override val _id: Uuid = Uuid.random(),
@@ -351,8 +319,7 @@ data class UniqueIndexTestModel(
     val set2: String? = String.random(),
 ) : HasId<Uuid>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 @IndexSet(["set1", "set2"], unique = IndexUniqueness.UniqueNullSparse, name = "uniqueNullSparseSet")
 data class UniqueNullSparseIndexTestModel(
     override val _id: Uuid = Uuid.random(),
@@ -366,8 +333,7 @@ data class UniqueNullSparseIndexTestModel(
     val set2: String? = String.random(),
 ) : HasId<Uuid>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class SealedPathTestModel(
     override val _id: Uuid = Uuid.random(),
     val shape: Shape = Shape.Empty,
@@ -379,39 +345,31 @@ data class SealedPathTestModel(
     companion object
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 sealed interface Shape {
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Circle(val radius: Int = 1) : Shape
 
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Square(val side: Int = 1, val label: String = "") : Shape
 
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data object Empty : Shape
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 sealed class Payment {
     abstract val amount: Int
 
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Card(override val amount: Int = 0, val last4: String = "") : Payment()
 
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data object Pending : Payment() {
         override val amount: Int get() = 0
     }
 }
 
 /** Declared outside [Payment], so its serial name isn't nested under the sealed class's. */
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class CashPayment(override val amount: Int = 0, val currency: String = "USD") : Payment()

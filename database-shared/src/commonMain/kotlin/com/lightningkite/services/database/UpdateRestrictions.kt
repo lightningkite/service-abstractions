@@ -1,6 +1,6 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNames
@@ -68,8 +68,7 @@ import kotlinx.serialization.json.JsonNames
  * @param mode The restriction mode ([Mode.Blacklist] or [Mode.Whitelist])
  * @param fields List of field-specific restrictions
  */
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 public data class UpdateRestrictions<T>(
     public val mode: Mode = Mode.Blacklist,
     public val fields: List<Part<T>>,
@@ -121,8 +120,7 @@ public data class UpdateRestrictions<T>(
      * ```
      */
     @OptIn(ExperimentalSerializationApi::class)
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     public data class Part<T>(
         @JsonNames("path") val property: DataClassPathPartial<T>,
         @JsonNames("limitedIf") val requires: Condition<T>,

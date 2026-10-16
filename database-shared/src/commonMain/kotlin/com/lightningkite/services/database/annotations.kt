@@ -34,8 +34,7 @@ import kotlinx.serialization.SerialInfo
  * // a value class wrapping a Long
  * value class Money(val cents: Long) : Comparable<Money>
  *
- * @Serializeable
- * @GenerateDataClassPaths
+ * @Queryable
  * data class Model(
  *    override val _id: Uuid,
  *    val money: Money = Money(cents = 0),
@@ -81,8 +80,7 @@ public annotation class InlineProperty
  * appropriate vector indexes based on this annotation.
  *
  * ```kotlin
- * @GenerateDataClassPaths
- * @Serializable
+ * @Queryable
  * data class Document(
  *     override val _id: UUID = UUID.random(),
  *     val title: String,

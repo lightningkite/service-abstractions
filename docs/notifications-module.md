@@ -128,8 +128,7 @@ await api.registerDeviceToken(token);
 ### Server-Side Token Storage
 
 ```kotlin
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class DeviceToken(
     override val _id: UUID = UUID.random(),
     val userId: String,

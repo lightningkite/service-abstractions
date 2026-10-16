@@ -16,8 +16,7 @@ import kotlin.reflect.KClass
 import kotlin.reflect.typeOf
 import kotlin.test.*
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Sample(
     @MaxLength(5) val x: String = "asdf",
     @IntegerRange(0, 100) val y: Int = 4,
@@ -30,26 +29,22 @@ enum class TestEnum {
     First, Second, Third
 }
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class BadSample(
     @MaxSize(1) val a: String = "fdsa",
     @MaxLength(5) val x: String = "asdf",
 )
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class ArgSample<T>(
     val value: T,
     @MaxLength(5) val str: String = "asdf",
 )
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Box<T>(val value: T)
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class CustomSample(
     @StringListContainsAll("hello", "world") val list: List<String> = listOf("hello", "world"),
     @StringListContainsAll("unapplied") val intList: List<Int> = listOf(1, 2, 3),
@@ -59,8 +54,7 @@ data class CustomSample(
     @SampleXNotContains("xyz") val sample: Sample? = null,
 )
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class TestWarnings(
     @AlwaysPrintsMismatchedTypesWarning val warn: Int = 5,
     @IntegerRange(0, 100) val shouldNotWarn: Int? = null,
@@ -94,12 +88,10 @@ annotation class MimeTypeCheck(val type: String)
 @Serializable
 data class File(val type: String)
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class FileWithMetadata(val file: File, val metadata: List<Int> = emptyList())
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class SampleWithFile(
     @MimeTypeCheck("text") val file: File = File("text"),
     @MimeTypeCheck("text") val fileWithMetadata: FileWithMetadata? = FileWithMetadata(File("text")),
@@ -149,12 +141,12 @@ class ValidationTest {
             Modification.Chain<SampleWithFile>(
                 listOf(
                     Modification.OnField(
-                        SampleWithFile_fileWithMetadata,
+                        SampleWithFile.fileWithMetadata,
                         Modification.IfNotNull(
                             Modification.Chain(
                                 listOf(
                                     Modification.OnField(
-                                        FileWithMetadata_file,
+                                        FileWithMetadata.file,
                                         Modification.Assign(File("nottext"))
                                     )
                                 )

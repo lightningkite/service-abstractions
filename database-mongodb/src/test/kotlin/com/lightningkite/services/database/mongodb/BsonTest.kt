@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.SerializableProperty
@@ -135,19 +135,16 @@ class BsonTest {
 data class PolymorphicHolder(val value: Polymorphic)
 
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class ObjectIdTest(
     @Contextual val _id: ObjectId,
 )
 
 @Serializable
 sealed interface Polymorphic {
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data object Object : Polymorphic
 
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data class Class(val inner: Int = 0) : Polymorphic
 }

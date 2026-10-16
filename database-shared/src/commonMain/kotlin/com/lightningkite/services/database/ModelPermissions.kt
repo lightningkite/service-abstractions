@@ -1,14 +1,13 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.Serializable
 
 /**
  * Defines permissions for accessing a model in a database.
  * Default constructor is 'whitelist' mode.
  */
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 public data class ModelPermissions<Model>(
     /**
      * The user may only create an item if it matches this condition.

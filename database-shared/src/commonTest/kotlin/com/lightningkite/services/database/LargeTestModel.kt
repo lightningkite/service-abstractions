@@ -7,8 +7,7 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 @TextIndex(["string", "embedded.value1"])
 data class LargeTestModel(
     override val _id: Uuid = Uuid.random(),
@@ -49,8 +48,7 @@ data class LargeTestModel(
 }
 
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class ClassUsedForEmbedding(
     var value1: String = "default",
     var value2: Int = 1,

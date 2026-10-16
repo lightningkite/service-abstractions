@@ -206,8 +206,7 @@ public interface Database : Service {
     }
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 public data class HealthCheckTestModel(override val _id: String) : HasId<String>
 
 /**

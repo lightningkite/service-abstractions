@@ -20,11 +20,10 @@ All components are:
 
 ## Generating Type-Safe Paths
 
-To use the DSL with your models, annotate them with `@GenerateDataClassPaths`:
+To use the DSL with your models, annotate them with `@Queryable`:
 
 ```kotlin
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class User(
     override val _id: UUID = UUID.random(),
     @Index(unique = true) val email: String,
@@ -34,8 +33,7 @@ data class User(
     val address: Address?
 ) : HasId<UUID>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Address(
     val city: String,
     val state: String

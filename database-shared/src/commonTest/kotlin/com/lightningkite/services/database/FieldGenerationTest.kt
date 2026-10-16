@@ -1,71 +1,58 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Sample(
     val x: Int,
     val y: String? = null,
     val z: List<String> = listOf(),
 ) {
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Nested(val value: Int) {
-        @Serializable
-        @GenerateDataClassPaths
+        @Queryable
         data class DoubleNested(val value: Int)
     }
 }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class SampleGeneric<A, B : Comparable<B>>(
     val x: A,
     val y: B,
     val z: List<String> = listOf(),
 ) {
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Nested(val value: Int) {
-        @Serializable
-        @GenerateDataClassPaths
+        @Queryable
         data class DoubleNested(val value: Int)
     }
 }
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 sealed interface Polymorphic {
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data class Foo(val name: String) : Polymorphic
 
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data class Bar(val id: Int) : Polymorphic
 }
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 sealed class PolymorphicClass {
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data class Foo(val name: String) : PolymorphicClass()
 
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data object Empty : PolymorphicClass()
 }
 
 /** Declared outside [PolymorphicClass], so its serial name isn't nested under the sealed class's. */
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class PolymorphicClassTopLevel(val id: Int) : PolymorphicClass()
 
 class FieldGenerationTest {
@@ -77,6 +64,9 @@ class FieldGenerationTest {
         condition<SampleGeneric.Nested> { it.value eq 0 }
         condition<Sample.Nested.DoubleNested> { it.value eq 0 }
         condition<SampleGeneric.Nested.DoubleNested> { it.value eq 0 }
+
+        Sample.x
+        Sample.properties
     }
 
     @Test

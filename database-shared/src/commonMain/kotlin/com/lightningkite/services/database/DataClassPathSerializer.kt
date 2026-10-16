@@ -2,6 +2,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.internal.ConcurrentMap
+import com.lightningkite.services.database.internal.getOrPutConcurrent
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
@@ -15,10 +17,10 @@ private class SerializablePropertyParser<T>(val serializer: KSerializer<T>) {
     }
 
     companion object {
-        val existing = HashMap<KSerializerKey, SerializablePropertyParser<*>>()
+        val existing = ConcurrentMap<KSerializerKey, SerializablePropertyParser<*>>()
 
         @Suppress("UNCHECKED_CAST")
-        operator fun <T> get(serializer: KSerializer<T>): SerializablePropertyParser<T> = existing.getOrPut(
+        operator fun <T> get(serializer: KSerializer<T>): SerializablePropertyParser<T> = existing.getOrPutConcurrent(
             KSerializerKey(serializer)
         ) {
             SerializablePropertyParser(serializer)
@@ -98,17 +100,11 @@ public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) :
             }
             if (name == "*") {
                 val c = current ?: throw SerializationException("'*' cannot be the root of a path")
-                when {
-                    currentSerializer.listElement() != null -> {
-                        @Suppress("UNCHECKED_CAST")
-                        current = DataClassPathList(c as DataClassPath<T, List<Any?>>)
-                        currentSerializer = currentSerializer.listElement()!!
-                    }
-
-                    else -> {
-                        throw SerializationException("'*' used on non-collection type ${currentSerializer.descriptor.serialName}")
-                    }
-                }
+                currentSerializer.listElement()?.let {
+                    @Suppress("UNCHECKED_CAST")
+                    current = DataClassPathList(c as DataClassPath<T, List<Any?>>)
+                    currentSerializer = it
+                } ?: throw SerializationException("'*' used on non-collection type ${currentSerializer.descriptor.serialName}")
                 continue
             }
 

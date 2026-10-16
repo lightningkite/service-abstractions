@@ -85,15 +85,15 @@ abstract class MaskedPermissionsTests {
         raw.insertOne(LargeTestModel(byte = 0, short = 0, int = 1234, embedded = ClassUsedForEmbedding("secret", 99)))
 
         val int = table.findPartial(setOf(path<LargeTestModel>().int), Condition.Always).toList().single()
-        assertEquals(0, int.parts[LargeTestModel_int])
+        assertEquals(0, int.parts[LargeTestModel.int])
 
         val nested = table.findPartial(setOf(path<LargeTestModel>().embedded.value1), Condition.Always).toList().single()
-        assertEquals("masked", (nested.parts[LargeTestModel_embedded] as Partial<*>).parts[ClassUsedForEmbedding_value1])
+        assertEquals("masked", (nested.parts[LargeTestModel.embedded] as Partial<*>).parts[ClassUsedForEmbedding.value1])
 
         val whole = table.findPartial(setOf(path<LargeTestModel>().embedded), Condition.Always).toList().single()
         assertEquals(
             ClassUsedForEmbedding("masked", 0),
-            (whole.parts[LargeTestModel_embedded] as Partial<ClassUsedForEmbedding>).total(ClassUsedForEmbedding.serializer())
+            (whole.parts[LargeTestModel.embedded] as Partial<ClassUsedForEmbedding>).total(ClassUsedForEmbedding.serializer())
         )
     }
 

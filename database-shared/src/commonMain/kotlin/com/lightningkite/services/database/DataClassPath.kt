@@ -45,11 +45,10 @@ public abstract class DataClassPathPartial<K> {
  * ## Generated Paths
  *
  * The database-processor KSP plugin generates path objects for models annotated with
- * `@GenerateDataClassPaths`. These provide compile-time safety:
+ * `@Queryable`. These provide compile-time safety:
  *
  * ```kotlin
- * @GenerateDataClassPaths
- * @Serializable
+ * @Queryable
  * data class User(val name: String, val age: Int)
  *
  * // Generated: User.path.name, User.path.age

@@ -1,11 +1,10 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.NothingSerializer
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 public data class Mask<T>(
     /**
      * If the condition does not pass, then the modification will be applied to mask the values.
