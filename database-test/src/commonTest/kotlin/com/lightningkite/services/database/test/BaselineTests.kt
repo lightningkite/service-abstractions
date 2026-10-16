@@ -102,3 +102,6 @@ class MetadataTest {
         println(LargeTestModel_uuidNullable.serializer.descriptor.serialName)
     }
 }
+class RamFullTextSearchTests : FullTextSearchTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}

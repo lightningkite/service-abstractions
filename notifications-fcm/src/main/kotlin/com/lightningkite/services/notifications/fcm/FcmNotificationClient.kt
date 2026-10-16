@@ -206,21 +206,24 @@ public open class FcmNotificationClient(
         // Everything except the token is identical across messages, so build it once.
         val template = data.toMessageTemplate()
 
-        // Aggregate the distinct provider error codes seen this send, for a single summary log line.
-        val errorCodes = Collections.synchronizedSet(HashSet<String>())
+        // Aggregate the distinct provider errors seen this send, for a single summary log line.
+        // FCM's message is kept alongside the code because the code alone is often not actionable —
+        // THIRD_PARTY_AUTH_ERROR, for instance, only says which downstream service (APNs or Web
+        // Push) refused us in its message.
+        val errors = Collections.synchronizedSet(LinkedHashSet<String>())
 
         val results = coroutineScope {
             targets.map { deviceToken ->
                 async {
                     sendConcurrency.withPermit {
-                        deviceToken to sendOne(token, template.copy(token = deviceToken), errorCodes)
+                        deviceToken to sendOne(token, template.copy(token = deviceToken), errors)
                     }
                 }
             }.awaitAll()
         }.toMap()
 
-        if (errorCodes.isNotEmpty()) {
-            log.warn { "Some notifications failed to send. Error codes received: ${errorCodes.joinToString()}" }
+        if (errors.isNotEmpty()) {
+            log.warn { "Some notifications failed to send. Errors received: ${errors.joinToString("; ")}" }
         }
         return results
     }
@@ -232,12 +235,12 @@ public open class FcmNotificationClient(
     private suspend fun sendOne(
         accessToken: String,
         message: FcmMessage,
-        errorCodes: MutableSet<String>,
+        errors: MutableSet<String>,
     ): NotificationSendResult {
         return try {
             val response = post(accessToken, FcmSendRequest(message))
             if (response.status.isSuccess()) NotificationSendResult.Success
-            else classifyError(response, errorCodes)
+            else classifyError(response, errors)
         } catch (e: Exception) {
             context.reportException(e)
             log.warn(e) { "FCM send failed for a token; marking Failure" }
@@ -245,8 +248,8 @@ public open class FcmNotificationClient(
         }
     }
 
-    /** Maps a non-2xx v1 response to a result, recording the provider error code for logging. */
-    private suspend fun classifyError(response: HttpResponse, errorCodes: MutableSet<String>): NotificationSendResult {
+    /** Maps a non-2xx v1 response to a result, recording the provider error for logging. */
+    private suspend fun classifyError(response: HttpResponse, errors: MutableSet<String>): NotificationSendResult {
         val bodyText = response.bodyAsText()
         val error = runCatching { json.decodeFromString(FcmErrorResponse.serializer(), bodyText).error }.getOrNull()
         // The v1 messaging error code lives in error.details[].errorCode; fall back to the coarse status.
@@ -257,7 +260,7 @@ public open class FcmNotificationClient(
         return if (fcmCode == "UNREGISTERED") {
             NotificationSendResult.DeadToken
         } else {
-            fcmCode?.let { errorCodes.add(it) }
+            errors.add(listOfNotNull(fcmCode ?: "HTTP ${response.status.value}", error?.message).joinToString(" - "))
             NotificationSendResult.Failure
         }
     }

@@ -39,11 +39,7 @@ public data class ZonedDateTime(val dateTime: LocalDateTime, val zone: TimeZone)
 
 public object ZonedDateTimeIso8601Serializer : KSerializer<ZonedDateTime> {
     override fun deserialize(decoder: Decoder): ZonedDateTime =
-        try {
-            ZonedDateTime.parse(decoder.decodeString())
-        } catch (e: IllegalArgumentException) {
-            throw SerializationException(e.message)
-        }
+        deserializing { ZonedDateTime.parse(decoder.decodeString()) }
 
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("com.lightningkite.services.data.ZonedDateTime", PrimitiveKind.STRING)
@@ -90,11 +86,7 @@ public data class OffsetDateTime(val dateTime: LocalDateTime, val offset: UtcOff
 
 public object OffsetDateTimeIso8601Serializer : KSerializer<OffsetDateTime> {
     override fun deserialize(decoder: Decoder): OffsetDateTime =
-        try {
-            OffsetDateTime.parse(decoder.decodeString())
-        } catch (e: IllegalArgumentException) {
-            throw SerializationException(e.message)
-        }
+        deserializing { OffsetDateTime.parse(decoder.decodeString()) }
 
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("com.lightningkite.services.data.OffsetDateTime", PrimitiveKind.STRING)
