@@ -201,6 +201,7 @@ public class MongoTable<Model : Any>(
                             val name = "default"
                             val keys = documentOf()
                             val ser = DataClassPathSerializer(serializer)
+                            val mongoPaths = it.fields.map { ser.fromString(it).mongo.split('.') }
                             for (key in it.fields) {
                                 val path = ser.fromString(key)
 
@@ -238,7 +239,16 @@ public class MongoTable<Model : Any>(
                                     "com.lightningkite.UUID" -> "uuid"
                                     else -> continue
                                 }
-                                keys[key] = listOf(documentOf("type" to mongoType))
+                                // Claude: Atlas reads a dotted key as one field named "a.b", so nest a document mapping per level.
+                                val parts = path.mongo.split('.')
+                                var fields = keys
+                                for (part in parts.dropLast(1)) {
+                                    val parent = fields.getOrPut(part) {
+                                        documentOf("type" to "document", "dynamic" to false, "fields" to documentOf())
+                                    } as Document
+                                    fields = parent["fields"] as Document
+                                }
+                                fields[parts.last()] = listOf(documentOf("type" to mongoType))
                             }
                             val existing = listSearchIndexes().name(name).toList().firstOrNull()
                             if (existing == null) {
@@ -266,9 +276,10 @@ public class MongoTable<Model : Any>(
                                         )
                                     } else throw e
                                 }
-                            } else if (it.fields.any {
+                            } else if (mongoPaths.any { parts ->
                                     existing.getEmbedded(
-                                        listOf("latestDefinition", "mappings", "fields", it),
+                                        listOf("latestDefinition", "mappings", "fields") +
+                                                parts.dropLast(1).flatMap { listOf(it, "fields") } + parts.last(),
                                         Any::class.java
                                     ) == null
                                 }) {
@@ -977,7 +988,50 @@ public class MongoTable<Model : Any>(
         skip: Int,
         limit: Int,
         maxQueryMs: Long,
-    ): Flow<ScoredResult<Model>> = throw UnsupportedOperationException("findText is not implemented for MongoDB yet")
+    ): Flow<ScoredResult<Model>> {
+        val fields = checkNotNull(indexedTextFields) { "findByTextIndex needs a @TextIndex on ${serializer.descriptor.serialName}" }
+        val textQuery = TextQuery.fromString(query)
+        val cs = condition.simplify()
+        if (cs is Condition.Never || limit <= 0 || (textQuery.exact.isEmpty() && textQuery.fuzzy.isEmpty())) return emptyFlow()
+        return recordingFlow("findByTextIndex") { access {
+            val pipeline = if (atlasSearch) {
+                val paths = fields.map { it.mongo }
+                val words = textQuery.fuzzy.map { term ->
+                    val edits = textQuery.allowedEdits(term)
+                    documentOf("text" to documentOf("query" to term, "path" to paths).apply {
+                        if (edits > 0) this["fuzzy"] = documentOf("maxEdits" to edits)
+                    })
+                }
+                val phrases = textQuery.exact.map { documentOf("phrase" to documentOf("query" to it, "path" to paths)) }
+                val compound = documentOf("must" to words + phrases)
+                if (textQuery.reject.isNotEmpty()) {
+                    compound["mustNot"] = textQuery.reject.map { documentOf("phrase" to documentOf("query" to it, "path" to paths)) }
+                }
+                buildList {
+                    add(documentOf("\$search" to documentOf("index" to "default", "compound" to compound)))
+                    add(Aggregates.addFields(Field("__text_score", documentOf("\$meta" to "searchScore"))))
+                    if (cs !is Condition.Always) add(Aggregates.match(cs.bson(serializer, atlasSearch = true, bson = bson)))
+                }
+            } else {
+                // Claude: $text matches any one plain word, but all quoted phrases, so every term is quoted.
+                val search = (textQuery.fuzzy + textQuery.exact).map { "\"$it\"" }
+                    .plus(textQuery.reject.map { "-\"$it\"" })
+                    .joinToString(" ")
+                val text = Filters.text(search)
+                listOf(
+                    Aggregates.match(
+                        if (cs is Condition.Always) text
+                        else Filters.and(text, cs.bson(serializer, bson = bson, atlasSearch = false))
+                    ),
+                    Aggregates.addFields(Field("__text_score", documentOf("\$meta" to "textScore"))),
+                    Aggregates.sort(Sorts.orderBy(Sorts.descending("__text_score"), Sorts.ascending("_id"))),
+                )
+            } + listOf(Aggregates.skip(skip), Aggregates.limit(limit))
+            aggregate<BsonDocument>(pipeline)
+                .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
+                .map { ScoredResult(bson.parse(serializer, it), it.getNumber("__text_score").doubleValue().toFloat()) }
+        } }
+    }
 
     override suspend fun findSimilar(
         vectorField: DataClassPath<Model, Embedding>,

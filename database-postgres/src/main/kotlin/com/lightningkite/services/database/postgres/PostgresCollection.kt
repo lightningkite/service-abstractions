@@ -440,7 +440,7 @@ public class PostgresCollection<T : Any>(
         skip: Int,
         limit: Int,
         maxQueryMs: Long,
-    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("findText is not implemented for PostgreSQL yet")
+    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("findByTextIndex is not implemented for PostgreSQL yet")
 
     override suspend fun findSimilar(
         vectorField: DataClassPath<T, Embedding>,

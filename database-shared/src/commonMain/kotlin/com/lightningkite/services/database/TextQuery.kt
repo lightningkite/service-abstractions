@@ -62,10 +62,10 @@ public data class TextQuery(
      * Returns how well [text] matches this query, from just above `0` to `1`, or `null` if it doesn't match.
      *
      * A match needs every word and phrase present and no exclusion present. An exact word scores `1`, and a word
-     * matched with typos scores less the more edits it took. A query with no words or phrases matches everything
-     * not excluded with a score of `1`.
+     * matched with typos scores less the more edits it took. A query with no words or phrases matches nothing.
      */
     public fun score(text: String): Float? {
+        if (exact.isEmpty() && fuzzy.isEmpty()) return null
         val textWords = words(text)
         if (reject.any { textWords.containsPhrase(words(it)) }) return null
         if (!exact.all { textWords.containsPhrase(words(it)) }) return null
@@ -81,8 +81,12 @@ public data class TextQuery(
         return (total + exact.size) / (terms.size + exact.size)
     }
 
-    // Claude: same scale as Elasticsearch's "AUTO" fuzziness. Numbers never fuzz: 2024 is not 2025.
-    private fun allowedEdits(term: String): Int = when {
+    /**
+     * Returns how many typos [term] may have and still match: none up to three letters, one up to seven, two beyond.
+     *
+     * Terms containing anything but letters must match exactly, so `2024` never matches `2025`.
+     */
+    public fun allowedEdits(term: String): Int = when {
         !term.all { it.isLetter() } -> 0
         term.length <= 3 -> 0
         term.length <= 7 -> 1

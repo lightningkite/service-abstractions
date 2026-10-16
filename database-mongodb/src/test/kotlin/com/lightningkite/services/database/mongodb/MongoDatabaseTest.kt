@@ -5,6 +5,11 @@ import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.TestDatabase.mongoClient
 import com.lightningkite.services.database.test.*
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import org.junit.Assume.assumeTrue
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -254,6 +259,27 @@ class MongodbVectorSearchTests : VectorSearchTests() {
     // We need to wait for documents to appear in the search index after insertion.
     override val vectorSearchIndexSyncDelay: Duration = 3.seconds
 }
+class MongodbTextSearchTests : TextSearchTests() {
+    override val database: Database = db()
+
+    // Claude: classic $text stems words but has no typo tolerance.
+    override val supportsTypoTolerance: Boolean = false
+}
+
+class MongodbAtlasTextSearchTests : TextSearchTests() {
+    override val database: Database = vectorDb()
+
+    // Claude: mongot syncs documents via change streams, so searches lag behind inserts.
+    override suspend fun waitForIndex() {
+        withContext(Dispatchers.Default) { delay(3.seconds) }
+    }
+
+    @BeforeTest
+    fun requireAtlas() {
+        assumeTrue("Atlas Search needs Docker or MONGO_VECTOR_TEST_URL", VectorTestDatabase.isAvailable)
+    }
+}
+
 class MongodbMaskedPermissionsTests : MaskedPermissionsTests() {
     override val database: Database = db()
 }

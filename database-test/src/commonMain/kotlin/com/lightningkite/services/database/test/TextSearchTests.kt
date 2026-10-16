@@ -96,6 +96,13 @@ abstract class TextSearchTests {
     }
 
     @Test
+    fun queryWithoutWordsReturnsNothing() = runTest {
+        val table = table("textSearchEmpty", TextSearchTestModel(title = "Kotlin"))
+        assertEquals(setOf(), table.titles(""))
+        assertEquals(setOf(), table.titles("-java"))
+    }
+
+    @Test
     fun appliesCondition() = runTest {
         val table = table(
             "textSearchCondition",

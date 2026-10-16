@@ -12,9 +12,9 @@ class TextQueryTest {
     }
 
     @Test
-    fun emptyQueryMatchesEverythingNotExcluded() {
-        assertEquals(1f, TextQuery.fromString("").score("anything"))
-        assertNull(TextQuery.fromString("-anything").score("anything"))
+    fun queryWithoutWordsMatchesNothing() {
+        assertNull(TextQuery.fromString("").score("anything"))
+        assertNull(TextQuery.fromString("-other").score("anything"))
     }
 
     @Test

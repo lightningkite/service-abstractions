@@ -136,7 +136,7 @@ public class JsonFileTable<Model : Any>(
         maxQueryMs: Long
     ): Flow<ScoredResult<Model>> = flow {
         val results = traced(
-            operation = "findText",
+            operation = "findByTextIndex",
             extraBlock = {
                 put(Database.TelemetryKeys.limit, limit.toLong())
                 put(Database.TelemetryKeys.skip, skip.toLong())

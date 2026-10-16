@@ -1201,7 +1201,7 @@ public class CassandraTable<Model : Any>(
 
     // ===== Vector Search (Not natively supported by Cassandra) =====
 
-    override suspend fun findText(
+    override suspend fun findByTextIndex(
         query: String,
         condition: Condition<Model>,
         skip: Int,

@@ -198,7 +198,7 @@ public open class InMemoryTable<Model : Any>(
         limit: Int,
         maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> {
-        val fields = checkNotNull(textIndexFields) { "findText needs a @TextIndex on ${serializer.descriptor.serialName}" }
+        val fields = checkNotNull(textIndexFields) { "findByTextIndex needs a @TextIndex on ${serializer.descriptor.serialName}" }
         val textQuery = TextQuery.fromString(query)
         return flow {
             val results = traced {
