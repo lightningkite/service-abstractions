@@ -10,7 +10,7 @@ import kotlin.uuid.Uuid
 
 /**
  * Demonstrates the database subsystem: insert/query/update/delete against an in-memory
- * `ram://` database, using a `@GenerateDataClassPaths` model for type-safe conditions and
+ * `ram://` database, using a `@Queryable` model for type-safe conditions and
  * modifications (the KSP-generated `Task.path` companion property).
  */
 fun main() = runBlocking {

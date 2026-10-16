@@ -13,11 +13,9 @@ data class Sample(
     val y: String? = null,
     val z: List<String> = listOf(),
 ) {
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Nested(val value: Int) {
-        @Serializable
-        @GenerateDataClassPaths
+        @Queryable
         data class DoubleNested(val value: Int)
     }
 }
@@ -28,34 +26,28 @@ data class SampleGeneric<A, B : Comparable<B>>(
     val y: B,
     val z: List<String> = listOf(),
 ) {
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Nested(val value: Int) {
-        @Serializable
-        @GenerateDataClassPaths
+        @Queryable
         data class DoubleNested(val value: Int)
     }
 }
 
 @Queryable
 sealed interface Polymorphic {
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data class Foo(val name: String) : Polymorphic
 
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data class Bar(val id: Int) : Polymorphic
 }
 
 @Queryable
 sealed class PolymorphicClass {
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data class Foo(val name: String) : PolymorphicClass()
 
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data object Empty : PolymorphicClass()
 }
 

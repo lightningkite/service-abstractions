@@ -40,7 +40,7 @@ data class User(
 
 **Key annotations:**
 
-- `@GenerateDataClassPaths` - Generates type-safe field accessors for queries
+- `@Queryable` - Generates type-safe field accessors for queries
 - `@Serializable` - Required for serialization/deserialization
 - `@Index` - Creates database indexes for performance
 - `HasId<T>` - Models must have an `_id` field

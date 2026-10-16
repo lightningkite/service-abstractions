@@ -200,7 +200,7 @@ This ensures all implementations satisfy the same contract.
 
 ### Working with Database Models
 
-1. Define your model with `@GenerateDataClassPaths`
+1. Define your model with `@Queryable`
 2. Run `./gradlew :database:kspCommonMainKotlinMetadata` to generate field paths
 3. Use generated paths for type-safe queries
 

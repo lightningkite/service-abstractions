@@ -30,14 +30,12 @@ data class DualTypeParamTestModelPart2<T, Y>(
     val otherValue: String,
 )
 
-@Serializable
+@Queryable
 @JvmInline
-@GenerateDataClassPaths
 value class LongWrapper(val long: Long)
 
-@Serializable
+@Queryable
 @JvmInline
-@GenerateDataClassPaths
 value class IdWrapper(override val raw: Uuid) : TypedId<Uuid, IdWrapper>
 
 @Queryable

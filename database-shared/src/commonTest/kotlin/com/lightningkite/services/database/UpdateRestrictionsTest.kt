@@ -27,12 +27,10 @@ enum class Role {
     Admin
 }
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Span(val start: Int = 0, val endInclusive: Int? = null)
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Holder(val span: Span = Span(), val thing: Polymorphic = Polymorphic.Foo("a"))
 
 class UpdateRestrictionsTest {

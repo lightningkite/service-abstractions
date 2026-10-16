@@ -8,14 +8,14 @@ import java.util.Locale.getDefault
 /**
  * KSP (Kotlin Symbol Processor) that generates type-safe DataClassPath field accessors.
  *
- * This processor scans for classes annotated with @GenerateDataClassPaths or @DatabaseModel
+ * This processor scans for classes annotated with @Queryable or @GenerateDataClassPaths
  * and generates extension properties that enable type-safe field references in database queries.
  *
  * ## What It Generates
  *
  * For a model like:
  * ```kotlin
- * @GenerateDataClassPaths
+ * @Queryable
  * @Serializable
  * data class User(val name: String, val age: Int)
  * ```
@@ -45,14 +45,18 @@ import java.util.Locale.getDefault
  * - **Lock files**: Prevents concurrent generation in multi-module builds
  * - **Common/platform**: Generates code in commonMain when applicable
  *
- * @see com.lightningkite.services.data.GenerateDataClassPaths
+ * @see com.lightningkite.services.data.Queryable
  */
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 18) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 19) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("Queryable") != null || annotation("GenerateDataClassPaths") != null
+
+    // Claude: @Queryable is @MetaSerializable, but KSP only sees annotations written in source, so check for it too.
+    private fun KSClassDeclaration.isSerializable(): Boolean =
+        annotation("Queryable") != null || annotation("Serializable", "kotlinx.serialization") != null
 
     override fun interestedIn(resolver: Resolver): Set<KSFile> {
         return resolver.getAllFiles()
@@ -156,7 +160,7 @@ class TableGenerator(
         for (declaration in classes) {
             when (declaration.classKind) {
                 ClassKind.INTERFACE -> {
-                    if (!declaration.modifiers.contains(Modifier.SEALED)) throw IllegalArgumentException("@GenerateDataClassPaths can only be applied to classes and sealed interfaces")
+                    if (!declaration.modifiers.contains(Modifier.SEALED)) throw IllegalArgumentException("@Queryable can only be applied to classes and sealed interfaces")
                     appendLine("// ${declaration.safeLocalReference()}")
                     writeSealedFields(declaration)
                     appendLine()
@@ -171,7 +175,7 @@ class TableGenerator(
 
                 ClassKind.ENUM_CLASS -> {}
                 ClassKind.OBJECT -> {}
-                else -> throw IllegalArgumentException("@GenerateDataClassPaths applied to invalid type: ${declaration.classKind}")
+                else -> throw IllegalArgumentException("@Queryable applied to invalid type: ${declaration.classKind}")
             }
         }
     }
@@ -188,7 +192,7 @@ class TableGenerator(
             } else {
                 appendLine("public inline val $classReference.Companion.path: DataClassPath<$classReference, $classReference> get() = com.lightningkite.services.database.path<$classReference>()")
                 declaration.getSealedSubclasses()
-                    .filter { it.needsDcp() && it.annotation("Serializable", "kotlinx.serialization") != null }
+                    .filter { it.needsDcp() && it.isSerializable() }
                     .forEach { variant ->
                         val variantReference = variant.safeLocalReference()
                         val propName = "as${variant.simpleName.asString()}"
@@ -213,7 +217,7 @@ class TableGenerator(
         when {
             Modifier.SEALED in it.modifiers -> it.sealedOptions()
             Modifier.ABSTRACT in it.modifiers -> emptySequence()
-            it.annotation("Serializable", "kotlinx.serialization") != null -> sequenceOf(it)
+            it.isSerializable() -> sequenceOf(it)
             else -> emptySequence()
         }
     }

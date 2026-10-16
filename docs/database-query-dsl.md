@@ -20,7 +20,7 @@ All components are:
 
 ## Generating Type-Safe Paths
 
-To use the DSL with your models, annotate them with `@GenerateDataClassPaths`:
+To use the DSL with your models, annotate them with `@Queryable`:
 
 ```kotlin
 @Queryable

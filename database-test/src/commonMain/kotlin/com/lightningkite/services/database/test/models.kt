@@ -7,8 +7,7 @@ import kotlin.jvm.JvmInline
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
-@GenerateDataClassPaths()
-@Serializable
+@Queryable
 data class User(
     override val _id: Uuid = Uuid.random(),
     @Index(unique = IndexUniqueness.Unique) override var email: String,
@@ -48,8 +47,7 @@ data class CompoundTestKey(
     override fun compareTo(other: CompoundTestKey): Int = comparator.compare(this, other)
 }
 
-@GenerateDataClassPaths()
-@Serializable
+@Queryable
 data class Post(
     override val _id: Uuid = Uuid.random(),
     var author: Uuid,
@@ -59,8 +57,7 @@ data class Post(
     companion object
 }
 
-@GenerateDataClassPaths()
-@Serializable
+@Queryable
 data class Employee(
     override val _id: Uuid = Uuid.random(),
     var dictionary: Map<String, Int> = mapOf(),
@@ -181,22 +178,19 @@ data class ValueClassContainingTest(
     val wrappedInt: IntWrapper = IntWrapper(42),
 ) : HasId<Uuid>
 
-@Serializable
+@Queryable
 @JvmInline
-@GenerateDataClassPaths
 value class ValueClass(val value: String)
 
-@Serializable
+@Queryable
 @JvmInline
-@GenerateDataClassPaths
 value class IntWrapper(val int: Int) : Comparable<IntWrapper> {
     override fun compareTo(other: IntWrapper): Int = int.compareTo(other.int)
 }
 
 // by Claude - UuidWrapper value class for testing UUID-wrapped value classes
-@Serializable
+@Queryable
 @JvmInline
-@GenerateDataClassPaths
 value class UuidWrapper(val uuid: Uuid)
 
 // by Claude - Extended test model with nullable value classes and list fields
@@ -352,16 +346,13 @@ data class SealedPathTestModel(
 
 @Queryable
 sealed interface Shape {
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Circle(val radius: Int = 1) : Shape
 
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Square(val side: Int = 1, val label: String = "") : Shape
 
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data object Empty : Shape
 }
 
@@ -369,12 +360,10 @@ sealed interface Shape {
 sealed class Payment {
     abstract val amount: Int
 
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data class Card(override val amount: Int = 0, val last4: String = "") : Payment()
 
-    @GenerateDataClassPaths
-    @Serializable
+    @Queryable
     data object Pending : Payment() {
         override val amount: Int get() = 0
     }

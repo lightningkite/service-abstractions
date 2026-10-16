@@ -142,11 +142,9 @@ data class ObjectIdTest(
 
 @Serializable
 sealed interface Polymorphic {
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data object Object : Polymorphic
 
-    @Serializable
-    @GenerateDataClassPaths
+    @Queryable
     data class Class(val inner: Int = 0) : Polymorphic
 }

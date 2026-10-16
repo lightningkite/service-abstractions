@@ -17,9 +17,8 @@ public typealias Dollars = Cents
  * Use this rather than a [Double] for money: [Double] cannot represent most cent amounts exactly, so sums
  * of them drift.  Construct amounts with the extensions in the companion, e.g. `12.dollars`, `50.cents`.
  */
-@Serializable
+@Queryable
 @JvmInline
-@GenerateDataClassPaths
 public value class Cents(public val inCents: Long) : Comparable<Cents> {
     public inline fun <T> toDollarsAndCents(action: (dollars: Long, cents: Long, negative: Boolean) -> T): T =
         action(inCents.absoluteValue / 100, inCents.absoluteValue % 100, inCents < 0)
