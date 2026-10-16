@@ -3,7 +3,7 @@ package com.lightningkite.services.database
 import kotlinx.serialization.Serializable
 
 /**
- * Result from a vector similarity search, including the similarity score.
+ * Result from a vector or text similarity search, including the similarity score.
  *
  * @param T The model type
  * @property model The matched record

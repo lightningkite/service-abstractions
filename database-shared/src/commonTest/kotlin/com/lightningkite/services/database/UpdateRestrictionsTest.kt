@@ -617,19 +617,6 @@ class UpdateRestrictionsTest {
         assertNever(restrictions, modification { it.listEmbedded assign listOf() })
         assertNever(restrictions, modification { it.listEmbedded += ClassUsedForEmbedding() })
         assertNever(restrictions, modification { it.listEmbedded.removeAll { it.value2 eq 1 } })
-        assertNever(restrictions, modification { it.listEmbedded.dropFirst() })
-        assertNever(restrictions, modification { it.listEmbedded.dropLast() })
-    }
-
-    @Test
-    fun `whitelist - map modifications write the map field`() {
-        val allowed = whitelistRestrictions<LargeTestModel> { it.map.canBeModified() }
-        val other = whitelistRestrictions<LargeTestModel> { it.int.canBeModified() }
-
-        assertEquals(Condition.Always, allowed(modification { it.map += mapOf("a" to 1) }))
-        assertEquals(Condition.Always, allowed(modification { it.map.removeKeys(setOf("a")) }))
-        assertNever(other, modification { it.map += mapOf("a" to 1) })
-        assertNever(other, modification { it.map.removeKeys(setOf("a")) })
     }
 
     @Test

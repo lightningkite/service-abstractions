@@ -791,6 +791,14 @@ public class SqlCollection<T : Any>(
 
     // ====================== Vector Search (Not Supported) ======================
 
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<T>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("Text search is not supported by the generic SQL driver")
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<T, Embedding>,
         params: DenseVectorSearchParams,

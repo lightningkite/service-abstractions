@@ -1,5 +1,6 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.data.TextIndex
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
@@ -168,6 +169,24 @@ public interface Table<Model : Any> {
     ).map {
         partialOf(it, fields)
     }
+
+    /**
+     * Searches the model's [TextIndex] fields for [query], returning matches that also pass [condition], most
+     * relevant first.
+     *
+     * [query] uses search-box syntax: every word must match, `"quoted phrases"` match exactly, and `-word` excludes.
+     * Matching ignores case. Stemming (`running` finds `run`) and typo tolerance vary by backend. Scores are only
+     * comparable within one result set.
+     *
+     * @throws IllegalStateException if the model has no [TextIndex].
+     */
+    public suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<Model> = Condition.Always,
+        skip: Int = 0,
+        limit: Int = 50,
+        maxQueryMs: Long = 15_000,
+    ): Flow<ScoredResult<Model>>
 
     /**
      * Count the number of matching items in the collection.

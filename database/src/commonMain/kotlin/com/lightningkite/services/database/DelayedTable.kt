@@ -180,6 +180,17 @@ public open class DelayedTable<Model : Any>(
         return wraps.deleteManyIgnoringOld(condition)
     }
 
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> {
+        doDelay()
+        return wraps.findByTextIndex(query, condition, skip, limit, maxQueryMs)
+    }
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<Model, Embedding>,
         params: DenseVectorSearchParams,

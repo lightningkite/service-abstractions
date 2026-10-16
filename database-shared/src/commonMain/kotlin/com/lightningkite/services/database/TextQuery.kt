@@ -2,13 +2,19 @@ package com.lightningkite.services.database
 
 import kotlin.math.min
 
-
+/**
+ * A parsed search-box query: plain words, `"quoted phrases"`, and `-excluded` words or phrases.
+ *
+ * Words tolerate typos in proportion to their length; phrases and exclusions must match exactly.
+ * Matching is case-insensitive and compares whole words, so `cat` does not match `concatenate`.
+ */
 public data class TextQuery(
     val exact: Set<String> = setOf(),
-    val loose: Set<String> = setOf(),
+    val fuzzy: Set<String> = setOf(),
     val reject: Set<String> = setOf(),
 ) {
     public companion object {
+        /** Parses [string] using the syntax most search boxes accept, e.g. `kotlin "type safe" -java`. */
         public fun fromString(string: String): TextQuery {
             val exact: HashSet<String> = HashSet()
             val loose: HashSet<String> = HashSet()
@@ -46,27 +52,48 @@ public data class TextQuery(
 
             return TextQuery(
                 exact = exact,
-                loose = loose,
+                fuzzy = loose,
                 reject = reject,
             )
         }
     }
 
-    public fun fuzzyPresent(input: String, off: Int = 2): Boolean {
-        val words = input.split(' ', '\n', '\t')
-        return exact.all {
-            input.contains(it, true)
-        } && loose.all { l ->
-            words.any { w ->
-                if (l.termShouldUseFuzzySearch())
-                    levenshtein(l.lowercase(), w.lowercase()) <= off
-                else
-                    input.contains(l, true)
-            }
-        } && reject.none {
-            input.contains(it, true)
+    /**
+     * Returns how well [text] matches this query, from just above `0` to `1`, or `null` if it doesn't match.
+     *
+     * A match needs every word and phrase present and no exclusion present. An exact word scores `1`, and a word
+     * matched with typos scores less the more edits it took. A query with no words or phrases matches everything
+     * not excluded with a score of `1`.
+     */
+    public fun score(text: String): Float? {
+        val textWords = words(text)
+        if (reject.any { textWords.containsPhrase(words(it)) }) return null
+        if (!exact.all { textWords.containsPhrase(words(it)) }) return null
+        val terms = fuzzy.flatMap { words(it) }
+        if (terms.isEmpty()) return 1f
+        var total = 0f
+        for (term in terms) {
+            val allowed = allowedEdits(term)
+            val edits = textWords.minOfOrNull { levenshtein(term, it) } ?: return null
+            if (edits > allowed) return null
+            total += 1f - edits.toFloat() / term.length
         }
+        return (total + exact.size) / (terms.size + exact.size)
     }
+
+    // Claude: same scale as Elasticsearch's "AUTO" fuzziness. Numbers never fuzz: 2024 is not 2025.
+    private fun allowedEdits(term: String): Int = when {
+        !term.all { it.isLetter() } -> 0
+        term.length <= 3 -> 0
+        term.length <= 7 -> 1
+        else -> 2
+    }
+
+    private fun words(text: String): List<String> =
+        text.lowercase().split(nonWordCharacters).filter { it.isNotEmpty() }
+
+    private fun List<String>.containsPhrase(phrase: List<String>): Boolean =
+        phrase.isEmpty() || windowed(phrase.size).any { it == phrase }
 
     private fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {
         if (lhs == rhs) {
@@ -106,3 +133,5 @@ public data class TextQuery(
         return cost[lhsLength - 1]
     }
 }
+
+private val nonWordCharacters = Regex("[^\\p{L}\\p{N}]+")

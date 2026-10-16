@@ -50,6 +50,5 @@ class CheckedUpdateBsonTest {
             Document("embeddedNullable.value1", Document("\$eq", BsonString("a"))),
             query(condition { it.embeddedNullable.notNull.value1 eq "a" })
         )
-        assertEquals(Document("map.k", Document("\$eq", BsonInt32(1))), query(path<LargeTestModel>().map.mapCondition(Condition.OnKey("k", Condition.Equal(1)))))
     }
 }

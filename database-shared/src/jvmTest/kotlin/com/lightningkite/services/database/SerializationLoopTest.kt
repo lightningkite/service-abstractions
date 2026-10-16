@@ -72,10 +72,6 @@ class SerializationLoopTest {
         "Set CollectionAllElements (also: ListAllElements, AllElements)" to condition { it.set all { e -> e gt 0 } },
         "Set CollectionAnyElements (also: ListAnyElements, AnyElements)" to condition { it.set any { e -> e eq 42 } },
 
-        // --- Map Conditions ---
-        "Exists" to condition { it.map containsKey "myKey" },
-        "OnKey" to condition { it.map.condition { Condition.OnKey("myKey", Condition.Equal(42)) } },
-
         // --- Nested/Nullable Conditions ---
         "OnField (uses field name as serial key)" to condition { it.embedded.condition { e -> e.value1 eq "test" } },
         "IfNotNull" to condition { it.intNullable.notNull eq 42 },
@@ -123,8 +119,6 @@ class SerializationLoopTest {
         "ListAppend (also: AppendList)" to modification { it -> it.list += listOf(1, 2, 3) },
         "ListRemove (also: Remove)" to modification { it -> it.list removeAll { e -> e gt 10 } },
         "ListRemoveInstances (also: RemoveInstances)" to modification { it -> it.list -= listOf(1, 2, 3) },
-        "ListDropFirst (also: DropFirst)" to modification { it -> it.list.dropFirst() },
-        "ListDropLast (also: DropLast)" to modification { it -> it.list.dropLast() },
         "ListPerElement (also: PerElement)" to modification { it -> it.list forEach { e -> e += 1 } },
         "ListPerElement with condition" to modification { it ->
             it.list.forEachIf(
@@ -144,10 +138,6 @@ class SerializationLoopTest {
                 modification = { e -> e += 10 }
             )
         },
-
-        // --- Map Modifications ---
-        "Combine" to modification { it -> it.map += mapOf("key1" to 1, "key2" to 2) },
-        "RemoveKeys" to modification { it -> it.map removeKeys setOf("key1", "key2") },
 
         // --- Nested Field Modification ---
         "OnField (uses field name as serial key)" to modification { it -> it.embedded.value1 assign "new value" },

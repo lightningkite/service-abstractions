@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.StringFormat
 import kotlinx.serialization.builtins.ListSerializer
-import java.io.Closeable
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import java.util.concurrent.ConcurrentHashMap
@@ -123,6 +122,27 @@ public class JsonFileTable<Model : Any>(
             }
         ) { span ->
             val results = super.find(condition, orderBy, skip, limit, maxQueryMs).toList()
+            span.enrich(TelemetryAttributes { put(Database.TelemetryKeys.resultCount, results.size.toLong()) })
+            results
+        }
+        results.forEach { emit(it) }
+    }
+
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long
+    ): Flow<ScoredResult<Model>> = flow {
+        val results = traced(
+            operation = "findText",
+            extraBlock = {
+                put(Database.TelemetryKeys.limit, limit.toLong())
+                put(Database.TelemetryKeys.skip, skip.toLong())
+            }
+        ) { span ->
+            val results = super.findByTextIndex(query, condition, skip, limit, maxQueryMs).toList()
             span.enrich(TelemetryAttributes { put(Database.TelemetryKeys.resultCount, results.size.toLong()) })
             results
         }

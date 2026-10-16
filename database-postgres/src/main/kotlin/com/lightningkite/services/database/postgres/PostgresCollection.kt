@@ -434,6 +434,14 @@ public class PostgresCollection<T : Any>(
         count
     }
 
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<T>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("findText is not implemented for PostgreSQL yet")
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<T, Embedding>,
         params: DenseVectorSearchParams,

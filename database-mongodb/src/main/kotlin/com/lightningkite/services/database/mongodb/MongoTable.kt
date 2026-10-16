@@ -971,6 +971,14 @@ public class MongoTable<Model : Any>(
         if (it.ascending) Sorts.ascending(fieldName) else Sorts.descending(fieldName)
     })
 
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> = throw UnsupportedOperationException("findText is not implemented for MongoDB yet")
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<Model, Embedding>,
         params: DenseVectorSearchParams,

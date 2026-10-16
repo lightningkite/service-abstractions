@@ -287,6 +287,25 @@ data class VectorTestModel(
 }
 
 @Queryable
+@TextIndex(["title", "body", "details.summary"])
+data class TextSearchTestModel(
+    override val _id: Uuid = Uuid.random(),
+    val title: String = "",
+    val body: String = "",
+    val author: String = "",
+    @Index val category: String = "",
+    val details: TextSearchDetails = TextSearchDetails(),
+) : HasId<Uuid> {
+    companion object
+}
+
+@Queryable
+data class TextSearchDetails(
+    val summary: String = "",
+    val secret: String = "",
+)
+
+@Queryable
 data class SparseVectorTestModel(
     override val _id: Uuid = Uuid.random(),
     val title: String = "",

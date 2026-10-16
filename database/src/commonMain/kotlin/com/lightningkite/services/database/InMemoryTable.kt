@@ -1,6 +1,7 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.data.IndexUniqueness
+import com.lightningkite.services.data.TextIndex
 import kotlinx.atomicfu.*
 import kotlinx.atomicfu.locks.ReentrantLock
 import kotlinx.atomicfu.locks.withLock
@@ -33,13 +34,17 @@ public open class InMemoryTable<Model : Any>(
 
     // The in-memory table does no I/O, so its operations are not traced. This passes the block
     // straight through, keeping operation bodies (which use `return@traced`) unchanged.
-    private suspend inline fun <R> traced(block: () -> R): R = block()
+    private inline fun <R> traced(block: () -> R): R = block()
 
     @Suppress("UNCHECKED_CAST")
     private val idProp: SerializableProperty<Model, Any?> =
         serializer.serializableProperties!!.first { it.name == "_id" } as SerializableProperty<Model, Any?>
 
     private fun idOf(model: Model): Any? = idProp.get(model)
+
+    private val textIndexFields: List<DataClassPathPartial<Model>>? =
+        serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
+            ?.map { DataClassPathSerializer(serializer).fromString(it) }
 
     /** Place items into [data] keyed by `_id`. Bypasses unique checks; intended for trusted preload paths. */
     public fun preload(items: Iterable<Model>) {
@@ -184,6 +189,34 @@ public open class InMemoryTable<Model : Any>(
             }
         }
         result.forEach { emit(it) }
+    }
+
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> {
+        val fields = checkNotNull(textIndexFields) { "findText needs a @TextIndex on ${serializer.descriptor.serialName}" }
+        val textQuery = TextQuery.fromString(query)
+        return flow {
+            val results = traced {
+                lock.withLock {
+                    candidatesFor(condition)
+                        .filter { condition(it) }
+                        .mapNotNull { model ->
+                            val text = fields.joinToString(" ") { it.getAny(model)?.toString() ?: "" }
+                            textQuery.score(text)?.let { ScoredResult(model, it) }
+                        }
+                        .sortedByDescending { it.score }
+                        .drop(skip)
+                        .take(limit)
+                        .toList()
+                }
+            }
+            results.forEach { emit(it) }
+        }
     }
 
     override suspend fun count(condition: Condition<Model>): Int = traced {
