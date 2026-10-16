@@ -15,4 +15,4 @@ internal expect fun <K : Any, V : Any> ConcurrentMap(sizeHint: Int = 16): Concur
 // Deliberately not named computeIfAbsent or getOrPut: on JVM those resolve to Map.computeIfAbsent (a member, which
 // locks while computing) or the stdlib's non-atomic getOrPut when this helper isn't imported.
 internal inline fun <K : Any, V : Any> ConcurrentMap<K, V>.getOrPutConcurrent(key: K, value: () -> V): V =
-    get(key) ?: value().also { created -> putIfAbsent(key, created) }
+    get(key) ?: value().let { created -> putIfAbsent(key, created) ?: created }
