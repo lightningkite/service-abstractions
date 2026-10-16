@@ -54,11 +54,12 @@ public class SentryTelemetryBackend(
 
     override fun ingest(batch: TelemetryBatch) {
         wrapped.ingest(batch)
-        for (log in batch.logs) {
-            val error = log.error ?: continue
+        // Clients are untrusted; one batch mustn't be able to spend the Sentry quota.
+        for (log in batch.logs.filter { it.error != null }.take(MAX_CLIENT_ERRORS_PER_BATCH)) {
+            val error = log.error!!
             val event = SentryEvent().apply {
                 level = SentryLevel.ERROR
-                message = Message().apply { formatted = log.message }
+                message = Message().apply { formatted = sanitize(log.message) }
                 exceptions = listOf(SentryException().apply { type = error.type; value = error.message })
                 fingerprints = listOf(error.fingerprint)
                 setExtra("stacktrace", sanitize(error.stacktrace))
@@ -75,6 +76,8 @@ public class SentryTelemetryBackend(
     }
 
     public companion object {
+        private const val MAX_CLIENT_ERRORS_PER_BATCH = 10
+
         init {
             TelemetryBackend.Settings.register("sentry") { name, settings, context ->
                 // A DSN ends at its numeric project ID; everything after that is the wrapped backend's URL.

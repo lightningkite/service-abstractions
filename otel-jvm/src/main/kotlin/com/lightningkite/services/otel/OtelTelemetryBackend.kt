@@ -81,6 +81,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import org.slf4j.LoggerFactory
 import org.slf4j.event.Level as Slf4jLevel
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -288,7 +289,7 @@ public class OtelTelemetryBackend(
                 resource = resource,
             )
         }
-        if (spans.isNotEmpty()) spanExporter.export(spans)
+        if (spans.isNotEmpty()) spanExporter.export(spans).warnOnFailure("spans")
 
         val logs = batch.logs.map { log ->
             val attributes = log.attributes.toOtel().toBuilder()
@@ -312,7 +313,7 @@ public class OtelTelemetryBackend(
                 attributes = attributes.build(),
             )
         }
-        if (logs.isNotEmpty()) logExporter.export(logs)
+        if (logs.isNotEmpty()) logExporter.export(logs).warnOnFailure("logs")
 
         for (metric in batch.metrics) {
             val sub = subFor(metric.owner)
@@ -414,7 +415,7 @@ public class OtelTelemetryBackend(
                 val logs = DevLogExporter(config)
                 val sdk = OpenTelemetrySdk.builder()
                     .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-                    .setTracerProvider(SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(spans)).setResource(resource).setSpanLimits(settings.spanLimits.make()).build())
+                    .setTracerProvider(SdkTracerProvider.builder().setSampler(followLocalParents(Sampler.alwaysOn())).addSpanProcessor(SimpleSpanProcessor.create(spans)).setResource(resource).setSpanLimits(settings.spanLimits.make()).build())
                     .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(PeriodicMetricReader.builder(DevMetricExporter(config)).setInterval(metricFrequency.toJavaDuration()).build()).setResource(resource).build())
                     .setLoggerProvider(SdkLoggerProvider.builder().addLogRecordProcessor(SimpleLogRecordProcessor.create(logs)).setResource(resource).build())
                     .build()
@@ -439,7 +440,7 @@ public class OtelTelemetryBackend(
                 val logs = DevLogExporter(config)
                 val sdk = OpenTelemetrySdk.builder()
                     .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-                    .setTracerProvider(SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(spans)).setResource(resource).setSpanLimits(settings.spanLimits.make()).build())
+                    .setTracerProvider(SdkTracerProvider.builder().setSampler(followLocalParents(Sampler.alwaysOn())).addSpanProcessor(SimpleSpanProcessor.create(spans)).setResource(resource).setSpanLimits(settings.spanLimits.make()).build())
                     .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(PeriodicMetricReader.builder(DevMetricExporter(config)).setInterval(metricFrequency.toJavaDuration()).build()).setResource(resource).build())
                     .setLoggerProvider(SdkLoggerProvider.builder().addLogRecordProcessor(SimpleLogRecordProcessor.create(logs)).setResource(resource).build())
                     .build()
@@ -596,10 +597,17 @@ private fun Span.put(key: TelemetryKey<*>, value: Any?) {
 // ── TelemetryBackend.Settings → OTel SDK builders ────────────────────────────
 
 private fun TelemetryBackend.Settings.Sampling.make(): Sampler = if (parentBased) {
-    Sampler.parentBasedBuilder(Sampler.traceIdRatioBased(ratio)).build()
+    followLocalParents(Sampler.traceIdRatioBased(ratio))
 } else {
     Sampler.traceIdRatioBased(ratio)
 }
+
+// A remote parent is a client's `traceparent` (see TraceParent). It links the trace, but an untrusted caller
+// must not decide whether we record: a `-00` flag would hide our errors, a `-01` flag would bypass our ratio.
+internal fun followLocalParents(root: Sampler): Sampler = Sampler.parentBasedBuilder(root)
+    .setRemoteParentSampled(root)
+    .setRemoteParentNotSampled(root)
+    .build()
 
 private fun TelemetryBackend.Settings.SpanLimitSettings.make(): SpanLimits =
     SpanLimits.builder()
@@ -620,9 +628,8 @@ private fun TelemetryBackend.Settings.limitLogs(exporter: LogRecordExporter): Lo
 }
 
 private fun TelemetryBackend.Settings.buildTracerProvider(wrapped: SpanExporter): SdkTracerProviderBuilder {
-    val sampler = sampling?.make()
     return SdkTracerProvider.builder()
-        .let { if (sampler != null) it.setSampler(sampler) else it }
+        .setSampler(sampling?.make() ?: followLocalParents(Sampler.alwaysOn()))
         .addSpanProcessor(
             traceReportBatching?.let {
                 BatchSpanProcessor.builder(wrapped)
@@ -655,6 +662,12 @@ private fun TelemetryBackend.Settings.buildMeterProvider(exporter: MetricExporte
             .setInterval((metricReportBatching?.frequency ?: 5.seconds).inWholeMilliseconds, TimeUnit.MILLISECONDS)
             .build()
     )
+
+private val ingestLogger = LoggerFactory.getLogger("com.lightningkite.services.otel.ingest")
+
+private fun CompletableResultCode.warnOnFailure(what: String) = whenComplete {
+    if (!isSuccess) ingestLogger.warn("Exporting ingested client $what failed", failureThrowable)
+}
 
 private object TraceParentGetter : TextMapGetter<String> {
     override fun keys(carrier: String): Iterable<String> = listOf("traceparent")

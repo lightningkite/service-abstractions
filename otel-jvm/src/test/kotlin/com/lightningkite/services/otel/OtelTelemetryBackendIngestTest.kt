@@ -28,6 +28,7 @@ import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
+import io.opentelemetry.sdk.trace.samplers.Sampler
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlin.test.Test
@@ -43,7 +44,7 @@ class OtelTelemetryBackendIngestTest {
     private val logs = InMemoryLogRecordExporter.create()
     private val metrics = InMemoryMetricReader.create()
     private val sdk = OpenTelemetrySdk.builder()
-        .setTracerProvider(SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(spans)).build())
+        .setTracerProvider(SdkTracerProvider.builder().setSampler(followLocalParents(Sampler.alwaysOn())).addSpanProcessor(SimpleSpanProcessor.create(spans)).build())
         .setLoggerProvider(SdkLoggerProvider.builder().addLogRecordProcessor(SimpleLogRecordProcessor.create(logs)).build())
         .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(metrics).build())
         .build()
@@ -128,14 +129,14 @@ class OtelTelemetryBackendIngestTest {
     }
 
     @Test
-    fun traceParentParentsOnlyTheOutermostSpan() = runBlocking {
+    fun traceParentParentsOnlyTheOutermostSpanAndDoesNotDecideSampling() = runBlocking {
         val owner = object : Namespaced {
             override val name = "http"
             override val context: SettingContext = object : SettingContext by TestSettingContext() {
                 override val telemetryBackend: TelemetryBackend get() = backend
             }
         }
-        withContext(TraceParent("00-$traceId-b7ad6b7169203331-01")) {
+        withContext(TraceParent("00-$traceId-b7ad6b7169203331-00")) { // client says unsampled
             owner.telemetryTrace("GET /") { owner.telemetryTrace("inner") {} }
         }
 
