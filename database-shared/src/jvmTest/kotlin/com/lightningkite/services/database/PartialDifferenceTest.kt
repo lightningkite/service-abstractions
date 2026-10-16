@@ -1,6 +1,7 @@
 
 package com.lightningkite.services.database
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -88,5 +89,29 @@ class PartialDifferenceTest {
         val back = Json.decodeFromString(ser, json)
         assertTrue(back.parts[prop("embedded")] is Partial<*>)
         assertEquals(2, back.parts[prop("int")])
+    }
+
+    @Test
+    fun selfReferentialTypeRoundTrips() {
+        val old = UnreasonablyComplex(nested = UnreasonablyComplex(string = "a"))
+        val new = old.copy(nested = UnreasonablyComplex(string = "b"))
+        val diff = partialOfDifference(old, new)!!
+        val ser = Partial.serializer(UnreasonablyComplex.serializer())
+        assertEquals(diff, Json.decodeFromString(ser, Json.encodeToString(ser, diff)))
+    }
+
+    @Serializable
+    data class MutualA(val name: String = "", val b: MutualB? = null)
+
+    @Serializable
+    data class MutualB(val name: String = "", val a: MutualA? = null)
+
+    @Test
+    fun mutuallyRecursiveTypesRoundTrip() {
+        val old = MutualA(b = MutualB(a = MutualA(name = "a")))
+        val new = MutualA(b = MutualB(a = MutualA(name = "b")))
+        val diff = partialOfDifference(old, new)!!
+        val ser = Partial.serializer(MutualA.serializer())
+        assertEquals(diff, Json.decodeFromString(ser, Json.encodeToString(ser, diff)))
     }
 }
