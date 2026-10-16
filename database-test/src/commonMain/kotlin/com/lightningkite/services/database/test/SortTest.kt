@@ -24,7 +24,7 @@ abstract class SortTest {
         )
         val sortedPosts = items.sortedBy { it.int }
         val reversePosts = items.sortedByDescending { it.int }
-        collection.insertMany(items)
+        collection.insert(items)
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 =
             collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().int, true))).toList()
@@ -47,7 +47,7 @@ abstract class SortTest {
         )
         val sortedPosts = items.sortedBy { it.embedded.value2 }
         val reversePosts = items.sortedByDescending { it.embedded.value2 }
-        collection.insertMany(items)
+        collection.insert(items)
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 =
             collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().embedded.value2, true)))
@@ -72,7 +72,7 @@ abstract class SortTest {
         )
         val sortedPosts = items.sortedBy { it.embeddedNullable?.value2 }
         val reversePosts = items.sortedByDescending { it.embeddedNullable?.value2 }
-        collection.insertMany(items)
+        collection.insert(items)
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 = collection.find(
             Condition.Always,
@@ -99,7 +99,7 @@ abstract class SortTest {
         )
         val sortedPosts = items.sortedBy { it.instant }
         val reversePosts = items.sortedByDescending { it.instant }
-        collection.insertMany(items)
+        collection.insert(items)
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 =
             collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().instant, true))).toList()
@@ -123,7 +123,7 @@ abstract class SortTest {
         )
         val sortedPosts = items.sortedBy { it.string }
         val reversePosts = items.sortedByDescending { it.string }
-        collection.insertMany(items)
+        collection.insert(items)
         val results2 =
             collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, true))).toList()
         val results3 =
@@ -145,7 +145,7 @@ abstract class SortTest {
         )
         val sortedPosts = items.sortedBy { it.string.lowercase() }
         val reversePosts = items.sortedByDescending { it.string.lowercase() }
-        collection.insertMany(items)
+        collection.insert(items)
         val results2 =
             collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, true, true)))
                 .toList()
@@ -168,7 +168,7 @@ abstract class SortTest {
     @Test
     fun testSortNullsBelowEverything() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("SortTest_testSortNullsBelowEverything"))
-        collection.insertMany(
+        collection.insert(
             listOf(
                 LargeTestModel(intNullable = 2),
                 LargeTestModel(intNullable = null),

@@ -139,6 +139,7 @@ interface Service {
 
 - **files/**: File system abstraction (`PublicFileSystem`)
 - **files-s3/**: S3 implementation
+- **files-azure-blob/**: Azure Blob Storage implementation (`azure-blob://<account>[:<key>]@<container>`; no key = managed identity). Tests need `scripts/azurite.sh` running.
 - **files-client/**: HTTP client for file systems
 - **files-test/**: Shared test suite
 - **email/**: Email service abstraction

@@ -114,46 +114,20 @@ class BsonTest {
             .first { it.name == "value" } as SerializableProperty<PolymorphicHolder, Polymorphic>
         val innerProp = Polymorphic.Class.serializer().serializableProperties!!
             .first { it.name == "inner" } as SerializableProperty<Polymorphic.Class, Int>
-        val classSerialName = Polymorphic.Class.serializer().descriptor.serialName
 
-        // Field modifications apply at the same key using the variant's serializer.
-        assertEquals(
-            Document("\$inc", Document("value.inner", BsonInt32(1))),
-            Modification.OnField(
-                valueProp,
-                Modification.IfIsType(
-                    Polymorphic.Class.serializer(),
-                    Modification.OnField(innerProp, Modification.Increment(1))
-                )
-            ).bson(holderSer, bson = bson).document
+        // Update operators can't check the variant, so the check goes into the filter.
+        val checkedModification = Modification.OnField(
+            valueProp,
+            Modification.IfIsType(Polymorphic.Class.serializer(), Modification.OnField(innerProp, Modification.Increment(1)))
         )
+        val checked = checkedModification.bson(holderSer, bson = bson)
+        assertEquals(Document("\$inc", Document("value.inner", BsonInt32(1))), checked.document)
+        assertEquals(Document("value._t", Document("\$eq", Polymorphic.Class.serializer().descriptor.serialName)), checked.check)
 
-        // Whole-value assignment keeps the discriminator.
-        assertEquals(
-            Document("\$set", Document("value", BsonDocument("_t", BsonString(classSerialName)).append("inner", BsonInt32(5)))),
-            Modification.OnField(
-                valueProp,
-                Modification.IfIsType(Polymorphic.Class.serializer(), Modification.Assign(Polymorphic.Class(5)))
-            ).bson(holderSer, bson = bson).document
-        )
-
-        // Each part of a chain is handled on its own, so an assignment inside one still keeps the discriminator.
-        assertEquals(
-            Document("\$inc", Document("value.inner", BsonInt32(1)))
-                .append("\$max", Document("value.inner", BsonInt32(3))),
-            Modification.OnField(
-                valueProp,
-                Modification.IfIsType(
-                    Polymorphic.Class.serializer(),
-                    Modification.Chain(
-                        listOf(
-                            Modification.OnField(innerProp, Modification.Increment(1)),
-                            Modification.OnField(innerProp, Modification.CoerceAtLeast(3)),
-                        )
-                    )
-                )
-            ).bson(holderSer, bson = bson).document
-        )
+        // Updates without a check keep the plain operator document.
+        val unchecked = Modification.OnField(valueProp, Modification.Assign<Polymorphic>(Polymorphic.Class(5)))
+            .bson(holderSer, bson = bson)
+        assertEquals(setOf("\$set"), unchecked.document.keys)
     }
 }
 

@@ -441,7 +441,7 @@ private fun conditionOnChildTable(
                         .mapKeys { it.key.removePrefix("value").removePrefix("__") }
                         .mapValues { it.value as ExpressionWithColumnType<Any?> }
                     val valueFieldSet = SqlFieldSet<Any?>(
-                        serializer = String.serializer() as KSerializer<Any?>,
+                        serializer = elementSerializer,
                         fields = valueFields,
                         format = format,
                         schema = schema,
@@ -528,12 +528,15 @@ internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = 
 
 internal interface FieldModifier {
     fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>)
+    /** The column's value after the modifications so far. */
+    fun current(key: String): Expression<Any?>
 }
 
-internal fun FieldModifier.sub(subKey: String): FieldModifier = object : FieldModifier {
-    override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
-        if (key.isEmpty()) this@sub.modify(subKey, modify)
-        else this@sub.modify("${subKey}__$key", modify)
+internal fun FieldModifier.sub(subKey: String): FieldModifier {
+    fun full(key: String) = if (key.isEmpty()) subKey else "${subKey}__$key"
+    return object : FieldModifier {
+        override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) = this@sub.modify(full(key), modify)
+        override fun current(key: String) = this@sub.current(full(key))
     }
 }
 
@@ -573,8 +576,9 @@ internal fun <T> UpdateBuilder<*>.modification(
     object : FieldModifier {
         fun default(key: String) = table.col[key]!! as Expression<Any?>
         override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
-            map[key] = modify(map[key] ?: default(key))
+            map[key] = modify(current(key))
         }
+        override fun current(key: String) = map[key] ?: default(key)
     }.scalarModification(
         modification,
         SqlFieldSet(serializer, table.col.mapValues { it.value as ExpressionWithColumnType<Any?> }, format, schema),
@@ -610,12 +614,23 @@ private fun <T> FieldModifier.scalarModification(
                 }
             }
         }
-        is Modification.IfNotNull<*> -> scalarModification(
-            modification.modification as Modification<Any?>,
-            fieldSet as SqlFieldSet<Any?>,
-            schema,
-            path,
-        )
+        // Every column the inner modification writes keeps its value when the field is null, as IfNotNull does in memory.
+        // The null check reads the value after the earlier parts of the modification, not the stored one.
+        is Modification.IfNotNull<*> -> {
+            val exists = fieldSet.fields["exists"]?.let { current("exists") as Expression<Boolean> }
+                ?: IsNotNullOp(current(fieldSet.fields.keys.first()))
+            object : FieldModifier {
+                override fun modify(key: String, modify: (Expression<Any?>) -> Expression<Any?>) {
+                    this@scalarModification.modify(key) { old -> case().When(exists, modify(old)).Else(old) }
+                }
+                override fun current(key: String) = this@scalarModification.current(key)
+            }.scalarModification(
+                modification.modification as Modification<Any?>,
+                fieldSet as SqlFieldSet<Any?>,
+                schema,
+                path,
+            )
+        }
         is Modification.Increment -> modifySingle(fieldSet) { type, old ->
             PlusOp(fieldSet.formatSingleExpression(modification.by), old, type)
         }

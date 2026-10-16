@@ -54,6 +54,51 @@ class PathsKtTest {
     }
 
     @Test
+    fun readsResultOfStructuredMasks() {
+        val embedded = modification<LargeTestModel> { it.embedded assign ClassUsedForEmbedding() }
+        assertTrue(condition<LargeTestModel> { it.embedded.value2 gt 3 }.readsResultOf(embedded))
+        assertTrue(condition<LargeTestModel> { it.embedded eq ClassUsedForEmbedding() }.readsResultOf(embedded))
+        assertFalse(condition<LargeTestModel> { it.int gt 3 }.readsResultOf(embedded))
+
+        val nullable = modification<LargeTestModel> { it.embeddedNullable assign null }
+        assertTrue(condition<LargeTestModel> { it.embeddedNullable.notNull.value1 eq "x" }.readsResultOf(nullable))
+        assertTrue(condition<LargeTestModel> { it.embeddedNullable.notNull.mapCondition(Condition.Always) }.readsResultOf(nullable))
+
+        val list = modification<LargeTestModel> { it.list assign listOf() }
+        assertTrue(condition<LargeTestModel> { it.list.any { it eq 7 } }.readsResultOf(list))
+        assertTrue(condition<LargeTestModel> { it.list.any { it.always } }.readsResultOf(list))
+        assertTrue(condition<LargeTestModel> { it.set.any { it eq 7 } }.readsResultOf(modification { it.set assign setOf() }))
+
+        val perElement = modification<LargeTestModel> { it.listEmbedded.forEach { it.value1 assign "" } }
+        assertTrue(condition<LargeTestModel> { it.listEmbedded.any { it.value1 eq "x" } }.readsResultOf(perElement))
+        assertFalse(condition<LargeTestModel> { it.listEmbedded.any { it.value2 eq 3 } }.readsResultOf(perElement))
+
+        assertTrue(condition<LargeTestModel> { it.fullTextSearch("x") }.readsResultOf(modification { it.int assign 2 }))
+    }
+
+    @Test
+    fun nestedFullTextSearchReadsTheWholeTextIndex() {
+        val textPaths = listOf(path<LargeTestModel>().string.properties)
+        val maskedText = modification<LargeTestModel> { it.string assign "" }
+        val underInt = path<LargeTestModel>().int.mapCondition(Condition.FullTextSearch("secret"))
+
+        assertTrue(underInt.readsResultOf(maskedText, textPaths), "MongoDB searches the model's text index wherever the search sits")
+        assertTrue(underInt.readsResultOf(maskedText))
+        assertFalse(underInt.readsResultOf(modification { it.short assign 2 }, textPaths))
+        assertTrue(
+            path<LargeTestModel>().embedded.mapCondition(Condition.FullTextSearch("secret"))
+                .readsResultOf(modification { it.embedded.value2 assign 0 }, textPaths),
+            "in memory it searches the value it sits on",
+        )
+    }
+
+    @Test
+    fun partialOrWithNoPassingBranchIsFalse() {
+        val partial = partialOf<LargeTestModel> { it.byte assign 0.toByte(); it.short assign 0.toShort() }
+        assertEquals(false, condition<LargeTestModel> { (it.byte eq 1) or (it.short eq 1) }(partial))
+    }
+
+    @Test
     fun testConditionSerializableProperty() {
         (path<LargeTestModel>().int).let { modification ->
             assertTrue((path<LargeTestModel>().int eq 3).reads(modification))

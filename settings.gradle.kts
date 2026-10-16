@@ -21,7 +21,7 @@ pluginManagement {
 
         versionCatalogs {
             create("awssdk") {
-                from("aws.sdk.kotlin:version-catalog:1.5.39")
+                from("aws.sdk.kotlin:version-catalog:1.9.8")
             }
         }
     }
@@ -80,6 +80,7 @@ include(":kfile")
 include(":kotlin-bytes-format")
 include(":files-client")
 include(":files-s3")
+include(":files-azure-blob")
 include(":files-test")
 include(":currency")
 //include(":geocoding")

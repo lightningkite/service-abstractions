@@ -121,7 +121,7 @@ class MailgunEmailServiceTest {
         )
 
         val body = capturedBody!!
-        assertTrue(body.contains("filename=invoice.pdf"), "expected filename in body, got: $body")
+        assertTrue(body.contains("filename=\"invoice.pdf\""), "expected filename in body, got: $body")
         assertTrue(body.contains("Content-Type: application/pdf"), "expected content type in body, got: $body")
     }
 

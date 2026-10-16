@@ -120,4 +120,21 @@ class ConditionNormalizerTest {
         // Should return structurally equivalent condition
         assertIs<Condition.And<Int>>(normalized)
     }
+
+    // The normalized condition is used as the app-side filter, so it must accept exactly what the original does.
+    @Test
+    fun testNotIfNotNullStillAcceptsNull() {
+        val original: Condition<Int?> = Condition.Not(Condition.IfNotNull(Condition.Equal(5)))
+        val normalized = ConditionNormalizer.normalize(original)
+        for (value in listOf(null, 5, 6)) assertEquals(original(value), normalized(value), "value=$value")
+    }
+
+    @Test
+    fun testNotOnKeyStillAcceptsMissingKey() {
+        val original: Condition<Map<String, Int>> = Condition.Not(Condition.OnKey("a", Condition.Equal(5)))
+        val normalized = ConditionNormalizer.normalize(original)
+        for (value in listOf(mapOf(), mapOf("a" to 5), mapOf("a" to 6))) {
+            assertEquals(original(value), normalized(value), "value=$value")
+        }
+    }
 }

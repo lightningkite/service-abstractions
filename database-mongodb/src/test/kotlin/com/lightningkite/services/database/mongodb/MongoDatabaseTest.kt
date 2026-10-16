@@ -1,10 +1,14 @@
 package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.database.Database
+import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.TestDatabase.mongoClient
 import com.lightningkite.services.database.test.*
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -90,6 +94,44 @@ class MongodbModificationTests : ModificationTests() {
     @Test
     fun start() {
     }
+
+    // MongoDB puts every notNull/asType check in the update's filter, so a row failing any check isn't written or
+    // matched at all, where memory applies the parts whose checks hold and reports the row matched.
+
+    @Test
+    override fun test_notNull_chain() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_notNull_chain"))
+        val failing = LargeTestModel(embeddedNullable = null, intNullable = 5)
+        val passing = LargeTestModel(embeddedNullable = ClassUsedForEmbedding("a", 2), intNullable = 5)
+        collection.insert(listOf(failing, passing))
+        val modification = modification<LargeTestModel> {
+            it.int assign 7
+            it.embeddedNullable.notNull.value1 assign "changed"
+            it.intNullable.notNull coerceAtMost 3
+        }
+        assertEquals(EntryChange<LargeTestModel>(null, null), collection.updateOneById(failing._id, modification))
+        assertEquals(failing, collection.get(failing._id))
+        collection.updateOneById(passing._id, modification)
+        assertEquals(modification(passing), collection.get(passing._id))
+    }
+
+    @Test
+    override fun test_notNull_unchangedRowsStillMatch() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_notNull_unchangedRowsStillMatch"))
+        val item = LargeTestModel(intNullable = null)
+        collection.insert(listOf(item, LargeTestModel(intNullable = 5)))
+        val modification = modification<LargeTestModel> { it.intNullable.notNull += 1 }
+        val byId = condition<LargeTestModel> { it._id eq item._id }
+
+        assertEquals(EntryChange<LargeTestModel>(null, null), collection.updateOne(byId, modification))
+        assertFalse(collection.updateOneIgnoringResult(byId, modification))
+        assertEquals(1, collection.updateManyIgnoringResult(Condition.Always, modification))
+        // An upsert still finds the row, so it doesn't insert a duplicate.
+        assertEquals(EntryChange(item, item), collection.upsertOne(byId, modification, item))
+        assertTrue(collection.upsertOneIgnoringResult(byId, modification, item))
+        assertEquals(item, collection.get(item._id))
+        assertEquals(2, collection.count(Condition.Always))
+    }
 }
 
 class MongodbSealedPathTests : SealedPathTests() {
@@ -97,6 +139,23 @@ class MongodbSealedPathTests : SealedPathTests() {
 
     @Test
     fun start() {
+    }
+
+    // MongoDB puts every asType check in the update's filter, so a row failing any check isn't written at all, where
+    // memory applies the parts whose checks hold.
+    @Test
+    override fun test_asType_chain_otherVariant() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_test_asType_chain_otherVariant"))
+        val item = SealedPathTestModel(shape = Shape.Square(2, "a"), payment = Payment.Card(10, "1111"))
+        collection.insertOne(item)
+        val change = collection.updateOneById(item._id, modification {
+            it.shape.asCircle.radius += 1
+            it.shape.asSquare.label assign "changed"
+            it.payment.asCard.amount += 5
+            it.payment.asCashPayment.currency assign "EUR"
+        })
+        assertEquals(EntryChange<SealedPathTestModel>(null, null), change)
+        assertEquals(item, collection.get(item._id))
     }
 }
 
@@ -194,4 +253,7 @@ class MongodbVectorSearchTests : VectorSearchTests() {
     // mongot syncs documents via Change Streams which is eventually consistent.
     // We need to wait for documents to appear in the search index after insertion.
     override val vectorSearchIndexSyncDelay: Duration = 3.seconds
+}
+class MongodbMaskedPermissionsTests : MaskedPermissionsTests() {
+    override val database: Database = db()
 }

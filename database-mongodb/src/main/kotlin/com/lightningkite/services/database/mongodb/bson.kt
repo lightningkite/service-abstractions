@@ -19,7 +19,6 @@ import org.bson.types.Binary
 import org.bson.types.ObjectId
 import java.math.BigDecimal
 import java.util.*
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
 import kotlin.uuid.Uuid
 import kotlinx.serialization.KSerializer
@@ -88,6 +87,8 @@ private fun <T> Condition<T>.dump(
                 bson = bson
             )
             into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
+            // $elemMatch never matches a null element with a condition on its fields, so a null element can't fail one.
+            if (innerSerializer.descriptor.isNullable && !(condition as Condition<Any?>)(null)) into.sub(key)["\$ne"] = null
         }
         // by Claude - Atlas $vectorSearch doesn't support $elemMatch in pre-filters.
         // When atlasSearch=true, dump the inner condition directly on the key instead;
@@ -116,6 +117,8 @@ private fun <T> Condition<T>.dump(
                 bson = bson
             )
             into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
+            // $elemMatch never matches a null element with a condition on its fields, so a null element can't fail one.
+            if (innerSerializer.descriptor.isNullable && !(condition as Condition<Any?>)(null)) into.sub(key)["\$ne"] = null
         }
 
 
@@ -139,13 +142,32 @@ private fun <T> Condition<T>.dump(
         is Condition.LessThan -> into.sub(key)["\$lt"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.GreaterThanOrEqual -> into.sub(key)["\$gte"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.LessThanOrEqual -> into.sub(key)["\$lte"] = value.let { bson.stringifyAny(serializer, it) }
-        is Condition.IfNotNull<*> -> (condition as Condition<Any?>).dump(
-            serializer.nullElement()!! as KSerializer<Any?>,
-            into,
-            key,
-            atlasSearch = atlasSearch,
-            bson = bson
-        )
+        // Mongo's $ne, $nin, $not and an empty condition all match a null or missing value, so for those the null check
+        // that IfNotNull does in memory has to be spelled out.
+        is Condition.IfNotNull<*> -> {
+            val nonNullSerializer = serializer.nullElement()!! as KSerializer<Any?>
+            // Mongo compares an array with null element by element, so `$ne: null` would reject [1, null].
+            val notNull = if (nonNullSerializer.descriptor.kind == StructureKind.LIST) documentOf("\$type" to "array")
+                else documentOf("\$ne" to null)
+            if (!condition.matchesNullInMongo(atlasSearch)) {
+                (condition as Condition<Any?>).dump(nonNullSerializer, into, key, atlasSearch = atlasSearch, bson = bson)
+            } else if (key != null) {
+                into["\$and"] = listOfNotNull(
+                    documentOf(key to notNull),
+                    (condition as Condition<Any?>).takeUnless { it is Condition.Always }
+                        ?.dump(nonNullSerializer, key = key, atlasSearch = atlasSearch, bson = bson),
+                )
+            } else {
+                // No key means this is a list element inside $elemMatch. The operators there apply to the element itself,
+                // so the check joins them, with a $ne rewritten as the equivalent $nin to make room for it.
+                // Conditions on the element's fields need no check: $elemMatch never matches a null element with those.
+                // $and/$or/$nor aren't operators on the element, so those forms get no check (and Mongo rejects them here).
+                val inner = (condition as? Condition.NotEqual)?.let { Condition.NotInside(setOf(it.value)) } ?: condition
+                val operators = (inner as Condition<Any?>).dump(nonNullSerializer, key = null, atlasSearch = atlasSearch, bson = bson)
+                into.putAll(operators)
+                if (operators.keys.all { it.startsWith("\$") && it !in setOf("\$and", "\$or", "\$nor") }) into.putAll(notNull)
+            }
+        }
 
         is Condition.Inside -> into.sub(key)["\$in"] = values.let { bson.stringifyAny(SetSerializer(serializer), it) }
         is Condition.NotInside -> into.sub(key)["\$nin"] =
@@ -176,13 +198,20 @@ private fun <T> Condition<T>.dump(
             }
         }
 
-        is Condition.OnKey<*> -> (condition as Condition<Any?>).dump(
-            serializer.mapValueElement() as KSerializer<Any?>,
-            into,
-            if (key == null) this.key else "$key.${this.key}",
-            atlasSearch = atlasSearch,
-            bson = bson
-        )
+        // Like IfNotNull: OnKey never matches a missing key in memory, but $ne, $nin and $not do.
+        is Condition.OnKey<*> -> {
+            val path = if (key == null) this.key else "$key.${this.key}"
+            val valueSerializer = serializer.mapValueElement() as KSerializer<Any?>
+            if (!condition.matchesNullInMongo(atlasSearch)) {
+                (condition as Condition<Any?>).dump(valueSerializer, into, path, atlasSearch = atlasSearch, bson = bson)
+            } else {
+                into["\$and"] = listOfNotNull(
+                    documentOf(path to documentOf("\$exists" to true)),
+                    (condition as Condition<Any?>).takeUnless { it is Condition.Always }
+                        ?.dump(valueSerializer, key = path, atlasSearch = atlasSearch, bson = bson),
+                )
+            }
+        }
 
         is Condition.GeoDistance -> {
             // $nearSphere with GeoJSON geometry works on both MongoDB and DocumentDB.
@@ -280,6 +309,25 @@ private fun <T> Condition<T>.dump(
     return into
 }
 
+// False only where it's certain that this condition's translation can't match a null or missing value.
+private fun Condition<*>.matchesNullInMongo(atlasSearch: Boolean): Boolean = when (this) {
+    is Condition.Never, is Condition.GreaterThan, is Condition.LessThan, is Condition.GreaterThanOrEqual,
+    is Condition.LessThanOrEqual, is Condition.StringContains, is Condition.RawStringContains, is Condition.RegexMatches,
+    is Condition.IntBitsClear, is Condition.IntBitsSet, is Condition.IntBitsAnyClear, is Condition.IntBitsAnySet,
+    is Condition.ListSizesEquals<*>, is Condition.SetSizesEquals<*>, is Condition.Exists<*>, is Condition.OnKey<*>,
+    is Condition.IfNotNull<*>, is Condition.IfIsType<*, *>, is Condition.GeoDistance -> false
+    is Condition.Equal -> value == null
+    is Condition.Inside -> values.any { it == null }
+    is Condition.And -> conditions.all { it.matchesNullInMongo(atlasSearch) }
+    is Condition.Or -> conditions.any { it.matchesNullInMongo(atlasSearch) }
+    // A missing parent makes the field missing too.
+    is Condition.OnField<*, *> -> condition.matchesNullInMongo(atlasSearch)
+    // $elemMatch needs an array; with atlasSearch these put the element condition straight on the field instead.
+    is Condition.ListAnyElements<*> -> atlasSearch && condition.matchesNullInMongo(atlasSearch)
+    is Condition.SetAnyElements<*> -> atlasSearch && condition.matchesNullInMongo(atlasSearch)
+    else -> true
+}
+
 @OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
 private fun KSerializer<*>.polymorphicSubSerializer(
     serialName: String,
@@ -313,6 +361,8 @@ private fun <T> Modification<T>.dump(
         is Modification.Multiply -> into["\$mul", key] = by.let { bson.stringifyAny(serializer, it) }
         is Modification.AppendString -> TODO("Appending strings is not supported yet")
         is Modification.AppendRawString -> TODO("Appending raw strings is not supported yet")
+        // IfNotNull and IfIsType only get here once something else does their check: the update's filter or an array
+        // filter (see [bson] and [perElement]). Update operators can't.
         is Modification.IfNotNull<*> -> (modification as Modification<Any?>).dump(
             serializer.nullElement()!! as KSerializer<Any?>,
             update,
@@ -320,17 +370,9 @@ private fun <T> Modification<T>.dump(
             bson = bson
         )
 
-        // Like IfNotNull, the check isn't enforced: the inner modification is applied at the same key as the variant.
         is Modification.IfIsType<*, *> -> when (val inner = modification) {
             // Encoding with the outer (polymorphic) serializer keeps the discriminator on the stored value.
             is Modification.Assign -> (inner as Modification<T>).dump(serializer, update, key, bson = bson)
-            is Modification.Chain -> inner.modifications.forEach {
-                (Modification.IfIsType(
-                    discriminator as SealedTypeDiscriminator<Any?>,
-                    it as Modification<Any?>
-                ) as Modification<T>).dump(serializer, update, key, bson = bson)
-            }
-
             else -> (inner as Modification<Any?>).dump(
                 serializer.polymorphicSubSerializer(discriminator.serialName, bson.serializersModule)
                     ?: throw IllegalArgumentException(
@@ -363,23 +405,14 @@ private fun <T> Modification<T>.dump(
 
         is Modification.ListDropFirst<*> -> into["\$pop", key] = -1
         is Modification.ListDropLast<*> -> into["\$pop", key] = 1
-        is Modification.ListPerElement<*> -> {
-            val condIdentifier = genName()
-            update.options = update.options.arrayFilters(
-                (update.options.arrayFilters ?: listOf()) + (condition as Condition<Any?>).dump(
-                    serializer.listElement() as KSerializer<Any?>,
-                    key = condIdentifier,
-                    atlasSearch = false,
-                    bson = bson
-                )
-            )
-            (modification as Modification<Any?>).dump(
-                serializer.listElement() as KSerializer<Any?>,
-                update,
-                "$key.$[$condIdentifier]",
-                bson = bson
-            )
-        }
+        is Modification.ListPerElement<*> -> perElement(
+            condition as Condition<Any?>,
+            modification as Modification<Any?>,
+            serializer.listElement() as KSerializer<Any?>,
+            update,
+            key,
+            bson
+        )
 
         is Modification.SetAppend<*> -> into.sub("\$addToSet").sub(key)["\$each"] =
             items.let { bson.stringifyAny(serializer as KSerializer<Set<Any?>>, it) }
@@ -392,23 +425,14 @@ private fun <T> Modification<T>.dump(
 
         is Modification.SetDropFirst<*> -> into["\$pop", key] = -1
         is Modification.SetDropLast<*> -> into["\$pop", key] = 1
-        is Modification.SetPerElement<*> -> {
-            val condIdentifier = genName()
-            update.options = update.options.arrayFilters(
-                (update.options.arrayFilters ?: listOf()) + (condition as Condition<Any?>).dump(
-                    serializer.listElement() as KSerializer<Any?>,
-                    key = condIdentifier,
-                    atlasSearch = false,
-                    bson = bson
-                )
-            )
-            (modification as Modification<Any?>).dump(
-                serializer.listElement() as KSerializer<Any?>,
-                update,
-                "$key.$[$condIdentifier]",
-                bson = bson
-            )
-        }
+        is Modification.SetPerElement<*> -> perElement(
+            condition as Condition<Any?>,
+            modification as Modification<Any?>,
+            serializer.listElement() as KSerializer<Any?>,
+            update,
+            key,
+            bson
+        )
 
         is Modification.Combine<*> -> map.forEach {
             into.sub("\$set")[if (key == null) it.key else "$key.${it.key}"] =
@@ -422,6 +446,50 @@ private fun <T> Modification<T>.dump(
     return update
 }
 
+// Applying the parts in order is the same as applying the whole, and a part never changes the outcome of its own check,
+// since it only writes below the checked value.
+@Suppress("UNCHECKED_CAST")
+private fun Modification<Any?>.checkedParts(): List<Pair<Condition<Any?>, Modification<Any?>>> = when (this) {
+    is Modification.Chain -> modifications.flatMap { it.checkedParts() }
+    is Modification.OnField<*, *> -> (modification as Modification<Any?>).checkedParts().map { (check, part) ->
+        val field = this.key as SerializableProperty<Any?, Any?>
+        (if (check is Condition.Always) check else Condition.OnField(field, check)) to Modification.OnField(field, part)
+    }
+    is Modification.IfNotNull<*> -> (modification as Modification<Any?>).checkedParts().map { (check, part) ->
+        Condition.IfNotNull(check) to Modification.IfNotNull(part)
+    }
+    is Modification.IfIsType<*, *> -> (modification as Modification<Any?>).checkedParts().map { (check, part) ->
+        val type = discriminator as SealedTypeDiscriminator<Any?>
+        Condition.IfIsType(type, check) to Modification.IfIsType(type, part)
+    }
+    else -> listOf(Condition.Always to this)
+}
+
+// Update operators can't check a value before changing it, so each notNull/asType check inside an element gets its own
+// array filter.
+@Suppress("UNCHECKED_CAST")
+private fun perElement(
+    condition: Condition<Any?>,
+    modification: Modification<Any?>,
+    elementSerializer: KSerializer<Any?>,
+    update: UpdateWithOptions,
+    key: String?,
+    bson: KBson,
+) {
+    for ((check, parts) in modification.checkedParts().groupBy({ it.first }, { it.second })) {
+        val filter = Condition.And(listOf(condition, check)).simplify()
+        if (filter is Condition.Always) {
+            Modification.Chain(parts).dump(elementSerializer, update, "$key.$[]", bson)
+        } else {
+            val identifier = "f${update.options.arrayFilters?.size ?: 0}"
+            update.options = update.options.arrayFilters(
+                (update.options.arrayFilters ?: listOf()) +
+                        filter.dump(elementSerializer, key = identifier, atlasSearch = false, bson = bson)
+            )
+            Modification.Chain(parts).dump(elementSerializer, update, "$key.$[$identifier]", bson)
+        }
+    }
+}
 
 private fun Document.sub(key: String?): Document = if (key == null) this else getOrPut(key) { Document() } as Document
 private operator fun Document.set(owner: String, key: String?, value: Any?) {
@@ -429,15 +497,11 @@ private operator fun Document.set(owner: String, key: String?, value: Any?) {
     else this.sub(owner)[key] = value
 }
 
-private var lastNum = AtomicInteger()
-private fun genName(): String {
-    val r = 'a' + (lastNum.getAndIncrement() % 26)
-    return r.toString()
-}
-
 internal data class UpdateWithOptions(
     val document: Document = Document(),
     var options: UpdateOptions = UpdateOptions(),
+    /** The notNull/asType checks outside lists, which the update's filter must include. */
+    val check: Document? = null,
 )
 
 internal fun <T> Condition<T>.bson(serializer: KSerializer<T>, atlasSearch: Boolean = false, bson: KBson): Document =
@@ -459,8 +523,20 @@ internal fun Document.pruneEmptyModifiers(): Document {
     return this
 }
 
-internal fun <T> Modification<T>.bson(serializer: KSerializer<T>, bson: KBson): UpdateWithOptions =
-    UpdateWithOptions().also { dump(serializer, it, null, bson); it.document.pruneEmptyModifiers() }
+/**
+ * Update operators can't check a value before changing it, so every notNull/asType check outside a list goes into
+ * [UpdateWithOptions.check]: a row failing any of them isn't written at all. Inside a list, [perElement] uses array filters.
+ */
+@Suppress("UNCHECKED_CAST")
+internal fun <T> Modification<T>.bson(serializer: KSerializer<T>, bson: KBson): UpdateWithOptions {
+    val anySerializer = serializer as KSerializer<Any?>
+    val parts = (this as Modification<Any?>).checkedParts()
+    val check = Condition.And(parts.map { it.first }.distinct()).simplify()
+    val update = UpdateWithOptions(check = if (check is Condition.Always) null else check.bson(anySerializer, bson = bson))
+    Modification.Chain(parts.map { it.second }).dump(anySerializer, update, null, bson)
+    update.document.pruneEmptyModifiers()
+    return update
+}
 
 /**
  * Tries to turn this update into a single atomic upsert by adding a `$setOnInsert` of [model],
@@ -483,6 +559,8 @@ internal fun <T> Modification<T>.bson(serializer: KSerializer<T>, bson: KBson): 
  * [restrict] silently read as "absent from the model" and let an unprovable upsert through.
  */
 internal fun <T> UpdateWithOptions.upsert(model: T, serializer: KSerializer<T>, bson: KBson): Boolean {
+    // With a check, Mongo would insert where a row matched but failed the check.
+    if (check != null) return false
     val set: Document? = (document["\$set"] as? Document) ?: (document["\$set"] as? BsonDocument)?.toDocument()
     val inc = (document["\$inc"] as? Document) ?: (document["\$inc"] as? BsonDocument)?.toDocument()
     val restrict = document.entries.asSequence()

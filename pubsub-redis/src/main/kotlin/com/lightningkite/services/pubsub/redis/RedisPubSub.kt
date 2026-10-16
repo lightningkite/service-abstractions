@@ -10,6 +10,7 @@ import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.lettuce.core.RedisClient
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
+import io.lettuce.core.pubsub.api.reactive.RedisPubSubReactiveCommands
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.reactive.awaitFirst
@@ -162,6 +163,8 @@ public class RedisPubSub(
     @Volatile
     private var _connection = lazy { client.connectPubSub() }
     private val connection: StatefulRedisPubSubConnection<String, String> get() = _connection.value
+    private val commands: RedisPubSubReactiveCommands<String, String>
+        get() = connection.commands(RedisPubSubReactiveCommands.factory())
 
     /**
      * Per-channel hot Flux, created on first use and evicted when its last collector leaves. Internal
@@ -189,7 +192,7 @@ public class RedisPubSub(
      * bound.
      */
     private fun subscription(key: String): Flux<String> = channels.computeIfAbsent(key) {
-        val reactive = connection.reactive()
+        val reactive = commands
         usingWhen(
             reactive.subscribe(key).then(Mono.just(reactive)),
             { it.observeChannels().filter { c -> c.channel == key }.map { c -> c.message } },
@@ -237,7 +240,7 @@ public class RedisPubSub(
         }) { span ->
             val message = encode(value)
             span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("message.size"), message.length.toLong()) })
-            val result = connection.reactive().publish(key, message).awaitFirst()
+            val result = commands.publish(key, message).awaitFirst()
             span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("pubsub.subscribers_reached"), result) })
         }
     }
@@ -280,7 +283,7 @@ public class RedisPubSub(
     override suspend fun healthCheck(): HealthStatus =
         try {
             val reply = telemetryTrace("ping") {
-                connection.reactive().ping().awaitFirstOrNull()
+                commands.ping().awaitFirstOrNull()
             }
             if (reply == "PONG") HealthStatus(HealthStatus.Level.OK)
             else HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Unexpected PING reply: $reply")

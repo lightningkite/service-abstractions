@@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
@@ -15,7 +15,12 @@ kotlin {
         optIn.add("kotlin.uuid.ExperimentalUuidApi")
     }
     applyDefaultHierarchyTemplate()
-    androidTarget {
+    android {
+        namespace = "com.lightningkite.services.speech.test"
+        compileSdk = 36
+        minSdk = 21
+        enableCoreLibraryDesugaring = true
+        withHostTest {}
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
@@ -26,9 +31,7 @@ kotlin {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
     }
-    js(IR) {
-        browser()
-    }
+    js { browser() }
 
     iosX64()
     iosArm64()
@@ -36,47 +39,34 @@ kotlin {
     macosArm64()
 
     sourceSets {
-        val commonMain by getting {
+        val commonMain = getByName("commonMain") {
             dependencies {
                 api(project(path = ":speech"))
                 api(project(path = ":test"))
             }
         }
-        val commonTest by getting {}
-        val androidMain by getting {
+        val commonTest = getByName("commonTest") {}
+        val androidMain = getByName("androidMain") {
             dependencies {
                 api(libs.kotlin.test.junit)
             }
         }
-        val jsMain by getting {
+        val jsMain = getByName("jsMain") {
             dependencies {
                 api(libs.kotlin.test.js)
             }
         }
-        val jvmMain by getting {
+        val jvmMain = getByName("jvmMain") {
             dependencies {
                 api(libs.kotlin.test.junit)
             }
         }
-        val jvmTest by getting {}
+        val jvmTest = getByName("jvmTest") {}
     }
 }
 
-android {
-    namespace = "com.lightningkite.services.speech.test"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 21
-    }
-    compileOptions {
-        isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-    dependencies {
-        coreLibraryDesugaring(libs.androidDesugaring)
-    }
+dependencies {
+    coreLibraryDesugaring(libs.androidDesugaring)
 }
 
 lkLibrary(

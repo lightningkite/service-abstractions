@@ -96,6 +96,7 @@ public object GeoCoordinateGeoJsonSerializer : KSerializer<GeoCoordinate> {
                 when (val index = decodeElementIndex(descriptor)) {
                     0 -> decodeStringElement(descriptor, 0)
                     1 -> decodeSerializableElement(descriptor, 1, das).let {
+                        if (it.size < 2) throw SerializationException("A coordinate needs a longitude and a latitude; got ${it.size} number(s).")
                         lat = it[1]
                         lon = it[0]
                     }
@@ -140,8 +141,8 @@ public object GeoCoordinateArraySerializer : KSerializer<GeoCoordinate> {
     override val descriptor: SerialDescriptor =
         SerialDescriptor("com.lightningkite.services.data.GeoCoordinate/longLatArray", delegate.descriptor)
 
-    override fun deserialize(decoder: Decoder): GeoCoordinate {
-        return decoder.decodeSerializableValue(delegate).let { GeoCoordinate(longitude = it[0], latitude = it[1]) }
+    override fun deserialize(decoder: Decoder): GeoCoordinate = deserializing {
+        decoder.decodeSerializableValue(delegate).let { GeoCoordinate(longitude = it[0], latitude = it[1]) }
     }
 
     override fun serialize(encoder: Encoder, value: GeoCoordinate) {

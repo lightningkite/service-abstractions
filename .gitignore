@@ -24,3 +24,5 @@ tmp
 
 # Live-test credentials. Never checked in; see docs/geocoding-module.md.
 /secrets/
+
+secrets.properties

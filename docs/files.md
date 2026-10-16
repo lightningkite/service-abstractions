@@ -310,6 +310,7 @@ try {
 ## Related Modules
 
 - **`files-s3`** - S3 file system implementation
+- **`files-azure-blob`** - Azure Blob Storage implementation: `azure-blob://<account>:<accountKey>@<container>?signedUrlDuration=1h`, or `azure-blob://<account>@<container>` to authenticate with `DefaultAzureCredential` (managed identity; needs "Storage Blob Data Contributor"; signed URLs capped at 5 days). Optional `endpoint=` for Azurite or sovereign clouds; local tests run against `scripts/azurite.sh`.
 - **`files-client`** - Client-side file operations and ServerFile
 - **`files-test`** - Shared test suite for file system implementations
 - **`files-clamav`** - ClamAV antivirus scanner integration

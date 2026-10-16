@@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
@@ -12,7 +12,12 @@ plugins {
 kotlin {
     explicitApi()
     applyDefaultHierarchyTemplate()
-    androidTarget {
+    android {
+        namespace = "com.lightningkite.services.http.client"
+        compileSdk = 36
+        minSdk = 21
+        enableCoreLibraryDesugaring = true
+        withHostTest {}
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
@@ -23,9 +28,7 @@ kotlin {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }
     }
-    js(IR) {
-        browser()
-    }
+    js { browser() }
 
     iosX64()
     iosArm64()
@@ -33,7 +36,7 @@ kotlin {
     macosArm64()
 
     sourceSets {
-        val commonMain by getting {
+        val commonMain = getByName("commonMain") {
             dependencies {
                 api(project(":basis"))
                 api(libs.ktor.client.cio)
@@ -43,15 +46,15 @@ kotlin {
                 api(libs.ktor.client.auth)
             }
         }
-        val commonTest by getting {
+        val commonTest = getByName("commonTest") {
             dependencies {
                 api(libs.kotlin.test)
                 api(libs.coroutines.testing)
             }
         }
-        val androidMain by getting {}
-        val jsMain by getting {}
-        val jvmMain by getting {
+        val androidMain = getByName("androidMain") {}
+        val jsMain = getByName("jsMain") {}
+        val jvmMain = getByName("jvmMain") {
             dependencies {
                 // OkHttp engine: gives the shared JVM client HTTP/2 (multiplexing), which CIO lacks.
                 // High-fanout services (FCM push) and connection reuse across all services benefit.
@@ -61,25 +64,12 @@ kotlin {
                 implementation(libs.crac)
             }
         }
-        val jvmTest by getting {}
+        val jvmTest = getByName("jvmTest") {}
     }
 }
 
-android {
-    namespace = "com.lightningkite.services"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 21
-    }
-    compileOptions {
-        isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-    dependencies {
-        coreLibraryDesugaring(libs.androidDesugaring)
-    }
+dependencies {
+    coreLibraryDesugaring(libs.androidDesugaring)
 }
 
 lkLibrary(

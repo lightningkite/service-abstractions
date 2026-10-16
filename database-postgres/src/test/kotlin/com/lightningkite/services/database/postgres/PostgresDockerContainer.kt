@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.postgres
 
-import org.testcontainers.containers.PostgreSQLContainer
+import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 
 /**
@@ -13,20 +13,8 @@ import org.testcontainers.utility.DockerImageName
  */
 object PostgresDockerContainer {
 
-    /**
-     * Custom PostgreSQL container with pgvector support.
-     * Uses the official pgvector Docker image which includes the extension pre-installed.
-     */
-    class PgVectorContainer(dockerImageName: DockerImageName) :
-        PostgreSQLContainer<PgVectorContainer>(dockerImageName) {
-        init {
-            // Enable the pgvector extension on startup
-            withInitScript("init-pgvector.sql")
-        }
-    }
-
     @Volatile
-    private var container: PgVectorContainer? = null
+    private var container: PostgreSQLContainer? = null
 
     @Volatile
     private var started = false
@@ -38,14 +26,15 @@ object PostgresDockerContainer {
      * @return The container instance, or null if Docker is not available
      */
     @Synchronized
-    fun getContainer(): PgVectorContainer? {
+    fun getContainer(): PostgreSQLContainer? {
         if (started) return container
 
         return try {
             val pgvectorImage = DockerImageName.parse("pgvector/pgvector:pg16")
                 .asCompatibleSubstituteFor("postgres")
 
-            val newContainer = PgVectorContainer(pgvectorImage)
+            val newContainer = PostgreSQLContainer(pgvectorImage)
+                .withInitScript("init-pgvector.sql") // Enable the pgvector extension on startup
                 .withDatabaseName("test")
                 .withUsername("test")
                 .withPassword("test")

@@ -94,7 +94,7 @@ abstract class VectorSearchTests {
             embedding = Embedding.of(0f, 1f, 0f) // Orthogonal to doc1
         )
 
-        collection.insertMany(listOf(doc1, doc2, doc3))
+        collection.insert(listOf(doc1, doc2, doc3))
         waitForVectorSearchSync()
 
         // Search for vectors similar to [1, 0, 0]
@@ -143,7 +143,7 @@ abstract class VectorSearchTests {
             embedding = Embedding.of(0f, 1f, 0f)
         )
 
-        collection.insertMany(listOf(doc1, doc2))
+        collection.insert(listOf(doc1, doc2))
         waitForVectorSearchSync()
 
         val queryVector = Embedding.of(1f, 0f, 0f)
@@ -190,7 +190,7 @@ abstract class VectorSearchTests {
             embedding = Embedding.of(0.5f, 0.5f, 0f)
         )
 
-        collection.insertMany(listOf(doc1, doc2, doc3))
+        collection.insert(listOf(doc1, doc2, doc3))
         waitForVectorSearchSync()
 
         val queryVector = Embedding.of(1f, 0f, 0f)
@@ -230,7 +230,7 @@ abstract class VectorSearchTests {
                 embedding = Embedding.of(1f - i * 0.05f, i * 0.05f, 0f)
             )
         }
-        collection.insertMany(docs)
+        collection.insert(docs)
         waitForVectorSearchSync()
 
         val queryVector = Embedding.of(1f, 0f, 0f)
@@ -274,7 +274,7 @@ abstract class VectorSearchTests {
             embedding = Embedding.of(10f, 10f, 0f)
         )
 
-        collection.insertMany(listOf(doc1, doc2))
+        collection.insert(listOf(doc1, doc2))
         waitForVectorSearchSync()
 
         val queryVector = Embedding.of(0f, 0f, 0f)
@@ -321,7 +321,7 @@ abstract class VectorSearchTests {
             embedding = Embedding.of(0.5f, 0.5f, 0f)
         )
 
-        collection.insertMany(listOf(doc1, doc2))
+        collection.insert(listOf(doc1, doc2))
         waitForVectorSearchSync()
 
         val queryVector = Embedding.of(1f, 1f, 0f)
@@ -381,7 +381,7 @@ abstract class VectorSearchTests {
             embedding = Embedding.of(0f, 1f, 0f) // Orthogonal
         )
 
-        collection.insertMany(listOf(doc1, doc2, doc3, doc4))
+        collection.insert(listOf(doc1, doc2, doc3, doc4))
         waitForVectorSearchSync()
 
         // Search for vectors similar to [1, 0, 0] but only where tags contain "kotlin"
@@ -432,7 +432,7 @@ abstract class VectorSearchTests {
             sparseEmbedding = SparseEmbedding(intArrayOf(3, 5), floatArrayOf(1f, 1f), 10) // Disjoint indices
         )
 
-        collection.insertMany(listOf(doc1, doc2, doc3))
+        collection.insert(listOf(doc1, doc2, doc3))
         waitForVectorSearchSync()
 
         val queryVector = SparseEmbedding(intArrayOf(0, 2), floatArrayOf(1f, 1f), 10)

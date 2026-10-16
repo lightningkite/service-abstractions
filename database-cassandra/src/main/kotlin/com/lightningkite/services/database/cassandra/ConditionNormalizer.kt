@@ -92,10 +92,13 @@ public object ConditionNormalizer {
                 )
             }
 
-            // Propagate into IfNotNull
-            is Condition.IfNotNull<*> -> {
-                Condition.IfNotNull(normalizeNot(inner.condition as Condition<Any>)) as Condition<T>
-            }
+            // Not(IfNotNull(c)) -> Or(Equal(null), IfNotNull(Not(c))), since IfNotNull fails on null
+            is Condition.IfNotNull<*> -> Condition.Or<Any?>(
+                listOf(
+                    Condition.Equal(null),
+                    Condition.IfNotNull(normalizeNot(inner.condition as Condition<Any>)),
+                )
+            ) as Condition<T>
 
             // Bitwise inversions
             is Condition.IntBitsClear -> Condition.IntBitsAnySet(inner.mask) as Condition<T>
@@ -128,10 +131,13 @@ public object ConditionNormalizer {
                 Condition.Not(inner)
             }
 
-            is Condition.OnKey<*> -> {
-                // Not(OnKey(k, cond)) -> OnKey(k, Not(cond)) normalized
-                Condition.OnKey(inner.key, normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
-            }
+            // Not(OnKey(k, c)) -> Or(Not(Exists(k)), OnKey(k, Not(c))), since OnKey fails on a missing key
+            is Condition.OnKey<*> -> Condition.Or<Map<String, Any?>>(
+                listOf(
+                    Condition.Not(Condition.Exists<Any?>(inner.key)),
+                    Condition.OnKey(inner.key, normalizeNot(inner.condition as Condition<Any?>)),
+                )
+            ) as Condition<T>
 
             // Conditions without direct negation - keep wrapped
             is Condition.StringContains,

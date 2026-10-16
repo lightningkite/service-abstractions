@@ -203,9 +203,7 @@ public sealed class Condition<in T> {
             // this would full-text-match against the word "null" instead of correctly never matching.
             if (on == null) return false
             val ser = try {
-                if (on != null) {
-                    kotlinx.serialization.serializer(on::class, listOf(), false)
-                } else null
+                serializer(on::class, listOf(), false)
             } catch (e: Exception) {
                 null
             }

@@ -20,12 +20,32 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
 import org.bson.BsonBoolean
 import org.bson.BsonDocument
+import org.bson.Document
 import org.bson.conversions.Bson
 import java.util.concurrent.TimeUnit
 import kotlin.reflect.KClass
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+
+// Searches only the @TextIndex fields when there are some: ModelPermissionsTable decides whether a search reads masked
+// data from those alone, and treats a search on a model without them as reading everything.
+internal fun atlasSearchStage(serializer: KSerializer<*>, search: Condition.FullTextSearch<*>): Document {
+    val fields = serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
+        ?.takeIf { it.isNotEmpty() }?.toList()
+        ?: documentOf("wildcard" to "*")
+    return documentOf(
+        "\$search" to documentOf(
+            "index" to "default",
+            "text" to documentOf(
+                "query" to search.value,
+                "fuzzy" to documentOf(),
+                "path" to fields,
+                "matchCriteria" to if (search.requireAllTermsPresent) "all" else "any"
+            )
+        )
+    )
+}
 
 public class MongoTable<Model : Any>(
     override val name: String,
@@ -508,6 +528,13 @@ public class MongoTable<Model : Any>(
             .hint(options.hint)
             .hintString(options.hintString)
 
+    private fun Bson.andCheck(check: Document?): Bson = if (check == null) this else Filters.and(this, check)
+
+    // A row that matched but failed the modification's check: it's left as it is, and an upsert mustn't insert a copy.
+    private suspend fun MongoCollection<BsonDocument>.existingUnchanged(filter: Bson, update: UpdateWithOptions): EntryChange<Model>? =
+        if (update.check == null) null
+        else find(filter).limit(1).firstOrNull()?.let { bson.parse(serializer, it) }?.let { EntryChange(it, it) }
+
     override suspend fun upsertOne(
         condition: Condition<Model>,
         modification: Modification<Model>,
@@ -526,8 +553,9 @@ public class MongoTable<Model : Any>(
                     ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
                     ?: EntryChange(null, model)
             } else {
-                findOneAndUpdate(filter, m.document, m.findOneAndUpdateOptions())
+                findOneAndUpdate(filter.andCheck(m.check), m.document, m.findOneAndUpdateOptions())
                     ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                    ?: existingUnchanged(filter, m)
                     ?: run {
                         insertOne(bson.stringify(serializer, model)); EntryChange(
                         null,
@@ -554,7 +582,7 @@ public class MongoTable<Model : Any>(
             if (m.upsert(model, serializer, bson = bson)) {
                 updateOne(filter, m.document, m.options).matchedCount > 0
             } else {
-                if (updateOne(filter, m.document, m.options).matchedCount != 0L) {
+                if (updateOne(filter.andCheck(m.check), m.document, m.options).matchedCount != 0L || existingUnchanged(filter, m) != null) {
                     true
                 } else {
                     insertOne(bson.stringify(serializer, model))
@@ -574,7 +602,8 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
         val m = simplifiedModification.bson(serializer, bson = bson)
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
+        // With orderBy, this updates the first row that passes the modification's check.
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
         val before = telemetryTrace("updateOne") { access<Model?> {
             findOneAndUpdate(
                 filter,
@@ -598,7 +627,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
         val m = simplifiedModification.bson(serializer, bson = bson)
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
         return telemetryTrace("updateOneIgnoringResult") { access {
             updateOne(filter, m.document, m.options).matchedCount != 0L
         } }
@@ -616,10 +645,10 @@ public class MongoTable<Model : Any>(
         val changes = ArrayList<EntryChange<Model>>()
         // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
         telemetryTrace("updateMany") { access {
-            find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).collectChunked(1000) { list ->
+            find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)).collectChunked(1000) { list ->
                 val parsed = list.asSequence().map { bson.parse(serializer, it) }.toList()
                 val chunkChanges = parsed.map { EntryChange(it, modification(it)) }
-                updateMany(Filters.`in`("_id", list.map { it["_id"] }), m.document, m.options)
+                updateMany(Filters.`in`("_id", list.map { it["_id"] }).andCheck(m.check), m.document, m.options)
                 changes.addAll(chunkChanges)
             }
         } }
@@ -635,7 +664,7 @@ public class MongoTable<Model : Any>(
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return 0
         val m = simplifiedModification.bson(serializer, bson = bson)
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
         return telemetryTrace("updateManyIgnoringResult") { access {
             updateMany(filter, m.document, m.options).matchedCount.toInt()
         } }
@@ -741,19 +770,7 @@ public class MongoTable<Model : Any>(
                 aggregate<BsonDocument>(
                     buildList {
                         if (anyFts != null && atlasSearch) {
-                            add(
-                                documentOf(
-                                    "\$search" to documentOf(
-                                        "index" to "default",
-                                        "text" to documentOf(
-                                            "query" to anyFts.value,
-                                            "fuzzy" to documentOf(),
-                                            "path" to documentOf("wildcard" to "*"),
-                                            "matchCriteria" to if (anyFts.requireAllTermsPresent) "all" else "any"
-                                        )
-                                    )
-                                )
-                            )
+                            add(atlasSearchStage(serializer, anyFts))
                             add(Aggregates.project(Projections.metaSearchScore("search_score").toBsonDocument().apply {
                                 for (field in serializer.descriptor.elementNames) put(field, BsonBoolean(true))
                             }))
