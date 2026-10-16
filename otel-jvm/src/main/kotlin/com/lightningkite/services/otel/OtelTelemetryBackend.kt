@@ -12,7 +12,6 @@ import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.telemetry.TelemetrySanitization
 import com.lightningkite.services.telemetry.TelemetryBatch
 import com.lightningkite.services.telemetry.RecordedSpan
-import com.lightningkite.services.telemetry.RecordedMetric
 import com.lightningkite.services.telemetry.RecordedError
 import com.lightningkite.services.telemetry.TraceParent
 import io.opentelemetry.api.common.Value
@@ -144,17 +143,16 @@ public class OtelTelemetryBackend(
         return builder.use { span ->
             val metricSpan = OtelTelemetryTrace(span, sub)
             val start = System.nanoTime()
-            fun seconds() = (System.nanoTime() - start) / 1_000_000_000.0
             try {
                 val result = action(metricSpan)
                 val resolved = buildResolvedMap(attributes, metricSpan.enriched)
-                red.record(system, opName, "ok", seconds(), dimensions, resolved)
+                red.record(system, opName, "ok", start, dimensions, resolved)
                 result
             } catch (c: CancellationException) {
                 throw c // not an error; left un-recorded as a RED outcome
             } catch (t: Throwable) {
                 val resolved = buildResolvedMap(attributes, metricSpan.enriched)
-                red.record(system, opName, "error", seconds(), dimensions, resolved)
+                red.record(system, opName, "error", start, dimensions, resolved)
                 throw t
             }
         }
@@ -246,7 +244,7 @@ public class OtelTelemetryBackend(
 
     /**
      * Exports client records with their own ids, timestamps (shifted by the batch's clock skew) and
-     * resource. Every span counts toward RED, but only sampled spans are exported.
+     * resource. They feed no metrics: client-chosen names and values would drive metric cardinality.
      */
     override fun ingest(batch: TelemetryBatch) {
         if (spanExporter == null || logExporter == null) {
@@ -258,11 +256,6 @@ public class OtelTelemetryBackend(
 
         val spans = ArrayList<SpanData>()
         for (span in batch.spans) {
-            val dimensions = span.attributes.keys.filterTo(HashSet()) { it.name in span.dimensions }
-            val seconds = (span.end - span.start).inWholeNanoseconds / 1_000_000_000.0
-            redFor(span.owner).record(span.owner, span.operation, span.outcome.name.lowercase(), seconds, dimensions, span.attributes.map)
-            if (!span.sampled) continue
-
             val attributes = span.attributes.toOtel().toBuilder()
             val events = ArrayList<EventData>()
             var status = StatusData.unset()
@@ -314,14 +307,6 @@ public class OtelTelemetryBackend(
             )
         }
         if (logs.isNotEmpty()) logExporter.export(logs).warnOnFailure("logs")
-
-        for (metric in batch.metrics) {
-            val sub = subFor(metric.owner)
-            when (metric.kind) {
-                RecordedMetric.Kind.Counter -> sub.counterBuilder(metric.name).ofDoubles().setUnit(metric.unit.ucum).build().add(metric.value, metric.attributes.toOtel())
-                RecordedMetric.Kind.Histogram -> sub.histogramBuilder(metric.name).setUnit(metric.unit.ucum).build().record(metric.value, metric.attributes.toOtel())
-            }
-        }
     }
 
     private fun RecordedError.toOtel(): Attributes = Attributes.builder()
@@ -471,7 +456,7 @@ public class OtelTelemetryBackend(
             system: String,
             operation: String,
             outcome: String,
-            seconds: Double,
+            startNanos: Long,
             dimensions: Set<TelemetryKey<*>>,
             resolved: Map<TelemetryKey<*>, Any?>,
         ) {
@@ -485,7 +470,7 @@ public class OtelTelemetryBackend(
             }
             val attrs = builder.build()
             ops.add(1, attrs)
-            duration.record(seconds, attrs)
+            duration.record((System.nanoTime() - startNanos) / 1_000_000_000.0, attrs)
         }
     }
 }

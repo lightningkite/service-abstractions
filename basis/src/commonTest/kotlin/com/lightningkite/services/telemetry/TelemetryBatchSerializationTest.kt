@@ -47,13 +47,10 @@ class TelemetryBatchSerializationTest {
                 start = time,
                 end = time,
                 attributes = allTypes,
-                dimensions = setOf("b"),
                 outcome = RecordedSpan.Outcome.Cancelled,
                 error = error,
-                sampled = false,
             )),
             logs = listOf(RecordedLog(time, LogLevel.Error, "failed", allTypes, traceId = "t", spanId = "s", error = error)),
-            metrics = listOf(RecordedMetric("app", "things", MetricUnit.Occurrences, RecordedMetric.Kind.Counter, 2.0, allTypes)),
         )
         assertEquals(batch, Json.decodeFromString(TelemetryBatch.serializer(), Json.encodeToString(TelemetryBatch.serializer(), batch)))
     }

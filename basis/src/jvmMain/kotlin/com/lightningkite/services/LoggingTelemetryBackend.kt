@@ -232,9 +232,6 @@ public class LoggingTelemetryBackend(
             for (log in batch.logs) {
                 out.println("$DIM${timeFormatter.format(log.time.toJavaInstant())}$RESET ${log.level} ${log.message} $DIM${log.attributes.fmtInline()} $source$RESET")
             }
-            for (metric in batch.metrics) {
-                out.println("$DIM◆ ${metric.owner}.${metric.name} ${metric.kind} ${"%.4g".format(metric.value)} ${metric.unit.ucum} $source$RESET")
-            }
             out.flush()
         }
     }

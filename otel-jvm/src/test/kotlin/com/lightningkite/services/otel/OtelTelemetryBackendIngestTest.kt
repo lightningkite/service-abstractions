@@ -4,10 +4,8 @@ import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.telemetry.LogLevel
-import com.lightningkite.services.telemetry.MetricUnit
 import com.lightningkite.services.telemetry.RecordedError
 import com.lightningkite.services.telemetry.RecordedLog
-import com.lightningkite.services.telemetry.RecordedMetric
 import com.lightningkite.services.telemetry.RecordedSpan
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryBackend
@@ -53,7 +51,7 @@ class OtelTelemetryBackendIngestTest {
     private val traceId = "0af7651916cd43dd8448eb211c80319c"
     private val screen = TelemetryKey.OfString("app.screen.name")
 
-    private fun span(spanId: String, sampled: Boolean, parent: String? = null) = RecordedSpan(
+    private fun span(spanId: String, parent: String? = null) = RecordedSpan(
         traceId = traceId,
         spanId = spanId,
         parentSpanId = parent,
@@ -62,15 +60,13 @@ class OtelTelemetryBackendIngestTest {
         start = Clock.System.now() - 2.seconds,
         end = Clock.System.now() - 1.seconds,
         attributes = telemetryAttributesOf(screen to "Home"),
-        dimensions = setOf(screen.name),
         outcome = RecordedSpan.Outcome.Ok,
-        sampled = sampled,
     )
 
     @Test
     fun keepsClientIdsAndShiftsTimestampsByClockSkew() {
         val clientNow = Clock.System.now() - 1.seconds // client clock runs 1s behind
-        val recorded = span("b7ad6b7169203331", sampled = true, parent = "00f067aa0ba902b7")
+        val recorded = span("b7ad6b7169203331", parent = "00f067aa0ba902b7")
             .copy(start = clientNow - 300.milliseconds, end = clientNow - 100.milliseconds)
         backend.ingest(TelemetryBatch(telemetryAttributesOf(TelemetryKeys.Service.name to "app"), sentAt = clientNow, spans = listOf(recorded)))
 
@@ -87,14 +83,11 @@ class OtelTelemetryBackendIngestTest {
     }
 
     @Test
-    fun unsampledSpansAreNotExportedButCountTowardRed() {
-        backend.ingest(TelemetryBatch(TelemetryAttributes.empty, Clock.System.now(), spans = listOf(span("b7ad6b7169203331", sampled = false))))
+    fun ingestedSpansFeedNoMetrics() {
+        backend.ingest(TelemetryBatch(TelemetryAttributes.empty, Clock.System.now(), spans = listOf(span("b7ad6b7169203331"))))
 
-        assertTrue(spans.finishedSpanItems.isEmpty())
-        val count = metrics.collectAllMetrics().single { it.name == "screen.client.operation.count" }.longSumData.points.single()
-        assertEquals(1L, count.value)
-        assertEquals("Home", count.attributes.get(AttributeKey.stringKey("app.screen.name")))
-        assertEquals("ok", count.attributes.get(AttributeKey.stringKey("outcome")))
+        assertEquals(1, spans.finishedSpanItems.size)
+        assertTrue(metrics.collectAllMetrics().isEmpty())
     }
 
     @Test
@@ -111,14 +104,6 @@ class OtelTelemetryBackendIngestTest {
         assertEquals(traceId, log.spanContext.traceId)
         assertEquals("fp", log.attributes.get(AttributeKey.stringKey("error.fingerprint")))
         assertEquals("IllegalStateException", log.attributes.get(AttributeKey.stringKey("exception.type")))
-    }
-
-    @Test
-    fun metricsGoThroughTheOwnersMeter() {
-        val point = RecordedMetric("connectivity", "issues", MetricUnit.Occurrences, RecordedMetric.Kind.Counter, 2.0, TelemetryAttributes.empty)
-        backend.ingest(TelemetryBatch(TelemetryAttributes.empty, Clock.System.now(), metrics = listOf(point, point)))
-
-        assertEquals(4.0, metrics.collectAllMetrics().single { it.name == "issues" }.doubleSumData.points.single().value)
     }
 
     @Test

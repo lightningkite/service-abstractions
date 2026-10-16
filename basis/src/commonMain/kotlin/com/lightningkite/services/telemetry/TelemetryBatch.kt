@@ -17,7 +17,6 @@ public data class TelemetryBatch(
     val sentAt: Instant,
     val spans: List<RecordedSpan> = listOf(),
     val logs: List<RecordedLog> = listOf(),
-    val metrics: List<RecordedMetric> = listOf(),
 )
 
 @Serializable
@@ -30,12 +29,8 @@ public data class RecordedSpan(
     val start: Instant,
     val end: Instant,
     val attributes: TelemetryAttributes,
-    /** Names of the [attributes] keys promoted to RED metric dimensions. */
-    val dimensions: Set<String>,
     val outcome: Outcome,
     val error: RecordedError? = null,
-    /** Unsampled spans are not exported, but still count toward RED metrics. */
-    val sampled: Boolean,
 ) {
     public enum class Outcome { Ok, Error, Cancelled }
 }
@@ -58,19 +53,6 @@ public data class RecordedError(
     val stacktrace: String,
     val fingerprint: String,
 )
-
-/** One raw metric point; the receiver aggregates. */
-@Serializable
-public data class RecordedMetric(
-    val owner: String,
-    val name: String,
-    val unit: MetricUnit,
-    val kind: Kind,
-    val value: Double,
-    val attributes: TelemetryAttributes,
-) {
-    public enum class Kind { Counter, Histogram }
-}
 
 // Grouped by type because a JSON number can't carry it: Kotlin/JS writes 2.0 as 2.
 @Serializable
