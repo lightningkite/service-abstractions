@@ -60,20 +60,18 @@ public data class Mask<T>(
      */
     public operator fun invoke(
         modification: Modification<T>,
-        tableTextPaths: List<List<SerializableProperty<*, *>>> = listOf(),
     ): Condition<T> {
         @Suppress("UNCHECKED_CAST")
         val reads = modification.readCondition() as Condition<T>? ?: return Condition.Always
-        return invoke(reads, tableTextPaths)
+        return invoke(reads)
     }
 
     public operator fun invoke(
         condition: Condition<T>,
-        tableTextPaths: List<List<SerializableProperty<*, *>>> = listOf(),
     ): Condition<T> {
         val totalConditions = ArrayList<Condition<T>>()
         for (pair in pairs) {
-            if (condition.readsResultOf(pair.second, tableTextPaths)) totalConditions.add(pair.first)
+            if (condition.readsResultOf(pair.second)) totalConditions.add(pair.first)
         }
         return when (totalConditions.size) {
             0 -> Condition.Always
@@ -249,15 +247,15 @@ private fun Modification<*>.readCondition(): Condition<*>? {
             ?.let { Condition.IfIsType(discriminator as SealedTypeDiscriminator<Any?>, it as Condition<Any?>) }
         is Modification.ListPerElement<*> -> listOfNotNull(condition.unlessConstant(), modification.readCondition())
             .takeIf { it.isNotEmpty() }
-            ?.let { Condition.ListAnyElements(Condition.And(it as List<Condition<Any?>>)) }
+            ?.let { Condition.CollectionAnyElements(Condition.And(it as List<Condition<Any?>>)) }
         // A set drops elements that become equal, which compares whole elements; a constant under an element check
         // reads the whole element (see readsResultOf).
-        is Modification.SetPerElement<*> -> Condition.SetAllElements(Condition.Always)
-        is Modification.ListRemove<*> -> condition.unlessConstant()?.let { Condition.ListAnyElements(it as Condition<Any?>) }
-        is Modification.SetRemove<*> -> condition.unlessConstant()?.let { Condition.SetAnyElements(it as Condition<Any?>) }
-        is Modification.ListRemoveInstances<*> -> Condition.ListAnyElements(Condition.Inside(items.toSet()))
-        is Modification.SetRemoveInstances<*> -> Condition.SetAnyElements(Condition.Inside(items))
-        is Modification.SetAppend<*> -> Condition.SetAnyElements(Condition.Inside(items))
+        is Modification.SetPerElement<*> -> Condition.CollectionAllElements(Condition.Always)
+        is Modification.ListRemove<*> -> condition.unlessConstant()?.let { Condition.CollectionAnyElements(it as Condition<Any?>) }
+        is Modification.SetRemove<*> -> condition.unlessConstant()?.let { Condition.CollectionAnyElements(it as Condition<Any?>) }
+        is Modification.ListRemoveInstances<*> -> Condition.CollectionAnyElements(Condition.Inside(items.toSet()))
+        is Modification.SetRemoveInstances<*> -> Condition.CollectionAnyElements(Condition.Inside(items))
+        is Modification.SetAppend<*> -> Condition.CollectionAnyElements(Condition.Inside(items))
         else -> null
     }
 }
@@ -271,10 +269,8 @@ private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean 
         } else false
 
         is Condition.Not -> this.condition.reads(list)
-        is Condition.ListAllElements<*> -> this.condition.reads(list)
-        is Condition.ListAnyElements<*> -> this.condition.reads(list)
-        is Condition.SetAllElements<*> -> this.condition.reads(list)
-        is Condition.SetAnyElements<*> -> this.condition.reads(list)
+        is Condition.CollectionAllElements<*, *> -> this.condition.reads(list)
+        is Condition.CollectionAnyElements<*, *> -> this.condition.reads(list)
         is Condition.And -> this.conditions.any { it.reads(list) }
         is Condition.Or -> this.conditions.any { it.reads(list) }
         is Condition.IfNotNull -> this.condition.reads(list)
@@ -326,39 +322,28 @@ private fun Condition<*>.emitReadPaths(soFar: DataClassPath<*, *>, out: (DataCla
  * Whether filtering by this condition could reveal anything [modification] changes, i.e. whether any path this
  * condition reads overlaps a path the modification writes.  Anything not understood counts as a read of the whole
  * value it sits on, so unknown shapes err towards "reads it".
- *
- * [tableTextPaths] are the fields a [Condition.FullTextSearch] searches, at any depth; without them, a search reads everything.
  */
 public fun <T> Condition<T>.readsResultOf(
     modification: Modification<T>,
-    tableTextPaths: List<List<SerializableProperty<*, *>>> = listOf(),
-): Boolean = readsResultOf(modification, listOf(), tableTextPaths)
+): Boolean = readsResultOf(modification, listOf())
 
 private fun Condition<*>.readsResultOf(
     modification: Modification<*>,
     at: List<SerializableProperty<*, *>>,
-    tableTextPaths: List<List<SerializableProperty<*, *>>>,
 ): Boolean = when (this) {
     // Below the root, a constant still sits under a null, type or element check that reads the value, e.g. `x.notNull.always`.
     is Condition.Always -> at.isNotEmpty() && modification.affects(at)
     is Condition.Never -> at.isNotEmpty() && modification.affects(at)
-    is Condition.And -> conditions.any { it.readsResultOf(modification, at, tableTextPaths) }
-    is Condition.Or -> conditions.any { it.readsResultOf(modification, at, tableTextPaths) }
-    is Condition.Not -> condition.readsResultOf(modification, at, tableTextPaths)
-    is Condition.OnField<*, *> -> condition.readsResultOf(modification, at + key, tableTextPaths)
+    is Condition.And -> conditions.any { it.readsResultOf(modification, at) }
+    is Condition.Or -> conditions.any { it.readsResultOf(modification, at) }
+    is Condition.Not -> condition.readsResultOf(modification, at)
+    is Condition.OnField<*, *> -> condition.readsResultOf(modification, at + key)
     // Paths don't record nullability, subtypes, or list/set elements, so these read the same path as their inner condition.
     // A mask only changes whether the value is null, of a type, or has elements by replacing it, which overlaps every inner read.
-    is Condition.IfNotNull<*> -> condition.readsResultOf(modification, at, tableTextPaths)
-    is Condition.IfIsType<*, *> -> condition.readsResultOf(modification, at, tableTextPaths)
-    is Condition.ListAllElements<*> -> condition.readsResultOf(modification, at, tableTextPaths)
-    is Condition.ListAnyElements<*> -> condition.readsResultOf(modification, at, tableTextPaths)
-    is Condition.SetAllElements<*> -> condition.readsResultOf(modification, at, tableTextPaths)
-    is Condition.SetAnyElements<*> -> condition.readsResultOf(modification, at, tableTextPaths)
-    // Wherever a search sits, MongoDB searches the model's whole text index ($text and Atlas $search are query-wide),
-    // while in memory a nested search reads the value it sits on.
-    is Condition.FullTextSearch<*> -> (at.isNotEmpty() && modification.affects(at)) ||
-            if (tableTextPaths.isEmpty()) modification.affects(listOf()) else tableTextPaths.any { modification.affects(it) }
-
+    is Condition.IfNotNull<*> -> condition.readsResultOf(modification, at)
+    is Condition.IfIsType<*, *> -> condition.readsResultOf(modification, at)
+    is Condition.CollectionAllElements<*, *> -> condition.readsResultOf(modification, at)
+    is Condition.CollectionAnyElements<*, *> -> condition.readsResultOf(modification, at)
     else -> modification.affects(at)
 }
 
@@ -400,7 +385,7 @@ private fun Condition<*>.requiredBeforeUntyped(modification: Modification<*>): C
     }
     // Only an assign can make a value null, and one under notNull or asType has a non-null type.
     // `eq null` gets no such rule: a write inside a non-null value it forbids would change what it forbids.
-    if (!readsResultOf(modification, listOf(), listOf()) || this == Condition.NotEqual(null)) return this
+    if (!readsResultOf(modification, listOf()) || this == Condition.NotEqual(null)) return this
     // An Or can't be split: the part that held before may be the one the modification breaks.
     return when (modification) {
         is Modification.OnField<*, *> -> when {
@@ -434,27 +419,27 @@ private fun Condition<*>.requiredBeforeUntyped(modification: Modification<*>): C
 
         // Elements the filter skips keep their old values; an element that held keeps holding if writing it can't break it.
         is Modification.ListPerElement<*> -> when (this) {
-            is Condition.ListAllElements<*> -> {
+            is Condition.CollectionAllElements<*, *> -> {
                 val needed = condition.requiredBeforeUntyped(modification.modification)
                 when (val perElement = if (modification.condition == Condition.Always) needed else allOf(listOf(condition, needed))) {
                     Condition.Always, Condition.Never -> perElement
-                    else -> Condition.ListAllElements(perElement as Condition<Any?>)
+                    else -> Condition.CollectionAllElements(perElement as Condition<Any?>)
                 }
             }
-            is Condition.ListAnyElements<*> ->
+            is Condition.CollectionAnyElements<*, *> ->
                 if (condition.requiredBeforeUntyped(modification.modification) == Condition.Always) this else Condition.Never
             else -> Condition.Never
         }
 
         is Modification.SetPerElement<*> -> when (this) {
-            is Condition.SetAllElements<*> -> {
+            is Condition.CollectionAllElements<*, *> -> {
                 val needed = condition.requiredBeforeUntyped(modification.modification)
                 when (val perElement = if (modification.condition == Condition.Always) needed else allOf(listOf(condition, needed))) {
                     Condition.Always, Condition.Never -> perElement
-                    else -> Condition.SetAllElements(perElement as Condition<Any?>)
+                    else -> Condition.CollectionAllElements(perElement as Condition<Any?>)
                 }
             }
-            is Condition.SetAnyElements<*> ->
+            is Condition.CollectionAnyElements<*, *> ->
                 if (condition.requiredBeforeUntyped(modification.modification) == Condition.Always) this else Condition.Never
             else -> Condition.Never
         }
@@ -515,10 +500,8 @@ public fun Condition<*>.walk(action: (Condition<*>) -> Unit) {
         is Condition.And -> this.conditions.forEach { it.walk(action) }
         is Condition.Or -> this.conditions.forEach { it.walk(action) }
         is Condition.Not -> this.condition.walk(action)
-        is Condition.ListAllElements<*> -> this.condition.walk(action)
-        is Condition.ListAnyElements<*> -> this.condition.walk(action)
-        is Condition.SetAllElements<*> -> this.condition.walk(action)
-        is Condition.SetAnyElements<*> -> this.condition.walk(action)
+        is Condition.CollectionAllElements<*, *> -> this.condition.walk(action)
+        is Condition.CollectionAnyElements<*, *> -> this.condition.walk(action)
         is Condition.OnKey<*> -> this.condition.walk(action)
         is Condition.OnField<*, *> -> this.condition.walk(action)
         is Condition.IfNotNull -> this.condition.walk(action)

@@ -107,22 +107,14 @@ public object ConditionNormalizer {
             is Condition.IntBitsAnySet -> Condition.IntBitsClear(inner.mask) as Condition<T>
 
             // Collection conditions - push Not inward
-            is Condition.ListAllElements<*> -> {
+            is Condition.CollectionAllElements<*, *> -> {
                 // Not(All(x)) -> Any(Not(x))
-                Condition.ListAnyElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
+                Condition.CollectionAnyElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
             }
 
-            is Condition.ListAnyElements<*> -> {
+            is Condition.CollectionAnyElements<*, *> -> {
                 // Not(Any(x)) -> All(Not(x))
-                Condition.ListAllElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
-            }
-
-            is Condition.SetAllElements<*> -> {
-                Condition.SetAnyElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
-            }
-
-            is Condition.SetAnyElements<*> -> {
-                Condition.SetAllElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
+                Condition.CollectionAllElements(normalizeNot(inner.condition as Condition<Any?>)) as Condition<T>
             }
 
             // Map conditions
@@ -141,9 +133,7 @@ public object ConditionNormalizer {
 
             // Conditions without direct negation - keep wrapped
             is Condition.StringContains,
-            is Condition.RawStringContains<*>,
             is Condition.RegexMatches,
-            is Condition.FullTextSearch<*>,
             is Condition.GeoDistance,
                 -> {
                 // No positive equivalent exists, keep as Not

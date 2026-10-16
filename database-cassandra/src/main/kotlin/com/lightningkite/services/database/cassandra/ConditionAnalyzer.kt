@@ -253,16 +253,7 @@ public class ConditionAnalyzer<T : Any>(
             is Condition.NotEqual<*> -> appFallback(onField as Condition<T>, "SAI does not support != queries")
             is Condition.Inside<*> -> appFallback(onField as Condition<T>, "SAI does not support IN queries")
 
-            is Condition.ListAnyElements<*> -> {
-                // SAI supports CONTAINS for collections
-                if (inner.condition is Condition.Equal<*>) {
-                    pushable(onField as Condition<T>)
-                } else {
-                    appFallback(onField as Condition<T>, "SAI CONTAINS only supports equality check on element")
-                }
-            }
-
-            is Condition.SetAnyElements<*> -> {
+            is Condition.CollectionAnyElements<*, *> -> {
                 // SAI supports CONTAINS for collections
                 if (inner.condition is Condition.Equal<*>) {
                     pushable(onField as Condition<T>)

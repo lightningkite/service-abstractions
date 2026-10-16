@@ -57,6 +57,7 @@ androidDesugaring = { module = "com.android.tools:desugar_jdk_libs", version.ref
 angusMail = { module = "org.eclipse.angus:angus-mail", version.ref = "angusMail" }
 atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
 aws-auth = { module = "software.amazon.awssdk:auth", version.ref = "awsVersion" }
+aws-signin = { module = "software.amazon.awssdk:signin", version.ref = "awsVersion" }
 aws-cloudWatch = { module = "software.amazon.awssdk:cloudwatch", version.ref = "awsVersion" }
 aws-crt-client = { module = "software.amazon.awssdk:aws-crt-client", version = { ref = "awsVersion" } }
 aws-nettyNioClient = { module = "software.amazon.awssdk:netty-nio-client", version.ref = "awsVersion" }
@@ -128,6 +129,7 @@ openTelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testi
 pinpointsmsvoicev2 = { module = "aws.sdk.kotlin:pinpointsmsvoicev2", version.ref = "pinpointsmsvoicev2" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 proguard = { module = "com.guardsquare:proguard-gradle", version.ref = "proguard" }
+sentry = { module = "io.sentry:sentry", version = "8.23.0" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
 stripe = { module = "com.stripe:stripe-java", version.ref = "stripe" }

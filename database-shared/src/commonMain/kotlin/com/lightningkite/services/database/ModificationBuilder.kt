@@ -1,6 +1,5 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.IsRawString
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.serializer
 import kotlin.jvm.JvmName
@@ -60,11 +59,6 @@ public class ModificationBuilder<K>() {
 
     public infix operator fun DataClassPath<K, String>.plusAssign(value: String) {
         modifications.add(mapModification(Modification.AppendString(value)))
-    }
-
-    @JvmName("plusAssignRaw")
-    public infix operator fun <T : IsRawString> DataClassPath<K, T>.plusAssign(value: String) {
-        modifications.add(mapModification(Modification.AppendRawString<T>(value)))
     }
 
     public infix operator fun <T> DataClassPath<K, List<T>>.plusAssign(items: List<T>) {
@@ -134,19 +128,9 @@ public class ModificationBuilder<K>() {
         modifications.add(mapModification(Modification.ListDropLast<T>()))
     }
 
-    @JvmName("dropLastSet")
-    public fun <T> DataClassPath<K, Set<T>>.dropLast() {
-        modifications.add(mapModification(Modification.SetDropLast<T>()))
-    }
-
     @JvmName("dropFirstList")
     public fun <T> DataClassPath<K, List<T>>.dropFirst() {
         modifications.add(mapModification(Modification.ListDropFirst<T>()))
-    }
-
-    @JvmName("dropFirstSet")
-    public fun <T> DataClassPath<K, Set<T>>.dropFirst() {
-        modifications.add(mapModification(Modification.SetDropFirst<T>()))
     }
 
     @JvmName("forEachList")

@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.data.Length.Companion.meters
 import com.lightningkite.services.data.TextIndex
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
@@ -76,24 +77,10 @@ private fun <T> Condition<T>.dump(
 
         is Condition.Equal -> into.sub(key)["\$eq"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.NotEqual -> into.sub(key)["\$ne"] = value.let { bson.stringifyAny(serializer, it) }
-        is Condition.SetAllElements<*> -> {
-            val innerSerializer = serializer.listElement()!! as KSerializer<Any?>
-            val matchDoc = Document()
-            (Condition.Not(condition as Condition<Any?>)).dump(
-                innerSerializer,
-                into = matchDoc,
-                key = null,
-                atlasSearch = atlasSearch,
-                bson = bson
-            )
-            into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
-            // $elemMatch never matches a null element with a condition on its fields, so a null element can't fail one.
-            if (innerSerializer.descriptor.isNullable && !(condition as Condition<Any?>)(null)) into.sub(key)["\$ne"] = null
-        }
         // by Claude - Atlas $vectorSearch doesn't support $elemMatch in pre-filters.
         // When atlasSearch=true, dump the inner condition directly on the key instead;
         // MongoDB scalar operators ($eq, $in, etc.) on array fields already match element-wise.
-        is Condition.SetAnyElements<*> -> if (atlasSearch) {
+        is Condition.CollectionAnyElements<*, *> -> if (atlasSearch) {
             (condition as Condition<Any?>).dump(
                 serializer.listElement()!! as KSerializer<Any?>,
                 into,
@@ -106,7 +93,7 @@ private fun <T> Condition<T>.dump(
                 (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
         }
 
-        is Condition.ListAllElements<*> -> {
+        is Condition.CollectionAllElements<*, *> -> {
             val innerSerializer = serializer.listElement()!! as KSerializer<Any?>
             val matchDoc = Document()
             (Condition.Not(condition as Condition<Any?>)).dump(
@@ -119,20 +106,6 @@ private fun <T> Condition<T>.dump(
             into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
             // $elemMatch never matches a null element with a condition on its fields, so a null element can't fail one.
             if (innerSerializer.descriptor.isNullable && !(condition as Condition<Any?>)(null)) into.sub(key)["\$ne"] = null
-        }
-
-
-        is Condition.ListAnyElements<*> -> if (atlasSearch) {
-            (condition as Condition<Any?>).dump(
-                serializer.listElement()!! as KSerializer<Any?>,
-                into,
-                key,
-                atlasSearch = atlasSearch,
-                bson = bson
-            )
-        } else {
-            into.sub(key)["\$elemMatch"] =
-                (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
         }
 
         is Condition.Exists<*> -> into[if (key == null) this.key else "$key.${this.key}"] =
@@ -221,9 +194,9 @@ private fun <T> Condition<T>.dump(
                     "type" to "Point",
                     "coordinates" to listOf(this.value.longitude, this.value.latitude)
                 ),
-                "\$maxDistance" to this.lessThanKilometers * 1000.0  // km → meters
+                "\$maxDistance" to this.lessThan.meters
             )
-            if (this.greaterThanKilometers > 0.0) geoDoc["\$minDistance"] = this.greaterThanKilometers * 1000.0
+            if (this.greaterThan > 0.meters) geoDoc["\$minDistance"] = this.greaterThan.meters
             into.sub(key)["\$nearSphere"] = geoDoc
         }
 
@@ -232,37 +205,9 @@ private fun <T> Condition<T>.dump(
         is Condition.StringContains ->
             into.sub(key)["\$regex"] = BsonRegularExpression(Regex.escape(this.value), if (this.ignoreCase) "i" else "")
 
-        is Condition.RawStringContains ->
-            into.sub(key)["\$regex"] = BsonRegularExpression(Regex.escape(this.value), if (this.ignoreCase) "i" else "")
-
         is Condition.RegexMatches ->
             into.sub(key)["\$regex"] = BsonRegularExpression(this.pattern, if (this.ignoreCase) "i" else "")
 
-        is Condition.FullTextSearch -> {
-            if (atlasSearch) {
-                val terms = value.split(' ')
-                val ser = DataClassPathSerializer(serializer)
-                val paths = serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields?.map {
-                    ser.fromString(it) as DataClassPath<T, String>
-                }?.takeIf { it.isNotEmpty() } ?: return into
-                val subs = terms.filter { !it.termShouldUseFuzzySearch() }
-                    .map { term ->
-                        Condition.Or(paths.map { it.mapCondition(Condition.StringContains(term, true)) })
-                    }
-                if (subs.isNotEmpty()) {
-                    if (this.requireAllTermsPresent)
-                        Condition.And(subs).dump(serializer, into, key, atlasSearch, bson = bson)
-                    else
-                        Condition.Or(subs).dump(serializer, into, key, atlasSearch, bson = bson)
-                }
-            } else into["\$text"] = documentOf(
-                "\$search" to value,
-                "\$caseSensitive" to false
-            )
-        }
-
-        is Condition.SetSizesEquals<*> -> into.sub(key)["\$size"] = count
-        is Condition.ListSizesEquals<*> -> into.sub(key)["\$size"] = count
         is Condition.OnField<*, *> -> (condition as Condition<Any?>).dump(
             this.key.serializer as KSerializer<Any?>,
             into,
@@ -312,9 +257,9 @@ private fun <T> Condition<T>.dump(
 // False only where it's certain that this condition's translation can't match a null or missing value.
 private fun Condition<*>.matchesNullInMongo(atlasSearch: Boolean): Boolean = when (this) {
     is Condition.Never, is Condition.GreaterThan, is Condition.LessThan, is Condition.GreaterThanOrEqual,
-    is Condition.LessThanOrEqual, is Condition.StringContains, is Condition.RawStringContains, is Condition.RegexMatches,
+    is Condition.LessThanOrEqual, is Condition.StringContains, is Condition.RegexMatches,
     is Condition.IntBitsClear, is Condition.IntBitsSet, is Condition.IntBitsAnyClear, is Condition.IntBitsAnySet,
-    is Condition.ListSizesEquals<*>, is Condition.SetSizesEquals<*>, is Condition.Exists<*>, is Condition.OnKey<*>,
+    is Condition.Exists<*>, is Condition.OnKey<*>,
     is Condition.IfNotNull<*>, is Condition.IfIsType<*, *>, is Condition.GeoDistance -> false
     is Condition.Equal -> value == null
     is Condition.Inside -> values.any { it == null }
@@ -323,8 +268,7 @@ private fun Condition<*>.matchesNullInMongo(atlasSearch: Boolean): Boolean = whe
     // A missing parent makes the field missing too.
     is Condition.OnField<*, *> -> condition.matchesNullInMongo(atlasSearch)
     // $elemMatch needs an array; with atlasSearch these put the element condition straight on the field instead.
-    is Condition.ListAnyElements<*> -> atlasSearch && condition.matchesNullInMongo(atlasSearch)
-    is Condition.SetAnyElements<*> -> atlasSearch && condition.matchesNullInMongo(atlasSearch)
+    is Condition.CollectionAnyElements<*, *> -> atlasSearch && condition.matchesNullInMongo(atlasSearch)
     else -> true
 }
 
@@ -360,7 +304,6 @@ private fun <T> Modification<T>.dump(
         is Modification.Increment -> into["\$inc", key] = by.let { bson.stringifyAny(serializer, it) }
         is Modification.Multiply -> into["\$mul", key] = by.let { bson.stringifyAny(serializer, it) }
         is Modification.AppendString -> TODO("Appending strings is not supported yet")
-        is Modification.AppendRawString -> TODO("Appending raw strings is not supported yet")
         // IfNotNull and IfIsType only get here once something else does their check: the update's filter or an array
         // filter (see [bson] and [perElement]). Update operators can't.
         is Modification.IfNotNull<*> -> (modification as Modification<Any?>).dump(
@@ -423,8 +366,6 @@ private fun <T> Modification<T>.dump(
         is Modification.SetRemoveInstances<*> -> into["\$pullAll", key] =
             items.let { bson.stringifyAny(serializer as KSerializer<Set<Any?>>, it) }
 
-        is Modification.SetDropFirst<*> -> into["\$pop", key] = -1
-        is Modification.SetDropLast<*> -> into["\$pop", key] = 1
         is Modification.SetPerElement<*> -> perElement(
             condition as Condition<Any?>,
             modification as Modification<Any?>,

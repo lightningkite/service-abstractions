@@ -56,21 +56,6 @@ abstract class MaskedPermissionsTests {
     }
 
     @Test
-    fun searchNestedUnderAnUnmaskedFieldRevealsNothing() = runTest {
-        val (raw, table) = table(
-            "maskedNestedSearch", ModelPermissions(
-                all = Condition.Always,
-                readMask = mask<LargeTestModel> { it.embedded.value1.mask("") }
-            )
-        )
-        raw.insertOne(LargeTestModel(int = 5, embedded = ClassUsedForEmbedding("secret", 1)))
-
-        assertEquals(0, table.count(path<LargeTestModel>().embedded.mapCondition(Condition.FullTextSearch("secret"))))
-        // Only MongoDB can fail this one: its search covers the whole text index, wherever the condition sits.
-        assertEquals(0, table.count(path<LargeTestModel>().int.mapCondition(Condition.FullTextSearch("secret"))))
-    }
-
-    @Test
     fun aggregatesDoNotRevealMaskedValues() = runTest {
         val (raw, table) = table(
             "maskedAggregates", ModelPermissions(

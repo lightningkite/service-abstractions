@@ -50,6 +50,7 @@ kotlin {
         val commonTest = getByName("commonTest") {
             dependencies {
                 implementation(libs.kotlin.test)
+                implementation(libs.kotlinx.serialization.json)
             }
         }
         val androidMain = getByName("androidMain") {}

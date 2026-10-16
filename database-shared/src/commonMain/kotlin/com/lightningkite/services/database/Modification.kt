@@ -1,6 +1,5 @@
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.IsRawString
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -30,7 +29,6 @@ import kotlinx.serialization.serializer
  * ## String Modifications
  *
  * - [AppendString] - Concatenate string
- * - [AppendRawString] - Concatenate to wrapped string types (EmailAddress, etc.)
  *
  * ## Collection Modifications
  *
@@ -177,13 +175,6 @@ public sealed class Modification<T> {
         override fun toString(): String = " += $value"
     }
 
-    @Serializable(ModificationAppendRawStringSerializer::class)
-    public data class AppendRawString<T : IsRawString>(val value: String) : Modification<T>() {
-        @Suppress("UNCHECKED_CAST")
-        override fun invoke(on: T): T = on.mapRaw { it + value } as T
-        override fun toString(): String = " += $value"
-    }
-
     @Serializable(ModificationListAppendSerializer::class)
     public data class ListAppend<T>(val items: List<T>) : Modification<List<T>>() {
         override fun invoke(on: List<T>): List<T> = on + items
@@ -245,26 +236,6 @@ public sealed class Modification<T> {
     public data class SetRemoveInstances<T>(val items: Set<T>) : Modification<Set<T>>() {
         override fun invoke(on: Set<T>): Set<T> = on - items
         override fun toString(): String = " -= $items"
-    }
-
-    @Serializable(ModificationSetDropFirstSerializer::class)
-    public class SetDropFirst<T> : Modification<Set<T>>() {
-        override fun invoke(on: Set<T>): Set<T> = on.drop(1).toSet()
-        override fun hashCode(): Int = 1
-
-        @Suppress("UNCHECKED_CAST")
-        override fun equals(other: Any?): Boolean = (other as? SetDropFirst<T>) != null
-        override fun toString(): String = ".removeFirst()"
-    }
-
-    @Serializable(ModificationSetDropLastSerializer::class)
-    public class SetDropLast<T> : Modification<Set<T>>() {
-        override fun invoke(on: Set<T>): Set<T> = on.toList().dropLast(1).toSet()
-        override fun hashCode(): Int = 1
-
-        @Suppress("UNCHECKED_CAST")
-        override fun equals(other: Any?): Boolean = (other as? SetDropLast<T>) != null
-        override fun toString(): String = ".removeLast()"
     }
 
     @Serializable

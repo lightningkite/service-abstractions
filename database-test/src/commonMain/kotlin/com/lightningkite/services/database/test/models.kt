@@ -192,6 +192,7 @@ data class ValueClassContainingTest(
     val direct: ValueClass = ValueClass("direct"),
     val set: Set<ValueClass> = setOf(ValueClass("set")),
     val wrappedInt: IntWrapper = IntWrapper(42),
+    val length: Length = Length(1.0),
 ) : HasId<Uuid>
 
 @Serializable

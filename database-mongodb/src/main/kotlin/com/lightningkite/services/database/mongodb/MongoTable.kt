@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
-import org.bson.BsonBoolean
 import org.bson.BsonDocument
 import org.bson.Document
 import org.bson.conversions.Bson
@@ -27,25 +26,6 @@ import kotlin.reflect.KClass
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-
-// Searches only the @TextIndex fields when there are some: ModelPermissionsTable decides whether a search reads masked
-// data from those alone, and treats a search on a model without them as reading everything.
-internal fun atlasSearchStage(serializer: KSerializer<*>, search: Condition.FullTextSearch<*>): Document {
-    val fields = serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
-        ?.takeIf { it.isNotEmpty() }?.toList()
-        ?: documentOf("wildcard" to "*")
-    return documentOf(
-        "\$search" to documentOf(
-            "index" to "default",
-            "text" to documentOf(
-                "query" to search.value,
-                "fuzzy" to documentOf(),
-                "path" to fields,
-                "matchCriteria" to if (search.requireAllTermsPresent) "all" else "any"
-            )
-        )
-    )
-}
 
 public class MongoTable<Model : Any>(
     override val name: String,
@@ -746,16 +726,14 @@ public class MongoTable<Model : Any>(
         // Wrap the cold result flow so the metric measures the actual query round-trip (driven by the
         // consumer's collect), not just the lazy pipeline construction.
         return recordingFlow("find") { access {
-            var anyFts: Condition.FullTextSearch<*>? = null
             var hasGeo = false
             condition.walk {
-                if (it is Condition.FullTextSearch) anyFts = it
                 if (it is Condition.GeoDistance) hasGeo = true
             }
 
             // $nearSphere (used for GeoDistance) is banned inside aggregate().$match in MongoDB 5+.
             // Use collection.find() directly when the query contains a geo distance condition.
-            if (hasGeo && anyFts == null) {
+            if (hasGeo) {
                 val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
                 val hasCiSort = orderBy.any { s -> s.ignoreCase }
                 withDocumentClass<BsonDocument>().find(filter)
@@ -769,22 +747,8 @@ public class MongoTable<Model : Any>(
                 val hasCiSort = orderBy.any { it.ignoreCase }
                 aggregate<BsonDocument>(
                     buildList {
-                        if (anyFts != null && atlasSearch) {
-                            add(atlasSearchStage(serializer, anyFts))
-                            add(Aggregates.project(Projections.metaSearchScore("search_score").toBsonDocument().apply {
-                                for (field in serializer.descriptor.elementNames) put(field, BsonBoolean(true))
-                            }))
-                            add(Aggregates.match(cs.bson(serializer, atlasSearch = true, bson = bson)))
-                        } else {
-                            add(Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)))
-                        }
-
-                    if (anyFts != null && !atlasSearch) {
-                        add(Aggregates.project(Projections.metaSearchScore("text_search_score").toBsonDocument().apply {
-                            for (field in serializer.descriptor.elementNames) put(field, BsonBoolean(true))
-                        }))
-                        add(Aggregates.sort(sort(orderBy, Sorts.metaTextScore("text_search_score"))))
-                    } else if (orderBy.isNotEmpty()) {
+                    add(Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)))
+                    if (orderBy.isNotEmpty()) {
                         if (hasCiSort && !supportsCollation) {
                             add(addCiFields(orderBy))
                             add(Aggregates.sort(sortCi(orderBy)))
@@ -986,12 +950,12 @@ public class MongoTable<Model : Any>(
         )
     }
 
-    private fun sort(orderBy: List<SortPart<Model>>, lastly: Bson? = null): Bson = Sorts.orderBy(orderBy.map {
+    private fun sort(orderBy: List<SortPart<Model>>): Bson = Sorts.orderBy(orderBy.map {
         if (it.ascending)
             Sorts.ascending(it.field.mongo)
         else
             Sorts.descending(it.field.mongo)
-    } + listOfNotNull(lastly))
+    })
 
     // DocumentDB and some other engines don't support MongoDB collation. Instead, for case-insensitive
     // sorts we add computed $toLower fields and sort by those.
@@ -1005,7 +969,7 @@ public class MongoTable<Model : Any>(
     private fun sortCi(orderBy: List<SortPart<Model>>, lastly: Bson? = null): Bson = Sorts.orderBy(orderBy.map {
         val fieldName = if (it.ignoreCase) ciFieldName(it) else it.field.mongo
         if (it.ascending) Sorts.ascending(fieldName) else Sorts.descending(fieldName)
-    } + listOfNotNull(lastly))
+    })
 
     override suspend fun findSimilar(
         vectorField: DataClassPath<Model, Embedding>,

@@ -219,7 +219,7 @@ public data class DataClassPathList<K, V>(val wraps: DataClassPath<K, List<V>>) 
     override fun set(key: K, value: V): K = wraps.set(key, listOf(value))
     override fun toString(): String = "$wraps.*"
     override fun mapCondition(condition: Condition<V>): Condition<K> =
-        wraps.mapCondition(Condition.ListAllElements(condition))
+        wraps.mapCondition(Condition.CollectionAllElements(condition))
 
     override fun mapModification(modification: Modification<V>): Modification<K> =
         wraps.mapModification(Modification.ListPerElement(Condition.Always, modification))
@@ -237,7 +237,7 @@ public data class DataClassPathSet<K, V>(val wraps: DataClassPath<K, Set<V>>) :
     override fun set(key: K, value: V): K = wraps.set(key, setOf(value))
     override fun toString(): String = "$wraps.*"
     override fun mapCondition(condition: Condition<V>): Condition<K> =
-        wraps.mapCondition(Condition.SetAllElements(condition))
+        wraps.mapCondition(Condition.CollectionAllElements(condition))
 
     override fun mapModification(modification: Modification<V>): Modification<K> =
         wraps.mapModification(Modification.SetPerElement(Condition.Always, modification))

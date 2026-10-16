@@ -14,7 +14,7 @@ import org.jetbrains.exposed.v1.jdbc.*
 import org.jetbrains.exposed.v1.core.ops.SingleValueInListOp
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
-// The backslash used to escape literal `%`/`_` in `StringContains`/`RawStringContains` LIKE
+// The backslash used to escape literal `%`/`_` in `StringContains` LIKE
 // patterns (see [escapeLikeValue]). Backslash is not a special character in either dialect's LIKE
 // syntax by default, so it's safe to reserve as the escape char here.
 private const val LIKE_ESCAPE_CHAR = '\\'
@@ -22,7 +22,7 @@ private const val LIKE_ESCAPE_CHAR = '\\'
 /**
  * Escapes a literal search value so it can be embedded inside a `%...%` LIKE pattern without its
  * own `%`/`_` characters being interpreted as SQL wildcards. The in-memory reference for
- * `StringContains`/`RawStringContains` is `on.contains(value)` — a literal substring search where
+ * `StringContains` is `on.contains(value)` — a literal substring search where
  * every character of [value] is significant — so this (together with passing [LIKE_ESCAPE_CHAR] as
  * the op's `escapeChar`, which emits `ESCAPE '\'`) is required to match that semantics.
  */
@@ -242,15 +242,6 @@ private fun <T> condition(
                 LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
         }
 
-        is Condition.RawStringContains -> {
-            val col = fieldSet.single
-            val pattern = "%${escapeLikeValue(condition.value)}%"
-            if (condition.ignoreCase)
-                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
-            else
-                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
-        }
-
         // Bitwise operations
         is Condition.IntBitsClear -> {
             val col = fieldSet.single(condition.mask as T)
@@ -291,12 +282,8 @@ private fun <T> condition(
 
         // Collection conditions that should NOT be reached directly (handled via OnField → child table)
         // If they ARE reached, it means the condition is on a non-child-table field → unsupported
-        is Condition.ListAllElements<*> -> unsupported()
-        is Condition.ListAnyElements<*> -> unsupported()
-        is Condition.SetAllElements<*> -> unsupported()
-        is Condition.SetAnyElements<*> -> unsupported()
-        is Condition.ListSizesEquals<*> -> unsupported()
-        is Condition.SetSizesEquals<*> -> unsupported()
+        is Condition.CollectionAllElements<*, *> -> unsupported()
+        is Condition.CollectionAnyElements<*, *> -> unsupported()
         is Condition.Exists<*> -> unsupported()
         is Condition.OnKey<*> -> unsupported()
 
@@ -305,7 +292,6 @@ private fun <T> condition(
         )
 
         // Unsupported: table scan fallback
-        is Condition.FullTextSearch -> unsupported()
         is Condition.GeoDistance -> unsupported()
         is Condition.RegexMatches -> {
             // Try standard SQL REGEXP (works on H2, SQLite; fails on some others)
@@ -373,42 +359,13 @@ private fun conditionOnChildTable(
         )
     }
 
-    fun countSubquery(): Expression<Int> {
-        @Suppress("UNCHECKED_CAST")
-        return wrapAsExpression<Int>(
-            childTable.select(Count(stringLiteral("*"))).where {
-                childTable.ownerIdColumns[0] eq mainIdCol
-            }
-        ) as Expression<Int>
-    }
-
     return when (condition) {
-        is Condition.ListAnyElements<*>, is Condition.SetAnyElements<*> -> {
-            val innerCond = when (condition) {
-                is Condition.ListAnyElements<*> -> condition.condition as Condition<Any?>
-                is Condition.SetAnyElements<*> -> condition.condition as Condition<Any?>
-            }
-            val efs = elementFieldSet()
-            existsSubquery(condition(innerCond, efs, ctx, negated))
-        }
+        is Condition.CollectionAnyElements<*, *> ->
+            existsSubquery(condition(condition.condition as Condition<Any?>, elementFieldSet(), ctx, negated))
 
-        is Condition.ListAllElements<*>, is Condition.SetAllElements<*> -> {
-            val innerCond = when (condition) {
-                is Condition.ListAllElements<*> -> condition.condition as Condition<Any?>
-                is Condition.SetAllElements<*> -> condition.condition as Condition<Any?>
-            }
-            val efs = elementFieldSet()
-            // NOT EXISTS (... WHERE NOT <condition>)
-            NotOp(existsSubquery(NotOp(condition(innerCond, efs, ctx, negated))))
-        }
-
-        is Condition.ListSizesEquals<*>, is Condition.SetSizesEquals<*> -> {
-            val count = when (condition) {
-                is Condition.ListSizesEquals<*> -> condition.count
-                is Condition.SetSizesEquals<*> -> condition.count
-            }
-            EqOp(countSubquery(), sqlLiteralOfSomeKind(IntegerColumnType(), count))
-        }
+        // NOT EXISTS (... WHERE NOT <condition>)
+        is Condition.CollectionAllElements<*, *> ->
+            NotOp(existsSubquery(NotOp(condition(condition.condition as Condition<Any?>, elementFieldSet(), ctx, negated))))
 
         is Condition.Exists<*> -> {
             // Map: check if key exists
@@ -500,7 +457,6 @@ internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = 
     is Modification.CoerceAtMost -> true
     is Modification.CoerceAtLeast -> true
     is Modification.AppendString -> true
-    is Modification.AppendRawString -> true
     is Modification.OnField<*, *> -> {
         // Navigating through a value class's wrapped property (key.inline) doesn't consume a
         // storage segment — see SqlFieldSet.sub() — so it must not extend the path either, or
@@ -520,8 +476,6 @@ internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = 
     is Modification.SetRemove<*> -> false
     is Modification.SetRemoveInstances<*> -> false
     is Modification.SetPerElement<*> -> false
-    is Modification.SetDropFirst<*> -> false
-    is Modification.SetDropLast<*> -> false
     is Modification.Combine<*> -> false
     is Modification.RemoveKeys<*> -> false
 }
@@ -644,9 +598,6 @@ private fun <T> FieldModifier.scalarModification(
             CustomFunction("GREATEST", type, fieldSet.formatSingleExpression(modification.value), old)
         }
         is Modification.AppendString -> modifySingle(fieldSet) { type, old ->
-            Concat("", old, fieldSet.formatSingleExpression(modification.value as T)) as Expression<Any?>
-        }
-        is Modification.AppendRawString -> modifySingle(fieldSet) { type, old ->
             Concat("", old, fieldSet.formatSingleExpression(modification.value as T)) as Expression<Any?>
         }
         is Modification.OnField<*, *> -> {

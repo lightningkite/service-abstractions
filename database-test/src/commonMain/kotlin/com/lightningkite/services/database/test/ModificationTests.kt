@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.data.toEmailAddress
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -914,6 +915,18 @@ abstract class ModificationTests() {
     }
 
     @Test
+    fun test_email_raw_append() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_email_raw_append"))
+        val item = LargeTestModel(email = "a@test.com".toEmailAddress())
+        collection.insertOne(item)
+        val modification = modification<LargeTestModel> { it.email.raw += ".uk" }
+        collection.updateOneById(item._id, modification)
+        val result = collection.get(item._id)!!
+        assertEquals("a@test.com.uk".toEmailAddress(), result.email)
+        assertEquals(modification(item), result)
+    }
+
+    @Test
     fun test_Int_mul() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Int_mul"))
         val item = LargeTestModel(int = 2)
@@ -1130,30 +1143,6 @@ abstract class ModificationTests() {
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(setOf(1), result.set)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
-    fun test_Set_popFirst() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Set_popFirst"))
-        val item = LargeTestModel(set = setOf(1, 2, 3))
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> { it.set.dropFirst() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(setOf(2, 3), result.set)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
-    fun test_Set_popLast() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Set_popLast"))
-        val item = LargeTestModel(set = setOf(1, 2, 3))
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> { it.set.dropLast() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(setOf(1, 2), result.set)
         assertEquals(modification(item), result)
     }
 

@@ -2,7 +2,6 @@
 
 package com.lightningkite.services.database
 
-import com.lightningkite.services.data.IsRawString
 import com.lightningkite.services.database.validation.ShouldValidateSub
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
@@ -109,16 +108,6 @@ private fun <T> setOptions(element: KSerializer<T>): List<MySealedClassSerialize
             priority = 45
         ) { it is Modification.SetRemoveInstances },
         MySealedClassSerializer.Option(
-            Modification.SetDropFirst.serializer(element),
-            "SetDropFirst",
-            priority = 45
-        ) { it is Modification.SetDropFirst },
-        MySealedClassSerializer.Option(
-            Modification.SetDropLast.serializer(element),
-            "SetDropLast",
-            priority = 45
-        ) { it is Modification.SetDropLast },
-        MySealedClassSerializer.Option(
             Modification.SetPerElement.serializer(element),
             "SetPerElement",
             priority = 45
@@ -164,21 +153,14 @@ private val stringOptions: List<MySealedClassSerializer.Option<Modification<Stri
         ) { it is Modification.AppendString },
     )
 
-private fun <T : IsRawString> rawStringOptions(element: KSerializer<T>) =
-    comparableOptions(element) + listOf(
-        MySealedClassSerializer.Option(
-            Modification.AppendRawString.serializer(element),
-            "AppendString",
-            alternativeNames = setOf("AppendRawString"),
-            priority = 45
-        ) { true },
-    )
-
 //private fun <T: Any> classOptions(inner: KSerializer<T>, fields: List<SerializableProperty<T, *>>): List<MySealedClassSerializer.Option<Modification<T>, *>> = commonOptions(inner) + fields.map { prop ->
 //    MySealedClassSerializer.Option(ModificationOnFieldSerializer(prop)) { it is Modification.OnField<*, *> && it.key.name == prop.name }
 //}
+// A value class's descriptor can't say whether it's Comparable, but wrapping one comparable value it almost always is.
+@Suppress("UNCHECKED_CAST")
 private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Modification<T>, *>> =
-    commonOptions(inner) + inner.serializableProperties!!.let {
+    (if (inner.descriptor.isInline) comparableOptions(inner as KSerializer<String>) as List<MySealedClassSerializer.Option<Modification<T>, *>>
+    else commonOptions(inner)) + inner.serializableProperties!!.let {
         it.mapIndexed { index, ser ->
             MySealedClassSerializer.Option(
                 serializer = ModificationOnFieldSerializer(field = ser),
@@ -220,7 +202,6 @@ public data class ModificationSerializer<T>(public val inner: KSerializer<T>) :
                 inner.nullElement() != null -> nullableOptions(inner.nullElement()!! as KSerializer<Any>)
                 inner.descriptor.serialName.substringBefore('/') == "kotlin.String" -> stringOptions
                 inner.descriptor.serialName in numlist -> numberOptions(inner as KSerializer<Int>)
-                IsRawString.Companion.serialNames.contains(inner.descriptor.serialName) -> rawStringOptions(inner as KSerializer<IsRawString>)
                 inner.descriptor.kind == StructureKind.MAP -> stringMapOptions(inner.mapValueElement()!!)
                 inner.descriptor.kind == StructureKind.LIST -> {
                     if (inner.descriptor.serialName.contains("Set")) setOptions(inner.listElement()!!)
@@ -319,12 +300,6 @@ internal object ModificationAppendStringSerializer :
     override fun outer(it: String): Modification.AppendString = Modification.AppendString(it)
 }
 
-internal class ModificationAppendRawStringSerializer<T : IsRawString> :
-    WrappingSerializer<Modification.AppendRawString<T>, String>("com.lightningkite.services.database.Modification.AppendRawString") {
-    override fun getDeferred(): KSerializer<String> = String.serializer()
-    override fun inner(it: Modification.AppendRawString<T>): String = it.value
-    override fun outer(it: String): Modification.AppendRawString<T> = Modification.AppendRawString(it)
-}
 
 internal class ModificationListAppendSerializer<T>(internal val inner: KSerializer<T>) :
     WrappingSerializer<Modification.ListAppend<T>, List<T>>("com.lightningkite.services.database.Modification.ListAppend") {
@@ -389,24 +364,9 @@ internal class ModificationListDropFirstSerializer<T>(internal val inner: KSeria
     override fun outer(it: Boolean): Modification.ListDropFirst<T> = Modification.ListDropFirst()
 }
 
-internal class ModificationSetDropFirstSerializer<T>(internal val inner: KSerializer<T>) :
-    WrappingSerializer<Modification.SetDropFirst<T>, Boolean>("com.lightningkite.services.database.Modification.SetDropFirst") {
-    override fun getDeferred(): KSerializer<Boolean> = Boolean.serializer()
-    override fun inner(it: Modification.SetDropFirst<T>): Boolean = true
-    override fun outer(it: Boolean): Modification.SetDropFirst<T> = Modification.SetDropFirst()
-}
-
 internal class ModificationListDropLastSerializer<T>(internal val inner: KSerializer<T>) :
     WrappingSerializer<Modification.ListDropLast<T>, Boolean>("com.lightningkite.services.database.Modification.ListDropLast") {
     override fun getDeferred(): KSerializer<Boolean> = Boolean.serializer()
     override fun inner(it: Modification.ListDropLast<T>): Boolean = true
     override fun outer(it: Boolean): Modification.ListDropLast<T> = Modification.ListDropLast()
 }
-
-internal class ModificationSetDropLastSerializer<T>(internal val inner: KSerializer<T>) :
-    WrappingSerializer<Modification.SetDropLast<T>, Boolean>("com.lightningkite.services.database.Modification.SetDropLast") {
-    override fun getDeferred(): KSerializer<Boolean> = Boolean.serializer()
-    override fun inner(it: Modification.SetDropLast<T>): Boolean = true
-    override fun outer(it: Boolean): Modification.SetDropLast<T> = Modification.SetDropLast()
-}
-

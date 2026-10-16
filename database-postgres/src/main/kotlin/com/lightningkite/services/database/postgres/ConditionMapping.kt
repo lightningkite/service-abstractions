@@ -11,7 +11,7 @@ import org.jetbrains.exposed.v1.jdbc.*
 import org.jetbrains.exposed.v1.core.ops.SingleValueInListOp
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
-// The backslash used to escape literal `%`/`_` in `StringContains`/`RawStringContains` LIKE
+// The backslash used to escape literal `%`/`_` in `StringContains` LIKE
 // patterns (see [escapeLikeValue]). Backslash is not a special character in Postgres's LIKE syntax
 // by default, so it's safe to reserve as the escape char here.
 private const val LIKE_ESCAPE_CHAR = '\\'
@@ -19,7 +19,7 @@ private const val LIKE_ESCAPE_CHAR = '\\'
 /**
  * Escapes a literal search value so it can be embedded inside a `%...%` LIKE pattern without its
  * own `%`/`_` characters being interpreted as SQL wildcards. The in-memory reference for
- * `StringContains`/`RawStringContains` is `on.contains(value)` — a literal substring search where
+ * `StringContains` is `on.contains(value)` — a literal substring search where
  * every character of [value] is significant — so this (together with passing [LIKE_ESCAPE_CHAR] as
  * the op's `escapeChar`, which emits `ESCAPE '\'`) is required to match that semantics.
  */
@@ -154,25 +154,13 @@ private fun <T> condition(
             }
         }
 
-        is Condition.SetAllElements<*> -> {
+        is Condition.CollectionAllElements<*, *> -> {
             AllIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
                 condition(condition.condition as Condition<Any?>, it)
             }))
         }
 
-        is Condition.ListAllElements<*> -> {
-            AllIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
-                condition(condition.condition as Condition<Any?>, it)
-            }))
-        }
-
-        is Condition.SetAnyElements<*> -> {
-            AnyIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
-                condition(condition.condition as Condition<Any?>, it)
-            }))
-        }
-
-        is Condition.ListAnyElements<*> -> {
+        is Condition.CollectionAnyElements<*, *> -> {
             AnyIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
                 condition(condition.condition as Condition<Any?>, it)
             }))
@@ -221,7 +209,6 @@ private fun <T> condition(
             )
             AndOp(listOf(ContainsOp(fieldSet.single, sqlLiteralOfSomeKind(fieldSet.single.columnType, listOf(keyValue))), onValue))
         }
-//        is Condition.FullTextSearch -> throw IllegalArgumentException()
 
         is Condition.GreaterThan -> op(condition.value, ::GreaterOp)
         is Condition.LessThan -> op(condition.value, ::LessOp)
@@ -314,34 +301,9 @@ private fun <T> condition(
                 LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
         }
 
-        is Condition.RawStringContains -> {
-            val col = fieldSet.single
-            val pattern = "%${escapeLikeValue(condition.value)}%"
-            if (condition.ignoreCase)
-                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
-            else
-                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
-        }
-
         is Condition.RegexMatches -> {
             val col = fieldSet.single
             RegexpOp(col as Column<String>, sqlLiteralOfSomeKind(TextColumnType(), condition.pattern), !condition.ignoreCase)
-        }
-
-        is Condition.SetSizesEquals<*> -> {
-            val col = fieldSet.single
-            EqOp(
-                ArrayLengthOp(col as Column<List<Any?>>),
-                sqlLiteralOfSomeKind(IntegerColumnType(), condition.count)
-            )
-        }
-
-        is Condition.ListSizesEquals<*> -> {
-            val col = fieldSet.single
-            EqOp(
-                ArrayLengthOp(col as Column<List<Any?>>),
-                sqlLiteralOfSomeKind(IntegerColumnType(), condition.count)
-            )
         }
 
         is Condition.OnField<*, *> -> condition<Any?>(
@@ -511,14 +473,6 @@ private fun <T> FieldModifier.modification(
             ) as Expression<Any?>
         }
 
-        is Modification.AppendRawString -> modifySingle(fieldSet) { type, old ->
-            Concat(
-                "",
-                old,
-                fieldSet.formatSingleExpression(modification.value as T)
-            ) as Expression<Any?>
-        }
-
         is Modification.ListAppend<*> -> modifyEach(fieldSet, modification.items as T) { type, it, old ->
             ConcatOp(
                 old,
@@ -580,28 +534,6 @@ private fun <T> FieldModifier.modification(
         }
 
         is Modification.ListDropLast<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old ->
-                SliceOp(
-                    old as Expression<List<Any?>>,
-                    to = MinusOp(
-                        ArrayLengthOp(old as Expression<List<Any?>>),
-                        sqlLiteralOfSomeKind(IntegerColumnType(), 1),
-                        IntegerColumnType()
-                    )
-                ) as Expression<Any?>
-            }
-        }
-
-        is Modification.SetDropFirst<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old ->
-                SliceOp(
-                    old as Expression<List<Any?>>,
-                    from = sqlLiteralOfSomeKind(IntegerColumnType(), 2)
-                ) as Expression<Any?>
-            }
-        }
-
-        is Modification.SetDropLast<*> -> fieldSet.fields.forEach {
             modify(it.key) { old ->
                 SliceOp(
                     old as Expression<List<Any?>>,

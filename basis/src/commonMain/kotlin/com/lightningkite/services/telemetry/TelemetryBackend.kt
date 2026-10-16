@@ -35,6 +35,12 @@ public interface TelemetryBackend {
      */
     public fun reportError(throwable: Throwable, attributes: TelemetryAttributes)
 
+    /**
+     * Sends anything buffered. Serverless engines call this at the end of each invocation, because a
+     * frozen process can't export in the background.
+     */
+    public suspend fun flush()
+
     @Serializable
     public data class Settings(
         override val url: String = "noop",
@@ -112,6 +118,7 @@ public interface TelemetryBackend {
         override fun inFlight(owner: Namespaced, name: String, dimensions: Set<TelemetryKey<*>>): InFlight = NoopInFlight
         override fun gauge(owner: Namespaced, name: String, unit: MetricUnit, attributes: TelemetryAttributes, sample: () -> Long): AutoCloseable = AutoCloseable {}
         override fun reportError(throwable: Throwable, attributes: TelemetryAttributes) {}
+        override suspend fun flush() {}
     }
 }
 

@@ -13,7 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Regression coverage for release review finding 5 (BLOCKER): `StringContains`/`RawStringContains`
+ * Regression coverage for release review finding 5 (BLOCKER): `StringContains`
  * built LIKE patterns as `"%${value}%"` with no escaping, so a literal `%`/`_` in the *search value*
  * was interpreted as a SQL wildcard instead of a literal character — silently broadening matches
  * versus the in-memory reference (`on.contains(value)`, a literal substring search).

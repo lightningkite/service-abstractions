@@ -53,7 +53,10 @@ import io.opentelemetry.sdk.trace.export.BatchSpanProcessor
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import io.opentelemetry.sdk.trace.export.SpanExporter
 import io.opentelemetry.sdk.trace.samplers.Sampler
+import io.opentelemetry.sdk.common.CompletableResultCode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import org.slf4j.event.Level as Slf4jLevel
 import java.util.concurrent.ConcurrentHashMap
@@ -194,6 +197,18 @@ public class OtelTelemetryBackend(
                 for ((key, value) in attributes.map) setAttribute(AttributeKey.stringKey(key.name), value.toString())
             }
             .emit()
+    }
+
+    override suspend fun flush() {
+        // An OpenTelemetry we didn't build (e.g. the Java agent's) is flushed by its owner.
+        if (sdk !is OpenTelemetrySdk) return
+        withContext(Dispatchers.IO) {
+            CompletableResultCode.ofAll(listOf(
+                sdk.sdkTracerProvider.forceFlush(),
+                sdk.sdkMeterProvider.forceFlush(),
+                sdk.sdkLoggerProvider.forceFlush(),
+            )).join(10, TimeUnit.SECONDS)
+        }
     }
 
     public companion object {
