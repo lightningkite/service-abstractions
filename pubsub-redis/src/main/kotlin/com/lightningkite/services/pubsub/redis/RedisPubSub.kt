@@ -9,6 +9,8 @@ import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.pubsub.PubSub
 import com.lightningkite.services.pubsub.PubSubChannel
 import io.lettuce.core.RedisClient
+import io.lettuce.core.api.StatefulRedisConnection
+import io.lettuce.core.api.reactive.RedisReactiveCommands
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
 import io.lettuce.core.pubsub.api.reactive.RedisPubSubReactiveCommands
 import kotlinx.coroutines.flow.FlowCollector
@@ -21,8 +23,8 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 import reactor.core.publisher.Flux
-import reactor.core.publisher.Flux.usingWhen
 import reactor.core.publisher.Mono
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -63,21 +65,26 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ## Connection Model
  *
- * A single shared pub/sub connection carries every channel. [subscription] builds a per-channel hot
- * [Flux] with [Flux.share], so all collectors of a channel see every message but Redis holds a single
- * SUBSCRIBE for it. [Flux.share] refcounts that upstream: the first collector SUBSCRIBEs, the last
- * one UNSUBSCRIBEs, and a later collector re-SUBSCRIBEs after the refcount drops to zero.
- * [Flux.usingWhen] scopes that SUBSCRIBE/UNSUBSCRIBE to a single resource lifetime.
+ * Each instance holds two connections:
+ * - A shared **subscribe** connection carries every SUBSCRIBE/UNSUBSCRIBE and receives every message,
+ *   for all channels. Each channel has one [Subscription] counting its live collectors, so all
+ *   collectors of a channel see every message while Redis holds a single SUBSCRIBE for it: the first
+ *   collector SUBSCRIBEs, the last one UNSUBSCRIBEs.
+ * - A **publish** connection sends every PUBLISH and never subscribes, so Redis never delivers a
+ *   message back to the connection that published it. Valkey 9.0.0-9.0.5 tears the RESP3 push frame in
+ *   exactly that case for messages of 16 KiB or more (valkey-io/valkey#4231, fixed in 9.0.6 and 9.1.2).
+ *   Lettuce then reads the payload as the PUBLISH reply and never matches another SUBSCRIBE
+ *   confirmation on that connection, so every later subscription silently hangs.
  *
- * The connection opens lazily on first use and is recreated by [disconnect], so a serverless handler
- * can release the socket before its execution context freezes without permanently disabling the
- * service. Dropping the connection ends any live collectors (their flows complete), which is the
- * intended teardown.
+ * Both connections open lazily on first use and are recreated by [disconnect], so a serverless
+ * handler can release the sockets before its execution context freezes without permanently disabling
+ * the service. Dropping the subscribe connection ends any live collectors (their flows complete),
+ * which is the intended teardown.
  *
  * __Note on caching:__ [channels] holds one entry per currently-subscribed channel key. Each entry is
- * removed when its last collector leaves (see [subscription]), so a key is only retained while it is
+ * removed when its last collector leaves (see [release]), so a key is only retained while it is
  * actively in use and no accumulation happens across short-lived uses. [disconnect] additionally
- * clears the whole map when it drops the connection.
+ * clears the whole map when it drops the connections.
  *
  * ## Important Gotchas
  *
@@ -155,25 +162,66 @@ public class RedisPubSub(
     private val json = Json { serializersModule = context.internalSerializersModule }
 
     /**
-     * One shared connection for both publishing and subscribing, rebuilt after [disconnect].
+     * The shared subscribe connection, rebuilt after [disconnect]. Never used to publish; see
+     * [publishConnection].
      *
      * `var` + `lazy` (rather than a plain `val`) so [disconnect] can drop the built connection and
      * let the next use rebuild it. Volatile because the getter reads it outside [lifecycleLock].
      */
     @Volatile
-    private var _connection = lazy { client.connectPubSub() }
-    private val connection: StatefulRedisPubSubConnection<String, String> get() = _connection.value
-    private val commands: RedisPubSubReactiveCommands<String, String>
-        get() = connection.commands(RedisPubSubReactiveCommands.factory())
+    private var _subscribeConnection = lazy { client.connectPubSub() }
+    private val subscribeConnection: StatefulRedisPubSubConnection<String, String>
+        get() = _subscribeConnection.value
 
     /**
-     * Per-channel hot Flux, created on first use and evicted when its last collector leaves. Internal
-     * so tests can assert eviction directly.
+     * Sends every PUBLISH, rebuilt after [disconnect]. A plain connection that never subscribes, so a
+     * message is never delivered back to the connection that published it (see the class docs).
      */
-    internal val channels = ConcurrentHashMap<String, Flux<String>>()
+    @Volatile
+    private var _publishConnection = lazy { client.connect() }
+    private val publishConnection: StatefulRedisConnection<String, String>
+        get() = _publishConnection.value
 
-    /** Guards connection recreation so [disconnect] cannot race a live [connection] use. */
+    /**
+     * Live subscriptions by channel key. Read freely (tests assert eviction directly), but every
+     * mutation goes through [ConcurrentHashMap.compute] on that key, together with the SUBSCRIBE or
+     * UNSUBSCRIBE it implies; see [acquire] and [release].
+     *
+     * Must stay a [ConcurrentHashMap]: its `compute` applies the function exactly once while holding
+     * the key's lock. The default [java.util.concurrent.ConcurrentMap.compute] may retry the function,
+     * which would send SUBSCRIBE twice and miscount collectors.
+     */
+    internal val channels = ConcurrentHashMap<String, Subscription>()
+
+    /** Guards connection recreation so [disconnect] cannot race a live connection use. */
     private val lifecycleLock = Mutex()
+
+    /**
+     * One channel's SUBSCRIBE on one specific subscribe connection, shared by all of that channel's
+     * collectors.
+     *
+     * Constructing it sends the SUBSCRIBE, so it is only constructed inside `channels.compute(key)`.
+     * It is pinned to [connection] so that a collector outliving a [disconnect] releases against the
+     * dead connection and never UNSUBSCRIBEs the replacement.
+     */
+    internal inner class Subscription(
+        val key: String,
+        val connection: StatefulRedisPubSubConnection<String, String>,
+    ) {
+        /** Live collectors. Only read or written inside `channels.compute(key)`, which serializes them. */
+        var collectors = 0
+
+        /** Completes when Redis confirms the SUBSCRIBE. */
+        val confirmed: CompletableFuture<Void> = connection.async().subscribe(key).toCompletableFuture()
+            .whenComplete { _, e -> if (e != null) logger.error("Redis subscription for channel '$key' failed", e) }
+
+        /** This channel's messages, fanned out to its collectors with one listener on the connection. */
+        val messages: Flux<String> = connection.commands(RedisPubSubReactiveCommands.factory())
+            .observeChannels()
+            .filter { it.channel == key }
+            .map { it.message }
+            .share()
+    }
 
     public companion object {
         public fun PubSub.Settings.Companion.redis(url: String): PubSub.Settings = PubSub.Settings("redis://$url")
@@ -185,20 +233,37 @@ public class RedisPubSub(
     }
 
     /**
-     * The hot Flux for [key]. First collector (per connection) subscribes and the last unsubscribes,
-     * thanks to [Flux.share]; re-SUBSCRIBE happens automatically once the refcount returns to zero.
-     * [Flux.usingWhen] makes the (un)subscribe a single subscription resource. When the last collector
-     * leaves, the entry is evicted so a high cardinality of channel keys does not accumulate without
-     * bound.
+     * Registers a collector on [key], sending SUBSCRIBE if it is the channel's first. Every [acquire]
+     * must be paired with a [release].
+     *
+     * SUBSCRIBE and UNSUBSCRIBE are sent (not merely built) inside `compute` on the channel's key.
+     * Commands on one connection execute in the order sent, so Redis' subscription state always
+     * matches the collector count, even when a channel's last collector leaves while a new one
+     * arrives. Different channels need no ordering against each other, so they do not contend.
      */
-    private fun subscription(key: String): Flux<String> = channels.computeIfAbsent(key) {
-        val reactive = commands
-        usingWhen(
-            reactive.subscribe(key).then(Mono.just(reactive)),
-            { it.observeChannels().filter { c -> c.channel == key }.map { c -> c.message } },
-            { channels.remove(key); it.unsubscribe(key).then() }
-        ).doOnError { e -> logger.error("Redis subscription for channel '$key' failed", e) }
-            .share()
+    private fun acquire(key: String): Subscription {
+        val connection = subscribeConnection
+        return channels.compute(key) { _, existing ->
+            val subscription = if (existing != null && existing.connection === connection) existing
+            else Subscription(key, connection)
+            subscription.collectors++
+            subscription
+        }!!
+    }
+
+    /** Unregisters a collector, sending UNSUBSCRIBE and evicting the entry if it was the last. */
+    private fun release(subscription: Subscription) {
+        channels.compute(subscription.key) { _, existing ->
+            if (--subscription.collectors > 0) return@compute existing
+            // A subscription from before a disconnect belongs to a closed connection: nothing to undo.
+            if (subscription.connection.isOpen) {
+                subscription.connection.async().unsubscribe(subscription.key).whenComplete { _, e ->
+                    if (e != null) logger.warn("Redis unsubscribe for channel '${subscription.key}' failed", e)
+                }
+            }
+            // Evict only this subscription; the key may already belong to a newer connection's entry.
+            if (existing === subscription) null else existing
+        }
     }
 
     /**
@@ -219,17 +284,36 @@ public class RedisPubSub(
             put(TelemetryKey.OfString("messaging.destination"), key)
             put(TelemetryKeys.Messaging.system, "redis")
         }) {
-            // Per-message spans created in the collecting coroutine (after asFlow()) so makeCurrent()
-            // works correctly and child spans get the right parent.
-            subscription(key).asFlow().collect { message ->
-                telemetryTrace("receive", attributes = TelemetryAttributes {
-                    put(TelemetryKey.OfString("pubsub.operation"), "receive")
-                    put(TelemetryKey.OfString("messaging.destination"), key)
-                    put(TelemetryKeys.Messaging.system, "redis")
-                    put(TelemetryKey.OfLong("message.size"), message.length.toLong())
-                }) {
-                    collector.emit(decode(message))
-                }
+            val subscription = acquire(key)
+            try {
+                // Listen before the SUBSCRIBE is confirmed, so nothing published in between is missed.
+                // Merging the confirmation in surfaces a failed SUBSCRIBE as this flow's error.
+                // suppressCancel: the confirmation is shared with the channel's other collectors.
+                subscription.messages
+                    .mergeWith(Mono.fromFuture(subscription.confirmed, true).then(Mono.empty()))
+                    .asFlow()
+                    .collect { message ->
+                        // Per-message spans created in the collecting coroutine (after asFlow()) so
+                        // makeCurrent() works correctly and child spans get the right parent.
+                        telemetryTrace("receive", attributes = TelemetryAttributes {
+                            put(TelemetryKey.OfString("pubsub.operation"), "receive")
+                            put(TelemetryKey.OfString("messaging.destination"), key)
+                            put(TelemetryKeys.Messaging.system, "redis")
+                            put(TelemetryKey.OfLong("message.size"), message.length.toLong())
+                        }) {
+                            // One undecodable payload must not end the subscription: whatever is
+                            // collecting (e.g. a WebSocket) would otherwise be torn down with it.
+                            val value = try {
+                                decode(message)
+                            } catch (e: Exception) {
+                                logger.warn("Dropped undecodable message on channel '$key': ${message.take(200)}", e)
+                                return@telemetryTrace
+                            }
+                            collector.emit(value)
+                        }
+                    }
+            } finally {
+                release(subscription)
             }
         }
 
@@ -240,7 +324,7 @@ public class RedisPubSub(
         }) { span ->
             val message = encode(value)
             span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("message.size"), message.length.toLong()) })
-            val result = commands.publish(key, message).awaitFirst()
+            val result = publishConnection.commands(RedisReactiveCommands.factory()).publish(key, message).awaitFirst()
             span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("pubsub.subscribers_reached"), result) })
         }
     }
@@ -251,42 +335,53 @@ public class RedisPubSub(
     override fun string(key: String): PubSubChannel<String> =
         channelImpl(key, { it }, { it })
 
-    /** Opens the shared connection. Optional -- every operation opens it lazily. */
+    /** Opens both connections. Optional -- every operation opens what it needs lazily. */
     override suspend fun connect() {
-        connection
+        subscribeConnection
+        publishConnection
     }
 
     /**
-     * Closes the shared connection, ending any live collectors (their flows complete), and drops the
-     * cached per-channel fluxes. Idempotent: repeated calls, or calling it without ever having
-     * connected, are a no-op beyond the first.
+     * Closes both connections, ending any live collectors (their flows complete), and drops the
+     * cached subscriptions. Idempotent: repeated calls, or calling it without ever having connected,
+     * are a no-op beyond the first.
      *
-     * The next use rebuilds the connection, so this does not permanently disable the service. The
+     * The next use rebuilds the connections, so this does not permanently disable the service. The
      * [client] is left running because it is constructor-injected and may be shared with other
      * services.
      */
     override suspend fun disconnect() {
         lifecycleLock.withLock {
-            if (_connection.isInitialized()) _connection.value.close()
+            if (_subscribeConnection.isInitialized()) _subscribeConnection.value.close()
+            if (_publishConnection.isInitialized()) _publishConnection.value.close()
             channels.clear()
-            _connection = lazy { client.connectPubSub() }
+            _subscribeConnection = lazy { client.connectPubSub() }
+            _publishConnection = lazy { client.connect() }
         }
     }
 
     /**
-     * Verifies Redis connectivity and credentials with a non-mutating PING on the shared connection.
+     * Verifies Redis connectivity and credentials with a non-mutating PING on each connection.
      *
      * Overrides the abstraction's default (which PUBLISHes a test message): PING exercises the full
      * connection including AUTH on authenticated/TLS URLs without broadcasting a stray message to
-     * subscribers, and a healthy server replies `PONG`.
+     * subscribers, and a healthy server replies `PONG`. Both connections are checked because a
+     * subscribe connection that has stopped answering breaks live updates while publishing still works.
      */
     override suspend fun healthCheck(): HealthStatus =
         try {
-            val reply = telemetryTrace("ping") {
-                commands.ping().awaitFirstOrNull()
+            val replies = telemetryTrace("ping") {
+                mapOf(
+                    "subscribe" to subscribeConnection.commands(RedisPubSubReactiveCommands.factory()).ping().awaitFirstOrNull(),
+                    "publish" to publishConnection.commands(RedisReactiveCommands.factory()).ping().awaitFirstOrNull(),
+                )
             }
-            if (reply == "PONG") HealthStatus(HealthStatus.Level.OK)
-            else HealthStatus(HealthStatus.Level.ERROR, additionalMessage = "Unexpected PING reply: $reply")
+            val unexpected = replies.filterValues { it != "PONG" }
+            if (unexpected.isEmpty()) HealthStatus(HealthStatus.Level.OK)
+            else HealthStatus(
+                HealthStatus.Level.ERROR,
+                additionalMessage = unexpected.entries.joinToString { "Unexpected PING reply on ${it.key} connection: ${it.value}" },
+            )
         } catch (e: Exception) {
             HealthStatus(HealthStatus.Level.ERROR, additionalMessage = e.message)
         }
