@@ -2,6 +2,7 @@ package com.lightningkite.services.pubsub
 
 import com.lightningkite.services.*
 import com.lightningkite.services.data.HealthStatus
+import com.lightningkite.services.telemetry.TelemetryKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.serialization.*
@@ -105,6 +106,11 @@ import kotlin.time.Duration.Companion.minutes
  * @see PubSubChannel
  */
 public interface PubSub : Service {
+
+    public object TelemetryKeys {
+        public val subscribersReached: TelemetryKey.OfLong = TelemetryKey.OfLong("pubsub.subscribers_reached")
+    }
+
     /**
      * Configuration for instantiating a PubSub service.
      *
