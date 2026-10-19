@@ -20,8 +20,6 @@ public interface Optic<K, V> {
 public interface Lens<K, V> : Optic<K, V> {
     override fun get(key: K): V
     override fun getOrThrow(key: K): V = get(key)
-
-
 }
 
 public class IdentityLens<T>(override val serializer: KSerializer<T>) : Lens<T, T> {
@@ -29,4 +27,8 @@ public class IdentityLens<T>(override val serializer: KSerializer<T>) : Lens<T, 
     override fun set(key: T, value: T): T = value
     override fun mapCondition(condition: Condition<T>): Condition<T> = condition
     override fun mapModification(modification: Modification<T>): Modification<T> = modification
+    override fun toString(): String = "this"
+    override fun equals(other: Any?): Boolean =
+        other is IdentityLens<*> && this.serializer.descriptor == other.serializer.descriptor
+    override fun hashCode(): Int = 0
 }
