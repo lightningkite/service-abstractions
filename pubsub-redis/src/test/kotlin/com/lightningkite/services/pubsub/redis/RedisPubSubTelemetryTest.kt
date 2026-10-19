@@ -14,8 +14,13 @@ import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.AfterClass
 import org.junit.BeforeClass
 import redis.embedded.RedisServer
@@ -75,6 +80,52 @@ class RedisPubSubTelemetryTest {
         )
         assertEquals(parentData.traceId, publishSpan.traceId)
 
+        sdk.close()
+    }
+
+    /**
+     * A collection can outlive any reasonable span, so it must not be wrapped in one: each message
+     * gets a finished span of its own, parented to whatever context the collector runs in.
+     */
+    @Test
+    fun receiveSpansAreShortAndParentToCollectorContext() = runBlocking {
+        val spanExporter = InMemorySpanExporter.create()
+        val sdk = OpenTelemetrySdk.builder()
+            .setTracerProvider(
+                SdkTracerProvider.builder()
+                    .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+                    .build()
+            )
+            .build()
+        val pubsub = RedisPubSub("receive-test", contextWith(sdk), client)
+        val channel = pubsub.string("receive-${System.nanoTime()}")
+
+        val parent = sdk.getTracer("test").spanBuilder("parent").startSpan()
+        val inbox = Channel<String>(Channel.UNLIMITED)
+        val job = launch(parent.asContextElement()) { channel.collect { inbox.send(it) } }
+        // Publish until the collector's SUBSCRIBE has landed and it receives one.
+        val received = withTimeout(5_000) {
+            var message: String? = null
+            while (message == null) {
+                channel.emit("hello")
+                message = withTimeoutOrNull(100) { inbox.receive() }
+            }
+            message
+        }
+        assertEquals("hello", received)
+
+        // Still collecting, yet the message's span is already finished and exported.
+        val receiveSpan = spanExporter.finishedSpanItems.first { it.name == "receive-test.receive" }
+        assertEquals(parent.spanContext.spanId, receiveSpan.parentSpanId)
+        assertEquals("process", receiveSpan.attributes.get(AttributeKey.stringKey("messaging.operation.type")))
+        assertEquals(5L, receiveSpan.attributes.get(AttributeKey.longKey("messaging.message.body.size")))
+
+        job.cancelAndJoin()
+        parent.end()
+        val names = spanExporter.finishedSpanItems.map { it.name }.toSet()
+        assertEquals(setOf("parent", "receive-test.publish", "receive-test.receive"), names)
+
+        pubsub.disconnect()
         sdk.close()
     }
 

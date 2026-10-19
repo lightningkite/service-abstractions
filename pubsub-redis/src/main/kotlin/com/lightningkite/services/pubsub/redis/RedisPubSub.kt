@@ -1,7 +1,6 @@
 package com.lightningkite.services.pubsub.redis
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
-import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.HealthStatus
@@ -279,11 +278,7 @@ public class RedisPubSub(
         encode: (T) -> String,
         decode: (String) -> T,
     ): PubSubChannel<T> = object : PubSubChannel<T> {
-        override suspend fun collect(collector: FlowCollector<T>): Unit = telemetryTrace("subscribe", attributes = TelemetryAttributes {
-            put(TelemetryKey.OfString("pubsub.operation"), "subscribe")
-            put(TelemetryKey.OfString("messaging.destination"), key)
-            put(TelemetryKeys.Messaging.system, "redis")
-        }) {
+        override suspend fun collect(collector: FlowCollector<T>) {
             val subscription = acquire(key)
             try {
                 // Listen before the SUBSCRIBE is confirmed, so nothing published in between is missed.
@@ -296,10 +291,11 @@ public class RedisPubSub(
                         // Per-message spans created in the collecting coroutine (after asFlow()) so
                         // makeCurrent() works correctly and child spans get the right parent.
                         telemetryTrace("receive", attributes = TelemetryAttributes {
-                            put(TelemetryKey.OfString("pubsub.operation"), "receive")
-                            put(TelemetryKey.OfString("messaging.destination"), key)
                             put(TelemetryKeys.Messaging.system, "redis")
-                            put(TelemetryKey.OfLong("message.size"), message.length.toLong())
+                            put(TelemetryKeys.Messaging.destinationName, key)
+                            put(TelemetryKeys.Messaging.operationName, "receive")
+                            put(TelemetryKeys.Messaging.operationType, "process")
+                            put(TelemetryKeys.Messaging.messageBodySize, message.encodeToByteArray().size.toLong())
                         }) {
                             // One undecodable payload must not end the subscription: whatever is
                             // collecting (e.g. a WebSocket) would otherwise be torn down with it.
@@ -318,14 +314,15 @@ public class RedisPubSub(
         }
 
         override suspend fun emit(value: T): Unit = telemetryTrace("publish", attributes = TelemetryAttributes {
-            put(TelemetryKey.OfString("pubsub.operation"), "publish")
-            put(TelemetryKey.OfString("messaging.destination"), key)
             put(TelemetryKeys.Messaging.system, "redis")
+            put(TelemetryKeys.Messaging.destinationName, key)
+            put(TelemetryKeys.Messaging.operationName, "publish")
+            put(TelemetryKeys.Messaging.operationType, "send")
         }) { span ->
             val message = encode(value)
-            span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("message.size"), message.length.toLong()) })
+            span.enrich(TelemetryAttributes { put(TelemetryKeys.Messaging.messageBodySize, message.encodeToByteArray().size.toLong()) })
             val result = publishConnection.commands(RedisReactiveCommands.factory()).publish(key, message).awaitFirst()
-            span.enrich(TelemetryAttributes { put(TelemetryKey.OfLong("pubsub.subscribers_reached"), result) })
+            span.enrich(TelemetryAttributes { put(PubSub.TelemetryKeys.subscribersReached, result) })
         }
     }
 
