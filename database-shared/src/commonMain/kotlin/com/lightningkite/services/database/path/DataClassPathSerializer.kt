@@ -41,10 +41,10 @@ private fun String.splitPathSegments(): List<String> {
     val current = StringBuilder()
     var depth = 0
     for (c in this) {
-        when {
-            c == '[' -> depth++
-            c == ']' -> depth--
-            c == '.' && depth == 0 -> {
+        when (c) {
+            '[' -> depth++
+            ']' -> depth--
+            '.' if depth == 0 -> {
                 parts.add(current.toString())
                 current.clear()
                 continue

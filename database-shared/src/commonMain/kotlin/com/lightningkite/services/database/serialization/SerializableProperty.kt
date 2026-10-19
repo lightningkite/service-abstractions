@@ -5,6 +5,7 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.database.internal.ConcurrentMap
 import com.lightningkite.services.database.internal.getOrPutConcurrent
+import com.lightningkite.services.database.path.Lens
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.*
@@ -15,17 +16,32 @@ import kotlinx.serialization.json.JsonNames
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
-public interface SerializableProperty<A, B> {
+public sealed interface SerializableProperty<A, B> : Lens<A, B> {
+    override val serializer: KSerializer<B>
+
     public val name: String
-    public fun get(receiver: A): B
-    public fun setCopy(receiver: A, value: B): A
-    public val serializer: KSerializer<B>
+
+    override fun get(key: A): B
+    override fun set(key: A, value: B): A
+
     public val annotations: List<Annotation> get() = listOf()
-    public val default: B? get() = null
-    public val defaultCode: String? get() = null
     public val serializableAnnotations: List<SerializableAnnotation>
         get() = annotations.mapNotNull(SerializableAnnotation::parseOrNull)
+
+    public val default: B? get() = null
+    public val defaultCode: String? get() = null
+
     public val inline: Boolean get() = false
+
+    @Deprecated("Use set instead", ReplaceWith("set(receiver, value)"))
+    public fun setCopy(receiver: A, value: B): A = set(receiver, value)
+
+    override fun mapCondition(condition: Condition<B>): Condition<A> =
+        Condition.OnField(this, condition)
+
+    override fun mapModification(modification: Modification<B>): Modification<A> =
+        Modification.OnField(this, modification)
+
 
     @Suppress("UNCHECKED_CAST")
     @OptIn(InternalSerializationApi::class)
@@ -35,8 +51,8 @@ public interface SerializableProperty<A, B> {
     ) : SerializableProperty<A, B> {
         override val name: String by lazy { parent.descriptor.getElementName(index) }
         override val serializer: KSerializer<B> by lazy { parent.childSerializers()[index] as KSerializer<B> }
-        override fun setCopy(receiver: A, value: B): A = parent.set(receiver, index, serializer, value)
-        override fun get(receiver: A): B = (parent as KSerializer<A>).get(receiver, index, serializer)
+        override fun set(key: A, value: B): A = parent.set(key, index, serializer, value)
+        override fun get(key: A): B = (parent as KSerializer<A>).get(key, index, serializer)
         override val annotations: List<Annotation> by lazy {
             parent.descriptor.getElementAnnotations(index) + serializer.descriptor.annotations
         }
@@ -118,9 +134,9 @@ public interface SerializableProperty<A, B> {
         override val serializer: KSerializer<Any?> by lazy { source.type.serializer(registry, context) }
         override val annotations: List<Annotation> get() = listOf()
         override val serializableAnnotations: List<SerializableAnnotation> get() = source.annotations
-        override fun get(receiver: VirtualInstance): Any? = receiver.values[source.index]
-        override fun setCopy(receiver: VirtualInstance, value: Any?): VirtualInstance =
-            VirtualInstance(receiver.type, receiver.values.toMutableList().also {
+        override fun get(key: VirtualInstance): Any? = key.values[source.index]
+        override fun set(key: VirtualInstance, value: Any?): VirtualInstance =
+            VirtualInstance(key.type, key.values.toMutableList().also {
                 it[source.index] = value
             })
 

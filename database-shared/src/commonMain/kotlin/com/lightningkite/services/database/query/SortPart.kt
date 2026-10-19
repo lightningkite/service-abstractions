@@ -52,7 +52,6 @@ public data class SortPart<T>(
 }
 
 /** Orders items the same way a [Database] must; see [SortPart] for the rules it implements. */
-@OptIn(ExperimentalSerializationApi::class)
 public val <T> List<SortPart<T>>.comparator: Comparator<T>?
     get() {
         if (this.isEmpty()) return null
@@ -64,7 +63,7 @@ public val <T> List<SortPart<T>>.comparator: Comparator<T>?
                     val result = aString.compareTo(bString, true)
                     if (result != 0) return@Comparator if (part.ascending) result else -result
                 } else {
-                    val result = part.field.compare.compare(a, b)
+                    val result = part.field.comparator.compare(a, b)
                     if (result != 0) return@Comparator if (part.ascending) result else -result
                 }
             }
