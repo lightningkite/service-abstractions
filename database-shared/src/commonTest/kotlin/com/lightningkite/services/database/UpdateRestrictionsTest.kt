@@ -707,7 +707,6 @@ class UpdateRestrictionsTest {
         }
 
         assertNever(restrictions, modification { it.embeddedNullable.notNull.value1 assign "TX" })
-        assertNever(restrictions, modification { it.embeddedNullable.notNull.value1 += "X" })
         assertEquals(condition { it.embeddedNullable neq null }, restrictions(modification { it.embeddedNullable.notNull.value1 assign "CO" }))
         assertEquals(condition { it.embeddedNullable.notNull.value1 eq "CO" }, restrictions(modification { it.embeddedNullable.notNull.value2 assign 3 }))
     }

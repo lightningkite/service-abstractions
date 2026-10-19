@@ -111,10 +111,6 @@ class SerializationLoopTest {
         "Increment" to modification { it -> it.int += 5 },
         "Multiply" to modification { it -> it.int *= 2 },
 
-        // --- String Modifications ---
-        "AppendString" to modification { it -> it.string += " appended" },
-        "AppendString through IsRawString.raw" to modification { it -> it.email.raw += ".appended" },
-
         // --- List Modifications ---
         "ListAppend (also: AppendList)" to modification { it -> it.list += listOf(1, 2, 3) },
         "ListRemove (also: Remove)" to modification { it -> it.list removeAll { e -> e gt 10 } },
@@ -183,7 +179,6 @@ class SerializationLoopTest {
         loop("Complex Modification", modification<LargeTestModel> { it ->
             it.int += 1
             it.int coerceAtMost 100
-            it.string += " modified"
             it.list += listOf(99)
             it.embedded.value1 assign "updated"
         })

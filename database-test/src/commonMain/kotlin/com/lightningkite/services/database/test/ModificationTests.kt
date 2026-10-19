@@ -915,18 +915,6 @@ abstract class ModificationTests() {
     }
 
     @Test
-    fun test_email_raw_append() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_email_raw_append"))
-        val item = LargeTestModel(email = "a@test.com".toEmailAddress())
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> { it.email.raw += ".uk" }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals("a@test.com.uk".toEmailAddress(), result.email)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
     fun test_Int_mul() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Int_mul"))
         val item = LargeTestModel(int = 2)

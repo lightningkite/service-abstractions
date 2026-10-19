@@ -26,10 +26,6 @@ import kotlinx.serialization.serializer
  * - [Multiply] - Multiply by a value
  * - [CoerceAtMost]/[CoerceAtLeast] - Clamp values to min/max
  *
- * ## String Modifications
- *
- * - [AppendString] - Concatenate string
- *
  * ## Collection Modifications
  *
  * - [ListAppend]/[SetAppend] - Add elements
@@ -167,12 +163,6 @@ public sealed class Modification<T> {
     public data class Multiply<T : Number>(val by: T) : Modification<T>() {
         override fun invoke(on: T): T = on * by
         override fun toString(): String = " *= $by"
-    }
-
-    @Serializable(ModificationAppendStringSerializer::class)
-    public data class AppendString(val value: String) : Modification<String>() {
-        override fun invoke(on: String): String = on + value
-        override fun toString(): String = " += $value"
     }
 
     @Serializable(ModificationListAppendSerializer::class)

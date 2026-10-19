@@ -118,15 +118,6 @@ private fun <T> numberOptions(serializer: KSerializer<T>): List<MySealedClassSer
         ) { it is Modification.Multiply },
     )
 
-private val stringOptions: List<MySealedClassSerializer.Option<Modification<String>, *>> =
-    comparableOptions(String.serializer()) + listOf(
-        MySealedClassSerializer.Option(
-            Modification.AppendString.serializer(),
-            "AppendString",
-            priority = 45
-        ) { it is Modification.AppendString },
-    )
-
 //private fun <T: Any> classOptions(inner: KSerializer<T>, fields: List<SerializableProperty<T, *>>): List<MySealedClassSerializer.Option<Modification<T>, *>> = commonOptions(inner) + fields.map { prop ->
 //    MySealedClassSerializer.Option(ModificationOnFieldSerializer(prop)) { it is Modification.OnField<*, *> && it.key.name == prop.name }
 //}
@@ -174,7 +165,6 @@ public data class ModificationSerializer<T>(public val inner: KSerializer<T>) :
         MySealedClassSerializer<Modification<T>>("com.lightningkite.services.database.Modification", {
             val r = when {
                 inner.nullElement() != null -> nullableOptions(inner.nullElement()!! as KSerializer<Any>)
-                inner.descriptor.serialName.substringBefore('/') == "kotlin.String" -> stringOptions
                 inner.descriptor.serialName in numlist -> numberOptions(inner as KSerializer<Int>)
 //                inner.descriptor.kind == StructureKind.MAP -> stringMapOptions(inner.mapValueElement()!!)
                 inner.descriptor.kind == StructureKind.LIST -> {
@@ -267,12 +257,6 @@ internal class ModificationMultiplySerializer<T : Number>(internal val inner: KS
     override fun outer(it: T): Modification.Multiply<T> = Modification.Multiply(it)
 }
 
-internal object ModificationAppendStringSerializer :
-    WrappingSerializer<Modification.AppendString, String>("com.lightningkite.services.database.Modification.AppendString") {
-    override fun getDeferred(): KSerializer<String> = String.serializer()
-    override fun inner(it: Modification.AppendString): String = it.value
-    override fun outer(it: String): Modification.AppendString = Modification.AppendString(it)
-}
 
 
 internal class ModificationListAppendSerializer<T>(internal val inner: KSerializer<T>) :

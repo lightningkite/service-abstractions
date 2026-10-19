@@ -421,14 +421,6 @@ private fun <T> FieldModifier.modification(
             )
         }
 
-        is Modification.AppendString -> modifySingle(fieldSet) { type, old ->
-            Concat(
-                "",
-                old,
-                fieldSet.formatSingleExpression(modification.value as T)
-            ) as Expression<Any?>
-        }
-
         is Modification.ListAppend<*> -> modifyEach(fieldSet, modification.items as T) { type, it, old ->
             ConcatOp(
                 old,

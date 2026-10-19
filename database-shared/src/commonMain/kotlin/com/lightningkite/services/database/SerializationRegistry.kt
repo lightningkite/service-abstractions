@@ -369,7 +369,6 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 it[0]
             )
         }
-        register(Modification.AppendString.serializer())
         register(Modification.ListAppend.serializer(NothingSerializer()).descriptor.serialName) {
             Modification.ListAppend.serializer(
                 it[0]

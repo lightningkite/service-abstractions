@@ -57,10 +57,6 @@ public class ModificationBuilder<K>() {
         modifications.add(mapModification(Modification.Multiply(by)))
     }
 
-    public infix operator fun DataClassPath<K, String>.plusAssign(value: String) {
-        modifications.add(mapModification(Modification.AppendString(value)))
-    }
-
     public infix operator fun <T> DataClassPath<K, List<T>>.plusAssign(items: List<T>) {
         modifications.add(mapModification(Modification.ListAppend(items)))
     }

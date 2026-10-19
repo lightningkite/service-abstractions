@@ -73,6 +73,8 @@ public class MongoDatabase(
     public val databaseName: String,
     public val atlasSearch: Boolean = false,
     public val supportsCollation: Boolean = true,
+    /** False for servers like DocumentDB that apply only the first array filter a list element matches. */
+    public val supportsOverlappingArrayFilters: Boolean = true,
     public val clientSettings: MongoClientSettings,
     override val context: SettingContext,
 ) : Database {
@@ -319,6 +321,7 @@ public class MongoDatabase(
                     serializer = serializer,
                     atlasSearch = atlasSearch,
                     supportsCollation = supportsCollation,
+                    supportsOverlappingArrayFilters = supportsOverlappingArrayFilters,
                     access = object : MongoCollectionAccess {
                         override suspend fun <T> wholeDb(action: suspend com.mongodb.kotlin.client.coroutine.MongoDatabase.() -> T): T {
                             return action(databaseLazy.value)

@@ -56,6 +56,7 @@ object DocumentDbTestDatabase {
                 .build(),
             atlasSearch = false,
             supportsCollation = false,
+            supportsOverlappingArrayFilters = false,
             context = TestSettingContext()
         )
     }
@@ -90,10 +91,10 @@ class DocumentDbConditionTests : ConditionTests() {
     @kotlin.test.Test fun start() {}
 }
 
-class DocumentDbModificationTests : ModificationTests() {
+// Claude: same driver as MongoDB, so it shares MongoDB's notNull overrides.
+class DocumentDbModificationTests : MongodbModificationTests() {
     override val database: Database get() = docDb()
     @BeforeTest fun checkAvailable() = skipIfUnavailable()
-    @kotlin.test.Test fun start() {}
 }
 
 class DocumentDbOperationsTests : OperationsTests() {

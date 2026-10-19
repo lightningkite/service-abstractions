@@ -404,7 +404,6 @@ internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = 
     is Modification.Multiply -> true
     is Modification.CoerceAtMost -> true
     is Modification.CoerceAtLeast -> true
-    is Modification.AppendString -> true
     is Modification.OnField<*, *> -> {
         // Navigating through a value class's wrapped property (key.inline) doesn't consume a
         // storage segment — see SqlFieldSet.sub() — so it must not extend the path either, or
@@ -540,9 +539,6 @@ private fun <T> FieldModifier.scalarModification(
         }
         is Modification.CoerceAtLeast -> modifySingle(fieldSet) { type, old ->
             CustomFunction("GREATEST", type, fieldSet.formatSingleExpression(modification.value), old)
-        }
-        is Modification.AppendString -> modifySingle(fieldSet) { type, old ->
-            Concat("", old, fieldSet.formatSingleExpression(modification.value as T)) as Expression<Any?>
         }
         is Modification.OnField<*, *> -> {
             // Value class hop (modification.key.inline): no storage segment consumed, so neither

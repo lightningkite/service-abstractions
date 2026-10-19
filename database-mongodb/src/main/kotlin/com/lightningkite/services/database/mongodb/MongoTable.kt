@@ -31,9 +31,10 @@ public class MongoTable<Model : Any>(
     override val name: String,
     override val serializer: KSerializer<Model>,
     public val atlasSearch: Boolean,
-    private val access: MongoCollectionAccess,
+    internal val access: MongoCollectionAccess,
     override val context: SettingContext,
     public val supportsCollation: Boolean = true,
+    public val supportsOverlappingArrayFilters: Boolean = true,
 ) : Table<Model>, Namespaced {
     internal val bson: KBson = KBson(context.internalSerializersModule)
 
@@ -539,7 +540,7 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
         return telemetryTrace("upsertOne") {
             access {
@@ -572,7 +573,7 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return false
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
         return telemetryTrace("upsertOneIgnoringResult") {
             access {
@@ -605,7 +606,7 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         // With orderBy, this updates the first row that passes the modification's check.
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
         val before = telemetryTrace("updateOne") {
@@ -632,7 +633,7 @@ public class MongoTable<Model : Any>(
         if (orderBy.isNotEmpty()) return updateOne(cs, modification, orderBy).old != null
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
         return telemetryTrace("updateOneIgnoringResult") {
             access {
@@ -649,7 +650,7 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return CollectionChanges()
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return CollectionChanges()
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val changes = ArrayList<EntryChange<Model>>()
         // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
         telemetryTrace("updateMany") {
@@ -675,7 +676,7 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return 0
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return 0
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
         return telemetryTrace("updateManyIgnoringResult") {
             access {
@@ -824,7 +825,7 @@ public class MongoTable<Model : Any>(
                         }
                     )
                         .let {
-                            if (orderBy.any { it.ignoreCase }) {
+                            if (hasCiSort && supportsCollation) {
                                 it.collation(Collation.builder().locale("en").build())
                             } else it
                         }
