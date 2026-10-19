@@ -1,0 +1,344 @@
+@file:Suppress("PackageDirectoryMismatch")
+@file:OptIn(ExperimentalSerializationApi::class)
+
+package com.lightningkite.services.database
+
+import com.lightningkite.services.database.internal.ConcurrentMap
+import com.lightningkite.services.database.internal.getOrPutConcurrent
+import com.lightningkite.services.data.GeoCoordinate
+import com.lightningkite.services.data.serialNameFQN
+import kotlinx.serialization.*
+import kotlinx.serialization.builtins.*
+import kotlinx.serialization.descriptors.*
+
+private fun <T> commonOptions(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> = listOf(
+    MySealedClassSerializer.Option(Condition.Never.serializer(), "Never", priority = 20) { it is Condition.Never },
+    MySealedClassSerializer.Option(Condition.Always.serializer(), "Always", priority = 20) { it is Condition.Always },
+    MySealedClassSerializer.Option(Condition.And.serializer(inner), "And", priority = 20) { it is Condition.And },
+    MySealedClassSerializer.Option(Condition.Or.serializer(inner), "Or", priority = 20) { it is Condition.Or },
+    MySealedClassSerializer.Option(Condition.Not.serializer(inner), "Not", priority = 20) { it is Condition.Not },
+    MySealedClassSerializer.Option(Condition.Equal.serializer(inner), "Equal", priority = 50) { it is Condition.Equal },
+    MySealedClassSerializer.Option(
+        Condition.NotEqual.serializer(inner),
+        "NotEqual",
+        priority = 40
+    ) { it is Condition.NotEqual },
+    MySealedClassSerializer.Option(
+        Condition.Inside.serializer(inner),
+        "Inside",
+        priority = 40
+    ) { it is Condition.Inside },
+    MySealedClassSerializer.Option(
+        Condition.NotInside.serializer(inner),
+        "NotInside",
+        priority = 40
+    ) { it is Condition.NotInside },
+)
+
+private fun <T : Any> nullableOptions(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T?>, *>> =
+    commonOptions(inner.nullable) + listOf(
+        MySealedClassSerializer.Option(
+            Condition.IfNotNull.serializer(inner),
+            "IfNotNull",
+            priority = 90
+        ) { it is Condition.IfNotNull },
+    )
+
+private fun <T : Comparable<T>> comparableOptions(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> =
+    commonOptions(inner) + listOf(
+        MySealedClassSerializer.Option(
+            Condition.GreaterThan.serializer(inner),
+            "GreaterThan",
+            priority = 45
+        ) { it is Condition.GreaterThan },
+        MySealedClassSerializer.Option(
+            Condition.LessThan.serializer(inner),
+            "LessThan",
+            priority = 45
+        ) { it is Condition.LessThan },
+        MySealedClassSerializer.Option(
+            Condition.GreaterThanOrEqual.serializer(inner),
+            "GreaterThanOrEqual",
+            priority = 45
+        ) { it is Condition.GreaterThanOrEqual },
+        MySealedClassSerializer.Option(
+            Condition.LessThanOrEqual.serializer(inner),
+            "LessThanOrEqual",
+            priority = 45
+        ) { it is Condition.LessThanOrEqual },
+    )
+
+private fun <T> listOptions(element: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<List<T>>, *>> =
+    commonOptions(ListSerializer(element)) + listOf(
+        MySealedClassSerializer.Option(
+            Condition.CollectionAllElements.serializer(ListSerializer(element), element),
+            "CollectionAllElements",
+            setOf("ListAllElements", "SetAllElements", "AllElements"),
+            priority = 60,
+        ) { it is Condition.CollectionAllElements<*, *> },
+        MySealedClassSerializer.Option(
+            Condition.CollectionAnyElements.serializer(ListSerializer(element), element),
+            "CollectionAnyElements",
+            setOf("ListAnyElements", "SetAnyElements", "AnyElements"),
+            priority = 60,
+        ) { it is Condition.CollectionAnyElements<*, *> },
+    )
+
+private fun <T> setOptions(element: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<Set<T>>, *>> =
+    commonOptions(SetSerializer(element)) + listOf(
+        MySealedClassSerializer.Option(
+            Condition.CollectionAllElements.serializer(SetSerializer(element), element),
+            "CollectionAllElements",
+            setOf("ListAllElements", "SetAllElements", "AllElements"),
+            priority = 60
+        ) { it is Condition.CollectionAllElements<*, *> },
+        MySealedClassSerializer.Option(
+            Condition.CollectionAnyElements.serializer(SetSerializer(element), element),
+            "CollectionAnyElements",
+            setOf("ListAnyElements", "SetAnyElements", "AnyElements"),
+            priority = 60
+        ) { it is Condition.CollectionAnyElements<*, *> },
+    )
+
+private val intOptions: List<MySealedClassSerializer.Option<Condition<Int>, *>> =
+    comparableOptions(Int.serializer()) + listOf(
+        MySealedClassSerializer.Option(
+            Condition.IntBitsClear.serializer(),
+            baseName = "IntBitsClear",
+            priority = 30
+        ) { it is Condition.IntBitsClear },
+        MySealedClassSerializer.Option(
+            Condition.IntBitsSet.serializer(),
+            baseName = "IntBitsSet",
+            priority = 30
+        ) { it is Condition.IntBitsSet },
+        MySealedClassSerializer.Option(
+            Condition.IntBitsAnyClear.serializer(),
+            baseName = "IntBitsAnyClear",
+            priority = 30
+        ) { it is Condition.IntBitsAnyClear },
+        MySealedClassSerializer.Option(
+            Condition.IntBitsAnySet.serializer(),
+            baseName = "IntBitsAnySet",
+            priority = 30
+        ) { it is Condition.IntBitsAnySet },
+    )
+private val geocoordinateOptions: List<MySealedClassSerializer.Option<Condition<GeoCoordinate>, *>> =
+    commonOptions(ContextualSerializer(GeoCoordinate::class)) + listOf(
+        MySealedClassSerializer.Option(
+            Condition.GeoDistance.serializer(),
+            "GeoDistance",
+            priority = 60
+        ) { it is Condition.GeoDistance },
+    )
+private val stringOptions: List<MySealedClassSerializer.Option<Condition<String>, *>> =
+    comparableOptions(String.serializer()) + listOf(
+        MySealedClassSerializer.Option(
+            Condition.StringContains.serializer(),
+            "StringContains",
+            setOf("Search"),
+            priority = 60
+        ) { it is Condition.StringContains },
+        MySealedClassSerializer.Option(
+            Condition.RegexMatches.serializer(),
+            "RegexMatches",
+            priority = 45
+        ) { it is Condition.RegexMatches },
+    )
+
+// A value class's descriptor can't say whether it's Comparable, but wrapping one comparable value it almost always is.
+@Suppress("UNCHECKED_CAST")
+private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> =
+    ((if (inner.descriptor.isInline) comparableOptions(inner as KSerializer<String>) as List<MySealedClassSerializer.Option<Condition<T>, *>>
+    else commonOptions(inner)) + inner.serializableProperties!!.let {
+        it.mapIndexed { index, ser ->
+            @Suppress("UNCHECKED_CAST")
+            MySealedClassSerializer.Option<Condition<T>, Condition.OnField<T, Any?>>(
+                ConditionOnFieldSerializer(
+                    ser as SerializableProperty<T, Any?>
+                ),
+                baseName = ser.name,
+                priority = 80
+            ) { it is Condition.OnField<*, *> && it.key.name == inner.descriptor.getElementName(index) }
+        }
+    })
+
+private fun <T> polymorphicOptions(supertype: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> =
+    commonOptions(supertype) + supertype.serializableOptions!!.map { option ->
+        val discriminator = SealedTypeDiscriminator(option.serializer)
+        MySealedClassSerializer.Option(
+            serializer = ConditionIfIsTypeSerializer(supertype, option.serializer),
+            baseName = discriminator.serialName,
+            alternativeNames = option.secondaryNames + listOfNotNull(supertype.variantShortName(discriminator)),
+            priority = 80
+        ) { it is Condition.IfIsType<*, *> && it.discriminator == discriminator }
+    }
+
+private val cache = ConcurrentMap<KSerializerKey, MySealedClassSerializerInterface<*>>()
+
+@Suppress("UNCHECKED_CAST")
+public class ConditionSerializer<T>(public val inner: KSerializer<T>) :
+    MySealedClassSerializerInterface<Condition<T>> by (cache.getOrPutConcurrent(KSerializerKey(inner)) {
+        MySealedClassSerializer<Condition<T>>("com.lightningkite.services.database.Condition", {
+            val r = when {
+                inner.descriptor.isNullable -> nullableOptions(inner.innerElement() as KSerializer<Any>)
+                inner.descriptor.serialNameFQN() == "kotlin.String" -> stringOptions
+                inner.descriptor.serialName == "kotlin.Int" -> intOptions
+                inner.descriptor.serialNameFQN() == "com.lightningkite.services.data.GeoCoordinate" -> geocoordinateOptions
+//                inner.descriptor.kind == StructureKind.MAP -> stringMapOptions(inner.innerElement2())
+                inner.descriptor.kind == StructureKind.LIST -> {
+                    if (inner.descriptor.serialName.contains("Set")) setOptions(inner.innerElement())
+                    else listOptions(inner.innerElement())
+                }
+
+                inner.serializableProperties != null -> classOptionsReflective(inner as KSerializer<Any>)
+                inner.serializableOptions != null -> polymorphicOptions(inner)
+                else -> comparableOptions(inner as KSerializer<String>)
+            }
+            r as List<MySealedClassSerializer.Option<Condition<T>, out Condition<T>>>
+        })
+    } as MySealedClassSerializerInterface<Condition<T>>), KSerializerWithDefault<Condition<T>> {
+}
+
+internal class ConditionOnFieldSerializer<K : Any, V>(
+    private val field: SerializableProperty<K, V>,
+) : WrappingSerializer<Condition.OnField<K, V>, Condition<V>>(field.name) {
+    override fun getDeferred(): KSerializer<Condition<V>> = Condition.serializer(field.serializer)
+    override fun inner(it: Condition.OnField<K, V>): Condition<V> = it.condition
+    override fun outer(it: Condition<V>): Condition.OnField<K, V> = Condition.OnField(field, it)
+}
+
+internal class ConditionAndSerializer<T>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.And<T>, List<Condition<T>>>("com.lightningkite.services.database.Condition.And") {
+    override fun getDeferred(): KSerializer<List<Condition<T>>> = ListSerializer(Condition.serializer(inner))
+    override fun inner(it: Condition.And<T>): List<Condition<T>> = it.conditions
+    override fun outer(it: List<Condition<T>>): Condition.And<T> = Condition.And(it)
+}
+
+internal class ConditionOrSerializer<T>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.Or<T>, List<Condition<T>>>("com.lightningkite.services.database.Condition.Or") {
+    override fun getDeferred(): KSerializer<List<Condition<T>>> = ListSerializer(Condition.serializer(inner))
+    override fun inner(it: Condition.Or<T>): List<Condition<T>> = it.conditions
+    override fun outer(it: List<Condition<T>>): Condition.Or<T> = Condition.Or(it)
+}
+
+internal class ConditionNotSerializer<T>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.Not<T>, Condition<T>>("com.lightningkite.services.database.Condition.Not") {
+    override fun getDeferred(): KSerializer<Condition<T>> = Condition.serializer(inner)
+    override fun inner(it: Condition.Not<T>): Condition<T> = it.condition
+    override fun outer(it: Condition<T>): Condition.Not<T> = Condition.Not(it)
+}
+
+internal class ConditionEqualSerializer<T>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.Equal<T>, T>("com.lightningkite.services.database.Condition.Equal") {
+    override fun getDeferred(): KSerializer<T> = inner
+    override fun inner(it: Condition.Equal<T>): T = it.value
+    override fun outer(it: T): Condition.Equal<T> = Condition.Equal(it)
+}
+
+internal class ConditionNotEqualSerializer<T>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.NotEqual<T>, T>("com.lightningkite.services.database.Condition.NotEqual") {
+    override fun getDeferred(): KSerializer<T> = inner
+    override fun inner(it: Condition.NotEqual<T>): T = it.value
+    override fun outer(it: T): Condition.NotEqual<T> = Condition.NotEqual(it)
+}
+
+internal class ConditionInsideSerializer<T>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.Inside<T>, Set<T>>("com.lightningkite.services.database.Condition.Inside") {
+    override fun getDeferred(): KSerializer<Set<T>> = SetSerializer(inner)
+    override fun inner(it: Condition.Inside<T>): Set<T> = it.values
+    override fun outer(it: Set<T>): Condition.Inside<T> = Condition.Inside(it)
+}
+
+internal class ConditionNotInsideSerializer<T>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.NotInside<T>, Set<T>>("com.lightningkite.services.database.Condition.NotInside") {
+    override fun getDeferred(): KSerializer<Set<T>> = SetSerializer(inner)
+    override fun inner(it: Condition.NotInside<T>): Set<T> = it.values
+    override fun outer(it: Set<T>): Condition.NotInside<T> = Condition.NotInside(it)
+}
+
+internal class ConditionGreaterThanSerializer<T : Comparable<T>>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.GreaterThan<T>, T>("com.lightningkite.services.database.Condition.GreaterThan") {
+    override fun getDeferred(): KSerializer<T> = inner
+    override fun inner(it: Condition.GreaterThan<T>): T = it.value
+    override fun outer(it: T): Condition.GreaterThan<T> = Condition.GreaterThan(it)
+}
+
+internal class ConditionLessThanSerializer<T : Comparable<T>>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.LessThan<T>, T>("com.lightningkite.services.database.Condition.LessThan") {
+    override fun getDeferred(): KSerializer<T> = inner
+    override fun inner(it: Condition.LessThan<T>): T = it.value
+    override fun outer(it: T): Condition.LessThan<T> = Condition.LessThan(it)
+}
+
+internal class ConditionGreaterThanOrEqualSerializer<T : Comparable<T>>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.GreaterThanOrEqual<T>, T>("com.lightningkite.services.database.Condition.GreaterThanOrEqual") {
+    override fun getDeferred(): KSerializer<T> = inner
+    override fun inner(it: Condition.GreaterThanOrEqual<T>): T = it.value
+    override fun outer(it: T): Condition.GreaterThanOrEqual<T> = Condition.GreaterThanOrEqual(it)
+}
+
+internal class ConditionLessThanOrEqualSerializer<T : Comparable<T>>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.LessThanOrEqual<T>, T>("com.lightningkite.services.database.Condition.LessThanOrEqual") {
+    override fun getDeferred(): KSerializer<T> = inner
+    override fun inner(it: Condition.LessThanOrEqual<T>): T = it.value
+    override fun outer(it: T): Condition.LessThanOrEqual<T> = Condition.LessThanOrEqual(it)
+}
+
+internal object ConditionIntBitsClearSerializer :
+    WrappingSerializer<Condition.IntBitsClear, Int>("com.lightningkite.services.database.Condition.IntBitsClear") {
+    override fun getDeferred(): KSerializer<Int> = Int.serializer()
+    override fun inner(it: Condition.IntBitsClear): Int = it.mask
+    override fun outer(it: Int): Condition.IntBitsClear = Condition.IntBitsClear(it)
+}
+
+internal object ConditionIntBitsSetSerializer :
+    WrappingSerializer<Condition.IntBitsSet, Int>("com.lightningkite.services.database.Condition.IntBitsSet") {
+    override fun getDeferred(): KSerializer<Int> = Int.serializer()
+    override fun inner(it: Condition.IntBitsSet): Int = it.mask
+    override fun outer(it: Int): Condition.IntBitsSet = Condition.IntBitsSet(it)
+}
+
+internal object ConditionIntBitsAnyClearSerializer :
+    WrappingSerializer<Condition.IntBitsAnyClear, Int>("com.lightningkite.services.database.Condition.IntBitsAnyClear") {
+    override fun getDeferred(): KSerializer<Int> = Int.serializer()
+    override fun inner(it: Condition.IntBitsAnyClear): Int = it.mask
+    override fun outer(it: Int): Condition.IntBitsAnyClear = Condition.IntBitsAnyClear(it)
+}
+
+internal object ConditionIntBitsAnySetSerializer :
+    WrappingSerializer<Condition.IntBitsAnySet, Int>("com.lightningkite.services.database.Condition.IntBitsAnySet") {
+    override fun getDeferred(): KSerializer<Int> = Int.serializer()
+    override fun inner(it: Condition.IntBitsAnySet): Int = it.mask
+    override fun outer(it: Int): Condition.IntBitsAnySet = Condition.IntBitsAnySet(it)
+}
+
+internal class ConditionCollectionAllElementsSerializer<C: Collection<T>, T>(private val collection: KSerializer<C>, private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.CollectionAllElements<C, T>, Condition<T>>("com.lightningkite.services.database.Condition.CollectionAllElements") {
+    override fun getDeferred(): KSerializer<Condition<T>> = Condition.serializer(inner)
+    override fun inner(it: Condition.CollectionAllElements<C, T>): Condition<T> = it.condition
+    override fun outer(it: Condition<T>): Condition.CollectionAllElements<C, T> = Condition.CollectionAllElements(it)
+}
+
+internal class ConditionCollectionAnyElementsSerializer<C: Collection<T>, T>(private val collection: KSerializer<C>, private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.CollectionAnyElements<C, T>, Condition<T>>("com.lightningkite.services.database.Condition.CollectionAnyElements") {
+    override fun getDeferred(): KSerializer<Condition<T>> = Condition.serializer(inner)
+    override fun inner(it: Condition.CollectionAnyElements<C, T>): Condition<T> = it.condition
+    override fun outer(it: Condition<T>): Condition.CollectionAnyElements<C, T> = Condition.CollectionAnyElements(it)
+}
+
+internal class ConditionIfNotNullSerializer<T>(private val inner: KSerializer<T>) :
+    WrappingSerializer<Condition.IfNotNull<T>, Condition<T>>("com.lightningkite.services.database.Condition.IfNotNull") {
+    override fun getDeferred(): KSerializer<Condition<T>> = Condition.serializer(inner)
+    override fun inner(it: Condition.IfNotNull<T>): Condition<T> = it.condition
+    override fun outer(it: Condition<T>): Condition.IfNotNull<T> = Condition.IfNotNull(it)
+}
+
+internal class ConditionIfIsTypeSerializer<T, V : T>(
+    private val outer: KSerializer<T>,
+    private val inner: KSerializer<V>
+) : WrappingSerializer<Condition.IfIsType<T, V>, Condition<V>>("com.lightningkite.services.database.Condition.IfIsType") {
+    override fun getDeferred(): KSerializer<Condition<V>> = Condition.serializer(inner)
+    override fun inner(it: Condition.IfIsType<T, V>): Condition<V> = it.condition
+    override fun outer(it: Condition<V>): Condition.IfIsType<T, V> = Condition.IfIsType(inner, it)
+}
