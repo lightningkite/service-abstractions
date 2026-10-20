@@ -464,7 +464,7 @@ private class ChildTableMapEncoder(
 
     private fun handleKeyMap(index: Int, keyMap: Map<String, Any?>) {
         if (index % 2 == 0) {
-            pendingKey = keyMap
+            pendingKey = keyMap.mapKeys { "key__${it.key}" }
         }
     }
 
@@ -472,7 +472,7 @@ private class ChildTableMapEncoder(
         if (index % 2 == 1) {
             output.writeChild(
                 fieldPath,
-                ChildRow(index = entryIndex++, key = pendingKey, values = valueMap)
+                ChildRow(index = entryIndex++, key = pendingKey, values = valueMap.mapKeys { "value__${it.key}" })
             )
         }
     }
@@ -692,12 +692,15 @@ private class ChildTableMapDecoder(
     }
 
     private fun getKeyMap(index: Int): Map<String, Any?> {
-        return rows[index / 2].key ?: emptyMap()
+        return (rows[index / 2].key ?: emptyMap()).unprefixed("key__")
     }
 
     private fun getValueMap(index: Int): Map<String, Any?> {
-        return rows[index / 2].values
+        return rows[index / 2].values.unprefixed("value__")
     }
+
+    private fun Map<String, Any?>.unprefixed(prefix: String): Map<String, Any?> =
+        entries.filter { it.key.startsWith(prefix) }.associate { it.key.removePrefix(prefix) to it.value }
 
     override fun decodeBooleanElement(descriptor: SerialDescriptor, index: Int): Boolean =
         getRawValue(index) as Boolean

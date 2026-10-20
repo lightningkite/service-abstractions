@@ -26,4 +26,20 @@ class ChildTableCollectionHandlerTest {
         assertEquals("""["x","y"]""", written.children["items"]!![0].values["tags"])
         assertEquals(value, format.decode(Holder.serializer(), written))
     }
+
+    @Serializable
+    data class Point(val x: Int, val y: Int)
+
+    @Serializable
+    data class Places(val byName: Map<String, Point>)
+
+    // Child tables name map value columns `value__<field>`; rows must use the same names or the
+    // values never reach a column.
+    @Test
+    fun structMapValuesUseValueColumns() {
+        val value = Places(mapOf("home" to Point(1, 2)))
+        val written = format.encode(Places.serializer(), value)
+        assertEquals(mapOf("value__x" to 1, "value__y" to 2), written.children["byName"]!![0].values)
+        assertEquals(value, format.decode(Places.serializer(), written))
+    }
 }
