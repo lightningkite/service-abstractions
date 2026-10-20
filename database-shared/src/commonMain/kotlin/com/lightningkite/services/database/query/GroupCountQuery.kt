@@ -1,9 +1,13 @@
 @file:Suppress("PackageDirectoryMismatch")
+@file:UseContextualSerialization(Number::class)
+
 package com.lightningkite.services.database
 
-import com.lightningkite.services.database.path.*
-
+import com.lightningkite.services.database.path.NumberOpticSerializer
+import com.lightningkite.services.database.path.Optic
+import com.lightningkite.services.database.path.OpticOn
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseContextualSerialization
 
 @Serializable
 public data class GroupCountQuery<Model>(
@@ -15,7 +19,7 @@ public data class GroupCountQuery<Model>(
 public data class AggregateQuery<Model>(
     val aggregate: Aggregate,
     val condition: Condition<Model> = Condition.Always,
-    val property: OpticOn<Model>,
+    @Serializable(NumberOpticSerializer::class) val property: Optic<Model, out Number?>,
 )
 
 @Serializable
@@ -23,5 +27,5 @@ public data class GroupAggregateQuery<Model>(
     val aggregate: Aggregate,
     val condition: Condition<Model> = Condition.Always,
     val groupBy: OpticOn<Model>,
-    val property: OpticOn<Model>,
+    @Serializable(NumberOpticSerializer::class) val property: Optic<Model, out Number?>,
 )

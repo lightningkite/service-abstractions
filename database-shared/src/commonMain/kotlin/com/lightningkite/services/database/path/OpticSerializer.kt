@@ -4,11 +4,13 @@ import com.lightningkite.services.database.KSerializerWithDefault
 import com.lightningkite.services.database.SealedTypeDiscriminator
 import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.listElement
+import com.lightningkite.services.database.nullElement
 import com.lightningkite.services.database.serializableOptions
 import com.lightningkite.services.database.serializableProperties
 import com.lightningkite.services.database.variantShortName
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -143,11 +145,45 @@ public class OpticSerializer<T, V>(
         untyped.serialize(encoder, value)
     }
 
-    @Suppress("UNCHECKED_CAST")
     override fun deserialize(decoder: Decoder): Optic<T, V> {
         val path = untyped.deserialize(decoder)
         if (path.serializer.descriptor != target.descriptor)
             throw SerializationException("Path $path ends at ${path.serializer.descriptor.serialName}, expected ${target.descriptor.serialName}")
+
+        @Suppress("UNCHECKED_CAST")
         return path as Optic<T, V>
+    }
+}
+
+/** Requires [kotlinx.serialization.UseContextualSerialization] on `Number?` for the file. */
+public class NumberOpticSerializer<T>(
+    root: KSerializer<T>,
+    number: KSerializer<Number?>
+) : KSerializer<Optic<T, out Number?>> {
+    private val untyped = OpticOnSerializer(root)
+
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("com.lightningkite.services.database.path.Optic", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: Optic<T, out Number?>) {
+        untyped.serialize(encoder, value)
+    }
+
+    override fun deserialize(decoder: Decoder): Optic<T, out Number?> {
+        val path = untyped.deserialize(decoder)
+        val accepted = listOf(
+            Double.serializer(),
+            Float.serializer(),
+            Int.serializer(),
+            Long.serializer(),
+            Short.serializer(),
+            Byte.serializer()
+        ).map { it.descriptor }
+
+        if ((path.serializer.nullElement() ?: path.serializer).descriptor !in accepted)
+            throw SerializationException("Path $path ends at ${path.serializer.descriptor.serialName}, but a Number? type was expected")
+
+        @Suppress("UNCHECKED_CAST")
+        return path as Optic<T, out Number?>
     }
 }

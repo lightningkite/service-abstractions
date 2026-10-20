@@ -214,4 +214,12 @@ class OpticTest {
 
         for (case in cases) println(case.toString())
     }
+
+    fun scratchpad() {
+        GroupAggregateQuery(
+            Aggregate.Sum,
+            groupBy = LargeTestModel.string,
+            property = LargeTestModel.embedded.value2
+        )
+    }
 }
