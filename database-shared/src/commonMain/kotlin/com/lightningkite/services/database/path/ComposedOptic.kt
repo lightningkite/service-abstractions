@@ -4,29 +4,6 @@ import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
 import kotlinx.serialization.KSerializer
 
-/**
- * Returns an optic that focuses on the target of [other] within the target of this optic.
- *
- * The result is a [Lens] whenever both sides are lenses at runtime, even if they are statically typed as optics.
- */
-@Suppress("UNCHECKED_CAST")
-public operator fun <A, B, C> Optic<A, B>.plus(other: Optic<B, C>): Optic<A, C> = when {
-    this is IdentityLens<*> -> other as Optic<A, C>
-    other is IdentityLens<*> -> this as Optic<A, C>
-    // Claude: regroup a + (b + c) as (a + b) + c, so equal paths are equal however they were composed.
-    other is ComposedOptic<*, *, *> -> {
-        val composed = other as ComposedOptic<B, Any?, C>
-        this + composed.outer + composed.inner
-    }
-    this is Lens<A, B> && other is Lens<B, C> -> ComposedLens(this, other)
-    else -> ComposedOptic(this, other)
-}
-
-/** Returns a lens that focuses on the target of [other] within the target of this lens. */
-@Suppress("UNCHECKED_CAST")
-public operator fun <A, B, C> Lens<A, B>.plus(other: Lens<B, C>): Lens<A, C> =
-    (this as Optic<A, B>).plus(other) as Lens<A, C>
-
 /** An optic that focuses on the target of [inner] within the target of [outer]. Create one with [plus]. */
 public open class ComposedOptic<A, B, C> internal constructor(
     public open val outer: Optic<A, B>,
@@ -40,7 +17,7 @@ public open class ComposedOptic<A, B, C> internal constructor(
     override fun mapModification(modification: Modification<C>): Modification<A> =
         outer.mapModification(inner.mapModification(modification))
 
-    override fun toString(): String = "$outer + $inner"
+    override fun toString(): String = "$outer.$inner"
     override fun equals(other: Any?): Boolean =
         other is ComposedOptic<*, *, *> && other.outer == outer && other.inner == inner
 

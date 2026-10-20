@@ -33,14 +33,14 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
 
     public val inline: Boolean get() = false
 
-    @Deprecated("Use set instead", ReplaceWith("set(receiver, value)"))
-    public fun setCopy(receiver: A, value: B): A = set(receiver, value)
-
     override fun mapCondition(condition: Condition<B>): Condition<A> =
         Condition.OnField(this, condition)
 
     override fun mapModification(modification: Modification<B>): Modification<A> =
         Modification.OnField(this, modification)
+
+    @Deprecated("Use set instead", ReplaceWith("set(receiver, value)"))
+    public fun setCopy(receiver: A, value: B): A = set(receiver, value)
 
 
     @Suppress("UNCHECKED_CAST")
@@ -102,7 +102,7 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
         override val default: B? get() = defaultInfo.first
         override val defaultCode: String? get() = defaultInfo.second
 
-        override fun toString(): String = parent.descriptor.serialName + "." + name
+        override fun toString(): String = name
         override fun hashCode(): Int = parent.descriptor.serialName.hashCode() + index
 
         private fun GeneratedSerializer<*>.isEqual(other: GeneratedSerializer<*>): Boolean {

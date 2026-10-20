@@ -3,6 +3,8 @@ package com.lightningkite.services.database.path
 import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.database.*
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlin.test.*
@@ -16,6 +18,12 @@ data class OpticMiddle(val inner: OpticInner = OpticInner())
 @Queryable
 data class OpticInner(val value: String = "")
 
+@Serializable
+data class OpticHolder(val path: Optic<OpticOuter, String>)
+
+@Serializable
+data class OpticAnyHolder(val path: OpticAny<OpticOuter>)
+
 class OpticTest {
     // Claude: stands in for a real prism, so composing a lens with a non-lens optic can be tested.
     private class NotNullForTest<V : Any>(override val serializer: KSerializer<V>) : Optic<V?, V> {
@@ -24,9 +32,9 @@ class OpticTest {
         override fun set(key: V?, value: V): V? = key?.let { value }
         override fun mapCondition(condition: Condition<V>): Condition<V?> = Condition.IfNotNull(condition)
         override fun mapModification(modification: Modification<V>): Modification<V?> = Modification.IfNotNull(modification)
+        override fun toString(): String = "notNull"
     }
 
-    private val serializer = OpticSerializer(LargeTestModel.serializer())
     private val present = LargeTestModel(embeddedNullable = ClassUsedForEmbedding(value1 = "a"))
     private val absent = LargeTestModel(embeddedNullable = null)
 
@@ -77,6 +85,7 @@ class OpticTest {
     @Test
     fun serializationRoundTripKeepsLens() {
         val lens = LargeTestModel.embedded + ClassUsedForEmbedding.value1
+        val serializer = OpticSerializer(LargeTestModel.serializer(), String.serializer())
         val string = Json.encodeToString(serializer, lens)
         assertEquals("\"embedded.value1\"", string)
         val decoded = Json.decodeFromString(serializer, string)
@@ -87,6 +96,7 @@ class OpticTest {
     @Test
     fun identitySerializesAsThis() {
         val identity = IdentityLens(LargeTestModel.serializer())
+        val serializer = OpticSerializer(LargeTestModel.serializer(), LargeTestModel.serializer())
         assertEquals("\"this\"", Json.encodeToString(serializer, identity))
         assertEquals(identity, Json.decodeFromString(serializer, "\"this\""))
     }
@@ -94,6 +104,7 @@ class OpticTest {
     @Test
     fun unknownOpticDoesNotSerialize() {
         val optic = LargeTestModel.embeddedNullable + NotNullForTest(ClassUsedForEmbedding.serializer())
+        val serializer = OpticSerializer(LargeTestModel.serializer(), ClassUsedForEmbedding.serializer())
         assertFailsWith<SerializationException> { Json.encodeToString(serializer, optic) }
     }
 
@@ -101,9 +112,9 @@ class OpticTest {
     fun separatelyBuiltPathsSerializeAsOnePath() {
         val relative = OpticMiddle.inner + OpticInner.value
         val full = OpticOuter.middle + relative
-        assertEquals("\"inner.value\"", Json.encodeToString(OpticSerializer(OpticMiddle.serializer()), relative))
+        assertEquals("\"inner.value\"", Json.encodeToString(OpticSerializer(OpticMiddle.serializer(), String.serializer()), relative))
 
-        val outerSerializer = OpticSerializer(OpticOuter.serializer())
+        val outerSerializer = OpticSerializer(OpticOuter.serializer(), String.serializer())
         val string = Json.encodeToString(outerSerializer, full)
         assertEquals("\"middle.inner.value\"", string)
         val decoded = Json.decodeFromString(outerSerializer, string)
@@ -111,5 +122,51 @@ class OpticTest {
         assertEquals(OpticOuter.middle + OpticMiddle.inner + OpticInner.value, decoded)
         assertIs<Lens<*, *>>(decoded)
         assertEquals("x", (full.set(OpticOuter(), "x")).middle.inner.value)
+    }
+
+    @Test
+    fun opticPropertySerializesInsideSerializableClass() {
+        val holder = OpticHolder(OpticOuter.middle + OpticMiddle.inner + OpticInner.value)
+        val string = Json.encodeToString(OpticHolder.serializer(), holder)
+        assertEquals("""{"path":"middle.inner.value"}""", string)
+        assertEquals(holder, Json.decodeFromString(OpticHolder.serializer(), string))
+    }
+
+    @Test
+    fun pathWithWrongTargetTypeFailsToDeserialize() {
+        val serializer = OpticSerializer(OpticOuter.serializer(), Int.serializer())
+        assertFailsWith<SerializationException> { Json.decodeFromString(serializer, "\"middle.inner.value\"") }
+    }
+
+    @Test
+    fun identityWithWrongTargetTypeFailsToDeserialize() {
+        val serializer = OpticSerializer(OpticOuter.serializer(), String.serializer())
+        assertFailsWith<SerializationException> { Json.decodeFromString(serializer, "\"this\"") }
+    }
+
+    @Test
+    fun anySerializerReadsPathsToAnyType() {
+        val serializer = OpticAnySerializer(OpticOuter.serializer())
+        assertEquals(OpticOuter.middle + OpticMiddle.inner, Json.decodeFromString(serializer, "\"middle.inner\""))
+        assertEquals(OpticOuter.middle + OpticMiddle.inner + OpticInner.value, Json.decodeFromString(serializer, "\"middle.inner.value\""))
+    }
+
+    @Test
+    fun opticAnyPropertyReadsPathsToAnyType() {
+        for (holder in listOf(
+            OpticAnyHolder(OpticOuter.middle + OpticMiddle.inner),
+            OpticAnyHolder(OpticOuter.middle + OpticMiddle.inner + OpticInner.value),
+            OpticAnyHolder(IdentityLens(OpticOuter.serializer())),
+        )) {
+            val string = Json.encodeToString(OpticAnyHolder.serializer(), holder)
+            assertEquals(holder, Json.decodeFromString(OpticAnyHolder.serializer(), string))
+        }
+    }
+
+    @Test
+    fun asOpticReturnsTheSameOptic() {
+        val optic = OpticOuter.middle + OpticMiddle.inner
+        val any: OpticAny<OpticOuter> = optic
+        assertSame(optic, any.asOptic())
     }
 }
