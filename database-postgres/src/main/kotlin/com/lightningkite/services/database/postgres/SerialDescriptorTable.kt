@@ -147,7 +147,7 @@ internal fun SerialDescriptor.columnType(serializersModule: SerializersModule): 
         SerialKind.CONTEXTUAL -> throw Error()
         PolymorphicKind.OPEN -> throw NotImplementedError()
         // Sealed types aren't supported yet, so neither are the type projection paths built on them
-        // (DataClassPathOfType, Condition.IfIsType, Modification.IfIsType - see ConditionMapping.kt).
+        // (OpticOfType, Condition.IfIsType, Modification.IfIsType - see ConditionMapping.kt).
         //
         // Planned design: flatten the sealed data into a discriminated union of columns.
         // - A discriminator column holds the variant's serial name.

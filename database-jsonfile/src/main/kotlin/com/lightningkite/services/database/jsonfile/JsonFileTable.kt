@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.jsonfile
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
@@ -159,7 +161,7 @@ public class JsonFileTable<Model : Any>(
 
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>
+        groupBy: Optic<Model, Key>
     ): Map<Key, Int> = traced(
         operation = "groupCount",
         extraBlock = { put(Database.TelemetryKeys.groupBy, groupBy.toString()) }
@@ -172,7 +174,7 @@ public class JsonFileTable<Model : Any>(
     override suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: DataClassPath<Model, N>
+        property: Optic<Model, N>
     ): Double? = traced(
         operation = "aggregate",
         extraBlock = {
@@ -186,8 +188,8 @@ public class JsonFileTable<Model : Any>(
     override suspend fun <N : Number?, Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>
+        groupBy: Optic<Model, Key>,
+        property: Optic<Model, N>
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
         extraBlock = {
@@ -343,7 +345,7 @@ public class JsonFileTable<Model : Any>(
     }
 
     override suspend fun findSimilar(
-        vectorField: DataClassPath<Model, Embedding>,
+        vectorField: Optic<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long
@@ -365,7 +367,7 @@ public class JsonFileTable<Model : Any>(
     }
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<Model, SparseEmbedding>,
+        vectorField: Optic<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long

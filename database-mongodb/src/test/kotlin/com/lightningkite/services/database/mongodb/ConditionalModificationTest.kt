@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.test.*
 import com.mongodb.client.model.Filters
