@@ -15,7 +15,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
 /**
- * Serializes an [OpticAny] on [root] as a dotted path, such as `embedded.value1`.
+ * Serializes an [OpticOn] whose source is [root] as a dotted path, such as `embedded.value1`.
  *
  * An [IdentityLens] serializes as `this`. A [NotNullOptic] adds `?` to the step before it, a [CollectionElementsOptic]
  * adds a `*` step, and an [OpticOfType] adds a `<Variant>` step, so `pets.*.<Dog>.owner?.name` is a valid path.
@@ -24,16 +24,16 @@ import kotlinx.serialization.encoding.Encoder
  *
  * Use [OpticSerializer] when the target type is known, so that a path to the wrong type fails to deserialize.
  */
-public class OpticAnySerializer<T>(private val root: KSerializer<T>) : KSerializer<OpticAny<T>> {
+public class OpticOnSerializer<T>(private val root: KSerializer<T>) : KSerializer<OpticOn<T>> {
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.services.database.path.OpticAny", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.database.path.OpticOn", PrimitiveKind.STRING)
 
-    override fun serialize(encoder: Encoder, value: OpticAny<T>) {
+    override fun serialize(encoder: Encoder, value: OpticOn<T>) {
         encoder.encodeString(segments(value).joinToString(".").ifEmpty { "this" })
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun segments(optic: OpticAny<*>): List<String> = when (optic) {
+    private fun segments(optic: OpticOn<*>): List<String> = when (optic) {
         is IdentityLens<*> -> listOf()
         is SerializableProperty<*, *> -> listOf(optic.name)
         is ComposedOptic<*, *, *> -> segments(optic.outer) + segments(optic.inner)
@@ -117,7 +117,7 @@ public class OpticAnySerializer<T>(private val root: KSerializer<T>) : KSerializ
 }
 
 /**
- * Serializes an [Optic] from [root] to [target] in the same format as [OpticAnySerializer].
+ * Serializes an [Optic] from [root] to [target] in the same format as [OpticOnSerializer].
  *
  * Deserializing throws a [SerializationException] if the path does not end at [target].
  */
@@ -125,7 +125,7 @@ public class OpticSerializer<T, V>(
     root: KSerializer<T>,
     private val target: KSerializer<V>,
 ) : KSerializer<Optic<T, V>> {
-    private val untyped = OpticAnySerializer(root)
+    private val untyped = OpticOnSerializer(root)
 
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("com.lightningkite.services.database.path.Optic", PrimitiveKind.STRING)

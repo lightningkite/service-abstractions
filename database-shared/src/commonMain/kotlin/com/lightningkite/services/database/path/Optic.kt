@@ -9,10 +9,10 @@ import kotlinx.serialization.Serializable
 /**
  * An [Optic] on [T] whose target type is unknown, for storing or serializing paths to any type.
  *
- * Every [OpticAny] is an [Optic]; use [asOptic] to get it back as one.
+ * Every [OpticOn] is an [Optic]; use [coerceToOptic] to get it back as one.
  */
-@Serializable(OpticAnySerializer::class)
-public sealed interface OpticAny<T> {
+@Serializable(OpticOnSerializer::class)
+public sealed interface OpticOn<T> {
     /** Returns the target of this optic within [source], or `null` if it is not present. */
     public fun get(source: T): Any?
 
@@ -25,7 +25,7 @@ public sealed interface OpticAny<T> {
 }
 
 /** Returns this as an [Optic] with an unknown target type. */
-public fun <T> OpticAny<T>.asOptic(): Optic<T, *> =
+public fun <T> OpticOn<T>.coerceToOptic(): Optic<T, *> =
     when (this) {
         is Optic<T, *> -> this
     }
@@ -37,7 +37,7 @@ public fun <T> OpticAny<T>.asOptic(): Optic<T, *> =
  * See [Lens] for optics whose target is always present.
  */
 @Serializable(OpticSerializer::class)
-public interface Optic<A, B> : OpticAny<A> {
+public interface Optic<A, B> : OpticOn<A> {
     public val serializer: KSerializer<B>
 
     /** Returns the target of this optic within [source], or `null` if it is not present. */

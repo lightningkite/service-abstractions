@@ -22,7 +22,7 @@ data class OpticInner(val value: String = "")
 data class OpticHolder(val path: Optic<OpticOuter, String>)
 
 @Serializable
-data class OpticAnyHolder(val path: OpticAny<OpticOuter>)
+data class OpticOnHolder(val path: OpticOn<OpticOuter>)
 
 class OpticTest {
     // Claude: stands in for a real prism, so composing a lens with a non-lens optic can be tested.
@@ -147,28 +147,28 @@ class OpticTest {
 
     @Test
     fun anySerializerReadsPathsToAnyType() {
-        val serializer = OpticAnySerializer(OpticOuter.serializer())
+        val serializer = OpticOnSerializer(OpticOuter.serializer())
         assertEquals(OpticOuter.middle + OpticMiddle.inner, Json.decodeFromString(serializer, "\"middle.inner\""))
         assertEquals(OpticOuter.middle + OpticMiddle.inner + OpticInner.value, Json.decodeFromString(serializer, "\"middle.inner.value\""))
     }
 
     @Test
-    fun opticAnyPropertyReadsPathsToAnyType() {
+    fun opticOnPropertyReadsPathsToAnyType() {
         for (holder in listOf(
-            OpticAnyHolder(OpticOuter.middle + OpticMiddle.inner),
-            OpticAnyHolder(OpticOuter.middle + OpticMiddle.inner + OpticInner.value),
-            OpticAnyHolder(IdentityLens(OpticOuter.serializer())),
+            OpticOnHolder(OpticOuter.middle + OpticMiddle.inner),
+            OpticOnHolder(OpticOuter.middle + OpticMiddle.inner + OpticInner.value),
+            OpticOnHolder(IdentityLens(OpticOuter.serializer())),
         )) {
-            val string = Json.encodeToString(OpticAnyHolder.serializer(), holder)
-            assertEquals(holder, Json.decodeFromString(OpticAnyHolder.serializer(), string))
+            val string = Json.encodeToString(OpticOnHolder.serializer(), holder)
+            assertEquals(holder, Json.decodeFromString(OpticOnHolder.serializer(), string))
         }
     }
 
     @Test
     fun asOpticReturnsTheSameOptic() {
         val optic = OpticOuter.middle + OpticMiddle.inner
-        val any: OpticAny<OpticOuter> = optic
-        assertSame(optic, any.asOptic())
+        val any: OpticOn<OpticOuter> = optic
+        assertSame(optic, any.coerceToOptic())
     }
 
     @Test

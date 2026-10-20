@@ -14,12 +14,12 @@ data class OpticNullableOuter(val inner: OpticNullableInner = OpticNullableInner
 data class OpticNullableInner(val value: String? = null)
 
 class OpticSerializationTest {
-    private val serializer = OpticAnySerializer(LargeTestModel.serializer())
+    private val serializer = OpticOnSerializer(LargeTestModel.serializer())
     private val oldSerializer = DataClassPathSerializer(LargeTestModel.serializer())
     private val root = path(LargeTestModel.serializer())
 
-    private fun encode(optic: OpticAny<LargeTestModel>): String = Json.encodeToString(serializer, optic).removeSurrounding("\"")
-    private fun decode(path: String): Optic<LargeTestModel, *> = Json.decodeFromString(serializer, "\"$path\"").asOptic()
+    private fun encode(optic: OpticOn<LargeTestModel>): String = Json.encodeToString(serializer, optic).removeSurrounding("\"")
+    private fun decode(path: String): Optic<LargeTestModel, *> = Json.decodeFromString(serializer, "\"$path\"").coerceToOptic()
 
     // Claude: each optic paired with the DataClassPath it replaces.
     private val equivalents: List<Pair<DataClassPath<LargeTestModel, *>, Optic<LargeTestModel, *>>> = listOf(
@@ -59,7 +59,7 @@ class OpticSerializationTest {
 
     @Test
     fun wrappersAfterNestedFieldsWrapTheWholePath() {
-        val serializer = OpticAnySerializer(OpticNullableOuter.serializer())
+        val serializer = OpticOnSerializer(OpticNullableOuter.serializer())
         val optic = (OpticNullableOuter.inner + OpticNullableInner.value).notNull
         val string = Json.encodeToString(serializer, optic)
         assertEquals("\"inner.value?\"", string)
@@ -99,7 +99,7 @@ class OpticSerializationTest {
 
     @Test
     fun variantsSerializeInAngleBrackets() {
-        val polymorphic = OpticAnySerializer(Polymorphic.serializer())
+        val polymorphic = OpticOnSerializer(Polymorphic.serializer())
         val foo = IdentityLens(Polymorphic.serializer()).asType(Polymorphic.Foo.serializer())
         val fooName = foo + Polymorphic.Foo.name
         assertEquals("\"<Foo>\"", Json.encodeToString(polymorphic, foo))
@@ -112,7 +112,7 @@ class OpticSerializationTest {
 
     @Test
     fun variantsWithoutShortNamesUseSerialName() {
-        val serializer = OpticAnySerializer(PolymorphicClass.serializer())
+        val serializer = OpticOnSerializer(PolymorphicClass.serializer())
         val topLevel = IdentityLens(PolymorphicClass.serializer()).asType(PolymorphicClassTopLevel.serializer()) + PolymorphicClassTopLevel.id
         val string = Json.encodeToString(serializer, topLevel)
         assertEquals("\"<${PolymorphicClassTopLevel.serializer().descriptor.serialName}>.id\"", string)
@@ -121,6 +121,6 @@ class OpticSerializationTest {
 
     @Test
     fun squareBracketVariantsNoLongerDeserialize() {
-        assertFailsWith<SerializationException> { Json.decodeFromString(OpticAnySerializer(Polymorphic.serializer()), "\"[Foo].name\"") }
+        assertFailsWith<SerializationException> { Json.decodeFromString(OpticOnSerializer(Polymorphic.serializer()), "\"[Foo].name\"") }
     }
 }
