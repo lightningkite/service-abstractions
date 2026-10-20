@@ -8,7 +8,6 @@ import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.json.Json
 import com.lightningkite.services.database.isSelfReferential
 import com.lightningkite.services.database.nullElement
 import kotlinx.serialization.KSerializer
@@ -32,17 +31,17 @@ public class ChildTableCollectionHandler(
 
     // A child row has one column per element field, so a collection nested inside an element
     // can't get its own child table; it is stored as JSON in its column instead.
-    private val config: MapFormatConfig
-        get() = configProvider().let {
-            MapFormatConfig(
-                serializersModule = it.serializersModule,
-                converters = it.converters,
-                collectionHandler = it.collectionHandler,
-                fieldSeparator = it.fieldSeparator,
-                serializeCollectionEmbeddedAsJson = it.serializeCollectionEmbeddedAsJson,
-                collectionsAsJson = true,
-            )
-        }
+    private val config: MapFormatConfig by lazy {
+        val outer = configProvider()
+        MapFormatConfig(
+            serializersModule = outer.serializersModule,
+            converters = outer.converters,
+            collectionHandler = outer.collectionHandler,
+            fieldSeparator = outer.fieldSeparator,
+            serializeCollectionEmbeddedAsJson = outer.serializeCollectionEmbeddedAsJson,
+            collectionsAsJson = true,
+        )
+    }
 
     override fun createListEncoder(
         fieldPath: String,
@@ -178,8 +177,8 @@ private class ChildTableListEncoder(
     override fun endStructure(descriptor: SerialDescriptor) {
         // All elements written inline via writeChild(). Also mark the field as present (even
         // when empty) so a nullable collection's decodeNotNullMark() can tell "empty" apart from
-        // "null" — see SqlSchema.registerNullableCollectionMarker(). Harmless no-op if the field
-        // isn't nullable: no such column exists, so the write is silently dropped on persist.
+        // "null" by its marker column. Harmless if the field
+        // isn't nullable: then there is no such column, and drivers ignore the value.
         output.writeField(fieldPath, true)
     }
 }
@@ -563,8 +562,8 @@ private class ChildTableMapEncoder(
     override fun endStructure(descriptor: SerialDescriptor) {
         // All entries written inline via writeChild(). Also mark the field as present (even
         // when empty) so a nullable map's decodeNotNullMark() can tell "empty" apart from
-        // "null" — see SqlSchema.registerNullableCollectionMarker(). Harmless no-op if the field
-        // isn't nullable: no such column exists, so the write is silently dropped on persist.
+        // "null" by its marker column. Harmless if the field
+        // isn't nullable: then there is no such column, and drivers ignore the value.
         output.writeField(fieldPath, true)
     }
 }
@@ -861,13 +860,6 @@ private fun SerialDescriptor.isJson(config: MapFormatConfig): Boolean =
 @OptIn(ExperimentalSerializationApi::class)
 private fun SerialDescriptor.isStruct(config: MapFormatConfig): Boolean =
     kind == StructureKind.CLASS && !isInline && !isJson(config)
-
-private val MapFormatConfig.json: Json
-    get() = Json {
-        serializersModule = this@json.serializersModule
-        encodeDefaults = true
-        ignoreUnknownKeys = true
-    }
 
 @Suppress("UNCHECKED_CAST")
 private fun SerializationStrategy<*>.nonNull(): SerializationStrategy<Any> =

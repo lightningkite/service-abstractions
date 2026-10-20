@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.SerialKind
 import kotlin.math.sqrt
 
 public class SqliteTable<T : Any> internal constructor(
@@ -67,10 +68,8 @@ public class SqliteTable<T : Any> internal constructor(
         },
     ) { block() }
 
-    private suspend fun <R> read(block: suspend SQLiteConnection.() -> R): R = database.transaction(schema, block)
-
     private suspend fun <R> write(block: suspend SQLiteConnection.() -> R): R = try {
-        database.transaction(schema, block)
+        database.transaction(this, block)
     } catch (e: Exception) {
         val message = e.message.orEmpty()
         if ("constraint failed" in message && ("UNIQUE" in message || "PRIMARY KEY" in message)) throw UniqueViolationException(e, table = name)
@@ -85,17 +84,21 @@ public class SqliteTable<T : Any> internal constructor(
         return sql to translator.exact
     }
 
-    private fun DataClassPathPartial<T>.path(): String = properties.filter { !it.inline }.joinToString("__") { it.name }
+    private fun DataClassPathPartial<T>.path(): String = properties.fold("") { path, key -> fieldPath(path, key) }
 
-    /** The ORDER BY clause, or null when a field isn't in a single column (e.g. it's inside a sealed type). */
+    /**
+     * The ORDER BY clause, or null when SQL would order differently than [SortPart]'s comparator: for
+     * fields not in a single column (e.g. inside a sealed type), case-insensitive text (SQLite's
+     * `lower()` only folds ASCII), and enums (stored by name, compared by declaration order).
+     */
     private fun orderBy(orderBy: List<SortPart<T>>): String? {
         if (orderBy.isEmpty()) return ""
         val terms = orderBy.map { part ->
+            val kind = part.field.serializerAny.descriptor.kind
+            if (kind == SerialKind.ENUM || (part.ignoreCase && kind == PrimitiveKind.STRING)) return null
             val column = schema.columns[part.field.path()]?.takeIf { !it.json } ?: return null
-            val ref = "$table.${q(column.name)}"
             // SQLite already puts nulls first ascending and last descending, as SortPart requires.
-            val expression = if (part.ignoreCase && part.field.serializerAny.descriptor.kind == PrimitiveKind.STRING) "lower($ref)" else ref
-            "$expression ${if (part.ascending) "ASC" else "DESC"}"
+            "$table.${q(column.name)} ${if (part.ascending) "ASC" else "DESC"}"
         }
         return " ORDER BY " + terms.joinToString()
     }
@@ -107,10 +110,14 @@ public class SqliteTable<T : Any> internal constructor(
         }
     }
 
-    private suspend fun SQLiteConnection.decode(rows: List<Map<String, Any?>>): List<T> {
+    /**
+     * @param newChildTables child tables just created for a field older rows didn't have; leaving them
+     * out of the decoded children lets those fields take their defaults.
+     */
+    private suspend fun SQLiteConnection.decode(rows: List<Map<String, Any?>>, newChildTables: Set<String> = setOf()): List<T> {
         if (rows.isEmpty()) return listOf()
         val ids = rows.map { row -> schema.idColumns.map { row[it.name] } }
-        val children = schema.childTables.values.associate { it.path to childRows(it, ids) }
+        val children = schema.childTables.values.filter { it.name !in newChildTables }.associate { it.path to childRows(it, ids) }
         return rows.mapIndexed { i, row ->
             val key = idKey(ids[i])
             // Null in a non-nullable column means the row predates the column; reading it as missing lets the field's default apply.
@@ -120,17 +127,16 @@ public class SqliteTable<T : Any> internal constructor(
     }
 
     private suspend fun SQLiteConnection.childRows(child: ChildTable, ids: List<List<Any?>>): Map<List<Any?>, List<ChildRow>> {
-        val ordered = child.isList || child.isMap
         val owners = schema.idColumns.map { q(schema.ownerColumn(it)) }
         val keys = child.keyColumns.values.toList()
         val elements = child.elementColumns.values.toList()
-        val selected = owners + listOfNotNull(if (ordered) "\"idx\"" else null) + (keys + elements).map { q(it.name) }
+        val selected = owners + listOfNotNull(if (child.ordered) "\"idx\"" else null) + child.storedColumns.map { q(it.name) }
         val result = HashMap<List<Any?>, MutableList<ChildRow>>()
         for (chunk in ids.chunked(CHUNK)) {
-            query(sql("SELECT ${selected.joinToString()} FROM ${q(child.name)} WHERE ", idsIn(owners, chunk), " ORDER BY ${if (ordered) "\"idx\"" else "rowid"}")) { s ->
+            query(sql("SELECT ${selected.joinToString()} FROM ${q(child.name)} WHERE ", idsIn(owners, chunk), " ORDER BY ${if (child.ordered) "\"idx\"" else "rowid"}")) { s ->
                 var i = 0
                 val owner = schema.idColumns.map { s.read(i++, it.type) }
-                val index = if (ordered) s.getLong(i++).toInt() else null
+                val index = if (child.ordered) s.getLong(i++).toInt() else null
                 val key = keys.associate { it.name to s.read(i++, it.type) }
                 val values = elements.associate { it.name to s.read(i++, it.type) }
                 result.getOrPut(idKey(owner)) { ArrayList() }.add(ChildRow(index, key.takeIf { child.isMap }, values))
@@ -189,12 +195,12 @@ public class SqliteTable<T : Any> internal constructor(
     }
 
     override suspend fun find(condition: Condition<T>, orderBy: List<SortPart<T>>, skip: Int, limit: Int, maxQueryMs: Long): Flow<T> = traced("find") {
-        read { matching(condition, orderBy, skip, limit) }.asFlow()
+        database.transaction(this) { matching(condition, orderBy, skip, limit) }.asFlow()
     }
 
     override suspend fun count(condition: Condition<T>): Int = traced("count") {
         val (where, exact) = where(condition)
-        read {
+        database.transaction(this) {
             if (exact) query(sql("SELECT COUNT(*) FROM $table WHERE ", where)) { it.getLong(0).toInt() }.single()
             else decode(rows(where)).count { condition(it) }
         }
@@ -223,7 +229,7 @@ public class SqliteTable<T : Any> internal constructor(
         val (where, exact) = where(condition)
         val path = groupBy.path()
         val group = groupColumns(path)
-        val groups = read {
+        val groups = database.transaction(this) {
             if (exact && group != null) {
                 val refs = group.joinToString { "$table.${q(it.name)}" }
                 query(sql("SELECT $refs, COUNT(*) FROM $table WHERE ", where, " GROUP BY $refs")) { s ->
@@ -245,7 +251,8 @@ public class SqliteTable<T : Any> internal constructor(
         val selectGroup = groupRefs.joinToString("") { "$it, " }
         val groupBy = if (group.isEmpty()) "" else " GROUP BY ${groupRefs.joinToString()}"
         val statement = when (aggregate) {
-            Aggregate.Sum -> sql("SELECT ${selectGroup}SUM($v), COUNT($v) FROM $table WHERE ", filtered, groupBy)
+            // TOTAL rather than SUM, which fails on 64-bit overflow where the in-memory sum just loses precision.
+            Aggregate.Sum -> sql("SELECT ${selectGroup}TOTAL($v), COUNT($v) FROM $table WHERE ", filtered, groupBy)
             Aggregate.Average -> sql("SELECT ${selectGroup}AVG($v), COUNT($v) FROM $table WHERE ", filtered, groupBy)
             // Squared distances from a mean computed first, rather than the sum of squares, which loses precision.
             Aggregate.StandardDeviationSample, Aggregate.StandardDeviationPopulation -> sql(
@@ -260,7 +267,7 @@ public class SqliteTable<T : Any> internal constructor(
             val total = if (s.isNull(group.size)) null else s.getDouble(group.size)
             val count = s.getLong(group.size + 1)
             key to when (aggregate) {
-                Aggregate.Sum, Aggregate.Average -> total
+                Aggregate.Sum, Aggregate.Average -> if (count == 0L) null else total
                 Aggregate.StandardDeviationSample -> if (count < 2) null else sqrt(total!! / (count - 1))
                 Aggregate.StandardDeviationPopulation -> if (count == 0L) null else sqrt(total!! / count)
             }
@@ -273,7 +280,7 @@ public class SqliteTable<T : Any> internal constructor(
     override suspend fun <N : Number?> aggregate(aggregate: Aggregate, condition: Condition<T>, property: DataClassPath<T, N>): Double? = traced("aggregate") {
         val (where, exact) = where(condition)
         val value = numberColumn(property)
-        read {
+        database.transaction(this) {
             if (exact && value != null) aggregates(aggregate, where, listOf(), value).single().second
             else decode(rows(where)).filter { condition(it) }.aggregateOfNotNull(aggregate) { property.get(it)?.toDouble() }
         }
@@ -289,7 +296,7 @@ public class SqliteTable<T : Any> internal constructor(
         val path = groupBy.path()
         val group = groupColumns(path)
         val value = numberColumn(property)
-        val groups = read {
+        val groups = database.transaction(this) {
             if (exact && group != null && value != null) {
                 aggregates(aggregate, where, group, value).associate { (key, result) -> decodeAt(path, groupBy.serializer, key) to result }
             } else {
@@ -317,15 +324,36 @@ public class SqliteTable<T : Any> internal constructor(
     private suspend fun SQLiteConnection.insertChildren(written: WriteResult) {
         val id = schema.idColumns.map { written.mainRecord[it.name] }
         for (child in schema.childTables.values) {
-            val ordered = child.isList || child.isMap
-            val names = schema.idColumns.map { q(schema.ownerColumn(it)) } + listOfNotNull(if (ordered) "\"idx\"" else null) +
-                (child.keyColumns.values + child.elementColumns.values).map { q(it.name) }
+            val names = schema.idColumns.map { q(schema.ownerColumn(it)) } + listOfNotNull(if (child.ordered) "\"idx\"" else null) +
+                child.storedColumns.map { q(it.name) }
             for (row in written.children[child.path].orEmpty()) {
-                val values = id + listOfNotNull(if (ordered) row.index else null) +
-                    child.keyColumns.values.map { row.key?.get(it.name) } + child.elementColumns.values.map { row.values[it.name] }
+                val index = if (child.ordered) listOf(row.index) else listOf()
+                val values = id + index + child.storedValues(row)
                 execute(Sql("INSERT INTO ${q(child.name)} (${names.joinToString()}) VALUES (${values.joinToString { "?" }})", values))
             }
         }
+    }
+
+    /**
+     * Creates or extends the tables; nothing is dropped.  Rows from before a field existed are
+     * rewritten with its default, so SQL conditions and updates see the value Kotlin reads.
+     */
+    internal suspend fun migrate(connection: SQLiteConnection): Unit = with(connection) {
+        val existingTables = query(Sql("SELECT name FROM sqlite_master WHERE type = 'table'")) { it.getText(0) }.toSet()
+        schema.createTables().forEach { execute(Sql(it)) }
+        var columnsAdded = false
+        for ((tableName, columns) in schema.expectedColumns()) {
+            val existing = query(Sql("SELECT name FROM pragma_table_info(?)", listOf(tableName))) { it.getText(0) }.toSet()
+            for (column in columns.filter { it.name !in existing }) {
+                execute(Sql("ALTER TABLE ${q(tableName)} ADD COLUMN ${q(column.name)} ${column.type.declaration}"))
+                columnsAdded = true
+            }
+        }
+        val newChildTables = schema.childTables.values.map { it.name }.filter { it !in existingTables }.toSet()
+        if (name in existingTables && (columnsAdded || newChildTables.isNotEmpty())) {
+            for (old in decode(rows(Sql("1")), newChildTables)) replace(idOf(old), old)
+        }
+        schema.createIndexes().forEach { execute(Sql(it)) }
     }
 
     /** Replaces the row with id [oldId] by [model], whose id may differ; child rows follow the id by cascade. */

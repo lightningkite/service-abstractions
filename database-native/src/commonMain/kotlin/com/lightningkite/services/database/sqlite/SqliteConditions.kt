@@ -11,6 +11,7 @@ import com.lightningkite.services.database.mapformat.WriteResult
 import com.lightningkite.services.database.nullElement
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 
 internal class Sql(val text: String, val args: List<Any?> = listOf())
@@ -49,6 +50,17 @@ internal class Scope(
 }
 
 internal fun ChildTable.elementScope(qualifier: String): Scope = Scope(qualifier, elementColumns)
+
+/** The serializer of one element, given the serializer of the (possibly nullable) collection field. */
+@Suppress("UNCHECKED_CAST")
+internal fun ChildTable.elementSerializer(collection: KSerializer<*>): KSerializer<Any?> {
+    val nonNull = if (collection.descriptor.isNullable) collection.nullElement()!! else collection
+    return (if (isMap) nonNull.mapValueElement() else nonNull.listElement()) as KSerializer<Any?>
+}
+
+/** Where [key]'s value is stored below [path].  A value class's property shares the value class's columns. */
+internal fun fieldPath(path: String, key: SerializableProperty<*, *>): String =
+    if (key.inline) path else if (path.isEmpty()) key.name else "${path}__${key.name}"
 
 /** Matches child rows to their owner in the main table, by every id column. */
 internal fun SqliteSchema.ownerMatch(child: String): String =
@@ -93,7 +105,8 @@ internal class SqliteConditions(private val schema: SqliteSchema, private val co
     private fun <T> translate(condition: Condition<T>, scope: Scope, path: String, serializer: KSerializer<T>, negated: Boolean): Sql {
         val single = scope.columns[path]?.takeIf { !it.json }
         fun compare(operator: String, value: T): Sql {
-            single ?: return inexact(negated)
+            // Enums are stored by name but compare by declaration order.
+            if (single == null || serializer.descriptor.kind == SerialKind.ENUM) return inexact(negated)
             return Sql("${scope.ref(single)} $operator ?", listOf(config.encodeAt(path, serializer, value).mainRecord[path]))
         }
         return when (condition) {
@@ -125,7 +138,7 @@ internal class SqliteConditions(private val schema: SqliteSchema, private val co
             }
             is Condition.OnField<*, *> -> {
                 val key = condition.key as SerializableProperty<T, Any?>
-                val fieldPath = if (key.inline) path else if (path.isEmpty()) key.name else "${path}__${key.name}"
+                val fieldPath = fieldPath(path, key)
                 val child = scope.childTables[fieldPath]
                 if (child != null) collection(condition.condition as Condition<Any?>, child, key.serializer, negated)
                 else translate(condition.condition as Condition<Any?>, scope, fieldPath, key.serializer, negated)
@@ -173,7 +186,7 @@ internal class SqliteConditions(private val schema: SqliteSchema, private val co
         val marker = schema.columns[child.path]
         val markerRef = marker?.let { "${q(schema.tableName)}.${q(it.name)}" }
         val nonNull = (if (serializer.descriptor.isNullable) serializer.nullElement() else serializer) as KSerializer<Any?>
-        val elementSerializer = (if (child.isMap) nonNull.mapValueElement() else nonNull.listElement()) as KSerializer<Any?>
+        val elementSerializer = child.elementSerializer(serializer)
         val rows = "FROM ${q(child.name)} AS c WHERE ${schema.ownerMatch("c")}"
         fun element(condition: Condition<*>, negated: Boolean): Sql =
             translate(condition as Condition<Any?>, child.elementScope("c"), "", elementSerializer, negated)

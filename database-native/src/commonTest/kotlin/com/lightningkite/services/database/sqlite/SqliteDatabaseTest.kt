@@ -64,8 +64,27 @@ data class MembershipKey(val group: String, val user: String) : Comparable<Membe
     override fun compareTo(other: MembershipKey): Int = compareValuesBy(this, other, { it.group }, { it.user })
 }
 
+// Declared out of alphabetical order, so name order and declaration order differ.
+enum class Level { Low, High, Medium }
+
+@GenerateDataClassPaths
+@Serializable
+data class Task(override val _id: Uuid = Uuid.random(), val level: Level) : HasId<Uuid>
+
 class SqliteDatabaseTest {
     private val notes = DatabaseTableDefinition(Note.serializer(), "Note")
+
+    @Test
+    fun enumsCompareByDeclarationOrder() = runTest {
+        val database = freshDatabase()
+        val table = database.prepare(DatabaseTableDefinition(Task.serializer(), "Task"))
+        table.insert(Level.entries.map { Task(level = it) })
+        assertEquals(Level.entries, table.find(Condition.Always, sort { it.level.ascending() }).toList().map { it.level })
+        assertEquals(listOf(Level.Medium), table.find(condition { it.level gt Level.High }).toList().map { it.level })
+        table.updateMany(Condition.Always, modification { it.level coerceAtMost Level.High })
+        assertEquals(listOf(Level.Low, Level.High, Level.High), table.find(Condition.Always, sort { it.level.ascending() }).toList().map { it.level })
+        database.disconnect()
+    }
 
     @Test
     fun survivesReconnecting() = runTest {
@@ -94,6 +113,10 @@ class SqliteDatabaseTest {
         val newer = NoteWithPriority(title = "b", priority = 1, archived = Archive("done", listOf("n")))
         table.insert(listOf(newer))
         assertEquals(listOf(newer), table.find(condition { it.priority eq 1 }).toList())
+        // SQL sees the default written into the older row, not a null.
+        assertEquals(1, table.count(condition { it.priority eq 3 }))
+        table.updateOne(condition { it._id eq note._id }, modification { it.priority += 1 })
+        assertEquals(4, table.find(condition { it._id eq note._id }).toList().single().priority)
         reopened.disconnect()
     }
 
@@ -169,6 +192,7 @@ class SqliteDatabaseTest {
         // A collection inside a list element is stored as JSON, so changing it is done in Kotlin.
         check(modification { it.places.forEachIf({ it.name eq "home" }) { it.aliases += listOf("hq") } }, inSql = false)
         check(modification { it.tags assign listOf("only") })
+        check(modification { it.labels assign setOf("a", "b") })
         check(modification { it.title assign "b"; it.tags += listOf("again") })
         database.disconnect()
     }

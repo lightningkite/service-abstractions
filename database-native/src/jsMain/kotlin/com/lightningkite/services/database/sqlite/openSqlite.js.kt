@@ -39,7 +39,10 @@ private val workerSource = """
 const ready = (async () => {
     const { default: sqlite3InitModule } = await import(SQLITE_MODULE_URL);
     const sqlite3 = await sqlite3InitModule();
-    return await sqlite3.installOpfsSAHPoolVfs({ name: "lightningkite-sqlite" });
+    const pool = await sqlite3.installOpfsSAHPoolVfs({ name: "lightningkite-sqlite" });
+    // Each database takes up to two of the pool's files (itself and its journal), and the pool doesn't grow on its own.
+    await pool.reserveMinimumCapacity(32);
+    return pool;
 })();
 const databases = new Map();
 const statements = new Map();

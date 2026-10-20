@@ -65,7 +65,7 @@ public class SqliteDatabase(
         tables.computeIfAbsent(tableDef) { SqliteTable(this, tableDef) } as SqliteTable<T>
 
     override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): Table<T> =
-        table(tableDef).also { transaction(it.schema) { } }
+        table(tableDef).also { transaction(it) { } }
 
     override suspend fun disconnect() {
         lock.withLock {
@@ -75,8 +75,8 @@ public class SqliteDatabase(
         }
     }
 
-    /** Runs [block] in a transaction, after creating or extending [schema]'s tables if this is their first use. */
-    internal suspend fun <R> transaction(schema: SqliteSchema, block: suspend SQLiteConnection.() -> R): R = lock.withLock {
+    /** Runs [block] in a transaction, after creating or extending [table]'s tables if this is their first use. */
+    internal suspend fun <R> transaction(table: SqliteTable<*>, block: suspend SQLiteConnection.() -> R): R = lock.withLock {
         withContext(sqliteDispatcher) {
             val connection = connection ?: openSqlite(location).also {
                 it.execute(Sql("PRAGMA foreign_keys = ON"))
@@ -84,29 +84,20 @@ public class SqliteDatabase(
             }
             connection.execute(Sql("BEGIN IMMEDIATE"))
             try {
-                val created = schema.tableName !in prepared
-                if (created) connection.migrate(schema)
+                val created = table.name !in prepared
+                if (created) table.migrate(connection)
                 connection.block().also {
                     connection.execute(Sql("COMMIT"))
-                    if (created) prepared += schema.tableName
+                    if (created) prepared += table.name
                 }
             } catch (e: Throwable) {
-                withContext(NonCancellable) { connection.execute(Sql("ROLLBACK")) }
+                // SQLite rolls back by itself after some errors, and then ROLLBACK fails; the original error is the one to report.
+                withContext(NonCancellable) {
+                    runCatching { connection.execute(Sql("ROLLBACK")) }.exceptionOrNull()?.let { e.addSuppressed(it) }
+                }
                 throw e
             }
         }
-    }
-
-    // Only adds: tables, columns for fields a newer model introduced, and indexes.  Nothing is dropped.
-    private suspend fun SQLiteConnection.migrate(schema: SqliteSchema) {
-        schema.createTables().forEach { execute(Sql(it)) }
-        for ((table, columns) in schema.expectedColumns()) {
-            val existing = query(Sql("SELECT name FROM pragma_table_info(?)", listOf(table))) { it.getText(0) }.toSet()
-            for (column in columns) {
-                if (column.name !in existing) execute(Sql("ALTER TABLE ${q(table)} ADD COLUMN ${q(column.name)} ${column.type.declaration}"))
-            }
-        }
-        schema.createIndexes().forEach { execute(Sql(it)) }
     }
 }
 

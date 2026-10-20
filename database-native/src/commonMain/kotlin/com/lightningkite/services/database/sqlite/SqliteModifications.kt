@@ -1,13 +1,13 @@
 package com.lightningkite.services.database.sqlite
 
+import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.SerializableProperty
-import com.lightningkite.services.database.listElement
-import com.lightningkite.services.database.mapValueElement
 import com.lightningkite.services.database.mapformat.ChildRow
 import com.lightningkite.services.database.mapformat.MapFormatConfig
 import com.lightningkite.services.database.nullElement
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.descriptors.SerialKind
 
 internal sealed interface Step {
     /** Statements for the rows `targets` (an expression over the main table) selects. */
@@ -55,7 +55,8 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
         val rewrite = listOf(Step.Rewrite(wrap(modification)))
         val single = main.columns[path]?.takeIf { !it.json }
         fun update(expression: (column: String) -> Sql): List<Step> {
-            single ?: return rewrite
+            // MIN and MAX would compare an enum by its stored name rather than its declaration order.
+            if (single == null || serializer.descriptor.kind == SerialKind.ENUM) return rewrite
             val column = q(single.name)
             return listOf(Step.Statements { targets ->
                 listOf(sql("UPDATE $table SET $column = ", expression(column), " WHERE ", where(targets, guards)))
@@ -73,7 +74,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
             }
             is Modification.OnField<*, *> -> {
                 val key = modification.key as SerializableProperty<Any?, Any?>
-                val fieldPath = if (key.inline) path else if (path.isEmpty()) key.name else "${path}__${key.name}"
+                val fieldPath = fieldPath(path, key)
                 val inner = modification.modification as Modification<Any?>
                 val innerWrap = { it: Modification<Any?> -> wrap(Modification.OnField(key, it)) }
                 val child = schema.childTables[fieldPath]
@@ -103,7 +104,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
             children.flatMap { child ->
                 listOf(sql("DELETE FROM ${q(child.name)} WHERE ", ownersIn(where))) +
                     encoded.children[child.path].orEmpty().map { row ->
-                        insert(child, row, where, index = row.index?.let { arg(it) })
+                        insert(child, row, where, index = if (child.ordered) arg(row.index) else null)
                     }
             } + listOfNotNull(columns.takeIf { it.isNotEmpty() }?.let {
                 val set = Sql(it.joinToString { c -> "${q(c.name)} = ?" }, it.map { c -> encoded.mainRecord[c.name] })
@@ -112,12 +113,11 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
         })
     }
 
-    /** Inserts [row] as an element of every selected owner. */
+    /** Inserts [row] as an element of every selected owner; [index] is required exactly when the child table is ordered. */
     private fun insert(child: ChildTable, row: ChildRow, where: Sql, index: Sql?, unless: (owner: String) -> Sql? = { null }): Sql {
-        val columns = child.keyColumns.values + child.elementColumns.values
-        val values = child.keyColumns.values.map { row.key?.get(it.name) } + child.elementColumns.values.map { row.values[it.name] }
-        val names = listOf(owners) + listOfNotNull(index?.let { "\"idx\"" }) + columns.map { q(it.name) }
-        val selected = listOfNotNull(Sql(ids), index) + values.map { arg(it) }
+        check((index != null) == child.ordered) { "${child.name} ${if (child.ordered) "needs" else "has no"} idx" }
+        val names = listOf(owners) + listOfNotNull(index?.let { "\"idx\"" }) + child.storedColumns.map { q(it.name) }
+        val selected = listOfNotNull(Sql(ids), index) + child.storedValues(row).map { arg(it) }
         val condition = listOfNotNull(where, unless("x")?.let { sql("NOT EXISTS (SELECT 1 FROM ${q(child.name)} AS x WHERE ${schema.ownerMatch("x")} AND ", it, ")") })
         return sql(
             "INSERT INTO ${q(child.name)} (${names.joinToString()}) SELECT ", selected.join(", "),
@@ -138,8 +138,10 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
     ): List<Step> {
         val rewrite = listOf(Step.Rewrite(wrap(modification)))
         val nonNull = (if (serializer.descriptor.isNullable) serializer.nullElement() else serializer) as KSerializer<Any?>
-        val elementSerializer = (if (child.isMap) nonNull.mapValueElement() else nonNull.listElement()) as KSerializer<Any?>
+        val elementSerializer = child.elementSerializer(serializer)
         val childTable = q(child.name)
+        // JSON text can spell equal values differently, so comparing whole elements there is left to Kotlin.
+        val jsonElements = child.elementColumns.values.any { it.json }
         fun rows(collection: Any?): List<ChildRow> = config.encodeAt(child.path, nonNull, collection).children[child.path].orEmpty()
         fun statements(build: (where: Sql) -> List<Sql>) = listOf(Step.Statements { targets -> build(where(targets, guards)) })
         fun delete(where: Sql, condition: Sql) = sql("DELETE FROM $childTable WHERE ", ownersIn(where), " AND ", condition)
@@ -148,9 +150,9 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
             "$column = (SELECT $function(x.$column) FROM $childTable AS x WHERE " +
                 schema.idColumns.joinToString(" AND ") { "x.${q(schema.ownerColumn(it))} = $childTable.${q(schema.ownerColumn(it))}" } + ")"
         )
-        fun elementCondition(condition: com.lightningkite.services.database.Condition<*>): Sql? {
+        fun elementCondition(condition: Condition<*>): Sql? {
             val translator = SqliteConditions(schema, config)
-            val translated = translator.element(condition as com.lightningkite.services.database.Condition<Any?>, child, childTable, elementSerializer)
+            val translated = translator.element(condition as Condition<Any?>, child, childTable, elementSerializer)
             return translated.takeIf { translator.exact }
         }
         return when (modification) {
@@ -167,7 +169,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
             is Modification.ListAppend<*> -> rows(modification.items).let { added ->
                 statements { where -> added.map { insert(child, it, where, nextIndex) } }
             }
-            is Modification.SetAppend<*> -> rows(modification.items).let { added ->
+            is Modification.SetAppend<*> -> if (jsonElements) rewrite else rows(modification.items).let { added ->
                 statements { where ->
                     added.map { row -> insert(child, row, where, index = null) { x -> sameAs(x, child.elementColumns.values) { row.values[it.name] } } }
                 }
@@ -179,8 +181,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                 statements { where -> listOf(delete(where, condition)) }
             } ?: rewrite
             is Modification.ListRemoveInstances<*>, is Modification.SetRemoveInstances<*> -> {
-                // JSON text can spell equal values differently, so equality there is left to Kotlin.
-                if (child.elementColumns.values.any { it.json }) return rewrite
+                if (jsonElements) return rewrite
                 val removed = rows(if (modification is Modification.ListRemoveInstances<*>) modification.items else (modification as Modification.SetRemoveInstances<*>).items)
                 val matches = removed.map { row -> sameAs(childTable, child.elementColumns.values) { row.values[it.name] } }.joinSql(" OR ", "0")
                 statements { where -> listOf(delete(where, matches)) }
@@ -195,6 +196,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                     is Modification.ListPerElement<*> -> modification.condition to modification.modification
                     else -> (modification as Modification.SetPerElement<*>).condition to modification.modification
                 }
+                if (!child.ordered && jsonElements) return rewrite
                 val matching = elementCondition(condition) ?: return rewrite
                 val set = elementAssignments(elementModification as Modification<Any?>, child, elementSerializer) ?: return rewrite
                 if (set.text.isEmpty()) return listOf()
@@ -202,9 +204,9 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                     listOfNotNull(
                         sql("UPDATE $childTable SET ", set, " WHERE ", ownersIn(where), " AND ", matching),
                         // A set can't hold the same element twice, so changed elements that now match another merge into it.
-                        if (child.isList) null else sql(
-                            "DELETE FROM $childTable WHERE ", ownersIn(where), " AND rowid NOT IN (SELECT MIN(rowid) FROM $childTable GROUP BY $owners, ",
-                            child.elementColumns.values.joinToString { q(it.name) }, ")",
+                        if (child.ordered) null else sql(
+                            "DELETE FROM $childTable WHERE ", ownersIn(where), " AND rowid NOT IN (SELECT MIN(rowid) FROM $childTable WHERE ",
+                            ownersIn(where), " GROUP BY $owners, ", child.elementColumns.values.joinToString { q(it.name) }, ")",
                         ),
                     )
                 }
@@ -247,7 +249,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
             }
             val single = scope.columns[path]?.takeIf { !it.json }
             fun update(expression: (Sql) -> Sql): Boolean {
-                single ?: return false
+                if (single == null || serializer.descriptor.kind == SerialKind.ENUM) return false
                 set(single, expression(current(single)))
                 return true
             }
@@ -266,7 +268,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                 }
                 is Modification.OnField<*, *> -> {
                     val key = modification.key as SerializableProperty<Any?, Any?>
-                    val fieldPath = if (key.inline) path else if (path.isEmpty()) key.name else "${path}__${key.name}"
+                    val fieldPath = fieldPath(path, key)
                     visit(modification.modification as Modification<Any?>, fieldPath, key.serializer, guard)
                 }
                 is Modification.Assign -> {

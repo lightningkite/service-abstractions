@@ -104,13 +104,7 @@ public class MapDecoder(
 
     // by Claude - helper to decode a value from JSON text (used for self-referential/polymorphic types)
     private fun <T> decodeFromJson(deserializer: DeserializationStrategy<T>): T {
-        val jsonString = input.readField(popTag()) as String
-        val json = Json {
-            serializersModule = config.serializersModule
-            ignoreUnknownKeys = true
-        }
-        @Suppress("UNCHECKED_CAST")
-        return json.decodeFromString(deserializer as kotlinx.serialization.KSerializer<T>, jsonString)
+        return config.json.decodeFromString(deserializer, input.readField(popTag()) as String)
     }
 
     override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {

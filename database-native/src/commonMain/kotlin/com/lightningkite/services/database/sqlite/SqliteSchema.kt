@@ -4,6 +4,7 @@ import com.lightningkite.services.data.Index
 import com.lightningkite.services.data.IndexSet
 import com.lightningkite.services.data.IndexUniqueness
 import com.lightningkite.services.database.isSelfReferential
+import com.lightningkite.services.database.mapformat.ChildRow
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -22,15 +23,24 @@ internal class Column(val name: String, val type: ColumnType, val nullable: Bool
 /**
  * The elements of one List/Set/Map field, one row per element, keyed by the owning row's id.
  * [keyColumns] and [elementColumns] are keyed by their path within the key or element.
+ *
+ * Lists and maps keep their order in an `idx` column ([ordered]); sets have none and read back in
+ * insertion order, which is rowid order.
  */
 internal class ChildTable(
     val path: String,
     val name: String,
     val isMap: Boolean,
-    val isList: Boolean,
+    val ordered: Boolean,
     val keyColumns: Map<String, Column>,
     val elementColumns: Map<String, Column>,
-)
+) {
+    /** The columns after the owner's and `idx`, in the order [storedValues] gives their values. */
+    val storedColumns: List<Column> = (keyColumns.values + elementColumns.values).toList()
+
+    fun storedValues(row: ChildRow): List<Any?> =
+        keyColumns.values.map { row.key?.get(it.name) } + elementColumns.values.map { row.values[it.name] }
+}
 
 internal class TableIndex(val name: String, val unique: Boolean, val expressions: List<String>)
 
@@ -121,7 +131,7 @@ internal class SqliteSchema(
             name = "${tableName}__$path",
             isMap = isMap,
             // kotlinx describes sets as lists; only the serial name tells them apart.
-            isList = !isMap && !collection.serialName.contains("HashSet"),
+            ordered = isMap || !collection.serialName.contains("HashSet"),
             keyColumns = keys.relativeTo("key"),
             elementColumns = if (isMap) elements.relativeTo("value") else elements,
         )
@@ -172,8 +182,8 @@ internal class SqliteSchema(
         for (child in childTables.values) {
             val owners = idColumns.map { q(ownerColumn(it)) }
             val definitions = idColumns.map { "${q(ownerColumn(it))} ${it.type.declaration}" } +
-                listOfNotNull(if (child.isList || child.isMap) "\"idx\" INTEGER" else null) +
-                (child.keyColumns.values + child.elementColumns.values).map { "${q(it.name)} ${it.type.declaration}" }
+                listOfNotNull(if (child.ordered) "\"idx\" INTEGER" else null) +
+                child.storedColumns.map { "${q(it.name)} ${it.type.declaration}" }
             add(
                 "CREATE TABLE IF NOT EXISTS ${q(child.name)} (${definitions.joinToString()}, " +
                     "FOREIGN KEY (${owners.joinToString()}) REFERENCES ${q(tableName)} ($ids) ON UPDATE CASCADE ON DELETE CASCADE)"
@@ -189,7 +199,7 @@ internal class SqliteSchema(
     /** The columns each table should have, for adding the ones a newer model introduced. */
     fun expectedColumns(): Map<String, List<Column>> =
         mapOf(tableName to columns.values.toList()) +
-            childTables.values.associate { it.name to (it.keyColumns.values + it.elementColumns.values).toList() }
+            childTables.values.associate { it.name to it.storedColumns }
 }
 
 internal fun q(identifier: String): String = "\"" + identifier.replace("\"", "\"\"") + "\""

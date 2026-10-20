@@ -1,6 +1,7 @@
 // by Claude
 package com.lightningkite.services.database.mapformat
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 
@@ -30,4 +31,13 @@ public class MapFormatConfig(
 
     /** Store List/Set/Map fields as one JSON string instead of passing them to [collectionHandler]. */
     public val collectionsAsJson: Boolean = false,
-)
+) {
+    /** For values stored whole as JSON text. */
+    internal val json: Json by lazy {
+        Json {
+            serializersModule = this@MapFormatConfig.serializersModule
+            encodeDefaults = true
+            ignoreUnknownKeys = true
+        }
+    }
+}

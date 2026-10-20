@@ -81,14 +81,7 @@ public class MapEncoder(
 
     // by Claude - helper to serialize a value as JSON text (used for self-referential/polymorphic types)
     private fun <T> encodeAsJson(serializer: SerializationStrategy<T>, value: T) {
-        val json = Json {
-            serializersModule = config.serializersModule
-            encodeDefaults = true
-        }
-
-        @Suppress("UNCHECKED_CAST")
-        val jsonString = json.encodeToString(serializer as kotlinx.serialization.KSerializer<T>, value)
-        output.writeField(popTag(), jsonString)
+        output.writeField(popTag(), config.json.encodeToString(serializer, value))
     }
 
     override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
