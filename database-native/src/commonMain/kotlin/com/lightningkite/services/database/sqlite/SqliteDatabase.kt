@@ -22,8 +22,22 @@ import kotlinx.coroutines.withContext
  *
  * URL: `native://<location>`.  On the JVM the location is a file path.  On iOS and macOS a relative
  * path is inside Application Support.  On Android it must be absolute, e.g.
- * `context.getDatabasePath("app.db").path`.  On the web it is a file name without slashes; only one
- * tab can have the database open at a time.
+ * `context.getDatabasePath("app.db").path`.  On the web it is a file name without slashes.
+ *
+ * On the web the app must serve SQLite's WebAssembly build: `index.mjs` and `sqlite3.wasm` from the
+ * `@sqlite.org/sqlite-wasm` npm package's `dist` folder, at `lightningkite-sqlite/` relative to the
+ * page's base URL.  For example, in the app's build file:
+ * ```kotlin
+ * tasks.named<Copy>("jsProcessResources") {
+ *     from(rootProject.layout.buildDirectory.dir("js/node_modules/@sqlite.org/sqlite-wasm/dist")) {
+ *         include("index.mjs", "sqlite3.wasm")
+ *         into("lightningkite-sqlite")
+ *     }
+ *     dependsOn(":kotlinNpmInstall")
+ * }
+ * ```
+ * Only one tab can have the databases open at a time, and `Long` values beyond ±2^53 lose precision,
+ * because the web driver passes integers through JavaScript numbers.
  */
 public class SqliteDatabase(
     override val name: String,
