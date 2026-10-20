@@ -257,19 +257,19 @@ public class PrepareFirstTable<MODEL : Any>(
         return prepare.await().groupCount(condition, groupBy)
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<MODEL>,
-        property: Optic<MODEL, N>
+        property: Optic<MODEL, out Number?>
     ): Double? {
         return prepare.await().aggregate(aggregate, condition, property)
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<MODEL>,
         groupBy: Optic<MODEL, Key>,
-        property: Optic<MODEL, N>
+        property: Optic<MODEL, out Number?>
     ): Map<Key, Double?> {
         return prepare.await().groupAggregate(aggregate, condition, groupBy, property)
     }

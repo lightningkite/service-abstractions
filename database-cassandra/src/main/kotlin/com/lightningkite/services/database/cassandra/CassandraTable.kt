@@ -710,10 +710,10 @@ public class CassandraTable<Model : Any>(
         return groupBy.dropUnrepresentableNullGroup(results)
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: Optic<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Double? {
         // Cassandra doesn't support arbitrary aggregations well
         // We compute client-side
@@ -751,11 +751,11 @@ public class CassandraTable<Model : Any>(
     }
 
     @Suppress("UNCHECKED_CAST")
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
         groupBy: Optic<Model, Key>,
-        property: Optic<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Map<Key, Double?> {
         // Group-aggregate client-side. As in groupCount above, every row's key (including a null
         // one) is accumulated here, and dropUnrepresentableNullGroup decides afterward whether a

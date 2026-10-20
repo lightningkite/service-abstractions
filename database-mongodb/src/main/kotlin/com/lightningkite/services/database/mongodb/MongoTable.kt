@@ -911,10 +911,10 @@ public class MongoTable<Model : Any>(
         Aggregate.StandardDeviationSample -> Accumulators.stdDevSamp("value", "\$" + propertyName)
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: Optic<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Double? {
         val cs = condition.simplify()
         if (cs is Condition.Never) return null
@@ -936,11 +936,11 @@ public class MongoTable<Model : Any>(
         }
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
         groupBy: Optic<Model, Key>,
-        property: Optic<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Map<Key, Double?> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return mapOf()

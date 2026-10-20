@@ -145,10 +145,10 @@ public open class ModelPermissionsTable<Model : Any>(
         )
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: Optic<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Double? =
         wraps.aggregate(
             aggregate,
@@ -156,11 +156,11 @@ public open class ModelPermissionsTable<Model : Any>(
             property
         )
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
         groupBy: Optic<Model, Key>,
-        property: Optic<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Map<Key, Double?> = wraps.groupAggregate(
         aggregate,
         condition and permissions.read and permissions.readMask(groupBy) and permissions.readMask(property) and permissions.readMask(

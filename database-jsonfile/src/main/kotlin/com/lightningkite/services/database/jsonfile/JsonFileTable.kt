@@ -171,10 +171,10 @@ public class JsonFileTable<Model : Any>(
         result
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: Optic<Model, N>
+        property: Optic<Model, out Number?>
     ): Double? = traced(
         operation = "aggregate",
         extraBlock = {
@@ -185,11 +185,11 @@ public class JsonFileTable<Model : Any>(
         super.aggregate(aggregate, condition, property)
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
         groupBy: Optic<Model, Key>,
-        property: Optic<Model, N>
+        property: Optic<Model, out Number?>
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
         extraBlock = {

@@ -416,10 +416,10 @@ public class SqlCollection<T : Any>(
         result
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<T>,
-        property: Optic<T, N>,
+        property: Optic<T, out Number?>,
     ): Double? = traced(
         operation = "aggregate",
         extraBlock = {
@@ -445,11 +445,11 @@ public class SqlCollection<T : Any>(
         }
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<T>,
         groupBy: Optic<T, Key>,
-        property: Optic<T, N>,
+        property: Optic<T, out Number?>,
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
         extraBlock = {

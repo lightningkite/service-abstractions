@@ -211,20 +211,20 @@ public interface Table<Model : Any> {
     /**
      * Aggregate a particular numerical field on all matching items.
      */
-    public suspend fun <N : Number?> aggregate(
+    public suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<Model> = Condition.Always,
-        property: Optic<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Double?
 
     /**
      * Aggregate a particular numerical field on all matching items by group.
      */
-    public suspend fun <N : Number?, Key> groupAggregate(
+    public suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model> = Condition.Always,
         groupBy: Optic<Model, Key>,
-        property: Optic<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Map<Key, Double?>
 
 
