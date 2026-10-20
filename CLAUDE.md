@@ -117,6 +117,7 @@ interface Service {
 - **should-be-standard-library/**: Utility functions that should be in Kotlin stdlib
 - **data/**: Common data types and utilities
 - **database-shared/**: Shared types for database abstraction (`Condition`, `Modification`, `SortPart`)
+- **telemetry-shared/**: Client-safe telemetry types: the upload format (`TelemetryBatch`, `RecordedSpan`/`RecordedLog`/`RecordedError`) and `TelemetryAttributes`/`TelemetryKey`/`TelemetryKeys`/`LogLevel`. No server concepts; `basis` re-exports it.
 
 #### Database Modules
 

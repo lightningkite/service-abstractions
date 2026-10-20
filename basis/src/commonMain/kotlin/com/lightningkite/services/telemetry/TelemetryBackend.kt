@@ -139,7 +139,6 @@ public enum class MetricUnit(public val ucum: String) {
     Occurrences("{occurrence}"),
 }
 
-public enum class LogLevel { Trace, Debug, Info, Warn, Error }
 
 
 

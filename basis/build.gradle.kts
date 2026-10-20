@@ -56,6 +56,7 @@ kotlin {
                 api(libs.kotlin.logging)
                 api(project(path = ":data"))
                 api(project(path = ":kfile"))
+                api(project(path = ":telemetry-shared"))
             }
         }
         val commonTest = getByName("commonTest") {
