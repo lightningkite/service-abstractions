@@ -6,7 +6,7 @@ import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.nullElement
 import kotlinx.serialization.KSerializer
 
-public class NotNullOptic<A, B : Any>(public val wraps: Optic<A, B?>) : Optic<A, B> {
+public data class NotNullOptic<A, B : Any>(public val wraps: Optic<A, B?>) : Optic<A, B> {
     override val serializer: KSerializer<B>
         @Suppress("UNCHECKED_CAST")
         get() = wraps.serializer.nullElement()!! as KSerializer<B>
