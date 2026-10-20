@@ -10,9 +10,9 @@ public open class ComposedOptic<A, B, C> internal constructor(
     public open val inner: Optic<B, C>,
 ) : Optic<A, C> {
     override val serializer: KSerializer<C> get() = inner.serializer
-    override fun get(key: A): C? = outer.get(key)?.let(inner::get)
-    override fun getOrThrow(key: A): C = inner.getOrThrow(outer.getOrThrow(key))
-    override fun set(key: A, value: C): A = outer.get(key)?.let { outer.set(key, inner.set(it, value)) } ?: key
+    override fun get(source: A): C? = outer.get(source)?.let(inner::get)
+    override fun getOrThrow(source: A): C = inner.getOrThrow(outer.getOrThrow(source))
+    override fun set(source: A, value: C): A = outer.get(source)?.let { outer.set(source, inner.set(it, value)) } ?: source
     override fun mapCondition(condition: Condition<C>): Condition<A> = outer.mapCondition(inner.mapCondition(condition))
     override fun mapModification(modification: Modification<C>): Modification<A> =
         outer.mapModification(inner.mapModification(modification))
@@ -29,7 +29,7 @@ public class ComposedLens<A, B, C> internal constructor(
     override val outer: Lens<A, B>,
     override val inner: Lens<B, C>,
 ) : ComposedOptic<A, B, C>(outer, inner), Lens<A, C> {
-    override fun get(key: A): C = inner.get(outer.get(key))
-    override fun getOrThrow(key: A): C = get(key)
-    override fun set(key: A, value: C): A = outer.set(key, inner.set(outer.get(key), value))
+    override fun get(source: A): C = inner.get(outer.get(source))
+    override fun getOrThrow(source: A): C = get(source)
+    override fun set(source: A, value: C): A = outer.set(source, inner.set(outer.get(source), value))
 }

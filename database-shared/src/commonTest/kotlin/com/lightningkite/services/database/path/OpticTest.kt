@@ -27,9 +27,9 @@ data class OpticAnyHolder(val path: OpticAny<OpticOuter>)
 class OpticTest {
     // Claude: stands in for a real prism, so composing a lens with a non-lens optic can be tested.
     private class NotNullForTest<V : Any>(override val serializer: KSerializer<V>) : Optic<V?, V> {
-        override fun get(key: V?): V? = key
-        override fun getOrThrow(key: V?): V = key!!
-        override fun set(key: V?, value: V): V? = key?.let { value }
+        override fun get(source: V?): V? = source
+        override fun getOrThrow(source: V?): V = source!!
+        override fun set(source: V?, value: V): V? = source?.let { value }
         override fun mapCondition(condition: Condition<V>): Condition<V?> = Condition.IfNotNull(condition)
         override fun mapModification(modification: Modification<V>): Modification<V?> = Modification.IfNotNull(modification)
         override fun toString(): String = "notNull"

@@ -12,8 +12,8 @@ import kotlinx.serialization.Serializable
  */
 @Serializable(OpticAnySerializer::class)
 public sealed interface OpticAny<T> {
-    /** Returns the target of this optic within [key], or `null` if it is not present. */
-    public fun get(key: T): Any?
+    /** Returns the target of this optic within [source], or `null` if it is not present. */
+    public fun get(source: T): Any?
 }
 
 /** Returns this as an [Optic] with an unknown target type. */
@@ -30,17 +30,16 @@ public fun <T> OpticAny<T>.asOptic(): Optic<T, *> =
  */
 @Serializable(OpticSerializer::class)
 public interface Optic<A, B> : OpticAny<A> {
-    /** The serializer of the target type [B]. */
     public val serializer: KSerializer<B>
 
-    /** Returns the target of this optic within [key], or `null` if it is not present. */
-    override fun get(key: A): B?
+    /** Returns the target of this optic within [source], or `null` if it is not present. */
+    override fun get(source: A): B?
 
-    /** Returns the target of this optic within [key], throwing if it is not present. */
-    public fun getOrThrow(key: A): B
+    /** Returns the target of this optic within [source], throwing if it is not present. */
+    public fun getOrThrow(source: A): B
 
-    /** Returns a copy of [key] with the target replaced by [value], or [key] unchanged if the target is not present. */
-    public fun set(key: A, value: B): A
+    /** Returns a copy of [source] with the target replaced by [value], or [source] unchanged if the target is not present. */
+    public fun set(source: A, value: B): A
 
     /** Returns a condition on [A] that holds when [condition] holds for the target. */
     public fun mapCondition(condition: Condition<B>): Condition<A>
@@ -68,8 +67,8 @@ public interface Optic<A, B> : OpticAny<A> {
 
 /** An [Optic] whose target is always present, so [get] never fails. */
 public interface Lens<A, B> : Optic<A, B> {
-    override fun get(key: A): B
-    override fun getOrThrow(key: A): B = get(key)
+    override fun get(source: A): B
+    override fun getOrThrow(source: A): B = get(source)
 
     /** Returns a lens that focuses on the target of [other] within the target of this lens. */
     @Suppress("UNCHECKED_CAST")

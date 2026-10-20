@@ -7,8 +7,8 @@ import kotlinx.serialization.serializer
 
 /** A [Lens] that focuses on the whole value. It serializes as `this`. */
 public class IdentityLens<T>(override val serializer: KSerializer<T>) : Lens<T, T> {
-    override fun get(key: T): T = key
-    override fun set(key: T, value: T): T = value
+    override fun get(source: T): T = source
+    override fun set(source: T, value: T): T = value
     override fun mapCondition(condition: Condition<T>): Condition<T> = condition
     override fun mapModification(modification: Modification<T>): Modification<T> = modification
 

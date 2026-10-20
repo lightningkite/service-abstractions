@@ -21,8 +21,8 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
 
     public val name: String
 
-    override fun get(key: A): B
-    override fun set(key: A, value: B): A
+    override fun get(source: A): B
+    override fun set(source: A, value: B): A
 
     public val annotations: List<Annotation> get() = listOf()
     public val serializableAnnotations: List<SerializableAnnotation>
@@ -51,8 +51,8 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
     ) : SerializableProperty<A, B> {
         override val name: String by lazy { parent.descriptor.getElementName(index) }
         override val serializer: KSerializer<B> by lazy { parent.childSerializers()[index] as KSerializer<B> }
-        override fun set(key: A, value: B): A = parent.set(key, index, serializer, value)
-        override fun get(key: A): B = (parent as KSerializer<A>).get(key, index, serializer)
+        override fun set(source: A, value: B): A = parent.set(source, index, serializer, value)
+        override fun get(source: A): B = (parent as KSerializer<A>).get(source, index, serializer)
         override val annotations: List<Annotation> by lazy {
             parent.descriptor.getElementAnnotations(index) + serializer.descriptor.annotations
         }
@@ -134,10 +134,10 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
         override val serializer: KSerializer<Any?> by lazy { source.type.serializer(registry, context) }
         override val annotations: List<Annotation> get() = listOf()
         override val serializableAnnotations: List<SerializableAnnotation> get() = source.annotations
-        override fun get(key: VirtualInstance): Any? = key.values[source.index]
-        override fun set(key: VirtualInstance, value: Any?): VirtualInstance =
-            VirtualInstance(key.type, key.values.toMutableList().also {
-                it[source.index] = value
+        override fun get(source: VirtualInstance): Any? = source.values[this@FromVirtualField.source.index]
+        override fun set(source: VirtualInstance, value: Any?): VirtualInstance =
+            VirtualInstance(source.type, source.values.toMutableList().also {
+                it[this@FromVirtualField.source.index] = value
             })
 
         override fun toString(): String = source.name
