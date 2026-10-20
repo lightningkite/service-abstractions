@@ -11,7 +11,7 @@ import org.jetbrains.exposed.v1.jdbc.*
 // path segment: value classes are collapsed away when the schema registers columns (mirroring
 // kotlinx serialization's transparent encodeInline), so they must be skipped here too.
 private fun colNameOf(properties: List<SerializableProperty<*, *>>): String =
-    properties.filterNot { it.inline }.joinToString("__") { it.name }
+    properties.filterNot { it.isInline }.joinToString("__") { it.name }
 
 // Extension to get flattened column name from a DataClassPath (joins property names with "__")
 internal val DataClassPath<*, *>.colName: String

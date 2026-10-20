@@ -3,6 +3,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.ExperimentalLightningServer
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
@@ -88,7 +90,7 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
     }
 }
 
-public fun <K> DataClassPathPartial<K>.setMap(key: K, out: Partial<K>) {
+public fun <K> OpticOn<K>.setMap(key: K, out: Partial<K>) {
     if (properties.isEmpty()) throw IllegalStateException("Path $this cannot be set for partial")
     @Suppress("UNCHECKED_CAST")
     var current = out as Partial<Any?>
@@ -106,6 +108,6 @@ public fun <K> DataClassPathPartial<K>.setMap(key: K, out: Partial<K>) {
     run {
         @Suppress("UNCHECKED_CAST")
         val prop = properties.last() as SerializableProperty<Any?, Any?>
-        current.parts[prop] = prop.toPartialEntry(getAny(key))
+        current.parts[prop] = prop.toPartialEntry(get(key))
     }
 }

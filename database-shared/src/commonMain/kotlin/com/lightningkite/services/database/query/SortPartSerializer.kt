@@ -3,6 +3,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.Description
 import com.lightningkite.services.data.ExperimentalLightningServer
 import kotlinx.serialization.*
@@ -12,7 +14,7 @@ import kotlinx.serialization.encoding.Encoder
 
 public class SortPartSerializer<T>(public val inner: KSerializer<T>) : KSerializerWithDefault<SortPart<T>> {
     override val default: SortPart<T>
-        get() = SortPart(DataClassPathAccess(DataClassPathSelf(inner), inner.serializableProperties!!.first()))
+        get() = SortPart(inner.serializableProperties!!.first())
 
     @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class, ExperimentalLightningServer::class)
     override val descriptor: SerialDescriptor = PrimitiveDescriptorWithAnnotations(
@@ -23,7 +25,7 @@ public class SortPartSerializer<T>(public val inner: KSerializer<T>) : KSerializ
         )
     )
 
-    private val sub = DataClassPathSerializer(inner)
+    private val sub = OpticOnSerializer(inner)
 
     override fun deserialize(decoder: Decoder): SortPart<T> {
         val value = decoder.decodeString()
@@ -38,7 +40,7 @@ public class SortPartSerializer<T>(public val inner: KSerializer<T>) : KSerializ
         encoder.encodeString(buildString {
             if (!value.ascending) append('-')
             if (value.ignoreCase) append('~')
-            append(value.field.toString())
+            append(sub.asString(value.field))
         })
     }
 }

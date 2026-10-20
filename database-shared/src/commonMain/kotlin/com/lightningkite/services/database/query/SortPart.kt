@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 
 import com.lightningkite.services.data.Description
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -40,7 +42,7 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 @Serializable(SortPartSerializer::class)
 @Description("The name of the property to sort by.  Prepend a '-' if you wish to sort descending.  Prepend '~' if you wish to ignore case.")
 public data class SortPart<T>(
-    val field: DataClassPathPartial<T>,
+    val field: OpticOn<T>,
     val ascending: Boolean = true,
     val ignoreCase: Boolean = false,
 ) {
@@ -57,13 +59,13 @@ public val <T> List<SortPart<T>>.comparator: Comparator<T>?
         if (this.isEmpty()) return null
         return Comparator { a, b ->
             for (part in this) {
-                if (part.ignoreCase && part.field.serializerAny.descriptor.kind == PrimitiveKind.STRING) {
-                    val aString = part.field.getAny(a) as String
-                    val bString = part.field.getAny(b) as String
+                if (part.ignoreCase && part.field.coerceToOptic().serializer.descriptor.kind == PrimitiveKind.STRING) {
+                    val aString = part.field.get(a) as String
+                    val bString = part.field.get(b) as String
                     val result = aString.compareTo(bString, true)
                     if (result != 0) return@Comparator if (part.ascending) result else -result
                 } else {
-                    val result = part.field.comparator.compare(a, b)
+                    val result = compareValues(part.field.get(a) as? Comparable<*>, part.field.get(b) as? Comparable<*>)
                     if (result != 0) return@Comparator if (part.ascending) result else -result
                 }
             }

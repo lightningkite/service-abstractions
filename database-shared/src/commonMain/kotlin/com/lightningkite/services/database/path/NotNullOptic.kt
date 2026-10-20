@@ -29,4 +29,4 @@ public data class NotNullOptic<A, B : Any>(public val wraps: Optic<A, B?>) : Opt
     override fun toString(): String = "$wraps?"
 }
 
-public val <A, B : Any> Optic<A, B?>.notNull: NotNullOptic<A, B> get() = NotNullOptic(this)
+public val <A, B : Any> Optic<A, B?>.notNull: Optic<A, B> get() = NotNullOptic(this)

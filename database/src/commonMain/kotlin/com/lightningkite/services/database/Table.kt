@@ -1,5 +1,7 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.TextIndex
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -154,7 +156,7 @@ public interface Table<Model : Any> {
      * Query for items in the collection.
      */
     public suspend fun findPartial(
-        fields: Set<DataClassPathPartial<Model>>,
+        fields: Set<OpticOn<Model>>,
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>> = listOf(),
         skip: Int = 0,
@@ -203,7 +205,7 @@ public interface Table<Model : Any> {
      */
     public suspend fun <Key> groupCount(
         condition: Condition<Model> = Condition.Always,
-        groupBy: DataClassPath<Model, Key>,
+        groupBy: Optic<Model, Key>,
     ): Map<Key, Int>
 
     /**
@@ -212,7 +214,7 @@ public interface Table<Model : Any> {
     public suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model> = Condition.Always,
-        property: DataClassPath<Model, N>,
+        property: Optic<Model, N>,
     ): Double?
 
     /**
@@ -221,8 +223,8 @@ public interface Table<Model : Any> {
     public suspend fun <N : Number?, Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model> = Condition.Always,
-        groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>,
+        groupBy: Optic<Model, Key>,
+        property: Optic<Model, N>,
     ): Map<Key, Double?>
 
 
@@ -403,7 +405,7 @@ public interface Table<Model : Any> {
      * @throws UnsupportedOperationException if the backend does not support vector search
      */
     public suspend fun findSimilar(
-        vectorField: DataClassPath<Model, Embedding>,
+        vectorField: Optic<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model> = Condition.Always,
         maxQueryMs: Long = 15_000,
@@ -422,7 +424,7 @@ public interface Table<Model : Any> {
      * @throws UnsupportedOperationException if the backend does not support sparse vector search
      */
     public suspend fun findSimilarSparse(
-        vectorField: DataClassPath<Model, SparseEmbedding>,
+        vectorField: Optic<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model> = Condition.Always,
         maxQueryMs: Long = 15_000,

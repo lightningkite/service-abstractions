@@ -1,26 +1,28 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.serializer
 import kotlin.jvm.JvmName
 
-public inline fun <reified T> modification(setup: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit): Modification<T> {
+public inline fun <reified T> modification(setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit): Modification<T> {
     return ModificationBuilder<T>().apply {
         setup(this, path())
     }.build()
 }
 
 public inline fun <T> modification(
-    path: DataClassPath<T, T>,
-    setup: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit,
+    path: Lens<T, T>,
+    setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
 ): Modification<T> {
     return ModificationBuilder<T>().apply {
         setup(this, path)
     }.build()
 }
 
-public inline fun <reified T> Modification<T>.and(setup: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit): Modification<T> {
+public inline fun <reified T> Modification<T>.and(setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit): Modification<T> {
     return ModificationBuilder<T>().apply {
         this.modifications.add(this@and)
         setup(this, path())
@@ -38,90 +40,90 @@ public class ModificationBuilder<K>() {
         else return Modification.Chain(modifications)
     }
 
-    public infix fun <T> DataClassPath<K, T>.assign(value: T) {
+    public infix fun <T> Optic<K, T>.assign(value: T) {
         modifications.add(mapModification(Modification.Assign(value)))
     }
 
-    public infix fun <T : Comparable<T>> DataClassPath<K, T>.coerceAtMost(value: T) {
+    public infix fun <T : Comparable<T>> Optic<K, T>.coerceAtMost(value: T) {
         modifications.add(mapModification(Modification.CoerceAtMost(value)))
     }
 
-    public infix fun <T : Comparable<T>> DataClassPath<K, T>.coerceAtLeast(value: T) {
+    public infix fun <T : Comparable<T>> Optic<K, T>.coerceAtLeast(value: T) {
         modifications.add(mapModification(Modification.CoerceAtLeast(value)))
     }
 
-    public infix operator fun <T : Number> DataClassPath<K, T>.plusAssign(by: T) {
+    public infix operator fun <T : Number> Optic<K, T>.plusAssign(by: T) {
         modifications.add(mapModification(Modification.Increment(by)))
     }
 
-    public infix operator fun <T : Number> DataClassPath<K, T>.timesAssign(by: T) {
+    public infix operator fun <T : Number> Optic<K, T>.timesAssign(by: T) {
         modifications.add(mapModification(Modification.Multiply(by)))
     }
 
-    public infix operator fun <T> DataClassPath<K, List<T>>.plusAssign(items: List<T>) {
+    public infix operator fun <T> Optic<K, List<T>>.plusAssign(items: List<T>) {
         modifications.add(mapModification(Modification.ListAppend(items)))
     }
 
-    public infix operator fun <T> DataClassPath<K, Set<T>>.plusAssign(items: Set<T>) {
+    public infix operator fun <T> Optic<K, Set<T>>.plusAssign(items: Set<T>) {
         modifications.add(mapModification(Modification.SetAppend(items)))
     }
 
     @JvmName("plusAssignList")
-    public infix operator fun <T> DataClassPath<K, List<T>>.plusAssign(item: T) {
+    public infix operator fun <T> Optic<K, List<T>>.plusAssign(item: T) {
         modifications.add(mapModification(Modification.ListAppend(listOf(item))))
     }
 
     @JvmName("plusAssignSet")
-    public infix operator fun <T> DataClassPath<K, Set<T>>.plusAssign(item: T) {
+    public infix operator fun <T> Optic<K, Set<T>>.plusAssign(item: T) {
         modifications.add(mapModification(Modification.SetAppend(setOf(item))))
     }
 
-    public infix operator fun <T> DataClassPath<K, List<T>>.minusAssign(items: List<T>) {
+    public infix operator fun <T> Optic<K, List<T>>.minusAssign(items: List<T>) {
         modifications.add(mapModification(Modification.ListRemoveInstances(items)))
     }
 
-    public infix operator fun <T> DataClassPath<K, Set<T>>.minusAssign(items: Set<T>) {
+    public infix operator fun <T> Optic<K, Set<T>>.minusAssign(items: Set<T>) {
         modifications.add(mapModification(Modification.SetRemoveInstances(items)))
     }
 
     @JvmName("minusAssignList")
-    public infix operator fun <T> DataClassPath<K, List<T>>.minusAssign(item: T) {
+    public infix operator fun <T> Optic<K, List<T>>.minusAssign(item: T) {
         modifications.add(mapModification(Modification.ListRemoveInstances(listOf(item))))
     }
 
     @JvmName("minusAssignSet")
-    public infix operator fun <T> DataClassPath<K, Set<T>>.minusAssign(item: T) {
+    public infix operator fun <T> Optic<K, Set<T>>.minusAssign(item: T) {
         modifications.add(mapModification(Modification.SetRemoveInstances(setOf(item))))
     }
 
-    public infix fun <T> DataClassPath<K, List<T>>.addAll(items: List<T>) {
+    public infix fun <T> Optic<K, List<T>>.addAll(items: List<T>) {
         modifications.add(mapModification(Modification.ListAppend(items)))
     }
 
-    public infix fun <T> DataClassPath<K, Set<T>>.addAll(items: Set<T>) {
+    public infix fun <T> Optic<K, Set<T>>.addAll(items: Set<T>) {
         modifications.add(mapModification(Modification.SetAppend(items)))
     }
 
     @JvmName("removeAllList")
-    public inline infix fun <reified T> DataClassPath<K, List<T>>.removeAll(condition: (DataClassPath<T, T>) -> Condition<T>) {
+    public inline infix fun <reified T> Optic<K, List<T>>.removeAll(condition: (Lens<T, T>) -> Condition<T>) {
         modifications.add(mapModification(Modification.ListRemove(path<T>().let(condition))))
     }
 
     @JvmName("removeAllSet")
-    public inline infix fun <reified T> DataClassPath<K, Set<T>>.removeAll(condition: (DataClassPath<T, T>) -> Condition<T>) {
+    public inline infix fun <reified T> Optic<K, Set<T>>.removeAll(condition: (Lens<T, T>) -> Condition<T>) {
         modifications.add(mapModification(Modification.SetRemove(path<T>().let(condition))))
     }
 
-    public infix fun <T> DataClassPath<K, List<T>>.removeAll(items: List<T>) {
+    public infix fun <T> Optic<K, List<T>>.removeAll(items: List<T>) {
         modifications.add(mapModification(Modification.ListRemoveInstances(items)))
     }
 
-    public infix fun <T> DataClassPath<K, Set<T>>.removeAll(items: Set<T>) {
+    public infix fun <T> Optic<K, Set<T>>.removeAll(items: Set<T>) {
         modifications.add(mapModification(Modification.SetRemoveInstances(items)))
     }
 
     @JvmName("forEachList")
-    public inline infix fun <reified T> DataClassPath<K, List<T>>.forEach(modification: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit) {
+    public inline infix fun <reified T> Optic<K, List<T>>.forEach(modification: ModificationBuilder<T>.(Lens<T, T>) -> Unit) {
         val builder = ModificationBuilder<T>()
         modification(builder, path())
         modifications.add(
@@ -135,7 +137,7 @@ public class ModificationBuilder<K>() {
     }
 
     @JvmName("forEachSet")
-    public inline infix fun <reified T> DataClassPath<K, Set<T>>.forEach(modification: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit) {
+    public inline infix fun <reified T> Optic<K, Set<T>>.forEach(modification: ModificationBuilder<T>.(Lens<T, T>) -> Unit) {
         val builder = ModificationBuilder<T>()
         modification(builder, path())
         modifications.add(
@@ -149,9 +151,9 @@ public class ModificationBuilder<K>() {
     }
 
     @JvmName("forEachIfList")
-    public inline fun <reified T> DataClassPath<K, List<T>>.forEachIf(
-        condition: (DataClassPath<T, T>) -> Condition<T>,
-        modification: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit,
+    public inline fun <reified T> Optic<K, List<T>>.forEachIf(
+        condition: (Lens<T, T>) -> Condition<T>,
+        modification: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
     ) {
         val builder = ModificationBuilder<T>()
         modification(builder, path())
@@ -166,9 +168,9 @@ public class ModificationBuilder<K>() {
     }
 
     @JvmName("forEachIfSet")
-    public inline fun <reified T> DataClassPath<K, Set<T>>.forEachIf(
-        condition: (DataClassPath<T, T>) -> Condition<T>,
-        modification: ModificationBuilder<T>.(DataClassPath<T, T>) -> Unit,
+    public inline fun <reified T> Optic<K, Set<T>>.forEachIf(
+        condition: (Lens<T, T>) -> Condition<T>,
+        modification: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
     ) {
         val builder = ModificationBuilder<T>()
         modification(builder, path())
@@ -183,12 +185,12 @@ public class ModificationBuilder<K>() {
     }
 }
 
-public fun <T, V> DataClassPathWithValue<T, V>.modify(): Modification<T> =
+public fun <T, V> OpticWithValue<T, V>.modify(): Modification<T> =
     path.mapModification(Modification.Assign(value))
 
 public inline fun <reified T> Partial<T>.toModification(): Modification<T> = toModification(serializer())
 public fun <T> Partial<T>.toModification(serializer: KSerializer<T>): Modification<T> {
     val out = ArrayList<Modification<T>>()
-    perPath(DataClassPathSelf(serializer)) { out += it.modify() }
+    perPath(IdentityLens(serializer)) { out += it.modify() }
     return Modification.Chain(out)
 }

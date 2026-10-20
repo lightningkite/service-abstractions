@@ -1,5 +1,7 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
@@ -20,25 +22,18 @@ class VectorSearchTest {
 
     private val serializer = DocumentWithEmbedding.serializer()
 
-    // Create manual DataClassPath for the embedding field
-    private val embeddingPath: DataClassPath<DocumentWithEmbedding, Embedding> by lazy {
+    private val embeddingPath: Optic<DocumentWithEmbedding, Embedding> by lazy {
         val props = serializer.serializableProperties!!
         val embeddingProp = props.first { it.name == "embedding" }
         @Suppress("UNCHECKED_CAST")
-        DataClassPathAccess(
-            DataClassPathSelf(serializer),
-            embeddingProp as SerializableProperty<DocumentWithEmbedding, Embedding>
-        )
+        embeddingProp as SerializableProperty<DocumentWithEmbedding, Embedding>
     }
 
-    private val categoryPath: DataClassPath<DocumentWithEmbedding, String> by lazy {
+    private val categoryPath: Optic<DocumentWithEmbedding, String> by lazy {
         val props = serializer.serializableProperties!!
         val categoryProp = props.first { it.name == "category" }
         @Suppress("UNCHECKED_CAST")
-        DataClassPathAccess(
-            DataClassPathSelf(serializer),
-            categoryProp as SerializableProperty<DocumentWithEmbedding, String>
-        )
+        categoryProp as SerializableProperty<DocumentWithEmbedding, String>
     }
 
     @Test

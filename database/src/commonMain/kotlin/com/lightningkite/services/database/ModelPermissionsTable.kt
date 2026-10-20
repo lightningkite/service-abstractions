@@ -1,5 +1,7 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.TextIndex
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -19,7 +21,7 @@ public open class ModelPermissionsTable<Model : Any>(
 ) : Table<Model> {
     override val serializer: KSerializer<Model> get() = wraps.serializer
     private val textIndexFields = serializer.descriptor.annotations.filterIsInstance<TextIndex>()
-        .firstOrNull()?.fields?.map { DataClassPathSerializer(serializer).fromString(it) }
+        .firstOrNull()?.fields?.map { OpticOnSerializer(serializer).fromString(it) }
         ?: listOf()
 
     override suspend fun find(
@@ -61,7 +63,7 @@ public open class ModelPermissionsTable<Model : Any>(
     }
 
     override suspend fun findSimilar(
-        vectorField: DataClassPath<Model, Embedding>,
+        vectorField: Optic<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,
@@ -78,7 +80,7 @@ public open class ModelPermissionsTable<Model : Any>(
     }
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<Model, SparseEmbedding>,
+        vectorField: Optic<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,
@@ -95,7 +97,7 @@ public open class ModelPermissionsTable<Model : Any>(
     }
 
     override suspend fun findPartial(
-        fields: Set<DataClassPathPartial<Model>>,
+        fields: Set<OpticOn<Model>>,
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>>,
         skip: Int,
@@ -132,7 +134,7 @@ public open class ModelPermissionsTable<Model : Any>(
 
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
+        groupBy: Optic<Model, Key>,
     ): Map<Key, Int> {
         return wraps.groupCount(
             condition and permissions.read and permissions.readMask(groupBy) and permissions.readMask(
@@ -146,7 +148,7 @@ public open class ModelPermissionsTable<Model : Any>(
     override suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: DataClassPath<Model, N>,
+        property: Optic<Model, N>,
     ): Double? =
         wraps.aggregate(
             aggregate,
@@ -157,8 +159,8 @@ public open class ModelPermissionsTable<Model : Any>(
     override suspend fun <N : Number?, Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>,
+        groupBy: Optic<Model, Key>,
+        property: Optic<Model, N>,
     ): Map<Key, Double?> = wraps.groupAggregate(
         aggregate,
         condition and permissions.read and permissions.readMask(groupBy) and permissions.readMask(property) and permissions.readMask(

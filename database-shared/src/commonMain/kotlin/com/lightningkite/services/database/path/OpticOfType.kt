@@ -12,8 +12,11 @@ import kotlinx.serialization.serializer
 public class OpticOfType<A, B, VARIANT : B>(
     public val wraps: Optic<A, B>,
     override val serializer: KSerializer<VARIANT>
-): Optic<A, VARIANT> {
+) : Optic<A, VARIANT> {
     public val discriminator: SealedTypeDiscriminator<VARIANT> = SealedTypeDiscriminator(serializer)
+
+    private val variantName
+        get() = wraps.serializer.variantShortName(discriminator) ?: discriminator.serialName
 
     override val properties: List<SerializableProperty<*, *>>
         get() = wraps.properties
@@ -29,12 +32,22 @@ public class OpticOfType<A, B, VARIANT : B>(
     override fun getOrThrow(source: A): VARIANT = wraps.getOrThrow(source).let { supertype ->
         discriminator.handle(
             supertype,
-            matchFail = { throw IllegalArgumentException("OpticOfType expected $wraps to be of type $discriminator, but was $supertype") },
+            matchFail = {
+                throw IllegalArgumentException(
+                    "OpticOfType expected $wraps to be of type $variantName, but was $supertype"
+                )
+            },
             matchSuccess = { it }
         )
     }
 
-    override fun set(source: A, value: VARIANT): A = wraps.set(source, value)
+    override fun set(source: A, value: VARIANT): A = wraps.get(source)?.let { supertype ->
+        discriminator.handle(
+            supertype,
+            matchFail = { source },
+            matchSuccess = { wraps.set(source, value) }
+        )
+    } ?: source
 
     override fun mapCondition(condition: Condition<VARIANT>): Condition<A> =
         wraps.mapCondition(Condition.IfIsType(discriminator, condition))
@@ -42,10 +55,7 @@ public class OpticOfType<A, B, VARIANT : B>(
     override fun mapModification(modification: Modification<VARIANT>): Modification<A> =
         wraps.mapModification(Modification.IfIsType(discriminator, modification))
 
-    override fun toString(): String {
-        val variant = wraps.serializer.variantShortName(discriminator) ?: discriminator.serialName
-        return "($wraps as? $variant)?"
-    }
+    override fun toString(): String = "($wraps as? $variantName)?"
 
     // Claude: the serializer instance isn't stable for generic variants, so compare by discriminator instead.
     override fun equals(other: Any?): Boolean =

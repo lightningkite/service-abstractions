@@ -42,13 +42,13 @@ import kotlinx.serialization.serializer
  *
  * ## Nested Modifications
  *
- * - [OnField] - Navigate to nested object fields (created by DataClassPath)
+ * - [OnField] - Navigate to nested object fields (created by optics)
  * - [IfNotNull] - Null-safe modification wrapper
  *
  * ## Usage with Type-Safe DSL
  *
  * ```kotlin
- * // Using generated DataClassPath extensions
+ * // Using generated optic extensions
  * userTable.updateOne(
  *     condition = User.path._id eq userId,
  *     modification = modification<User> { it ->
@@ -74,7 +74,7 @@ import kotlinx.serialization.serializer
  *
  * - **Chain order matters**: Modifications in Chain are applied sequentially left-to-right
  * - **Nothing is special**: isNothing property allows optimizing out no-op updates
- * - **Type safety via DataClassPath**: Direct field access creates OnField wrappers automatically
+ * - **Type safety via optics**: Direct field access creates OnField wrappers automatically
  * - **Backend support varies**: Some complex modifications may not be supported by all databases
  *
  * @param T The type of values this modification transforms

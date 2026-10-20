@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.path
 
+import com.lightningkite.services.database.KSerializerWithDefault
 import com.lightningkite.services.database.SealedTypeDiscriminator
 import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.listElement
@@ -24,13 +25,18 @@ import kotlinx.serialization.encoding.Encoder
  *
  * Use [OpticSerializer] when the target type is known, so that a path to the wrong type fails to deserialize.
  */
-public class OpticOnSerializer<T>(private val root: KSerializer<T>) : KSerializer<OpticOn<T>> {
+public class OpticOnSerializer<T>(public val root: KSerializer<T>) : KSerializerWithDefault<OpticOn<T>> {
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("com.lightningkite.services.database.path.OpticOn", PrimitiveKind.STRING)
 
+    override val default: OpticOn<T> get() = IdentityLens(root)
+
     override fun serialize(encoder: Encoder, value: OpticOn<T>) {
-        encoder.encodeString(segments(value).joinToString(".").ifEmpty { "this" })
+        encoder.encodeString(asString(value))
     }
+
+    /** Returns [optic] in the format this serializer writes. */
+    public fun asString(optic: OpticOn<T>): String = segments(optic).joinToString(".").ifEmpty { "this" }
 
     @Suppress("UNCHECKED_CAST")
     private fun segments(optic: OpticOn<*>): List<String> = when (optic) {
@@ -47,8 +53,11 @@ public class OpticOnSerializer<T>(private val root: KSerializer<T>) : KSerialize
         else -> throw SerializationException("$optic can't be serialized as a path")
     }
 
-    override fun deserialize(decoder: Decoder): Optic<T, *> =
-        decoder.decodeString().splitSegments().fold(identity()) { optic, segment ->
+    override fun deserialize(decoder: Decoder): Optic<T, *> = fromString(decoder.decodeString())
+
+    /** Returns the optic that [path] describes, throwing a [SerializationException] if it does not exist on [root]. */
+    public fun fromString(path: String): Optic<T, *> =
+        path.splitSegments().fold(identity()) { optic, segment ->
             val name = segment.removeSuffix("?")
             val next = when {
                 name == "this" -> optic

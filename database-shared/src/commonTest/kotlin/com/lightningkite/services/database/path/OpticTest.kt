@@ -2,6 +2,7 @@ package com.lightningkite.services.database.path
 
 import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.database.*
+import com.lightningkite.services.database.path.legacy.*
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
@@ -78,7 +79,7 @@ class OpticTest {
     @Test
     fun mapConditionMatchesDataClassPath() {
         val condition = Condition.Equal("x")
-        val old = path(LargeTestModel.serializer())[LargeTestModel.embedded][ClassUsedForEmbedding.value1]
+        val old = DataClassPathSelf(LargeTestModel.serializer())[LargeTestModel.embedded][ClassUsedForEmbedding.value1]
         val new = LargeTestModel.embedded + ClassUsedForEmbedding.value1
         assertEquals(old.mapCondition(condition), new.mapCondition(condition))
     }
@@ -189,8 +190,28 @@ class OpticTest {
 
     @Test
     fun propertiesMatchDataClassPath() {
-        val old = path(LargeTestModel.serializer())[LargeTestModel.embeddedNullable].notNull[ClassUsedForEmbedding.value1]
+        val old = DataClassPathSelf(LargeTestModel.serializer())[LargeTestModel.embeddedNullable].notNull[ClassUsedForEmbedding.value1]
         val new = NotNullOptic(LargeTestModel.embeddedNullable) + ClassUsedForEmbedding.value1
         assertEquals(old.properties, new.properties)
+    }
+
+    @Test
+    fun testStringForms() {
+        val cases = listOf(
+            LargeTestModel._id,
+            LargeTestModel.embedded.value1,
+            LargeTestModel.embeddedNullable.notNull.value1,
+            UnreasonablyComplex.string,
+            UnreasonablyComplex.nested.notNull.string,
+            UnreasonablyComplex.listNested.elements.nested.notNull.int,
+            Polymorphic.path.asFoo,
+            Polymorphic.path.asFoo.name,
+            Polymorphic.path.asBar.id,
+            ContainsPolymorphic.clazz.asFoo.name,
+            ContainsPolymorphic.clazz.asEmpty,
+            ContainsPolymorphic.clazz.asPolymorphicClassTopLevel.id,
+        )
+
+        for (case in cases) println(case.toString())
     }
 }

@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.NothingSerializer
@@ -41,7 +43,7 @@ public data class Mask<T>(
         }
     }
 
-    public operator fun invoke(on: DataClassPathPartial<T>): Condition<T> {
+    public operator fun invoke(on: OpticOn<T>): Condition<T> {
         val totalConditions = ArrayList<Condition<T>>()
         for (pair in pairs) {
             if (pair.second.affects(on)) totalConditions.add(pair.first)
@@ -84,12 +86,12 @@ public data class Mask<T>(
         serializer: KSerializer<T>,
         public val pairs: ArrayList<Pair<Condition<T>, Modification<T>>> = ArrayList(),
     ) {
-        private val it = DataClassPathSelf(serializer)
-        public fun <V> DataClassPath<T, V>.mask(value: V, unless: Condition<T> = Condition.Never) {
+        private val it = IdentityLens(serializer)
+        public fun <V> Optic<T, V>.mask(value: V, unless: Condition<T> = Condition.Never) {
             pairs.add(unless to mapModification(Modification.Assign(value)))
         }
 
-        public infix fun <V> DataClassPath<T, V>.maskedTo(value: V): Modification<T> =
+        public infix fun <V> Optic<T, V>.maskedTo(value: V): Modification<T> =
             mapModification(Modification.Assign(value))
 
         public infix fun Modification<T>.unless(condition: Condition<T>) {
@@ -107,7 +109,7 @@ public data class Mask<T>(
     }
 }
 
-public inline fun <reified T> mask(builder: Mask.Builder<T>.(DataClassPath<T, T>) -> Unit): Mask<T> {
+public inline fun <reified T> mask(builder: Mask.Builder<T>.(Lens<T, T>) -> Unit): Mask<T> {
     return Mask.Builder<T>(serializer<T>()).apply { builder(path()) }.build()
 }
 
@@ -173,23 +175,23 @@ private fun Modification<Any?>.applyToPartialEntry(entry: Any?): Any? {
     }
 }
 
-public fun <K, V> Modification<K>.valueSetForDataClassPath(path: DataClassPath<K, V>): V? =
-    (forDataClassPath<V>(path.properties) as? Modification.Assign<V>)?.value
+public fun <K, V> Modification<K>.valueSetForOptic(path: Optic<K, V>): V? =
+    (forOptic<V>(path.properties) as? Modification.Assign<V>)?.value
 
-public fun <K, V> Modification<K>.forDataClassPath(path: DataClassPath<K, V>): Modification<V>? =
-    forDataClassPath<V>(path.properties)
+public fun <K, V> Modification<K>.forOptic(path: Optic<K, V>): Modification<V>? =
+    forOptic<V>(path.properties)
 
 @Suppress("UNCHECKED_CAST")
-private fun <V> Modification<*>.forDataClassPath(list: List<SerializableProperty<*, *>>): Modification<V>? {
+private fun <V> Modification<*>.forOptic(list: List<SerializableProperty<*, *>>): Modification<V>? {
     return when (this) {
         is Modification.OnField<*, *> -> if (list.first() == this.key) {
             if (list.size == 1) modification as Modification<V>
-            else this.modification.forDataClassPath(list.drop(1))
+            else this.modification.forOptic(list.drop(1))
         } else null
 
-        is Modification.SetPerElement<*> -> this.modification.forDataClassPath(list)
-        is Modification.ListPerElement<*> -> this.modification.forDataClassPath(list)
-        is Modification.Chain -> this.modifications.mapNotNull { it.forDataClassPath<V>(list) }.let {
+        is Modification.SetPerElement<*> -> this.modification.forOptic(list)
+        is Modification.ListPerElement<*> -> this.modification.forOptic(list)
+        is Modification.Chain -> this.modifications.mapNotNull { it.forOptic<V>(list) }.let {
             when (it.size) {
                 0 -> null
                 1 -> it.first()
@@ -197,7 +199,7 @@ private fun <V> Modification<*>.forDataClassPath(list: List<SerializableProperty
             }
         }
 
-        is Modification.IfNotNull -> this.modification.forDataClassPath(list)
+        is Modification.IfNotNull -> this.modification.forOptic(list)
         is Modification.Assign -> Modification.Assign(list.fold(value) { value, prop ->
             (prop as SerializableProperty<Any?, Any?>).get(
                 value
@@ -208,7 +210,7 @@ private fun <V> Modification<*>.forDataClassPath(list: List<SerializableProperty
     }
 }
 
-public fun Modification<*>.affects(path: DataClassPathPartial<*>): Boolean = affects(path.properties)
+public fun Modification<*>.affects(path: OpticOn<*>): Boolean = affects(path.properties)
 // Paths overlap when one is a prefix of the other: writing `a` rewrites `a.b`, and writing `a.b` changes `a`.
 private fun Modification<*>.affects(list: List<SerializableProperty<*, *>>): Boolean =
     affectsPaths().any { it.take(list.size) == list.take(it.size) }
@@ -216,7 +218,7 @@ private fun Modification<*>.affects(list: List<SerializableProperty<*, *>>): Boo
 /**
  * The paths this modification writes.  Anything other than navigation into a field, element, non-null value or
  * variant rewrites the whole value it sits on, so e.g. `items += x` writes `[items]` and a root [Modification.Assign]
- * writes `[]`.  Like [DataClassPath.properties], paths don't record nullability, subtypes or list/set elements.
+ * writes `[]`.  Like [Optic.properties], paths don't record nullability, subtypes or list/set elements.
  */
 public fun Modification<*>.affectsPaths(): List<List<SerializableProperty<*, *>>> =
     when (this) {
@@ -260,7 +262,7 @@ private fun Modification<*>.readCondition(): Condition<*>? {
     }
 }
 
-public fun Condition<*>.reads(path: DataClassPathPartial<*>): Boolean = reads(path.properties)
+public fun Condition<*>.reads(path: OpticOn<*>): Boolean = reads(path.properties)
 private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean {
     return when (this) {
         is Condition.OnField<*, *> -> if (list.first() == this.key) {
@@ -278,37 +280,34 @@ private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean 
     }
 }
 
-public fun <T> Condition<T>.readPaths(): Set<DataClassPathPartial<T>> {
-    val out = HashSet<DataClassPathPartial<T>>()
+public fun <T> Condition<T>.readPaths(): Set<OpticOn<T>> {
+    val out = HashSet<OpticOn<T>>()
     emitReadPaths { out.add(it) }
     return out
 }
 
 @OptIn(ExperimentalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
-public fun <T> Condition<T>.emitReadPaths(out: (DataClassPathPartial<T>) -> Unit): Unit = emitReadPaths(
-    DataClassPathSelf<T>(
+public fun <T> Condition<T>.emitReadPaths(out: (OpticOn<T>) -> Unit): Unit = emitReadPaths(
+    IdentityLens(
         NothingSerializer() as KSerializer<T>
     )
-) { out(it as DataClassPathPartial<T>) }
+) { out(it as OpticOn<T>) }
 
-private fun Condition<*>.emitReadPaths(soFar: DataClassPath<*, *>, out: (DataClassPathPartial<*>) -> Unit) {
+private fun Condition<*>.emitReadPaths(soFar: Optic<*, *>, out: (OpticOn<*>) -> Unit) {
     @Suppress("UNCHECKED_CAST")
     when (this) {
         is Condition.Always -> {}
         is Condition.Never -> {}
         is Condition.OnField<*, *> -> condition.emitReadPaths(
-            DataClassPathAccess(
-                soFar as DataClassPath<Any?, Any>,
-                key as SerializableProperty<Any, Any?>
-            ), out
+            (soFar as Optic<Any?, Any>) + (key as SerializableProperty<Any, Any?>), out
         )
 
         is Condition.Not -> this.condition.emitReadPaths(soFar, out)
         is Condition.And -> this.conditions.forEach { it.emitReadPaths(soFar, out) }
         is Condition.Or -> this.conditions.forEach { it.emitReadPaths(soFar, out) }
         is Condition.IfNotNull<*> -> this.condition.emitReadPaths(
-            DataClassPathNotNull(soFar as DataClassPath<Any?, Any?>),
+            NotNullOptic(soFar as Optic<Any?, Any?>),
             out
         )
 
@@ -450,7 +449,7 @@ private fun Condition<*>.requiredBeforeUntyped(modification: Modification<*>): C
 
 @Suppress("UNCHECKED_CAST")
 public fun <T, V> Modification<T>.map(
-    path: DataClassPath<T, V>,
+    path: Optic<T, V>,
     onModification: (Modification<V>) -> Modification<V>,
 ): Modification<T> = (this as Modification<Any?>).map<V>(path.properties, onModification) as Modification<T>
 

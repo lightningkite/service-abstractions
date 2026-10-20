@@ -33,7 +33,7 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
     public val default: B? get() = null
     public val defaultCode: String? get() = null
 
-    public val inline: Boolean get() = false
+    public val isInline: Boolean get() = false
 
     override fun mapCondition(condition: Condition<B>): Condition<A> =
         Condition.OnField(this, condition)
@@ -64,7 +64,7 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
             annotations
                 .mapNotNull { SerializableAnnotation.parseOrNull(it) }
         }
-        override val inline: Boolean get() = parent.descriptor.isInline
+        override val isInline: Boolean get() = parent.descriptor.isInline
 
         // by Claude - Detect dynamic defaults (Uuid.random(), Clock.System.now(), etc.) by deserializing twice
         @OptIn(ExperimentalSerializationApi::class)

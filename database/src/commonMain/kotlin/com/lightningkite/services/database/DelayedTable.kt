@@ -1,5 +1,7 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.SettingContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -47,7 +49,7 @@ public open class DelayedTable<Model : Any>(
     ): Flow<Model> = wraps.find(condition, orderBy, skip, limit, maxQueryMs).onStart { doDelay() }
 
     override suspend fun findPartial(
-        fields: Set<DataClassPathPartial<Model>>,
+        fields: Set<OpticOn<Model>>,
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>>,
         skip: Int,
@@ -63,7 +65,7 @@ public open class DelayedTable<Model : Any>(
 
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
+        groupBy: Optic<Model, Key>,
     ): Map<Key, Int> {
         doDelay()
         return wraps.groupCount(condition, groupBy)
@@ -72,7 +74,7 @@ public open class DelayedTable<Model : Any>(
     override suspend fun <N : Number?> aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: DataClassPath<Model, N>,
+        property: Optic<Model, N>,
     ): Double? {
         doDelay()
         return wraps.aggregate(aggregate, condition, property)
@@ -81,8 +83,8 @@ public open class DelayedTable<Model : Any>(
     override suspend fun <N : Number?, Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>,
+        groupBy: Optic<Model, Key>,
+        property: Optic<Model, N>,
     ): Map<Key, Double?> {
         doDelay()
         return wraps.groupAggregate(aggregate, condition, groupBy, property)
@@ -192,7 +194,7 @@ public open class DelayedTable<Model : Any>(
     }
 
     override suspend fun findSimilar(
-        vectorField: DataClassPath<Model, Embedding>,
+        vectorField: Optic<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,
@@ -202,7 +204,7 @@ public open class DelayedTable<Model : Any>(
     }
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<Model, SparseEmbedding>,
+        vectorField: Optic<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,

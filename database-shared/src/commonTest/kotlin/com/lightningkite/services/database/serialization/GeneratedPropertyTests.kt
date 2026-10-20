@@ -137,7 +137,7 @@ class GeneratedPropertyTests {
         if (properties == null) fail("No generated properties")
         else {
             assertEquals(1, properties.size)
-            println("Properties (${properties.size}): ${properties.joinToString { if (it.inline) "${it.name} (inline)" else it.name }}")
+            println("Properties (${properties.size}): ${properties.joinToString { if (it.isInline) "${it.name} (inline)" else it.name }}")
         }
 
         val prop = LongWrapper.path.long

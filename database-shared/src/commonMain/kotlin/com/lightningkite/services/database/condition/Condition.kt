@@ -36,14 +36,14 @@ import kotlinx.serialization.json.*
  *
  * ## Nested Conditions
  *
- * - [OnField] - Navigate to nested object fields (created by DataClassPath)
+ * - [OnField] - Navigate to nested object fields (created by optics)
  * - [OnKey] - Access map values by key
  * - [IfNotNull] - Null-safe condition wrapper
  *
  * ## Usage with Type-Safe DSL
  *
  * ```kotlin
- * // Using generated DataClassPath extensions
+ * // Using generated optic extensions
  * val adults = userTable.find(
  *     condition = User.path.age gte 18
  * )

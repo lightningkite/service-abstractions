@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
@@ -51,6 +53,12 @@ sealed class PolymorphicClass {
     @Queryable
     data object Empty : PolymorphicClass()
 }
+
+@Queryable
+data class ContainsPolymorphic(
+    val inter: Polymorphic,
+    val clazz: PolymorphicClass
+)
 
 /** Declared outside [PolymorphicClass], so its serial name isn't nested under the sealed class's. */
 @Queryable
@@ -133,13 +141,13 @@ class FieldGenerationTest {
 
     @Test
     fun sealedClassVariantPathStrings() {
-        val serializer = DataClassPathSerializer(PolymorphicClass.serializer())
+        val serializer = OpticOnSerializer(PolymorphicClass.serializer())
         val nested = PolymorphicClass.path.asFoo.name
         val topLevel = PolymorphicClass.path.asPolymorphicClassTopLevel.id
-        assertEquals("[Foo].name", nested.toString())
+        assertEquals("<Foo>.name", serializer.asString(nested))
         // Not nested under the sealed class's serial name, so there is no short name to use.
-        assertEquals("[${PolymorphicClassTopLevel.serializer().descriptor.serialName}].id", topLevel.toString())
-        assertEquals(nested, serializer.fromString(nested.toString()))
-        assertEquals(topLevel, serializer.fromString(topLevel.toString()))
+        assertEquals("<${PolymorphicClassTopLevel.serializer().descriptor.serialName}>.id", serializer.asString(topLevel))
+        assertEquals(nested, serializer.fromString(serializer.asString(nested)))
+        assertEquals(topLevel, serializer.fromString(serializer.asString(topLevel)))
     }
 }

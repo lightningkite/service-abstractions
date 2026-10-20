@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -123,7 +125,7 @@ public data class UpdateRestrictions<T>(
     @OptIn(ExperimentalSerializationApi::class)
     @Queryable
     public data class Part<T>(
-        @JsonNames("path") val property: DataClassPathPartial<T>,
+        @JsonNames("path") val property: OpticOn<T>,
         @JsonNames("limitedIf") val requires: Condition<T>,
         val limitedTo: Condition<T>,
     )
@@ -233,7 +235,7 @@ public data class UpdateRestrictions<T>(
          * }
          * ```
          */
-        public fun DataClassPath<T, *>.cannotBeModified() {
+        public fun Optic<T, *>.cannotBeModified() {
             fields.add(Part(property = this, requires = Condition.Never, limitedTo = Condition.Always))
         }
 
@@ -253,7 +255,7 @@ public data class UpdateRestrictions<T>(
          * }
          * ```
          */
-        public fun DataClassPath<T, *>.canBeModified() {
+        public fun Optic<T, *>.canBeModified() {
             if (mode == Mode.Blacklist) return
             fields.add(Part(property = this, requires = Condition.Always, limitedTo = Condition.Always))
         }
@@ -281,7 +283,7 @@ public data class UpdateRestrictions<T>(
          *
          * @param condition The condition that must be met on the existing record
          */
-        public infix fun DataClassPath<T, *>.requires(condition: Condition<T>) {
+        public infix fun Optic<T, *>.requires(condition: Condition<T>) {
             fields.add(Part(property = this, requires = condition, limitedTo = Condition.Always))
         }
 
@@ -311,7 +313,7 @@ public data class UpdateRestrictions<T>(
          *
          * @param valueMust Lambda that returns a condition the new value must satisfy
          */
-        public inline fun <reified V> DataClassPath<T, V>.mustBe(valueMust: (DataClassPath<V, V>) -> Condition<V>) {
+        public inline fun <reified V> Optic<T, V>.mustBe(valueMust: (Lens<V, V>) -> Condition<V>) {
             fields.add(Part(property = this, requires = Condition.Always, limitedTo = this.condition(valueMust)))
         }
 
@@ -342,9 +344,9 @@ public data class UpdateRestrictions<T>(
          * @param requires Condition on the existing record
          * @param valueMust Lambda that returns a condition the new value must satisfy
          */
-        public inline fun <reified V> DataClassPath<T, V>.requires(
+        public inline fun <reified V> Optic<T, V>.requires(
             requires: Condition<T>,
-            valueMust: (DataClassPath<V, V>) -> Condition<V>,
+            valueMust: (Lens<V, V>) -> Condition<V>,
         ) {
             fields.add(Part(property = this, requires = requires, limitedTo = this.condition(valueMust)))
         }
@@ -391,7 +393,7 @@ public data class UpdateRestrictions<T>(
  * DSL for defining [UpdateRestrictions] in a type-safe way.
  *
  * This function provides a convenient builder syntax for creating update restrictions.
- * The builder lambda receives the root [DataClassPath] for the type [T], allowing you
+ * The builder lambda receives the root [Lens] for the type [T], allowing you
  * to reference fields in a type-safe manner.
  *
  * ## Mode
@@ -455,7 +457,7 @@ public data class UpdateRestrictions<T>(
  */
 public inline fun <reified T> updateRestrictions(
     mode: UpdateRestrictions.Mode = UpdateRestrictions.Mode.Blacklist,
-    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
+    builder: UpdateRestrictions.Builder<T>.(Lens<T, T>) -> Unit,
 ): UpdateRestrictions<T> {
     return UpdateRestrictions.Builder<T>(mode).apply { builder(path<T>()) }.build()
 }
@@ -480,7 +482,7 @@ public inline fun <reified T> updateRestrictions(
  * @see updateRestrictions
  */
 public inline fun <reified T> blacklistRestrictions(
-    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
+    builder: UpdateRestrictions.Builder<T>.(Lens<T, T>) -> Unit,
 ): UpdateRestrictions<T> =
     updateRestrictions(UpdateRestrictions.Mode.Blacklist, builder)
 
@@ -505,7 +507,7 @@ public inline fun <reified T> blacklistRestrictions(
  * @see updateRestrictions
  */
 public inline fun <reified T> whitelistRestrictions(
-    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
+    builder: UpdateRestrictions.Builder<T>.(Lens<T, T>) -> Unit,
 ): UpdateRestrictions<T> =
     updateRestrictions(UpdateRestrictions.Mode.Whitelist, builder)
 
@@ -547,7 +549,7 @@ public inline fun <reified T> whitelistRestrictions(
  * @return New [ModelPermissions] with combined restrictions
  */
 public inline fun <reified T> ModelPermissions<T>.withAdditionalUpdateRestrictions(
-    builder: UpdateRestrictions.Builder<T>.(DataClassPath<T, T>) -> Unit,
+    builder: UpdateRestrictions.Builder<T>.(Lens<T, T>) -> Unit,
 ): ModelPermissions<T> =
     copy(
         updateRestrictions = updateRestrictions(this.updateRestrictions.mode) {

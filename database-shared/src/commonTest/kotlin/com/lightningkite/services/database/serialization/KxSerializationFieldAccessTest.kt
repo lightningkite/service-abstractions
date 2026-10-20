@@ -3,6 +3,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.test.performance
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.*

@@ -3,6 +3,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialInfo
 
@@ -46,7 +48,7 @@ import kotlinx.serialization.SerialInfo
  * val Money_cents: SerializableProperty<Money, Long> get() = ...
  *
  * @InlineProperty
- * val <T> DataClassPath<T, Money>.cents: DataClassPath<T, Long> get() = ...
+ * val <T> Optic<T, Money>.cents: Optic<T, Long> get() = ...
  * // ----------------------------
  *
  *

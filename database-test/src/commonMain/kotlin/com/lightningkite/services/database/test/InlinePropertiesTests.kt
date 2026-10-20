@@ -2,6 +2,8 @@
 
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.path.*
+
 // by Claude - Additional imports for comprehensive value class testing
 import com.lightningkite.services.data.Length.Companion.meters
 import com.lightningkite.services.database.*
@@ -961,9 +963,9 @@ abstract class InlinePropertiesTests {
     @Test
     fun test_serializableProperty_inline_isInline() {
         // Verify the inline flag is set correctly for inline properties
-        assertTrue(ValueClass.value.inline)
-        assertTrue(IntWrapper.int.inline)
-        assertTrue(UuidWrapper.uuid.inline)
+        assertTrue(ValueClass.value.isInline)
+        assertTrue(IntWrapper.int.isInline)
+        assertTrue(UuidWrapper.uuid.isInline)
     }
 
     // endregion

@@ -5,7 +5,7 @@ package com.lightningkite.services.database.validation
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.modification
-import com.lightningkite.services.database.notNull
+import com.lightningkite.services.database.path.notNull
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.ListSerializer

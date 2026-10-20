@@ -2,6 +2,7 @@ package com.lightningkite.services.database.path
 
 import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.database.*
+import com.lightningkite.services.database.path.legacy.*
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -16,7 +17,7 @@ data class OpticNullableInner(val value: String? = null)
 class OpticSerializationTest {
     private val serializer = OpticOnSerializer(LargeTestModel.serializer())
     private val oldSerializer = DataClassPathSerializer(LargeTestModel.serializer())
-    private val root = path(LargeTestModel.serializer())
+    private val root = DataClassPathSelf(LargeTestModel.serializer())
 
     private fun encode(optic: OpticOn<LargeTestModel>): String = Json.encodeToString(serializer, optic).removeSurrounding("\"")
     private fun decode(path: String): Optic<LargeTestModel, *> = Json.decodeFromString(serializer, "\"$path\"").coerceToOptic()

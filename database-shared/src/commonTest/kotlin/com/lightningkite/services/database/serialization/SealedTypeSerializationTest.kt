@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -8,7 +10,7 @@ import kotlin.test.assertEquals
 class SealedTypeSerializationTest {
     private val conditionSerializer = Condition.serializer(Polymorphic.serializer())
     private val modificationSerializer = Modification.serializer(Polymorphic.serializer())
-    private val pathSerializer = DataClassPathSerializer(Polymorphic.serializer())
+    private val pathSerializer = OpticOnSerializer(Polymorphic.serializer())
 
     @Test
     fun conditionRoundTrips() {
@@ -40,11 +42,11 @@ class SealedTypeSerializationTest {
     fun pathsRoundTrip() {
         val variant = Polymorphic.path.asFoo
         val field = Polymorphic.path.asFoo.name
-        assertEquals("[Foo]", variant.toString())
-        assertEquals("[Foo].name", field.toString())
-        assertEquals(variant, pathSerializer.fromString(variant.toString()))
-        assertEquals(field, pathSerializer.fromString(field.toString()))
-        assertEquals(field, pathSerializer.fromString("[com.lightningkite.services.database.Polymorphic.Foo].name"))
+        assertEquals("<Foo>", pathSerializer.asString(variant))
+        assertEquals("<Foo>.name", pathSerializer.asString(field))
+        assertEquals(variant, pathSerializer.fromString("<Foo>"))
+        assertEquals(field, pathSerializer.fromString("<Foo>.name"))
+        assertEquals(field, pathSerializer.fromString("<com.lightningkite.services.database.Polymorphic.Foo>.name"))
         assertEquals(listOf("name"), field.properties.map { it.name })
     }
 }

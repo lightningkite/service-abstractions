@@ -4,7 +4,6 @@ import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.SerializableProperty
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.serializer
 
 /** A [Lens] that focuses on the whole value. It serializes as `this`. */
 public class IdentityLens<T>(override val serializer: KSerializer<T>) : Lens<T, T> {
@@ -21,7 +20,3 @@ public class IdentityLens<T>(override val serializer: KSerializer<T>) : Lens<T, 
     override fun hashCode(): Int = serializer.descriptor.hashCode()
 }
 
-/** Returns an [IdentityLens] on [T], the starting point for building a path with [plus]. */
-public fun <T> pathOf(serializer: KSerializer<T>): IdentityLens<T> = IdentityLens(serializer)
-/** Returns an [IdentityLens] on [T], the starting point for building a path with [plus]. */
-public inline fun <reified T> pathOf(): IdentityLens<T> = IdentityLens(serializer())

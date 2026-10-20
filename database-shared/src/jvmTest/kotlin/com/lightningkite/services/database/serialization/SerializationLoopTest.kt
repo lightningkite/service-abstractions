@@ -2,6 +2,8 @@
 // by Claude - Comprehensive serialization loop test for all Condition and Modification types
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.GeoCoordinate
 import com.lightningkite.services.data.Length.Companion.miles
 import com.lightningkite.services.data.toEmailAddress
@@ -186,10 +188,10 @@ class SerializationLoopTest {
     }
 
     // Helper to create conditions with the LargeTestModel type
-    private inline fun condition(crossinline setup: (DataClassPath<LargeTestModel, LargeTestModel>) -> Condition<LargeTestModel>): Condition<LargeTestModel> =
+    private inline fun condition(crossinline setup: (Lens<LargeTestModel, LargeTestModel>) -> Condition<LargeTestModel>): Condition<LargeTestModel> =
         condition<LargeTestModel>(setup)
 
     // Helper to create modifications with the LargeTestModel type
-    private inline fun modification(crossinline setup: ModificationBuilder<LargeTestModel>.(DataClassPath<LargeTestModel, LargeTestModel>) -> Unit): Modification<LargeTestModel> =
+    private inline fun modification(crossinline setup: ModificationBuilder<LargeTestModel>.(Lens<LargeTestModel, LargeTestModel>) -> Unit): Modification<LargeTestModel> =
         modification<LargeTestModel>(setup)
 }

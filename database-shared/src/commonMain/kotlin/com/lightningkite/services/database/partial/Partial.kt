@@ -1,8 +1,9 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import kotlinx.serialization.*
-import kotlin.jvm.JvmName
 
 // TODO : Optimize for fully complete subobjects
 // TODO : Better handle nullable objects for mod translation
@@ -14,17 +15,17 @@ public data class Partial<T>(
     public fun total(serializer: KSerializer<T>): T? =
         if (parts.keys.containsAll(serializer.serializableProperties!!.asList())) {
             var out = serializer.default()
-            perPath(DataClassPathSelf(serializer)) {
+            perPath(IdentityLens(serializer)) {
                 out = it.set(out)
             }
             out
         } else null
 
-    public fun <S> perPath(soFar: DataClassPath<S, T>, action: (DataClassPathWithValue<S, *>) -> Unit) {
+    public fun <S> perPath(soFar: Optic<S, T>, action: (OpticWithValue<S, *>) -> Unit) {
         for (part in parts) {
 
             @Suppress("UNCHECKED_CAST")
-            val p = DataClassPathAccess(soFar, part.key as SerializableProperty<T, Any?>)
+            val p = soFar + part.key as SerializableProperty<T, Any?>
             if (part.value is Partial<*> && part.key.serializer.let {
                     it.nullElement() ?: it
                 } !is PartialSerializer<*>) {
@@ -35,16 +36,16 @@ public data class Partial<T>(
 
                 @Suppress("UNCHECKED_CAST")
                 partial.total(ser as KSerializer<Any?>)?.let {
-                    action(DataClassPathWithValue(p, it))
+                    action(OpticWithValue(p, it))
                 } ?: partial.perPath(p, action)
             } else {
-                action(DataClassPathWithValue(p, part.value))
+                action(OpticWithValue(p, part.value))
             }
         }
     }
 }
 
-public data class DataClassPathWithValue<A, V>(val path: DataClassPath<A, V>, val value: V) {
+public data class OpticWithValue<A, V>(val path: Optic<A, V>, val value: V) {
     public fun set(a: A): A = path.set(a, value)
 }
 
@@ -65,7 +66,7 @@ public fun <A> SerializableProperty<*, A>.toPartialEntry(value: A): Any? =
 
 @Suppress("UNCHECKED_CAST")
 public class PartialBuilder<T>(public val partial: Partial<T> = Partial()) {
-    public infix fun <A> DataClassPath<T, A>.assign(value: A) {
+    public infix fun <A> Optic<T, A>.assign(value: A) {
         var target: Partial<Any> = partial as Partial<Any>
         val props = properties
         for (prop in props.dropLast(1)) {
@@ -75,7 +76,7 @@ public class PartialBuilder<T>(public val partial: Partial<T> = Partial()) {
         target.parts[last] = last.toPartialEntry(value)
     }
 
-    public infix fun <A> DataClassPath<T, A>.assign(value: Partial<A>) {
+    public infix fun <A> Optic<T, A>.assign(value: Partial<A>) {
         var target: Partial<Any> = partial as Partial<Any>
         val props = properties
         for (prop in props.dropLast(1)) {
@@ -85,39 +86,21 @@ public class PartialBuilder<T>(public val partial: Partial<T> = Partial()) {
     }
 }
 
-public inline fun <reified T> partialOf(builder: PartialBuilder<T>.(DataClassPathSelf<T>) -> Unit): Partial<T> =
+public inline fun <reified T> partialOf(builder: PartialBuilder<T>.(Lens<T, T>) -> Unit): Partial<T> =
     PartialBuilder<T>().apply {
         builder(
-            DataClassPathSelf(
+            IdentityLens(
                 serializer()
             )
         )
     }.partial
 
 
-public fun <T> partialOf(item: T, properties: Array<SerializableProperty<T, *>>): Partial<T> = Partial<T>().apply {
-    properties.forEach { property ->
-        @Suppress("UNCHECKED_CAST")
-        property as SerializableProperty<T, Any?>
-        parts[property] = property.toPartialEntry(property.get(item))
-    }
-}
-
-public fun <T> partialOf(item: T, properties: Iterable<SerializableProperty<T, *>>): Partial<T> = Partial<T>().apply {
-    properties.forEach { property ->
-        @Suppress("UNCHECKED_CAST")
-        property as SerializableProperty<T, Any?>
-        parts[property] = property.toPartialEntry(property.get(item))
-    }
-}
-
-@JvmName("partialOfPaths")
-public fun <T> partialOf(item: T, paths: Iterable<DataClassPathPartial<T>>): Partial<T> = Partial<T>().apply {
+public fun <T> partialOf(item: T, paths: Iterable<OpticOn<T>>): Partial<T> = Partial<T>().apply {
     paths.forEach { it.setMap(item, this) }
 }
 
-@JvmName("partialOfPaths")
-public fun <T> partialOf(item: T, paths: Array<DataClassPathPartial<T>>): Partial<T> = Partial<T>().apply {
+public fun <T> partialOf(item: T, paths: Array<out OpticOn<T>>): Partial<T> = Partial<T>().apply {
     paths.forEach { it.setMap(item, this) }
 }
 

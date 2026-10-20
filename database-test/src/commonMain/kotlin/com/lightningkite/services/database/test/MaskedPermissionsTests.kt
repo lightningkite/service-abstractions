@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest

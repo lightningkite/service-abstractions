@@ -1,7 +1,6 @@
 package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.data.Length.Companion.meters
-import com.lightningkite.services.data.TextIndex
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
 import com.lightningkite.services.database.mongodb.bson.serializationOverrides
@@ -194,7 +193,7 @@ private fun <T> Condition<T>.dump(
             this.key.serializer as KSerializer<Any?>,
             into,
             key =
-                if (this.key.inline) key
+                if (this.key.isInline) key
                 else if (key == null) this.key.name
                 else "$key.${this.key.name}",
             atlasSearch = atlasSearch,
@@ -311,7 +310,7 @@ private fun <T> Modification<T>.dump(
             this.key.serializer as KSerializer<Any?>,
             update,
             key =
-                if (this.key.inline) key
+                if (this.key.isInline) key
                 else if (key == null) this.key.name
                 else "$key.${this.key.name}",
             bson = bson

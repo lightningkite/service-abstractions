@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -103,7 +105,7 @@ abstract class AggregationsTest() {
     }
 
     // The other half of the contract. `embeddedNullable.notNull.value2` has declared value type Int,
-    // but DataClassPath.get() returns V? regardless -- DataClassPathNotNull yields null when the
+    // but Optic.get() returns V? regardless -- NotNullOptic yields null when the
     // optional it wraps is absent, and every driver has the same behaviour via a NULL column or a
     // missing document field. Returning those rows under a `null` key would put a null into a
     // Map<Int, Int>, which the map's own type says is impossible. They must be dropped instead.

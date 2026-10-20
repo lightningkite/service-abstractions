@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.OpticOnSerializer
+
 import com.lightningkite.services.data.*
 import kotlinx.datetime.*
 import kotlinx.serialization.*
@@ -423,11 +425,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 it[0]
             )
         }
-        register(DataClassPathPartial.serializer(NothingSerializer()).descriptor.serialName) {
-            DataClassPathPartial.serializer(
-                it[0]
-            )
-        }
+        register(OpticOnSerializer(NothingSerializer()).descriptor.serialName) { OpticOnSerializer(it[0]) }
         register(Partial.serializer(NothingSerializer()).descriptor.serialName) { Partial.serializer(it[0]) }
         register(VirtualAlias.serializer())
         register(VirtualTypeParameter.serializer())
