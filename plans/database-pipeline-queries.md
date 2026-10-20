@@ -236,7 +236,7 @@ The proposal hinges on representing "the current shape of a row mid-pipeline" in
 - `VirtualStruct` is a serializable description of a struct's fields.
 - `VirtualStruct.Concrete` is a `KSerializer<VirtualInstance>` — so virtual rows participate in serialization.
 - `VirtualInstance` is the runtime row representation (`List<Any?>` indexed by field index).
-- `SerializableProperty.FromVirtualField` already wraps a virtual field as a `SerializableProperty<VirtualInstance, Any?>`, which means **`Optic` already works on virtual rows for free**.
+- `Field.FromVirtualField` already wraps a virtual field as a `Field<VirtualInstance, Any?>`, which means **`Optic` already works on virtual rows for free**.
 
 This is what makes the design tractable. The user's `UnknownData` is literally `VirtualInstance`, and `Optic<VirtualInstance, Int>` is constructible today without any new infrastructure.
 

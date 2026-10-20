@@ -2,7 +2,6 @@ package com.lightningkite.services.database.path
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.nullElement
 import kotlinx.serialization.KSerializer
 
@@ -11,7 +10,7 @@ public data class NotNullOptic<A, B : Any>(public val wraps: Optic<A, B?>) : Opt
         @Suppress("UNCHECKED_CAST")
         get() = wraps.serializer.nullElement()!! as KSerializer<B>
 
-    override val properties: List<SerializableProperty<*, *>> get() = wraps.properties
+    override val fields: List<Field<*, *>> get() = wraps.fields
 
     override fun get(source: A): B? = wraps.get(source)
 

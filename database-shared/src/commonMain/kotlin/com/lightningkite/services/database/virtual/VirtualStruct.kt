@@ -3,6 +3,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.ExperimentalLightningServer
 import com.lightningkite.services.data.nowLocal
 import kotlinx.serialization.*
@@ -18,7 +20,7 @@ public data class VirtualStruct(
     val fields: List<VirtualField>,
     val parameters: List<VirtualTypeParameter>,
 ) : VirtualType {
-    internal val idField = fields.find { it.name == "_id" }
+    internal val idField = this@VirtualStruct.fields.find { it.name == "_id" }
 
     public operator fun invoke(registry: SerializationRegistry, vararg arguments: KSerializer<*>): Concrete =
         Concrete(registry, arguments)
@@ -28,7 +30,7 @@ public data class VirtualStruct(
 
     override fun toString(): String = "virtual data class $serialName${
         parameters.takeUnless { it.isEmpty() }?.joinToString(", ", "<", ">") { it.name } ?: ""
-    }(${fields.joinToString()})"
+    }(${this@VirtualStruct.fields.joinToString()})"
 
     private object DefaultNotPresent
     public inner class Concrete(
@@ -36,8 +38,11 @@ public data class VirtualStruct(
         public val arguments: Array<out KSerializer<*>>,
     ) :
         KSerializer<VirtualInstance>, VirtualType by this@VirtualStruct,
-        KSerializerWithDefault<VirtualInstance> {
+        KSerializerWithDefault<VirtualInstance>
+    {
         internal val struct: VirtualStruct = this@VirtualStruct
+
+        private val structFields get() = this@VirtualStruct.fields
 
         init {
             if (arguments.size < parameters.size) throw IllegalArgumentException("VirtualStructure $serialName needs ${parameters.size} parameters, but we only got ${arguments.size}")
@@ -48,7 +53,7 @@ public data class VirtualStruct(
         override val default: VirtualInstance
             get() = VirtualInstance(
                 this,
-                fields.indices.map { index ->
+                structFields.indices.map { index ->
                     val gen = defaultGenerators[index]
                     val serializer = serializers[index]
                     if (gen != null) gen() else serializer.default()
@@ -57,7 +62,7 @@ public data class VirtualStruct(
 
         public operator fun invoke(): VirtualInstance = default
         public operator fun invoke(map: Map<VirtualField, Any?> = mapOf()): VirtualInstance {
-            val fields = fields.indices.mapTo(ArrayList()) { index ->
+            val fields = structFields.indices.mapTo(ArrayList()) { index ->
                 val gen = defaultGenerators[index]
                 val serializer = serializers[index]
                 if (gen != null) gen() else serializer.default()
@@ -92,13 +97,13 @@ public data class VirtualStruct(
         }
 
         private val serializers by lazy {
-            fields.map {
+            structFields.map {
                 if (it.type.serialName == serialName) placeholderSerializer
                 else it.type.serializer(registry, typeArguments)
             }
         }
         private val defaultGenerators: List<(() -> Any?)?> by lazy {
-            fields.zip(serializers) { field, serializer ->
+            structFields.zip(serializers) { field, serializer ->
                 field.defaultCode?.trim()?.let {
                     // handling some common cases for sanity's sake
                     when (it) {
@@ -149,19 +154,19 @@ public data class VirtualStruct(
             }
         }
 
-        public val serializableProperties: Array<SerializableProperty<VirtualInstance, Any?>> by lazy {
-            fields.map {
-                SerializableProperty.FromVirtualField(it, registry, typeArguments)
+        public val fields: Array<Field<VirtualInstance, Any?>> by lazy {
+            structFields.map {
+                Field.FromVirtualField(it, registry, typeArguments)
             }.toTypedArray()
         }
-        private val ensureNotNull = fields.withIndex().filter {
+        private val ensureNotNull = structFields.withIndex().filter {
             !it.value.optional && !it.value.type.isNullable
         }.map { it.index }.toIntArray()
 
         @Transient
         override val descriptor: SerialDescriptor by lazy {
             val descriptor = buildClassSerialDescriptor(serialName) {
-                for (field in fields)
+                for (field in structFields)
                     element(
                         elementName = field.name,
                         descriptor = serializers[field.index].descriptor,
@@ -174,7 +179,7 @@ public data class VirtualStruct(
         }
 
         override fun deserialize(decoder: Decoder): VirtualInstance {
-            val values = Array(fields.size) {
+            val values = Array(structFields.size) {
                 defaultGenerators[it]?.invoke()
             }
             val s = decoder.beginStructure(descriptor)
@@ -182,7 +187,7 @@ public data class VirtualStruct(
                 val index = s.decodeElementIndex(descriptor)
                 if (index == CompositeDecoder.DECODE_DONE) break
                 if (index == CompositeDecoder.UNKNOWN_NAME) break
-                val f = fields[index]
+                val f = structFields[index]
                 if (f.type.isNullable) {
                     values[index] = s.decodeNullableSerializableElement(
                         descriptor,
@@ -203,7 +208,7 @@ public data class VirtualStruct(
             // Ensure we got everything
             ensureNotNull.forEach { index ->
                 if (values[index] == null) {
-                    throw SerializationException("${fields[index].name} required but was not present")
+                    throw SerializationException("${structFields[index].name} required but was not present")
                 }
             }
             return VirtualInstance(this, values.asList())
@@ -211,7 +216,7 @@ public data class VirtualStruct(
 
         override fun serialize(encoder: Encoder, value: VirtualInstance) {
             val s = encoder.beginStructure(descriptor)
-            for ((index, _) in fields.withIndex()) {
+            for ((index, _) in structFields.withIndex()) {
                 val v = value.values[index]
                 if (v != skipSerializationIfEqual[index] || s.shouldEncodeElementDefault(descriptor, index)) {
                     val ser = serializers[index]

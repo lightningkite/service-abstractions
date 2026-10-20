@@ -3,14 +3,13 @@ package com.lightningkite.services.database.sql
 import com.lightningkite.services.database.path.*
 
 import org.jetbrains.exposed.v1.core.*
-import org.jetbrains.exposed.v1.jdbc.*
 
 // Flatten a path's properties into a "__"-joined column name, matching SqlSchema's registration.
 // Properties whose owner is a Kotlin value/inline class (property.inline) don't get their own
 // path segment: value classes are collapsed away when the schema registers columns (mirroring
 // kotlinx serialization's transparent encodeInline), so they must be skipped here too.
 internal val OpticOn<*>.colName: String
-    get() = properties.filterNot { it.isInline }.joinToString("__") { it.name }
+    get() = fields.filterNot { it.isInline }.joinToString("__") { it.name }
 
 // Create a typed SQL literal from a column type and value
 @Suppress("UNCHECKED_CAST")

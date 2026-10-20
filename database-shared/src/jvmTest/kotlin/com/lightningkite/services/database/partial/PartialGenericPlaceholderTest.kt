@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlin.test.Test

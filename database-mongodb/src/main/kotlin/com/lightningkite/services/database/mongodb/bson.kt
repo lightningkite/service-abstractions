@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.Length.Companion.meters
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
@@ -361,7 +363,7 @@ private fun <T> Modification<T>.dump(
 private fun Modification<Any?>.checkedParts(): List<Pair<Condition<Any?>, Modification<Any?>>> = when (this) {
     is Modification.Chain -> modifications.flatMap { it.checkedParts() }
     is Modification.OnField<*, *> -> (modification as Modification<Any?>).checkedParts().map { (check, part) ->
-        val field = this.key as SerializableProperty<Any?, Any?>
+        val field = this.key as Field<Any?, Any?>
         (if (check is Condition.Always) check else Condition.OnField(field, check)) to Modification.OnField(field, part)
     }
     is Modification.IfNotNull<*> -> (modification as Modification<Any?>).checkedParts().map { (check, part) ->

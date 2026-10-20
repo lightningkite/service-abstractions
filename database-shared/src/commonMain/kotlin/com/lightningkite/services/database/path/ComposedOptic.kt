@@ -2,7 +2,6 @@ package com.lightningkite.services.database.path
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.SerializableProperty
 import kotlinx.serialization.KSerializer
 
 /** An optic that focuses on the target of [inner] within the target of [outer]. Create one with [plus]. */
@@ -11,8 +10,8 @@ public open class ComposedOptic<A, B, C> internal constructor(
     public open val inner: Optic<B, C>,
 ) : Optic<A, C> {
     override val serializer: KSerializer<C> get() = inner.serializer
-    override val properties: List<SerializableProperty<*, *>> by lazy {
-        outer.properties + inner.properties
+    override val fields: List<Field<*, *>> by lazy {
+        outer.fields + inner.fields
     }
     override fun get(source: A): C? = outer.get(source)?.let(inner::get)
     override fun getOrThrow(source: A): C = inner.getOrThrow(outer.getOrThrow(source))

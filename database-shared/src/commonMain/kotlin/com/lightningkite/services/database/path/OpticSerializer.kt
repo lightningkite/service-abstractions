@@ -2,11 +2,8 @@ package com.lightningkite.services.database.path
 
 import com.lightningkite.services.database.KSerializerWithDefault
 import com.lightningkite.services.database.SealedTypeDiscriminator
-import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.listElement
 import com.lightningkite.services.database.nullElement
-import com.lightningkite.services.database.serializableOptions
-import com.lightningkite.services.database.serializableProperties
 import com.lightningkite.services.database.variantShortName
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
@@ -43,7 +40,7 @@ public class OpticOnSerializer<T>(public val root: KSerializer<T>) : KSerializer
     @Suppress("UNCHECKED_CAST")
     private fun segments(optic: OpticOn<*>): List<String> = when (optic) {
         is IdentityLens<*> -> listOf()
-        is SerializableProperty<*, *> -> listOf(optic.name)
+        is Field<*, *> -> listOf(optic.name)
         is ComposedOptic<*, *, *> -> segments(optic.outer) + segments(optic.inner)
         is NotNullOptic<*, *> -> segments(optic.wraps).ifEmpty { listOf("this") }.let { it.dropLast(1) + "${it.last()}?" }
         is CollectionElementsOptic<*, *, *> -> segments(optic.wraps) + "*"
@@ -102,9 +99,9 @@ public class OpticOnSerializer<T>(public val root: KSerializer<T>) : KSerializer
 
     @Suppress("UNCHECKED_CAST")
     private fun Optic<T, Any?>.property(name: String): Optic<T, Any?> {
-        val property = serializer.serializableProperties?.find { it.name == name }
+        val property = serializer.fields?.find { it.name == name }
             ?: throw SerializationException("${serializer.descriptor.serialName} has no property '$name'")
-        return this + property as SerializableProperty<Any?, Any?>
+        return this + property as Field<Any?, Any?>
     }
 
     /** Splits this on '.', except inside `<...>`, since variant serial names contain dots. */

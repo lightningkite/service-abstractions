@@ -1,5 +1,7 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database// by Claude - Test for reflection-based annotation parsing
+
+import com.lightningkite.services.database.path.*
 import com.lightningkite.services.data.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.EmptySerializersModule
@@ -145,7 +147,7 @@ class AnnotationReflectionTest {
     @Test
     fun `serializableProperties includes References annotation`() {
         val ser = serializer<ModelWithForeignKey>()
-        val props = ser.serializableProperties
+        val props = ser.fields
         assertNotNull(props, "serializableProperties should not be null")
 
         val referencedIdProp = props.find { it.name == "referencedId" }

@@ -9,7 +9,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialInfo
 
 /**
- * [InlineProperty] marks a generated [SerializableProperty] for an inline `value class`.
+ * [InlineProperty] marks a generated [Field] for an inline `value class`.
  *
  * Properties marked with this annotation are accessors to the wrapped type of an inline class.
  *
@@ -45,7 +45,7 @@ import kotlinx.serialization.SerialInfo
  *
  * // --- Generated properties ---
  * @InlineProperty
- * val Money_cents: SerializableProperty<Money, Long> get() = ...
+ * val Money_cents: Field<Money, Long> get() = ...
  *
  * @InlineProperty
  * val <T> Optic<T, Money>.cents: Optic<T, Long> get() = ...

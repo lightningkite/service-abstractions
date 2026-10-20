@@ -11,6 +11,7 @@ import com.lightningkite.services.telemetry.telemetryTrace
 import com.mongodb.MongoCommandException
 import com.mongodb.client.model.*
 import com.mongodb.client.model.Aggregates
+import com.mongodb.client.model.Field
 import com.mongodb.client.model.Aggregates.match
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.Filters.ne

@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.cassandra
 
-import com.lightningkite.services.database.serializableProperties
+import com.lightningkite.services.database.path.*
+
 import kotlinx.serialization.KSerializer
 
 /**
@@ -32,7 +33,7 @@ public class ComputedColumnsHandler<T : Any>(
     private fun computeValue(
         model: T,
         info: ComputedColumnInfo<T>,
-        properties: Array<out com.lightningkite.services.database.SerializableProperty<T, *>>,
+        properties: Array<out com.lightningkite.services.database.path.Field<T, *>>,
     ): Any? {
         return when (info.transform) {
             ComputedTransform.LOWERCASE -> {
@@ -67,7 +68,7 @@ public class ComputedColumnsHandler<T : Any>(
     private fun computeGeohash(
         model: T,
         sourceProperties: List<String>,
-        properties: Array<out com.lightningkite.services.database.SerializableProperty<T, *>>,
+        properties: Array<out com.lightningkite.services.database.path.Field<T, *>>,
         precision: Int,
     ): String? {
         if (sourceProperties.size < 2) return null

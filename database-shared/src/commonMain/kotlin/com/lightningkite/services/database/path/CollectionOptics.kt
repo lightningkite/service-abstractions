@@ -2,7 +2,6 @@ package com.lightningkite.services.database.path
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.listElement
 import kotlinx.serialization.KSerializer
 import kotlin.jvm.JvmName
@@ -14,8 +13,8 @@ public abstract class CollectionElementsOptic<A, T, COLLECTION: Collection<T>>(
         @Suppress("UNCHECKED_CAST")
         get() = wraps.serializer.listElement()!! as KSerializer<T>
 
-    override val properties: List<SerializableProperty<*, *>>
-        get() = wraps.properties
+    override val fields: List<Field<*, *>>
+        get() = wraps.fields
 
     override fun get(source: A): T? = wraps.get(source)?.firstOrNull()
     override fun getOrThrow(source: A): T = wraps.getOrThrow(source).first()

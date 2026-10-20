@@ -1,5 +1,7 @@
-// by Claude - Tests for dynamic default detection in SerializableProperty.Generated
+// by Claude - Tests for dynamic default detection in Field.Generated
 package com.lightningkite.services.database
+
+import com.lightningkite.services.database.path.*
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer
@@ -24,7 +26,7 @@ class DefaultDetectionTest {
 
     @Test
     fun `detect Uuid random default`() {
-        val props = serializer<TestDefaultsModel>().serializableProperties!!
+        val props = serializer<TestDefaultsModel>().fields!!
         val idProp = props.find { it.name == "id" }!!
 
         assertEquals("Uuid.random()", idProp.defaultCode, "Should detect Uuid.random() default")
@@ -33,7 +35,7 @@ class DefaultDetectionTest {
 
     @Test
     fun `detect Clock System now default`() {
-        val props = serializer<TestDefaultsModel>().serializableProperties!!
+        val props = serializer<TestDefaultsModel>().fields!!
         val createdProp = props.find { it.name == "created" }!!
 
         assertEquals("Clock.System.now()", createdProp.defaultCode, "Should detect Clock.System.now() default")
@@ -42,7 +44,7 @@ class DefaultDetectionTest {
 
     @Test
     fun `detect static String default`() {
-        val props = serializer<TestDefaultsModel>().serializableProperties!!
+        val props = serializer<TestDefaultsModel>().fields!!
         val nameProp = props.find { it.name == "name" }!!
 
         assertNull(nameProp.defaultCode, "Static defaults should not have defaultCode")
@@ -51,7 +53,7 @@ class DefaultDetectionTest {
 
     @Test
     fun `detect static Int default`() {
-        val props = serializer<TestDefaultsModel>().serializableProperties!!
+        val props = serializer<TestDefaultsModel>().fields!!
         val countProp = props.find { it.name == "count" }!!
 
         assertNull(countProp.defaultCode, "Static defaults should not have defaultCode")
@@ -60,7 +62,7 @@ class DefaultDetectionTest {
 
     @Test
     fun `required field has no default`() {
-        val props = serializer<TestDefaultsModel>().serializableProperties!!
+        val props = serializer<TestDefaultsModel>().fields!!
         val requiredProp = props.find { it.name == "required" }!!
 
         assertNull(requiredProp.defaultCode, "Required fields should not have defaultCode")

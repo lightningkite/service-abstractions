@@ -3,6 +3,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.database.internal.ConcurrentMap
 import com.lightningkite.services.database.internal.getOrPutConcurrent
 import com.lightningkite.services.database.validation.ShouldValidateSub
@@ -119,14 +121,14 @@ private fun <T> numberOptions(serializer: KSerializer<T>): List<MySealedClassSer
         ) { it is Modification.Multiply },
     )
 
-//private fun <T: Any> classOptions(inner: KSerializer<T>, fields: List<SerializableProperty<T, *>>): List<MySealedClassSerializer.Option<Modification<T>, *>> = commonOptions(inner) + fields.map { prop ->
+//private fun <T: Any> classOptions(inner: KSerializer<T>, fields: List<Field<T, *>>): List<MySealedClassSerializer.Option<Modification<T>, *>> = commonOptions(inner) + fields.map { prop ->
 //    MySealedClassSerializer.Option(ModificationOnFieldSerializer(prop)) { it is Modification.OnField<*, *> && it.key.name == prop.name }
 //}
 // A value class's descriptor can't say whether it's Comparable, but wrapping one comparable value it almost always is.
 @Suppress("UNCHECKED_CAST")
 private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Modification<T>, *>> =
     (if (inner.descriptor.isInline) comparableOptions(inner as KSerializer<String>) as List<MySealedClassSerializer.Option<Modification<T>, *>>
-    else commonOptions(inner)) + inner.serializableProperties!!.let {
+    else commonOptions(inner)) + inner.fields!!.let {
         it.mapIndexed { index, ser ->
             MySealedClassSerializer.Option(
                 serializer = ModificationOnFieldSerializer(field = ser),
@@ -173,7 +175,7 @@ public data class ModificationSerializer<T>(public val inner: KSerializer<T>) :
                     else listOptions(inner.listElement()!!)
                 }
 
-                inner.serializableProperties != null -> classOptionsReflective(inner as KSerializer<Any>)
+                inner.fields != null -> classOptionsReflective(inner as KSerializer<Any>)
                 inner.serializableOptions != null -> polymorphicOptions(inner as KSerializer<Any>)
                 else -> comparableOptions(inner as KSerializer<String>)
             }
@@ -183,7 +185,7 @@ public data class ModificationSerializer<T>(public val inner: KSerializer<T>) :
 }
 
 public class ModificationOnFieldSerializer<K : Any, V>(
-    private val field: SerializableProperty<K, V>,
+    private val field: Field<K, V>,
 ) : WrappingSerializer<Modification.OnField<K, V>, Modification<V>>(field.name) {
     override fun getDeferred(): KSerializer<Modification<V>> = Modification.serializer(field.serializer)
     override fun inner(it: Modification.OnField<K, V>): Modification<V> = it.modification

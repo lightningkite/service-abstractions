@@ -48,7 +48,7 @@ class OpticSerializationTest {
         for ((old, new) in equivalents) {
             val decoded = decode(old.toString())
             assertEquals(new, decoded)
-            assertEquals(old.properties, decoded.properties)
+            assertEquals(old.properties, decoded.fields)
         }
     }
 
@@ -108,7 +108,7 @@ class OpticSerializationTest {
         assertEquals(foo, Json.decodeFromString(polymorphic, "\"<Foo>\""))
         assertEquals(fooName, Json.decodeFromString(polymorphic, "\"<Foo>.name\""))
         assertEquals(fooName, Json.decodeFromString(polymorphic, "\"<com.lightningkite.services.database.Polymorphic.Foo>.name\""))
-        assertEquals(listOf(Polymorphic.Foo.name), Json.decodeFromString(polymorphic, "\"<Foo>.name\"").properties)
+        assertEquals(listOf(Polymorphic.Foo.name), Json.decodeFromString(polymorphic, "\"<Foo>.name\"").fields)
     }
 
     @Test

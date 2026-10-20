@@ -1,11 +1,10 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
-import kotlinx.serialization.ExperimentalSerializationApi
+import com.lightningkite.services.database.path.*
+
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.serializer
 
 /**
  * Represents an update operation that transforms a value of type T.
@@ -220,7 +219,7 @@ public sealed class Modification<T> {
         override fun toString(): String = ".map { if (it.$condition) it.$modification }"
     }
 
-    public data class OnField<K, V>(val key: SerializableProperty<K, V>, val modification: Modification<V>) :
+    public data class OnField<K, V>(val key: Field<K, V>, val modification: Modification<V>) :
         Modification<K>() {
         override fun invoke(on: K): K = key.setCopy(on, modification(key.get(on)))
         override fun toString(): String {

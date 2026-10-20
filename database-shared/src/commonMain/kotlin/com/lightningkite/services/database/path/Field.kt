@@ -1,11 +1,20 @@
-@file:Suppress("PackageDirectoryMismatch")
-@file:OptIn(ExperimentalUnsignedTypes::class)
+package com.lightningkite.services.database.path
 
-package com.lightningkite.services.database
-
+import com.lightningkite.services.database.Condition
+import com.lightningkite.services.database.GenericPlaceholderException
+import com.lightningkite.services.database.Modification
+import com.lightningkite.services.database.SerializableAnnotation
+import com.lightningkite.services.database.SerializationRegistry
+import com.lightningkite.services.database.StubPolymorphicDecoder
+import com.lightningkite.services.database.StubPolymorphicEncoder
+import com.lightningkite.services.database.VirtualField
+import com.lightningkite.services.database.VirtualInstance
+import com.lightningkite.services.database.VirtualStruct
+import com.lightningkite.services.database.default
+import com.lightningkite.services.database.get
 import com.lightningkite.services.database.internal.ConcurrentMap
 import com.lightningkite.services.database.internal.getOrPutConcurrent
-import com.lightningkite.services.database.path.Lens
+import com.lightningkite.services.database.set
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.*
@@ -16,12 +25,12 @@ import kotlinx.serialization.json.JsonNames
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
-public sealed interface SerializableProperty<A, B> : Lens<A, B> {
+public sealed interface Field<A, B> : Lens<A, B> {
     override val serializer: KSerializer<B>
 
     public val name: String
 
-    override val properties: List<SerializableProperty<*, *>> get() = listOf(this)
+    override val fields: List<Field<*, *>> get() = listOf(this)
 
     override fun get(source: A): B
     override fun set(source: A, value: B): A
@@ -33,6 +42,17 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
     public val default: B? get() = null
     public val defaultCode: String? get() = null
 
+    /**
+     * Whether this [Field] is a handle to an inline `value class` field.
+     *
+     * ```kotlin
+     * @Queryable
+     * @JvmInline
+     * value class IntWrapper(val int: Int)
+     *
+     * assertTrue(IntWrapper.int.isInline)
+     * ```
+     * */
     public val isInline: Boolean get() = false
 
     override fun mapCondition(condition: Condition<B>): Condition<A> =
@@ -50,7 +70,7 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
     public class Generated<A, B>(
         public val parent: GeneratedSerializer<A>,
         public val index: Int,
-    ) : SerializableProperty<A, B> {
+    ) : Field<A, B> {
         override val name: String by lazy { parent.descriptor.getElementName(index) }
         override val serializer: KSerializer<B> by lazy { parent.childSerializers()[index] as KSerializer<B> }
         override fun set(source: A, value: B): A = parent.set(source, index, serializer, value)
@@ -131,7 +151,7 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
         public val source: VirtualField,
         public val registry: SerializationRegistry,
         public val context: Map<String, KSerializer<*>>,
-    ) : SerializableProperty<VirtualInstance, Any?> {
+    ) : Field<VirtualInstance, Any?> {
         override val name: String get() = source.name
         override val serializer: KSerializer<Any?> by lazy { source.type.serializer(registry, context) }
         override val annotations: List<Annotation> get() = listOf()
@@ -148,30 +168,23 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
     }
 }
 
-@OptIn(ExperimentalSerializationApi::class)
-public fun <T> KSerializer<T>.tryFindAnnotations(propertyName: String): List<Annotation> {
-    val i = descriptor.getElementIndex(propertyName)
-    if (i < 0) return listOf()
-    else return descriptor.getElementAnnotations(i)
-}
+private val serNameToProperties = ConcurrentMap<String, Array<Field<*, *>>>()
 
-private val serNameToProperties = ConcurrentMap<String, Array<SerializableProperty<*, *>>>()
-
-@OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
+@OptIn(InternalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
-public val <T> KSerializer<T>.serializableProperties: Array<SerializableProperty<T, *>>?
+public val <T> KSerializer<T>.fields: Array<Field<T, *>>?
     get() {
-        if (this is VirtualStruct.Concrete) return this.serializableProperties as Array<SerializableProperty<T, *>>
+        if (this is VirtualStruct.Concrete) return this.fields as Array<Field<T, *>>
         return if (this !is GeneratedSerializer<*>) null
         else if (this.typeParametersSerializers().isEmpty()) serNameToProperties.getOrPutConcurrent(this.descriptor.serialName) {
-            (0..<descriptor.elementsCount).map<Int, SerializableProperty<T, *>> { index ->
-                SerializableProperty.Generated<T, Any?>(
+            (0..<descriptor.elementsCount).map<Int, Field<T, *>> { index ->
+                Field.Generated<T, Any?>(
                     this as GeneratedSerializer<T>,
                     index
                 )
             }.toTypedArray()
-        } as Array<SerializableProperty<T, *>> else (0..<descriptor.elementsCount).map<Int, SerializableProperty<T, *>> { index ->
-            SerializableProperty.Generated<T, Any?>(
+        } as Array<Field<T, *>> else (0..<descriptor.elementsCount).map<Int, Field<T, *>> { index ->
+            Field.Generated<T, Any?>(
                 this as GeneratedSerializer<T>,
                 index
             )

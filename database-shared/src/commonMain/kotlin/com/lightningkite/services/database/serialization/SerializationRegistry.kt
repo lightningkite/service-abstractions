@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.database.path.OpticOnSerializer
 
 import com.lightningkite.services.data.*
@@ -617,7 +619,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                             it
                         )
                     },
-                    fields = value.serializableProperties?.mapIndexed { index, it ->
+                    fields = value.fields?.mapIndexed { index, it ->
                         VirtualField(
                             index = index,
                             name = it.name,
@@ -798,7 +800,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                                 it
                             )
                         },
-                        fields = value.serializableProperties?.mapIndexed { index, it ->
+                        fields = value.fields?.mapIndexed { index, it ->
                             VirtualField(
                                 index = index,
                                 name = it.name,

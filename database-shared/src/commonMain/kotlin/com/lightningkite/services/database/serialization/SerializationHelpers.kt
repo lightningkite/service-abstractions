@@ -364,7 +364,7 @@ public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*
 @OptIn(InternalSerializationApi::class)
 public fun KSerializer<*>.childSerializersOrNull(): Array<KSerializer<*>>? =
     (this as? GeneratedSerializer<*>)?.childSerializers()
-        ?: (this as? VirtualStruct.Concrete)?.serializableProperties?.map { it.serializer }?.toTypedArray()
+        ?: (this as? VirtualStruct.Concrete)?.fields?.map { it.serializer }?.toTypedArray()
         ?: (this as? MySealedClassSerializerInterface<*>)?.options?.map { it.serializer }?.toTypedArray()
         ?: when (descriptor.serialName) {
             "kotlin.String",

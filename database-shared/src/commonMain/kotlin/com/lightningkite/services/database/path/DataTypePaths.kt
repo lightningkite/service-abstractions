@@ -1,8 +1,7 @@
 package com.lightningkite.services.database.path
 
 import com.lightningkite.services.data.*
-import com.lightningkite.services.database.SerializableProperty
-import com.lightningkite.services.database.serializableProperties
+import com.lightningkite.services.database.path.Field
 import kotlinx.serialization.KSerializer
 import kotlin.jvm.JvmName
 
@@ -11,8 +10,8 @@ import kotlin.jvm.JvmName
 // Each has a Lens overload too, so a path of fields stays statically a Lens.
 
 @Suppress("UNCHECKED_CAST")
-private fun <T, V> KSerializer<T>.wrapped(): SerializableProperty<T, V> =
-    serializableProperties!!.single() as SerializableProperty<T, V>
+private fun <T, V> KSerializer<T>.wrapped(): Field<T, V> =
+    serializableProperties!!.single() as Field<T, V>
 
 @get:JvmName("pathIsRawString_raw") public val <K, T : IsRawString> Optic<K, T>.raw: Optic<K, String> get() = this + serializer.wrapped()
 @get:JvmName("pathUuidV7_raw") public val <K> Optic<K, UuidV7>.raw: Optic<K, kotlin.uuid.Uuid> get() = this + UuidV7.serializer().wrapped()

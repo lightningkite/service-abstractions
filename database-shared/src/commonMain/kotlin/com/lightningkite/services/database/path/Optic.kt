@@ -2,7 +2,6 @@ package com.lightningkite.services.database.path
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.SerializableProperty
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 
@@ -21,7 +20,7 @@ public sealed interface OpticOn<T> {
      *
      * Steps that aren't fields, such as [NotNullOptic], add no properties, so an [IdentityLens] has none.
      */
-    public val properties: List<SerializableProperty<*, *>>
+    public val fields: List<Field<*, *>>
 }
 
 /** Returns this as an [Optic] with an unknown target type. */

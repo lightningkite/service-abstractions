@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 private fun <T> List<Modification<T>>.toMod(): Modification<T> {
     val listWithoutNothing = this.filter { !it.isNothing }
     if (listWithoutNothing.isEmpty()) return Modification.Nothing()
@@ -30,7 +32,7 @@ public fun <T> Modification<T>.simplify(): Modification<T> {
                     @Suppress("Unchecked_Cast")
                     if (it.key == null) it.value.toMod()
                     else Modification.OnField(
-                        it.key as SerializableProperty<T, Any?>,
+                        it.key as Field<T, Any?>,
                         it.value.map { (it as Modification.OnField<T, Any?>).modification }.toMod().simplify()
                     )
                 }
@@ -48,7 +50,7 @@ public fun <T> Modification<T>.simplify(): Modification<T> {
         is Modification.OnField<*, *> -> {
             @Suppress("UNCHECKED_CAST")
             Modification.OnField(
-                this.key as SerializableProperty<T, Any?>,
+                this.key as Field<T, Any?>,
                 this.modification.simplify() as Modification<Any?>
             )
         }

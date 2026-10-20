@@ -3,7 +3,6 @@ package com.lightningkite.services.database.path
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.SealedTypeDiscriminator
-import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.handle
 import com.lightningkite.services.database.variantShortName
 import kotlinx.serialization.KSerializer
@@ -18,8 +17,8 @@ public class OpticOfType<A, B, VARIANT : B>(
     private val variantName
         get() = wraps.serializer.variantShortName(discriminator) ?: discriminator.serialName
 
-    override val properties: List<SerializableProperty<*, *>>
-        get() = wraps.properties
+    override val fields: List<Field<*, *>>
+        get() = wraps.fields
 
     override fun get(source: A): VARIANT? = wraps.get(source)?.let { supertype ->
         discriminator.handle(

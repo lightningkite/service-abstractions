@@ -174,7 +174,7 @@ public data class UpdateRestrictions<T>(
      */
     public operator fun invoke(on: Modification<T>): Condition<T> {
         if (mode == Mode.Whitelist && on.affectsPaths().any { written ->
-                fields.none { written.take(it.property.properties.size) == it.property.properties }
+                fields.none { written.take(it.property.fields.size) == it.property.fields }
             }) return Condition.Never
 
         val appliedConditions = LinkedHashSet<Condition<T>>()

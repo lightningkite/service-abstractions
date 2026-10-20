@@ -1,8 +1,10 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
 
-public fun <T, V> Modification<T>.forFieldOrNull(field: SerializableProperty<T, V>): Modification<V>? {
+
+public fun <T, V> Modification<T>.forFieldOrNull(field: Field<T, V>): Modification<V>? {
     return when (this) {
         is Modification.Chain -> modifications.mapNotNull { it.forFieldOrNull(field) }.takeUnless { it.isEmpty() }
             ?.let { Modification.Chain(it) }
@@ -16,7 +18,7 @@ public fun <T, V> Modification<T>.forFieldOrNull(field: SerializableProperty<T, 
     }
 }
 
-public fun <T, V> Modification<T>.vet(field: SerializableProperty<T, V>, onModification: (Modification<V>) -> Unit) {
+public fun <T, V> Modification<T>.vet(field: Field<T, V>, onModification: (Modification<V>) -> Unit) {
     when (this) {
         is Modification.Assign -> onModification(Modification.Assign(field.get(this.value)))
         is Modification.Chain -> modifications.forEach { it.vet(field, onModification) }
@@ -40,10 +42,10 @@ public fun <T> Modification<T>.vet(onModification: (Modification<T>) -> Unit) {
 
 @Suppress("UNCHECKED_CAST")
 public fun <V> Modification<*>.vet(
-    fieldChain: List<SerializableProperty<*, *>>,
+    fieldChain: List<Field<*, *>>,
     onModification: (Modification<V>) -> Unit,
 ) {
-    val field: SerializableProperty<*, *> = fieldChain.firstOrNull() ?: run {
+    val field: Field<*, *> = fieldChain.firstOrNull() ?: run {
         onModification(this as Modification<V>)
         return
     }
@@ -51,7 +53,7 @@ public fun <V> Modification<*>.vet(
         is Modification.Assign -> {
             var value = this.value
             for (key in fieldChain) {
-                value = (key as SerializableProperty<Any?, Any?>).get(value)
+                value = (key as Field<Any?, Any?>).get(value)
             }
             onModification(Modification.Assign(value as V))
         }
@@ -68,7 +70,7 @@ public fun <V> Modification<*>.vet(
 }
 
 public fun <T, V> Modification<T>.map(
-    field: SerializableProperty<T, V>,
+    field: Field<T, V>,
     onModification: (Modification<V>) -> Modification<V>,
 ): Modification<T> {
     return when (this) {
@@ -97,7 +99,7 @@ public fun <T, V> Modification<T>.map(
 }
 
 public suspend fun <T, V> Modification<T>.mapSuspend(
-    field: SerializableProperty<T, V>,
+    field: Field<T, V>,
     onModification: suspend (Modification<V>) -> Modification<V>,
 ): Modification<T> {
     return when (this) {

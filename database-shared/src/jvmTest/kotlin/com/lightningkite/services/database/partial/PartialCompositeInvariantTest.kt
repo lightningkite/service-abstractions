@@ -1,6 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -11,7 +13,7 @@ import kotlin.test.assertEquals
 // composite fields must hold a nested Partial instead. Leaf/inline fields hold the raw value.
 class PartialCompositeInvariantTest {
 
-    private val embeddedProp = LargeTestModel.serializer().serializableProperties!!
+    private val embeddedProp = LargeTestModel.serializer().fields!!
         .first { it.name == "embedded" }
 
     @Test
@@ -37,7 +39,7 @@ class PartialCompositeInvariantTest {
         assertTrue(stored is Partial<*>, "composite field should be wrapped in a Partial")
         @Suppress("UNCHECKED_CAST")
         val inner = stored as Partial<ClassUsedForEmbedding>
-        val value1Prop = ClassUsedForEmbedding.serializer().serializableProperties!!.first { it.name == "value1" }
+        val value1Prop = ClassUsedForEmbedding.serializer().fields!!.first { it.name == "value1" }
         assertEquals("x", inner.parts[value1Prop], "nested partial should carry the assigned leaf values")
     }
 

@@ -3,6 +3,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.database.internal.ConcurrentMap
 import com.lightningkite.services.database.internal.getOrPutConcurrent
 import com.lightningkite.services.data.GeoCoordinate
@@ -150,12 +152,12 @@ private val stringOptions: List<MySealedClassSerializer.Option<Condition<String>
 @Suppress("UNCHECKED_CAST")
 private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> =
     ((if (inner.descriptor.isInline) comparableOptions(inner as KSerializer<String>) as List<MySealedClassSerializer.Option<Condition<T>, *>>
-    else commonOptions(inner)) + inner.serializableProperties!!.let {
+    else commonOptions(inner)) + inner.fields!!.let {
         it.mapIndexed { index, ser ->
             @Suppress("UNCHECKED_CAST")
             MySealedClassSerializer.Option<Condition<T>, Condition.OnField<T, Any?>>(
                 ConditionOnFieldSerializer(
-                    ser as SerializableProperty<T, Any?>
+                    ser as Field<T, Any?>
                 ),
                 baseName = ser.name,
                 priority = 80
@@ -191,7 +193,7 @@ public class ConditionSerializer<T>(public val inner: KSerializer<T>) :
                     else listOptions(inner.innerElement())
                 }
 
-                inner.serializableProperties != null -> classOptionsReflective(inner as KSerializer<Any>)
+                inner.fields != null -> classOptionsReflective(inner as KSerializer<Any>)
                 inner.serializableOptions != null -> polymorphicOptions(inner)
                 else -> comparableOptions(inner as KSerializer<String>)
             }
@@ -201,7 +203,7 @@ public class ConditionSerializer<T>(public val inner: KSerializer<T>) :
 }
 
 internal class ConditionOnFieldSerializer<K : Any, V>(
-    private val field: SerializableProperty<K, V>,
+    private val field: Field<K, V>,
 ) : WrappingSerializer<Condition.OnField<K, V>, Condition<V>>(field.name) {
     override fun getDeferred(): KSerializer<Condition<V>> = Condition.serializer(field.serializer)
     override fun inner(it: Condition.OnField<K, V>): Condition<V> = it.condition

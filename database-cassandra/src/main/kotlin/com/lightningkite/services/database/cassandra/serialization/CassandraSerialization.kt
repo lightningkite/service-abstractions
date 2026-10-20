@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.cassandra.serialization
 
+import com.lightningkite.services.database.path.*
+
 import com.datastax.oss.driver.api.core.cql.Row
 import com.datastax.oss.driver.api.core.data.UdtValue
 import com.datastax.oss.driver.api.core.type.DataType
@@ -8,7 +10,6 @@ import com.datastax.oss.driver.api.core.type.ListType
 import com.datastax.oss.driver.api.core.type.MapType
 import com.datastax.oss.driver.api.core.type.SetType
 import com.datastax.oss.driver.api.core.type.UserDefinedType
-import com.lightningkite.services.database.serializableProperties
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.*

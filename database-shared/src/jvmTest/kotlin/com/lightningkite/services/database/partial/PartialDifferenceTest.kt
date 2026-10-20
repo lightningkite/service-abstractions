@@ -2,6 +2,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -11,9 +13,9 @@ import kotlin.test.assertTrue
 
 class PartialDifferenceTest {
 
-    private val props = LargeTestModel.serializer().serializableProperties!!
+    private val props = LargeTestModel.serializer().fields!!
     private fun prop(name: String) = props.first { it.name == name }
-    private val cufeProps = ClassUsedForEmbedding.serializer().serializableProperties!!
+    private val cufeProps = ClassUsedForEmbedding.serializer().fields!!
     private fun cufeProp(name: String) = cufeProps.first { it.name == name }
 
     @Test

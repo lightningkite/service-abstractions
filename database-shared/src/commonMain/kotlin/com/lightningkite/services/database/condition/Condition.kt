@@ -1,11 +1,11 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.*
 import com.lightningkite.services.data.Length.Companion.kilometers
 import kotlinx.serialization.*
-import kotlinx.serialization.descriptors.StructureKind
-import kotlinx.serialization.json.*
 
 /**
  * Represents a boolean query condition for filtering database records.
@@ -237,7 +237,7 @@ public sealed class Condition<in T> {
     }
 
     public data class OnField<K, V>(
-        val key: SerializableProperty<in K, V>,
+        val key: Field<in K, V>,
         val condition: Condition<V>,
     ) : Condition<K>() {
         override fun invoke(on: K): Boolean = condition(key.get(on))

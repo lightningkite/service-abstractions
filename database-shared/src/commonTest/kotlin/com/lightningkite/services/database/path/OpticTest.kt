@@ -33,7 +33,7 @@ class OpticTest {
         override fun set(source: V?, value: V): V? = source?.let { value }
         override fun mapCondition(condition: Condition<V>): Condition<V?> = Condition.IfNotNull(condition)
         override fun mapModification(modification: Modification<V>): Modification<V?> = Modification.IfNotNull(modification)
-        override val properties: List<SerializableProperty<*, *>> get() = listOf()
+        override val fields: List<Field<*, *>> get() = listOf()
         override fun toString(): String = "notNull"
     }
 
@@ -174,25 +174,25 @@ class OpticTest {
 
     @Test
     fun propertiesListFieldsFromOutermostToInnermost() {
-        assertEquals(listOf(), IdentityLens(OpticOuter.serializer()).properties)
-        assertEquals(listOf(OpticOuter.middle), OpticOuter.middle.properties)
+        assertEquals(listOf(), IdentityLens(OpticOuter.serializer()).fields)
+        assertEquals(listOf(OpticOuter.middle), OpticOuter.middle.fields)
         assertEquals(
             listOf(OpticOuter.middle, OpticMiddle.inner, OpticInner.value),
-            (OpticOuter.middle + (OpticMiddle.inner + OpticInner.value)).properties,
+            (OpticOuter.middle + (OpticMiddle.inner + OpticInner.value)).fields,
         )
     }
 
     @Test
     fun propertiesSkipNonFieldSteps() {
         val optic = NotNullOptic(LargeTestModel.embeddedNullable) + ClassUsedForEmbedding.value1
-        assertEquals(listOf(LargeTestModel.embeddedNullable, ClassUsedForEmbedding.value1), optic.properties)
+        assertEquals(listOf(LargeTestModel.embeddedNullable, ClassUsedForEmbedding.value1), optic.fields)
     }
 
     @Test
     fun propertiesMatchDataClassPath() {
         val old = DataClassPathSelf(LargeTestModel.serializer())[LargeTestModel.embeddedNullable].notNull[ClassUsedForEmbedding.value1]
         val new = NotNullOptic(LargeTestModel.embeddedNullable) + ClassUsedForEmbedding.value1
-        assertEquals(old.properties, new.properties)
+        assertEquals(old.properties, new.fields)
     }
 
     @Test

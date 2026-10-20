@@ -16,9 +16,9 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
     // Claude: each field's serializer before nullable composites are wrapped in `.nullable`. The descriptor is built
     // from this, because `.nullable` reads the wrapped descriptor, which for a recursive type is still being built.
     private val unwrappedChildSerializers: List<KSerializer<*>> by lazy {
-        this.source.serializableProperties?.map {
+        this.source.fields?.map {
             val nonNull = if (it.serializer.descriptor.isNullable) it.serializer.nullElement()!! else it.serializer
-            if (nonNull.serializableProperties != null && !nonNull.descriptor.isInline) {
+            if (nonNull.fields != null && !nonNull.descriptor.isInline) {
                 if (nonNull == source) this
                 else PartialSerializer(nonNull)
             } else it.serializer
@@ -69,12 +69,12 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
         LazySerialDescriptor("com.lightningkite.services.database.Partial", StructureKind.CLASS) { innerDescriptor }
 
     override fun deserialize(decoder: Decoder): Partial<T> = decoder.decodeStructure(descriptor) {
-        val out = HashMap<SerializableProperty<T, *>, Any?>()
+        val out = HashMap<Field<T, *>, Any?>()
         while (true) {
             when (val index = decodeElementIndex(descriptor)) {
                 CompositeDecoder.DECODE_DONE -> break
                 CompositeDecoder.UNKNOWN_NAME -> continue
-                else -> out[source.serializableProperties!!.find { it.name == descriptor.getElementName(index) }!!] =
+                else -> out[source.fields!!.find { it.name == descriptor.getElementName(index) }!!] =
                     decodeSerializableElement(descriptor, index, childSerializers[index])
             }
         }
@@ -91,23 +91,23 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
 }
 
 public fun <K> OpticOn<K>.setMap(key: K, out: Partial<K>) {
-    if (properties.isEmpty()) throw IllegalStateException("Path $this cannot be set for partial")
+    if (fields.isEmpty()) throw IllegalStateException("Path $this cannot be set for partial")
     @Suppress("UNCHECKED_CAST")
     var current = out as Partial<Any?>
     var value: Any? = key
-    for (prop in properties.dropLast(1)) {
+    for (prop in fields.dropLast(1)) {
         @Suppress("UNCHECKED_CAST")
-        value = (prop as SerializableProperty<Any?, Any?>).get(value)
+        value = (prop as Field<Any?, Any?>).get(value)
         if (value == null) {
             current.parts[prop] = null
             return
         }
         @Suppress("UNCHECKED_CAST")
-        current = current.parts.getOrPut(prop as SerializableProperty<Any?, *>) { Partial<Any?>() } as Partial<Any?>
+        current = current.parts.getOrPut(prop as Field<Any?, *>) { Partial<Any?>() } as Partial<Any?>
     }
     run {
         @Suppress("UNCHECKED_CAST")
-        val prop = properties.last() as SerializableProperty<Any?, Any?>
+        val prop = fields.last() as Field<Any?, Any?>
         current.parts[prop] = prop.toPartialEntry(get(key))
     }
 }

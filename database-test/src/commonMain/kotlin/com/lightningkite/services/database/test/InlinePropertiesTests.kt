@@ -834,7 +834,7 @@ abstract class InlinePropertiesTests {
 
     // endregion
 
-    // region SerializableProperty get/setCopy Tests
+    // region Field get/setCopy Tests
 
     @Test
     fun test_serializableProperty_get_valueclass() {
@@ -902,7 +902,7 @@ abstract class InlinePropertiesTests {
 
     // endregion
 
-    // region by Claude - Inline SerializableProperty get/setCopy Tests (raw inner value accessors)
+    // region by Claude - Inline Field get/setCopy Tests (raw inner value accessors)
 
     @Test
     fun test_serializableProperty_inline_get_ValueClass_value() {

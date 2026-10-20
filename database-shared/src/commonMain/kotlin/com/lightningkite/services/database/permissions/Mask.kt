@@ -154,7 +154,7 @@ private fun Modification<Any?>.applyToPartialEntry(entry: Any?): Any? {
     return when (this) {
         is Modification.OnField<*, *> -> if (entry.parts.containsKey(key)) {
             val newPartial = Partial(entry.parts.toMutableMap())
-            newPartial.parts[key as SerializableProperty<Any?, *>] =
+            newPartial.parts[key as Field<Any?, *>] =
                 (modification as Modification<Any?>).applyToPartialEntry(entry.parts[key])
             newPartial
         } else entry
@@ -163,7 +163,7 @@ private fun Modification<Any?>.applyToPartialEntry(entry: Any?): Any? {
         is Modification.IfNotNull<*> -> (modification as Modification<Any?>).applyToPartialEntry(entry)
         is Modification.Assign -> value?.let { assigned ->
             Partial(entry.parts.mapValuesTo(mutableMapOf()) { (property, part) ->
-                property as SerializableProperty<Any?, Any?>
+                property as Field<Any?, Any?>
                 val fieldValue = property.get(assigned)
                 if (part is Partial<*>) Modification.Assign(fieldValue).applyToPartialEntry(part)
                 else property.toPartialEntry(fieldValue)
@@ -176,13 +176,13 @@ private fun Modification<Any?>.applyToPartialEntry(entry: Any?): Any? {
 }
 
 public fun <K, V> Modification<K>.valueSetForOptic(path: Optic<K, V>): V? =
-    (forOptic<V>(path.properties) as? Modification.Assign<V>)?.value
+    (forOptic<V>(path.fields) as? Modification.Assign<V>)?.value
 
 public fun <K, V> Modification<K>.forOptic(path: Optic<K, V>): Modification<V>? =
-    forOptic<V>(path.properties)
+    forOptic<V>(path.fields)
 
 @Suppress("UNCHECKED_CAST")
-private fun <V> Modification<*>.forOptic(list: List<SerializableProperty<*, *>>): Modification<V>? {
+private fun <V> Modification<*>.forOptic(list: List<Field<*, *>>): Modification<V>? {
     return when (this) {
         is Modification.OnField<*, *> -> if (list.first() == this.key) {
             if (list.size == 1) modification as Modification<V>
@@ -201,7 +201,7 @@ private fun <V> Modification<*>.forOptic(list: List<SerializableProperty<*, *>>)
 
         is Modification.IfNotNull -> this.modification.forOptic(list)
         is Modification.Assign -> Modification.Assign(list.fold(value) { value, prop ->
-            (prop as SerializableProperty<Any?, Any?>).get(
+            (prop as Field<Any?, Any?>).get(
                 value
             )
         } as V)
@@ -210,17 +210,17 @@ private fun <V> Modification<*>.forOptic(list: List<SerializableProperty<*, *>>)
     }
 }
 
-public fun Modification<*>.affects(path: OpticOn<*>): Boolean = affects(path.properties)
+public fun Modification<*>.affects(path: OpticOn<*>): Boolean = affects(path.fields)
 // Paths overlap when one is a prefix of the other: writing `a` rewrites `a.b`, and writing `a.b` changes `a`.
-private fun Modification<*>.affects(list: List<SerializableProperty<*, *>>): Boolean =
+private fun Modification<*>.affects(list: List<Field<*, *>>): Boolean =
     affectsPaths().any { it.take(list.size) == list.take(it.size) }
 
 /**
  * The paths this modification writes.  Anything other than navigation into a field, element, non-null value or
  * variant rewrites the whole value it sits on, so e.g. `items += x` writes `[items]` and a root [Modification.Assign]
- * writes `[]`.  Like [Optic.properties], paths don't record nullability, subtypes or list/set elements.
+ * writes `[]`.  Like [Optic.fields], paths don't record nullability, subtypes or list/set elements.
  */
-public fun Modification<*>.affectsPaths(): List<List<SerializableProperty<*, *>>> =
+public fun Modification<*>.affectsPaths(): List<List<Field<*, *>>> =
     when (this) {
         is Modification.OnField<*, *> -> modification.affectsPaths().map { listOf(key) + it }
         is Modification.SetPerElement<*> -> this.modification.affectsPaths()
@@ -240,7 +240,7 @@ private fun Modification<*>.readCondition(): Condition<*>? {
     fun Condition<*>.unlessConstant() = takeUnless { it is Condition.Always || it is Condition.Never }
     return when (this) {
         is Modification.OnField<*, *> -> modification.readCondition()
-            ?.let { Condition.OnField(key as SerializableProperty<Any?, Any?>, it as Condition<Any?>) }
+            ?.let { Condition.OnField(key as Field<Any?, Any?>, it as Condition<Any?>) }
         is Modification.Chain -> modifications.mapNotNull { it.readCondition() }
             .takeIf { it.isNotEmpty() }
             ?.let { Condition.And(it as List<Condition<Any?>>) }
@@ -262,8 +262,8 @@ private fun Modification<*>.readCondition(): Condition<*>? {
     }
 }
 
-public fun Condition<*>.reads(path: OpticOn<*>): Boolean = reads(path.properties)
-private fun Condition<*>.reads(list: List<SerializableProperty<*, *>>): Boolean {
+public fun Condition<*>.reads(path: OpticOn<*>): Boolean = reads(path.fields)
+private fun Condition<*>.reads(list: List<Field<*, *>>): Boolean {
     return when (this) {
         is Condition.OnField<*, *> -> if (list.first() == this.key) {
             if (list.size == 1) true
@@ -300,7 +300,7 @@ private fun Condition<*>.emitReadPaths(soFar: Optic<*, *>, out: (OpticOn<*>) -> 
         is Condition.Always -> {}
         is Condition.Never -> {}
         is Condition.OnField<*, *> -> condition.emitReadPaths(
-            (soFar as Optic<Any?, Any>) + (key as SerializableProperty<Any, Any?>), out
+            (soFar as Optic<Any?, Any>) + (key as Field<Any, Any?>), out
         )
 
         is Condition.Not -> this.condition.emitReadPaths(soFar, out)
@@ -328,7 +328,7 @@ public fun <T> Condition<T>.readsResultOf(
 
 private fun Condition<*>.readsResultOf(
     modification: Modification<*>,
-    at: List<SerializableProperty<*, *>>,
+    at: List<Field<*, *>>,
 ): Boolean = when (this) {
     // Below the root, a constant still sits under a null, type or element check that reads the value, e.g. `x.notNull.always`.
     is Condition.Always -> at.isNotEmpty() && modification.affects(at)
@@ -392,7 +392,7 @@ private fun Condition<*>.requiredBeforeUntyped(modification: Modification<*>): C
             key != modification.key -> this
             else -> when (val needed = condition.requiredBeforeUntyped(modification.modification)) {
                 Condition.Always, Condition.Never -> needed
-                else -> Condition.OnField(key as SerializableProperty<Any?, Any?>, needed as Condition<Any?>)
+                else -> Condition.OnField(key as Field<Any?, Any?>, needed as Condition<Any?>)
             }
         }
 
@@ -451,11 +451,11 @@ private fun Condition<*>.requiredBeforeUntyped(modification: Modification<*>): C
 public fun <T, V> Modification<T>.map(
     path: Optic<T, V>,
     onModification: (Modification<V>) -> Modification<V>,
-): Modification<T> = (this as Modification<Any?>).map<V>(path.properties, onModification) as Modification<T>
+): Modification<T> = (this as Modification<Any?>).map<V>(path.fields, onModification) as Modification<T>
 
 @Suppress("UNCHECKED_CAST")
 private fun <V> Modification<*>.map(
-    list: List<SerializableProperty<*, *>>,
+    list: List<Field<*, *>>,
     onModification: (Modification<V>) -> Modification<V>,
 ): Modification<*> {
     return when (this) {
@@ -464,7 +464,7 @@ private fun <V> Modification<*>.map(
 
         is Modification.OnField<*, *> -> if (list.first() == this.key) {
             if (list.size == 1) Modification.OnField(
-                key = this.key as SerializableProperty<Any?, Any?>,
+                key = this.key as Field<Any?, Any?>,
                 modification = onModification(modification as Modification<V>) as Modification<Any?>
             )
             else this.modification.map(list.drop(1), onModification)
@@ -476,14 +476,14 @@ private fun <V> Modification<*>.map(
         is Modification.Assign -> {
             fun mapValue(
                 value: Any?,
-                list: List<SerializableProperty<Any?, Any?>>,
+                list: List<Field<Any?, Any?>>,
                 onValue: (V) -> V,
             ): Any? {
                 if (value == null) return null
                 if (list.isEmpty()) return onValue(value as V)
                 return list.first().setCopy(value, mapValue(list.first().get(value), list.drop(1), onValue))
             }
-            Modification.Assign(mapValue(value, list as List<SerializableProperty<Any?, Any?>>) {
+            Modification.Assign(mapValue(value, list as List<Field<Any?, Any?>>) {
                 (onModification(Modification.Assign(it)) as Modification.Assign).value
             })
         }

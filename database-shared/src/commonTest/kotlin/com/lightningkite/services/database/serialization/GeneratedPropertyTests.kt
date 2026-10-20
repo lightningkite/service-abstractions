@@ -3,6 +3,8 @@
 
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.Queryable
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -132,7 +134,7 @@ class GeneratedPropertyTests {
         val ser = LongWrapper.serializer()
         println("Element count: ${ser.descriptor.elementsCount}")
 
-        val properties = ser.serializableProperties
+        val properties = ser.fields
 
         if (properties == null) fail("No generated properties")
         else {
@@ -186,14 +188,14 @@ class GeneratedPropertyTests {
             if (old == new) return@run null
             if (old == null || new == null) return@run Modification.Assign(new)
             return@run (serializer.nullElement()
-                ?: serializer).serializableProperties.also { println("Properties: ${it?.joinToString { it.name }}") }
+                ?: serializer).fields.also { println("Properties: ${it?.joinToString { it.name }}") }
                 ?.let {
                     Modification.Chain<T>(it.mapNotNull { prop ->
                         @Suppress("UNCHECKED_CAST")
-                        prop as SerializableProperty<T, Any?>
+                        prop as Field<T, Any?>
                         val oldValue = prop.get(old as T)
                         val newValue =
-                            prop.get(new as T)   // issue comes from SerializableProperty.get going to MinEncoder
+                            prop.get(new as T)   // issue comes from Field.get going to MinEncoder
                         println("New value for ${prop.name} is $newValue of type ${newValue?.let { it::class }}, type is ${prop.serializer.descriptor.serialName}")
                         val inner = modification(prop.serializer, oldValue, newValue)?.let { mod ->
                             if (prop.serializer.descriptor.isNullable && mod !is Modification.Assign<*>)

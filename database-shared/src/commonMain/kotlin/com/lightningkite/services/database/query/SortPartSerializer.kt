@@ -14,7 +14,7 @@ import kotlinx.serialization.encoding.Encoder
 
 public class SortPartSerializer<T>(public val inner: KSerializer<T>) : KSerializerWithDefault<SortPart<T>> {
     override val default: SortPart<T>
-        get() = SortPart(inner.serializableProperties!!.first())
+        get() = SortPart(inner.fields!!.first())
 
     @OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class, ExperimentalLightningServer::class)
     override val descriptor: SerialDescriptor = PrimitiveDescriptorWithAnnotations(

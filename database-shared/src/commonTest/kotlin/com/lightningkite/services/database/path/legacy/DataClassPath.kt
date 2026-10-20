@@ -3,6 +3,8 @@
 // Claude: the DataClassPath implementation removed from the library, kept so tests can check optics stay compatible with it.
 package com.lightningkite.services.database.path.legacy
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.database.*
 
 import kotlinx.serialization.*
@@ -24,7 +26,7 @@ import kotlin.jvm.JvmName
 public abstract class DataClassPathPartial<K> {
     public abstract fun getAny(key: K): Any?
     public abstract fun setAny(key: K, any: Any?): K
-    public abstract val properties: List<SerializableProperty<*, *>>
+    public abstract val properties: List<Field<*, *>>
     abstract override fun hashCode(): Int
     abstract override fun toString(): String
     abstract override fun equals(other: Any?): Boolean
@@ -106,7 +108,7 @@ public abstract class DataClassPath<K, V> : DataClassPathPartial<K>() {
     public abstract fun mapModification(modification: Modification<V>): Modification<K>
 
     @JsName("prop")
-    public operator fun <V2> get(prop: SerializableProperty<V, V2>): DataClassPathAccess<K, V, V2> =
+    public operator fun <V2> get(prop: Field<V, V2>): DataClassPathAccess<K, V, V2> =
         DataClassPathAccess(this, prop)
 
     override val serializerAny: KSerializer<*> get() = serializer
@@ -119,14 +121,14 @@ public class DataClassPathSelf<K>(override val serializer: KSerializer<K>) : Dat
     override fun toString(): String = "this"
     override fun hashCode(): Int = 0
     override fun equals(other: Any?): Boolean = other is DataClassPathSelf<*>
-    override val properties: List<SerializableProperty<*, *>> get() = listOf()
+    override val properties: List<Field<*, *>> get() = listOf()
     override fun mapCondition(condition: Condition<K>): Condition<K> = condition
     override fun mapModification(modification: Modification<K>): Modification<K> = modification
 }
 
 public data class DataClassPathAccess<K, M, V>(
     val first: DataClassPath<K, M>,
-    val second: SerializableProperty<M, V>,
+    val second: Field<M, V>,
 ) : DataClassPath<K, V>() {
     override fun get(key: K): V? = first.get(key)?.let {
         try {
@@ -139,7 +141,7 @@ public data class DataClassPathAccess<K, M, V>(
 
     override fun set(key: K, value: V): K = first.get(key)?.let { first.set(key, second.setCopy(it, value)) } ?: key
     override fun toString(): String = if (first is DataClassPathSelf<*>) second.name else "$first.${second.name}"
-    override val properties: List<SerializableProperty<*, *>> get() = first.properties + listOf(second)
+    override val properties: List<Field<*, *>> get() = first.properties + listOf(second)
     override fun mapCondition(condition: Condition<V>): Condition<K> =
         first.mapCondition(Condition.OnField(second, condition))
 
@@ -151,7 +153,7 @@ public data class DataClassPathAccess<K, M, V>(
 
 public data class DataClassPathNotNull<K, V>(val wraps: DataClassPath<K, V?>) :
     DataClassPath<K, V>() {
-    override val properties: List<SerializableProperty<*, *>>
+    override val properties: List<Field<*, *>>
         get() = wraps.properties
 
     override fun get(key: K): V? = wraps.get(key)
@@ -173,7 +175,7 @@ public data class DataClassPathOfType<K, T, V : T>(
 ) : DataClassPath<K, V>() {
     public val discriminator: SealedTypeDiscriminator<V> = SealedTypeDiscriminator(serializer)
 
-    override val properties: List<SerializableProperty<*, *>>
+    override val properties: List<Field<*, *>>
         get() = wraps.properties
 
     override fun get(key: K): V? = wraps.get(key)?.let { supertype ->
@@ -214,7 +216,7 @@ public data class DataClassPathOfType<K, T, V : T>(
 
 public data class DataClassPathList<K, V>(val wraps: DataClassPath<K, List<V>>) :
     DataClassPath<K, V>() {
-    override val properties: List<SerializableProperty<*, *>>
+    override val properties: List<Field<*, *>>
         get() = wraps.properties
 
     override fun get(key: K): V? = wraps.get(key)?.firstOrNull()
@@ -232,7 +234,7 @@ public data class DataClassPathList<K, V>(val wraps: DataClassPath<K, List<V>>) 
 
 public data class DataClassPathSet<K, V>(val wraps: DataClassPath<K, Set<V>>) :
     DataClassPath<K, V>() {
-    override val properties: List<SerializableProperty<*, *>>
+    override val properties: List<Field<*, *>>
         get() = wraps.properties
 
     override fun get(key: K): V? = wraps.get(key)?.firstOrNull()

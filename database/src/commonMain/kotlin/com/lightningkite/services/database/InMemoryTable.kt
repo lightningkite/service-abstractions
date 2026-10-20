@@ -39,8 +39,8 @@ public open class InMemoryTable<Model : Any>(
     private inline fun <R> traced(block: () -> R): R = block()
 
     @Suppress("UNCHECKED_CAST")
-    private val idProp: SerializableProperty<Model, Any?> =
-        serializer.serializableProperties!!.first { it.name == "_id" } as SerializableProperty<Model, Any?>
+    private val idProp: Field<Model, Any?> =
+        serializer.fields!!.first { it.name == "_id" } as Field<Model, Any?>
 
     private fun idOf(model: Model): Any? = idProp.get(model)
 
@@ -90,7 +90,7 @@ public open class InMemoryTable<Model : Any>(
                 if (index.unique in
                     setOf(IndexUniqueness.Unique, IndexUniqueness.UniqueNullSparse)
                 ) {
-                    val fields = serializer.serializableProperties!!.filter { index.fields.contains(it.name) }
+                    val fields = serializer.fields!!.filter { index.fields.contains(it.name) }
                     val isPrimaryKey = index.fields.size == 1 && index.fields[0] == "_id"
                     uniqueIndexChecks.update { it ->
                         it.plus({ changes: List<EntryChange<Model>> ->

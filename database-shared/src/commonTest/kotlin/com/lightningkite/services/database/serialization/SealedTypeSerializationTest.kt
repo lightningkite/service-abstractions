@@ -47,6 +47,6 @@ class SealedTypeSerializationTest {
         assertEquals(variant, pathSerializer.fromString("<Foo>"))
         assertEquals(field, pathSerializer.fromString("<Foo>.name"))
         assertEquals(field, pathSerializer.fromString("<com.lightningkite.services.database.Polymorphic.Foo>.name"))
-        assertEquals(listOf("name"), field.properties.map { it.name })
+        assertEquals(listOf("name"), field.fields.map { it.name })
     }
 }

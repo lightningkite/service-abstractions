@@ -23,17 +23,17 @@ class VectorSearchTest {
     private val serializer = DocumentWithEmbedding.serializer()
 
     private val embeddingPath: Optic<DocumentWithEmbedding, Embedding> by lazy {
-        val props = serializer.serializableProperties!!
+        val props = serializer.fields!!
         val embeddingProp = props.first { it.name == "embedding" }
         @Suppress("UNCHECKED_CAST")
-        embeddingProp as SerializableProperty<DocumentWithEmbedding, Embedding>
+        embeddingProp as Field<DocumentWithEmbedding, Embedding>
     }
 
     private val categoryPath: Optic<DocumentWithEmbedding, String> by lazy {
-        val props = serializer.serializableProperties!!
+        val props = serializer.fields!!
         val categoryProp = props.first { it.name == "category" }
         @Suppress("UNCHECKED_CAST")
-        categoryProp as SerializableProperty<DocumentWithEmbedding, String>
+        categoryProp as Field<DocumentWithEmbedding, String>
     }
 
     @Test

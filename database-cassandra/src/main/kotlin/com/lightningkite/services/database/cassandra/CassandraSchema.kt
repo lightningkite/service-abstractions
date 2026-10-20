@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.cassandra
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.data.Index
 import com.lightningkite.services.database.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -49,7 +51,7 @@ public data class CassandraSchema<T : Any>(
                             partitionKeys.add(
                                 PropertyInfo(
                                     name = name,
-                                    property = prop as SerializableProperty<T, Any?>,
+                                    property = prop as Field<T, Any?>,
                                     order = annotation.order
                                 )
                             )
@@ -60,7 +62,7 @@ public data class CassandraSchema<T : Any>(
                             clusteringColumns.add(
                                 ClusteringColumnInfo(
                                     name = name,
-                                    property = prop as SerializableProperty<T, Any?>,
+                                    property = prop as Field<T, Any?>,
                                     order = annotation.order,
                                     descending = annotation.descending
                                 )
@@ -90,7 +92,7 @@ public data class CassandraSchema<T : Any>(
                             computedColumns[name] = ComputedColumnInfo(
                                 transform = annotation.transform,
                                 sourceProperties = annotation.sourceProperties.toList(),
-                                property = prop as SerializableProperty<T, Any?>
+                                property = prop as Field<T, Any?>
                             )
                         }
                     }
@@ -110,7 +112,7 @@ public data class CassandraSchema<T : Any>(
                     partitionKeys.add(
                         PropertyInfo(
                             name = "_id",
-                            property = properties[idIndex] as SerializableProperty<T, Any?>,
+                            property = properties[idIndex] as Field<T, Any?>,
                             order = 0
                         )
                     )
@@ -268,7 +270,7 @@ public data class CassandraSchema<T : Any>(
  */
 public data class PropertyInfo<T, V>(
     public val name: String,
-    public val property: SerializableProperty<T, V>,
+    public val property: Field<T, V>,
     public val order: Int,
 ) {
     public fun get(obj: T): V = property.get(obj)
@@ -279,7 +281,7 @@ public data class PropertyInfo<T, V>(
  */
 public data class ClusteringColumnInfo<T, V>(
     public val name: String,
-    public val property: SerializableProperty<T, V>,
+    public val property: Field<T, V>,
     public val order: Int,
     public val descending: Boolean,
 ) {
@@ -301,7 +303,7 @@ public data class SasiIndexInfo(
 public data class ComputedColumnInfo<T>(
     public val transform: ComputedTransform,
     public val sourceProperties: List<String>,
-    public val property: SerializableProperty<T, Any?>,
+    public val property: Field<T, Any?>,
 )
 
 /**

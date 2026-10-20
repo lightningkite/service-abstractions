@@ -3,6 +3,8 @@
 // Claude: the DataClassPath implementation removed from the library, kept so tests can check optics stay compatible with it.
 package com.lightningkite.services.database.path.legacy
 
+import com.lightningkite.services.database.path.*
+
 import com.lightningkite.services.database.*
 
 import com.lightningkite.services.database.internal.ConcurrentMap
@@ -15,7 +17,7 @@ import kotlinx.serialization.encoding.Encoder
 
 private class SerializablePropertyParser<T>(val serializer: KSerializer<T>) {
     val children = run {
-        (serializer.serializableProperties
+        (serializer.fields
             ?: throw SerializationException("${serializer.descriptor.serialName} does not have any serializable properties")).associateBy { it.name }
     }
 
@@ -30,7 +32,7 @@ private class SerializablePropertyParser<T>(val serializer: KSerializer<T>) {
         } as SerializablePropertyParser<T>
     }
 
-    operator fun invoke(key: String): SerializableProperty<T, *> {
+    operator fun invoke(key: String): Field<T, *> {
         @Suppress("UNCHECKED_CAST")
         return children[key]
             ?: throw IllegalStateException("Could find no property with name '$key' on ${serializer.descriptor.serialName}")
@@ -121,9 +123,9 @@ public class DataClassPathSerializer<T>(public val inner: KSerializer<T>) :
             @Suppress("UNCHECKED_CAST")
             current = if (c == null) DataClassPathAccess(
                 DataClassPathSelf<T>(inner),
-                prop as SerializableProperty<T, Any?>
+                prop as Field<T, Any?>
             )
-            else DataClassPathAccess(c as DataClassPath<T, Any?>, prop as SerializableProperty<Any?, Any?>)
+            else DataClassPathAccess(c as DataClassPath<T, Any?>, prop as Field<Any?, Any?>)
             if (part.endsWith('?') || prop.serializer.descriptor.isNullable && index != valueParts.lastIndex) {
                 @Suppress("UNCHECKED_CAST")
                 current = DataClassPathNotNull(current as DataClassPath<T, Any?>)
