@@ -10,7 +10,7 @@ The query DSL consists of three main components:
 
 1. **Condition** - Boolean queries for filtering records
 2. **Modification** - Update operations for transforming records
-3. **DataClassPath** - Type-safe field references
+3. **Optic** - Type-safe field references
 
 All components are:
 
@@ -40,14 +40,23 @@ data class Address(
 )
 ```
 
-The KSP processor (`database-processor`) generates path objects:
+The KSP processor (`database-processor`) generates an optic for each field:
 
 ```kotlin
+import com.lightningkite.services.database.path.*
+
 // Auto-generated in your build directory
-val emailPath: DataClassPath<User, String> = User.path.email
-val agePath: DataClassPath<User, Int> = User.path.age
-val cityPath: DataClassPath<User, String> = User.path.address.notNull.city
+val emailPath: Lens<User, String> = User.path.email
+val agePath: Lens<User, Int> = User.path.age
+val cityPath: Optic<User, String> = User.path.address.notNull.city
 ```
+
+A `Lens` always finds its value, so a path made only of fields stays a `Lens`. Steps that may find nothing
+(`.notNull`, `.elements`, or a sealed variant like `.asCircle`) make it an `Optic`, whose `get` returns `null` when the value is
+missing. `.notNull`, `.elements` and `.asType` live in `com.lightningkite.services.database.path`, so import it.
+
+Optics serialize as dotted strings: `"address?.city"` for a not-null step, `"tags.*"` for elements, `"shape.<Circle>"`
+for a sealed variant, and `"this"` for the whole model.
 
 ## Conditions (Queries)
 
@@ -370,7 +379,7 @@ Check your database backend's documentation for specific limitations.
 
 ### Type Safety Tips
 
-1. **Let KSP generate paths**: Don't manually create DataClassPath objects
+1. **Let KSP generate paths**: Don't manually create optics
 2. **Use DSL builders**: Prefer `modification<T> { }` over constructing Modification objects
 3. **Leverage IDE autocomplete**: Type `User.path.` to explore available fields
 

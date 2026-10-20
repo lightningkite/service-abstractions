@@ -159,7 +159,7 @@ data class User(
 ```
 
 **Generated Code:**
-The KSP processor generates `DataClassPath` objects for each field, enabling type-safe queries:
+The KSP processor generates an optic (`Lens`/`Optic` from `com.lightningkite.services.database.path`) for each field, enabling type-safe queries:
 
 ```kotlin
 // Type-safe queries using generated paths
@@ -170,14 +170,11 @@ val adults = userTable.find(
 // Type-safe updates
 userTable.updateOne(
     condition = User.path.email eq "john@example.com",
-    modification = User.path.age assign 25
+    modification = modification { it.age assign 25 }
 )
 
 // Aggregations
-val countByAge = userTable.groupAggregate(
-    aggregate = Aggregate.Count,
-    groupBy = User.path.age
-)
+val countByAge = userTable.groupCount(groupBy = User.path.age)
 ```
 
 ### Testing Pattern

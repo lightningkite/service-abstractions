@@ -27,7 +27,7 @@ This proposal introduces a serializable pipeline query DSL that:
 
 1. Compiles to native MongoDB aggregation pipelines where possible.
 2. Falls back to a server-side streaming executor for backends without a native implementation, with batched lookups for joins so the fallback is not catastrophic.
-3. Reuses the existing type-safe path infrastructure (`DataClassPath`, `Condition`, `SortPart`, `VirtualStruct`) so that pipelines participate fully in the existing query DSL ecosystem.
+3. Reuses the existing type-safe path infrastructure (`Optic`, `Condition`, `SortPart`, `VirtualStruct`) so that pipelines participate fully in the existing query DSL ecosystem.
 
 ## Non-Goals
 
@@ -126,7 +126,7 @@ public sealed interface PipelineStage {
     public data class Join(
         val otherTable: TableRef,
         val onSourceField: String,                  // field name on current row
-        val onOtherPath: DataClassPathPartial<*>,   // path on the joined model
+        val onOtherPath: OpticOn<*>,   // path on the joined model
         val additionalFilter: Condition<*>,
         val aggregating: AggregationStrategy<*, *>,
         val into: String,                           // target virtual field name
@@ -163,7 +163,7 @@ public data class GroupAggregation(
 ```kotlin
 @Serializable
 public sealed interface PipelineExpression {
-    @Serializable public data class Path(val path: DataClassPathPartial<*>) : PipelineExpression     // identity copy
+    @Serializable public data class Path(val path: OpticOn<*>) : PipelineExpression     // identity copy
     @Serializable public data class VirtualField(val name: String) : PipelineExpression             // copy a virtual field
     @Serializable public data class Constant(val json: kotlinx.serialization.json.JsonElement) : PipelineExpression
     @Serializable public data class DateComponent(
@@ -236,9 +236,9 @@ The proposal hinges on representing "the current shape of a row mid-pipeline" in
 - `VirtualStruct` is a serializable description of a struct's fields.
 - `VirtualStruct.Concrete` is a `KSerializer<VirtualInstance>` — so virtual rows participate in serialization.
 - `VirtualInstance` is the runtime row representation (`List<Any?>` indexed by field index).
-- `SerializableProperty.FromVirtualField` already wraps a virtual field as a `SerializableProperty<VirtualInstance, Any?>`, which means **`DataClassPath` already works on virtual rows for free**.
+- `SerializableProperty.FromVirtualField` already wraps a virtual field as a `SerializableProperty<VirtualInstance, Any?>`, which means **`Optic` already works on virtual rows for free**.
 
-This is what makes the design tractable. The user's `UnknownData` is literally `VirtualInstance`, and `DataClassPath<VirtualInstance, Int>` is constructible today without any new infrastructure.
+This is what makes the design tractable. The user's `UnknownData` is literally `VirtualInstance`, and `Optic<VirtualInstance, Int>` is constructible today without any new infrastructure.
 
 ### Pipeline-builder receiver
 
@@ -246,7 +246,7 @@ This is what makes the design tractable. The user's `UnknownData` is literally `
 
 Inside a stage lambda the user references fields by:
 
-- A generated `DataClassPath` from `@Queryable` when still working in the model type
+- A generated `Optic` from `@Queryable` when still working in the model type
 - A `def<V>(name)` handle for new virtual fields
 - A `field("name")` accessor for previously declared virtual fields
 
@@ -349,7 +349,7 @@ Without a preceding `Sort`, `First`/`Last` are non-deterministic. MongoDB does n
 
 ### 3. Security masks across `.map`
 
-`Table.mask()` and `Table.fullCondition()` enforce security rules on the source model. After `.map` reshapes rows into a `VirtualInstance`, the original mask is no longer applicable in its current form — its `DataClassPath<Model, _>` targets reference fields that may no longer exist or that have been renamed.
+`Table.mask()` and `Table.fullCondition()` enforce security rules on the source model. After `.map` reshapes rows into a `VirtualInstance`, the original mask is no longer applicable in its current form — its `Optic<Model, _>` targets reference fields that may no longer exist or that have been renamed.
 
 Two viable answers:
 

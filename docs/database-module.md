@@ -13,7 +13,7 @@ between MongoDB, PostgreSQL, in-memory storage, and other backends via configura
 
 ### Key Features
 
-- **Type-safe queries** via KSP-generated DataClassPath accessors
+- **Type-safe queries** via KSP-generated optics
 - **Multiple backends** - MongoDB, PostgreSQL, in-memory, JSON files
 - **Unified API** - Same code works across all database implementations
 - **Flow-based results** - Memory-efficient streaming for large result sets
@@ -103,7 +103,7 @@ userTable.deleteMany(condition = User.path.active eq false)
 
 ## Querying with Conditions
 
-The query DSL uses generated `DataClassPath` accessors for type-safe queries.
+The query DSL uses generated optics (`Lens`/`Optic`) for type-safe queries.
 See [database-query-dsl.md](./database-query-dsl.md) for complete reference.
 
 ### Common Query Patterns
