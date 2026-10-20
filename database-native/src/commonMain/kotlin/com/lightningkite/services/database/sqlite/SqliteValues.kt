@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.sqlite
 
+import androidx.sqlite.SQLITE_DATA_TEXT
 import androidx.sqlite.SQLiteStatement
 import com.lightningkite.services.database.mapformat.ValueConverter
 import com.lightningkite.services.database.mapformat.ValueConverterRegistry
@@ -88,7 +89,9 @@ internal fun SQLiteStatement.bindAll(args: List<Any?>) {
             is Boolean -> bindLong(index, if (value) 1L else 0L)
             is Float -> bindDouble(index, value.toDouble())
             is Double -> bindDouble(index, value)
-            is Number -> bindLong(index, value.toLong())
+            // The web driver passes integers as JavaScript numbers, exact only within ±2^53.  Larger
+            // ones go as their digits, which SQLite stores back as an exact INTEGER.
+            is Number -> value.toLong().let { if (it in -SAFE_INTEGER..SAFE_INTEGER) bindLong(index, it) else bindText(index, it.toString()) }
             is String -> bindText(index, value)
             is ByteArray -> bindBlob(index, value)
             else -> throw IllegalArgumentException("Can't store a ${value::class} in SQLite")
@@ -96,11 +99,14 @@ internal fun SQLiteStatement.bindAll(args: List<Any?>) {
     }
 }
 
+private const val SAFE_INTEGER = 1L shl 53
+
 internal fun SQLiteStatement.read(index: Int, type: ColumnType): Any? =
     if (isNull(index)) null
     else when (type) {
         ColumnType.Boolean -> getLong(index) != 0L
-        ColumnType.Integer -> getLong(index)
+        // On the web, integers beyond ±2^53 arrive as their digits; see bindAll.
+        ColumnType.Integer -> if (getColumnType(index) == SQLITE_DATA_TEXT) getText(index).toLong() else getLong(index)
         ColumnType.Real -> getDouble(index)
         ColumnType.Text -> getText(index)
         ColumnType.Blob -> getBlob(index)

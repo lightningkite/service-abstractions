@@ -36,8 +36,7 @@ import kotlinx.coroutines.withContext
  *     dependsOn(":kotlinNpmInstall")
  * }
  * ```
- * Only one tab can have the databases open at a time, and `Long` values beyond ±2^53 lose precision,
- * because the web driver passes integers through JavaScript numbers.
+ * Only one tab can have the databases open at a time.
  */
 public class SqliteDatabase(
     override val name: String,

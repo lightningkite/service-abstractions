@@ -39,10 +39,7 @@ private val workerSource = """
 const ready = (async () => {
     const { default: sqlite3InitModule } = await import(SQLITE_MODULE_URL);
     const sqlite3 = await sqlite3InitModule();
-    const pool = await sqlite3.installOpfsSAHPoolVfs({ name: "lightningkite-sqlite" });
-    // Each database takes up to two of the pool's files (itself and its journal), and the pool doesn't grow on its own.
-    await pool.reserveMinimumCapacity(32);
-    return pool;
+    return await sqlite3.installOpfsSAHPoolVfs({ name: "lightningkite-sqlite" });
 })();
 const databases = new Map();
 const statements = new Map();
@@ -52,13 +49,21 @@ let nextId = 1;
 const typeOf = (value) =>
     value === null ? 5 : typeof value === "string" ? 3 : value instanceof Uint8Array ? 4 : Number.isInteger(value) ? 1 : 2;
 
-onmessage = async ({ data: { id, data: request } }) => {
+// Requests are handled one at a time, in the order they arrive, even when handling one waits.
+let queue = Promise.resolve();
+onmessage = ({ data: { id, data: request } }) => {
+    queue = queue.then(() => handle(id, request));
+};
+
+async function handle(id, request) {
     try {
-        // Awaited before anything else, so requests are still handled in the order they arrive.
         const pool = await ready;
         let response;
         switch (request.cmd) {
             case "open": {
+                // A database takes up to two of the pool's files (itself and its journal), and the
+                // pool doesn't grow by itself.
+                await pool.reserveMinimumCapacity(pool.getFileCount() + 2);
                 const databaseId = nextId++;
                 databases.set(databaseId, new pool.OpfsSAHPoolDb(request.fileName));
                 response = { databaseId };
@@ -68,7 +73,9 @@ onmessage = async ({ data: { id, data: request } }) => {
                 const statement = databases.get(request.databaseId).prepare(request.sql);
                 const statementId = nextId++;
                 statements.set(statementId, statement);
-                response = { statementId, parameterCount: statement.parameterCount, columnNames: statement.getColumnNames() };
+                // getColumnNames() throws for a statement without result columns.
+                const columnNames = statement.columnCount > 0 ? statement.getColumnNames() : [];
+                response = { statementId, parameterCount: statement.parameterCount, columnNames };
                 break;
             }
             case "step": {
@@ -78,7 +85,9 @@ onmessage = async ({ data: { id, data: request } }) => {
                     statement.bind(Array.from({ length: statement.parameterCount }, (_, i) => request.bindings[i] ?? null));
                 }
                 const rows = [];
-                while (statement.step()) rows.push(statement.get([]).map((v) => (typeof v === "bigint" ? Number(v) : v)));
+                // Integers beyond 2^53 go back as their exact digits; SqliteValues reads them as text.
+                const exact = (v) => (typeof v !== "bigint" ? v : Number.isSafeInteger(Number(v)) ? Number(v) : v.toString());
+                while (statement.step()) rows.push(statement.get([]).map(exact));
                 const columnTypes = rows.length > 0 ? rows[0].map(typeOf) : new Array(statement.columnCount).fill(5);
                 response = { rows, columnTypes };
                 break;
@@ -103,5 +112,5 @@ onmessage = async ({ data: { id, data: request } }) => {
     } catch (e) {
         postMessage({ id, data: null, error: String(e && e.message ? e.message : e) });
     }
-};
+}
 """
