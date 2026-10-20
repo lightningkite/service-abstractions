@@ -19,7 +19,7 @@ kotlin {
     explicitApi()
     applyDefaultHierarchyTemplate()
     android {
-        namespace = "com.lightningkite.services.database.native"
+        namespace = "com.lightningkite.services.database.sqlite"
         compileSdk = 36
         minSdk = 21
         enableCoreLibraryDesugaring = true
@@ -36,7 +36,6 @@ kotlin {
     }
     js { browser() }
 
-    iosX64()
     iosArm64()
     iosSimulatorArm64()
     macosArm64()
