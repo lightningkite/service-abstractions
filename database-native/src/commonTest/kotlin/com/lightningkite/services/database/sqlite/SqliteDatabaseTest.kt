@@ -11,6 +11,8 @@ import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import com.lightningkite.services.database.mapformat.ChildTableCollectionHandler
+import com.lightningkite.services.database.mapformat.MapFormatConfig
 import kotlin.uuid.Uuid
 
 @GenerateDataClassPaths
@@ -141,7 +143,14 @@ class SqliteDatabaseTest {
             places = listOf(Place("home", 1, listOf("h")), Place("work", 5)),
         )
         table.insert(listOf(note))
-        suspend fun check(modification: Modification<Note>) {
+        val config = run {
+            lateinit var config: MapFormatConfig
+            config = MapFormatConfig(TestSettingContext().internalSerializersModule, sqliteConverters, ChildTableCollectionHandler { config })
+            config
+        }
+        val translator = SqliteModifications(database.table(notes).schema, config)
+        suspend fun check(modification: Modification<Note>, inSql: Boolean = true) {
+            assertEquals(inSql, translator.steps(modification, Note.serializer()).none { it is Step.Rewrite }, "$modification in SQL")
             val before = table.find(Condition.Always).toList().single()
             val change = table.updateOne(Condition.Always, modification)
             assertEquals(before, change.old)
@@ -157,7 +166,8 @@ class SqliteDatabaseTest {
         check(modification { it.counts += mapOf("two" to 22, "three" to 3) })
         check(modification { it.counts removeKeys setOf("one") })
         check(modification { it.places.forEach { it.visits += 10 } })
-        check(modification { it.places.forEachIf({ it.name eq "home" }) { it.aliases += listOf("hq") } })
+        // A collection inside a list element is stored as JSON, so changing it is done in Kotlin.
+        check(modification { it.places.forEachIf({ it.name eq "home" }) { it.aliases += listOf("hq") } }, inSql = false)
         check(modification { it.tags assign listOf("only") })
         check(modification { it.title assign "b"; it.tags += listOf("again") })
         database.disconnect()
