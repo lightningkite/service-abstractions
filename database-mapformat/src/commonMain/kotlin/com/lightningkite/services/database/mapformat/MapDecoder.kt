@@ -137,6 +137,12 @@ public class MapDecoder(
             return decodeFromJson(deserializer)
         }
 
+        if (config.collectionsAsJson &&
+            (deserializer.descriptor.kind == StructureKind.LIST || deserializer.descriptor.kind == StructureKind.MAP)
+        ) {
+            return decodeFromJson(deserializer)
+        }
+
         return deserializer.deserialize(this)
     }
 

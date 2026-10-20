@@ -27,4 +27,7 @@ public class MapFormatConfig(
      * columns store embedded objects as JSON text.
      */
     public val serializeCollectionEmbeddedAsJson: Boolean = false,
+
+    /** Store List/Set/Map fields as one JSON string instead of passing them to [collectionHandler]. */
+    public val collectionsAsJson: Boolean = false,
 )

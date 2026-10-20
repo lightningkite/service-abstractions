@@ -118,6 +118,13 @@ public class MapEncoder(
             return
         }
 
+        if (config.collectionsAsJson &&
+            (serializer.descriptor.kind == StructureKind.LIST || serializer.descriptor.kind == StructureKind.MAP)
+        ) {
+            encodeAsJson(serializer, value)
+            return
+        }
+
         serializer.serialize(this, value)
 
         // For CLASS/OBJECT types, pop the tag that was pushed by encodeSerializableElement

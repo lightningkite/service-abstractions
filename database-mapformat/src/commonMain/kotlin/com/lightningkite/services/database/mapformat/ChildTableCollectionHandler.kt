@@ -1,8 +1,7 @@
 @file:Suppress("OPT_IN_USAGE")
 
-package com.lightningkite.services.database.sql
+package com.lightningkite.services.database.mapformat
 
-import com.lightningkite.services.database.mapformat.*
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationStrategy
@@ -22,11 +21,23 @@ import kotlinx.serialization.modules.SerializersModule
  * databases that lack native array or collection column types.
  */
 @OptIn(ExperimentalSerializationApi::class)
-internal class ChildTableCollectionHandler(
+public class ChildTableCollectionHandler(
     private val configProvider: () -> MapFormatConfig,
 ) : CollectionHandler {
 
-    private val config: MapFormatConfig get() = configProvider()
+    // A child row has one column per element field, so a collection nested inside an element
+    // can't get its own child table; it is stored as JSON in its column instead.
+    private val config: MapFormatConfig
+        get() = configProvider().let {
+            MapFormatConfig(
+                serializersModule = it.serializersModule,
+                converters = it.converters,
+                collectionHandler = it.collectionHandler,
+                fieldSeparator = it.fieldSeparator,
+                serializeCollectionEmbeddedAsJson = it.serializeCollectionEmbeddedAsJson,
+                collectionsAsJson = true,
+            )
+        }
 
     override fun createListEncoder(
         fieldPath: String,
