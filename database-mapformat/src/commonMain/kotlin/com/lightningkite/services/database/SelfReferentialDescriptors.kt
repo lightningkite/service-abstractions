@@ -6,12 +6,12 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.descriptors.getContextualDescriptor
+import kotlinx.serialization.descriptors.nonNullOriginal
 import kotlinx.serialization.modules.SerializersModule
-import java.util.IdentityHashMap
-import java.util.concurrent.ConcurrentHashMap
+import com.lightningkite.services.ConcurrentMutableMap
 
 // by Claude
-private val selfReferentialCache = ConcurrentHashMap<SerialDescriptor, Boolean>()
+private val selfReferentialCache = ConcurrentMutableMap<SerialDescriptor, Boolean>()
 
 /**
  * True if this descriptor's structure can reach itself again by unwrapping classes, lists, and maps -
@@ -48,7 +48,7 @@ public fun SerialDescriptor.isSelfReferential(serializersModule: SerializersModu
     // been explored once and found not to lead back to `root`, re-expanding it via a different path
     // would explore the exact same, deterministic subgraph and find the same answer, so a plain
     // "seen" set (rather than a push/pop stack) is both correct and cheaper here.
-    val visiting = java.util.Collections.newSetFromMap(IdentityHashMap<SerialDescriptor, Boolean>())
+    val visiting = ArrayList<SerialDescriptor>()
 
     fun visit(descriptor: SerialDescriptor, isRoot: Boolean): Boolean {
         val resolved = descriptor.resolveForSelfReferenceCheck(serializersModule)
@@ -56,7 +56,8 @@ public fun SerialDescriptor.isSelfReferential(serializersModule: SerializersModu
             StructureKind.CLASS -> {
                 if (resolved.isInline) return visit(resolved.getElementDescriptor(0), isRoot)
                 if (!isRoot && resolved === root) return true
-                if (!visiting.add(resolved)) return false
+                if (visiting.any { it === resolved }) return false
+                visiting.add(resolved)
                 (0 until resolved.elementsCount).any { visit(resolved.getElementDescriptor(it), isRoot = false) }
             }
 
@@ -72,34 +73,17 @@ public fun SerialDescriptor.isSelfReferential(serializersModule: SerializersModu
 }
 
 /**
- * Resolves contextual and nullable-wrapper indirection (mirroring the identical handling already done
- * independently by the SQL and Postgres drivers' own schema builders), then peels [LazySerialDescriptor]
- * wrappers down to the concrete descriptor they represent - see [isSelfReferential]'s doc for why that
- * peeling is necessary.
+ * Resolves contextual and nullable-wrapper indirection, then peels [LazySerialDescriptor] wrappers down
+ * to the concrete descriptor they represent - see [isSelfReferential]'s doc for why that peeling is
+ * necessary.
  */
 @OptIn(ExperimentalSerializationApi::class, ExperimentalLightningServer::class)
 private fun SerialDescriptor.resolveForSelfReferenceCheck(serializersModule: SerializersModule): SerialDescriptor {
     val contextResolved = if (this.kind == SerialKind.CONTEXTUAL)
         serializersModule.getContextualDescriptor(this) ?: this
     else this
-    var resolved = contextResolved.unwrapNullableWrapper()
+    var resolved = contextResolved.nonNullOriginal
     while (resolved is LazySerialDescriptor) resolved = resolved.wrapped
     return resolved
 }
 
-/**
- * Unwraps the hidden `original` field kotlinx.serialization stashes on the synthetic descriptor it
- * builds for `T?.serializer()` (nullability there is a wrapper, not a flag on the same descriptor).
- * Mirrors the identical reflection trick already used independently in the SQL and Postgres drivers'
- * own schema builders.
- */
-private fun SerialDescriptor.unwrapNullableWrapper(): SerialDescriptor {
-    if (!isNullable) return this
-    return try {
-        val field = this::class.java.getDeclaredField("original")
-        field.isAccessible = true
-        (field.get(this) as? SerialDescriptor) ?: this
-    } catch (e: Exception) {
-        this
-    }
-}

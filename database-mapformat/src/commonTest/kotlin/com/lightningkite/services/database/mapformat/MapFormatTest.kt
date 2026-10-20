@@ -3,6 +3,7 @@ package com.lightningkite.services.database.mapformat
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlin.jvm.JvmInline
 import kotlin.test.*
 
 class MapFormatTest {
