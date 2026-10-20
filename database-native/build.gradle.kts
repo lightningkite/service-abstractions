@@ -23,7 +23,6 @@ kotlin {
         compileSdk = 36
         minSdk = 21
         enableCoreLibraryDesugaring = true
-        withHostTest {}
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_1_8)
         }

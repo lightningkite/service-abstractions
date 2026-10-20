@@ -12,7 +12,8 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.nanoseconds
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.DurationUnit
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
@@ -55,24 +56,12 @@ private val converters: List<Converter<*, *>> = listOf(
             LocalDateTime(LocalDate.fromEpochDays(days.toLong() - EPOCH_DAYS_SHIFT), LocalTime.fromNanosecondOfDay(nanos.toLong()))
         },
     ),
-    Converter<Duration, Long>(
-        Duration.serializer().descriptor, ColumnType.Integer,
-        to = {
-            if (it.isInfinite()) {
-                if (it.isPositive()) Long.MAX_VALUE else Long.MIN_VALUE
-            } else {
-                val nanos = it.inWholeNanoseconds
-                check(nanos != Long.MAX_VALUE && nanos != Long.MIN_VALUE) { "$it is too long to store with nanosecond precision" }
-                nanos
-            }
-        },
-        from = {
-            when (it) {
-                Long.MAX_VALUE -> Duration.INFINITE
-                Long.MIN_VALUE -> -Duration.INFINITE
-                else -> it.nanoseconds
-            }
-        },
+    // Milliseconds as a Double, like the MongoDB driver: it holds INFINITE, and survives the web
+    // driver, which passes integers through JavaScript numbers.
+    Converter<Duration, Double>(
+        Duration.serializer().descriptor, ColumnType.Real,
+        to = { it.toDouble(DurationUnit.MILLISECONDS) },
+        from = { it.milliseconds },
     ),
     Converter<ByteArray, ByteArray>(ByteArraySerializer().descriptor, ColumnType.Blob, { it }, { it }),
 )
