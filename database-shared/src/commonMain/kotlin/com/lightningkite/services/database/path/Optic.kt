@@ -2,6 +2,7 @@ package com.lightningkite.services.database.path
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
+import com.lightningkite.services.database.SerializableProperty
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 
@@ -14,6 +15,13 @@ import kotlinx.serialization.Serializable
 public sealed interface OpticAny<T> {
     /** Returns the target of this optic within [source], or `null` if it is not present. */
     public fun get(source: T): Any?
+
+    /**
+     * The fields this optic passes through, from the outermost to the innermost.
+     *
+     * Steps that aren't fields, such as [NotNullOptic], add no properties, so an [IdentityLens] has none.
+     */
+    public val properties: List<SerializableProperty<*, *>>
 }
 
 /** Returns this as an [Optic] with an unknown target type. */

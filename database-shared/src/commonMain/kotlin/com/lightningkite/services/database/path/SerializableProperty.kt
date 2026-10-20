@@ -21,6 +21,8 @@ public sealed interface SerializableProperty<A, B> : Lens<A, B> {
 
     public val name: String
 
+    override val properties: List<SerializableProperty<*, *>> get() = listOf(this)
+
     override fun get(source: A): B
     override fun set(source: A, value: B): A
 

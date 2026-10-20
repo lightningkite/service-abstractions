@@ -32,6 +32,7 @@ class OpticTest {
         override fun set(source: V?, value: V): V? = source?.let { value }
         override fun mapCondition(condition: Condition<V>): Condition<V?> = Condition.IfNotNull(condition)
         override fun mapModification(modification: Modification<V>): Modification<V?> = Modification.IfNotNull(modification)
+        override val properties: List<SerializableProperty<*, *>> get() = listOf()
         override fun toString(): String = "notNull"
     }
 
@@ -168,5 +169,28 @@ class OpticTest {
         val optic = OpticOuter.middle + OpticMiddle.inner
         val any: OpticAny<OpticOuter> = optic
         assertSame(optic, any.asOptic())
+    }
+
+    @Test
+    fun propertiesListFieldsFromOutermostToInnermost() {
+        assertEquals(listOf(), IdentityLens(OpticOuter.serializer()).properties)
+        assertEquals(listOf(OpticOuter.middle), OpticOuter.middle.properties)
+        assertEquals(
+            listOf(OpticOuter.middle, OpticMiddle.inner, OpticInner.value),
+            (OpticOuter.middle + (OpticMiddle.inner + OpticInner.value)).properties,
+        )
+    }
+
+    @Test
+    fun propertiesSkipNonFieldSteps() {
+        val optic = NotNullOptic(LargeTestModel.embeddedNullable) + ClassUsedForEmbedding.value1
+        assertEquals(listOf(LargeTestModel.embeddedNullable, ClassUsedForEmbedding.value1), optic.properties)
+    }
+
+    @Test
+    fun propertiesMatchDataClassPath() {
+        val old = path(LargeTestModel.serializer())[LargeTestModel.embeddedNullable].notNull[ClassUsedForEmbedding.value1]
+        val new = NotNullOptic(LargeTestModel.embeddedNullable) + ClassUsedForEmbedding.value1
+        assertEquals(old.properties, new.properties)
     }
 }
