@@ -21,6 +21,7 @@ import com.lightningkite.services.database.SparseVectorSearchParams
 import com.lightningkite.services.database.Table
 import com.lightningkite.services.database.UniqueViolationException
 import com.lightningkite.services.database.aggregateOfNotNull
+import com.lightningkite.services.database.comparator
 import com.lightningkite.services.database.groupAggregateNotNull
 import com.lightningkite.services.database.mapformat.ChildRow
 import com.lightningkite.services.database.mapformat.ChildTableCollectionHandler
@@ -86,21 +87,22 @@ public class SqliteTable<T : Any> internal constructor(
 
     private fun DataClassPathPartial<T>.path(): String = properties.filter { !it.inline }.joinToString("__") { it.name }
 
-    private fun orderBy(orderBy: List<SortPart<T>>): String {
+    /** The ORDER BY clause, or null when a field isn't in a single column (e.g. it's inside a sealed type). */
+    private fun orderBy(orderBy: List<SortPart<T>>): String? {
         if (orderBy.isEmpty()) return ""
-        return " ORDER BY " + orderBy.joinToString { part ->
-            val column = schema.columns[part.field.path()]?.takeIf { !it.json }
-                ?: throw IllegalArgumentException("Can't sort $name by ${part.field}: it isn't stored in a single column")
+        val terms = orderBy.map { part ->
+            val column = schema.columns[part.field.path()]?.takeIf { !it.json } ?: return null
             val ref = "$table.${q(column.name)}"
             // SQLite already puts nulls first ascending and last descending, as SortPart requires.
             val expression = if (part.ignoreCase && part.field.serializerAny.descriptor.kind == PrimitiveKind.STRING) "lower($ref)" else ref
             "$expression ${if (part.ascending) "ASC" else "DESC"}"
         }
+        return " ORDER BY " + terms.joinToString()
     }
 
-    private suspend fun SQLiteConnection.rows(where: Sql, orderBy: List<SortPart<T>> = listOf(), limit: Int = -1, skip: Int = 0): List<Map<String, Any?>> {
+    private suspend fun SQLiteConnection.rows(where: Sql, orderBy: String = "", limit: Int = -1, skip: Int = 0): List<Map<String, Any?>> {
         val columns = schema.columns.values.toList()
-        return query(sql("SELECT ${columns.joinToString { "$table.${q(it.name)}" }} FROM $table WHERE ", where, orderBy(orderBy), " LIMIT ", arg(limit), " OFFSET ", arg(skip))) { s ->
+        return query(sql("SELECT ${columns.joinToString { "$table.${q(it.name)}" }} FROM $table WHERE ", where, orderBy, " LIMIT ", arg(limit), " OFFSET ", arg(skip))) { s ->
             columns.withIndex().associate { (i, column) -> column.name to s.read(i, column.type) }
         }
     }
@@ -157,17 +159,26 @@ public class SqliteTable<T : Any> internal constructor(
         return schema.idColumns.map { record[it.name] }
     }
 
-    private suspend fun SQLiteConnection.matching(condition: Condition<T>, orderBy: List<SortPart<T>> = listOf(), limit: Int = -1): List<T> {
+    /**
+     * The matching rows, in order.  What SQL can't filter or sort is done here on the decoded rows,
+     * and then the page has to be taken here too.
+     */
+    private suspend fun SQLiteConnection.matching(condition: Condition<T>, orderBy: List<SortPart<T>> = listOf(), skip: Int = 0, limit: Int = -1): List<T> {
         val (where, exact) = where(condition)
-        if (exact) return decode(rows(where, orderBy, limit))
-        val found = decode(rows(where, orderBy)).filter { condition(it) }
+        val sqlOrder = orderBy(orderBy)
+        if (exact && sqlOrder != null) return decode(rows(where, sqlOrder, limit, skip))
+        var found = decode(rows(where, sqlOrder ?: ""))
+        if (!exact) found = found.filter { condition(it) }
+        if (sqlOrder == null) found = found.sortedWith(orderBy.comparator!!)
+        found = found.drop(skip)
         return if (limit < 0) found else found.take(limit)
     }
 
     private suspend fun SQLiteConnection.matchingIds(condition: Condition<T>, orderBy: List<SortPart<T>> = listOf(), limit: Int = -1): List<List<Any?>> {
         val (where, exact) = where(condition)
-        if (!exact) return matching(condition, orderBy, limit).map { idOf(it) }
-        return query(sql("SELECT ${idRefs.joinToString()} FROM $table WHERE ", where, orderBy(orderBy), " LIMIT ", arg(limit))) { s ->
+        val sqlOrder = orderBy(orderBy)
+        if (!exact || sqlOrder == null) return matching(condition, orderBy, limit = limit).map { idOf(it) }
+        return query(sql("SELECT ${idRefs.joinToString()} FROM $table WHERE ", where, sqlOrder, " LIMIT ", arg(limit))) { s ->
             schema.idColumns.mapIndexed { i, column -> s.read(i, column.type) }
         }
     }
@@ -178,11 +189,7 @@ public class SqliteTable<T : Any> internal constructor(
     }
 
     override suspend fun find(condition: Condition<T>, orderBy: List<SortPart<T>>, skip: Int, limit: Int, maxQueryMs: Long): Flow<T> = traced("find") {
-        val (where, exact) = where(condition)
-        read {
-            if (exact) decode(rows(where, orderBy, limit, skip))
-            else decode(rows(where, orderBy)).filter { condition(it) }.drop(skip).take(limit)
-        }.asFlow()
+        read { matching(condition, orderBy, skip, limit) }.asFlow()
     }
 
     override suspend fun count(condition: Condition<T>): Int = traced("count") {
@@ -202,6 +209,8 @@ public class SqliteTable<T : Any> internal constructor(
 
     @Suppress("UNCHECKED_CAST")
     private fun <K> decodeAt(path: String, serializer: KSerializer<K>, row: Map<String, Any?>): K {
+        // A path through a nullable field has a non-null serializer but is null where that field is.
+        if (!serializer.descriptor.isNullable && row.values.all { it == null }) return null as K
         val present = row.filter { (column, value) -> value != null || schema.columns.getValue(column).nullable }
         val decoder = MapDecoder(config, SimpleReadSource(present))
         val holder = holderDescriptor(path, serializer.descriptor)

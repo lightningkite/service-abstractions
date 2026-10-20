@@ -33,6 +33,17 @@ class ChildTableCollectionHandlerTest {
     @Serializable
     data class Places(val byName: Map<String, Point>)
 
+    @Serializable
+    data class Optionals(val points: List<Point?>, val byName: Map<String, Point?>, val ids: List<Int?>)
+
+    // Collection serializers hand a nullable element's NullableSerializer to encodeSerializableElement,
+    // so present struct elements used to be written without their exists marker and read back as null.
+    @Test
+    fun nullableElementsRoundTrip() {
+        val value = Optionals(listOf(null, Point(1, 2)), mapOf("none" to null, "some" to Point(3, 4)), listOf(null, 5))
+        assertEquals(value, format.decode(Optionals.serializer(), format.encode(Optionals.serializer(), value)))
+    }
+
     // Child tables name map value columns `value__<field>`; rows must use the same names or the
     // values never reach a column.
     @Test

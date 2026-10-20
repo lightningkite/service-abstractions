@@ -32,7 +32,7 @@ internal class ChildTable(
     val elementColumns: Map<String, Column>,
 )
 
-internal class TableIndex(val name: String, val unique: Boolean, val columns: List<String>)
+internal class TableIndex(val name: String, val unique: Boolean, val expressions: List<String>)
 
 /**
  * A model flattened into one main table: nested fields become `a__b` columns, a nullable embedded
@@ -86,7 +86,7 @@ internal class SqliteSchema(
                 walk(resolved.getElementDescriptor(0), path, isNullable, into, onCollection)
             resolved.kind == StructureKind.CLASS && resolved.isSelfReferential(module) -> leaf(json = true)
             resolved.kind == StructureKind.CLASS -> {
-                if (descriptor.isNullable && path.isNotEmpty()) {
+                if (descriptor.isNullable) {
                     into["${path}__exists"] = Column("${path}__exists", ColumnType.Boolean, nullable = false)
                 }
                 for (i in 0 until resolved.elementsCount) {
@@ -152,18 +152,16 @@ internal class SqliteSchema(
     private fun add(name: String, uniqueness: IndexUniqueness, indexed: List<Column>) {
         // Fields kept in child tables have no column here to index.
         if (indexed.isEmpty()) return
-        // SQLite's UNIQUE treats every NULL as distinct, which is UniqueNullSparse; it can't enforce Unique's single NULL.
-        val nullable = indexed.filter { it.nullable }
-        require(uniqueness != IndexUniqueness.Unique || nullable.isEmpty()) {
-            "$tableName declares IndexUniqueness.Unique over nullable ${nullable.joinToString { it.name }}, which SQLite " +
-                "can't enforce: a UNIQUE index lets any number of NULL rows through. Use IndexUniqueness.UniqueNullSparse " +
-                "if that's intended, or make the field non-nullable."
+        // A UNIQUE index treats every NULL as distinct, which is UniqueNullSparse.  For Unique, where NULL
+        // collides with NULL, a nullable column is indexed as (is it null, its value or 0) instead.
+        val expressions = indexed.flatMap {
+            if (uniqueness == IndexUniqueness.Unique && it.nullable) listOf("${q(it.name)} IS NULL", "IFNULL(${q(it.name)}, 0)")
+            else listOf(q(it.name))
         }
-        val columnNames = indexed.map { it.name }
         indexes += TableIndex(
-            name = "${tableName}__${name.ifBlank { columnNames.joinToString("_") }}",
+            name = "${tableName}__${name.ifBlank { indexed.joinToString("_") { it.name } }}",
             unique = uniqueness.isUnique,
-            columns = columnNames,
+            expressions = expressions,
         )
     }
 
@@ -185,7 +183,7 @@ internal class SqliteSchema(
     }
 
     fun createIndexes(): List<String> = indexes.map {
-        "CREATE ${if (it.unique) "UNIQUE " else ""}INDEX IF NOT EXISTS ${q(it.name)} ON ${q(tableName)} (${it.columns.joinToString { c -> q(c) }})"
+        "CREATE ${if (it.unique) "UNIQUE " else ""}INDEX IF NOT EXISTS ${q(it.name)} ON ${q(tableName)} (${it.expressions.joinToString()})"
     }
 
     /** The columns each table should have, for adding the ones a newer model introduced. */

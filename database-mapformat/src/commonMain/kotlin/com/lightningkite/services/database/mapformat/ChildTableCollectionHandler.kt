@@ -6,7 +6,12 @@ import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.StructureKind
+import kotlinx.serialization.json.Json
+import com.lightningkite.services.database.isSelfReferential
+import com.lightningkite.services.database.nullElement
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.encoding.Decoder
@@ -140,22 +145,27 @@ private class ChildTableListEncoder(
         index: Int,
         serializer: SerializationStrategy<T>,
         value: T,
-    ) {
-        config.converters.get(serializer.descriptor)?.let {
-            val converted = config.converters.toDatabase(serializer.descriptor, value as Any)
-            writePrimitive(index, converted)
-            return
-        }
+    ) = encodeElement(index, serializer, value, nullable = serializer.descriptor.isNullable)
 
-        if (serializer.descriptor.kind == StructureKind.CLASS && !serializer.descriptor.isInline) {
-            val subTarget = SimpleWriteTarget()
-            val subEncoder = MapEncoder(config, subTarget)
-            serializer.serialize(subEncoder, value)
-            output.writeChild(fieldPath, ChildRow(index = index, key = null, values = subTarget.result().mainRecord))
-        } else {
-            val elementEncoder = ChildTableListElementEncoder(fieldPath, index, config, output)
-            serializer.serialize(elementEncoder, value)
+    // Collection serializers pass a nullable element's NullableSerializer here, never to
+    // encodeNullableSerializableElement, so nullability comes from the element's descriptor.
+    private fun <T> encodeElement(index: Int, serializer: SerializationStrategy<T>, value: T, nullable: Boolean) {
+        val element = serializer.nonNull()
+        val values: Map<String, Any?> = when {
+            value == null -> if (element.descriptor.isStruct(config)) mapOf(EXISTS to false) else mapOf("value" to null)
+            config.converters.has(element.descriptor) -> mapOf("value" to config.converters.toDatabase(element.descriptor, value as Any))
+            element.descriptor.isJson(config) -> mapOf("value" to config.json.encodeToString(element, value as Any))
+            element.descriptor.isStruct(config) -> {
+                val subTarget = SimpleWriteTarget()
+                element.serialize(MapEncoder(config, subTarget), value as Any)
+                subTarget.result().mainRecord + if (nullable) mapOf(EXISTS to true) else mapOf()
+            }
+            else -> {
+                element.serialize(ChildTableListElementEncoder(fieldPath, index, config, output), value as Any)
+                return
+            }
         }
+        output.writeChild(fieldPath, ChildRow(index = index, key = null, values = values))
     }
 
     override fun <T : Any> encodeNullableSerializableElement(
@@ -163,13 +173,7 @@ private class ChildTableListEncoder(
         index: Int,
         serializer: SerializationStrategy<T>,
         value: T?,
-    ) {
-        if (value == null) {
-            writePrimitive(index, null)
-        } else {
-            encodeSerializableElement(descriptor, index, serializer, value)
-        }
-    }
+    ) = @Suppress("UNCHECKED_CAST") encodeElement(index, serializer as SerializationStrategy<T?>, value, nullable = true)
 
     override fun endStructure(descriptor: SerialDescriptor) {
         // All elements written inline via writeChild(). Also mark the field as present (even
@@ -399,21 +403,21 @@ private class ChildTableListDecoder(
         index: Int,
         deserializer: DeserializationStrategy<T>,
         previousValue: T?,
-    ): T {
-        val row = rows[index]
+    ): T = decodeElement(index, deserializer, nullable = deserializer.descriptor.isNullable)
 
-        config.converters.get(deserializer.descriptor)?.let {
-            @Suppress("UNCHECKED_CAST")
-            return config.converters.fromDatabase(deserializer.descriptor, row.values["value"] as Any)
-        }
-
-        if (deserializer.descriptor.kind == StructureKind.CLASS && !deserializer.descriptor.isInline) {
-            val source = SimpleReadSource(row.values, emptyMap(), config.fieldSeparator)
-            return MapDecoder(config, source).decodeSerializableValue(deserializer)
-        }
-
-        val decoder = ChildTableElementDecoder(row.values["value"], config)
-        return deserializer.deserialize(decoder)
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> decodeElement(index: Int, deserializer: DeserializationStrategy<T>, nullable: Boolean): T {
+        val values = rows[index].values
+        val element = deserializer.nonNull()
+        val present = if (element.descriptor.isStruct(config)) !nullable || values[EXISTS] == true else values["value"] != null
+        return when {
+            !present -> null
+            config.converters.has(element.descriptor) -> config.converters.fromDatabase(element.descriptor, values["value"] as Any)
+            element.descriptor.isJson(config) -> config.json.decodeFromString(element, values["value"] as String)
+            element.descriptor.isStruct(config) ->
+                MapDecoder(config, SimpleReadSource(values, emptyMap(), config.fieldSeparator)).decodeSerializableValue(element)
+            else -> element.deserialize(ChildTableElementDecoder(values["value"], config))
+        } as T
     }
 
     override fun <T : Any> decodeNullableSerializableElement(
@@ -421,10 +425,7 @@ private class ChildTableListDecoder(
         index: Int,
         deserializer: DeserializationStrategy<T?>,
         previousValue: T?,
-    ): T? {
-        val value = rows[index].values["value"]
-        return if (value == null) null else decodeSerializableElement(descriptor, index, deserializer, previousValue)
-    }
+    ): T? = decodeElement(index, deserializer, nullable = true)
 
     override fun endStructure(descriptor: SerialDescriptor) {}
 }
@@ -526,26 +527,26 @@ private class ChildTableMapEncoder(
         index: Int,
         serializer: SerializationStrategy<T>,
         value: T,
-    ) {
-        config.converters.get(serializer.descriptor)?.let {
-            handleElement(index, config.converters.toDatabase(serializer.descriptor, value as Any))
-            return
-        }
+    ) = encodeElement(index, serializer, value, nullable = serializer.descriptor.isNullable)
 
-        if (serializer.descriptor.kind == StructureKind.CLASS && !serializer.descriptor.isInline) {
-            val subTarget = SimpleWriteTarget()
-            val subEncoder = MapEncoder(config, subTarget)
-            serializer.serialize(subEncoder, value)
-            val result = subTarget.result().mainRecord
-            if (index % 2 == 0) {
-                handleKeyMap(index, result)
-            } else {
-                handleValueMap(index, result)
+    // As for lists, a nullable key or value arrives with its NullableSerializer.
+    private fun <T> encodeElement(index: Int, serializer: SerializationStrategy<T>, value: T, nullable: Boolean) {
+        val element = serializer.nonNull()
+        when {
+            value == null -> if (element.descriptor.isStruct(config)) handleStruct(index, mapOf("exists" to false)) else handleElement(index, null)
+            config.converters.has(element.descriptor) -> handleElement(index, config.converters.toDatabase(element.descriptor, value as Any))
+            element.descriptor.isJson(config) -> handleElement(index, config.json.encodeToString(element, value as Any))
+            element.descriptor.isStruct(config) -> {
+                val subTarget = SimpleWriteTarget()
+                element.serialize(MapEncoder(config, subTarget), value as Any)
+                handleStruct(index, subTarget.result().mainRecord + if (nullable) mapOf("exists" to true) else mapOf())
             }
-        } else {
-            val elementEncoder = ChildTableMapElementEncoder(this, index, config)
-            serializer.serialize(elementEncoder, value)
+            else -> element.serialize(ChildTableMapElementEncoder(this, index, config), value as Any)
         }
+    }
+
+    private fun handleStruct(index: Int, fields: Map<String, Any?>) {
+        if (index % 2 == 0) handleKeyMap(index, fields) else handleValueMap(index, fields)
     }
 
     override fun <T : Any> encodeNullableSerializableElement(
@@ -553,13 +554,7 @@ private class ChildTableMapEncoder(
         index: Int,
         serializer: SerializationStrategy<T>,
         value: T?,
-    ) {
-        if (value == null) {
-            handleElement(index, null)
-        } else {
-            encodeSerializableElement(descriptor, index, serializer, value)
-        }
-    }
+    ) = @Suppress("UNCHECKED_CAST") encodeElement(index, serializer as SerializationStrategy<T?>, value, nullable = true)
 
     internal fun addElement(index: Int, value: Any?) {
         handleElement(index, value)
@@ -742,20 +737,21 @@ private class ChildTableMapDecoder(
         index: Int,
         deserializer: DeserializationStrategy<T>,
         previousValue: T?,
-    ): T {
-        config.converters.get(deserializer.descriptor)?.let {
-            @Suppress("UNCHECKED_CAST")
-            return config.converters.fromDatabase(deserializer.descriptor, getRawValue(index) as Any)
-        }
+    ): T = decodeElement(index, deserializer, nullable = deserializer.descriptor.isNullable)
 
-        if (deserializer.descriptor.kind == StructureKind.CLASS && !deserializer.descriptor.isInline) {
-            val dataMap = if (index % 2 == 0) getKeyMap(index) else getValueMap(index)
-            val source = SimpleReadSource(dataMap, emptyMap(), config.fieldSeparator)
-            return MapDecoder(config, source).decodeSerializableValue(deserializer)
-        }
-
-        val decoder = ChildTableElementDecoder(getRawValue(index), config)
-        return deserializer.deserialize(decoder)
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> decodeElement(index: Int, deserializer: DeserializationStrategy<T>, nullable: Boolean): T {
+        val element = deserializer.nonNull()
+        val fields = if (index % 2 == 0) getKeyMap(index) else getValueMap(index)
+        val present = if (element.descriptor.isStruct(config)) !nullable || fields["exists"] == true else getRawValue(index) != null
+        return when {
+            !present -> null
+            config.converters.has(element.descriptor) -> config.converters.fromDatabase(element.descriptor, getRawValue(index) as Any)
+            element.descriptor.isJson(config) -> config.json.decodeFromString(element, getRawValue(index) as String)
+            element.descriptor.isStruct(config) ->
+                MapDecoder(config, SimpleReadSource(fields, emptyMap(), config.fieldSeparator)).decodeSerializableValue(element)
+            else -> element.deserialize(ChildTableElementDecoder(getRawValue(index), config))
+        } as T
     }
 
     override fun <T : Any> decodeNullableSerializableElement(
@@ -763,10 +759,7 @@ private class ChildTableMapDecoder(
         index: Int,
         deserializer: DeserializationStrategy<T?>,
         previousValue: T?,
-    ): T? {
-        val value = getRawValue(index)
-        return if (value == null) null else decodeSerializableElement(descriptor, index, deserializer, previousValue)
-    }
+    ): T? = decodeElement(index, deserializer, nullable = true)
 
     override fun endStructure(descriptor: SerialDescriptor) {}
 }
@@ -856,3 +849,30 @@ private class ChildTableElementConverterDecoder(
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder =
         throw kotlinx.serialization.SerializationException("ChildTableElementConverterDecoder cannot decode structures")
 }
+
+// The `exists` column a nullable struct element gets, named as MapEncoder names it at a value's root.
+private const val EXISTS = "__exists"
+
+// Sealed and self-referential values can't be flattened into columns; like MapEncoder does for fields, they are stored as JSON.
+@OptIn(ExperimentalSerializationApi::class)
+private fun SerialDescriptor.isJson(config: MapFormatConfig): Boolean =
+    kind is PolymorphicKind || (kind == StructureKind.CLASS && isSelfReferential(config.serializersModule))
+
+@OptIn(ExperimentalSerializationApi::class)
+private fun SerialDescriptor.isStruct(config: MapFormatConfig): Boolean =
+    kind == StructureKind.CLASS && !isInline && !isJson(config)
+
+private val MapFormatConfig.json: Json
+    get() = Json {
+        serializersModule = this@json.serializersModule
+        encodeDefaults = true
+        ignoreUnknownKeys = true
+    }
+
+@Suppress("UNCHECKED_CAST")
+private fun SerializationStrategy<*>.nonNull(): SerializationStrategy<Any> =
+    ((this as KSerializer<*>).nullElement() ?: this) as SerializationStrategy<Any>
+
+@Suppress("UNCHECKED_CAST")
+private fun DeserializationStrategy<*>.nonNull(): DeserializationStrategy<Any> =
+    ((this as KSerializer<*>).nullElement() ?: this) as DeserializationStrategy<Any>
