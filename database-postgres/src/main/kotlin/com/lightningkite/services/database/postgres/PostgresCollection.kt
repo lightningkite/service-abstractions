@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.postgres
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryTrace

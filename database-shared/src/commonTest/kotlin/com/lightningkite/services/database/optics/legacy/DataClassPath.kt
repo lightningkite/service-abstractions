@@ -1,9 +1,9 @@
 @file:OptIn(ExperimentalSerializationApi::class)
 
 // Claude: the DataClassPath implementation removed from the library, kept so tests can check optics stay compatible with it.
-package com.lightningkite.services.database.path.legacy
+package com.lightningkite.services.database.optics.legacy
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.database.*
 

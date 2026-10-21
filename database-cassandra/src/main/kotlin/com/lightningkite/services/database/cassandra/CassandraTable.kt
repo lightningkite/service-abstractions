@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.cassandra
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.cql.*

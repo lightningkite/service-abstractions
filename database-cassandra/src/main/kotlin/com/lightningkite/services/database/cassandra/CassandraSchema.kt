@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.cassandra
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.data.Index
 import com.lightningkite.services.database.*

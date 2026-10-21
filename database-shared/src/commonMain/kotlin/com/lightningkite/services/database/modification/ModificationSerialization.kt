@@ -3,7 +3,7 @@
 
 package com.lightningkite.services.database
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.database.internal.ConcurrentMap
 import com.lightningkite.services.database.internal.getOrPutConcurrent

@@ -2,7 +2,7 @@
 
 package com.lightningkite.services.database.test
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 // by Claude - Additional imports for comprehensive value class testing
 import com.lightningkite.services.data.Length.Companion.meters

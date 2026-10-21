@@ -1,4 +1,4 @@
-package com.lightningkite.services.database.path
+package com.lightningkite.services.database.optics
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.GenericPlaceholderException

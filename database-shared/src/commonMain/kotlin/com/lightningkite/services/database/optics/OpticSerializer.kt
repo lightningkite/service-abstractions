@@ -1,4 +1,4 @@
-package com.lightningkite.services.database.path
+package com.lightningkite.services.database.optics
 
 import com.lightningkite.services.database.KSerializerWithDefault
 import com.lightningkite.services.database.SealedTypeDiscriminator
@@ -27,7 +27,7 @@ import kotlinx.serialization.encoding.Encoder
  */
 public class OpticOnSerializer<T>(public val root: KSerializer<T>) : KSerializerWithDefault<OpticOn<T>> {
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.services.database.path.OpticOn", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.database.optics.OpticOn", PrimitiveKind.STRING)
 
     override val default: OpticOn<T> get() = IdentityLens(root)
 
@@ -137,7 +137,7 @@ public class OpticSerializer<T, V>(
     private val untyped = OpticOnSerializer(root)
 
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.services.database.path.Optic", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.database.optics.Optic", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: Optic<T, V>) {
         untyped.serialize(encoder, value)
@@ -161,7 +161,7 @@ public class NumberOpticSerializer<T>(
     private val untyped = OpticOnSerializer(root)
 
     override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.services.database.path.Optic", PrimitiveKind.STRING)
+        PrimitiveSerialDescriptor("com.lightningkite.services.database.optics.Optic", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: Optic<T, out Number?>) {
         untyped.serialize(encoder, value)

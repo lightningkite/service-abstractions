@@ -1,11 +1,11 @@
-package com.lightningkite.services.database.path
+package com.lightningkite.services.database.optics
 
 import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.database.*
-import com.lightningkite.services.database.path.legacy.*
-import com.lightningkite.services.database.path.legacy.DataClassPath
-import com.lightningkite.services.database.path.legacy.DataClassPathSelf
-import com.lightningkite.services.database.path.legacy.DataClassPathSerializer
+import com.lightningkite.services.database.optics.legacy.*
+import com.lightningkite.services.database.optics.legacy.DataClassPath
+import com.lightningkite.services.database.optics.legacy.DataClassPathSelf
+import com.lightningkite.services.database.optics.legacy.DataClassPathSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json

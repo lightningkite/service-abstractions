@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.cassandra.serialization
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.datastax.oss.driver.api.core.cql.Row
 import com.datastax.oss.driver.api.core.data.UdtValue

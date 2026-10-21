@@ -3,7 +3,7 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.data.Length
 import com.lightningkite.services.data.Queryable
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlin.test.*

@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.postgres
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import org.jetbrains.exposed.v1.core.IColumnType
 import org.jetbrains.exposed.v1.core.QueryParameter

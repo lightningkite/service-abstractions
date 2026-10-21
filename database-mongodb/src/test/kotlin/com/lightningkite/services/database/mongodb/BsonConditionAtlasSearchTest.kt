@@ -3,7 +3,7 @@
 // Atlas-compatible operators ($eq/$in) instead of $elemMatch when atlasSearch=true.
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson

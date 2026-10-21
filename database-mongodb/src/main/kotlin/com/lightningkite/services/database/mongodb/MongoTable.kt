@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext

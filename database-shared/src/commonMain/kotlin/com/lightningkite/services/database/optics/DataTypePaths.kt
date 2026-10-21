@@ -1,7 +1,7 @@
-package com.lightningkite.services.database.path
+package com.lightningkite.services.database.optics
 
 import com.lightningkite.services.data.*
-import com.lightningkite.services.database.path.Field
+import com.lightningkite.services.database.optics.Field
 import kotlinx.serialization.KSerializer
 import kotlin.jvm.JvmName
 

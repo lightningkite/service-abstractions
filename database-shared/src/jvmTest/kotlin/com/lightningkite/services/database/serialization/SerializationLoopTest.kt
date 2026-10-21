@@ -2,7 +2,7 @@
 // by Claude - Comprehensive serialization loop test for all Condition and Modification types
 package com.lightningkite.services.database
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.data.GeoCoordinate
 import com.lightningkite.services.data.Length.Companion.miles

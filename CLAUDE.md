@@ -177,7 +177,7 @@ data class User(
 ```
 
 **Generated Code:**
-The KSP processor generates an optic (`Lens`/`Optic` from `com.lightningkite.services.database.path`) for each field, enabling type-safe queries:
+The KSP processor generates an optic (`Lens`/`Optic` from `com.lightningkite.services.database.optics`) for each field, enabling type-safe queries:
 
 ```kotlin
 // Type-safe queries using generated paths

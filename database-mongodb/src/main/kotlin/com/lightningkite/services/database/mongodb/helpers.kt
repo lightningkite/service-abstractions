@@ -1,6 +1,6 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 import com.mongodb.client.model.changestream.UpdateDescription
 import org.bson.*

@@ -3,9 +3,9 @@
 
 package com.lightningkite.services.database
 
-import com.lightningkite.services.database.path.NumberOpticSerializer
-import com.lightningkite.services.database.path.Optic
-import com.lightningkite.services.database.path.OpticOn
+import com.lightningkite.services.database.optics.NumberOpticSerializer
+import com.lightningkite.services.database.optics.Optic
+import com.lightningkite.services.database.optics.OpticOn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseContextualSerialization
 

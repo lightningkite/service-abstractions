@@ -51,7 +51,7 @@ import java.util.Locale.getDefault
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 23) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 24) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("Queryable") != null || annotation("GenerateDataClassPaths") != null
 
@@ -121,7 +121,7 @@ class TableGenerator(
                 .plus(
                     listOf(
                         "com.lightningkite.services.database.*",
-                        "com.lightningkite.services.database.path.*",
+                        "com.lightningkite.services.database.optics.*",
                         "com.lightningkite.services.data.*",
                         "kotlin.reflect.*",
                         "kotlinx.serialization.*",

@@ -1,7 +1,7 @@
 @file:Suppress("PackageDirectoryMismatch")
 package com.lightningkite.services.database
 
-import com.lightningkite.services.database.path.*
+import com.lightningkite.services.database.optics.*
 
 
 public fun <T, V> Modification<T>.forFieldOrNull(field: Field<T, V>): Modification<V>? {
