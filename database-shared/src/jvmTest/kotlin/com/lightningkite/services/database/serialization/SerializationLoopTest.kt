@@ -53,7 +53,7 @@ class SerializationLoopTest {
         "Equal on an IsRawString" to condition { it.email eq "a@b.com".toEmailAddress() },
         "GreaterThan on an IsRawString" to condition { it.email gt "a@b.com".toEmailAddress() },
         "RegexMatches" to condition {
-            it.string.Condition {
+            it.string.mapCondition {
                 Condition.RegexMatches(
                     "test.*pattern",
                     ignoreCase = true
@@ -76,7 +76,7 @@ class SerializationLoopTest {
         "Set CollectionAnyElements (also: ListAnyElements, AnyElements)" to condition { it.set any { e -> e eq 42 } },
 
         // --- Nested/Nullable Conditions ---
-        "OnField (uses field name as serial key)" to condition { it.embedded.Condition { e -> e.value1 eq "test" } },
+        "OnField (uses field name as serial key)" to condition { it.embedded.mapCondition { e -> e.value1 eq "test" } },
         "IfNotNull" to condition { it.intNullable.notNull eq 42 },
     )
 

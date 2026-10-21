@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.Lens
 import com.lightningkite.services.database.*
 import kotlin.test.*
 
@@ -14,8 +15,8 @@ class MaskTest {
             float = 1f
         )
         val mask = mask<LargeTestModel> {
-            it.byte.mask(0, it.never)
-            it.short.mask(0, it.always)
+            it.byte.mask(0, it.never())
+            it.short.mask(0, it.always())
             it.int.mask(0, it.byte eq 1)
             it.long.mask(0, it.byte neq 1)
             it.float.mask(0f, it.string eq "test")
@@ -39,7 +40,7 @@ class MaskTest {
         val notMatchingModA = Modification<LargeTestModel> { it.embedded.value2 assign 2 }
         val notMatchingModB = Modification<LargeTestModel> { it.int assign 2 }
 
-        val mask = updateRestrictions<LargeTestModel> { it.embedded.value1 requires it.never }
+        val mask = updateRestrictions<LargeTestModel> { it.embedded.value1 requires it.never() }
 
         assertTrue(mask(matchingMod) is Condition.Never)
         assertTrue(mask(notMatchingModA) is Condition.Always)
@@ -50,7 +51,7 @@ class MaskTest {
     fun complexModification() {
         val mask = updateRestrictions<LargeTestModel> {
             it.embedded.value2.requires<Int>(
-                requires = it.always,
+                requires = it.always(),
                 valueMust = { it gt 4 }
             )
         }
@@ -82,9 +83,9 @@ class MaskTest {
 
     @Test
     fun sort() {
-        val matchingSort = SortPart(path<LargeTestModel>().int)
-        val notMatchingSortA = SortPart(path<LargeTestModel>().byte)
-        val notMatchingSortV = SortPart(path<LargeTestModel>().string)
+        val matchingSort = SortPart(Lens<LargeTestModel>().int)
+        val notMatchingSortA = SortPart(Lens<LargeTestModel>().byte)
+        val notMatchingSortV = SortPart(Lens<LargeTestModel>().string)
 
         val mask = mask<LargeTestModel> { always(it.int.maskedTo(2)) }
 

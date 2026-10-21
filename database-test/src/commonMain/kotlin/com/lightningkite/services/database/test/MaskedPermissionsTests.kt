@@ -54,7 +54,7 @@ abstract class MaskedPermissionsTests {
         assertEquals(0, table.count(Condition { it.set.any { it eq 7 } }))
         assertEquals(0, table.count(Condition { it.listEmbedded.any { it.value2 eq 99 } }))
         assertEquals(0, table.find(Condition { it.embedded.value2 eq 99 }).toList().size)
-        assertEquals(mapOf(), table.groupCount(Condition { it.list.any { it eq 7 } }, path<LargeTestModel>().byte))
+        assertEquals(mapOf(), table.groupCount(Condition { it.list.any { it eq 7 } }, Lens<LargeTestModel>().byte))
     }
 
     @Test
@@ -67,9 +67,9 @@ abstract class MaskedPermissionsTests {
         )
         val secret = raw.insertOne(LargeTestModel(int = 1234))
 
-        assertNull(table.aggregate(Aggregate.Sum, Condition { it._id eq secret._id }, path<LargeTestModel>().int))
+        assertNull(table.aggregate(Aggregate.Sum, Condition { it._id eq secret._id }, Lens<LargeTestModel>().int))
         assertNull(
-            table.groupAggregate(Aggregate.Sum, Condition { it._id eq secret._id }, path<LargeTestModel>().byte, path<LargeTestModel>().int)[0]
+            table.groupAggregate(Aggregate.Sum, Condition { it._id eq secret._id }, Lens<LargeTestModel>().byte, Lens<LargeTestModel>().int)[0]
         )
     }
 
@@ -86,13 +86,13 @@ abstract class MaskedPermissionsTests {
         )
         raw.insertOne(LargeTestModel(byte = 0, short = 0, int = 1234, embedded = ClassUsedForEmbedding("secret", 99)))
 
-        val int = table.findPartial(setOf(path<LargeTestModel>().int), Condition.Always).toList().single()
+        val int = table.findPartial(setOf(Lens<LargeTestModel>().int), Condition.Always).toList().single()
         assertEquals(0, int.parts[LargeTestModel.int])
 
-        val nested = table.findPartial(setOf(path<LargeTestModel>().embedded.value1), Condition.Always).toList().single()
+        val nested = table.findPartial(setOf(Lens<LargeTestModel>().embedded.value1), Condition.Always).toList().single()
         assertEquals("masked", (nested.parts[LargeTestModel.embedded] as Partial<*>).parts[ClassUsedForEmbedding.value1])
 
-        val whole = table.findPartial(setOf(path<LargeTestModel>().embedded), Condition.Always).toList().single()
+        val whole = table.findPartial(setOf(Lens<LargeTestModel>().embedded), Condition.Always).toList().single()
         assertEquals(
             ClassUsedForEmbedding("masked", 0),
             (whole.parts[LargeTestModel.embedded] as Partial<ClassUsedForEmbedding>).total(ClassUsedForEmbedding.serializer())
@@ -109,7 +109,7 @@ abstract class MaskedPermissionsTests {
         )
         raw.insertOne(LargeTestModel(listEmbedded = listOf(ClassUsedForEmbedding("secret", 0))))
 
-        val read = table.findPartial(setOf(path<LargeTestModel>().listEmbedded.elements.value1), Condition.Always).toList().single()
+        val read = table.findPartial(setOf(Lens<LargeTestModel>().listEmbedded.elements.value1), Condition.Always).toList().single()
         assertFalse("secret" in read.toString(), read.toString())
     }
 

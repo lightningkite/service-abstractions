@@ -112,11 +112,11 @@ abstract class InlinePropertiesTests {
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 = collection.find(
             Condition.Always,
-            orderBy = listOf(SortPart(path<ValueClassContainingTest>().wrappedInt.int, true))
+            orderBy = listOf(SortPart(Lens<ValueClassContainingTest>().wrappedInt.int, true))
         ).toList()
         val results3 = collection.find(
             Condition.Always,
-            orderBy = listOf(SortPart(path<ValueClassContainingTest>().wrappedInt.int, false))
+            orderBy = listOf(SortPart(Lens<ValueClassContainingTest>().wrappedInt.int, false))
         ).toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
@@ -138,7 +138,7 @@ abstract class InlinePropertiesTests {
         for (type in Aggregate.entries) {
             val ram = ints.aggregate(type)
             val control = c.all().toList().asSequence().aggregateOf(type) { it.wrappedInt.int.toDouble() }
-            val test = c.aggregate(type, Condition.Always, path<ValueClassContainingTest>().wrappedInt.int)
+            val test = c.aggregate(type, Condition.Always, Lens<ValueClassContainingTest>().wrappedInt.int)
             // Tolerance: in-RAM table iterates a map (unspecified order); precision aggregators
             // are order-sensitive at the 1-ulp level, so values may differ from `ram` (computed
             // in monotonic 0..9 order) by tiny floating-point roundoff.

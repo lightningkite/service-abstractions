@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.Lens
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -24,7 +25,7 @@ abstract class OperationsTests() {
         var m = LargeTestModel(int = 42)
         collection.insertOne(m)
         val result = collection.findPartial(
-            fields = setOf(path<LargeTestModel>().int),
+            fields = setOf(Lens<LargeTestModel>().int),
             condition = Condition.Always
         ).toList()
         assertEquals(partialOf { it.int assign m.int }, result.first())

@@ -276,7 +276,7 @@ abstract class SealedPathTests {
     ) {
         val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_$name"))
         collection.insert(items)
-        val fullOrder = orderBy + SortPart(path<SealedPathTestModel>()._id)
+        val fullOrder = orderBy + SortPart(Lens<SealedPathTestModel>()._id)
         val expected = items.filter { condition(it) }.sortedWith(fullOrder.comparator!!)
         assertEquals(expected, collection.find(condition, orderBy = fullOrder).toList())
     }
@@ -286,7 +286,7 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_asType_field",
             shapes.map { SealedPathTestModel(shape = it) },
-            listOf(SortPart(path<SealedPathTestModel>().shape.asCircle.radius))
+            listOf(SortPart(Lens<SealedPathTestModel>().shape.asCircle.radius))
         )
     }
 
@@ -295,7 +295,7 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_asType_field_descending",
             shapes.map { SealedPathTestModel(shape = it) },
-            listOf(SortPart(path<SealedPathTestModel>().shape.asCircle.radius, ascending = false))
+            listOf(SortPart(Lens<SealedPathTestModel>().shape.asCircle.radius, ascending = false))
         )
     }
 
@@ -304,7 +304,7 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_asType_sharedFieldName",
             payments.map { SealedPathTestModel(payment = it) },
-            listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount)),
+            listOf(SortPart(Lens<SealedPathTestModel>().payment.asCard.amount)),
             Condition { it.payment isType Payment.Card.serializer() }
         )
     }
@@ -314,7 +314,7 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_asType_sharedFieldName_descending",
             payments.map { SealedPathTestModel(payment = it) },
-            listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false)),
+            listOf(SortPart(Lens<SealedPathTestModel>().payment.asCard.amount, ascending = false)),
             Condition { it.payment isType Payment.Card.serializer() }
         )
     }
@@ -324,7 +324,7 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_notNull_asType_field",
             (shapes + null).map { SealedPathTestModel(shapeNullable = it) },
-            listOf(SortPart(path<SealedPathTestModel>().shapeNullable.notNull.asCircle.radius, ascending = false))
+            listOf(SortPart(Lens<SealedPathTestModel>().shapeNullable.notNull.asCircle.radius, ascending = false))
         )
     }
 
@@ -333,7 +333,7 @@ abstract class SealedPathTests {
         val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_test_updateOne_sorted_asType_sharedFieldName"))
         val items = payments.map { SealedPathTestModel(payment = it) }
         collection.insert(items)
-        val orderBy = listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false))
+        val orderBy = listOf(SortPart(Lens<SealedPathTestModel>().payment.asCard.amount, ascending = false))
         val modification = Modification<SealedPathTestModel> { it.payment.asCard.last4 assign "9999" }
         val condition = Condition<SealedPathTestModel> { it.payment isType Payment.Card.serializer() }
         val target = items.filter { condition(it) }.sortedWith(orderBy.comparator!!).first()
@@ -348,7 +348,7 @@ abstract class SealedPathTests {
         val items = payments.map { SealedPathTestModel(payment = it) }
         collection.insert(items)
         // CashPayment(30) has the largest amount, but the condition leaves only Cards to sort.
-        val orderBy = listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false))
+        val orderBy = listOf(SortPart(Lens<SealedPathTestModel>().payment.asCard.amount, ascending = false))
         val condition = Condition<SealedPathTestModel> { it.payment isType Payment.Card.serializer() }
         val target = items.filter { condition(it) }.sortedWith(orderBy.comparator!!).first()
         assertEquals(target, collection.deleteOne(condition, orderBy))

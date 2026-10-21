@@ -170,7 +170,7 @@ class PostgresRetrievalTest {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = path<LargeTestModel>().instant eq higher.instant
+        val condition = Condition<LargeTestModel> { it.instant eq higher.instant }
         val all = collection.find(Condition.Always).toList()
         println("All: $all")
         val results = collection.find(condition).toList()

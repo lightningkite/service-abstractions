@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.Lens
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -41,7 +42,7 @@ abstract class ScaleAndBoundaryTests {
         assertEquals(0, collection.count())
         assertEquals(0, collection.count(Condition { it.int gt 0 }))
         assertNull(collection.findOne(Condition.Always))
-        assertEquals(emptyMap(), collection.groupCount(Condition.Always, path<LargeTestModel>().int))
+        assertEquals(emptyMap(), collection.groupCount(Condition.Always, Lens<LargeTestModel>().int))
     }
 
     @Test

@@ -12,13 +12,8 @@ import kotlinx.serialization.serializer
 import kotlin.js.JsName
 import kotlin.jvm.JvmName
 
-/** Returns an [IdentityLens] on [T], the starting point for building a path with [Optic.plus]. */
-public fun <T> path(serializer: KSerializer<T>): IdentityLens<T> = IdentityLens(serializer)
-/** Returns an [IdentityLens] on [T], the starting point for building a path with [Optic.plus]. */
-public inline fun <reified T> path(): IdentityLens<T> = IdentityLens(serializerOrContextual<T>())
-
 public inline fun <reified T> Condition(setup: (Lens<T, T>) -> Condition<T>): Condition<T> =
-    path<T>().let(setup)
+    setup(IdentityLens(serializerOrContextual()))
 
 public fun Condition(boolean: Boolean): Condition<Any?> = if (boolean) Condition.Always else Condition.Never
 
@@ -80,15 +75,15 @@ public fun <K> Optic<K, String>.contains(value: String, ignoreCase: Boolean): Co
 @JsName("xOpticCollectionAll")
 @JvmName("collectionAll")
 public inline infix fun <K, C: Collection<T>, reified T> Optic<K, C>.all(condition: (Lens<T, T>) -> Condition<T>): Condition<K> =
-    mapCondition(Condition.CollectionAllElements(path<T>().let(condition)))
+    mapCondition(Condition.CollectionAllElements(Condition(condition)))
 
 @JsName("xOpticCollectionAny")
 @JvmName("collectionAny")
 public inline infix fun <K, C: Collection<T>, reified T> Optic<K, C>.any(condition: (Lens<T, T>) -> Condition<T>): Condition<K> =
-    mapCondition(Condition.CollectionAnyElements(path<T>().let(condition)))
+    mapCondition(Condition.CollectionAnyElements(Condition(condition)))
 
-public inline infix fun <K, reified T> Optic<K, T>.Condition(make: (Lens<T, T>) -> Condition<T>): Condition<K> =
-    mapCondition(make(path<T>()))
+public inline fun <K, T> Optic<K, T>.mapCondition(make: (Lens<T, T>) -> Condition<T>): Condition<K> =
+    mapCondition(make(IdentityLens(serializer)))
 
 @JsName("xOpticInsideSet")
 public infix fun <K, T> Optic<K, T>.inside(values: Set<T>): Condition<K> =

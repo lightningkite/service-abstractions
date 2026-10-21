@@ -7,7 +7,7 @@ import kotlin.jvm.JvmName
 
 public inline fun <reified T> sort(setup: SortBuilder<T>.(Lens<T, T>) -> Unit): List<SortPart<T>> {
     return SortBuilder<T>().apply {
-        setup(this, path())
+        setup(this, Lens())
     }.build()
 }
 

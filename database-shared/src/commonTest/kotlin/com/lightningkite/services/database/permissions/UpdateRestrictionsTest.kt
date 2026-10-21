@@ -583,10 +583,10 @@ class UpdateRestrictionsTest {
             it.embedded.value1.canBeModified()
             it.embeddedNullable.notNull.value1.canBeModified()
         }
-        val writeChildThenParent = path<LargeTestModel>().embedded.mapModification(
+        val writeChildThenParent = Lens<LargeTestModel>().embedded.mapModification(
             Modification.Chain(
                 listOf(
-                    path<ClassUsedForEmbedding>().value1.mapModification(Modification.Assign("x")),
+                    Lens<ClassUsedForEmbedding>().value1.mapModification(Modification.Assign("x")),
                     Modification.Assign(ClassUsedForEmbedding("y", 99)),
                 )
             )
@@ -730,14 +730,14 @@ class UpdateRestrictionsTest {
         val fooName = Modification<Holder> { it.thing.asFoo.name assign "b" }
         val nothing = Modification.Nothing.invoke<Holder>()
 
-        assertTrue(fooName.affects(path<Holder>().thing))
-        assertTrue(fooName.affects(path<Holder>().thing.asFoo.name))
-        assertFalse(fooName.affects(path<Holder>().thing.asBar.id))
-        assertFalse(fooName.affects(path<Holder>().span))
-        assertTrue(Modification<Holder> { it.thing assign Polymorphic.Bar(1) }.affects(path<Holder>().thing.asFoo.name))
-        assertFalse(nothing.affects(path<Holder>()))
-        assertFalse(nothing.affects(path<Holder>().span))
-        assertFalse(Modification<Holder> { it.span.start assign 1 }.let { Modification.Chain(listOf(nothing, it)) }.affects(path<Holder>().thing))
+        assertTrue(fooName.affects(Lens<Holder>().thing))
+        assertTrue(fooName.affects(Lens<Holder>().thing.asFoo.name))
+        assertFalse(fooName.affects(Lens<Holder>().thing.asBar.id))
+        assertFalse(fooName.affects(Lens<Holder>().span))
+        assertTrue(Modification<Holder> { it.thing assign Polymorphic.Bar(1) }.affects(Lens<Holder>().thing.asFoo.name))
+        assertFalse(nothing.affects(Lens<Holder>()))
+        assertFalse(nothing.affects(Lens<Holder>().span))
+        assertFalse(Modification<Holder> { it.span.start assign 1 }.let { Modification.Chain(listOf(nothing, it)) }.affects(Lens<Holder>().thing))
     }
 
     @Test
@@ -760,9 +760,9 @@ class UpdateRestrictionsTest {
         assertEquals(Condition.Always, hidden(Condition { it.thing.asBar.id eq 1 }))
         assertEquals(admin, hidden(Condition { it.thing.asFoo.name eq "x" }))
         assertEquals(admin, hidden(Condition { it.thing eq Polymorphic.Foo("x") }))
-        assertEquals(Condition.Always, hidden.permitSort(listOf(SortPart(path<Holder>().thing.asBar.id))))
-        assertEquals(admin, hidden.permitSort(listOf(SortPart(path<Holder>().thing.asFoo.name))))
-        assertEquals(admin, hidden(path<Holder>().thing))
+        assertEquals(Condition.Always, hidden.permitSort(listOf(SortPart(Lens<Holder>().thing.asBar.id))))
+        assertEquals(admin, hidden.permitSort(listOf(SortPart(Lens<Holder>().thing.asFoo.name))))
+        assertEquals(admin, hidden(Lens<Holder>().thing))
         assertEquals(Condition.Always, mask<Holder> { always(Modification.Nothing.invoke()) }(Condition { it.span.start eq 1 }))
     }
 

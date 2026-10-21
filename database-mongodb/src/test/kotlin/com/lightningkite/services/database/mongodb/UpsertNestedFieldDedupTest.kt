@@ -31,7 +31,7 @@ class UpsertNestedFieldDedupTest {
         )
         val fallback = LargeTestModel(embedded = ClassUsedForEmbedding(value2 = 5))
         val modification = Modification<LargeTestModel> { it.embedded.value2 += 1 }
-        val neverMatches = path<LargeTestModel>()._id eq Uuid.random()
+        val neverMatches = Condition<LargeTestModel> { it._id eq Uuid.random() }
 
         val result = collection.upsertOne(neverMatches, modification, fallback)
         assertEquals(null, result.old)
@@ -47,7 +47,7 @@ class UpsertNestedFieldDedupTest {
         )
         val fallback = LargeTestModel(embedded = ClassUsedForEmbedding(value2 = 5))
         val modification = Modification<LargeTestModel> { it.embedded.value2 += 1 }
-        val neverMatches = path<LargeTestModel>()._id eq Uuid.random()
+        val neverMatches = Condition<LargeTestModel> { it._id eq Uuid.random() }
 
         // false == "no existing document matched, so this was an insert".
         assertEquals(false, collection.upsertOneIgnoringResult(neverMatches, modification, fallback))
@@ -61,7 +61,7 @@ class UpsertNestedFieldDedupTest {
         )
         val fallback = LargeTestModel(embedded = ClassUsedForEmbedding(value1 = "fallback-default"))
         val modification = Modification<LargeTestModel> { it.embedded.value1 assign "x" }
-        val neverMatches = path<LargeTestModel>()._id eq Uuid.random()
+        val neverMatches = Condition<LargeTestModel> { it._id eq Uuid.random() }
 
         val result = collection.upsertOne(neverMatches, modification, fallback)
         assertEquals(null, result.old)
@@ -84,7 +84,7 @@ class UpsertNestedFieldDedupTest {
         val modification = Modification<LargeTestModel> { it.embedded.value2 += 1 }
 
         val result = collection.upsertOne(
-            path<LargeTestModel>()._id eq existing._id,
+            Condition<LargeTestModel> { it._id eq existing._id },
             modification,
             LargeTestModel(embedded = ClassUsedForEmbedding(value2 = 99)),
         )
@@ -112,7 +112,7 @@ class UpsertNestedFieldDedupTest {
         )
         val fallback = LargeTestModel(int = 5, string = "no-such-string")
         val modification = Modification<LargeTestModel> { it.int += 5 }
-        val neverMatches = path<LargeTestModel>().string eq "no-such-string"
+        val neverMatches = Condition<LargeTestModel> { it.string eq "no-such-string" }
 
         val result = collection.upsertOne(neverMatches, modification, fallback)
         assertEquals(null, result.old)

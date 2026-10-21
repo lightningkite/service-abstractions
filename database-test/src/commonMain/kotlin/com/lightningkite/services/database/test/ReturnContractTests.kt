@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.Lens
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -221,7 +222,7 @@ abstract class ReturnContractTests {
         collection.insert((1..5).map { LargeTestModel(int = it, string = "row$it") })
 
         val matching = Condition<LargeTestModel> { it.int gt 2 }
-        val partials = collection.findPartial(setOf(path<LargeTestModel>().int), matching).toList()
+        val partials = collection.findPartial(setOf(Lens<LargeTestModel>().int), matching).toList()
         val full = collection.find(matching).toList()
 
         assertEquals(full.size, partials.size)

@@ -139,7 +139,7 @@ class SqliteDatabaseTest {
         val table = database.prepare(notes)
         table.insert((0 until 20).map { Note(title = if (it % 2 == 0) "even $it" else "odd $it") })
         val page = table.find(
-            path<Note>().title.mapCondition(Condition.RegexMatches("^even")),
+            Condition<Note> { it.title.mapCondition(Condition.RegexMatches("^even")) },
             orderBy = sort { it.title.ascending() },
             skip = 2,
             limit = 3,
