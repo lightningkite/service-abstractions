@@ -6,7 +6,7 @@ package com.lightningkite.services.database.mapformat
 import kotlinx.serialization.descriptors.SerialDescriptor
 
 /**
- * Converts between Kotlin serialization values and database-native values.
+ * Converts between Kotlin serialization values and database-sqlite values.
  *
  * Database layers provide implementations for types they handle specially.
  * For example, Postgres might convert Uuid to java.util.UUID, while
@@ -20,12 +20,12 @@ public interface ValueConverter<K : Any, D : Any> {
     public val descriptor: SerialDescriptor
 
     /**
-     * Convert from Kotlin value to database-native value.
+     * Convert from Kotlin value to database-sqlite value.
      */
     public fun toDatabase(value: K): D
 
     /**
-     * Convert from database-native value back to Kotlin.
+     * Convert from database-sqlite value back to Kotlin.
      */
     public fun fromDatabase(value: D): K
 }
