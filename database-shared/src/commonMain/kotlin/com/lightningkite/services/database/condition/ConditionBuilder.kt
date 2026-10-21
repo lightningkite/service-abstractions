@@ -22,10 +22,11 @@ public inline fun <reified T> Condition(setup: (Lens<T, T>) -> Condition<T>): Co
 
 public fun Condition(boolean: Boolean): Condition<Any?> = if (boolean) Condition.Always else Condition.Never
 
-public val <K> Lens<K, K>.always: Condition<K> get() = Condition.Always
-public val <K> Lens<K, K>.never: Condition<K> get() = Condition.Never
+public fun <K> Optic<K, *>.always(): Condition<K> = Condition.Always
+public fun <K> Optic<K, *>.never(): Condition<K> = Condition.Never
 
 public infix fun <K, T> Optic<K, T>.eq(value: T): Condition<K> = mapCondition(Condition.Equal(value))
+
 public infix fun <K, T : Any> Optic<K, T>.eqNn(value: T?): Condition<K> =
     if (value == null) Condition.Never else mapCondition(Condition.Equal(value))
 

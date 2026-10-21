@@ -14,8 +14,8 @@ public inline fun <reified T> Modification(setup: ModificationBuilder<T>.(Lens<T
 }
 
 public inline fun <T> Modification(
-    path: Lens<T, T>,
-    setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
+    path: Optic<T, T>,
+    setup: ModificationBuilder<T>.(Optic<T, T>) -> Unit,
 ): Modification<T> {
     return ModificationBuilder<T>().apply {
         setup(this, path)
@@ -29,15 +29,15 @@ public inline fun <reified T> Modification<T>.and(setup: ModificationBuilder<T>.
     }.build()
 }
 
-public class ModificationBuilder<K>() {
+public class ModificationBuilder<K> {
     public val modifications: ArrayList<Modification<K>> = ArrayList()
     public fun add(modification: Modification<K>) {
         modifications.add(modification)
     }
 
     public fun build(): Modification<K> {
-        if (modifications.size == 1) return modifications[0]
-        else return Modification.Chain(modifications)
+        return if (modifications.size == 1) modifications[0]
+        else Modification.Chain(modifications)
     }
 
     public infix fun <T> Optic<K, T>.assign(value: T) {
