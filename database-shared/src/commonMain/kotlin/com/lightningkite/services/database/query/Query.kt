@@ -61,4 +61,4 @@ public inline fun <reified T> Query(
     skip: Int = 0,
     limit: Int = 100,
     makeCondition: (Lens<T, T>) -> Condition<T>,
-): Query<T> = Query(makeCondition(path()), orderBy, skip, limit)
+): Query<T> = Query(makeCondition(Lens()), orderBy, skip, limit)

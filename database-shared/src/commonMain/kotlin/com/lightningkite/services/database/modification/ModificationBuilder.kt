@@ -7,15 +7,15 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.serializer
 import kotlin.jvm.JvmName
 
-public inline fun <reified T> modification(setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit): Modification<T> {
+public inline fun <reified T> Modification(setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit): Modification<T> {
     return ModificationBuilder<T>().apply {
-        setup(this, path())
+        setup(this, Lens())
     }.build()
 }
 
-public inline fun <T> modification(
-    path: Lens<T, T>,
-    setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
+public inline fun <T> Modification(
+    path: Optic<T, T>,
+    setup: ModificationBuilder<T>.(Optic<T, T>) -> Unit,
 ): Modification<T> {
     return ModificationBuilder<T>().apply {
         setup(this, path)
@@ -25,19 +25,19 @@ public inline fun <T> modification(
 public inline fun <reified T> Modification<T>.and(setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit): Modification<T> {
     return ModificationBuilder<T>().apply {
         this.modifications.add(this@and)
-        setup(this, path())
+        setup(this, Lens())
     }.build()
 }
 
-public class ModificationBuilder<K>() {
+public class ModificationBuilder<K> {
     public val modifications: ArrayList<Modification<K>> = ArrayList()
     public fun add(modification: Modification<K>) {
         modifications.add(modification)
     }
 
     public fun build(): Modification<K> {
-        if (modifications.size == 1) return modifications[0]
-        else return Modification.Chain(modifications)
+        return if (modifications.size == 1) modifications[0]
+        else Modification.Chain(modifications)
     }
 
     public infix fun <T> Optic<K, T>.assign(value: T) {
@@ -106,12 +106,12 @@ public class ModificationBuilder<K>() {
 
     @JvmName("removeAllList")
     public inline infix fun <reified T> Optic<K, List<T>>.removeAll(condition: (Lens<T, T>) -> Condition<T>) {
-        modifications.add(mapModification(Modification.ListRemove(path<T>().let(condition))))
+        modifications.add(mapModification(Modification.ListRemove(Condition(condition))))
     }
 
     @JvmName("removeAllSet")
     public inline infix fun <reified T> Optic<K, Set<T>>.removeAll(condition: (Lens<T, T>) -> Condition<T>) {
-        modifications.add(mapModification(Modification.SetRemove(path<T>().let(condition))))
+        modifications.add(mapModification(Modification.SetRemove(Condition(condition))))
     }
 
     public infix fun <T> Optic<K, List<T>>.removeAll(items: List<T>) {
@@ -125,7 +125,7 @@ public class ModificationBuilder<K>() {
     @JvmName("forEachList")
     public inline infix fun <reified T> Optic<K, List<T>>.forEach(modification: ModificationBuilder<T>.(Lens<T, T>) -> Unit) {
         val builder = ModificationBuilder<T>()
-        modification(builder, path())
+        modification(builder, Lens())
         modifications.add(
             mapModification(
                 Modification.ListPerElement(
@@ -139,7 +139,7 @@ public class ModificationBuilder<K>() {
     @JvmName("forEachSet")
     public inline infix fun <reified T> Optic<K, Set<T>>.forEach(modification: ModificationBuilder<T>.(Lens<T, T>) -> Unit) {
         val builder = ModificationBuilder<T>()
-        modification(builder, path())
+        modification(builder, Lens())
         modifications.add(
             mapModification(
                 Modification.SetPerElement(
@@ -156,11 +156,11 @@ public class ModificationBuilder<K>() {
         modification: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
     ) {
         val builder = ModificationBuilder<T>()
-        modification(builder, path())
+        modification(builder, Lens())
         modifications.add(
             mapModification(
                 Modification.ListPerElement(
-                    condition = path<T>().let(condition),
+                    condition = Condition(condition),
                     modification = builder.build()
                 )
             )
@@ -173,11 +173,11 @@ public class ModificationBuilder<K>() {
         modification: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
     ) {
         val builder = ModificationBuilder<T>()
-        modification(builder, path())
+        modification(builder, Lens())
         modifications.add(
             mapModification(
                 Modification.SetPerElement(
-                    condition = path<T>().let(condition),
+                    condition = Condition(condition),
                     modification = builder.build()
                 )
             )

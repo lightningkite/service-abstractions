@@ -59,7 +59,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_isType",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { it.shape isType Shape.Circle.serializer() }
+            Condition { it.shape isType Shape.Circle.serializer() }
         )
     }
 
@@ -68,7 +68,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_isType_object",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { it.shape isType Shape.Empty.serializer() }
+            Condition { it.shape isType Shape.Empty.serializer() }
         )
     }
 
@@ -77,7 +77,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_asType_field_eq",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { it.shape.asCircle.radius eq 2 }
+            Condition { it.shape.asCircle.radius eq 2 }
         )
     }
 
@@ -87,7 +87,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_asType_field_gt",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { it.shape.asSquare.side gt 2 }
+            Condition { it.shape.asSquare.side gt 2 }
         )
     }
 
@@ -96,7 +96,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_asType_eq",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { it.shape.asCircle eq Shape.Circle(2) }
+            Condition { it.shape.asCircle eq Shape.Circle(2) }
         )
     }
 
@@ -105,7 +105,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_asType_neq",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { it.shape.asCircle neq Shape.Circle(2) }
+            Condition { it.shape.asCircle neq Shape.Circle(2) }
         )
     }
 
@@ -115,7 +115,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_asType_field_neq",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { it.shape.asCircle.radius neq 2 }
+            Condition { it.shape.asCircle.radius neq 2 }
         )
     }
 
@@ -124,7 +124,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_asType_field_notInside",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { it.shape.asSquare.label notInside listOf("a") }
+            Condition { it.shape.asSquare.label notInside listOf("a") }
         )
     }
 
@@ -133,7 +133,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_asType_field_not",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { it.shape.asCircle.radius.mapCondition(Condition.Not(Condition.Equal(1))) }
+            Condition { it.shape.asCircle.radius.mapCondition(Condition.Not(Condition.Equal(1))) }
         )
     }
 
@@ -142,7 +142,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_not_asType_field",
             shapes.map { SealedPathTestModel(shape = it) },
-            condition { !(it.shape.asCircle.radius eq 1) }
+            Condition { !(it.shape.asCircle.radius eq 1) }
         )
     }
 
@@ -151,7 +151,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_notNull_asType_field_neq",
             (shapes + null).map { SealedPathTestModel(shapeNullable = it) },
-            condition { it.shapeNullable.notNull.asCircle.radius neq 2 }
+            Condition { it.shapeNullable.notNull.asCircle.radius neq 2 }
         )
     }
 
@@ -165,7 +165,7 @@ abstract class SealedPathTests {
                 SealedPathTestModel(shapes = listOf(Shape.Empty)),
                 SealedPathTestModel(shapes = listOf()),
             ),
-            condition { it.shapes.all { it.asCircle.radius neq 1 } }
+            Condition { it.shapes.all { it.asCircle.radius neq 1 } }
         )
     }
 
@@ -174,7 +174,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_notNull_asType",
             (shapes + null).map { SealedPathTestModel(shapeNullable = it) },
-            condition { it.shapeNullable.notNull.asCircle.radius eq 1 }
+            Condition { it.shapeNullable.notNull.asCircle.radius eq 1 }
         )
     }
 
@@ -187,7 +187,7 @@ abstract class SealedPathTests {
                 SealedPathTestModel(shapes = listOf(Shape.Square(3), Shape.Circle(1))),
                 SealedPathTestModel(shapes = listOf()),
             ),
-            condition { it.shapes.any { it.asCircle.radius eq 3 } }
+            Condition { it.shapes.any { it.asCircle.radius eq 3 } }
         )
     }
 
@@ -200,7 +200,7 @@ abstract class SealedPathTests {
                 SealedPathTestModel(shapes = listOf(Shape.Square(3), Shape.Circle(1))),
                 SealedPathTestModel(shapes = listOf()),
             ),
-            condition { it.shapes.all { it isType Shape.Circle.serializer() } }
+            Condition { it.shapes.all { it isType Shape.Circle.serializer() } }
         )
     }
 
@@ -209,7 +209,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_sealedClass_isType",
             payments.map { SealedPathTestModel(payment = it) },
-            condition { it.payment isType Payment.Card.serializer() }
+            Condition { it.payment isType Payment.Card.serializer() }
         )
     }
 
@@ -218,7 +218,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_sealedClass_isType_object",
             payments.map { SealedPathTestModel(payment = it) },
-            condition { it.payment isType Payment.Pending.serializer() }
+            Condition { it.payment isType Payment.Pending.serializer() }
         )
     }
 
@@ -228,7 +228,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_sealedClass_asType_field_eq",
             payments.map { SealedPathTestModel(payment = it) },
-            condition { it.payment.asCard.amount eq 10 }
+            Condition { it.payment.asCard.amount eq 10 }
         )
     }
 
@@ -237,7 +237,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_sealedClass_topLevelVariant_field_eq",
             payments.map { SealedPathTestModel(payment = it) },
-            condition { it.payment.asCashPayment.currency eq "EUR" }
+            Condition { it.payment.asCashPayment.currency eq "EUR" }
         )
     }
 
@@ -246,7 +246,7 @@ abstract class SealedPathTests {
         conditionTest(
             "test_sealedClass_asType_eq",
             payments.map { SealedPathTestModel(payment = it) },
-            condition { it.payment.asCashPayment eq CashPayment(10, "USD") }
+            Condition { it.payment.asCashPayment eq CashPayment(10, "USD") }
         )
     }
 
@@ -259,7 +259,7 @@ abstract class SealedPathTests {
                 SealedPathTestModel(payments = listOf(CashPayment(20), Payment.Card(10))),
                 SealedPathTestModel(payments = listOf()),
             ),
-            condition { it.payments.any { it.asCard.amount eq 20 } }
+            Condition { it.payments.any { it.asCard.amount eq 20 } }
         )
     }
 
@@ -276,7 +276,7 @@ abstract class SealedPathTests {
     ) {
         val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_$name"))
         collection.insert(items)
-        val fullOrder = orderBy + SortPart(path<SealedPathTestModel>()._id)
+        val fullOrder = orderBy + SortPart(Lens<SealedPathTestModel>()._id)
         val expected = items.filter { condition(it) }.sortedWith(fullOrder.comparator!!)
         assertEquals(expected, collection.find(condition, orderBy = fullOrder).toList())
     }
@@ -286,7 +286,7 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_asType_field",
             shapes.map { SealedPathTestModel(shape = it) },
-            listOf(SortPart(path<SealedPathTestModel>().shape.asCircle.radius))
+            listOf(SortPart(Lens<SealedPathTestModel>().shape.asCircle.radius))
         )
     }
 
@@ -295,7 +295,7 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_asType_field_descending",
             shapes.map { SealedPathTestModel(shape = it) },
-            listOf(SortPart(path<SealedPathTestModel>().shape.asCircle.radius, ascending = false))
+            listOf(SortPart(Lens<SealedPathTestModel>().shape.asCircle.radius, ascending = false))
         )
     }
 
@@ -304,8 +304,8 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_asType_sharedFieldName",
             payments.map { SealedPathTestModel(payment = it) },
-            listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount)),
-            condition { it.payment isType Payment.Card.serializer() }
+            listOf(SortPart(Lens<SealedPathTestModel>().payment.asCard.amount)),
+            Condition { it.payment isType Payment.Card.serializer() }
         )
     }
 
@@ -314,8 +314,8 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_asType_sharedFieldName_descending",
             payments.map { SealedPathTestModel(payment = it) },
-            listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false)),
-            condition { it.payment isType Payment.Card.serializer() }
+            listOf(SortPart(Lens<SealedPathTestModel>().payment.asCard.amount, ascending = false)),
+            Condition { it.payment isType Payment.Card.serializer() }
         )
     }
 
@@ -324,7 +324,7 @@ abstract class SealedPathTests {
         sortTest(
             "test_sort_notNull_asType_field",
             (shapes + null).map { SealedPathTestModel(shapeNullable = it) },
-            listOf(SortPart(path<SealedPathTestModel>().shapeNullable.notNull.asCircle.radius, ascending = false))
+            listOf(SortPart(Lens<SealedPathTestModel>().shapeNullable.notNull.asCircle.radius, ascending = false))
         )
     }
 
@@ -333,9 +333,9 @@ abstract class SealedPathTests {
         val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_test_updateOne_sorted_asType_sharedFieldName"))
         val items = payments.map { SealedPathTestModel(payment = it) }
         collection.insert(items)
-        val orderBy = listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false))
-        val modification = modification<SealedPathTestModel> { it.payment.asCard.last4 assign "9999" }
-        val condition = condition<SealedPathTestModel> { it.payment isType Payment.Card.serializer() }
+        val orderBy = listOf(SortPart(Lens<SealedPathTestModel>().payment.asCard.amount, ascending = false))
+        val modification = Modification<SealedPathTestModel> { it.payment.asCard.last4 assign "9999" }
+        val condition = Condition<SealedPathTestModel> { it.payment isType Payment.Card.serializer() }
         val target = items.filter { condition(it) }.sortedWith(orderBy.comparator!!).first()
         val change = collection.updateOne(condition, modification, orderBy)
         assertEquals(target, change.old)
@@ -348,8 +348,8 @@ abstract class SealedPathTests {
         val items = payments.map { SealedPathTestModel(payment = it) }
         collection.insert(items)
         // CashPayment(30) has the largest amount, but the condition leaves only Cards to sort.
-        val orderBy = listOf(SortPart(path<SealedPathTestModel>().payment.asCard.amount, ascending = false))
-        val condition = condition<SealedPathTestModel> { it.payment isType Payment.Card.serializer() }
+        val orderBy = listOf(SortPart(Lens<SealedPathTestModel>().payment.asCard.amount, ascending = false))
+        val condition = Condition<SealedPathTestModel> { it.payment isType Payment.Card.serializer() }
         val target = items.filter { condition(it) }.sortedWith(orderBy.comparator!!).first()
         assertEquals(target, collection.deleteOne(condition, orderBy))
         assertEquals(null, collection.get(target._id))
@@ -364,7 +364,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shape = Shape.Circle(1)),
             "test_asType_field_increment",
-            modification { it.shape.asCircle.radius += 2 }
+            Modification { it.shape.asCircle.radius += 2 }
         )
     }
 
@@ -373,7 +373,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shape = Shape.Square(2, "a")),
             "test_asType_field_assign",
-            modification { it.shape.asSquare.label assign "changed" }
+            Modification { it.shape.asSquare.label assign "changed" }
         )
     }
 
@@ -382,7 +382,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shape = Shape.Circle(1)),
             "test_asType_assign",
-            modification { it.shape.asCircle assign Shape.Circle(9) }
+            Modification { it.shape.asCircle assign Shape.Circle(9) }
         )
     }
 
@@ -391,7 +391,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shape = Shape.Square(2, "a")),
             "test_asType_multiple_fields",
-            modification {
+            Modification {
                 it.shape.asSquare.side += 1
                 it.shape.asSquare.label assign "changed"
             }
@@ -403,7 +403,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shapeNullable = Shape.Circle(1)),
             "test_notNull_asType_increment",
-            modification { it.shapeNullable.notNull.asCircle.radius += 1 }
+            Modification { it.shapeNullable.notNull.asCircle.radius += 1 }
         )
     }
 
@@ -412,7 +412,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shapes = listOf(Shape.Circle(1), Shape.Square(1), Shape.Circle(5), Shape.Empty)),
             "test_list_forEachIf_asType",
-            modification {
+            Modification {
                 it.shapes.forEachIf(
                     condition = { it isType Shape.Circle.serializer() },
                     modification = { it.asCircle.radius += 1 }
@@ -426,7 +426,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shape = Shape.Square(2, "a")),
             "test_asType_field_increment_otherVariant",
-            modification { it.shape.asCircle.radius += 2 }
+            Modification { it.shape.asCircle.radius += 2 }
         )
     }
 
@@ -435,7 +435,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shape = Shape.Empty),
             "test_asType_assign_otherVariant",
-            modification { it.shape.asCircle assign Shape.Circle(9) }
+            Modification { it.shape.asCircle assign Shape.Circle(9) }
         )
     }
 
@@ -444,7 +444,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shapeNullable = null),
             "test_notNull_asType_increment_null",
-            modification { it.shapeNullable.notNull.asCircle.radius += 1 }
+            Modification { it.shapeNullable.notNull.asCircle.radius += 1 }
         )
     }
 
@@ -453,7 +453,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shapeNullable = Shape.Square(2, "a")),
             "test_notNull_asType_increment_otherVariant",
-            modification { it.shapeNullable.notNull.asCircle.radius += 1 }
+            Modification { it.shapeNullable.notNull.asCircle.radius += 1 }
         )
     }
 
@@ -462,7 +462,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shape = Shape.Square(2, "a"), payment = Payment.Card(10, "1111")),
             "test_asType_chain_otherVariant",
-            modification {
+            Modification {
                 it.shape.asCircle.radius += 1
                 it.shape.asSquare.label assign "changed"
                 it.payment.asCard.amount += 5
@@ -476,7 +476,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shapes = listOf(Shape.Circle(1), Shape.Square(1), Shape.Circle(5), Shape.Empty)),
             "test_list_forEach_asType",
-            modification {
+            Modification {
                 it.shapes.forEach {
                     it.asCircle.radius += 1
                     it.asSquare.label assign "changed"
@@ -490,7 +490,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(shapes = listOf(Shape.Circle(1), Shape.Square(1), Shape.Circle(5), Shape.Square(5), Shape.Empty)),
             "test_list_forEachIf_asType_partlySelected",
-            modification {
+            Modification {
                 it.shapes.forEachIf(
                     condition = { it neq Shape.Circle(1) },
                     modification = { it.asSquare.side += 1 }
@@ -504,8 +504,8 @@ abstract class SealedPathTests {
         val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_test_updateMany_selectedByType"))
         val items = shapes.map { SealedPathTestModel(shape = it) }
         collection.insert(items)
-        val condition = condition<SealedPathTestModel> { it.shape isType Shape.Circle.serializer() }
-        val modification = modification<SealedPathTestModel> { it.shape.asCircle.radius += 10 }
+        val condition = Condition<SealedPathTestModel> { it.shape isType Shape.Circle.serializer() }
+        val modification = Modification<SealedPathTestModel> { it.shape.asCircle.radius += 10 }
         collection.updateMany(condition, modification)
         val expected = items.map { if (condition(it)) modification(it) else it }.sortedBy { it._id }
         assertEquals(expected, collection.find(Condition.Always).toList().sortedBy { it._id })
@@ -516,7 +516,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(payment = Payment.Card(10, "1111")),
             "test_sealedClass_asType_field_increment",
-            modification { it.payment.asCard.amount += 5 }
+            Modification { it.payment.asCard.amount += 5 }
         )
     }
 
@@ -525,7 +525,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(payment = CashPayment(10, "USD")),
             "test_sealedClass_topLevelVariant_field_assign",
-            modification { it.payment.asCashPayment.currency assign "EUR" }
+            Modification { it.payment.asCashPayment.currency assign "EUR" }
         )
     }
 
@@ -534,7 +534,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(payment = CashPayment(10, "USD")),
             "test_sealedClass_asType_assign",
-            modification { it.payment.asCashPayment assign CashPayment(99, "GBP") }
+            Modification { it.payment.asCashPayment assign CashPayment(99, "GBP") }
         )
     }
 
@@ -543,7 +543,7 @@ abstract class SealedPathTests {
         modificationTest(
             SealedPathTestModel(payments = listOf(Payment.Card(10), CashPayment(10), Payment.Pending, Payment.Card(3))),
             "test_sealedClass_list_forEachIf_asType",
-            modification {
+            Modification {
                 it.payments.forEachIf(
                     condition = { it isType Payment.Card.serializer() },
                     modification = { it.asCard.amount += 1 }

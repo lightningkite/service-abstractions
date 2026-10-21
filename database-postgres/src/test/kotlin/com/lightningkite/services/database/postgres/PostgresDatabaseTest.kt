@@ -5,7 +5,6 @@ import com.lightningkite.services.database.*
 import com.lightningkite.services.database.test.*
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -60,19 +59,19 @@ class BasicTest() {
             val t = LargeTestModel()
             collection.insertOne(t)
             assertEquals(t, collection.find(Condition.Always).firstOrNull())
-            assertEquals(t, collection.find(condition { it.byte eq 0 }).firstOrNull())
-            assertEquals(t.byte, collection.updateOne(Condition.Always, modification { it.byte += 1 }).old?.byte)
+            assertEquals(t, collection.find(Condition { it.byte eq 0 }).firstOrNull())
+            assertEquals(t.byte, collection.updateOne(Condition.Always, Modification { it.byte += 1 }).old?.byte)
             assertEquals(
                 t.byte.plus(1).toByte(),
-                collection.updateOne(Condition.Always, modification { it.byte += 1 }).old?.byte
+                collection.updateOne(Condition.Always, Modification { it.byte += 1 }).old?.byte
             )
             assertEquals(
                 t.byte.plus(2).toByte(),
-                collection.updateOne(Condition.Always, modification { it.byte += 1 }).old?.byte
+                collection.updateOne(Condition.Always, Modification { it.byte += 1 }).old?.byte
             )
             assertEquals(
                 t.byte.plus(3).toByte(),
-                collection.updateOne(Condition.Always, modification { it.byte += 1 }).old?.byte
+                collection.updateOne(Condition.Always, Modification { it.byte += 1 }).old?.byte
             )
         }
     }
@@ -171,7 +170,7 @@ class PostgresRetrievalTest {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = path<LargeTestModel>().instant eq higher.instant
+        val condition = Condition<LargeTestModel> { it.instant eq higher.instant }
         val all = collection.find(Condition.Always).toList()
         println("All: $all")
         val results = collection.find(condition).toList()

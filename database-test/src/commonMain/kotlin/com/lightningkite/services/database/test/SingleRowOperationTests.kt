@@ -8,7 +8,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.uuid.Uuid
 
 /**
  * Contract tests for the six single-row operations: [Table.updateOne], [Table.updateOneIgnoringResult],
@@ -54,7 +53,7 @@ abstract class SingleRowOperationTests {
     private suspend fun Table<LargeTestModel>.all() = find(Condition.Always).toList()
 
     /** The mark an update-style operation leaves; every seeded row starts `false`. */
-    private val mark = modification<LargeTestModel> { it.boolean assign true }
+    private val mark = Modification<LargeTestModel> { it.boolean assign true }
 
     /** Asserts the table still holds every row and that exactly one of them carries [mark]. */
     private suspend fun Table<LargeTestModel>.assertOneMarked(): LargeTestModel {
@@ -277,7 +276,7 @@ abstract class SingleRowOperationTests {
 
     @Test
     fun singleRowOps_reportNothingWhenConditionMatchesNothing() = runTest {
-        val noMatch = condition<LargeTestModel> { it.int eq 9999 }
+        val noMatch = Condition<LargeTestModel> { it.int eq 9999 }
         assertNoOpUnderCondition("srot_nomatch", noMatch)
     }
 
@@ -329,13 +328,13 @@ abstract class SingleRowOperationTests {
     fun updateOne_returnsTheRowAsItWasBeforeTheChange() = runTest {
         val collection = seeded("srot_updateOne_oldValue")
         val change = collection.updateOne(
-            condition { it.int eq 3 },
-            modification { it.string assign "changed" },
+            Condition { it.int eq 3 },
+            Modification { it.string assign "changed" },
         )
         // `old` is an observation of the database and must reflect the pre-change row exactly.
         assertEquals(3, change.old?.int)
         assertEquals("", change.old?.string)
-        assertEquals("changed", collection.findOne(condition { it.int eq 3 })?.string)
+        assertEquals("changed", collection.findOne(Condition { it.int eq 3 })?.string)
     }
 
     private companion object {

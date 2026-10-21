@@ -53,7 +53,7 @@ class SerializationLoopTest {
         "Equal on an IsRawString" to condition { it.email eq "a@b.com".toEmailAddress() },
         "GreaterThan on an IsRawString" to condition { it.email gt "a@b.com".toEmailAddress() },
         "RegexMatches" to condition {
-            it.string.condition {
+            it.string.mapCondition {
                 Condition.RegexMatches(
                     "test.*pattern",
                     ignoreCase = true
@@ -76,7 +76,7 @@ class SerializationLoopTest {
         "Set CollectionAnyElements (also: ListAnyElements, AnyElements)" to condition { it.set any { e -> e eq 42 } },
 
         // --- Nested/Nullable Conditions ---
-        "OnField (uses field name as serial key)" to condition { it.embedded.condition { e -> e.value1 eq "test" } },
+        "OnField (uses field name as serial key)" to condition { it.embedded.mapCondition { e -> e.value1 eq "test" } },
         "IfNotNull" to condition { it.intNullable.notNull eq 42 },
     )
 
@@ -169,7 +169,7 @@ class SerializationLoopTest {
     @Test
     fun complexConditionExample() {
         // Complex example combining multiple condition types
-        loop("Complex Condition", condition<LargeTestModel> {
+        loop("Complex Condition", Condition<LargeTestModel> {
             (it.int gt 0 and (it.int lt 100)) or
                     (it.string contains "special") and
                     !(it.boolean eq true)
@@ -179,7 +179,7 @@ class SerializationLoopTest {
     @Test
     fun complexModificationExample() {
         // Complex example combining multiple modification types
-        loop("Complex Modification", modification<LargeTestModel> { it ->
+        loop("Complex Modification", Modification<LargeTestModel> { it ->
             it.int += 1
             it.int coerceAtMost 100
             it.list += listOf(99)
@@ -189,9 +189,9 @@ class SerializationLoopTest {
 
     // Helper to create conditions with the LargeTestModel type
     private inline fun condition(crossinline setup: (Lens<LargeTestModel, LargeTestModel>) -> Condition<LargeTestModel>): Condition<LargeTestModel> =
-        condition<LargeTestModel>(setup)
+        Condition<LargeTestModel>(setup)
 
     // Helper to create modifications with the LargeTestModel type
     private inline fun modification(crossinline setup: ModificationBuilder<LargeTestModel>.(Lens<LargeTestModel, LargeTestModel>) -> Unit): Modification<LargeTestModel> =
-        modification<LargeTestModel>(setup)
+        Modification<LargeTestModel>(setup)
 }

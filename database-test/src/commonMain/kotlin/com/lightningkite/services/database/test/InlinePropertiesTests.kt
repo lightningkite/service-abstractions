@@ -30,8 +30,8 @@ abstract class InlinePropertiesTests {
         collection.insertOne(notMatching)
         assertEquals(matching, collection.get(matching._id))
         assertEquals(notMatching, collection.get(notMatching._id))
-        assertEquals(setOf(matching), collection.find(condition { it.direct.eq(matching.direct) }).toSet())
-        assertEquals(setOf(matching), collection.find(condition { it.direct.value.eq("1") }).toSet())
+        assertEquals(setOf(matching), collection.find(Condition { it.direct.eq(matching.direct) }).toSet())
+        assertEquals(setOf(matching), collection.find(Condition { it.direct.value.eq("1") }).toSet())
     }
 
     @Test
@@ -42,10 +42,10 @@ abstract class InlinePropertiesTests {
         )
         collection.insertOne(numMatching)
         assertEquals(numMatching, collection.get(numMatching._id))
-        assertEquals(setOf(numMatching), collection.find(condition { it.wrappedInt.lte(IntWrapper(1000)) }).toSet())
-        assertEquals(setOf(numMatching), collection.find(condition { it.wrappedInt.int.lte(1000) }).toSet())
-        assertEquals(setOf(numMatching), collection.find(condition { it.wrappedInt.gte(IntWrapper(0)) }).toSet())
-        assertEquals(setOf(numMatching), collection.find(condition { it.wrappedInt.int.gte(0) }).toSet())
+        assertEquals(setOf(numMatching), collection.find(Condition { it.wrappedInt.lte(IntWrapper(1000)) }).toSet())
+        assertEquals(setOf(numMatching), collection.find(Condition { it.wrappedInt.int.lte(1000) }).toSet())
+        assertEquals(setOf(numMatching), collection.find(Condition { it.wrappedInt.gte(IntWrapper(0)) }).toSet())
+        assertEquals(setOf(numMatching), collection.find(Condition { it.wrappedInt.int.gte(0) }).toSet())
     }
 
     @Test
@@ -61,8 +61,8 @@ abstract class InlinePropertiesTests {
         collection.insertOne(notMatching)
         assertEquals(matching, collection.get(matching._id))
         assertEquals(notMatching, collection.get(notMatching._id))
-        assertEquals(setOf(matching), collection.find(condition { it.set.eq(matching.set) }).toSet())
-        assertEquals(setOf(matching), collection.find(condition { it.set.any { it.value.eq("1") } }).toSet())
+        assertEquals(setOf(matching), collection.find(Condition { it.set.eq(matching.set) }).toSet())
+        assertEquals(setOf(matching), collection.find(Condition { it.set.any { it.value.eq("1") } }).toSet())
     }
 
     // modification tets
@@ -77,7 +77,7 @@ abstract class InlinePropertiesTests {
         val id = items.first()._id
         collection.updateOneById(
             id,
-            modification {
+            Modification {
                 it.wrappedInt.int assign 42
                 it.direct.value assign "hello world"
             }
@@ -88,7 +88,7 @@ abstract class InlinePropertiesTests {
         val before = collection.all().map { it.wrappedInt.int }.toList()
         collection.updateMany(
             Condition.Always,
-            modification { it.wrappedInt.int += 1 }
+            Modification { it.wrappedInt.int += 1 }
         )
         assertEquals(before.map { IntWrapper(it + 1) }, collection.all().map { it.wrappedInt }.toList())
     }
@@ -112,11 +112,11 @@ abstract class InlinePropertiesTests {
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 = collection.find(
             Condition.Always,
-            orderBy = listOf(SortPart(path<ValueClassContainingTest>().wrappedInt.int, true))
+            orderBy = listOf(SortPart(Lens<ValueClassContainingTest>().wrappedInt.int, true))
         ).toList()
         val results3 = collection.find(
             Condition.Always,
-            orderBy = listOf(SortPart(path<ValueClassContainingTest>().wrappedInt.int, false))
+            orderBy = listOf(SortPart(Lens<ValueClassContainingTest>().wrappedInt.int, false))
         ).toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
@@ -138,7 +138,7 @@ abstract class InlinePropertiesTests {
         for (type in Aggregate.entries) {
             val ram = ints.aggregate(type)
             val control = c.all().toList().asSequence().aggregateOf(type) { it.wrappedInt.int.toDouble() }
-            val test = c.aggregate(type, Condition.Always, path<ValueClassContainingTest>().wrappedInt.int)
+            val test = c.aggregate(type, Condition.Always, Lens<ValueClassContainingTest>().wrappedInt.int)
             // Tolerance: in-RAM table iterates a map (unspecified order); precision aggregators
             // are order-sensitive at the 1-ulp level, so values may differ from `ram` (computed
             // in monotonic 0..9 order) by tiny floating-point roundoff.
@@ -159,7 +159,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ValueClassContainingTest> { it.direct neq ValueClass("b") }
+        val condition = Condition<ValueClassContainingTest> { it.direct neq ValueClass("b") }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -174,7 +174,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ValueClassContainingTest> { it.wrappedInt eq IntWrapper(42) }
+        val condition = Condition<ValueClassContainingTest> { it.wrappedInt eq IntWrapper(42) }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -189,7 +189,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ValueClassContainingTest> { it.wrappedInt neq IntWrapper(100) }
+        val condition = Condition<ValueClassContainingTest> { it.wrappedInt neq IntWrapper(100) }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -216,7 +216,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ExtendedValueClassTest> { it.wrappedUuid eq UuidWrapper(testUuid) }
+        val condition = Condition<ExtendedValueClassTest> { it.wrappedUuid eq UuidWrapper(testUuid) }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -232,7 +232,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ExtendedValueClassTest> { it.wrappedUuid neq notMatching.wrappedUuid }
+        val condition = Condition<ExtendedValueClassTest> { it.wrappedUuid neq notMatching.wrappedUuid }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -248,7 +248,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ExtendedValueClassTest> { it.wrappedUuid.uuid eq testUuid }
+        val condition = Condition<ExtendedValueClassTest> { it.wrappedUuid.uuid eq testUuid }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -267,7 +267,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<ValueClassContainingTest> { it.wrappedInt gt IntWrapper(50) }
+        val condition = Condition<ValueClassContainingTest> { it.wrappedInt gt IntWrapper(50) }
         val results = collection.find(condition).toList()
         assertContains(results, higher)
         assertTrue(lower !in results)
@@ -282,7 +282,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<ValueClassContainingTest> { it.wrappedInt lt IntWrapper(50) }
+        val condition = Condition<ValueClassContainingTest> { it.wrappedInt lt IntWrapper(50) }
         val results = collection.find(condition).toList()
         assertContains(results, lower)
         assertTrue(higher !in results)
@@ -297,7 +297,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<ValueClassContainingTest> { it.wrappedInt.int gt 50 }
+        val condition = Condition<ValueClassContainingTest> { it.wrappedInt.int gt 50 }
         val results = collection.find(condition).toList()
         assertContains(results, higher)
         assertTrue(lower !in results)
@@ -312,7 +312,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<ValueClassContainingTest> { it.length.meters gt 50.0 }
+        val condition = Condition<ValueClassContainingTest> { it.length.meters gt 50.0 }
         val results = collection.find(condition).toList()
         assertContains(results, higher)
         assertTrue(lower !in results)
@@ -324,7 +324,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_length_inc_innerValue"))
         val item = ValueClassContainingTest(length = 10.0.meters)
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.length.meters += 5.0 }
+        val modification = Modification<ValueClassContainingTest> { it.length.meters += 5.0 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(15.0.meters, result.length)
@@ -339,7 +339,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<ValueClassContainingTest> { it.wrappedInt.int lt 50 }
+        val condition = Condition<ValueClassContainingTest> { it.wrappedInt.int lt 50 }
         val results = collection.find(condition).toList()
         assertContains(results, lower)
         assertTrue(higher !in results)
@@ -359,7 +359,7 @@ abstract class InlinePropertiesTests {
         collection.insertOne(matching)
         collection.insertOne(notMatching)
         val condition =
-            condition<ValueClassContainingTest> { it.wrappedInt inside listOf(IntWrapper(42), IntWrapper(50)) }
+            Condition<ValueClassContainingTest> { it.wrappedInt inside listOf(IntWrapper(42), IntWrapper(50)) }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -375,7 +375,7 @@ abstract class InlinePropertiesTests {
         collection.insertOne(matching)
         collection.insertOne(notMatching)
         val condition =
-            condition<ValueClassContainingTest> { it.wrappedInt notInside listOf(IntWrapper(100), IntWrapper(200)) }
+            Condition<ValueClassContainingTest> { it.wrappedInt notInside listOf(IntWrapper(100), IntWrapper(200)) }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -391,7 +391,7 @@ abstract class InlinePropertiesTests {
         collection.insertOne(matching)
         collection.insertOne(notMatching)
         val condition =
-            condition<ValueClassContainingTest> { it.direct inside listOf(ValueClass("a"), ValueClass("b")) }
+            Condition<ValueClassContainingTest> { it.direct inside listOf(ValueClass("a"), ValueClass("b")) }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -408,7 +408,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ExtendedValueClassTest> {
+        val condition = Condition<ExtendedValueClassTest> {
             it.wrappedUuid inside listOf(
                 UuidWrapper(testUuid1),
                 UuidWrapper(testUuid2)
@@ -432,7 +432,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ValueClassContainingTest> { it.direct.value.contains("world") }
+        val condition = Condition<ValueClassContainingTest> { it.direct.value.contains("world") }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -447,7 +447,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ValueClassContainingTest> { it.set.all { it.value.contains("a") } }
+        val condition = Condition<ValueClassContainingTest> { it.set.all { it.value.contains("a") } }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -462,7 +462,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ExtendedValueClassTest> { it.list.any { it.value eq "match" } }
+        val condition = Condition<ExtendedValueClassTest> { it.list.any { it.value eq "match" } }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -477,7 +477,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(matching, notMatching)
         collection.insertOne(matching)
         collection.insertOne(notMatching)
-        val condition = condition<ExtendedValueClassTest> { it.list.all { it.value.contains("a") } }
+        val condition = Condition<ExtendedValueClassTest> { it.list.all { it.value.contains("a") } }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -496,7 +496,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<ExtendedValueClassTest> { it.directNullable.notNull eq ValueClass("match") }
+        val condition = Condition<ExtendedValueClassTest> { it.directNullable.notNull eq ValueClass("match") }
         val results = collection.find(condition).toList()
         assertContains(results, higher)
         assertTrue(lower !in results)
@@ -511,7 +511,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<ExtendedValueClassTest> { it.directNullable eq null }
+        val condition = Condition<ExtendedValueClassTest> { it.directNullable eq null }
         val results = collection.find(condition).toList()
         assertContains(results, lower)
         assertTrue(higher !in results)
@@ -526,7 +526,7 @@ abstract class InlinePropertiesTests {
         val highItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(100))
         val manualList = listOf(nullItem, lowItem, highItem)
         collection.insert(listOf(nullItem, lowItem, highItem))
-        val condition = condition<ExtendedValueClassTest> { it.wrappedIntNullable.notNull gt IntWrapper(50) }
+        val condition = Condition<ExtendedValueClassTest> { it.wrappedIntNullable.notNull gt IntWrapper(50) }
         val results = collection.find(condition).toList()
         assertContains(results, highItem)
         assertTrue(nullItem !in results)
@@ -542,7 +542,7 @@ abstract class InlinePropertiesTests {
         val highItem = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(100))
         val manualList = listOf(nullItem, lowItem, highItem)
         collection.insert(listOf(nullItem, lowItem, highItem))
-        val condition = condition<ExtendedValueClassTest> { it.wrappedIntNullable.notNull lt IntWrapper(50) }
+        val condition = Condition<ExtendedValueClassTest> { it.wrappedIntNullable.notNull lt IntWrapper(50) }
         val results = collection.find(condition).toList()
         assertContains(results, lowItem)
         assertTrue(nullItem !in results)
@@ -559,7 +559,7 @@ abstract class InlinePropertiesTests {
         val otherItem = ExtendedValueClassTest(wrappedUuidNullable = UuidWrapper(Uuid.random()))
         val manualList = listOf(nullItem, matchingItem, otherItem)
         collection.insert(listOf(nullItem, matchingItem, otherItem))
-        val condition = condition<ExtendedValueClassTest> { it.wrappedUuidNullable.notNull eq UuidWrapper(testUuid) }
+        val condition = Condition<ExtendedValueClassTest> { it.wrappedUuidNullable.notNull eq UuidWrapper(testUuid) }
         val results = collection.find(condition).toList()
         assertContains(results, matchingItem)
         assertTrue(nullItem !in results)
@@ -575,7 +575,7 @@ abstract class InlinePropertiesTests {
         val manualList = listOf(nullItem, nonNullItem)
         collection.insertOne(nullItem)
         collection.insertOne(nonNullItem)
-        val condition = condition<ExtendedValueClassTest> { it.wrappedUuidNullable eq null }
+        val condition = Condition<ExtendedValueClassTest> { it.wrappedUuidNullable eq null }
         val results = collection.find(condition).toList()
         assertContains(results, nullItem)
         assertTrue(nonNullItem !in results)
@@ -591,7 +591,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_multiply"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int *= 3 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int *= 3 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(30), result.wrappedInt)
@@ -603,7 +603,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_decrement"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int += -30 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int += -30 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(70), result.wrappedInt)
@@ -615,7 +615,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtMost"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(50), result.wrappedInt)
@@ -627,7 +627,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtMost_miss"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(30))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(30), result.wrappedInt)  // Unchanged, already below threshold
@@ -639,7 +639,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtLeast"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(50), result.wrappedInt)
@@ -651,7 +651,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtLeast_miss"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(100), result.wrappedInt)  // Unchanged, already above threshold
@@ -668,7 +668,7 @@ abstract class InlinePropertiesTests {
         val item = ValueClassContainingTest(set = setOf(ValueClass("a")))
         collection.insertOne(item)
         val modification =
-            modification<ValueClassContainingTest> { it.set.addAll(setOf(ValueClass("b"), ValueClass("c"))) }
+            Modification<ValueClassContainingTest> { it.set.addAll(setOf(ValueClass("b"), ValueClass("c"))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(setOf(ValueClass("a"), ValueClass("b"), ValueClass("c")), result.set)
@@ -680,7 +680,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassSet_removeAll_byCondition"))
         val item = ValueClassContainingTest(set = setOf(ValueClass("aa"), ValueClass("ab"), ValueClass("bc")))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.set.removeAll { it.value.contains("a") } }
+        val modification = Modification<ValueClassContainingTest> { it.set.removeAll { it.value.contains("a") } }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(setOf(ValueClass("bc")), result.set)
@@ -693,7 +693,7 @@ abstract class InlinePropertiesTests {
         val item = ValueClassContainingTest(set = setOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
         collection.insertOne(item)
         val modification =
-            modification<ValueClassContainingTest> { it.set.removeAll(setOf(ValueClass("a"), ValueClass("c"))) }
+            Modification<ValueClassContainingTest> { it.set.removeAll(setOf(ValueClass("a"), ValueClass("c"))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(setOf(ValueClass("b")), result.set)
@@ -710,7 +710,7 @@ abstract class InlinePropertiesTests {
         val item = ExtendedValueClassTest(list = listOf(ValueClass("a")))
         collection.insertOne(item)
         val modification =
-            modification<ExtendedValueClassTest> { it.list.addAll(listOf(ValueClass("b"), ValueClass("c"))) }
+            Modification<ExtendedValueClassTest> { it.list.addAll(listOf(ValueClass("b"), ValueClass("c"))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")), result.list)
@@ -722,7 +722,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_removeAll_byCondition"))
         val item = ExtendedValueClassTest(list = listOf(ValueClass("aa"), ValueClass("ab"), ValueClass("bc")))
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.list.removeAll { it.value.contains("a") } }
+        val modification = Modification<ExtendedValueClassTest> { it.list.removeAll { it.value.contains("a") } }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(listOf(ValueClass("bc")), result.list)
@@ -735,7 +735,7 @@ abstract class InlinePropertiesTests {
         val item = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
         collection.insertOne(item)
         val modification =
-            modification<ExtendedValueClassTest> { it.list.removeAll(listOf(ValueClass("a"), ValueClass("c"))) }
+            Modification<ExtendedValueClassTest> { it.list.removeAll(listOf(ValueClass("a"), ValueClass("c"))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(listOf(ValueClass("b")), result.list)
@@ -748,7 +748,7 @@ abstract class InlinePropertiesTests {
         val item = ExtendedValueClassTest(listInt = listOf(IntWrapper(1)))
         collection.insertOne(item)
         val modification =
-            modification<ExtendedValueClassTest> { it.listInt.addAll(listOf(IntWrapper(2), IntWrapper(3))) }
+            Modification<ExtendedValueClassTest> { it.listInt.addAll(listOf(IntWrapper(2), IntWrapper(3))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(listOf(IntWrapper(1), IntWrapper(2), IntWrapper(3)), result.listInt)
@@ -764,7 +764,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableValueclass_assign_null"))
         val item = ExtendedValueClassTest(directNullable = ValueClass("initial"))
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.directNullable assign null }
+        val modification = Modification<ExtendedValueClassTest> { it.directNullable assign null }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(null, result.directNullable)
@@ -776,7 +776,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableValueclass_assign_value"))
         val item = ExtendedValueClassTest(directNullable = null)
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.directNullable assign ValueClass("assigned") }
+        val modification = Modification<ExtendedValueClassTest> { it.directNullable assign ValueClass("assigned") }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(ValueClass("assigned"), result.directNullable)
@@ -788,7 +788,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedInt_assign_null"))
         val item = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(42))
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.wrappedIntNullable assign null }
+        val modification = Modification<ExtendedValueClassTest> { it.wrappedIntNullable assign null }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(null, result.wrappedIntNullable)
@@ -800,7 +800,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedInt_assign_value"))
         val item = ExtendedValueClassTest(wrappedIntNullable = null)
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.wrappedIntNullable assign IntWrapper(100) }
+        val modification = Modification<ExtendedValueClassTest> { it.wrappedIntNullable assign IntWrapper(100) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(100), result.wrappedIntNullable)
@@ -812,7 +812,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedUuid_assign_null"))
         val item = ExtendedValueClassTest(wrappedUuidNullable = UuidWrapper(Uuid.random()))
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.wrappedUuidNullable assign null }
+        val modification = Modification<ExtendedValueClassTest> { it.wrappedUuidNullable assign null }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(null, result.wrappedUuidNullable)
@@ -825,7 +825,7 @@ abstract class InlinePropertiesTests {
         val testUuid = Uuid.random()
         val item = ExtendedValueClassTest(wrappedUuidNullable = null)
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.wrappedUuidNullable assign UuidWrapper(testUuid) }
+        val modification = Modification<ExtendedValueClassTest> { it.wrappedUuidNullable assign UuidWrapper(testUuid) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(UuidWrapper(testUuid), result.wrappedUuidNullable)

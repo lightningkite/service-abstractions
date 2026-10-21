@@ -221,7 +221,7 @@ class SqlBasicTest {
         val b = LargeTestModel(int = 20)
         collection.insertMany(listOf(a, b))
 
-        val results = collection.find(condition { it.int eq 10 }).toList()
+        val results = collection.find(Condition { it.int eq 10 }).toList()
         assertEquals(1, results.size)
         assertEquals(a._id, results[0]._id)
     }
@@ -234,7 +234,7 @@ class SqlBasicTest {
 
         val change = collection.updateOne(
             Condition.Always,
-            modification { it.int assign 42 }
+            Modification { it.int assign 42 }
         )
         assertEquals(5, change.old?.int)
         assertEquals(42, change.new?.int)
@@ -328,7 +328,7 @@ class SqlBasicTest {
         val noMatch = LargeTestModel(set = setOf(30, 40))
         collection.insertMany(listOf(match, noMatch))
 
-        val results = collection.find(condition { it.set.any { e -> e eq 20 } }).toList()
+        val results = collection.find(Condition { it.set.any { e -> e eq 20 } }).toList()
         assertEquals(1, results.size)
         assertEquals(match._id, results[0]._id)
     }

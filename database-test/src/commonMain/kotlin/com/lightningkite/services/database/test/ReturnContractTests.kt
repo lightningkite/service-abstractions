@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.Lens
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -46,13 +47,13 @@ abstract class ReturnContractTests {
         collection.insert(listOf(original))
 
         val change = collection.updateOne(
-            condition { it.int eq 1 },
-            modification { it.string assign "after" },
+            Condition { it.int eq 1 },
+            Modification { it.string assign "after" },
         )
 
         assertEquals(original, change.old)
         // Uncontended, the client-side prediction must agree with what actually landed.
-        assertEquals(change.new, collection.findOne(condition { it.int eq 1 }))
+        assertEquals(change.new, collection.findOne(Condition { it.int eq 1 }))
     }
 
     @Test
@@ -60,9 +61,9 @@ abstract class ReturnContractTests {
         val collection = table("rct_updateMany")
         collection.insert((1..6).map { LargeTestModel(int = it) })
 
-        val matching = condition<LargeTestModel> { it.int gt 3 }
+        val matching = Condition<LargeTestModel> { it.int gt 3 }
         val before = collection.find(matching).toList().toSet()
-        val changes = collection.updateMany(matching, modification { it.boolean assign true })
+        val changes = collection.updateMany(matching, Modification { it.boolean assign true })
 
         assertEquals(3, changes.changes.size)
         assertEquals(before, changes.changes.map { it.old!! }.toSet())
@@ -79,8 +80,8 @@ abstract class ReturnContractTests {
         a.insert(rows)
         b.insert(rows)
 
-        val matching = condition<LargeTestModel> { it.int gt 3 }
-        val mark = modification<LargeTestModel> { it.boolean assign true }
+        val matching = Condition<LargeTestModel> { it.int gt 3 }
+        val mark = Modification<LargeTestModel> { it.boolean assign true }
         assertEquals(a.updateMany(matching, mark).changes.size, b.updateManyIgnoringResult(matching, mark))
     }
 
@@ -90,7 +91,7 @@ abstract class ReturnContractTests {
         collection.insert((1..6).map { LargeTestModel(int = it) })
 
         val before = collection.all().toSet()
-        val deleted = collection.deleteMany(condition { it.int gt 3 }).toSet()
+        val deleted = collection.deleteMany(Condition { it.int gt 3 }).toSet()
         val after = collection.all().toSet()
 
         assertEquals(3, deleted.size)
@@ -106,7 +107,7 @@ abstract class ReturnContractTests {
         a.insert(rows)
         b.insert(rows)
 
-        val matching = condition<LargeTestModel> { it.int gt 3 }
+        val matching = Condition<LargeTestModel> { it.int gt 3 }
         assertEquals(a.deleteMany(matching).size, b.deleteManyIgnoringOld(matching))
     }
 
@@ -115,11 +116,11 @@ abstract class ReturnContractTests {
         val collection = table("rct_upsertInsert")
         val model = LargeTestModel(int = 1)
 
-        val result = collection.upsertOne(condition { it._id eq model._id }, modification { it.boolean assign true }, model)
+        val result = collection.upsertOne(Condition { it._id eq model._id }, Modification { it.boolean assign true }, model)
 
         assertNull(result.old, "nothing existed, so there is no old row to report")
         assertEquals(model, result.new)
-        assertEquals(model, collection.findOne(condition { it._id eq model._id }))
+        assertEquals(model, collection.findOne(Condition { it._id eq model._id }))
     }
 
     @Test
@@ -129,13 +130,13 @@ abstract class ReturnContractTests {
         collection.insert(listOf(model))
 
         val result = collection.upsertOne(
-            condition { it._id eq model._id },
-            modification { it.boolean assign true },
+            Condition { it._id eq model._id },
+            Modification { it.boolean assign true },
             LargeTestModel(int = 99),
         )
 
         assertEquals(model, result.old)
-        assertEquals(result.new, collection.findOne(condition { it._id eq model._id }))
+        assertEquals(result.new, collection.findOne(Condition { it._id eq model._id }))
         assertEquals(1, collection.count(), "the update path must not also insert")
     }
 
@@ -143,10 +144,10 @@ abstract class ReturnContractTests {
     fun upsertOneIgnoringResult_reportsWhetherARowExisted() = runTest {
         val collection = table("rct_upsertIgnoring")
         val model = LargeTestModel(int = 1)
-        val mark = modification<LargeTestModel> { it.boolean assign true }
+        val mark = Modification<LargeTestModel> { it.boolean assign true }
 
-        assertEquals(false, collection.upsertOneIgnoringResult(condition { it._id eq model._id }, mark, model))
-        assertEquals(true, collection.upsertOneIgnoringResult(condition { it._id eq model._id }, mark, model))
+        assertEquals(false, collection.upsertOneIgnoringResult(Condition { it._id eq model._id }, mark, model))
+        assertEquals(true, collection.upsertOneIgnoringResult(Condition { it._id eq model._id }, mark, model))
         assertEquals(1, collection.count())
     }
 
@@ -167,13 +168,13 @@ abstract class ReturnContractTests {
         val conditions = listOf<Condition<LargeTestModel>>(
             Condition.Always,
             Condition.Never,
-            condition<LargeTestModel> { it.int gt 5 },
-            condition<LargeTestModel> { it.int lte 5 },
-            condition<LargeTestModel> { it.boolean eq true },
-            condition<LargeTestModel> { it.string eq "row1" },
-            condition<LargeTestModel> { it.intNullable eq null },
-            condition<LargeTestModel> { (it.int gt 2) and (it.int lt 8) },
-            condition<LargeTestModel> { (it.int lt 2) or (it.int gt 8) },
+            Condition<LargeTestModel> { it.int gt 5 },
+            Condition<LargeTestModel> { it.int lte 5 },
+            Condition<LargeTestModel> { it.boolean eq true },
+            Condition<LargeTestModel> { it.string eq "row1" },
+            Condition<LargeTestModel> { it.intNullable eq null },
+            Condition<LargeTestModel> { (it.int gt 2) and (it.int lt 8) },
+            Condition<LargeTestModel> { (it.int lt 2) or (it.int gt 8) },
         )
         for (c in conditions) {
             assertEquals(
@@ -190,10 +191,10 @@ abstract class ReturnContractTests {
         collection.insert((1..5).map { LargeTestModel(int = it) })
         assertEquals(5, collection.count())
 
-        collection.deleteOne(condition { it.int eq 1 })
+        collection.deleteOne(Condition { it.int eq 1 })
         assertEquals(4, collection.count())
 
-        collection.deleteMany(condition { it.int gt 3 })
+        collection.deleteMany(Condition { it.int gt 3 })
         assertEquals(2, collection.count())
 
         collection.insert(listOf(LargeTestModel(int = 100)))
@@ -208,7 +209,7 @@ abstract class ReturnContractTests {
         collection.insert(listOf(original))
 
         val replacement = original.copy(string = "after")
-        val change = collection.replaceOne(condition { it.int eq 1 }, replacement)
+        val change = collection.replaceOne(Condition { it.int eq 1 }, replacement)
 
         assertEquals(original, change.old)
         assertEquals(replacement, change.new)
@@ -220,8 +221,8 @@ abstract class ReturnContractTests {
         val collection = table("rct_findPartial")
         collection.insert((1..5).map { LargeTestModel(int = it, string = "row$it") })
 
-        val matching = condition<LargeTestModel> { it.int gt 2 }
-        val partials = collection.findPartial(setOf(path<LargeTestModel>().int), matching).toList()
+        val matching = Condition<LargeTestModel> { it.int gt 2 }
+        val partials = collection.findPartial(setOf(Lens<LargeTestModel>().int), matching).toList()
         val full = collection.find(matching).toList()
 
         assertEquals(full.size, partials.size)

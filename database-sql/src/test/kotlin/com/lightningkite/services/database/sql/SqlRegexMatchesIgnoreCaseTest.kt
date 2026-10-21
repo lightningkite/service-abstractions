@@ -31,7 +31,7 @@ class SqlRegexMatchesIgnoreCaseTest {
         val nonMatching = LargeTestModel(string = "goodbye world")
         collection.insertMany(listOf(upper, lower, nonMatching))
 
-        val condition = path<LargeTestModel>().string.mapCondition(Condition.RegexMatches("^hello", ignoreCase = true))
+        val condition = Condition<LargeTestModel> { it.string.mapCondition(Condition.RegexMatches("^hello", ignoreCase = true)) }
         val results = collection.find(condition).toList()
         assertEquals(setOf(upper._id, lower._id), results.map { it._id }.toSet())
     }
@@ -43,7 +43,7 @@ class SqlRegexMatchesIgnoreCaseTest {
         val lower = LargeTestModel(string = "hello world")
         collection.insertMany(listOf(upper, lower))
 
-        val condition = path<LargeTestModel>().string.mapCondition(Condition.RegexMatches("^hello", ignoreCase = false))
+        val condition = Condition<LargeTestModel> { it.string.mapCondition(Condition.RegexMatches("^hello", ignoreCase = false)) }
         val results = collection.find(condition).toList()
         assertEquals(listOf(lower._id), results.map { it._id })
     }

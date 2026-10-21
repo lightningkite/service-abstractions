@@ -27,12 +27,12 @@ abstract class AggregationsTest() {
         )
         run {
             val control = c.all().toList().groupingBy { it.byte }.eachCount()
-            val test: Map<Byte, Int> = c.groupCount(groupBy = path<LargeTestModel>().byte)
+            val test: Map<Byte, Int> = c.groupCount(groupBy = Lens<LargeTestModel>().byte)
             assertEquals(control, test)
         }
         run {
             val control = c.all().toList().asSequence().filter { it.int > 40 }.groupingBy { it.byte }.eachCount()
-            val test: Map<Byte, Int> = c.groupCount(condition { it.int gt 40 }, groupBy = path<LargeTestModel>().byte)
+            val test: Map<Byte, Int> = c.groupCount(Condition { it.int gt 40 }, groupBy = Lens<LargeTestModel>().byte)
             assertEquals(control, test)
         }
         run {
@@ -53,7 +53,7 @@ abstract class AggregationsTest() {
             for (type in Aggregate.entries) {
                 val control = c.all().toList().asSequence().groupAggregate(type) { it.byte to it.int.toDouble() }
                 val test: Map<Byte, Double?> =
-                    c.groupAggregate(type, property = property, groupBy = path<LargeTestModel>().byte)
+                    c.groupAggregate(type, property = property, groupBy = Lens<LargeTestModel>().byte)
                 assertEquals(control.keys, test.keys)
                 for (key in control.keys) {
                     assertEquals(control[key]!!, test[key]!!, 0.0000001)
@@ -71,7 +71,7 @@ abstract class AggregationsTest() {
                 val test: Map<Byte, Double?> = c.groupAggregate(
                     type,
                     property = property,
-                    groupBy = path<LargeTestModel>().byte,
+                    groupBy = Lens<LargeTestModel>().byte,
                     condition = Condition.Never
                 )
                 assertEquals(control.keys, test.keys)
@@ -99,7 +99,7 @@ abstract class AggregationsTest() {
             )
         )
         val control = c.all().toList().groupingBy { it.stringNullable }.eachCount()
-        val test: Map<String?, Int> = c.groupCount(groupBy = path<LargeTestModel>().stringNullable)
+        val test: Map<String?, Int> = c.groupCount(groupBy = Lens<LargeTestModel>().stringNullable)
         assertEquals(control, test)
         assertEquals(3, test[null])
     }
@@ -121,7 +121,7 @@ abstract class AggregationsTest() {
                 LargeTestModel(embeddedNullable = null),
             )
         )
-        val test: Map<Int, Int> = c.groupCount(groupBy = path<LargeTestModel>().embeddedNullable.notNull.value2)
+        val test: Map<Int, Int> = c.groupCount(groupBy = Lens<LargeTestModel>().embeddedNullable.notNull.value2)
         // Asserted as whole-map equality: a surviving null key fails this, and the message shows it.
         assertEquals(mapOf(1 to 2, 2 to 1), test)
     }
@@ -139,8 +139,8 @@ abstract class AggregationsTest() {
         )
         val test: Map<Int, Double?> = c.groupAggregate(
             aggregate = Aggregate.Sum,
-            groupBy = path<LargeTestModel>().embeddedNullable.notNull.value2,
-            property = path<LargeTestModel>().int,
+            groupBy = Lens<LargeTestModel>().embeddedNullable.notNull.value2,
+            property = Lens<LargeTestModel>().int,
         )
         assertEquals(setOf(1, 2), test.keys)
         assertEquals(30.0, test[1]!!, 0.0000001)

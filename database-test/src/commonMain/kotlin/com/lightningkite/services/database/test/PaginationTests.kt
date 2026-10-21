@@ -105,7 +105,7 @@ abstract class PaginationTests {
         val collection = seeded("pag_conditioned")
         // Condition first (6 rows), then skip 2, then limit 3.
         val page = collection.find(
-            condition { it.int gt 4 },
+            Condition { it.int gt 4 },
             byInt,
             skip = 2,
             limit = 3,

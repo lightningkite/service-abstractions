@@ -33,7 +33,7 @@ class SqlNotEqualNullableTest {
         collection.insertMany(listOf(nullRow, matchingRow, differentRow))
 
         // In-memory semantics: null != 5 -> true, 99 != 5 -> true, 5 != 5 -> false.
-        val results = collection.find(condition { it.intNullable neq 5 }).toList()
+        val results = collection.find(Condition { it.intNullable neq 5 }).toList()
         assertEquals(setOf(nullRow._id, differentRow._id), results.map { it._id }.toSet())
     }
 }

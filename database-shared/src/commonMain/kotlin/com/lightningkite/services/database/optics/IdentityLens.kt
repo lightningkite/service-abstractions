@@ -2,6 +2,7 @@ package com.lightningkite.services.database.optics
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
+import com.lightningkite.services.database.serializerOrContextual
 import kotlinx.serialization.KSerializer
 
 /** A [Lens] that focuses on the whole value. It serializes as `this`. */
@@ -19,3 +20,5 @@ public class IdentityLens<T>(override val serializer: KSerializer<T>) : Lens<T, 
     override fun hashCode(): Int = serializer.descriptor.hashCode()
 }
 
+/** Returns an [IdentityLens] on [T]. */
+public inline fun <reified T> Lens(): Lens<T, T> = IdentityLens(serializerOrContextual<T>())

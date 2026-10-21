@@ -22,15 +22,14 @@ import java.util.Locale.getDefault
  *
  * It generates:
  * ```kotlin
- * val User.Companion.path: IdentityLens<User>
- * val User_name: Field<User, String>
- * val User_age: Field<User, Int>
+ * val User.Companion.name: Field<User, String>
+ * val User.Companion.age: Field<User, Int>
  * val <ROOT> Optic<ROOT, User>.name: Optic<ROOT, String>
  * val <ROOT> Lens<ROOT, User>.name: Lens<ROOT, String>
  * (and the same for age)
  * ```
  *
- * This enables queries like: `User.path.age gte 18`
+ * This enables queries like: `User.age gte 18`
  *
  * ## Processing Flow
  *
@@ -192,7 +191,8 @@ class TableGenerator(
             if (declaration.typeParameters.isNotEmpty()) {
                 appendLine("// Skipped $classReference: generic sealed types are not supported")
             } else {
-                appendLine("public inline val $classReference.Companion.path: IdentityLens<$classReference> get() = com.lightningkite.services.database.path<$classReference>()")
+                appendPathDeprecation("Lens<$classReference>()", "com.lightningkite.services.database.optics.Lens")
+                appendLine("public val $classReference.Companion.path: IdentityLens<$classReference> get() = IdentityLens($classReference.serializer())")
                 declaration.getSealedSubclasses()
                     .filter { it.needsDcp() && it.isSerializable() }
                     .forEach { variant ->
@@ -278,13 +278,14 @@ class TableGenerator(
         }
 
         if (declaration.typeParameters.isNotEmpty()) {
+            appendPathDeprecation("Lens<$typeReference>()", "com.lightningkite.services.database.optics.Lens")
             appendLine(
                 "public inline fun <${
                     declaration.typeParameters.joinToString(", ") {
                         "reified " + it.name.asString() + ": " + (it.bounds.firstOrNull()
                             ?.toKotlin() ?: "Any?")
                     }
-                }> $classReference.Companion.path(): IdentityLens<$typeReference> = com.lightningkite.services.database.path<$typeReference>()"
+                }> $classReference.Companion.path(): IdentityLens<$typeReference> = IdentityLens(com.lightningkite.services.database.serializerOrContextual<$typeReference>())"
             )
 
             fun appendGenericCompanionHelper(name: String) {
@@ -306,10 +307,14 @@ class TableGenerator(
                 +"): "
             }
 
+            appendPathDeprecation(
+                "IdentityLens($classReference.serializer(${declaration.typeParameters.joinToString { it.name.asString().lowercase() }}))",
+                "com.lightningkite.services.database.optics.IdentityLens"
+            )
             appendGenericCompanionHelper("path")
             +"IdentityLens<$typeReference>"
             +" = "
-            +"com.lightningkite.services.database.path($classReference.Companion.serializer("
+            +"IdentityLens($classReference.Companion.serializer("
             +declaration.typeParameters.joinToString { it.name.asString().lowercase() }
             +"))"
             appendLine()
@@ -354,7 +359,8 @@ class TableGenerator(
                 }
             }
         } else {
-            appendLine("public inline val $typeReference.Companion.path: IdentityLens<$typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
+            appendPathDeprecation("Lens<$typeReference>()", "com.lightningkite.services.database.optics.Lens")
+            appendLine("public val $typeReference.Companion.path: IdentityLens<$typeReference> get() = IdentityLens($typeReference.serializer())")
             appendLine("public val ${typeReference}.Companion.fields: Array<Field<$typeReference, *>> get() = serializer().fields!!")
             for ((index, field) in fields.withIndex()) {
                 appendInlinePropertyAnnotation()
@@ -369,6 +375,13 @@ class TableGenerator(
         }
     } catch (e: Exception) {
         appendLine("/*" + e.stackTraceToString() + "*/")
+    }
+
+    private fun TabAppendable.appendPathDeprecation(replacement: String, import: String) {
+        appendLine(
+            "@Deprecated(\"Fields can be used as paths directly now, so you probably don't need this. " +
+                "If you need a lens on the type itself, use Lens<T>().\", ReplaceWith(\"$replacement\", \"$import\"))"
+        )
     }
 }
 

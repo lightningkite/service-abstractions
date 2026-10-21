@@ -65,7 +65,7 @@ public fun <K> AnyOptic<K>.setAny(key: K, any: Any?): K = (coerceToOptic() as Op
 @Deprecated("Use coerceToOptic().serializer instead", ReplaceWith("coerceToOptic().serializer", "com.lightningkite.services.database.optics.coerceToOptic"))
 public val AnyOptic<*>.serializerAny: KSerializer<*> get() = coerceToOptic().serializer
 
-@Deprecated("Compose with plus instead", ReplaceWith("this + prop", "com.lightningkite.services.database.optics.plus"))
+@Deprecated("Compose with plus instead", ReplaceWith("this + prop", "com.lightningkite.services.database.optics.*"))
 public operator fun <K, V, V2> Optic<K, V>.get(prop: Field<V, V2>): Optic<K, V2> = this + prop
 
 @Deprecated("Renamed to forOptic", ReplaceWith("forOptic(path)"))
@@ -74,3 +74,38 @@ public fun <K, V> Modification<K>.forDataClassPath(path: Optic<K, V>): Modificat
 @Deprecated("Renamed to valueSetForOptic", ReplaceWith("valueSetForOptic(path)"))
 public fun <K, V> Modification<K>.valueSetForDataClassPath(path: Optic<K, V>): V? = valueSetForOptic(path)
 
+@Deprecated("Renamed to Condition to match kotlin naming conventions", ReplaceWith("Condition(setup)", "com.lightningkite.services.database.Condition"))
+public inline fun <reified T> condition(setup: (Lens<T, T>) -> Condition<T>): Condition<T> =
+    Condition(setup)
+
+@Deprecated("Renamed to Condition to match kotlin naming conventions", ReplaceWith("Condition(setup)", "com.lightningkite.services.database.Condition"))
+public fun condition(boolean: Boolean): Condition<Any?> = Condition(boolean)
+
+@Deprecated("Renamed to Modification to match kotlin naming conventions", ReplaceWith("Modification(setup)", "com.lightningkite.services.database.Modification"))
+public inline fun <reified T> modification(setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit): Modification<T> {
+    return ModificationBuilder<T>().apply {
+        setup(this, Lens())
+    }.build()
+}
+
+@Deprecated("Renamed to Modification to match kotlin naming conventions", ReplaceWith("Modification(path, setup)", "com.lightningkite.services.database.Modification"))
+public inline fun <T> modification(
+    path: Lens<T, T>,
+    setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
+): Modification<T> {
+    return ModificationBuilder<T>().apply {
+        setup(this, path)
+    }.build()
+}
+
+@Deprecated("Use the IdentityLens constructor", ReplaceWith("IdentityLens(serializer)", "com.lightningkite.services.database.optics.IdentityLens"))
+public fun <T> path(serializer: KSerializer<T>): IdentityLens<T> = IdentityLens(serializer)
+
+@Deprecated("Renamed to Lens", ReplaceWith("Lens<T>()", "com.lightningkite.services.database.optics.Lens"))
+public inline fun <reified T> path(): Lens<T, T> = Lens()
+
+@Deprecated("Replaced by always()", ReplaceWith("always()", "com.lightningkite.services.database.always"))
+public val <K> Lens<K, K>.always: Condition<K> get() = Condition.Always
+
+@Deprecated("Replaced by never()", ReplaceWith("never()", "com.lightningkite.services.database.never"))
+public val <K> Lens<K, K>.never: Condition<K> get() = Condition.Never

@@ -52,14 +52,14 @@ abstract class ConcurrencyTests {
 
         inParallel(concurrency) {
             collection.updateOneIgnoringResult(
-                condition { it._id eq model._id },
-                modification { it.int plusAssign 1 },
+                Condition { it._id eq model._id },
+                Modification { it.int plusAssign 1 },
             )
         }
 
         assertEquals(
             concurrency,
-            collection.findOne(condition { it._id eq model._id })?.int,
+            collection.findOne(Condition { it._id eq model._id })?.int,
             "every increment must survive; a lower value means an update was lost",
         )
     }
@@ -72,8 +72,8 @@ abstract class ConcurrencyTests {
 
         val olds = inParallel(concurrency) {
             collection.updateOne(
-                condition { it._id eq model._id },
-                modification { it.int plusAssign 1 },
+                Condition { it._id eq model._id },
+                Modification { it.int plusAssign 1 },
             ).old?.int
         }
 
@@ -120,13 +120,13 @@ abstract class ConcurrencyTests {
         // `old` means this caller is the one that made the transition.
         val winners = inParallel(concurrency) {
             collection.updateOne(
-                condition { (it._id eq model._id) and (it.boolean eq false) },
-                modification { it.boolean assign true },
+                Condition { (it._id eq model._id) and (it.boolean eq false) },
+                Modification { it.boolean assign true },
             ).old
         }.filterNotNull()
 
         assertEquals(1, winners.size, "exactly one caller may win the transition")
-        assertTrue(collection.findOne(condition { it._id eq model._id })!!.boolean)
+        assertTrue(collection.findOne(Condition { it._id eq model._id })!!.boolean)
     }
 
     @Test
@@ -139,11 +139,11 @@ abstract class ConcurrencyTests {
         // end up half-written, and a row reported deleted must actually be gone.
         val deleted = inParallel(concurrency) { index ->
             if (index % 2 == 0) {
-                collection.deleteOne(condition { it.int eq index + 1 })?._id
+                collection.deleteOne(Condition { it.int eq index + 1 })?._id
             } else {
                 collection.updateOneIgnoringResult(
-                    condition { it.int eq index + 1 },
-                    modification { it.string assign "touched" },
+                    Condition { it.int eq index + 1 },
+                    Modification { it.string assign "touched" },
                 )
                 null
             }

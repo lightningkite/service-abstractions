@@ -18,6 +18,6 @@ data class SampleGeneric<A, B : Comparable<B>>(
 )
 
 fun ifSyntaxWorksWereOk() {
-    condition<Sample> { it.x gt 4 }
-    condition<SampleGeneric<Int, String>> { it.x gt 4 }
+    Condition<Sample> { it.x gt 4 }
+    Condition<SampleGeneric<Int, String>> { it.x gt 4 }
 }

@@ -29,9 +29,9 @@ abstract class SortTest {
         collection.insert(items)
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().int, true))).toList()
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().int, true))).toList()
         val results3 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().int, false))).toList()
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().int, false))).toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
     }
@@ -52,10 +52,10 @@ abstract class SortTest {
         collection.insert(items)
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().embedded.value2, true)))
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().embedded.value2, true)))
                 .toList()
         val results3 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().embedded.value2, false)))
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().embedded.value2, false)))
                 .toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
@@ -78,11 +78,11 @@ abstract class SortTest {
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 = collection.find(
             Condition.Always,
-            orderBy = listOf(SortPart(path<LargeTestModel>().embeddedNullable.notNull.value2, true))
+            orderBy = listOf(SortPart(Lens<LargeTestModel>().embeddedNullable.notNull.value2, true))
         ).toList()
         val results3 = collection.find(
             Condition.Always,
-            orderBy = listOf(SortPart(path<LargeTestModel>().embeddedNullable.notNull.value2, false))
+            orderBy = listOf(SortPart(Lens<LargeTestModel>().embeddedNullable.notNull.value2, false))
         ).toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
@@ -104,9 +104,9 @@ abstract class SortTest {
         collection.insert(items)
         // Note: results without ordering are not guaranteed to match insertion order
         val results2 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().instant, true))).toList()
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().instant, true))).toList()
         val results3 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().instant, false)))
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().instant, false)))
                 .toList()
         assertEquals(sortedPosts.map { it._id }, results2.map { it._id })
         assertEquals(reversePosts.map { it._id }, results3.map { it._id })
@@ -127,9 +127,9 @@ abstract class SortTest {
         val reversePosts = items.sortedByDescending { it.string }
         collection.insert(items)
         val results2 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, true))).toList()
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().string, true))).toList()
         val results3 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, false))).toList()
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().string, false))).toList()
         assertEquals(sortedPosts.map { it.string }, results2.map { it.string })
         assertEquals(reversePosts.map { it.string }, results3.map { it.string })
     }
@@ -149,10 +149,10 @@ abstract class SortTest {
         val reversePosts = items.sortedByDescending { it.string.lowercase() }
         collection.insert(items)
         val results2 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, true, true)))
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().string, true, true)))
                 .toList()
         val results3 =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().string, false, true)))
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().string, false, true)))
                 .toList()
         assertEquals(sortedPosts.map { it.string }, results2.map { it.string })
         assertEquals(reversePosts.map { it.string }, results3.map { it.string })
@@ -181,10 +181,10 @@ abstract class SortTest {
         )
 
         val ascending =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().intNullable, true)))
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().intNullable, true)))
                 .toList()
         val descending =
-            collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().intNullable, false)))
+            collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().intNullable, false)))
                 .toList()
 
         assertEquals(listOf(null, null, 1, 2, 3), ascending.map { it.intNullable })
@@ -202,7 +202,7 @@ abstract class SortTest {
             LargeTestModel(string = "ae"),
             LargeTestModel(string = "Af"),
         )
-        collection.find(Condition.Always, orderBy = listOf(SortPart(path<LargeTestModel>().long, true, true))).toList()
+        collection.find(Condition.Always, orderBy = listOf(SortPart(Lens<LargeTestModel>().long, true, true))).toList()
     }
 
 }

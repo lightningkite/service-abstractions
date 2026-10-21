@@ -62,12 +62,12 @@ class PostgresLogLeakTest {
         collection.insertOne(model)
 
         // Exercise Equal condition path (the format(value) leak site).
-        collection.find(condition<LargeTestModel> { it.int eq 42 }).toList()
+        collection.find(Condition<LargeTestModel> { it.int eq 42 }).toList()
 
         // Exercise modification path (uses formatSingleExpression / format).
         collection.updateOne(
-            condition<LargeTestModel> { it.int eq 42 },
-            modification<LargeTestModel> { it.int assign 43 }
+            Condition<LargeTestModel> { it.int eq 42 },
+            Modification<LargeTestModel> { it.int assign 43 }
         )
 
         // Flush anything buffered before we restore stdout.

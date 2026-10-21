@@ -110,7 +110,7 @@ public data class Mask<T>(
 }
 
 public inline fun <reified T> mask(builder: Mask.Builder<T>.(Lens<T, T>) -> Unit): Mask<T> {
-    return Mask.Builder<T>(serializer<T>()).apply { builder(path()) }.build()
+    return Mask.Builder<T>(serializer<T>()).apply { builder(Lens()) }.build()
 }
 
 public operator fun <T> Condition<T>.invoke(map: Partial<T>): Boolean? {

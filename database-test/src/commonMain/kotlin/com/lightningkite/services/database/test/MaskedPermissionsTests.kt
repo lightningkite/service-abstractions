@@ -46,15 +46,15 @@ abstract class MaskedPermissionsTests {
             )
         )
 
-        assertEquals(1, table.count(condition { it.int eq 5 }), "unmasked fields stay filterable")
-        assertEquals(0, table.count(condition { it.embedded.value2 eq 99 }))
-        assertEquals(0, table.count(condition { it.embedded eq ClassUsedForEmbedding("secret", 99) }))
-        assertEquals(0, table.count(condition { it.embeddedNullable.notNull.value1 eq "secret" }))
-        assertEquals(0, table.count(condition { it.list.any { it eq 7 } }))
-        assertEquals(0, table.count(condition { it.set.any { it eq 7 } }))
-        assertEquals(0, table.count(condition { it.listEmbedded.any { it.value2 eq 99 } }))
-        assertEquals(0, table.find(condition { it.embedded.value2 eq 99 }).toList().size)
-        assertEquals(mapOf(), table.groupCount(condition { it.list.any { it eq 7 } }, path<LargeTestModel>().byte))
+        assertEquals(1, table.count(Condition { it.int eq 5 }), "unmasked fields stay filterable")
+        assertEquals(0, table.count(Condition { it.embedded.value2 eq 99 }))
+        assertEquals(0, table.count(Condition { it.embedded eq ClassUsedForEmbedding("secret", 99) }))
+        assertEquals(0, table.count(Condition { it.embeddedNullable.notNull.value1 eq "secret" }))
+        assertEquals(0, table.count(Condition { it.list.any { it eq 7 } }))
+        assertEquals(0, table.count(Condition { it.set.any { it eq 7 } }))
+        assertEquals(0, table.count(Condition { it.listEmbedded.any { it.value2 eq 99 } }))
+        assertEquals(0, table.find(Condition { it.embedded.value2 eq 99 }).toList().size)
+        assertEquals(mapOf(), table.groupCount(Condition { it.list.any { it eq 7 } }, Lens<LargeTestModel>().byte))
     }
 
     @Test
@@ -67,9 +67,9 @@ abstract class MaskedPermissionsTests {
         )
         val secret = raw.insertOne(LargeTestModel(int = 1234))
 
-        assertNull(table.aggregate(Aggregate.Sum, condition { it._id eq secret._id }, path<LargeTestModel>().int))
+        assertNull(table.aggregate(Aggregate.Sum, Condition { it._id eq secret._id }, Lens<LargeTestModel>().int))
         assertNull(
-            table.groupAggregate(Aggregate.Sum, condition { it._id eq secret._id }, path<LargeTestModel>().byte, path<LargeTestModel>().int)[0]
+            table.groupAggregate(Aggregate.Sum, Condition { it._id eq secret._id }, Lens<LargeTestModel>().byte, Lens<LargeTestModel>().int)[0]
         )
     }
 
@@ -79,20 +79,20 @@ abstract class MaskedPermissionsTests {
             "maskedPartials", ModelPermissions(
                 all = Condition.Always,
                 readMask = mask<LargeTestModel> {
-                    it.int.mask(0, unless = condition<LargeTestModel> { (it.byte eq 1) or (it.short eq 1) })
+                    it.int.mask(0, unless = Condition<LargeTestModel> { (it.byte eq 1) or (it.short eq 1) })
                     it.embedded.mask(ClassUsedForEmbedding("masked", 0))
                 }
             )
         )
         raw.insertOne(LargeTestModel(byte = 0, short = 0, int = 1234, embedded = ClassUsedForEmbedding("secret", 99)))
 
-        val int = table.findPartial(setOf(path<LargeTestModel>().int), Condition.Always).toList().single()
+        val int = table.findPartial(setOf(Lens<LargeTestModel>().int), Condition.Always).toList().single()
         assertEquals(0, int.parts[LargeTestModel.int])
 
-        val nested = table.findPartial(setOf(path<LargeTestModel>().embedded.value1), Condition.Always).toList().single()
+        val nested = table.findPartial(setOf(Lens<LargeTestModel>().embedded.value1), Condition.Always).toList().single()
         assertEquals("masked", (nested.parts[LargeTestModel.embedded] as Partial<*>).parts[ClassUsedForEmbedding.value1])
 
-        val whole = table.findPartial(setOf(path<LargeTestModel>().embedded), Condition.Always).toList().single()
+        val whole = table.findPartial(setOf(Lens<LargeTestModel>().embedded), Condition.Always).toList().single()
         assertEquals(
             ClassUsedForEmbedding("masked", 0),
             (whole.parts[LargeTestModel.embedded] as Partial<ClassUsedForEmbedding>).total(ClassUsedForEmbedding.serializer())
@@ -109,7 +109,7 @@ abstract class MaskedPermissionsTests {
         )
         raw.insertOne(LargeTestModel(listEmbedded = listOf(ClassUsedForEmbedding("secret", 0))))
 
-        val read = table.findPartial(setOf(path<LargeTestModel>().listEmbedded.elements.value1), Condition.Always).toList().single()
+        val read = table.findPartial(setOf(Lens<LargeTestModel>().listEmbedded.elements.value1), Condition.Always).toList().single()
         assertFalse("secret" in read.toString(), read.toString())
     }
 
@@ -130,18 +130,18 @@ abstract class MaskedPermissionsTests {
                 setEmbedded = setOf(ClassUsedForEmbedding("secret", 3)),
             )
         )
-        suspend fun write(modification: Modification<LargeTestModel>) = table.updateOne(condition { it._id eq row._id }, modification)
+        suspend fun write(modification: Modification<LargeTestModel>) = table.updateOne(Condition { it._id eq row._id }, modification)
 
-        assertNull(write(modification { it.listEmbedded.forEachIf({ it.value1 eq "secret" }) { it.value2 assign 2 } }).new)
-        assertNull(write(modification { it.listEmbedded.removeAll { it.value1 eq "secret" } }).new)
-        assertNull(write(modification { it.listEmbedded -= ClassUsedForEmbedding("secret", 0) }).new)
-        assertNull(write(modification { it.setEmbedded -= ClassUsedForEmbedding("secret", 3) }).new)
-        assertNull(write(modification { it.setEmbedded += ClassUsedForEmbedding("secret", 3) }).new)
+        assertNull(write(Modification { it.listEmbedded.forEachIf({ it.value1 eq "secret" }) { it.value2 assign 2 } }).new)
+        assertNull(write(Modification { it.listEmbedded.removeAll { it.value1 eq "secret" } }).new)
+        assertNull(write(Modification { it.listEmbedded -= ClassUsedForEmbedding("secret", 0) }).new)
+        assertNull(write(Modification { it.setEmbedded -= ClassUsedForEmbedding("secret", 3) }).new)
+        assertNull(write(Modification { it.setEmbedded += ClassUsedForEmbedding("secret", 3) }).new)
         assertEquals(row, raw.get(row._id))
 
-        val unfiltered = write(modification { it.listEmbedded.forEach { it.value2 assign 1 } }).new
+        val unfiltered = write(Modification { it.listEmbedded.forEach { it.value2 assign 1 } }).new
         assertEquals(listOf(ClassUsedForEmbedding("masked", 1), ClassUsedForEmbedding("masked", 1)), unfiltered?.listEmbedded)
-        assertNotNull(write(modification { it.listEmbedded.forEachIf({ it.value2 eq 1 }) { it.value2 assign 2 } }).new)
+        assertNotNull(write(Modification { it.listEmbedded.forEachIf({ it.value2 eq 1 }) { it.value2 assign 2 } }).new)
     }
 
     @Test
@@ -149,7 +149,7 @@ abstract class MaskedPermissionsTests {
         val (raw, table) = table(
             "maskedWrites", ModelPermissions(
                 create = Condition.Always,
-                read = condition { it.byte eq 1 },
+                read = Condition { it.byte eq 1 },
                 readMask = mask<LargeTestModel> { it.int.mask(0) },
                 update = Condition.Always,
                 delete = Condition.Always,
@@ -157,21 +157,21 @@ abstract class MaskedPermissionsTests {
         )
         val hidden = raw.insertOne(LargeTestModel(byte = 0, int = 1234))
         val masked = raw.insertOne(LargeTestModel(byte = 1, int = 1234))
-        val touch = modification<LargeTestModel> { it.boolean assign true }
+        val touch = Modification<LargeTestModel> { it.boolean assign true }
 
         assertEquals(1, table.updateManyIgnoringResult(Condition.Always, touch), "only the readable row is writable")
-        assertEquals(0, table.updateManyIgnoringResult(condition { it.int eq 1234 }, touch))
-        assertEquals(0, table.updateMany(condition { it.int eq 1234 }, touch).changes.size)
-        assertFalse(table.updateOneIgnoringResult(condition { it.int eq 1234 }, touch))
-        assertNull(table.updateOne(condition { it._id eq hidden._id }, touch).old)
-        assertFalse(table.replaceOneIgnoringResult(condition { it._id eq hidden._id }, hidden.copy(byte = 1)))
-        assertEquals(0, table.deleteManyIgnoringOld(condition { it.int eq 1234 }))
-        assertFalse(table.deleteOneIgnoringOld(condition { it._id eq hidden._id }))
-        assertNull(table.deleteOne(condition { it.int eq 1234 }))
-        assertEquals(listOf(), table.deleteMany(condition { it._id eq hidden._id }))
+        assertEquals(0, table.updateManyIgnoringResult(Condition { it.int eq 1234 }, touch))
+        assertEquals(0, table.updateMany(Condition { it.int eq 1234 }, touch).changes.size)
+        assertFalse(table.updateOneIgnoringResult(Condition { it.int eq 1234 }, touch))
+        assertNull(table.updateOne(Condition { it._id eq hidden._id }, touch).old)
+        assertFalse(table.replaceOneIgnoringResult(Condition { it._id eq hidden._id }, hidden.copy(byte = 1)))
+        assertEquals(0, table.deleteManyIgnoringOld(Condition { it.int eq 1234 }))
+        assertFalse(table.deleteOneIgnoringOld(Condition { it._id eq hidden._id }))
+        assertNull(table.deleteOne(Condition { it.int eq 1234 }))
+        assertEquals(listOf(), table.deleteMany(Condition { it._id eq hidden._id }))
 
         assertEquals(2, raw.count())
-        assertTrue(table.deleteOneIgnoringOld(condition { it._id eq masked._id }))
+        assertTrue(table.deleteOneIgnoringOld(Condition { it._id eq masked._id }))
     }
 
 }
