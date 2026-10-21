@@ -852,4 +852,114 @@ class RedisPubSubConnectionSharingTest {
         awaitSubscribers(name, 0L)
         subscriber.disconnect()
     }
+
+    // ---------------------------------------------------------------- publish isolation
+
+    /**
+     * Regression test: PUBLISH must never go out on the connection that holds the subscriptions.
+     *
+     * Valkey 9.0.0-9.0.5 tears the RESP3 push frame when a message of 16 KiB or more is delivered to the
+     * connection that published it (valkey-io/valkey#4231). Lettuce then reads the payload as the
+     * PUBLISH reply, and every later SUBSCRIBE on that connection hangs, which wedged live updates in
+     * production. The embedded server here does not have that bug, so this asserts the structural
+     * property that rules it out, using Redis' own view of each connection.
+     */
+    @Test
+    fun publishNeverUsesTheSubscribeConnection() = runBlocking {
+        val clientName = "publish-isolation-${System.nanoTime()}"
+        val namedClient = RedisClient.create("redis://127.0.0.1:$PORT?clientName=$clientName")
+        try {
+            val pubsub = RedisPubSub("test", TestSettingContext(), namedClient)
+            val name = channelName("publish-isolation")
+            val channel = pubsub.string(name)
+
+            val (inboxes, jobs) = startCollectors(channel, 3)
+            // Large enough to have triggered the Valkey bug, delivered to this same instance.
+            val large = "x".repeat(20_000)
+            channel.emit(large)
+            inboxes.forEach { assertEquals(large, withTimeout(5_000) { it.receive() }) }
+
+            // CLIENT LIST reports, per connection, its live subscription count and its last command.
+            val ours = admin.sync().clientList()
+                .lineSequence()
+                .filter { " name=$clientName " in " $it " }
+                .map { line -> line.split(' ').associate { it.substringBefore('=') to it.substringAfter('=') } }
+                .toList()
+            val subscribing = ours.filter { (it["sub"]?.toInt() ?: 0) > 0 }
+            val publishing = ours.filter { it["cmd"] == "publish" }
+            assertEquals(1, subscribing.size, "Expected one subscribe connection; CLIENT LIST: $ours")
+            assertEquals(1, publishing.size, "Expected one connection to have published; CLIENT LIST: $ours")
+            assertEquals(
+                "0", publishing.single()["sub"],
+                "The publishing connection must not hold subscriptions; CLIENT LIST: $ours"
+            )
+
+            jobs.forEach { it.cancel() }
+            awaitSubscribers(name, 0L)
+            pubsub.disconnect()
+        } finally {
+            namedClient.shutdown()
+        }
+    }
+
+    // ---------------------------------------------------------------- robustness
+
+    /**
+     * One undecodable payload must be dropped rather than ending the collector. Throwing out of
+     * collect tore down everything built on it, such as a WebSocket carrying many subscriptions.
+     */
+    @Test
+    fun undecodablePayloadIsSkippedAndCollectionContinues() = runBlocking {
+        val pubsub = RedisPubSub("test", TestSettingContext(), client)
+        val name = channelName("undecodable")
+        val channel = pubsub.get(name, Int.serializer())
+
+        val inbox = Channel<Int>(Channel.UNLIMITED)
+        val job = launch { channel.collect { inbox.send(it) } }
+        awaitSubscribers(name, 1L)
+
+        admin.sync().publish(name, "not a number")
+        channel.emit(42)
+
+        assertEquals(42, withTimeout(5_000) { inbox.receive() }, "The collector must survive a bad payload")
+        assertTrue(job.isActive, "The collector must still be running after a bad payload")
+
+        job.cancel()
+        awaitSubscribers(name, 0L)
+        pubsub.disconnect()
+    }
+
+    /**
+     * Regression test: a channel's last collector leaving while a new one arrives must leave Redis
+     * subscribed. Cleanup that sent UNSUBSCRIBE after the newcomer's SUBSCRIBE, or that evicted the
+     * newcomer's map entry, left the newcomer silently receiving nothing.
+     */
+    @Test
+    fun rejoinWhileLastCollectorLeavesStaysSubscribed() = runBlocking {
+        val pubsub = RedisPubSub("test", TestSettingContext(), client)
+        val name = channelName("rejoin")
+        val channel = pubsub.string(name)
+
+        var previous = startCollectors(channel, 1).second.single()
+        repeat(40) { round ->
+            // Start the newcomer and retire the old collector at the same moment.
+            val inbox = Channel<String>(Channel.UNLIMITED)
+            val next = launch { channel.collect { inbox.send(it) } }
+            previous.cancel()
+
+            val delivered = withTimeoutOrNull(5_000) {
+                while (true) {
+                    channel.emit("round-$round")
+                    if (withTimeoutOrNull(100) { inbox.receive() } != null) break
+                }
+                true
+            }
+            assertTrue(delivered == true, "Round $round: the new collector must receive after the old one left")
+            previous = next
+        }
+
+        previous.cancel()
+        awaitSubscribers(name, 0L)
+        pubsub.disconnect()
+    }
 }
