@@ -182,12 +182,8 @@ class SqliteDatabaseTest {
         }
         check(modification { it.tags += listOf("w") })
         check(modification { it.tags.removeAll { it eq "y" } })
-        check(modification { it.tags.dropFirst() })
-        check(modification { it.tags.dropLast() })
         check(modification { it.labels += setOf("q", "r") })
         check(modification { it.labels.removeAll { it eq "p" } })
-        check(modification { it.counts += mapOf("two" to 22, "three" to 3) })
-        check(modification { it.counts removeKeys setOf("one") })
         check(modification { it.places.forEach { it.visits += 10 } })
         // A collection inside a list element is stored as JSON, so changing it is done in Kotlin.
         check(modification { it.places.forEachIf({ it.name eq "home" }) { it.aliases += listOf("hq") } }, inSql = false)

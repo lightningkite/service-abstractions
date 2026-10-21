@@ -126,7 +126,6 @@ internal class SqliteConditions(private val schema: SqliteSchema, private val co
             is Condition.GreaterThanOrEqual -> compare(">=", condition.value)
             is Condition.LessThanOrEqual -> compare("<=", condition.value)
             is Condition.StringContains -> contains(scope, single, condition.value, condition.ignoreCase) ?: inexact(negated)
-            is Condition.RawStringContains -> contains(scope, single, condition.value, condition.ignoreCase) ?: inexact(negated)
             is Condition.IntBitsClear -> single?.let { Sql("(${scope.ref(it)} & ?) = 0", listOf(condition.mask)) } ?: inexact(negated)
             is Condition.IntBitsSet -> single?.let { Sql("(${scope.ref(it)} & ?) = ?", listOf(condition.mask, condition.mask)) } ?: inexact(negated)
             is Condition.IntBitsAnyClear -> single?.let { Sql("(${scope.ref(it)} & ?) <> ?", listOf(condition.mask, condition.mask)) } ?: inexact(negated)
@@ -202,21 +201,9 @@ internal class SqliteConditions(private val schema: SqliteSchema, private val co
                 Sql(if (markerRef == null) "1" else "$markerRef IS NOT NULL"),
                 collection(condition.condition as Condition<Any?>, child, nonNull, negated),
             ).joinSql(" AND ", "1")
-            is Condition.ListAnyElements<*> -> element(condition.condition, negated).let { Sql("EXISTS (SELECT 1 $rows AND ${it.text})", it.args) }
-            is Condition.SetAnyElements<*> -> element(condition.condition, negated).let { Sql("EXISTS (SELECT 1 $rows AND ${it.text})", it.args) }
-            is Condition.ListAllElements<*> -> element(condition.condition, negated).let { Sql("NOT EXISTS (SELECT 1 $rows AND NOT ${it.text})", it.args) }
-            is Condition.SetAllElements<*> -> element(condition.condition, negated).let { Sql("NOT EXISTS (SELECT 1 $rows AND NOT ${it.text})", it.args) }
-            is Condition.ListSizesEquals<*> -> Sql("(SELECT COUNT(*) $rows) = ?", listOf(condition.count))
-            is Condition.SetSizesEquals<*> -> Sql("(SELECT COUNT(*) $rows) = ?", listOf(condition.count))
-            is Condition.Exists<*> -> keyColumn(child)?.let { Sql("EXISTS (SELECT 1 $rows AND c.${q(it.name)} = ?)", listOf(condition.key)) }
-                ?: inexact(negated)
-            is Condition.OnKey<*> -> keyColumn(child)?.let { key ->
-                element(condition.condition, negated).let { Sql("EXISTS (SELECT 1 $rows AND c.${q(key.name)} = ? AND ${it.text})", listOf(condition.key) + it.args) }
-            } ?: inexact(negated)
+            is Condition.CollectionAnyElements<*, *> -> element(condition.condition, negated).let { Sql("EXISTS (SELECT 1 $rows AND ${it.text})", it.args) }
+            is Condition.CollectionAllElements<*, *> -> element(condition.condition, negated).let { Sql("NOT EXISTS (SELECT 1 $rows AND NOT ${it.text})", it.args) }
             else -> inexact(negated)
         }
     }
-
-    private fun keyColumn(child: ChildTable): Column? =
-        child.keyColumns[""]?.takeIf { child.isMap && it.type == ColumnType.Text && !it.json }
 }

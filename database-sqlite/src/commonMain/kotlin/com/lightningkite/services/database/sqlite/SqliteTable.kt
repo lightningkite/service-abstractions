@@ -468,6 +468,14 @@ public class SqliteTable<T : Any> internal constructor(
         write { matchingIds(condition).also { delete(it) }.size }
     }
 
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<T>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("Text search is not supported by the SQLite driver")
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<T, Embedding>,
         params: DenseVectorSearchParams,
