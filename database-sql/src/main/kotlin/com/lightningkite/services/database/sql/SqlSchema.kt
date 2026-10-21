@@ -357,21 +357,30 @@ internal class SqlSchema(
         descriptor: SerialDescriptor,
         prefix: String,
         target: MutableMap<String, Column<Any?>>,
+        forceNullable: Boolean = false,
     ) {
         val resolved = resolveDescriptor(descriptor, serializersModule)
+        // Every column of a nullable class is null when the class is.
+        val nullable = forceNullable || descriptor.isNullable
 
         when (resolved.kind) {
             StructureKind.CLASS -> {
                 if (resolved.isInline) {
-                    registerChildColumns(table, resolved.getElementDescriptor(0), prefix, target)
+                    registerChildColumns(table, resolved.getElementDescriptor(0), prefix, target, nullable)
                     return
                 }
                 if (resolved.isSelfReferential(serializersModule)) {
                     // Self-referential type reached through a child table (e.g. a list of
                     // Condition<T>): fall back to one JSON column, which is what MapEncoder/
                     // MapDecoder already produce at write/read time for the same check.
-                    registerChildLeaf(table, prefix, resolved, descriptor.isNullable, target)
+                    registerChildLeaf(table, prefix, resolved, nullable, target)
                     return
+                }
+                // A nullable class, whether the element itself or a field of it, is written with an exists marker.
+                if (descriptor.isNullable) {
+                    val existsName = "${prefix}__exists"
+                    @Suppress("UNCHECKED_CAST")
+                    target[existsName] = table.registerColumn<Any?>(existsName, BooleanColumnType().also { it.nullable = true } as ColumnType<Any>)
                 }
                 for (i in 0 until resolved.elementsCount) {
                     val elementName = resolved.getElementName(i)
@@ -383,15 +392,15 @@ internal class SqlSchema(
                     if (elementResolved.kind == StructureKind.LIST || elementResolved.kind == StructureKind.MAP) {
                         @Suppress("UNCHECKED_CAST")
                         val col = table.registerColumn<Any?>(childPrefix, TextColumnType().also {
-                            it.nullable = elementDesc.isNullable
+                            it.nullable = nullable || elementDesc.isNullable
                         } as ColumnType<Any>)
                         target[childPrefix] = col
                     } else {
-                        registerChildColumns(table, elementDesc, childPrefix, target)
+                        registerChildColumns(table, elementDesc, childPrefix, target, nullable)
                     }
                 }
             }
-            else -> registerChildLeaf(table, prefix, resolved, descriptor.isNullable, target)
+            else -> registerChildLeaf(table, prefix, resolved, nullable, target)
         }
     }
 

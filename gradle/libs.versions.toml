@@ -1,6 +1,7 @@
 [versions]
 agp = "9.1.1"
 androidDesugaring = "2.1.5"
+androidxSqlite = "2.7.1"
 angusMail = "2.0.5"
 atomicfu = "0.33.0"
 awsVersion = "2.55.5"
@@ -46,6 +47,7 @@ proguard = "7.10.0"
 shadow = "8.1.1"
 slf4j = "2.0.20"
 sqliteJdbc = "3.53.4.0"
+sqliteWasm = "3.54.1-build1"
 stripe = "34.0.0"
 testcontainers = "2.0.5"
 vanniktechMavenPublish = "0.37.0"
@@ -54,6 +56,10 @@ vosk = "0.3.45"
 
 [libraries]
 androidDesugaring = { module = "com.android.tools:desugar_jdk_libs", version.ref = "androidDesugaring" }
+androidx-sqlite = { module = "androidx.sqlite:sqlite", version.ref = "androidxSqlite" }
+androidx-sqlite-async = { module = "androidx.sqlite:sqlite-async", version.ref = "androidxSqlite" }
+androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "androidxSqlite" }
+androidx-sqlite-web = { module = "androidx.sqlite:sqlite-web", version.ref = "androidxSqlite" }
 angusMail = { module = "org.eclipse.angus:angus-mail", version.ref = "angusMail" }
 atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
 aws-auth = { module = "software.amazon.awssdk:auth", version.ref = "awsVersion" }
