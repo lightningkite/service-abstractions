@@ -2,9 +2,9 @@ package com.lightningkite.services.database.sqlite
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.mapformat.ChildRow
 import com.lightningkite.services.database.mapformat.MapFormatConfig
+import com.lightningkite.services.database.optics.Field
 import com.lightningkite.services.database.nullElement
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.SerialKind
@@ -73,7 +73,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                 }
             }
             is Modification.OnField<*, *> -> {
-                val key = modification.key as SerializableProperty<Any?, Any?>
+                val key = modification.key as Field<Any?, Any?>
                 val fieldPath = fieldPath(path, key)
                 val inner = modification.modification as Modification<Any?>
                 val innerWrap = { it: Modification<Any?> -> wrap(Modification.OnField(key, it)) }
@@ -86,8 +86,6 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
             is Modification.Multiply -> update { sql("$it * ", arg(modification.by)) }
             is Modification.CoerceAtMost -> update { Sql("MIN($it, ?)", listOf(stored(modification.value))) }
             is Modification.CoerceAtLeast -> update { Sql("MAX($it, ?)", listOf(stored(modification.value))) }
-            is Modification.AppendString -> update { Sql("$it || ?", listOf(modification.value)) }
-            is Modification.AppendRawString<*> -> update { Sql("$it || ?", listOf(modification.value)) }
             // Sealed-type projections, and collections stored as JSON, are applied in Kotlin.
             else -> rewrite
         }
@@ -146,10 +144,6 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
         fun statements(build: (where: Sql) -> List<Sql>) = listOf(Step.Statements { targets -> build(where(targets, guards)) })
         fun delete(where: Sql, condition: Sql) = sql("DELETE FROM $childTable WHERE ", ownersIn(where), " AND ", condition)
         val nextIndex = Sql("COALESCE((SELECT MAX(x.\"idx\") FROM $childTable AS x WHERE ${schema.ownerMatch("x")}), -1) + 1")
-        fun endOfList(function: String, column: String) = Sql(
-            "$column = (SELECT $function(x.$column) FROM $childTable AS x WHERE " +
-                schema.idColumns.joinToString(" AND ") { "x.${q(schema.ownerColumn(it))} = $childTable.${q(schema.ownerColumn(it))}" } + ")"
-        )
         fun elementCondition(condition: Condition<*>): Sql? {
             val translator = SqliteConditions(schema, config)
             val translated = translator.element(condition as Condition<Any?>, child, childTable, elementSerializer)
@@ -186,11 +180,6 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                 val matches = removed.map { row -> sameAs(childTable, child.elementColumns.values) { row.values[it.name] } }.joinSql(" OR ", "0")
                 statements { where -> listOf(delete(where, matches)) }
             }
-            is Modification.ListDropFirst<*> -> statements { where -> listOf(delete(where, endOfList("MIN", "\"idx\""))) }
-            is Modification.ListDropLast<*> -> statements { where -> listOf(delete(where, endOfList("MAX", "\"idx\""))) }
-            // Set elements are read back in insertion order, which is rowid order.
-            is Modification.SetDropFirst<*> -> statements { where -> listOf(delete(where, endOfList("MIN", "rowid"))) }
-            is Modification.SetDropLast<*> -> statements { where -> listOf(delete(where, endOfList("MAX", "rowid"))) }
             is Modification.ListPerElement<*>, is Modification.SetPerElement<*> -> {
                 val (condition, elementModification) = when (modification) {
                     is Modification.ListPerElement<*> -> modification.condition to modification.modification
@@ -210,25 +199,6 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                         ),
                     )
                 }
-            }
-            is Modification.Combine<*> -> {
-                val keyColumns = child.keyColumns.values
-                rows(modification.map).let { entries ->
-                    statements { where ->
-                        entries.flatMap { row ->
-                            val set = Sql(child.elementColumns.values.joinToString { "${q(it.name)} = ?" }, child.elementColumns.values.map { row.values[it.name] })
-                            listOf(
-                                sql("UPDATE $childTable SET ", set, " WHERE ", ownersIn(where), " AND ", sameAs(childTable, keyColumns) { row.key?.get(it.name) }),
-                                insert(child, row, where, nextIndex) { x -> sameAs(x, keyColumns) { row.key?.get(it.name) } },
-                            )
-                        }
-                    }
-                }
-            }
-            is Modification.RemoveKeys<*> -> {
-                val key = child.keyColumns[""] ?: return rewrite
-                val keys = modification.fields.toList()
-                statements { where -> listOf(delete(where, Sql("$childTable.${q(key.name)} IN (${keys.joinToString { "?" }})", keys))) }
             }
             else -> rewrite
         }
@@ -267,7 +237,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                     )
                 }
                 is Modification.OnField<*, *> -> {
-                    val key = modification.key as SerializableProperty<Any?, Any?>
+                    val key = modification.key as Field<Any?, Any?>
                     val fieldPath = fieldPath(path, key)
                     visit(modification.modification as Modification<Any?>, fieldPath, key.serializer, guard)
                 }
@@ -282,8 +252,6 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                 is Modification.Multiply -> update { sql("(", it, " * ", arg(modification.by), ")") }
                 is Modification.CoerceAtMost -> update { sql("MIN(", it, ", ", arg(stored(modification.value)), ")") }
                 is Modification.CoerceAtLeast -> update { sql("MAX(", it, ", ", arg(stored(modification.value)), ")") }
-                is Modification.AppendString -> update { sql("(", it, " || ", arg(modification.value), ")") }
-                is Modification.AppendRawString<*> -> update { sql("(", it, " || ", arg(modification.value), ")") }
                 else -> false
             }
         }

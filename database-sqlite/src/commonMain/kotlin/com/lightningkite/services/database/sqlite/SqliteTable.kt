@@ -6,8 +6,6 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.database.Aggregate
 import com.lightningkite.services.database.CollectionChanges
 import com.lightningkite.services.database.Condition
-import com.lightningkite.services.database.DataClassPath
-import com.lightningkite.services.database.DataClassPathPartial
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.DatabaseTableDefinition
 import com.lightningkite.services.database.DenseVectorSearchParams
@@ -28,6 +26,9 @@ import com.lightningkite.services.database.mapformat.ChildTableCollectionHandler
 import com.lightningkite.services.database.mapformat.MapDecoder
 import com.lightningkite.services.database.mapformat.MapFormat
 import com.lightningkite.services.database.mapformat.MapFormatConfig
+import com.lightningkite.services.database.optics.AnyOptic
+import com.lightningkite.services.database.optics.Optic
+import com.lightningkite.services.database.optics.coerceToOptic
 import com.lightningkite.services.database.mapformat.SimpleReadSource
 import com.lightningkite.services.database.mapformat.WriteResult
 import com.lightningkite.services.database.nullElement
@@ -84,7 +85,7 @@ public class SqliteTable<T : Any> internal constructor(
         return sql to translator.exact
     }
 
-    private fun DataClassPathPartial<T>.path(): String = properties.fold("") { path, key -> fieldPath(path, key) }
+    private fun AnyOptic<T>.path(): String = fields.fold("") { path, key -> fieldPath(path, key) }
 
     /**
      * The ORDER BY clause, or null when SQL would order differently than [SortPart]'s comparator: for
@@ -94,7 +95,7 @@ public class SqliteTable<T : Any> internal constructor(
     private fun orderBy(orderBy: List<SortPart<T>>): String? {
         if (orderBy.isEmpty()) return ""
         val terms = orderBy.map { part ->
-            val kind = part.field.serializerAny.descriptor.kind
+            val kind = part.field.coerceToOptic().serializer.descriptor.kind
             if (kind == SerialKind.ENUM || (part.ignoreCase && kind == PrimitiveKind.STRING)) return null
             val column = schema.columns[part.field.path()]?.takeIf { !it.json } ?: return null
             // SQLite already puts nulls first ascending and last descending, as SortPart requires.
@@ -225,7 +226,7 @@ public class SqliteTable<T : Any> internal constructor(
         else decoder.decodeSerializableElement(holder, 0, serializer, null)
     }
 
-    override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> = traced("groupCount") {
+    override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: Optic<T, Key>): Map<Key, Int> = traced("groupCount") {
         val (where, exact) = where(condition)
         val path = groupBy.path()
         val group = groupColumns(path)
@@ -274,10 +275,10 @@ public class SqliteTable<T : Any> internal constructor(
         }
     }
 
-    private fun numberColumn(property: DataClassPath<T, *>): Column? =
+    private fun numberColumn(property: Optic<T, out Number?>): Column? =
         schema.columns[property.path()]?.takeIf { it.type == ColumnType.Integer || it.type == ColumnType.Real }
 
-    override suspend fun <N : Number?> aggregate(aggregate: Aggregate, condition: Condition<T>, property: DataClassPath<T, N>): Double? = traced("aggregate") {
+    override suspend fun aggregate(aggregate: Aggregate, condition: Condition<T>, property: Optic<T, out Number?>): Double? = traced("aggregate") {
         val (where, exact) = where(condition)
         val value = numberColumn(property)
         database.transaction(this) {
@@ -286,11 +287,11 @@ public class SqliteTable<T : Any> internal constructor(
         }
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<T>,
-        groupBy: DataClassPath<T, Key>,
-        property: DataClassPath<T, N>,
+        groupBy: Optic<T, Key>,
+        property: Optic<T, out Number?>,
     ): Map<Key, Double?> = traced("groupAggregate") {
         val (where, exact) = where(condition)
         val path = groupBy.path()
@@ -468,15 +469,23 @@ public class SqliteTable<T : Any> internal constructor(
         write { matchingIds(condition).also { delete(it) }.size }
     }
 
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<T>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("Text search is not supported by the SQLite driver")
+
     override suspend fun findSimilar(
-        vectorField: DataClassPath<T, Embedding>,
+        vectorField: Optic<T, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<T>,
         maxQueryMs: Long,
     ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("Vector search is not supported by the SQLite driver")
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<T, SparseEmbedding>,
+        vectorField: Optic<T, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<T>,
         maxQueryMs: Long,

@@ -1,7 +1,7 @@
 package com.lightningkite.services.database.sqlite
 
 import com.lightningkite.services.TestSettingContext
-import com.lightningkite.services.data.GenerateDataClassPaths
+import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.data.Index
 import com.lightningkite.services.data.IndexUniqueness
 import com.lightningkite.services.database.*
@@ -15,8 +15,7 @@ import com.lightningkite.services.database.mapformat.ChildTableCollectionHandler
 import com.lightningkite.services.database.mapformat.MapFormatConfig
 import kotlin.uuid.Uuid
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Note(
     override val _id: Uuid = Uuid.random(),
     val title: String,
@@ -26,13 +25,11 @@ data class Note(
     val places: List<Place> = listOf(),
 ) : HasId<Uuid>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Place(val name: String, val visits: Int = 0, val aliases: List<String> = listOf())
 
 /** [Note] as a later version of an app might define it. */
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class NoteWithPriority(
     override val _id: Uuid = Uuid.random(),
     val title: String,
@@ -47,16 +44,14 @@ data class NoteWithPriority(
 @Serializable
 data class Archive(val reason: String, val notes: List<String>)
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Account(
     override val _id: Uuid = Uuid.random(),
     @Index(IndexUniqueness.Unique) val email: String,
     @Index(IndexUniqueness.UniqueNullSparse) val handle: String? = null,
 ) : HasId<Uuid>
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Membership(override val _id: MembershipKey, val roles: List<String> = listOf()) : HasId<MembershipKey>
 
 @Serializable
@@ -67,8 +62,7 @@ data class MembershipKey(val group: String, val user: String) : Comparable<Membe
 // Declared out of alphabetical order, so name order and declaration order differ.
 enum class Level { Low, High, Medium }
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Task(override val _id: Uuid = Uuid.random(), val level: Level) : HasId<Uuid>
 
 class SqliteDatabaseTest {
@@ -182,12 +176,8 @@ class SqliteDatabaseTest {
         }
         check(modification { it.tags += listOf("w") })
         check(modification { it.tags.removeAll { it eq "y" } })
-        check(modification { it.tags.dropFirst() })
-        check(modification { it.tags.dropLast() })
         check(modification { it.labels += setOf("q", "r") })
         check(modification { it.labels.removeAll { it eq "p" } })
-        check(modification { it.counts += mapOf("two" to 22, "three" to 3) })
-        check(modification { it.counts removeKeys setOf("one") })
         check(modification { it.places.forEach { it.visits += 10 } })
         // A collection inside a list element is stored as JSON, so changing it is done in Kotlin.
         check(modification { it.places.forEachIf({ it.name eq "home" }) { it.aliases += listOf("hq") } }, inSql = false)
