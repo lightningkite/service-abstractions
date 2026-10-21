@@ -151,6 +151,36 @@ abstract class ReturnContractTests {
     }
 
     @Test
+    fun upsertOne_withEmptyModificationStillInserts() = runTest {
+        val collection = table("rct_upsertEmpty")
+        val model = LargeTestModel(int = 1)
+        val nothing = modification<LargeTestModel> { }
+
+        val inserted = collection.upsertOne(condition { it._id eq model._id }, nothing, model)
+        assertNull(inserted.old)
+        assertEquals(model, inserted.new)
+        assertEquals(model, collection.findOne(condition { it._id eq model._id }))
+
+        val existing = collection.upsertOne(condition { it._id eq model._id }, nothing, LargeTestModel(int = 99))
+        assertEquals(model, existing.old)
+        assertEquals(model, existing.new, "an empty modification leaves the existing row as it is")
+        assertEquals(1, collection.count())
+    }
+
+    @Test
+    fun upsertOneIgnoringResult_withEmptyModificationStillInserts() = runTest {
+        val collection = table("rct_upsertIgnoringEmpty")
+        val model = LargeTestModel(int = 1)
+        val nothing = modification<LargeTestModel> { }
+
+        assertEquals(false, collection.upsertOneIgnoringResult(condition { it._id eq model._id }, nothing, model))
+        assertEquals(model, collection.findOne(condition { it._id eq model._id }))
+        assertEquals(true, collection.upsertOneIgnoringResult(condition { it._id eq model._id }, nothing, LargeTestModel(int = 99)))
+        assertEquals(model, collection.findOne(condition { it._id eq model._id }))
+        assertEquals(1, collection.count())
+    }
+
+    @Test
     fun count_agreesWithFind() = runTest {
         val collection = table("rct_countAgreement")
         collection.insert(
