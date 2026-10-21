@@ -77,48 +77,48 @@ class GeneratedPropertyTests {
     fun conditionEqualityTest() {
 
         // Simple Equal
-        var condition1: Condition<*> = condition<DualTypeParamTestModel<Uuid, Int>> { it.otherValue.eq("") }
-        var condition2: Condition<*> = condition<DualTypeParamTestModel<Uuid, Int>> { it.otherValue.eq("") }
+        var condition1: Condition<*> = Condition<DualTypeParamTestModel<Uuid, Int>> { it.otherValue.eq("") }
+        var condition2: Condition<*> = Condition<DualTypeParamTestModel<Uuid, Int>> { it.otherValue.eq("") }
         assertEquals(condition1, condition2)
 
         // Simple Not Equal
-        condition1 = condition<DualTypeParamTestModel<Uuid, Long>> { it.otherValue.eq("") }
-        condition2 = condition<DualTypeParamTestModel<Uuid, Uuid>> { it.otherValue.eq("") }
+        condition1 = Condition<DualTypeParamTestModel<Uuid, Long>> { it.otherValue.eq("") }
+        condition2 = Condition<DualTypeParamTestModel<Uuid, Uuid>> { it.otherValue.eq("") }
         assertNotEquals(condition1 as Any, condition2 as Any)
 
         // Complicated Equal
         condition1 =
-            condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
+            Condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
                 it.otherValue.eq("")
             }
         condition2 =
-            condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
+            Condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
                 it.otherValue.eq("")
             }
         assertEquals(condition1, condition2)
 
         // Complicated Not Equal
         condition1 =
-            condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Long, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
+            Condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Long, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
                 it.otherValue.eq("")
             }
         condition2 =
-            condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Int, DualTypeParamTestModel<Short, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
+            Condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Int, DualTypeParamTestModel<Short, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
                 it.otherValue.eq("")
             }
         assertNotEquals(condition1 as Any, condition2 as Any)
 
         // Extreme Differences
-        condition1 = condition<DualTypeParamTestModel<Uuid, Long>> { it.otherValue.eq("") }
+        condition1 = Condition<DualTypeParamTestModel<Uuid, Long>> { it.otherValue.eq("") }
         condition2 =
-            condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
+            Condition<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<DualTypeParamTestModel<String, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Uuid, DualTypeParamTestModel<Int, Long>>, Long>>>>, DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, DualTypeParamTestModel<DualTypeParamTestModel<Int, DualTypeParamTestModel<Int, Long>>, Long>>>>>> {
                 it.otherValue.eq("")
             }
         assertNotEquals(condition1 as Any, condition2 as Any)
 
         // Different Models
-        condition1 = condition<DualTypeParamTestModelPart2<Uuid, Long>> { it.otherValue.eq("") }
-        condition2 = condition<DualTypeParamTestModel<Uuid, Long>> { it.otherValue.eq("") }
+        condition1 = Condition<DualTypeParamTestModelPart2<Uuid, Long>> { it.otherValue.eq("") }
+        condition2 = Condition<DualTypeParamTestModel<Uuid, Long>> { it.otherValue.eq("") }
         assertNotEquals(condition1 as Any, condition2 as Any)
     }
 
@@ -147,7 +147,7 @@ class GeneratedPropertyTests {
         assertEquals(1L, prop.get(LongWrapper(1L)))
         assertEquals(LongWrapper(5L), prop.set(LongWrapper(0L), 5L))
 
-        val cond = condition<LongWrapper> { it.long eq 5L }
+        val cond = Condition<LongWrapper> { it.long eq 5L }
         val mod = modification<LongWrapper> { it.long assign 5L }
 
         assertEquals(true, cond(LongWrapper(5L)))
@@ -170,7 +170,7 @@ class GeneratedPropertyTests {
             prop2.set(ClassWithWrappedValue(LongWrapper(0L), id), 5L)
         )
 
-        val cond2 = condition<ClassWithWrappedValue> { it.long.long eq 5L }
+        val cond2 = Condition<ClassWithWrappedValue> { it.long.long eq 5L }
         val mod2 = modification<ClassWithWrappedValue> { it.long.long assign 5L }
 
         assertEquals(true, cond2(ClassWithWrappedValue(LongWrapper(5L))))

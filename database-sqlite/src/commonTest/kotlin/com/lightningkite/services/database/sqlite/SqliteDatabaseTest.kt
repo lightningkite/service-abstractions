@@ -74,7 +74,7 @@ class SqliteDatabaseTest {
         val table = database.prepare(DatabaseTableDefinition(Task.serializer(), "Task"))
         table.insert(Level.entries.map { Task(level = it) })
         assertEquals(Level.entries, table.find(Condition.Always, sort { it.level.ascending() }).toList().map { it.level })
-        assertEquals(listOf(Level.Medium), table.find(condition { it.level gt Level.High }).toList().map { it.level })
+        assertEquals(listOf(Level.Medium), table.find(Condition { it.level gt Level.High }).toList().map { it.level })
         table.updateMany(Condition.Always, modification { it.level coerceAtMost Level.High })
         assertEquals(listOf(Level.Low, Level.High, Level.High), table.find(Condition.Always, sort { it.level.ascending() }).toList().map { it.level })
         database.disconnect()
@@ -106,11 +106,11 @@ class SqliteDatabaseTest {
         assertEquals(listOf(NoteWithPriority(note._id, "a", listOf("x"))), table.find(Condition.Always).toList())
         val newer = NoteWithPriority(title = "b", priority = 1, archived = Archive("done", listOf("n")))
         table.insert(listOf(newer))
-        assertEquals(listOf(newer), table.find(condition { it.priority eq 1 }).toList())
+        assertEquals(listOf(newer), table.find(Condition { it.priority eq 1 }).toList())
         // SQL sees the default written into the older row, not a null.
-        assertEquals(1, table.count(condition { it.priority eq 3 }))
-        table.updateOne(condition { it._id eq note._id }, modification { it.priority += 1 })
-        assertEquals(4, table.find(condition { it._id eq note._id }).toList().single().priority)
+        assertEquals(1, table.count(Condition { it.priority eq 3 }))
+        table.updateOne(Condition { it._id eq note._id }, modification { it.priority += 1 })
+        assertEquals(4, table.find(Condition { it._id eq note._id }).toList().single().priority)
         reopened.disconnect()
     }
 
@@ -123,10 +123,10 @@ class SqliteDatabaseTest {
         accounts.insert(listOf(Account(email = "c@x.com")))
         assertFailsWith<UniqueViolationException> { accounts.insert(listOf(Account(email = "a@x.com"))) }
         assertFailsWith<UniqueViolationException> {
-            accounts.updateOne(condition { it.email eq "c@x.com" }, modification { it.handle assign "b" })
+            accounts.updateOne(Condition { it.email eq "c@x.com" }, modification { it.handle assign "b" })
         }
         assertFailsWith<UniqueViolationException> {
-            accounts.upsertOne(condition { it.email eq "nobody@x.com" }, modification { }, Account(email = "b@x.com"))
+            accounts.upsertOne(Condition { it.email eq "nobody@x.com" }, modification { }, Account(email = "b@x.com"))
         }
         assertEquals(3, accounts.count())
         database.disconnect()
@@ -194,10 +194,10 @@ class SqliteDatabaseTest {
         val a = Membership(MembershipKey("g", "a"), listOf("admin"))
         val b = Membership(MembershipKey("g", "b"), listOf("member"))
         table.insert(listOf(a, b))
-        assertEquals(listOf(b), table.find(condition { it.roles.any { it eq "member" } }).toList())
-        table.updateOne(condition { it._id eq a._id }, modification { it.roles += listOf("owner") })
+        assertEquals(listOf(b), table.find(Condition { it.roles.any { it eq "member" } }).toList())
+        table.updateOne(Condition { it._id eq a._id }, modification { it.roles += listOf("owner") })
         val moved = MembershipKey("h", "a")
-        table.updateOne(condition { it._id eq a._id }, modification { it._id assign moved })
+        table.updateOne(Condition { it._id eq a._id }, modification { it._id assign moved })
         assertEquals(
             setOf(Membership(moved, listOf("admin", "owner")), b),
             table.find(Condition.Always).toList().toSet(),

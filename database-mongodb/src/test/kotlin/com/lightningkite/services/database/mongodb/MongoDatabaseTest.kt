@@ -132,7 +132,7 @@ open class MongodbModificationTests : ModificationTests() {
         val item = LargeTestModel(intNullable = null)
         collection.insert(listOf(item, LargeTestModel(intNullable = 5)))
         val modification = modification<LargeTestModel> { it.intNullable.notNull += 1 }
-        val byId = condition<LargeTestModel> { it._id eq item._id }
+        val byId = Condition<LargeTestModel> { it._id eq item._id }
 
         assertEquals(EntryChange<LargeTestModel>(null, null), collection.updateOne(byId, modification))
         assertFalse(collection.updateOneIgnoringResult(byId, modification))

@@ -60,7 +60,7 @@ class BasicTest() {
             val t = LargeTestModel()
             collection.insertOne(t)
             assertEquals(t, collection.find(Condition.Always).firstOrNull())
-            assertEquals(t, collection.find(condition { it.byte eq 0 }).firstOrNull())
+            assertEquals(t, collection.find(Condition { it.byte eq 0 }).firstOrNull())
             assertEquals(t.byte, collection.updateOne(Condition.Always, modification { it.byte += 1 }).old?.byte)
             assertEquals(
                 t.byte.plus(1).toByte(),

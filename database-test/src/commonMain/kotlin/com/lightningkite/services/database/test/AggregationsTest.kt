@@ -32,7 +32,7 @@ abstract class AggregationsTest() {
         }
         run {
             val control = c.all().toList().asSequence().filter { it.int > 40 }.groupingBy { it.byte }.eachCount()
-            val test: Map<Byte, Int> = c.groupCount(condition { it.int gt 40 }, groupBy = path<LargeTestModel>().byte)
+            val test: Map<Byte, Int> = c.groupCount(Condition { it.int gt 40 }, groupBy = path<LargeTestModel>().byte)
             assertEquals(control, test)
         }
         run {

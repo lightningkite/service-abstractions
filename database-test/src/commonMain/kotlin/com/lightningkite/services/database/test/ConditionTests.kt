@@ -24,7 +24,7 @@ abstract class ConditionTests() {
         val higher = GeoTest(geo = lk.copy(latitude = lk.latitude - 1.0))
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<GeoTest>() { it.geo.distanceBetween(lk, lessThan = 50.0.kilometers) }
+        val condition = Condition<GeoTest>() { it.geo.distanceBetween(lk, lessThan = 50.0.kilometers) }
         val results = collection.find(condition).toList()
         assertEquals(listOf(lower), results)
     }
@@ -38,7 +38,7 @@ abstract class ConditionTests() {
         val higher = GeoTest(geo = lk.copy(latitude = lk.latitude - 1.0))
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<GeoTest>() { it.geo.distanceBetween(lk, greaterThan = 50.0.kilometers) }
+        val condition = Condition<GeoTest>() { it.geo.distanceBetween(lk, greaterThan = 50.0.kilometers) }
         val results = collection.find(condition).toList()
         assertEquals(listOf(higher), results)
     }
@@ -50,7 +50,7 @@ abstract class ConditionTests() {
         val higher = LargeTestModel(int = 1)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<LargeTestModel>() { (it.int neq 1) and (it.int neq 2) }
+        val condition = Condition<LargeTestModel>() { (it.int neq 1) and (it.int neq 2) }
         val results = collection.find(condition).toList()
         assertEquals(listOf(lower), results)
     }
@@ -64,7 +64,7 @@ abstract class ConditionTests() {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<LargeTestModel>() { (it.boolean eq true) and (it.byte eq 0) }
+        val condition = Condition<LargeTestModel>() { (it.boolean eq true) and (it.byte eq 0) }
         val results = collection.find(condition).toList()
         assertContains(results, higher)
         assertTrue(lower !in results)
@@ -79,7 +79,7 @@ abstract class ConditionTests() {
         val manualList = listOf(lower, higher)
         collection.insertOne(lower)
         collection.insertOne(higher)
-        val condition = condition<LargeTestModel>() { (it.boolean eq true) and (it.boolean eq false) }
+        val condition = Condition<LargeTestModel>() { (it.boolean eq true) and (it.boolean eq false) }
         val results = collection.find(condition).toList()
         assertEquals(listOf(), results)
     }
@@ -3207,7 +3207,7 @@ abstract class ConditionTests() {
         assertMatchesInMemory(
             "NullableInListTestModel_test_notNull_inListElement_any",
             nullableInList,
-            condition { it.items.any { it.embed1.notNull.value2 neq 1 } }
+            Condition { it.items.any { it.embed1.notNull.value2 neq 1 } }
         )
     }
 
@@ -3216,7 +3216,7 @@ abstract class ConditionTests() {
         assertMatchesInMemory(
             "NullableInListTestModel_test_notNull_inListElement_all",
             nullableInList,
-            condition { it.items.all { it.embed1.notNull.value2 neq 1 } }
+            Condition { it.items.all { it.embed1.notNull.value2 neq 1 } }
         )
     }
 
@@ -3236,7 +3236,7 @@ abstract class ConditionTests() {
         assertMatchesInMemory(
             "NullableIntsTestModel_test_notNull_listElement_any_gt",
             nullableIntElements,
-            condition { it.ints.any { it.notNull gt 1 } }
+            Condition { it.ints.any { it.notNull gt 1 } }
         )
     }
 
@@ -3245,7 +3245,7 @@ abstract class ConditionTests() {
         assertMatchesInMemory(
             "NullableIntsTestModel_test_notNull_listElement_any_neq",
             nullableIntElements,
-            condition { it.ints.any { it.notNull neq 1 } }
+            Condition { it.ints.any { it.notNull neq 1 } }
         )
     }
 
@@ -3254,7 +3254,7 @@ abstract class ConditionTests() {
         assertMatchesInMemory(
             "NullableIntsTestModel_test_notNull_listElement_all_neq",
             nullableIntElements,
-            condition { it.ints.all { it.notNull neq 1 } }
+            Condition { it.ints.all { it.notNull neq 1 } }
         )
     }
 
@@ -3263,7 +3263,7 @@ abstract class ConditionTests() {
         assertMatchesInMemory(
             "NullableEmbedsTestModel_test_notNull_listElement_any_field_neq",
             nullableEmbedElements,
-            condition { it.embeds.any { it.notNull.value2 neq 1 } }
+            Condition { it.embeds.any { it.notNull.value2 neq 1 } }
         )
     }
 
@@ -3272,7 +3272,7 @@ abstract class ConditionTests() {
         assertMatchesInMemory(
             "NullableEmbedsTestModel_test_notNull_listElement_all_field_neq",
             nullableEmbedElements,
-            condition { it.embeds.all { it.notNull.value2 neq 1 } }
+            Condition { it.embeds.all { it.notNull.value2 neq 1 } }
         )
     }
 
@@ -3294,7 +3294,7 @@ abstract class ConditionTests() {
         assertMatchesInMemory(
             "NullableIntsTestModel_test_notNull_listWithNullElements_any_neq",
             nullableListOfNullables,
-            condition { it.intsNullable.notNull.any { it neq 5 } }
+            Condition { it.intsNullable.notNull.any { it neq 5 } }
         )
     }
 
@@ -3303,7 +3303,7 @@ abstract class ConditionTests() {
         assertMatchesInMemory(
             "NullableIntsTestModel_test_notNull_listWithNullElements_all_neq",
             nullableListOfNullables,
-            condition { it.intsNullable.notNull.all { it neq 5 } }
+            Condition { it.intsNullable.notNull.all { it neq 5 } }
         )
     }
 }

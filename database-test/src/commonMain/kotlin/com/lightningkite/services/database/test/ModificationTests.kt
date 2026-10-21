@@ -46,14 +46,14 @@ abstract class ModificationTests() {
             orderBy = sort { it.int.descending() }
         ))
         // Exactly one row, and it must be the one the sort selected.
-        assertEquals(listOf(max), collection.find(condition { it.boolean eq true }).toList().map { it.int })
+        assertEquals(listOf(max), collection.find(Condition { it.boolean eq true }).toList().map { it.int })
 
         assertEquals(true, collection.deleteOneIgnoringOld(
             condition = Condition.Always,
             orderBy = sort { it.int.descending() }
         ))
         assertEquals(max - 1, collection.count())
-        assertEquals(null, collection.findOne(condition { it.int eq max }))
+        assertEquals(null, collection.findOne(Condition { it.int eq max }))
     }
 
     @Test
@@ -1229,7 +1229,7 @@ abstract class ModificationTests() {
         val item = LargeTestModel(intNullable = null)
         collection.insertOne(item)
         val modification = modification<LargeTestModel> { it.intNullable.notNull += 1 }
-        collection.upsertOne(condition { it._id eq item._id }, modification, item)
+        collection.upsertOne(Condition { it._id eq item._id }, modification, item)
         assertEquals(item, collection.get(item._id))
     }
 
@@ -1280,7 +1280,7 @@ abstract class ModificationTests() {
         val item = LargeTestModel(intNullable = null)
         collection.insert(listOf(item, LargeTestModel(intNullable = 5)))
         val modification = modification<LargeTestModel> { it.intNullable.notNull += 1 }
-        val byId = condition<LargeTestModel> { it._id eq item._id }
+        val byId = Condition<LargeTestModel> { it._id eq item._id }
 
         assertEquals(EntryChange(item, item), collection.updateOne(byId, modification))
         assertTrue(collection.updateOneIgnoringResult(byId, modification))

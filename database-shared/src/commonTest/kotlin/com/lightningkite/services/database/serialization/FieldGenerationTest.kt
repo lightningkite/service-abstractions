@@ -67,12 +67,12 @@ data class PolymorphicClassTopLevel(val id: Int) : PolymorphicClass()
 class FieldGenerationTest {
     @Test
     fun ifSyntaxWorksWereOk() {
-        condition<Sample> { it.x gt 4 }
-        condition<SampleGeneric<Int, String>> { it.x gt 4 }
-        condition<Sample.Nested> { it.value eq 0 }
-        condition<SampleGeneric.Nested> { it.value eq 0 }
-        condition<Sample.Nested.DoubleNested> { it.value eq 0 }
-        condition<SampleGeneric.Nested.DoubleNested> { it.value eq 0 }
+        Condition<Sample> { it.x gt 4 }
+        Condition<SampleGeneric<Int, String>> { it.x gt 4 }
+        Condition<Sample.Nested> { it.value eq 0 }
+        Condition<SampleGeneric.Nested> { it.value eq 0 }
+        Condition<Sample.Nested.DoubleNested> { it.value eq 0 }
+        Condition<SampleGeneric.Nested.DoubleNested> { it.value eq 0 }
 
         Sample.x
         Sample.fields
@@ -80,8 +80,8 @@ class FieldGenerationTest {
 
     @Test
     fun sealedVariantPaths() {
-        val isFooNamedA = condition<Polymorphic> { it.asFoo.name eq "a" }
-        condition<Polymorphic> { it isType Polymorphic.Foo.serializer() }
+        val isFooNamedA = Condition<Polymorphic> { it.asFoo.name eq "a" }
+        Condition<Polymorphic> { it isType Polymorphic.Foo.serializer() }
         assertTrue(isFooNamedA(Polymorphic.Foo("a")))
         assertFalse(isFooNamedA(Polymorphic.Foo("b")))
         assertFalse(isFooNamedA(Polymorphic.Bar(1)))
@@ -93,7 +93,7 @@ class FieldGenerationTest {
 
     @Test
     fun sealedVariantChecks() {
-        val isFoo = condition<Polymorphic> { it isType Polymorphic.Foo.serializer() }
+        val isFoo = Condition<Polymorphic> { it isType Polymorphic.Foo.serializer() }
         assertTrue(isFoo(Polymorphic.Foo("a")))
         assertFalse(isFoo(Polymorphic.Bar(1)))
     }
@@ -108,7 +108,7 @@ class FieldGenerationTest {
 
     @Test
     fun sealedClassVariantPaths() {
-        val isFooNamedA = condition<PolymorphicClass> { it.asFoo.name eq "a" }
+        val isFooNamedA = Condition<PolymorphicClass> { it.asFoo.name eq "a" }
         assertTrue(isFooNamedA(PolymorphicClass.Foo("a")))
         assertFalse(isFooNamedA(PolymorphicClass.Foo("b")))
         assertFalse(isFooNamedA(PolymorphicClassTopLevel(1)))
@@ -121,12 +121,12 @@ class FieldGenerationTest {
 
     @Test
     fun sealedClassVariantChecks() {
-        val isEmpty = condition<PolymorphicClass> { it isType PolymorphicClass.Empty.serializer() }
+        val isEmpty = Condition<PolymorphicClass> { it isType PolymorphicClass.Empty.serializer() }
         assertTrue(isEmpty(PolymorphicClass.Empty))
         assertFalse(isEmpty(PolymorphicClass.Foo("a")))
         assertFalse(isEmpty(PolymorphicClassTopLevel(1)))
 
-        val isEmptyViaPath = condition<PolymorphicClass> { it.asEmpty isType PolymorphicClass.Empty.serializer() }
+        val isEmptyViaPath = Condition<PolymorphicClass> { it.asEmpty isType PolymorphicClass.Empty.serializer() }
         assertTrue(isEmptyViaPath(PolymorphicClass.Empty))
         assertFalse(isEmptyViaPath(PolymorphicClass.Foo("a")))
     }

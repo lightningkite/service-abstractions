@@ -71,11 +71,11 @@ class CheckedUpdateBsonTest {
 
     @Test
     fun notNull_nullRejectingConditions_keepTheirShape() {
-        assertEquals(Document("intNullable", Document("\$eq", BsonInt32(1))), query(condition { it.intNullable.notNull eq 1 }))
-        assertEquals(Document("intNullable", Document("\$gt", BsonInt32(1))), query(condition { it.intNullable.notNull gt 1 }))
+        assertEquals(Document("intNullable", Document("\$eq", BsonInt32(1))), query(Condition { it.intNullable.notNull eq 1 }))
+        assertEquals(Document("intNullable", Document("\$gt", BsonInt32(1))), query(Condition { it.intNullable.notNull gt 1 }))
         assertEquals(
             Document("embeddedNullable.value1", Document("\$eq", BsonString("a"))),
-            query(condition { it.embeddedNullable.notNull.value1 eq "a" })
+            query(Condition { it.embeddedNullable.notNull.value1 eq "a" })
         )
     }
 }

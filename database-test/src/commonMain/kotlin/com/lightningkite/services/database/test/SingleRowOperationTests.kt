@@ -277,7 +277,7 @@ abstract class SingleRowOperationTests {
 
     @Test
     fun singleRowOps_reportNothingWhenConditionMatchesNothing() = runTest {
-        val noMatch = condition<LargeTestModel> { it.int eq 9999 }
+        val noMatch = Condition<LargeTestModel> { it.int eq 9999 }
         assertNoOpUnderCondition("srot_nomatch", noMatch)
     }
 
@@ -329,13 +329,13 @@ abstract class SingleRowOperationTests {
     fun updateOne_returnsTheRowAsItWasBeforeTheChange() = runTest {
         val collection = seeded("srot_updateOne_oldValue")
         val change = collection.updateOne(
-            condition { it.int eq 3 },
+            Condition { it.int eq 3 },
             modification { it.string assign "changed" },
         )
         // `old` is an observation of the database and must reflect the pre-change row exactly.
         assertEquals(3, change.old?.int)
         assertEquals("", change.old?.string)
-        assertEquals("changed", collection.findOne(condition { it.int eq 3 })?.string)
+        assertEquals("changed", collection.findOne(Condition { it.int eq 3 })?.string)
     }
 
     private companion object {

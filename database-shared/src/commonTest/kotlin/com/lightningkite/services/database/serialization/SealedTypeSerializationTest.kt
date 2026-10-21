@@ -14,7 +14,7 @@ class SealedTypeSerializationTest {
 
     @Test
     fun conditionRoundTrips() {
-        val condition = condition<Polymorphic> { it.asFoo.name eq "a" }
+        val condition = Condition<Polymorphic> { it.asFoo.name eq "a" }
         val encoded = Json.encodeToString(conditionSerializer, condition)
         assertEquals(condition, Json.decodeFromString(conditionSerializer, encoded))
     }
@@ -29,7 +29,7 @@ class SealedTypeSerializationTest {
     @Test
     fun shortVariantNamesDecode() {
         assertEquals(
-            condition<Polymorphic> { it.asFoo.name eq "a" },
+            Condition<Polymorphic> { it.asFoo.name eq "a" },
             Json.decodeFromString(conditionSerializer, """{"Foo":{"name":{"Equal":"a"}}}""")
         )
         assertEquals(

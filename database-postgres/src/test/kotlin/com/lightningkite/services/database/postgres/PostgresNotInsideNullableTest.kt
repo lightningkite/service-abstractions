@@ -41,7 +41,7 @@ class PostgresNotInsideNullableTest {
         collection.insertMany(listOf(nullRow, outsideListRow, insideListRow))
 
         // In-memory semantics: !listOf(1,2,3).contains(value) -> true for both null and 99.
-        val results = collection.find(condition { it.intNullable notInside listOf(1, 2, 3) }).toList()
+        val results = collection.find(Condition { it.intNullable notInside listOf(1, 2, 3) }).toList()
         assertEquals(setOf(nullRow._id, outsideListRow._id), results.map { it._id }.toSet())
     }
 }

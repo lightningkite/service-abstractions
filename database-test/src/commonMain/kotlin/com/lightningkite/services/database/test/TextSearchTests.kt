@@ -116,7 +116,7 @@ abstract class TextSearchTests {
             TextSearchTestModel(title = "Kotlin A", category = "a"),
             TextSearchTestModel(title = "Kotlin B", category = "b"),
         )
-        val results = table.findByTextIndex("kotlin", condition { it.category eq "b" }).toList()
+        val results = table.findByTextIndex("kotlin", Condition { it.category eq "b" }).toList()
         assertEquals(listOf("Kotlin B"), results.map { it.model.title })
     }
 
@@ -223,7 +223,7 @@ abstract class TextSearchTests {
         val table = raw.withPermissions(
             ModelPermissions(
                 all = Condition.Always,
-                readMask = mask<LargeTestModel> { it.string.mask("", unless = condition<LargeTestModel> { it.byte eq 1 }) },
+                readMask = mask<LargeTestModel> { it.string.mask("", unless = Condition<LargeTestModel> { it.byte eq 1 }) },
             )
         )
         assertEquals(listOf<Byte>(1), table.findByTextIndex("secret").toList().map { it.model.byte })

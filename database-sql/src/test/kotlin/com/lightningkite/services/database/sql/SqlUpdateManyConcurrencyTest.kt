@@ -47,12 +47,12 @@ class SqlUpdateManyConcurrencyTest {
 
         inParallel(concurrency) { index ->
             collection.updateManyIgnoringResult(
-                condition { it._id eq model._id },
+                Condition { it._id eq model._id },
                 modification { it.list += index },
             )
         }
 
-        val found = collection.findOne(condition { it._id eq model._id })
+        val found = collection.findOne(Condition { it._id eq model._id })
         assertEquals(
             concurrency,
             found?.list?.size,

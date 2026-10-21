@@ -39,7 +39,7 @@ abstract class ScaleAndBoundaryTests {
         val collection = table("sbt_emptyReads")
         assertEquals(emptyList(), collection.all())
         assertEquals(0, collection.count())
-        assertEquals(0, collection.count(condition { it.int gt 0 }))
+        assertEquals(0, collection.count(Condition { it.int gt 0 }))
         assertNull(collection.findOne(Condition.Always))
         assertEquals(emptyMap(), collection.groupCount(Condition.Always, path<LargeTestModel>().int))
     }
@@ -96,7 +96,7 @@ abstract class ScaleAndBoundaryTests {
         collection.insert((1..BULK).map { LargeTestModel(int = it) })
 
         assertEquals(BULK, collection.updateManyIgnoringResult(Condition.Always, modification { it.boolean assign true }))
-        assertEquals(BULK, collection.count(condition { it.boolean eq true }))
+        assertEquals(BULK, collection.count(Condition { it.boolean eq true }))
     }
 
     // endregion
@@ -137,8 +137,8 @@ abstract class ScaleAndBoundaryTests {
         val present = LargeTestModel(int = 2, embeddedNullable = ClassUsedForEmbedding("here", 9))
         collection.insert(listOf(absent, present))
 
-        assertNull(assertNotNull(collection.findOne(condition { it.int eq 1 })).embeddedNullable)
-        assertEquals(present.embeddedNullable, assertNotNull(collection.findOne(condition { it.int eq 2 })).embeddedNullable)
+        assertNull(assertNotNull(collection.findOne(Condition { it.int eq 1 })).embeddedNullable)
+        assertEquals(present.embeddedNullable, assertNotNull(collection.findOne(Condition { it.int eq 2 })).embeddedNullable)
     }
 
     @Test
@@ -148,11 +148,11 @@ abstract class ScaleAndBoundaryTests {
         val nulled = LargeTestModel(int = 2, list = listOf(), listNullable = null, map = mapOf(), mapNullable = null)
         collection.insert(listOf(empty, nulled))
 
-        val readEmpty = assertNotNull(collection.findOne(condition { it.int eq 1 }))
+        val readEmpty = assertNotNull(collection.findOne(Condition { it.int eq 1 }))
         assertEquals(emptyList(), readEmpty.listNullable, "an empty list must not come back as null")
         assertEquals(emptyMap(), readEmpty.mapNullable, "an empty map must not come back as null")
 
-        val readNulled = assertNotNull(collection.findOne(condition { it.int eq 2 }))
+        val readNulled = assertNotNull(collection.findOne(Condition { it.int eq 2 }))
         assertNull(readNulled.listNullable, "a null list must not come back as empty")
         assertNull(readNulled.mapNullable, "a null map must not come back as empty")
     }
@@ -186,14 +186,14 @@ abstract class ScaleAndBoundaryTests {
         )
         collection.insert(listOf(min, max))
 
-        assertEquals(min, collection.findOne(condition { it.byte eq Byte.MIN_VALUE }))
-        assertEquals(max, collection.findOne(condition { it.byte eq Byte.MAX_VALUE }))
-        assertEquals(min, collection.findOne(condition { it.short eq Short.MIN_VALUE }))
-        assertEquals(max, collection.findOne(condition { it.short eq Short.MAX_VALUE }))
-        assertEquals(min, collection.findOne(condition { it.int eq Int.MIN_VALUE }))
-        assertEquals(max, collection.findOne(condition { it.int eq Int.MAX_VALUE }))
-        assertEquals(min, collection.findOne(condition { it.long eq Long.MIN_VALUE }))
-        assertEquals(max, collection.findOne(condition { it.long eq Long.MAX_VALUE }))
+        assertEquals(min, collection.findOne(Condition { it.byte eq Byte.MIN_VALUE }))
+        assertEquals(max, collection.findOne(Condition { it.byte eq Byte.MAX_VALUE }))
+        assertEquals(min, collection.findOne(Condition { it.short eq Short.MIN_VALUE }))
+        assertEquals(max, collection.findOne(Condition { it.short eq Short.MAX_VALUE }))
+        assertEquals(min, collection.findOne(Condition { it.int eq Int.MIN_VALUE }))
+        assertEquals(max, collection.findOne(Condition { it.int eq Int.MAX_VALUE }))
+        assertEquals(min, collection.findOne(Condition { it.long eq Long.MIN_VALUE }))
+        assertEquals(max, collection.findOne(Condition { it.long eq Long.MAX_VALUE }))
     }
 
     @Test
@@ -211,7 +211,7 @@ abstract class ScaleAndBoundaryTests {
             listOf(Int.MIN_VALUE, 0, Int.MAX_VALUE),
             collection.find(Condition.Always, sort { it.int.ascending() }).toList().map { it.int },
         )
-        assertEquals(1, collection.count(condition { it.int lt 0 }))
+        assertEquals(1, collection.count(Condition { it.int lt 0 }))
     }
 
     @Test
@@ -228,7 +228,7 @@ abstract class ScaleAndBoundaryTests {
         collection.insert(strings.mapIndexed { index, s -> LargeTestModel(int = index, string = s) })
 
         for ((index, expected) in strings.withIndex()) {
-            assertEquals(expected, collection.findOne(condition { it.int eq index })?.string, "string $index")
+            assertEquals(expected, collection.findOne(Condition { it.int eq index })?.string, "string $index")
         }
     }
 
@@ -238,7 +238,7 @@ abstract class ScaleAndBoundaryTests {
         val awkward = "quotes ' \" and percent %_"
         collection.insert(listOf(LargeTestModel(int = 1, string = awkward), LargeTestModel(int = 2, string = "other")))
         // Also a light check that special characters are parameterized rather than interpolated.
-        assertEquals(listOf(1), collection.find(condition { it.string eq awkward }).toList().map { it.int })
+        assertEquals(listOf(1), collection.find(Condition { it.string eq awkward }).toList().map { it.int })
     }
     @Test
     fun awkwardStringsAreContainsCheckable() = runTest {
@@ -246,7 +246,7 @@ abstract class ScaleAndBoundaryTests {
         val awkward = "quotes ' \" and percent %_"
         collection.insert(listOf(LargeTestModel(int = 1, string = awkward), LargeTestModel(int = 2, string = "other")))
         // Also a light check that special characters are parameterized rather than interpolated.
-        assertEquals(listOf(1), collection.find(condition { it.string.contains("\" and percent %") }).toList().map { it.int })
+        assertEquals(listOf(1), collection.find(Condition { it.string.contains("\" and percent %") }).toList().map { it.int })
     }
 
     @Test

@@ -81,7 +81,7 @@ class UpdateRestrictionsTest {
         val roleMod = modification<TestUser> { it.role assign Role.Moderator }
 
         val result = restrictions(roleMod)
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, result)
+        assertEquals(Condition<TestUser> { it.role eq Role.Admin }, result)
     }
 
     @Test
@@ -98,9 +98,9 @@ class UpdateRestrictionsTest {
             it.credits assign 1000
         }
 
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(roleMod))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(creditsMod))
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(bothMod))
+        assertEquals(Condition<TestUser> { it.role eq Role.Admin }, restrictions(roleMod))
+        assertEquals(Condition<TestUser> { it.role eq Role.Admin }, restrictions(creditsMod))
+        assertEquals(Condition<TestUser> { it.role eq Role.Admin }, restrictions(bothMod))
     }
 
     @Test
@@ -133,7 +133,7 @@ class UpdateRestrictionsTest {
         val creditsMod = modification<TestUser> { it.credits assign 100 }
 
         val result = restrictions(creditsMod)
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, result)
+        assertEquals(Condition<TestUser> { it.role eq Role.Admin }, result)
     }
 
     @Test
@@ -150,11 +150,11 @@ class UpdateRestrictionsTest {
 
         assertEquals(Condition.Never, restrictions(modification<TestUser> { it._id assign Uuid.random() }))
         assertEquals(
-            condition<TestUser> { it.role eq Role.Admin },
+            Condition<TestUser> { it.role eq Role.Admin },
             restrictions(modification<TestUser> { it.role assign Role.Moderator })
         )
         assertEquals(
-            condition<TestUser> { it.role eq Role.Admin },
+            Condition<TestUser> { it.role eq Role.Admin },
             restrictions(modification<TestUser> { it.credits assign 100 })
         )
         assertEquals(Condition.Always, restrictions(modification<TestUser> { it.username assign "newname" }))
@@ -178,7 +178,7 @@ class UpdateRestrictionsTest {
         }
 
         val emailMod = modification<TestUser> { it.email assign "new@example.com" }
-        val expected = condition<TestUser> { (it.role eq Role.Admin) and (it.isActive eq true) }
+        val expected = Condition<TestUser> { (it.role eq Role.Admin) and (it.isActive eq true) }
 
         assertEquals(expected, restrictions(emailMod))
     }
@@ -226,7 +226,7 @@ class UpdateRestrictionsTest {
         val emailMod = modification<TestUser> { it.email assign "new@example.com" }
         val usernameMod = modification<TestUser> { it.username assign "newuser" }
 
-        assertEquals(condition<TestUser> { it.isActive eq true }, restrictions(emailMod))
+        assertEquals(Condition<TestUser> { it.isActive eq true }, restrictions(emailMod))
         assertEquals(Condition.Never, restrictions(usernameMod)) // Not whitelisted
     }
 
@@ -256,7 +256,7 @@ class UpdateRestrictionsTest {
 
         val creditsMod = modification<TestUser> { it.credits assign 100 }
         val emailMod = modification<TestUser> { it.email assign "new@example.com" }
-        val expected = condition<TestUser> { (it.role eq Role.Moderator) or (it.role eq Role.Admin) }
+        val expected = Condition<TestUser> { (it.role eq Role.Moderator) or (it.role eq Role.Admin) }
 
         assertEquals(expected, restrictions(creditsMod))
         assertEquals(Condition.Never, restrictions(emailMod)) // Not whitelisted
@@ -274,7 +274,7 @@ class UpdateRestrictionsTest {
         assertEquals(Condition.Always, restrictions(modification<TestUser> { it.email assign "new@example.com" }))
         assertEquals(Condition.Always, restrictions(modification<TestUser> { it.username assign "newuser" }))
         assertEquals(
-            condition<TestUser> { it.role eq Role.Admin },
+            Condition<TestUser> { it.role eq Role.Admin },
             restrictions(modification<TestUser> { it.credits assign 100 })
         )
         assertEquals(Condition.Always, restrictions(modification<TestUser> { it.isActive assign true }))
@@ -315,7 +315,7 @@ class UpdateRestrictionsTest {
             extendedRestrictions(modification<TestUser> { it.email assign "new@example.com" })
         )
         assertEquals(
-            condition<TestUser> { it.role eq Role.Admin },
+            Condition<TestUser> { it.role eq Role.Admin },
             extendedRestrictions(modification<TestUser> { it.role assign Role.Moderator })
         )
         assertEquals(Condition.Always, extendedRestrictions(modification<TestUser> { it.username assign "newuser" }))
@@ -361,7 +361,7 @@ class UpdateRestrictionsTest {
         assertEquals(Condition.Never, combined(modification<TestUser> { it._id assign Uuid.random() }))
         assertEquals(Condition.Never, combined(modification<TestUser> { it.email assign "new@example.com" }))
         assertEquals(
-            condition<TestUser> { it.role eq Role.Admin },
+            Condition<TestUser> { it.role eq Role.Admin },
             combined(modification<TestUser> { it.role assign Role.Moderator })
         )
     }
@@ -382,7 +382,7 @@ class UpdateRestrictionsTest {
 
         val result = restrictions(chainMod)
         // Both fields require admin, so the condition should be admin
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, result)
+        assertEquals(Condition<TestUser> { it.role eq Role.Admin }, result)
     }
 
     @Test
@@ -399,7 +399,7 @@ class UpdateRestrictionsTest {
 
         val result = restrictions(chainMod)
         // Only role is restricted
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, result)
+        assertEquals(Condition<TestUser> { it.role eq Role.Admin }, result)
     }
 
     @Test
@@ -468,7 +468,7 @@ class UpdateRestrictionsTest {
         val result = restrictions(roleMod)
 
         // Both conditions should be combined
-        val expected = condition<TestUser> { (it.isActive eq true) and (it.credits gt 100) }
+        val expected = Condition<TestUser> { (it.isActive eq true) and (it.credits gt 100) }
         assertEquals(expected, result)
     }
 
@@ -481,7 +481,7 @@ class UpdateRestrictionsTest {
         val assignMod = Modification.Assign(TestUser(email = "new@example.com"))
         // Assign modifies all fields, so email restriction should apply
         val result = restrictions(assignMod)
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, result)
+        assertEquals(Condition<TestUser> { it.role eq Role.Admin }, result)
     }
 
     // ==================== REAL-WORLD SCENARIOS ====================
@@ -506,11 +506,11 @@ class UpdateRestrictionsTest {
         assertEquals(Condition.Never, restrictions(modification<TestUser> { it.role assign Role.Admin }))
         assertEquals(Condition.Never, restrictions(modification<TestUser> { it.credits assign 1000 }))
         assertEquals(
-            condition<TestUser> { it._id eq userId },
+            Condition<TestUser> { it._id eq userId },
             restrictions(modification<TestUser> { it.email assign "new@example.com" })
         )
         assertEquals(
-            condition<TestUser> { it._id eq userId },
+            Condition<TestUser> { it._id eq userId },
             restrictions(modification<TestUser> { it.username assign "newuser" })
         )
     }
@@ -529,15 +529,15 @@ class UpdateRestrictionsTest {
 
         assertEquals(Condition.Never, restrictions(modification<TestUser> { it._id assign Uuid.random() }))
         assertEquals(
-            condition<TestUser> { it.role eq Role.Admin },
+            Condition<TestUser> { it.role eq Role.Admin },
             restrictions(modification<TestUser> { it.role assign Role.Moderator })
         )
         assertEquals(
-            condition<TestUser> { it.role eq Role.Admin },
+            Condition<TestUser> { it.role eq Role.Admin },
             restrictions(modification<TestUser> { it.credits assign 1000 })
         )
         assertEquals(
-            condition<TestUser> { it.role eq Role.Admin },
+            Condition<TestUser> { it.role eq Role.Admin },
             restrictions(modification<TestUser> { it.isActive assign false })
         )
     }
@@ -569,7 +569,7 @@ class UpdateRestrictionsTest {
         }
 
         val creditsMod = modification<TestUser> { it.credits assign 500 }
-        assertEquals(condition<TestUser> { it.role eq Role.Admin }, restrictions(creditsMod))
+        assertEquals(Condition<TestUser> { it.role eq Role.Admin }, restrictions(creditsMod))
     }
 
     // ==================== PARENT / CHILD PATHS ====================
@@ -651,7 +651,7 @@ class UpdateRestrictionsTest {
 
     @Test
     fun `whitelist - a rule on a child applies when writing its allowed parent`() {
-        val admin = condition<LargeTestModel> { it.boolean eq true }
+        val admin = Condition<LargeTestModel> { it.boolean eq true }
         val restrictions = whitelistRestrictions<LargeTestModel> {
             it.embedded.canBeModified()
             it.embedded.value2 requires admin
@@ -663,7 +663,7 @@ class UpdateRestrictionsTest {
 
     @Test
     fun `whitelist - nullable end date that must be in the future or open`() {
-        val admin = condition<Holder> { it.thing.asFoo.name eq "admin" }
+        val admin = Condition<Holder> { it.thing.asFoo.name eq "admin" }
         val restrictions = whitelistRestrictions<Holder> {
             it.span.endInclusive.requires(admin) { it.notNull.gte(10) or it.eq(null) }
         }
@@ -687,8 +687,8 @@ class UpdateRestrictionsTest {
         assertNever(restrictions, modification { it.embedded.value2 assign 0 })
         assertNever(restrictions, modification { it.embedded assign ClassUsedForEmbedding("TX", 1) })
         // The part a write leaves alone must already hold, so a write can fix one part of a row that breaks the rule.
-        assertEquals(condition { it.embedded.value2 neq 0 }, restrictions(modification { it.embedded.value1 assign "CO" }))
-        assertEquals(condition { it.embedded.value1 eq "CO" }, restrictions(modification { it.embedded.value2 assign 5 }))
+        assertEquals(Condition { it.embedded.value2 neq 0 }, restrictions(modification { it.embedded.value1 assign "CO" }))
+        assertEquals(Condition { it.embedded.value1 eq "CO" }, restrictions(modification { it.embedded.value2 assign 5 }))
         assertEquals(Condition.Always, restrictions(modification { it.embedded assign ClassUsedForEmbedding("CO", 1) }))
     }
 
@@ -710,17 +710,17 @@ class UpdateRestrictionsTest {
         }
 
         assertNever(restrictions, modification { it.embeddedNullable.notNull.value1 assign "TX" })
-        assertEquals(condition { it.embeddedNullable neq null }, restrictions(modification { it.embeddedNullable.notNull.value1 assign "CO" }))
-        assertEquals(condition { it.embeddedNullable.notNull.value1 eq "CO" }, restrictions(modification { it.embeddedNullable.notNull.value2 assign 3 }))
+        assertEquals(Condition { it.embeddedNullable neq null }, restrictions(modification { it.embeddedNullable.notNull.value1 assign "CO" }))
+        assertEquals(Condition { it.embeddedNullable.notNull.value1 eq "CO" }, restrictions(modification { it.embeddedNullable.notNull.value2 assign 3 }))
     }
 
     @Test
     fun `guaranteedAfter fails closed on shapes it cannot prove`() {
         val embeddedValue1 = modification<LargeTestModel> { it.embedded.value1 assign "x" }
         assertEquals(false, Condition.Never.guaranteedAfter(embeddedValue1))
-        assertEquals(false, Condition.Not(condition<LargeTestModel> { it.embedded.value1 neq "x" }).guaranteedAfter(embeddedValue1))
-        assertEquals(true, condition<LargeTestModel> { it.embedded.value1 eq "x" }.guaranteedAfter(embeddedValue1))
-        assertEquals(true, condition<LargeTestModel> { it.embedded.value2 eq 1 }.guaranteedAfter(embeddedValue1))
+        assertEquals(false, Condition.Not(Condition<LargeTestModel> { it.embedded.value1 neq "x" }).guaranteedAfter(embeddedValue1))
+        assertEquals(true, Condition<LargeTestModel> { it.embedded.value1 eq "x" }.guaranteedAfter(embeddedValue1))
+        assertEquals(true, Condition<LargeTestModel> { it.embedded.value2 eq 1 }.guaranteedAfter(embeddedValue1))
     }
 
     // ==================== asType AND Nothing ====================
@@ -754,16 +754,16 @@ class UpdateRestrictionsTest {
 
     @Test
     fun `a mask under one variant restricts only reads of that variant's fields`() {
-        val admin = condition<Holder> { it.span.start eq 1 }
+        val admin = Condition<Holder> { it.span.start eq 1 }
         val hidden = mask<Holder> { it.thing.asFoo.name.mask("", unless = admin) }
 
-        assertEquals(Condition.Always, hidden(condition { it.thing.asBar.id eq 1 }))
-        assertEquals(admin, hidden(condition { it.thing.asFoo.name eq "x" }))
-        assertEquals(admin, hidden(condition { it.thing eq Polymorphic.Foo("x") }))
+        assertEquals(Condition.Always, hidden(Condition { it.thing.asBar.id eq 1 }))
+        assertEquals(admin, hidden(Condition { it.thing.asFoo.name eq "x" }))
+        assertEquals(admin, hidden(Condition { it.thing eq Polymorphic.Foo("x") }))
         assertEquals(Condition.Always, hidden.permitSort(listOf(SortPart(path<Holder>().thing.asBar.id))))
         assertEquals(admin, hidden.permitSort(listOf(SortPart(path<Holder>().thing.asFoo.name))))
         assertEquals(admin, hidden(path<Holder>().thing))
-        assertEquals(Condition.Always, mask<Holder> { always(Modification.Nothing.invoke()) }(condition { it.span.start eq 1 }))
+        assertEquals(Condition.Always, mask<Holder> { always(Modification.Nothing.invoke()) }(Condition { it.span.start eq 1 }))
     }
 
     // ==================== guaranteedAfter OVER UNREAD PARTS ====================
@@ -772,7 +772,7 @@ class UpdateRestrictionsTest {
     fun `neq null on an object survives writes inside it but not assigning null`() {
         val restrictions = updateRestrictions<LargeTestModel> { it.embeddedNullable.mustBe { it neq null } }
 
-        val nonNull = condition<LargeTestModel> { it.embeddedNullable neq null }
+        val nonNull = Condition<LargeTestModel> { it.embeddedNullable neq null }
         assertEquals(nonNull, restrictions(modification { it.embeddedNullable.notNull.value1 assign "x" }))
         assertEquals(nonNull, restrictions(modification { it.embeddedNullable.notNull assign ClassUsedForEmbedding() }))
         assertEquals(Condition.Always, restrictions(modification { it.embeddedNullable assign ClassUsedForEmbedding() }))
@@ -835,7 +835,7 @@ class UpdateRestrictionsTest {
             it.embedded.value1 assign "CO"
             it.embedded.value1 assign "TX"
         })
-        assertEquals(condition { it.embedded.value2 neq 0 }, restrictions(modification {
+        assertEquals(Condition { it.embedded.value2 neq 0 }, restrictions(modification {
             it.embedded.value1 assign "TX"
             it.embedded.value1 assign "CO"
         }))

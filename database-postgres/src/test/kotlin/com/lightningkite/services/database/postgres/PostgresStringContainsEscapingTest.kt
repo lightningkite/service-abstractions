@@ -40,7 +40,7 @@ class PostgresStringContainsEscapingTest {
         collection.insertMany(listOf(literalMatch, wildcardOnlyMatch))
 
         // In-memory reference: "50% off".contains("50%") == true, "50xyz".contains("50%") == false.
-        val results = collection.find(condition { it.string.contains("50%") }).toList()
+        val results = collection.find(Condition { it.string.contains("50%") }).toList()
         assertEquals(listOf(literalMatch._id), results.map { it._id })
     }
 
@@ -53,7 +53,7 @@ class PostgresStringContainsEscapingTest {
 
         // In-memory reference: "a_b".contains("a_b") == true, "axb".contains("a_b") == false
         // (a naive LIKE would treat '_' as "any one character" and match both).
-        val results = collection.find(condition { it.string.contains("a_b") }).toList()
+        val results = collection.find(Condition { it.string.contains("a_b") }).toList()
         assertEquals(listOf(literalMatch._id), results.map { it._id })
     }
 }

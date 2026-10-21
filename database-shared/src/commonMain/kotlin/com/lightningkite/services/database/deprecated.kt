@@ -65,7 +65,7 @@ public fun <K> AnyOptic<K>.setAny(key: K, any: Any?): K = (coerceToOptic() as Op
 @Deprecated("Use coerceToOptic().serializer instead", ReplaceWith("coerceToOptic().serializer", "com.lightningkite.services.database.optics.coerceToOptic"))
 public val AnyOptic<*>.serializerAny: KSerializer<*> get() = coerceToOptic().serializer
 
-@Deprecated("Compose with plus instead", ReplaceWith("this + prop", "com.lightningkite.services.database.optics.plus"))
+@Deprecated("Compose with plus instead", ReplaceWith("this + prop", "com.lightningkite.services.database.optics.*"))
 public operator fun <K, V, V2> Optic<K, V>.get(prop: Field<V, V2>): Optic<K, V2> = this + prop
 
 @Deprecated("Renamed to forOptic", ReplaceWith("forOptic(path)"))
@@ -74,3 +74,9 @@ public fun <K, V> Modification<K>.forDataClassPath(path: Optic<K, V>): Modificat
 @Deprecated("Renamed to valueSetForOptic", ReplaceWith("valueSetForOptic(path)"))
 public fun <K, V> Modification<K>.valueSetForDataClassPath(path: Optic<K, V>): V? = valueSetForOptic(path)
 
+@Deprecated("Renamed to Condition to match kotlin naming conventions", ReplaceWith("Condition(setup)", "com.lightningkite.services.database.Condition"))
+public inline fun <reified T> condition(setup: (Lens<T, T>) -> Condition<T>): Condition<T> =
+    Condition(setup)
+
+@Deprecated("Renamed to Condition to match kotlin naming conventions", ReplaceWith("Condition(setup)", "com.lightningkite.services.database.Condition"))
+public fun condition(boolean: Boolean): Condition<Any?> = Condition(boolean)

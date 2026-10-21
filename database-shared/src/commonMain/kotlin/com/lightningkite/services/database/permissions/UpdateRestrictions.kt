@@ -314,7 +314,7 @@ public data class UpdateRestrictions<T>(
          * @param valueMust Lambda that returns a condition the new value must satisfy
          */
         public inline fun <reified V> Optic<T, V>.mustBe(valueMust: (Lens<V, V>) -> Condition<V>) {
-            this@Builder.fields.add(Part(property = this, requires = Condition.Always, limitedTo = this.condition(valueMust)))
+            this@Builder.fields.add(Part(property = this, requires = Condition.Always, limitedTo = this.Condition(valueMust)))
         }
 
         /**
@@ -348,7 +348,7 @@ public data class UpdateRestrictions<T>(
             requires: Condition<T>,
             valueMust: (Lens<V, V>) -> Condition<V>,
         ) {
-            this@Builder.fields.add(Part(property = this, requires = requires, limitedTo = this.condition(valueMust)))
+            this@Builder.fields.add(Part(property = this, requires = requires, limitedTo = this.Condition(valueMust)))
         }
 
         /**

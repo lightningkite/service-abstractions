@@ -17,10 +17,10 @@ public fun <T> path(serializer: KSerializer<T>): IdentityLens<T> = IdentityLens(
 /** Returns an [IdentityLens] on [T], the starting point for building a path with [Optic.plus]. */
 public inline fun <reified T> path(): IdentityLens<T> = IdentityLens(serializerOrContextual<T>())
 
-public inline fun <reified T> condition(setup: (Lens<T, T>) -> Condition<T>): Condition<T> =
+public inline fun <reified T> Condition(setup: (Lens<T, T>) -> Condition<T>): Condition<T> =
     path<T>().let(setup)
 
-public fun condition(boolean: Boolean): Condition<Any?> = if (boolean) Condition.Always else Condition.Never
+public fun Condition(boolean: Boolean): Condition<Any?> = if (boolean) Condition.Always else Condition.Never
 
 public val <K> Lens<K, K>.always: Condition<K> get() = Condition.Always
 public val <K> Lens<K, K>.never: Condition<K> get() = Condition.Never
@@ -86,7 +86,7 @@ public inline infix fun <K, C: Collection<T>, reified T> Optic<K, C>.all(conditi
 public inline infix fun <K, C: Collection<T>, reified T> Optic<K, C>.any(condition: (Lens<T, T>) -> Condition<T>): Condition<K> =
     mapCondition(Condition.CollectionAnyElements(path<T>().let(condition)))
 
-public inline infix fun <K, reified T> Optic<K, T>.condition(make: (Lens<T, T>) -> Condition<T>): Condition<K> =
+public inline infix fun <K, reified T> Optic<K, T>.Condition(make: (Lens<T, T>) -> Condition<T>): Condition<K> =
     mapCondition(make(path<T>()))
 
 @JsName("xOpticInsideSet")

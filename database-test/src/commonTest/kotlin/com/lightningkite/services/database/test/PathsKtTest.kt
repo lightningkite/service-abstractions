@@ -46,28 +46,28 @@ class PathsKtTest {
     @Test
     fun readsResultOfStructuredMasks() {
         val embedded = modification<LargeTestModel> { it.embedded assign ClassUsedForEmbedding() }
-        assertTrue(condition<LargeTestModel> { it.embedded.value2 gt 3 }.readsResultOf(embedded))
-        assertTrue(condition<LargeTestModel> { it.embedded eq ClassUsedForEmbedding() }.readsResultOf(embedded))
-        assertFalse(condition<LargeTestModel> { it.int gt 3 }.readsResultOf(embedded))
+        assertTrue(Condition<LargeTestModel> { it.embedded.value2 gt 3 }.readsResultOf(embedded))
+        assertTrue(Condition<LargeTestModel> { it.embedded eq ClassUsedForEmbedding() }.readsResultOf(embedded))
+        assertFalse(Condition<LargeTestModel> { it.int gt 3 }.readsResultOf(embedded))
 
         val nullable = modification<LargeTestModel> { it.embeddedNullable assign null }
-        assertTrue(condition<LargeTestModel> { it.embeddedNullable.notNull.value1 eq "x" }.readsResultOf(nullable))
-        assertTrue(condition<LargeTestModel> { it.embeddedNullable.notNull.mapCondition(Condition.Always) }.readsResultOf(nullable))
+        assertTrue(Condition<LargeTestModel> { it.embeddedNullable.notNull.value1 eq "x" }.readsResultOf(nullable))
+        assertTrue(Condition<LargeTestModel> { it.embeddedNullable.notNull.mapCondition(Condition.Always) }.readsResultOf(nullable))
 
         val list = modification<LargeTestModel> { it.list assign listOf() }
-        assertTrue(condition<LargeTestModel> { it.list.any { it eq 7 } }.readsResultOf(list))
-        assertTrue(condition<LargeTestModel> { it.list.any { it.always } }.readsResultOf(list))
-        assertTrue(condition<LargeTestModel> { it.set.any { it eq 7 } }.readsResultOf(modification { it.set assign setOf() }))
+        assertTrue(Condition<LargeTestModel> { it.list.any { it eq 7 } }.readsResultOf(list))
+        assertTrue(Condition<LargeTestModel> { it.list.any { it.always } }.readsResultOf(list))
+        assertTrue(Condition<LargeTestModel> { it.set.any { it eq 7 } }.readsResultOf(modification { it.set assign setOf() }))
 
         val perElement = modification<LargeTestModel> { it.listEmbedded.forEach { it.value1 assign "" } }
-        assertTrue(condition<LargeTestModel> { it.listEmbedded.any { it.value1 eq "x" } }.readsResultOf(perElement))
-        assertFalse(condition<LargeTestModel> { it.listEmbedded.any { it.value2 eq 3 } }.readsResultOf(perElement))
+        assertTrue(Condition<LargeTestModel> { it.listEmbedded.any { it.value1 eq "x" } }.readsResultOf(perElement))
+        assertFalse(Condition<LargeTestModel> { it.listEmbedded.any { it.value2 eq 3 } }.readsResultOf(perElement))
     }
 
     @Test
     fun partialOrWithNoPassingBranchIsFalse() {
         val partial = partialOf<LargeTestModel> { it.byte assign 0.toByte(); it.short assign 0.toShort() }
-        assertEquals(false, condition<LargeTestModel> { (it.byte eq 1) or (it.short eq 1) }(partial))
+        assertEquals(false, Condition<LargeTestModel> { (it.byte eq 1) or (it.short eq 1) }(partial))
     }
 
     @Test

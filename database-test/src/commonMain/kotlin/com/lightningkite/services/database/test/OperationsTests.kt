@@ -35,7 +35,7 @@ abstract class OperationsTests() {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_massUpdate"))
         val basis = (0..100).map { LargeTestModel(int = it) }
         collection.insert(basis)
-        val cond = condition<LargeTestModel> { it.int gt 50 }
+        val cond = Condition<LargeTestModel> { it.int gt 50 }
         val mod = modification<LargeTestModel> { it.boolean assign true }
         val out = collection.updateMany(cond, mod)
         assertEquals(basis.map { if (cond(it)) mod(it) else it }, collection.all().toList().sortedBy { it.int })
@@ -51,7 +51,7 @@ abstract class OperationsTests() {
         collection.insertOne(m)
         try {
             m = m.copy(int = 1)
-            collection.replaceOneIgnoringResult(condition { it._id eq m._id }, m)
+            collection.replaceOneIgnoringResult(Condition { it._id eq m._id }, m)
             assertEquals(m, collection.get(m._id))
         } catch (u: UnsupportedOperationException) {
             println("fine...")
@@ -62,13 +62,13 @@ abstract class OperationsTests() {
     fun test_wackyUpsert() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_wackyUpsert"))
         var m = LargeTestModel(int = 2, byte = 1)
-        var updated = collection.upsertOne(condition { it._id eq m._id }, modification { it.boolean assign true }, m)
+        var updated = collection.upsertOne(Condition { it._id eq m._id }, modification { it.boolean assign true }, m)
         assertEquals(null, updated.old)
         assertEquals(m, updated.new)
         m = collection.get(m._id)!!
         assertEquals(m, updated.new)
         updated = collection.upsertOne(
-            condition { it._id eq m._id },
+            Condition { it._id eq m._id },
             modification { it.byte assign 1 },
             LargeTestModel(byte = 1)
         )
@@ -81,13 +81,13 @@ abstract class OperationsTests() {
     fun test_normalUpsert() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_normalUpsert"))
         var m = LargeTestModel(int = 2, boolean = true)
-        var updated = collection.upsertOne(condition { it._id eq m._id }, modification { it.boolean assign true }, m)
+        var updated = collection.upsertOne(Condition { it._id eq m._id }, modification { it.boolean assign true }, m)
         assertEquals(null, updated.old)
         assertEquals(m, updated.new)
         m = collection.get(m._id)!!
         assertEquals(m, updated.new)
         updated = collection.upsertOne(
-            condition { it._id eq m._id },
+            Condition { it._id eq m._id },
             modification { it.byte assign 1 },
             LargeTestModel(byte = 1)
         )
@@ -100,13 +100,13 @@ abstract class OperationsTests() {
     fun test_modUpsert() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_modUpsert"))
         var m = LargeTestModel(int = 2, boolean = true, byte = 1)
-        var updated = collection.upsertOne(condition { it._id eq m._id }, modification { it.byte plusAssign 1 }, m)
+        var updated = collection.upsertOne(Condition { it._id eq m._id }, modification { it.byte plusAssign 1 }, m)
         assertEquals(null, updated.old)
         assertEquals(m, updated.new)
         m = collection.get(m._id)!!
         assertEquals(m, updated.new)
         updated = collection.upsertOne(
-            condition { it._id eq m._id },
+            Condition { it._id eq m._id },
             modification { it.byte plusAssign 1 },
             LargeTestModel(byte = 1)
         )
@@ -114,7 +114,7 @@ abstract class OperationsTests() {
         m = collection.get(m._id)!!
         assertEquals(m, updated.new)
         updated = collection.upsertOne(
-            condition { it._id eq m._id },
+            Condition { it._id eq m._id },
             modification { it.byte plusAssign 1 },
             LargeTestModel(byte = 1)
         )
@@ -128,14 +128,14 @@ abstract class OperationsTests() {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_wackyUpsertIgnoring"))
         var m = LargeTestModel(int = 2)
         var updated = collection.upsertOneIgnoringResult(
-            condition { it._id eq m._id },
+            Condition { it._id eq m._id },
             modification { it.boolean assign true },
             m
         )
         m = collection.get(m._id)!!
         assertEquals(false, updated)
         updated =
-            collection.upsertOneIgnoringResult(condition { it._id eq m._id }, modification { it.byte assign 1 }, m)
+            collection.upsertOneIgnoringResult(Condition { it._id eq m._id }, modification { it.byte assign 1 }, m)
         m = collection.get(m._id)!!
         assertEquals(true, updated)
     }
@@ -145,14 +145,14 @@ abstract class OperationsTests() {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_normalUpsertIgnoring"))
         var m = LargeTestModel(int = 2, boolean = true)
         var updated = collection.upsertOneIgnoringResult(
-            condition { it._id eq m._id },
+            Condition { it._id eq m._id },
             modification { it.boolean assign true },
             m
         )
         m = collection.get(m._id)!!
         assertEquals(false, updated)
         updated =
-            collection.upsertOneIgnoringResult(condition { it._id eq m._id }, modification { it.byte assign 1 }, m)
+            collection.upsertOneIgnoringResult(Condition { it._id eq m._id }, modification { it.byte assign 1 }, m)
         m = collection.get(m._id)!!
         assertEquals(true, updated)
     }
@@ -162,11 +162,11 @@ abstract class OperationsTests() {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_modUpsert"))
         var m = LargeTestModel(int = 2, boolean = true, byte = 1)
         var updated =
-            collection.upsertOneIgnoringResult(condition { it._id eq m._id }, modification { it.byte plusAssign 1 }, m)
+            collection.upsertOneIgnoringResult(Condition { it._id eq m._id }, modification { it.byte plusAssign 1 }, m)
         m = collection.get(m._id)!!
         assertEquals(false, updated)
         updated =
-            collection.upsertOneIgnoringResult(condition { it._id eq m._id }, modification { it.byte plusAssign 1 }, m)
+            collection.upsertOneIgnoringResult(Condition { it._id eq m._id }, modification { it.byte plusAssign 1 }, m)
         m = collection.get(m._id)!!
         assertEquals(true, updated)
     }
@@ -222,18 +222,18 @@ abstract class OperationsTests() {
         } catch (e: UniqueViolationException) {
             // OK!
         }
-        collection().find(condition(true)).collect { println(it) }
+        collection().find(Condition(true)).collect { println(it) }
     }
 
     @Test
     fun test_compoundUpdate() = runTest {
         suspend fun collection() = database.prepare(DatabaseTableDefinition<CompoundKeyTestModel>("test_compoundUpdate"))
         collection().insertOne(CompoundKeyTestModel(CompoundTestKey("A", "B")))
-        collection().updateOne(condition {
+        collection().updateOne(Condition {
             it._id.eq(CompoundTestKey("A", "B")) and it._id.first.eq("A")
         }, modification {
             it.value assign 1
         })
-        collection().find(condition(true)).collect { println(it) }
+        collection().find(Condition(true)).collect { println(it) }
     }
 }

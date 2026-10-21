@@ -96,9 +96,9 @@ class MaskTest {
 
     @Test
     fun condition() {
-        val matchingSort = condition<LargeTestModel> { it.int eq 2 }
-        val notMatchingSortA = condition<LargeTestModel> { it.byte eq 2 }
-        val notMatchingSortV = condition<LargeTestModel> { it.string eq "" }
+        val matchingSort = Condition<LargeTestModel> { it.int eq 2 }
+        val notMatchingSortA = Condition<LargeTestModel> { it.byte eq 2 }
+        val notMatchingSortV = Condition<LargeTestModel> { it.string eq "" }
 
         val mask = mask<LargeTestModel> { always(it.int.maskedTo(2)) }
 

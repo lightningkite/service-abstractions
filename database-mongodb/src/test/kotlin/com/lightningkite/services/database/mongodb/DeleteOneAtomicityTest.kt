@@ -44,7 +44,7 @@ class DeleteOneAtomicityTest {
             collection.insertOne(model)
 
             val workers = 16
-            val matchById: Condition<LargeTestModel> = condition<LargeTestModel> { it._id eq model._id }
+            val matchById: Condition<LargeTestModel> = Condition<LargeTestModel> { it._id eq model._id }
             val results = coroutineScope {
                 withContext(Dispatchers.IO) {
                     (1..workers).map {

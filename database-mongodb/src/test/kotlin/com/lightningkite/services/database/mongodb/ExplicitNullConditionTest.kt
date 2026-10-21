@@ -25,7 +25,7 @@ class ExplicitNullConditionTest {
         db().database.getCollection(name, BsonDocument::class.java)
             .updateOne(Filters.empty(), BsonDocument("\$set", BsonDocument("intNullable", BsonNull.VALUE)))
 
-        assertEquals(listOf(), collection.find(condition { it.intNullable.notNull neq 1 }).toList())
-        assertEquals(listOf(), collection.find(condition { it.intNullable.notNull notInside listOf(1) }).toList())
+        assertEquals(listOf(), collection.find(Condition { it.intNullable.notNull neq 1 }).toList())
+        assertEquals(listOf(), collection.find(Condition { it.intNullable.notNull notInside listOf(1) }).toList())
     }
 }
