@@ -1,11 +1,9 @@
 package com.lightningkite.services
 
-import com.lightningkite.services.telemetry.TelemetryAttributeElement
-import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryBackend
 import com.lightningkite.services.telemetry.TelemetrySanitization
+import com.lightningkite.services.telemetry.currentTelemetryAttributes
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.time.Clock
 
@@ -165,7 +163,7 @@ public interface SettingContext {
      */
     public suspend fun reportException(throwable: Throwable) {
         logger.error(throwable){""}
-        telemetryBackend.reportError(throwable, currentCoroutineContext()[TelemetryAttributeElement]?.attributes ?: TelemetryAttributes.empty)
+        telemetryBackend.reportError(throwable, currentTelemetryAttributes())
     }
 
     public companion object {

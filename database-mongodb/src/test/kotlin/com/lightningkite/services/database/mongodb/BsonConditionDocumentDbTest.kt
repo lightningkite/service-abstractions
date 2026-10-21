@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.data.GeoCoordinate
+import com.lightningkite.services.data.Length.Companion.kilometers
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
 import com.lightningkite.services.database.test.GeoTest
@@ -77,7 +78,7 @@ class BsonConditionDocumentDbTest {
     @Test
     fun geoDistance_usesNearSphere_notGeoWithinCenterSphere() {
         val lk = GeoCoordinate(41.727019, -111.8443002)
-        val cond = Condition.OnField(geoProp, Condition.GeoDistance(lk, lessThanKilometers = 50.0))
+        val cond = Condition.OnField(geoProp, Condition.GeoDistance(lk, lessThan = 50.0.kilometers))
         val doc = cond.bson(geoSerializer, atlasSearch = false, bson = bson)
 
         val geoDoc = doc["geo"] as Document
@@ -102,7 +103,7 @@ class BsonConditionDocumentDbTest {
     @Test
     fun geoDistance_withMinDistance_includesMinDistanceField() {
         val lk = GeoCoordinate(41.727019, -111.8443002)
-        val cond = Condition.OnField(geoProp, Condition.GeoDistance(lk, greaterThanKilometers = 50.0))
+        val cond = Condition.OnField(geoProp, Condition.GeoDistance(lk, greaterThan = 50.0.kilometers))
         val doc = cond.bson(geoSerializer, atlasSearch = false, bson = bson)
 
         val geoDoc = doc["geo"] as Document

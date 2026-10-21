@@ -652,6 +652,21 @@ abstract class ConditionTests() {
         assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
     }
 
+    @Test
+    fun test_email_raw_contains() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_email_raw_contains"))
+        val lower = LargeTestModel(email = "abc@test.com".toEmailAddress())
+        val higher = LargeTestModel(email = "bcd@test.com".toEmailAddress())
+        val manualList = listOf(lower, higher)
+        collection.insertOne(lower)
+        collection.insertOne(higher)
+        val condition = path<LargeTestModel>().email.raw.contains("CD", ignoreCase = true)
+        val results = collection.find(condition).toList()
+        assertContains(results, higher)
+        assertTrue(lower !in results)
+        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
+    }
+
     // FIX 36: RegexMatches is unanchored (partial match), matching MongoDB's $regex, Postgres's ~, and
     // SQL's REGEXP -- every backend is expected to find the pattern anywhere in the value, not require
     // it to match the entire string. This condition previously had zero behavioural coverage, which is
@@ -668,21 +683,6 @@ abstract class ConditionTests() {
         val results = collection.find(condition).toList()
         assertContains(results, matchesInMiddle)
         assertTrue(noMatch !in results)
-    }
-
-    @Test
-    fun test_email_contains() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_email_contains"))
-        val lower = LargeTestModel(email = "abc@test.com".toEmailAddress())
-        val higher = LargeTestModel(email = "bcd@test.com".toEmailAddress())
-        val manualList = listOf(lower, higher)
-        collection.insertOne(lower)
-        collection.insertOne(higher)
-        val condition = path<LargeTestModel>().email.contains("CD", ignoreCase = true)
-        val results = collection.find(condition).toList()
-        assertContains(results, higher)
-        assertTrue(lower !in results)
-        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
     }
 
     @Test
@@ -2691,22 +2691,6 @@ abstract class ConditionTests() {
         assertEquals(item1, results.first())
     }
 
-    @Suppress("DEPRECATION") // Deliberately exercises the deprecated sizesEquals condition.
-    @Test
-    fun test_List_size() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_List_size"))
-        val matchingSize = LargeTestModel(list = listOf(1, 2, 3))
-        val notMatchingSize = LargeTestModel(list = listOf(1, 2))
-        val manualList = listOf(matchingSize, notMatchingSize)
-        collection.insertOne(matchingSize)
-        collection.insertOne(notMatchingSize)
-        val condition = path<LargeTestModel>().list.sizesEquals(3)
-        val results = collection.find(condition).toList()
-        assertContains(results, matchingSize)
-        assertTrue(notMatchingSize !in results)
-        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-    }
-
     @Test
     fun test_Set_all() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Set_all"))
@@ -2769,67 +2753,6 @@ abstract class ConditionTests() {
         assertEquals(1, results.size)
         assertEquals(item1, results.first())
     }
-
-    @Suppress("DEPRECATION") // Deliberately exercises the deprecated sizesEquals condition.
-    @Test
-    fun test_Set_size() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Set_size"))
-        val matchingSize = LargeTestModel(set = setOf(1, 2, 3))
-        val notMatchingSize = LargeTestModel(set = setOf(1, 2))
-        val manualSet = listOf(matchingSize, notMatchingSize)
-        collection.insertOne(matchingSize)
-        collection.insertOne(notMatchingSize)
-        val condition = path<LargeTestModel>().set.sizesEquals(3)
-        val results = collection.find(condition).toList()
-        assertContains(results, matchingSize)
-        assertTrue(notMatchingSize !in results)
-        assertEquals(manualSet.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-    }
-
-
-    @Test
-    fun test_Map_exists() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_exists"))
-        val matching = LargeTestModel(map = mapOf("a" to 42))
-        val notMatching = LargeTestModel(map = mapOf("b" to 24))
-        val manualList = listOf(matching, notMatching)
-        collection.insertOne(matching)
-        collection.insertOne(notMatching)
-        val condition = path<LargeTestModel>().map.containsKey("a")
-        val results = collection.find(condition).toList()
-        println(results.joinToString("\n"))
-        assertContains(results, matching)
-        assertTrue(notMatching !in results)
-        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-    }
-    @Test fun test_Map_onField() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_onField"))
-        val matching = LargeTestModel(map = mapOf("a" to 42))
-        val notMatching = LargeTestModel(map = mapOf("b" to 24))
-        val manualList = listOf(matching, notMatching)
-        collection.insertOne(matching)
-        collection.insertOne(notMatching)
-        val condition = path<LargeTestModel>().map.containsKey("a")
-        val results = collection.find(condition).toList()
-        println(results.joinToString("\n"))
-        assertContains(results, matching)
-        assertTrue(notMatching !in results)
-        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-    }
-//    @Test fun test_Map_onField() = runTest {
-//        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_onField"))
-//        val matching = LargeTestModel(map = mapOf("a" to 42))
-//        val notMatching = LargeTestModel(map = mapOf("a" to 24))
-//        val manualList = listOf(matching, notMatching)
-//        collection.insertOne(matching)
-//        collection.insertOne(notMatching)
-//        val condition = startChain<LargeTestModel>().map["a"] gt 32
-//        val results = collection.find(condition).toList()
-//        assertContains(results, matching)
-//        assertTrue(notMatching !in results)
-//        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-//        Unit
-//    }
 
     @Test
     fun test_not_null_condition() = runTest {
@@ -3381,14 +3304,4 @@ abstract class ConditionTests() {
             condition { it.intsNullable.notNull.all { it neq 5 } }
         )
     }
-
-    @Test
-    fun test_mapKey_neq() = runTest {
-        assertMatchesInMemory(
-            "LargeTestModel_test_mapKey_neq",
-            listOf(mapOf(), mapOf("a" to 1), mapOf("a" to 2), mapOf("b" to 1)).map { LargeTestModel(map = it) },
-            path<LargeTestModel>().map.mapCondition(Condition.OnKey("a", Condition.NotEqual(1)))
-        )
-    }
-    // endregion
 }

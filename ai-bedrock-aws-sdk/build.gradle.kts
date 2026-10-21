@@ -15,6 +15,7 @@ dependencies {
     // Just the AWS SDK credential providers — not a full service client. Brings in the default
     // provider chain (env, profile, SSO, credential_process, assume-role, IMDS) with refresh.
     api(libs.aws.auth)
+    api(libs.aws.signin)
     implementation(libs.coroutines.core)
 
     testImplementation(libs.kotlin.test)

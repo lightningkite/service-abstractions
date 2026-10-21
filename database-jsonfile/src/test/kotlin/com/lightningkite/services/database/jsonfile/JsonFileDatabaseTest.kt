@@ -78,3 +78,6 @@ class JsonFileScaleAndBoundaryTests : ScaleAndBoundaryTests() {
 class JsonFileConcurrencyTests : ConcurrencyTests() {
     override val database: Database = db()
 }
+class JsonFileTextSearchTests : TextSearchTests() {
+    override val database: Database = db()
+}

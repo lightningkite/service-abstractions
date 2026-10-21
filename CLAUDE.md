@@ -158,6 +158,7 @@ interface Service {
 #### Observability
 
 - **otel-jvm/**: OpenTelemetry integration for JVM
+- **telemetry-sentry/**: `TelemetryBackend` wrapper that also sends `reportException`s to Sentry: `sentry://<key>@<host>/<projectId>/<wrapped telemetry URL>` (the DSN with `https` swapped for `sentry`, then e.g. `otlp-grpc://localhost:4317`)
 
 ### Database Abstraction in Detail
 

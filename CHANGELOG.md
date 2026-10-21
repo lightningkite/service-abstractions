@@ -14,6 +14,14 @@
 - **aws-client**: `AwsConnections.total` default lowered `Int.MAX_VALUE` → `1000`. Health checks may newly flip to DEGRADED/ERROR — tune if needed.
 - **sms-inbound-twilio**: Webhook fails closed (`SecurityException`) when `webhookUrl` is null (was a silent skip).
 - **voiceagent-openai**: Event channel `UNLIMITED` → `Channel(64, DROP_OLDEST)`; tool-call/audio events may drop under back-pressure.
+- **data-shared**: `TrimmedString`, `CaselessString`, `TrimmedCaselessString`, `EmailAddress` and `PhoneNumber` use generated serializers. Decoding now *rejects* un-normalized input (`" Bob@X.com "`) with a `SerializationException` instead of normalizing it; normalize client-side with `toEmailAddress()` etc. The constructors throw on un-normalized values too. `TrimmedStringSerializer`, `CaselessStringSerializer`, `TrimmedCaselessStringSerializer`, `EmailAddressSerializer`, `PhoneNumberSerializer` are removed; use `X.serializer()`. JSON and serial names are unchanged.
+- **database-shared**: Condition/Modification vocabulary trimmed (wire format changes too):
+  - `ListAllElements`/`SetAllElements` → `CollectionAllElements`, `ListAnyElements`/`SetAnyElements` → `CollectionAnyElements`. Old serial names still decode.
+  - Every data-shared value class has a path to its wrapped value: `raw` on `IsRawString`s and `UuidV7`, `meters` on `Length`, `bytes` on `DataSize`, and so on. Search an email with `it.email.raw contains "x"`. Value classes now also serialize comparison conditions and modifications (`gt`, `coerceAtMost`, ...).
+  - Removed `FullTextSearch` (`fullTextSearch`), `RawStringContains` (`contains` on `IsRawString`; use `.raw contains`), `ListSizesEquals`/`SetSizesEquals` (`sizesEquals`), `AppendRawString` (`+=` on `IsRawString`), `SetDropFirst`/`SetDropLast`. `Mask`'s `tableTextPaths` parameter is gone with `FullTextSearch`.
+  - `GeoDistance` takes `greaterThan`/`lessThan: Length` instead of `greaterThanKilometers`/`lessThanKilometers: Double`.
+  - `condition(Boolean)` is no longer generic; it returns `Condition<Any?>`.
+- **basis**: `TelemetryBackend` gains abstract `suspend fun flush()`; custom backends must implement it. Serverless engines call it at the end of each invocation (`OtelTelemetryBackend` force-flushes its SDK).
 
 ### Security
 - **database-mongodb, database-postgres, database-sql (LIB-2)**: `notNull` modifications now leave a null or missing value untouched on every backend, and `asType` another variant on MongoDB, as in memory; on MongoDB a row failing any such check isn't written or matched. See BREAKING_CHANGES_1.3.md §7.
@@ -42,9 +50,11 @@
 - **email-inbound-sendgrid**: `KeyFactory` cached at class level; `Signature` is now `ThreadLocal` (thread-safety bug). Attachments with duplicate filenames are renamed `${i}_${filename}` instead of being silently dropped by `distinctBy`.
 - **files-kotlinx-io**: `get()` uses try-open pattern instead of exists-then-open (eliminates TOCTOU race).
 - **pubsub-aws (DynamoDB)**: `collect()` filters out the `seq=0` counter row on bootstrap — first subscribers previously missed the backlog's first record.
+- **basis**: `SettingContext.reportException` passes the whole ambient attribute stack, not just the innermost `telemetryAttributes` layer.
 
 ### Added
 - `OpenTelemetrySub.span` helper adopted across cache, files, and email-inbound modules with sanitized span attributes.
+- **telemetry-sentry**: `SentryTelemetryBackend` wraps another backend and also sends `reportError`s to Sentry: `sentry://<key>@<host>/<projectId>/<wrapped telemetry URL>`. Attributes become tags, the OTel trace ID is tagged `trace_id`, exception messages pass through `TelemetrySanitization`.
 
 ### Removed
 - `cache-dynamodb-kmp` module (see Breaking Changes).

@@ -79,12 +79,9 @@ User.path.email contains "@example.com"
 // Case-sensitive search
 User.path.name.contains("Alice", ignoreCase = false)
 
-// Full-text search with fuzzy matching
-User.path.bio.fullTextSearch(
-    value = "software engineer",
-    levenshteinDistance = 2,
-    requireAllTermsPresent = true
-)
+// Wrapper types (EmailAddress, TrimmedString, Length, ...) expose their wrapped value
+User.path.contactEmail.raw contains "@example.com"
+User.path.height.meters gt 1.8
 ```
 
 ### Boolean Logic
@@ -127,10 +124,6 @@ User.path.tags all { it eq "verified" }
 
 // Any element matches condition
 User.path.friends any { it eq friendId }
-
-// Size checks (deprecated - use isEmpty/notEmpty when available)
-@Deprecated
-User.path.tags sizesEquals 0
 ```
 
 ### Geospatial Queries
@@ -342,7 +335,6 @@ Not all database backends support all operations:
 |-------------------|---------|---------------|----------------|
 | Basic comparisons | ✅       | ✅             | ✅              |
 | String contains   | ✅       | ✅             | ✅              |
-| Full-text search  | ✅       | ✅             | ~approximation |
 | Regex matches     | ✅       | ✅             | ✅              |
 | Geo queries       | ✅       | ✅ (PostGIS)   | ✅              |
 | Bitwise ops       | ✅       | ✅             | ✅              |

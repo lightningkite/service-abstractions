@@ -45,8 +45,8 @@ internal object DefaultDecoder : Decoder {
         defaults[TimeZoneSerializer.descriptor.serialName] = TimeZone.currentSystemDefault()
         defaults[GeoCoordinateGeoJsonSerializer.descriptor.serialName] = GeoCoordinate(0.0, 0.0)
         defaults[GeoCoordinateArraySerializer.descriptor.serialName] = GeoCoordinate(0.0, 0.0)
-        defaults[EmailAddressSerializer.descriptor.serialName] = "test@test.com".toEmailAddress()
-        defaults[PhoneNumberSerializer.descriptor.serialName] = "+18000000000".toPhoneNumber()
+        defaults[EmailAddress.serializer().descriptor.serialName] = "test@test.com".toEmailAddress()
+        defaults[PhoneNumber.serializer().descriptor.serialName] = "+18000000000".toPhoneNumber()
     }
 
     override var serializersModule: SerializersModule = EmptySerializersModule()

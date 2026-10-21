@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
-import org.bson.BsonBoolean
 import org.bson.BsonDocument
 import org.bson.Document
 import org.bson.conversions.Bson
@@ -28,32 +27,14 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
-// Searches only the @TextIndex fields when there are some: ModelPermissionsTable decides whether a search reads masked
-// data from those alone, and treats a search on a model without them as reading everything.
-internal fun atlasSearchStage(serializer: KSerializer<*>, search: Condition.FullTextSearch<*>): Document {
-    val fields = serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
-        ?.takeIf { it.isNotEmpty() }?.toList()
-        ?: documentOf("wildcard" to "*")
-    return documentOf(
-        "\$search" to documentOf(
-            "index" to "default",
-            "text" to documentOf(
-                "query" to search.value,
-                "fuzzy" to documentOf(),
-                "path" to fields,
-                "matchCriteria" to if (search.requireAllTermsPresent) "all" else "any"
-            )
-        )
-    )
-}
-
 public class MongoTable<Model : Any>(
     override val name: String,
     override val serializer: KSerializer<Model>,
     public val atlasSearch: Boolean,
-    private val access: MongoCollectionAccess,
+    internal val access: MongoCollectionAccess,
     override val context: SettingContext,
     public val supportsCollation: Boolean = true,
+    public val supportsOverlappingArrayFilters: Boolean = true,
 ) : Table<Model>, Namespaced {
     internal val bson: KBson = KBson(context.internalSerializersModule)
 
@@ -63,6 +44,7 @@ public class MongoTable<Model : Any>(
             ser.fromString(it)
         }
     }
+
 
     private suspend inline fun <T> access(crossinline action: suspend MongoCollection<BsonDocument>.() -> T): T {
         return access.run {
@@ -221,6 +203,7 @@ public class MongoTable<Model : Any>(
                             val name = "default"
                             val keys = documentOf()
                             val ser = DataClassPathSerializer(serializer)
+                            val mongoPaths = it.fields.map { ser.fromString(it).mongo.split('.') }
                             for (key in it.fields) {
                                 val path = ser.fromString(key)
 
@@ -255,10 +238,19 @@ public class MongoTable<Model : Any>(
                                         -> "number"
 
                                     "kotlin.String" -> "string"
-                                    "com.lightningkite.UUID" -> "uuid"
+                                    "kotlin.uuid.Uuid" -> "uuid"
                                     else -> continue
                                 }
-                                keys[key] = listOf(documentOf("type" to mongoType))
+                                // Claude: Atlas reads a dotted key as one field named "a.b", so nest a document mapping per level.
+                                val parts = path.mongo.split('.')
+                                var fields = keys
+                                for (part in parts.dropLast(1)) {
+                                    val parent = fields.getOrPut(part) {
+                                        documentOf("type" to "document", "dynamic" to false, "fields" to documentOf())
+                                    } as Document
+                                    fields = parent["fields"] as Document
+                                }
+                                fields[parts.last()] = listOf(documentOf("type" to mongoType))
                             }
                             val existing = listSearchIndexes().name(name).toList().firstOrNull()
                             if (existing == null) {
@@ -286,9 +278,10 @@ public class MongoTable<Model : Any>(
                                         )
                                     } else throw e
                                 }
-                            } else if (it.fields.any {
+                            } else if (mongoPaths.any { parts ->
                                     existing.getEmbedded(
-                                        listOf("latestDefinition", "mappings", "fields", it),
+                                        listOf("latestDefinition", "mappings", "fields") +
+                                                parts.dropLast(1).flatMap { listOf(it, "fields") } + parts.last(),
                                         Any::class.java
                                     ) == null
                                 }) {
@@ -531,7 +524,10 @@ public class MongoTable<Model : Any>(
     private fun Bson.andCheck(check: Document?): Bson = if (check == null) this else Filters.and(this, check)
 
     // A row that matched but failed the modification's check: it's left as it is, and an upsert mustn't insert a copy.
-    private suspend fun MongoCollection<BsonDocument>.existingUnchanged(filter: Bson, update: UpdateWithOptions): EntryChange<Model>? =
+    private suspend fun MongoCollection<BsonDocument>.existingUnchanged(
+        filter: Bson,
+        update: UpdateWithOptions
+    ): EntryChange<Model>? =
         if (update.check == null) null
         else find(filter).limit(1).firstOrNull()?.let { bson.parse(serializer, it) }?.let { EntryChange(it, it) }
 
@@ -544,26 +540,28 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
-        return telemetryTrace("upsertOne") { access {
-            // TODO: Ugly hack for handling weird upserts
-            if (m.upsert(model, serializer, bson)) {
-                findOneAndUpdate(filter, m.document, m.findOneAndUpdateOptions())
-                    ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
-                    ?: EntryChange(null, model)
-            } else {
-                findOneAndUpdate(filter.andCheck(m.check), m.document, m.findOneAndUpdateOptions())
-                    ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
-                    ?: existingUnchanged(filter, m)
-                    ?: run {
-                        insertOne(bson.stringify(serializer, model)); EntryChange(
-                        null,
-                        model
-                    )
-                    }
+        return telemetryTrace("upsertOne") {
+            access {
+                // TODO: Ugly hack for handling weird upserts
+                if (m.upsert(model, serializer, bson)) {
+                    findOneAndUpdate(filter, m.document, m.findOneAndUpdateOptions())
+                        ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                        ?: EntryChange(null, model)
+                } else {
+                    findOneAndUpdate(filter.andCheck(m.check), m.document, m.findOneAndUpdateOptions())
+                        ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                        ?: existingUnchanged(filter, m)
+                        ?: run {
+                            insertOne(bson.stringify(serializer, model)); EntryChange(
+                            null,
+                            model
+                        )
+                        }
+                }
             }
-        } }
+        }
     }
 
     override suspend fun upsertOneIgnoringResult(
@@ -575,21 +573,28 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return false
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
-        return telemetryTrace("upsertOneIgnoringResult") { access {
-            // TODO: Ugly hack for handling weird upserts
-            if (m.upsert(model, serializer, bson = bson)) {
-                updateOne(filter, m.document, m.options).matchedCount > 0
-            } else {
-                if (updateOne(filter.andCheck(m.check), m.document, m.options).matchedCount != 0L || existingUnchanged(filter, m) != null) {
-                    true
+        return telemetryTrace("upsertOneIgnoringResult") {
+            access {
+                // TODO: Ugly hack for handling weird upserts
+                if (m.upsert(model, serializer, bson = bson)) {
+                    updateOne(filter, m.document, m.options).matchedCount > 0
                 } else {
-                    insertOne(bson.stringify(serializer, model))
-                    false
+                    if (updateOne(
+                            filter.andCheck(m.check),
+                            m.document,
+                            m.options
+                        ).matchedCount != 0L || existingUnchanged(filter, m) != null
+                    ) {
+                        true
+                    } else {
+                        insertOne(bson.stringify(serializer, model))
+                        false
+                    }
                 }
             }
-        } }
+        }
     }
 
     override suspend fun updateOne(
@@ -601,16 +606,18 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         // With orderBy, this updates the first row that passes the modification's check.
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
-        val before = telemetryTrace("updateOne") { access<Model?> {
-            findOneAndUpdate(
-                filter,
-                m.document,
-                m.findOneAndUpdateOptions(if (orderBy.isEmpty()) null else sort(orderBy))
-            )?.let { bson.parse(serializer, it) }
-        } }
+        val before = telemetryTrace("updateOne") {
+            access<Model?> {
+                findOneAndUpdate(
+                    filter,
+                    m.document,
+                    m.findOneAndUpdateOptions(if (orderBy.isEmpty()) null else sort(orderBy))
+                )?.let { bson.parse(serializer, it) }
+            }
+        }
         val after = before?.let { modification(it) }
         return EntryChange(before, after)
     }
@@ -626,11 +633,13 @@ public class MongoTable<Model : Any>(
         if (orderBy.isNotEmpty()) return updateOne(cs, modification, orderBy).old != null
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
-        return telemetryTrace("updateOneIgnoringResult") { access {
-            updateOne(filter, m.document, m.options).matchedCount != 0L
-        } }
+        return telemetryTrace("updateOneIgnoringResult") {
+            access {
+                updateOne(filter, m.document, m.options).matchedCount != 0L
+            }
+        }
     }
 
     override suspend fun updateMany(
@@ -641,17 +650,21 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return CollectionChanges()
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return CollectionChanges()
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val changes = ArrayList<EntryChange<Model>>()
         // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
-        telemetryTrace("updateMany") { access {
-            find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)).collectChunked(1000) { list ->
-                val parsed = list.asSequence().map { bson.parse(serializer, it) }.toList()
-                val chunkChanges = parsed.map { EntryChange(it, modification(it)) }
-                updateMany(Filters.`in`("_id", list.map { it["_id"] }).andCheck(m.check), m.document, m.options)
-                changes.addAll(chunkChanges)
+        telemetryTrace("updateMany") {
+            access {
+                find(
+                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
+                ).collectChunked(1000) { list ->
+                    val parsed = list.asSequence().map { bson.parse(serializer, it) }.toList()
+                    val chunkChanges = parsed.map { EntryChange(it, modification(it)) }
+                    updateMany(Filters.`in`("_id", list.map { it["_id"] }).andCheck(m.check), m.document, m.options)
+                    changes.addAll(chunkChanges)
+                }
             }
-        } }
+        }
         return CollectionChanges(changes = changes)
     }
 
@@ -663,23 +676,27 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return 0
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return 0
-        val m = simplifiedModification.bson(serializer, bson = bson)
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
-        return telemetryTrace("updateManyIgnoringResult") { access {
-            updateMany(filter, m.document, m.options).matchedCount.toInt()
-        } }
+        return telemetryTrace("updateManyIgnoringResult") {
+            access {
+                updateMany(filter, m.document, m.options).matchedCount.toInt()
+            }
+        }
     }
 
     override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? {
         val cs = condition.simplify()
         if (cs is Condition.Never) return null
-        return telemetryTrace("deleteOne") { access {
-            withDocumentClass<BsonDocument>().findOneAndDelete(
-                cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
-                FindOneAndDeleteOptions()
-                    .let { if (orderBy.isEmpty()) it else it.sort(sort(orderBy)) }
-            )?.let { bson.parse(serializer, it) }
-        } }
+        return telemetryTrace("deleteOne") {
+            access {
+                withDocumentClass<BsonDocument>().findOneAndDelete(
+                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
+                    FindOneAndDeleteOptions()
+                        .let { if (orderBy.isEmpty()) it else it.sort(sort(orderBy)) }
+                )?.let { bson.parse(serializer, it) }
+            }
+        }
     }
 
     override suspend fun deleteOneIgnoringOld(
@@ -689,7 +706,17 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         if (orderBy.isNotEmpty()) return deleteOne(condition, orderBy) != null
-        return telemetryTrace("deleteOneIgnoringOld") { access { deleteOne(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount > 0 } }
+        return telemetryTrace("deleteOneIgnoringOld") {
+            access {
+                deleteOne(
+                    cs.bson(
+                        serializer,
+                        bson = bson,
+                        atlasSearch = atlasSearch
+                    )
+                ).deletedCount > 0
+            }
+        }
     }
 
     /**
@@ -710,23 +737,35 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return listOf()
         val remove = ArrayList<Model>()
-        telemetryTrace("deleteMany") { access {
-            withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
-                .collectChunked(1000) { list ->
-                    deleteMany(Filters.`in`("_id", list.map { it["_id"] }))
-                    list.asSequence().map { bson.parse(serializer, it) }
-                        .forEach {
-                            remove.add(it)
-                        }
-                }
-        } }
+        telemetryTrace("deleteMany") {
+            access {
+                withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
+                    .collectChunked(1000) { list ->
+                        deleteMany(Filters.`in`("_id", list.map { it["_id"] }))
+                        list.asSequence().map { bson.parse(serializer, it) }
+                            .forEach {
+                                remove.add(it)
+                            }
+                    }
+            }
+        }
         return remove
     }
 
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int {
         val cs = condition.simplify()
         if (cs is Condition.Never) return 0
-        return telemetryTrace("deleteManyIgnoringOld") { access { deleteMany(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).deletedCount.toInt() } }
+        return telemetryTrace("deleteManyIgnoringOld") {
+            access {
+                deleteMany(
+                    cs.bson(
+                        serializer,
+                        bson = bson,
+                        atlasSearch = atlasSearch
+                    )
+                ).deletedCount.toInt()
+            }
+        }
     }
 
 
@@ -745,68 +784,58 @@ public class MongoTable<Model : Any>(
         if (limit <= 0) return emptyFlow()
         // Wrap the cold result flow so the metric measures the actual query round-trip (driven by the
         // consumer's collect), not just the lazy pipeline construction.
-        return recordingFlow("find") { access {
-            var anyFts: Condition.FullTextSearch<*>? = null
-            var hasGeo = false
-            condition.walk {
-                if (it is Condition.FullTextSearch) anyFts = it
-                if (it is Condition.GeoDistance) hasGeo = true
-            }
+        return recordingFlow("find") {
+            access {
+                var hasGeo = false
+                condition.walk {
+                    if (it is Condition.GeoDistance) hasGeo = true
+                }
 
-            // $nearSphere (used for GeoDistance) is banned inside aggregate().$match in MongoDB 5+.
-            // Use collection.find() directly when the query contains a geo distance condition.
-            if (hasGeo && anyFts == null) {
-                val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
-                val hasCiSort = orderBy.any { s -> s.ignoreCase }
-                withDocumentClass<BsonDocument>().find(filter)
-                    .let { if (orderBy.isNotEmpty()) it.sort(sort(orderBy)) else it }
-                    .let { if (hasCiSort && supportsCollation) it.collation(Collation.builder().locale("en").build()) else it }
-                    .skip(skip)
-                    .limit(limit)
-                    .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
-                    .map { bson.parse(serializer, it) }
-            } else {
-                val hasCiSort = orderBy.any { it.ignoreCase }
-                aggregate<BsonDocument>(
-                    buildList {
-                        if (anyFts != null && atlasSearch) {
-                            add(atlasSearchStage(serializer, anyFts))
-                            add(Aggregates.project(Projections.metaSearchScore("search_score").toBsonDocument().apply {
-                                for (field in serializer.descriptor.elementNames) put(field, BsonBoolean(true))
-                            }))
-                            add(Aggregates.match(cs.bson(serializer, atlasSearch = true, bson = bson)))
-                        } else {
+                // $nearSphere (used for GeoDistance) is banned inside aggregate().$match in MongoDB 5+.
+                // Use collection.find() directly when the query contains a geo distance condition.
+                if (hasGeo) {
+                    val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
+                    val hasCiSort = orderBy.any { s -> s.ignoreCase }
+                    withDocumentClass<BsonDocument>().find(filter)
+                        .let { if (orderBy.isNotEmpty()) it.sort(sort(orderBy)) else it }
+                        .let {
+                            if (hasCiSort && supportsCollation) it.collation(
+                                Collation.builder().locale("en").build()
+                            ) else it
+                        }
+                        .skip(skip)
+                        .limit(limit)
+                        .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
+                        .map { bson.parse(serializer, it) }
+                } else {
+                    val hasCiSort = orderBy.any { it.ignoreCase }
+                    aggregate<BsonDocument>(
+                        buildList {
                             add(Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)))
+                            if (orderBy.isNotEmpty()) {
+                                if (hasCiSort && !supportsCollation) {
+                                    add(addCiFields(orderBy))
+                                    add(Aggregates.sort(sortCi(orderBy)))
+                                } else {
+                                    add(Aggregates.sort(sort(orderBy)))
+                                }
+                            }
+                            add(Aggregates.skip(skip))
+                            add(Aggregates.limit(limit))
                         }
-
-                    if (anyFts != null && !atlasSearch) {
-                        add(Aggregates.project(Projections.metaSearchScore("text_search_score").toBsonDocument().apply {
-                            for (field in serializer.descriptor.elementNames) put(field, BsonBoolean(true))
-                        }))
-                        add(Aggregates.sort(sort(orderBy, Sorts.metaTextScore("text_search_score"))))
-                    } else if (orderBy.isNotEmpty()) {
-                        if (hasCiSort && !supportsCollation) {
-                            add(addCiFields(orderBy))
-                            add(Aggregates.sort(sortCi(orderBy)))
-                        } else {
-                            add(Aggregates.sort(sort(orderBy)))
+                    )
+                        .let {
+                            if (hasCiSort && supportsCollation) {
+                                it.collation(Collation.builder().locale("en").build())
+                            } else it
                         }
-                    }
-                    add(Aggregates.skip(skip))
-                    add(Aggregates.limit(limit))
-                }
-            )
-                .let {
-                    if (orderBy.any { it.ignoreCase }) {
-                        it.collation(Collation.builder().locale("en").build())
-                    } else it
-                }
-                .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
-                .map {
-                    bson.parse(serializer, it)
+                        .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
+                        .map {
+                            bson.parse(serializer, it)
+                        }
                 }
             }
-        } }
+        }
     }
 
     /**
@@ -854,21 +883,23 @@ public class MongoTable<Model : Any>(
     ): Map<Key, Int> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return mapOf()
-        return telemetryTrace("groupCount") { access {
-            aggregate<BsonDocument>(
-                listOf(
-                    Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
-                    Aggregates.group("\$" + groupBy.mongo, Accumulators.sum("count", 1)),
-                ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(match(ne("_id", null)))
-            )
-                .toList()
-                .associate {
-                    bson.parse(
-                        KeyHolder.serializer(groupBy.serializer),
-                        it
-                    )._id to it.getNumber("count").intValue()
-                }
-        } }
+        return telemetryTrace("groupCount") {
+            access {
+                aggregate<BsonDocument>(
+                    listOf(
+                        Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
+                        Aggregates.group("\$" + groupBy.mongo, Accumulators.sum("count", 1)),
+                    ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(match(ne("_id", null)))
+                )
+                    .toList()
+                    .associate {
+                        bson.parse(
+                            KeyHolder.serializer(groupBy.serializer),
+                            it
+                        )._id to it.getNumber("count").intValue()
+                    }
+            }
+        }
     }
 
     private fun Aggregate.asValueBson(propertyName: String) = when (this) {
@@ -885,20 +916,22 @@ public class MongoTable<Model : Any>(
     ): Double? {
         val cs = condition.simplify()
         if (cs is Condition.Never) return null
-        return telemetryTrace("aggregate") { access {
-            aggregate(
-                listOf(
-                    Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
-                    Aggregates.group(null, aggregate.asValueBson(property.mongo))
+        return telemetryTrace("aggregate") {
+            access {
+                aggregate(
+                    listOf(
+                        Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
+                        Aggregates.group(null, aggregate.asValueBson(property.mongo))
+                    )
                 )
-            )
-                .toList()
-                .map {
-                    if (it.isNull("value")) null
-                    else it.getNumber("value").doubleValue()
-                }
-                .firstOrNull()
-        } }
+                    .toList()
+                    .map {
+                        if (it.isNull("value")) null
+                        else it.getNumber("value").doubleValue()
+                    }
+                    .firstOrNull()
+            }
+        }
     }
 
     override suspend fun <N : Number?, Key> groupAggregate(
@@ -909,21 +942,23 @@ public class MongoTable<Model : Any>(
     ): Map<Key, Double?> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return mapOf()
-        return telemetryTrace("groupAggregate") { access {
-            aggregate(
-                listOf(
-                    Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
-                    Aggregates.group("\$" + groupBy.mongo, aggregate.asValueBson(property.mongo)),
-                ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(match(ne("_id", null)))
-            )
-                .toList()
-                .associate {
-                    bson.parse(
-                        KeyHolder.serializer(groupBy.serializer),
-                        it
-                    )._id to (if (it.isNull("value")) null else it.getNumber("value").doubleValue())
-                }
-        } }
+        return telemetryTrace("groupAggregate") {
+            access {
+                aggregate(
+                    listOf(
+                        Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
+                        Aggregates.group("\$" + groupBy.mongo, aggregate.asValueBson(property.mongo)),
+                    ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(match(ne("_id", null)))
+                )
+                    .toList()
+                    .associate {
+                        bson.parse(
+                            KeyHolder.serializer(groupBy.serializer),
+                            it
+                        )._id to (if (it.isNull("value")) null else it.getNumber("value").doubleValue())
+                    }
+            }
+        }
     }
 
     private data class NeededVectorIndex(
@@ -954,7 +989,8 @@ public class MongoTable<Model : Any>(
         return result
     }
 
-    @Volatile private var preparedAlready = false
+    @Volatile
+    private var preparedAlready = false
 
     /**
      * Wait for a search index to become queryable.
@@ -986,12 +1022,12 @@ public class MongoTable<Model : Any>(
         )
     }
 
-    private fun sort(orderBy: List<SortPart<Model>>, lastly: Bson? = null): Bson = Sorts.orderBy(orderBy.map {
+    private fun sort(orderBy: List<SortPart<Model>>): Bson = Sorts.orderBy(orderBy.map {
         if (it.ascending)
             Sorts.ascending(it.field.mongo)
         else
             Sorts.descending(it.field.mongo)
-    } + listOfNotNull(lastly))
+    })
 
     // DocumentDB and some other engines don't support MongoDB collation. Instead, for case-insensitive
     // sorts we add computed $toLower fields and sort by those.
@@ -1005,7 +1041,77 @@ public class MongoTable<Model : Any>(
     private fun sortCi(orderBy: List<SortPart<Model>>, lastly: Bson? = null): Bson = Sorts.orderBy(orderBy.map {
         val fieldName = if (it.ignoreCase) ciFieldName(it) else it.field.mongo
         if (it.ascending) Sorts.ascending(fieldName) else Sorts.descending(fieldName)
-    } + listOfNotNull(lastly))
+    })
+
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> {
+        val fields =
+            checkNotNull(indexedTextFields) { "findByTextIndex needs a @TextIndex on ${serializer.descriptor.serialName}" }
+        val textQuery = TextQuery.fromString(query)
+        val cs = condition.simplify()
+        if (cs is Condition.Never || limit <= 0 || (textQuery.exact.isEmpty() && textQuery.fuzzy.isEmpty())) return emptyFlow()
+        return recordingFlow("findByTextIndex") {
+            access {
+                val pipeline = if (atlasSearch) {
+                    val paths = fields.map { it.mongo }
+                    val words = textQuery.fuzzy.map { term ->
+                        val edits = textQuery.allowedEdits(term)
+                        documentOf("text" to documentOf("query" to term, "path" to paths).apply {
+                            if (edits > 0) this["fuzzy"] = documentOf("maxEdits" to edits)
+                        })
+                    }
+                    val phrases =
+                        textQuery.exact.map { documentOf("phrase" to documentOf("query" to it, "path" to paths)) }
+                    val compound = documentOf("must" to words + phrases)
+                    if (textQuery.reject.isNotEmpty()) {
+                        compound["mustNot"] =
+                            textQuery.reject.map { documentOf("phrase" to documentOf("query" to it, "path" to paths)) }
+                    }
+                    // Claude: $search already returns results by score, so no sort stage is needed.
+                    buildList {
+                        add(documentOf("\$search" to documentOf("index" to "default", "compound" to compound)))
+                        add(Aggregates.addFields(Field("__text_score", documentOf("\$meta" to "searchScore"))))
+                        if (cs !is Condition.Always) add(
+                            Aggregates.match(
+                                cs.bson(
+                                    serializer,
+                                    atlasSearch = true,
+                                    bson = bson
+                                )
+                            )
+                        )
+                    }
+                } else {
+                    // Claude: $text matches any one plain word, but all quoted phrases, so every term is quoted.
+                    val search = (textQuery.fuzzy + textQuery.exact).map { "\"$it\"" }
+                        .plus(textQuery.reject.map { "-\"$it\"" })
+                        .joinToString(" ")
+                    val text = Filters.text(search)
+                    listOf(
+                        Aggregates.match(
+                            if (cs is Condition.Always) text
+                            else Filters.and(text, cs.bson(serializer, bson = bson, atlasSearch = false))
+                        ),
+                        Aggregates.addFields(Field("__text_score", documentOf("\$meta" to "textScore"))),
+                        Aggregates.sort(Sorts.descending("__text_score")),
+                    )
+                } + listOf(Aggregates.skip(skip), Aggregates.limit(limit))
+                aggregate<BsonDocument>(pipeline)
+                    .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
+                    .map {
+                        ScoredResult(
+                            bson.parse(serializer, it),
+                            it.getNumber("__text_score").doubleValue().toFloat()
+                        )
+                    }
+            }
+        }
+    }
 
     override suspend fun findSimilar(
         vectorField: DataClassPath<Model, Embedding>,
@@ -1035,64 +1141,67 @@ public class MongoTable<Model : Any>(
         }
 
         // Build the vector search pipeline
-        return recordingFlow("findSimilar") { access {
-            val pipeline = buildList {
-                // $vectorSearch must be the first stage
-                add(
-                    documentOf(
-                        "\$vectorSearch" to documentOf(
-                            "index" to "${vectorField.mongo}_vector_index",
-                            "path" to vectorField.mongo,
-                            "queryVector" to params.queryVector.values.toList(),
-                            "numCandidates" to (params.numCandidates ?: (params.limit * 10)),
-                            "limit" to params.limit,
-                            "similarity" to similarity
-                        ).apply {
-                            // Add exact search if requested
-                            if (params.exact) {
-                                this["exact"] = true
+        return recordingFlow("findSimilar") {
+            access {
+                val pipeline = buildList {
+                    // $vectorSearch must be the first stage
+                    add(
+                        documentOf(
+                            "\$vectorSearch" to documentOf(
+                                "index" to "${vectorField.mongo}_vector_index",
+                                "path" to vectorField.mongo,
+                                "queryVector" to params.queryVector.values.toList(),
+                                "numCandidates" to (params.numCandidates ?: (params.limit * 10)),
+                                "limit" to params.limit,
+                                "similarity" to similarity
+                            ).apply {
+                                // Add exact search if requested
+                                if (params.exact) {
+                                    this["exact"] = true
+                                }
+                                // Add filter condition if not always
+                                if (cs !is Condition.Always) {
+                                    this["filter"] = cs.bson(serializer, atlasSearch = true, bson = bson)
+                                }
                             }
-                            // Add filter condition if not always
-                            if (cs !is Condition.Always) {
-                                this["filter"] = cs.bson(serializer, atlasSearch = true, bson = bson)
-                            }
-                        }
-                    ))
+                        ))
 
-                // Add $project stage to get the vector search score
-                add(
-                    Aggregates.project(
-                        Projections.fields(
-                            Projections.metaVectorSearchScore("vector_search_score"),
-                            Projections.include(*serializer.descriptor.elementNames.toList().toTypedArray())
+                    // Add $project stage to get the vector search score
+                    add(
+                        Aggregates.project(
+                            Projections.fields(
+                                Projections.metaVectorSearchScore("vector_search_score"),
+                                Projections.include(*serializer.descriptor.elementNames.toList().toTypedArray())
+                            )
                         )
                     )
-                )
-            }
-
-            aggregate<BsonDocument>(pipeline)
-                .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
-                .mapNotNull { doc ->
-                    val score = doc.getNumber("vector_search_score")?.doubleValue()?.toFloat() ?: return@mapNotNull null
-
-                    // Apply minScore filter if specified
-                    val minScore = params.minScore
-                    if (minScore != null && score < minScore) {
-                        return@mapNotNull null
-                    }
-
-                    // MongoDB Atlas already returns scores in 0-1 range for cosine
-                    // For euclidean, we need to normalize using 1/(1+distance)
-                    val normalizedScore = when (params.metric) {
-                        SimilarityMetric.Euclidean -> 1f / (1f + score)
-                        SimilarityMetric.Cosine, SimilarityMetric.DotProduct -> score
-                        else -> score
-                    }
-
-                    val model = bson.parse(serializer, doc)
-                    ScoredResult(model, normalizedScore)
                 }
-        } }
+
+                aggregate<BsonDocument>(pipeline)
+                    .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
+                    .mapNotNull { doc ->
+                        val score =
+                            doc.getNumber("vector_search_score")?.doubleValue()?.toFloat() ?: return@mapNotNull null
+
+                        // Apply minScore filter if specified
+                        val minScore = params.minScore
+                        if (minScore != null && score < minScore) {
+                            return@mapNotNull null
+                        }
+
+                        // MongoDB Atlas already returns scores in 0-1 range for cosine
+                        // For euclidean, we need to normalize using 1/(1+distance)
+                        val normalizedScore = when (params.metric) {
+                            SimilarityMetric.Euclidean -> 1f / (1f + score)
+                            SimilarityMetric.Cosine, SimilarityMetric.DotProduct -> score
+                            else -> score
+                        }
+
+                        val model = bson.parse(serializer, doc)
+                        ScoredResult(model, normalizedScore)
+                    }
+            }
+        }
     }
 
     override suspend fun findSimilarSparse(

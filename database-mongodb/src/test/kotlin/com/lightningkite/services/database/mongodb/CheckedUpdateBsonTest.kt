@@ -40,6 +40,31 @@ class CheckedUpdateBsonTest {
         )
     }
 
+    // DocumentDB applies only the first array filter an element matches, so no element may match two.
+    @Test
+    fun withoutOverlappingArrayFilters_eachElementMatchesOneFilter() {
+        val update = modification<NullableInListTestModel> {
+            it.items.forEach { it.embed1.notNull.value2 += 1 }
+            it.items.forEachIf(
+                condition = { it.name eq "a" },
+                modification = {
+                    it.name assign "changed"
+                    it.embed1.notNull.value1 assign "changed"
+                }
+            )
+        }.bson(NullableInListTestModel.serializer(), bson, overlappingArrayFilters = false)
+        assertEquals(
+            Document("\$inc", Document("items.$[f0].embed1.value2", BsonInt32(1)).append("items.$[f2].embed1.value2", BsonInt32(1)))
+                .append(
+                    "\$set", Document("items.$[f1].name", BsonString("changed"))
+                        .append("items.$[f2].name", BsonString("changed"))
+                        .append("items.$[f2].embed1.value1", BsonString("changed"))
+                ),
+            update.document
+        )
+        assertEquals(3, update.options.arrayFilters!!.size)
+    }
+
     private fun query(condition: Condition<LargeTestModel>) = condition.bson(serializer, bson = bson)
 
     @Test
@@ -50,6 +75,5 @@ class CheckedUpdateBsonTest {
             Document("embeddedNullable.value1", Document("\$eq", BsonString("a"))),
             query(condition { it.embeddedNullable.notNull.value1 eq "a" })
         )
-        assertEquals(Document("map.k", Document("\$eq", BsonInt32(1))), query(path<LargeTestModel>().map.mapCondition(Condition.OnKey("k", Condition.Equal(1)))))
     }
 }

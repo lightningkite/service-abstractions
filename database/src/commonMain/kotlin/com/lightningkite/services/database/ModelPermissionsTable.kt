@@ -18,8 +18,8 @@ public open class ModelPermissionsTable<Model : Any>(
     private val permissions: ModelPermissions<Model>,
 ) : Table<Model> {
     override val serializer: KSerializer<Model> get() = wraps.serializer
-    private val textIndexPaths = serializer.descriptor.annotations.filterIsInstance<TextIndex>()
-        .firstOrNull()?.fields?.map { DataClassPathSerializer(serializer).fromString(it).properties }
+    private val textIndexFields = serializer.descriptor.annotations.filterIsInstance<TextIndex>()
+        .firstOrNull()?.fields?.map { DataClassPathSerializer(serializer).fromString(it) }
         ?: listOf()
 
     override suspend fun find(
@@ -33,13 +33,31 @@ public open class ModelPermissionsTable<Model : Any>(
         return wraps.find(
             condition = condition and permissions.read and sortImposedConditions and permissions.readMask(
                 condition,
-                textIndexPaths
+
             ),
             orderBy = orderBy,
             skip = skip,
             limit = limit,
             maxQueryMs = maxQueryMs
         ).map { permissions.mask(it) }
+    }
+
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> {
+        // Claude: a match reveals what the text fields hold, so skip rows where any of them would be masked.
+        val textFieldMasks = textIndexFields.map { permissions.readMask(it) }
+        return wraps.findByTextIndex(
+            query = query,
+            condition = Condition.And(listOf(condition, permissions.read, permissions.readMask(condition)) + textFieldMasks),
+            skip = skip,
+            limit = limit,
+            maxQueryMs = maxQueryMs
+        ).map { it.copy(model = permissions.mask(it.model)) }
     }
 
     override suspend fun findSimilar(
@@ -53,7 +71,7 @@ public open class ModelPermissionsTable<Model : Any>(
             params = params,
             condition = condition and permissions.read and permissions.readMask(
                 condition,
-                textIndexPaths
+
             ) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
             maxQueryMs = maxQueryMs
         ).map { it.copy(model = permissions.mask(it.model)) }
@@ -70,7 +88,7 @@ public open class ModelPermissionsTable<Model : Any>(
             params = params,
             condition = condition and permissions.read and permissions.readMask(
                 condition,
-                textIndexPaths
+
             ) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
             maxQueryMs = maxQueryMs
         ).map { it.copy(model = permissions.mask(it.model)) }
@@ -95,7 +113,7 @@ public open class ModelPermissionsTable<Model : Any>(
             fields = allFields,
             condition = condition and permissions.read and sortImposedConditions and permissions.readMask(
                 condition,
-                textIndexPaths
+
             ),
             orderBy = orderBy,
             skip = skip,
@@ -110,7 +128,7 @@ public open class ModelPermissionsTable<Model : Any>(
     }
 
     override suspend fun count(condition: Condition<Model>): Int =
-        wraps.count(condition and permissions.read and permissions.readMask(condition, textIndexPaths))
+        wraps.count(condition and permissions.read and permissions.readMask(condition, ))
 
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
@@ -119,7 +137,7 @@ public open class ModelPermissionsTable<Model : Any>(
         return wraps.groupCount(
             condition and permissions.read and permissions.readMask(groupBy) and permissions.readMask(
                 condition,
-                textIndexPaths
+
             ),
             groupBy
         )
@@ -132,7 +150,7 @@ public open class ModelPermissionsTable<Model : Any>(
     ): Double? =
         wraps.aggregate(
             aggregate,
-            condition and permissions.read and permissions.readMask(property) and permissions.readMask(condition, textIndexPaths),
+            condition and permissions.read and permissions.readMask(property) and permissions.readMask(condition, ),
             property
         )
 
@@ -145,7 +163,7 @@ public open class ModelPermissionsTable<Model : Any>(
         aggregate,
         condition and permissions.read and permissions.readMask(groupBy) and permissions.readMask(property) and permissions.readMask(
             condition,
-            textIndexPaths
+
         ),
         groupBy,
         property
@@ -255,10 +273,10 @@ public open class ModelPermissionsTable<Model : Any>(
     }
 
     override suspend fun fullCondition(condition: Condition<Model>): Condition<Model> =
-        permissions.read and condition and permissions.readMask(condition, textIndexPaths)
+        permissions.read and condition and permissions.readMask(condition, )
 
     private suspend fun writeCondition(condition: Condition<Model>, modification: Modification<Model>): Condition<Model> =
-        fullCondition(condition) and permissions.allowed(modification) and permissions.readMask(modification, textIndexPaths)
+        fullCondition(condition) and permissions.allowed(modification) and permissions.readMask(modification, )
 
     override suspend fun mask(): Mask<Model> = permissions.readMask
 }

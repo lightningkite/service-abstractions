@@ -2,6 +2,7 @@ package com.lightningkite.services.data
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
@@ -115,13 +116,10 @@ public object TrimLowercaseOnSerialize : KSerializer<String> {
     override fun serialize(encoder: Encoder, value: String): Unit = encoder.encodeString(value)
 }
 
-/** Serializer for [TrimmedString]. */
-public object TrimmedStringSerializer : KSerializer<TrimmedString> {
-    override fun deserialize(decoder: Decoder): TrimmedString = decoder.decodeString().trimmed()
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.services.data.TrimmedString", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: TrimmedString): Unit = encoder.encodeString(value.raw)
+// Decoding goes straight through the constructor, so its check is what rejects untrusted input.
+// SerializationException is an IllegalArgumentException that also reads as a bad request rather than a server fault.
+private inline fun requireNormalized(isNormalized: Boolean, message: () -> String) {
+    if (!isNormalized) throw SerializationException(message())
 }
 
 /**
@@ -140,10 +138,14 @@ public object TrimmedStringSerializer : KSerializer<TrimmedString> {
  * val user = User(name = "  John  ".trimmed())  // Stored as "John"
  * ```
  */
-@Serializable(TrimmedStringSerializer::class)
+@Serializable
 @JvmInline
 public value class TrimmedString @Deprecated("Use String.trimmed()") constructor(override val raw: String) :
     IsRawString {
+    init {
+        requireNormalized(raw == raw.trim()) { "TrimmedString has leading or trailing whitespace: '$raw'" }
+    }
+
     override fun toString(): String = raw
     override fun mapRaw(action: (String) -> String): TrimmedString = raw.let(action).trimmed()
 }
@@ -157,18 +159,14 @@ public value class TrimmedString @Deprecated("Use String.trimmed()") constructor
 public inline fun String.trimmed(): TrimmedString = TrimmedString(this.trim())
 
 
-public object CaselessStringSerializer : KSerializer<CaselessString> {
-    override fun deserialize(decoder: Decoder): CaselessString = decoder.decodeString().caseless()
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.services.data.CaselessString", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: CaselessString): Unit = encoder.encodeString(value.raw)
-}
-
-@Serializable(CaselessStringSerializer::class)
+@Serializable
 @JvmInline
 public value class CaselessString @Deprecated("Use String.caseless()") constructor(override val raw: String) :
     IsRawString {
+    init {
+        requireNormalized(raw == raw.lowercase()) { "CaselessString has uppercase characters: '$raw'" }
+    }
+
     override fun toString(): String = raw
     override fun mapRaw(action: (String) -> String): CaselessString = raw.let(action).caseless()
 }
@@ -177,18 +175,16 @@ public value class CaselessString @Deprecated("Use String.caseless()") construct
 public inline fun String.caseless(): CaselessString = CaselessString(this.lowercase())
 
 
-public object TrimmedCaselessStringSerializer : KSerializer<TrimmedCaselessString> {
-    override fun deserialize(decoder: Decoder): TrimmedCaselessString = decoder.decodeString().trimmedCaseless()
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.services.data.TrimmedCaselessString", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: TrimmedCaselessString): Unit = encoder.encodeString(value.raw)
-}
-
-@Serializable(TrimmedCaselessStringSerializer::class)
+@Serializable
 @JvmInline
 public value class TrimmedCaselessString @Deprecated("Use String.trimmedCaseless()") constructor(override val raw: String) :
     IsRawString {
+    init {
+        requireNormalized(raw == raw.trim().lowercase()) {
+            "TrimmedCaselessString has surrounding whitespace or uppercase characters: '$raw'"
+        }
+    }
+
     override fun toString(): String = raw
     override fun mapRaw(action: (String) -> String): TrimmedCaselessString = raw.let(action).trimmedCaseless()
 }
@@ -196,16 +192,6 @@ public value class TrimmedCaselessString @Deprecated("Use String.trimmedCaseless
 @Suppress("DEPRECATION", "NOTHING_TO_INLINE")
 public inline fun String.trimmedCaseless(): TrimmedCaselessString = TrimmedCaselessString(this.trim().lowercase())
 
-
-/** Serializer for [EmailAddress]. */
-public object EmailAddressSerializer : KSerializer<EmailAddress> {
-    override fun deserialize(decoder: Decoder): EmailAddress =
-        deserializing { decoder.decodeString().toEmailAddress() }
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.services.data.EmailAddress", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: EmailAddress): Unit = encoder.encodeString(value.raw)
-}
 
 /**
  * String value class representing a validated email address.
@@ -234,10 +220,16 @@ public object EmailAddressSerializer : KSerializer<EmailAddress> {
  *
  * @throws IllegalArgumentException if the string is not a valid email address
  */
-@Serializable(EmailAddressSerializer::class)
+@Serializable
 @JvmInline
 public value class EmailAddress @Deprecated("Use String.toEmailAddress()") constructor(override val raw: String) :
     IsRawString {
+    init {
+        requireNormalized(raw == raw.trim().lowercase() && emailRegex.matches(raw)) {
+            "$raw is not a lowercase, trimmed email address."
+        }
+    }
+
     public companion object {
         private val commentRegex = Regex("\\([^)]+\\)")
     }
@@ -324,15 +316,6 @@ public fun String.toEmailAddressOrNull(): EmailAddress? {
 
 
 /** Serializer for [PhoneNumber]. */
-public object PhoneNumberSerializer : KSerializer<PhoneNumber> {
-    override fun deserialize(decoder: Decoder): PhoneNumber =
-        deserializing { decoder.decodeString().toPhoneNumber() }
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("com.lightningkite.services.data.PhoneNumber", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: PhoneNumber): Unit = encoder.encodeString(value.raw)
-}
-
 /**
  * String value class representing a phone number in E.164 format.
  *
@@ -363,10 +346,16 @@ public object PhoneNumberSerializer : KSerializer<PhoneNumber> {
  *
  * @throws IllegalArgumentException if the string is not a valid phone number format
  */
-@Serializable(PhoneNumberSerializer::class)
+@Serializable
 @JvmInline
 public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constructor(override val raw: String) :
     IsRawString {
+    init {
+        requireNormalized(raw.startsWith('+') && raw == raw.lowercase() && raw.none { it in punctuation }) {
+            "$raw is not a phone number in '+<country code><number>' form."
+        }
+    }
+
     // TODO: API Recommendation - Add support for more regional formatting (UK, EU, etc.)
     //  Currently only US +1 numbers get formatted in toString()
     override fun toString(): String = when {

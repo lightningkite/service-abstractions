@@ -5,6 +5,15 @@ import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.TestDatabase.mongoClient
 import com.lightningkite.services.database.test.*
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.firstOrNull
+import com.mongodb.MongoCommandException
+import org.bson.Document
+import org.junit.Assume.assumeTrue
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -88,8 +97,8 @@ class MongodbConditionTests : ConditionTests() {
     }
 }
 
-class MongodbModificationTests : ModificationTests() {
-    override val database: Database = db()
+open class MongodbModificationTests : ModificationTests() {
+    override val database: Database get() = db()
 
     @Test
     fun start() {
@@ -131,6 +140,21 @@ class MongodbModificationTests : ModificationTests() {
         assertTrue(collection.upsertOneIgnoringResult(byId, modification, item))
         assertEquals(item, collection.get(item._id))
         assertEquals(2, collection.count(Condition.Always))
+    }
+}
+
+// Claude: runs DocumentDB's non-overlapping array filters on MongoDB, which can check they give the same result.
+class MongodbDisjointArrayFiltersModificationTests : MongodbModificationTests() {
+    override val database: Database get() = disjointArrayFiltersDb
+
+    companion object {
+        val disjointArrayFiltersDb = MongoDatabase(
+            "disjoint-array-filters",
+            clientSettings = TestDatabase.settings,
+            databaseName = "test-disjoint-array-filters",
+            supportsOverlappingArrayFilters = false,
+            context = TestSettingContext()
+        )
     }
 }
 
@@ -254,6 +278,52 @@ class MongodbVectorSearchTests : VectorSearchTests() {
     // We need to wait for documents to appear in the search index after insertion.
     override val vectorSearchIndexSyncDelay: Duration = 3.seconds
 }
+class MongodbTextSearchTests : TextSearchTests() {
+    override val database: Database = db()
+
+    // Claude: classic $text stems words but has no typo tolerance, and its fixed scoring formula isn't BM25.
+    override val supportsTypoTolerance: Boolean = false
+    override val supportsBm25Ranking: Boolean = false
+}
+
+class MongodbAtlasTextSearchTests : TextSearchTests() {
+    override val database: Database = vectorDb()
+
+    // Claude: mongot syncs documents via change streams, so searches lag behind writes.
+    override suspend fun waitForIndex(table: Table<*>, count: Int) {
+        table as MongoTable<*>
+        // Claude: counts rows whose first text field is indexed, so every test row needs a non-empty one.
+        val firstTextField = table.indexedTextFields!!.first().mongo
+        val countIndexed = Document(
+            "\$searchMeta",
+            Document("index", "default").append("exists", Document("path", firstTextField)).append("count", Document("type", "total"))
+        )
+        // Claude: on Dispatchers.Default so runTest's virtual time doesn't skip the polling delays.
+        var lastSeen: Any? = null
+        val reached = withContext(Dispatchers.Default) {
+            withTimeoutOrNull(30.seconds) {
+                while (true) {
+                    lastSeen = try {
+                        // Claude: $searchMeta returns no document when nothing matches.
+                        table.access.run { aggregate<Document>(listOf(countIndexed)).firstOrNull() }
+                            ?.getEmbedded(listOf("count", "total"), Number::class.java)?.toInt() ?: 0
+                    } catch (e: MongoCommandException) {
+                        e.errorMessage // Claude: the search index may still be building.
+                    }
+                    if (lastSeen == count) break
+                    delay(100)
+                }
+            }
+        }
+        checkNotNull(reached) { "Search index didn't reach $count rows in 30s; last saw: $lastSeen" }
+    }
+
+    @BeforeTest
+    fun requireAtlas() {
+        assumeTrue("Atlas Search needs Docker or MONGO_VECTOR_TEST_URL", VectorTestDatabase.isAvailable)
+    }
+}
+
 class MongodbMaskedPermissionsTests : MaskedPermissionsTests() {
     override val database: Database = db()
 }

@@ -46,6 +46,10 @@ class RamVectorSearchTests : VectorSearchTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
 
+class RamTextSearchTests : TextSearchTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
 class RamSingleRowOperationTests : SingleRowOperationTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }

@@ -11,7 +11,7 @@ import org.jetbrains.exposed.v1.jdbc.*
 import org.jetbrains.exposed.v1.core.ops.SingleValueInListOp
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
-// The backslash used to escape literal `%`/`_` in `StringContains`/`RawStringContains` LIKE
+// The backslash used to escape literal `%`/`_` in `StringContains` LIKE
 // patterns (see [escapeLikeValue]). Backslash is not a special character in Postgres's LIKE syntax
 // by default, so it's safe to reserve as the escape char here.
 private const val LIKE_ESCAPE_CHAR = '\\'
@@ -19,7 +19,7 @@ private const val LIKE_ESCAPE_CHAR = '\\'
 /**
  * Escapes a literal search value so it can be embedded inside a `%...%` LIKE pattern without its
  * own `%`/`_` characters being interpreted as SQL wildcards. The in-memory reference for
- * `StringContains`/`RawStringContains` is `on.contains(value)` — a literal substring search where
+ * `StringContains` is `on.contains(value)` — a literal substring search where
  * every character of [value] is significant — so this (together with passing [LIKE_ESCAPE_CHAR] as
  * the op's `escapeChar`, which emits `ESCAPE '\'`) is required to match that semantics.
  */
@@ -154,74 +154,17 @@ private fun <T> condition(
             }
         }
 
-        is Condition.SetAllElements<*> -> {
+        is Condition.CollectionAllElements<*, *> -> {
             AllIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
                 condition(condition.condition as Condition<Any?>, it)
             }))
         }
 
-        is Condition.ListAllElements<*> -> {
-            AllIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
-                condition(condition.condition as Condition<Any?>, it)
-            }))
-        }
-
-        is Condition.SetAnyElements<*> -> {
+        is Condition.CollectionAnyElements<*, *> -> {
             AnyIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
                 condition(condition.condition as Condition<Any?>, it)
             }))
         }
-
-        is Condition.ListAnyElements<*> -> {
-            AnyIsTrueOp(MapOp(fieldSet as FieldSet2<List<Any?>>, mapper = {
-                condition(condition.condition as Condition<Any?>, it)
-            }))
-        }
-
-        is Condition.Exists<*> -> {
-            val keyValue =
-                fieldSet.format.encode(fieldSet.serializer.mapKeyElement()!! as KSerializer<Any?>, condition.key)[""]
-            ContainsOp(fieldSet.single, sqlLiteralOfSomeKind(fieldSet.single.columnType, listOf(keyValue)))
-        }
-
-        // The key check is needed because a missing key reads as null, which conditions like NotEqual accept.
-        is Condition.OnKey<*> -> {
-            val keyValue =
-                fieldSet.format.encode(fieldSet.serializer.mapKeyElement()!! as KSerializer<Any?>, condition.key)[""]
-            val onValue = condition(
-                condition = condition.condition as Condition<Any?>,
-                fieldSet = FieldSet2<Any?>(
-                    serializer = fieldSet.serializer.mapValueElement()!! as KSerializer<Any?>,
-                    fields = fieldSet.fields.entries.asSequence()
-                        .filter { it.key.startsWith("value") }
-                        .associate {
-                            it.key.removePrefix("value").removePrefix("__") to object :
-                                ExpressionWithColumnType<Any?>() {
-                                override val columnType: IColumnType<Any>
-                                    get() = (it.value.columnType as ArrayColumnType<Any>).type
-
-                                override fun toQueryBuilder(queryBuilder: QueryBuilder) {
-                                    GetOp(
-                                        it.value as Expression<List<Any?>>,
-                                        CustomFunction<Int>(
-                                            "array_position",
-                                            IntegerColumnType(),
-                                            fieldSet.single,
-                                            sqlLiteralOfSomeKind(
-                                                (fieldSet.fields[""]!!.columnType as ArrayColumnType<Any>).type,
-                                                keyValue
-                                            )
-                                        )
-                                    ).toQueryBuilder(queryBuilder)
-                                }
-                            }
-                        },
-                    format = fieldSet.format,
-                )
-            )
-            AndOp(listOf(ContainsOp(fieldSet.single, sqlLiteralOfSomeKind(fieldSet.single.columnType, listOf(keyValue))), onValue))
-        }
-//        is Condition.FullTextSearch -> throw IllegalArgumentException()
 
         is Condition.GreaterThan -> op(condition.value, ::GreaterOp)
         is Condition.LessThan -> op(condition.value, ::LessOp)
@@ -314,34 +257,9 @@ private fun <T> condition(
                 LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
         }
 
-        is Condition.RawStringContains -> {
-            val col = fieldSet.single
-            val pattern = "%${escapeLikeValue(condition.value)}%"
-            if (condition.ignoreCase)
-                InsensitiveLikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
-            else
-                LikeEscapeOp(col, sqlLiteralOfSomeKind(TextColumnType(), pattern), true, LIKE_ESCAPE_CHAR)
-        }
-
         is Condition.RegexMatches -> {
             val col = fieldSet.single
             RegexpOp(col as Column<String>, sqlLiteralOfSomeKind(TextColumnType(), condition.pattern), !condition.ignoreCase)
-        }
-
-        is Condition.SetSizesEquals<*> -> {
-            val col = fieldSet.single
-            EqOp(
-                ArrayLengthOp(col as Column<List<Any?>>),
-                sqlLiteralOfSomeKind(IntegerColumnType(), condition.count)
-            )
-        }
-
-        is Condition.ListSizesEquals<*> -> {
-            val col = fieldSet.single
-            EqOp(
-                ArrayLengthOp(col as Column<List<Any?>>),
-                sqlLiteralOfSomeKind(IntegerColumnType(), condition.count)
-            )
         }
 
         is Condition.OnField<*, *> -> condition<Any?>(
@@ -503,22 +421,6 @@ private fun <T> FieldModifier.modification(
             )
         }
 
-        is Modification.AppendString -> modifySingle(fieldSet) { type, old ->
-            Concat(
-                "",
-                old,
-                fieldSet.formatSingleExpression(modification.value as T)
-            ) as Expression<Any?>
-        }
-
-        is Modification.AppendRawString -> modifySingle(fieldSet) { type, old ->
-            Concat(
-                "",
-                old,
-                fieldSet.formatSingleExpression(modification.value as T)
-            ) as Expression<Any?>
-        }
-
         is Modification.ListAppend<*> -> modifyEach(fieldSet, modification.items as T) { type, it, old ->
             ConcatOp(
                 old,
@@ -566,50 +468,6 @@ private fun <T> FieldModifier.modification(
                                 .Else(f.fields[it.key]!!)
                         }
                     }
-                ) as Expression<Any?>
-            }
-        }
-
-        is Modification.ListDropFirst<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old ->
-                SliceOp(
-                    old as Expression<List<Any?>>,
-                    from = sqlLiteralOfSomeKind(IntegerColumnType(), 2)
-                ) as Expression<Any?>
-            }
-        }
-
-        is Modification.ListDropLast<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old ->
-                SliceOp(
-                    old as Expression<List<Any?>>,
-                    to = MinusOp(
-                        ArrayLengthOp(old as Expression<List<Any?>>),
-                        sqlLiteralOfSomeKind(IntegerColumnType(), 1),
-                        IntegerColumnType()
-                    )
-                ) as Expression<Any?>
-            }
-        }
-
-        is Modification.SetDropFirst<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old ->
-                SliceOp(
-                    old as Expression<List<Any?>>,
-                    from = sqlLiteralOfSomeKind(IntegerColumnType(), 2)
-                ) as Expression<Any?>
-            }
-        }
-
-        is Modification.SetDropLast<*> -> fieldSet.fields.forEach {
-            modify(it.key) { old ->
-                SliceOp(
-                    old as Expression<List<Any?>>,
-                    to = MinusOp(
-                        ArrayLengthOp(old as Expression<List<Any?>>),
-                        sqlLiteralOfSomeKind(IntegerColumnType(), 1),
-                        IntegerColumnType()
-                    )
                 ) as Expression<Any?>
             }
         }
@@ -676,45 +534,6 @@ private fun <T> FieldModifier.modification(
             }
         }
 
-        is Modification.Combine<*> -> {
-            // Maps are stored as parallel arrays -- one per key-path segment of the key type, one
-            // (suffixed "value") per key-path segment of the value type; see
-            // SerialDescriptorTable.columnType's StructureKind.MAP branch. `on + map` means: entries
-            // whose key is being replaced are dropped from the old arrays (via the same key-array
-            // filter [MapOp] uses for RemoveKeys below), then the new entries are appended -- to
-            // every column in lockstep, so the key/value arrays stay aligned by position.
-            val newEntries = modification.map
-            val newColumnLiterals = fieldSet.format(modification.map as T)
-            fieldSet.fields.forEach { (colKey, colExpr) ->
-                modify(colKey) {
-                    @Suppress("UNCHECKED_CAST")
-                    ConcatOp(
-                        MapOp(
-                            fieldSet as FieldSet2<List<Any?>>,
-                            mapper = { fs -> fs.fields[colKey]!! },
-                            filter = { fs -> NotOp(SingleValueInListOp(fs.fields[""]!!, newEntries.keys.toList())) },
-                        ),
-                        newColumnLiterals[colExpr]!! as Expression<List<Any?>>,
-                    ) as Expression<Any?>
-                }
-            }
-        }
-
-        is Modification.RemoveKeys<*> -> {
-            // Same array-filter shape as the Combine branch above, minus the append: keep only the
-            // entries whose key isn't being removed, applied to every column (key + value arrays) in
-            // lockstep so they stay aligned by position.
-            val keysToRemove = modification.fields.toList()
-            fieldSet.fields.forEach { (colKey, _) ->
-                modify(colKey) {
-                    MapOp(
-                        fieldSet as FieldSet2<List<Any?>>,
-                        mapper = { fs -> fs.fields[colKey]!! },
-                        filter = { fs -> NotOp(SingleValueInListOp(fs.fields[""]!!, keysToRemove)) },
-                    ) as Expression<Any?>
-                }
-            }
-        }
         is Modification.OnField<*, *> -> {
             val key = modification.key as SerializableProperty<T, Any?>
             val d = fieldSet.serializer.descriptor

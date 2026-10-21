@@ -1,6 +1,7 @@
 package com.lightningkite.services.database
 
 import com.lightningkite.services.data.*
+import com.lightningkite.services.data.Length.Companion.kilometers
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.json.*
@@ -23,17 +24,14 @@ import kotlinx.serialization.json.*
  *
  * ## Special Conditions
  *
- * - [StringContains]/[RawStringContains] - Substring search (case-insensitive by default)
- * - [FullTextSearch] - Full-text search with fuzzy matching and Levenshtein distance
+ * - [StringContains] - Substring search
  * - [RegexMatches] - Regular expression matching (may not be supported by all backends)
  * - [GeoDistance] - Geospatial queries by distance
  * - [IntBitsClear]/[IntBitsSet] etc. - Bitwise operations
  *
  * ## Collection Conditions
  *
- * - [ListAllElements]/[ListAnyElements] - Test all/any list elements
- * - [SetAllElements]/[SetAnyElements] - Test all/any set elements
- * - [ListSizesEquals]/[SetSizesEquals] - Size checks (deprecated in favor of empty checks)
+ * - [CollectionAllElements]/[CollectionAnyElements] - Test all/any elements of a list or set
  *
  * ## Nested Conditions
  *
@@ -60,8 +58,6 @@ import kotlinx.serialization.json.*
  * ## Important Gotchas
  *
  * - **Backend support varies**: Not all database backends support all conditions (e.g., RegexMatches)
- * - **FullTextSearch approximation**: In-memory evaluation is a rough approximation of database behavior
- * - **Case sensitivity**: String operations default to case-insensitive (StringContains, RawStringContains)
  * - **hashCode/equals**: Throw NotImplementedError by default - only specific implementations override
  * - **Type variance**: Condition is contravariant (Condition<Any?> is a valid Condition<String>)
  *
@@ -171,66 +167,15 @@ public sealed class Condition<in T> {
     }
 
     @Serializable
-    public data class RawStringContains<T : IsRawString>(val value: String, val ignoreCase: Boolean = false) :
-        Condition<T>() {
-        override fun invoke(on: T): Boolean = on.raw.contains(value, ignoreCase)
-        override fun toString(): String = ".contains($value, $ignoreCase)"
-    }
-
-    @Serializable
     public data class GeoDistance(
         val value: GeoCoordinate,
-        val greaterThanKilometers: Double = 0.0,
-        val lessThanKilometers: Double = 100_000.0,
+        val greaterThan: Length = 0.0.kilometers,
+        val lessThan: Length = 100_000.0.kilometers,
     ) : Condition<GeoCoordinate>() {
         override fun invoke(on: GeoCoordinate): Boolean =
-            on.distanceToKilometers(value) in greaterThanKilometers..lessThanKilometers
+            on.distanceTo(value) in greaterThan..lessThan
 
-        override fun toString(): String = ".distanceToKilometers(value) in $greaterThanKilometers..$lessThanKilometers"
-    }
-
-    @Serializable
-    public data class FullTextSearch<T>(
-        @DoesNotNeedLabel val value: String,
-        val requireAllTermsPresent: Boolean = true,
-        val levenshteinDistance: Int = 2,
-    ) :
-        Condition<T>() {
-        @OptIn(ExperimentalSerializationApi::class)
-        override fun invoke(on: T): Boolean {
-            // A null value has nothing to search: without this, `on` falls through to `on.toString()`
-            // below, and the Kotlin stdlib returns the literal string "null" for a null receiver -- so
-            // this would full-text-match against the word "null" instead of correctly never matching.
-            if (on == null) return false
-            val ser = try {
-                serializer(on::class, listOf(), false)
-            } catch (e: Exception) {
-                null
-            }
-            if (ser != null && ser.descriptor.kind == StructureKind.CLASS) {
-                val fieldNames = ser.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
-                val element = Json.encodeToJsonElement(ser, on) as? JsonObject
-                val fromString = element?.let { e ->
-                    fieldNames?.joinToString(" ") { fieldPath ->
-                        // by Claude: Handle nested field paths like "metadata.category" by traversing the JSON structure
-                        val pathParts = fieldPath.split(".")
-                        var current: kotlinx.serialization.json.JsonElement? = e
-                        for (part in pathParts) {
-                            current = (current as? JsonObject)?.get(part)
-                            if (current == null) break
-                        }
-                        when (val p = current) {
-                            is JsonPrimitive -> p.content
-                            null -> ""
-                            else -> p.toString()
-                        }
-                    }
-                } ?: on.toString()
-                return TextQuery.fromString(value).fuzzyPresent(fromString, levenshteinDistance)
-            } else return TextQuery.fromString(value).fuzzyPresent(on.toString(), levenshteinDistance)
-        }
-
-        override fun toString(): String = ".fullTextSearch($value, $requireAllTermsPresent, $levenshteinDistance)"
+        override fun toString(): String = ".distanceTo($value) in $greaterThan..$lessThan"
     }
 
     /**
@@ -240,8 +185,10 @@ public sealed class Condition<in T> {
      * anchor the pattern themselves with `^…$`.
      */
     @Serializable
-    public data class RegexMatches(@DoesNotNeedLabel val pattern: String, val ignoreCase: Boolean = false) :
-        Condition<String>() {
+    public data class RegexMatches(
+        @DoesNotNeedLabel val pattern: String,
+        val ignoreCase: Boolean = false
+    ) : Condition<String>() {
         @Transient
         private val regex = Regex(pattern, if (ignoreCase) setOf(RegexOption.IGNORE_CASE) else setOf())
         override fun invoke(on: String): Boolean = regex.containsMatchIn(on)
@@ -276,58 +223,16 @@ public sealed class Condition<in T> {
         override fun toString(): String = ".bitsAnySet(${mask.toString(16)})"
     }
 
-    // TODO: Merge collection operations once Khrysalis is fully deprecated
-    @Serializable(ConditionListAllElementsSerializer::class)
-    public data class ListAllElements<E>(val condition: Condition<E>) : Condition<List<E>>() {
-        override fun invoke(on: List<E>): Boolean = on.all { condition(it) }
+    @Serializable(ConditionCollectionAllElementsSerializer::class)
+    public data class CollectionAllElements<C: Collection<E>, E>(val condition: Condition<E>) : Condition<C>() {
+        override fun invoke(on: C): Boolean = on.all { condition(it) }
         override fun toString(): String = ".all { it$condition }"
     }
 
-    @Serializable(ConditionListAnyElementsSerializer::class)
-    public data class ListAnyElements<E>(val condition: Condition<E>) : Condition<List<E>>() {
-        override fun invoke(on: List<E>): Boolean = on.any { condition(it) }
+    @Serializable(ConditionCollectionAnyElementsSerializer::class)
+    public data class CollectionAnyElements<C: Collection<E>, E>(val condition: Condition<E>) : Condition<C>() {
+        override fun invoke(on: C): Boolean = on.any { condition(it) }
         override fun toString(): String = ".any { it$condition }"
-    }
-
-    // TODO: Change to empty check
-    @Serializable(ConditionListSizesEqualsSerializer::class)
-    public data class ListSizesEquals<E>(val count: Int) : Condition<List<E>>() {
-        override fun invoke(on: List<E>): Boolean = on.size == count
-        override fun toString(): String = ".size == $count"
-    }
-
-    @Serializable(ConditionSetAllElementsSerializer::class)
-    public data class SetAllElements<E>(val condition: Condition<E>) : Condition<Set<E>>() {
-        override fun invoke(on: Set<E>): Boolean = on.all { condition(it) }
-        override fun toString(): String = ".all { it$condition }"
-    }
-
-    @Serializable(ConditionSetAnyElementsSerializer::class)
-    public data class SetAnyElements<E>(val condition: Condition<E>) : Condition<Set<E>>() {
-        override fun invoke(on: Set<E>): Boolean = on.any { condition(it) }
-        override fun toString(): String = ".any { it$condition }"
-    }
-
-    // TODO: Change to empty check
-    @Serializable(ConditionSetSizesEqualsSerializer::class)
-    public data class SetSizesEquals<E>(val count: Int) : Condition<Set<E>>() {
-        override fun invoke(on: Set<E>): Boolean = on.size == count
-        override fun toString(): String = ".size == $count"
-    }
-
-    // TODO: Allow alternate keys once Khrysalis is fully deprecated
-    @Serializable(ConditionExistsSerializer::class)
-    public data class Exists<V>(val key: String) : Condition<Map<String, V>>() {
-        override fun invoke(on: Map<String, V>): Boolean = on.containsKey(key)
-        override fun toString(): String = ".containsKey($key)"
-    }
-
-    @Serializable
-    public data class OnKey<V>(val key: String, val condition: Condition<V>) :
-        Condition<Map<String, V>>() {
-        @Suppress("UNCHECKED_CAST")
-        override fun invoke(on: Map<String, V>): Boolean = on.containsKey(key) && condition(on[key] as V)
-        override fun toString(): String = "[$key]$condition"
     }
 
     public data class OnField<K, V>(
@@ -418,17 +323,4 @@ public fun <T> Condition.Companion.ifThenElse(
     else_: Condition<T>,
 ): Condition.Or<T> =
     (if_ and then) or (!if_ and else_)
-
-// TODO: API Recommendation - Add empty/notEmpty collection conditions
-//  ListSizesEquals/SetSizesEquals are deprecated. Add explicit isEmpty/isNotEmpty conditions
-//  that backends can optimize (e.g., MongoDB $size operator, SQL WHERE array_length(field) > 0)
-//
-// TODO: API Recommendation - Consider adding case-sensitive string operations
-//  StringContains defaults to case-insensitive. Add startsWith/endsWith/exactMatch variants
-//  for performance-critical queries where case-insensitive search isn't needed
-//
-// TODO: API Recommendation - Document RegexMatches backend support matrix
-//  Not all backends support regex (e.g., DynamoDB). Consider adding a feature detection API
-//  or documenting which backends support which Condition types
-
 

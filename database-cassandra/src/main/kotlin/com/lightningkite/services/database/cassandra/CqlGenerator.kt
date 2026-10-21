@@ -314,22 +314,10 @@ public class CqlGenerator<T : Any>(
                 "$quotedColumn LIKE ?"
             }
 
-            is Condition.ListAnyElements<*>, is Condition.SetAnyElements<*> -> {
+            is Condition.CollectionAnyElements<*, *> -> {
                 // SAI CONTAINS for collections
-                val value = when (condition) {
-                    is Condition.ListAnyElements<*> -> {
-                        // Extract the value from Equal condition inside
-                        (condition.condition as? Condition.Equal<*>)?.value
-                            ?: throw IllegalArgumentException("ListAnyElements requires Equal condition for CQL CONTAINS")
-                    }
-
-                    is Condition.SetAnyElements<*> -> {
-                        (condition.condition as? Condition.Equal<*>)?.value
-                            ?: throw IllegalArgumentException("SetAnyElements requires Equal condition for CQL CONTAINS")
-                    }
-
-                    else -> throw IllegalStateException()
-                }
+                val value = (condition.condition as? Condition.Equal<*>)?.value
+                    ?: throw IllegalArgumentException("CollectionAnyElements requires Equal condition for CQL CONTAINS")
                 params.add(convertToCassandraType(value))
                 "$quotedColumn CONTAINS ?"
             }

@@ -1,18 +1,17 @@
 // by Claude - Tests for BSON condition conversion with atlasSearch flag,
-// specifically verifying that SetAnyElements and ListAnyElements generate
+// specifically verifying that CollectionAnyElements on sets and lists generate
 // Atlas-compatible operators ($eq/$in) instead of $elemMatch when atlasSearch=true.
 package com.lightningkite.services.database.mongodb
 
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
-import com.lightningkite.services.database.test.ClassUsedForEmbedding
 import com.lightningkite.services.database.test.LargeTestModel
 import org.bson.Document
 import kotlin.test.*
 
 /**
  * Tests that the atlasSearch flag in BSON condition conversion correctly handles
- * SetAnyElements and ListAnyElements conditions.
+ * CollectionAnyElements conditions on sets and lists.
  *
  * Atlas $vectorSearch pre-filters only support: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $not.
  * $elemMatch is NOT supported and causes runtime errors on Atlas.
@@ -36,13 +35,13 @@ class BsonConditionAtlasSearchTest {
     @Suppress("UNCHECKED_CAST")
     private val intProp = props.first { it.name == "int" } as SerializableProperty<LargeTestModel, Int>
 
-    // Helper: build OnField(setProp, SetAnyElements(innerCondition))
+    // Helper: build OnField(setProp, CollectionAnyElements(innerCondition))
     private fun setAny(inner: Condition<Int>): Condition<LargeTestModel> =
-        Condition.OnField(setProp, Condition.SetAnyElements(inner))
+        Condition.OnField(setProp, Condition.CollectionAnyElements(inner))
 
-    // Helper: build OnField(listProp, ListAnyElements(innerCondition))
+    // Helper: build OnField(listProp, CollectionAnyElements(innerCondition))
     private fun listAny(inner: Condition<Int>): Condition<LargeTestModel> =
-        Condition.OnField(listProp, Condition.ListAnyElements(inner))
+        Condition.OnField(listProp, Condition.CollectionAnyElements(inner))
 
     // ============================================================
     // SetAnyElements - atlasSearch=false (existing behavior preserved)
@@ -171,18 +170,4 @@ class BsonConditionAtlasSearchTest {
         )
     }
 
-    @Test
-    fun searchStage_onlySearchesTextIndexFields() {
-        val stage = atlasSearchStage(serializer, Condition.FullTextSearch<LargeTestModel>("secret"))
-        val text = (stage["\$search"] as Document)["text"] as Document
-        assertEquals(listOf("string", "embedded.value1"), text["path"])
-    }
-
-    @Test
-    fun searchStage_withoutTextIndex_searchesEverything() {
-        // ModelPermissionsTable counts such a search as reading every field, so masked users only reach unmasked rows.
-        val stage = atlasSearchStage(ClassUsedForEmbedding.serializer(), Condition.FullTextSearch<ClassUsedForEmbedding>("secret"))
-        val text = (stage["\$search"] as Document)["text"] as Document
-        assertEquals(Document("wildcard", "*"), text["path"])
-    }
 }

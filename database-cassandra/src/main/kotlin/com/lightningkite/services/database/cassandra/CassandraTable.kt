@@ -1201,6 +1201,14 @@ public class CassandraTable<Model : Any>(
 
     // ===== Vector Search (Not natively supported by Cassandra) =====
 
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<Model>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<Model>> = throw UnsupportedOperationException("Text search is not supported by Apache Cassandra")
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<Model, Embedding>,
         params: DenseVectorSearchParams,

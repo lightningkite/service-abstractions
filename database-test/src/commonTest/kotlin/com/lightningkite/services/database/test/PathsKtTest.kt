@@ -39,18 +39,6 @@ class PathsKtTest {
             assertTrue(condition.readsResultOf(modification { it.listEmbedded.forEach { it.value2 assign 3 } }))
             assertTrue(condition.readsResultOf(modification { it.listEmbedded.forEach { it.value2.plusAssign(1) } }))
         }
-        assertTrue(
-            condition<LargeTestModel> { it.fullTextSearch("asdf") }.readsResultOf(
-                modification<LargeTestModel> { it.string assign "asdf" },
-                listOf(path<LargeTestModel>().string.properties, path<LargeTestModel>().stringNullable.properties)
-            )
-        )
-        assertFalse(
-            condition<LargeTestModel> { it.fullTextSearch("asdf") }.readsResultOf(
-                modification<LargeTestModel> { it.int assign 2 },
-                listOf(path<LargeTestModel>().string.properties, path<LargeTestModel>().stringNullable.properties)
-            )
-        )
     }
 
     @Test
@@ -72,24 +60,6 @@ class PathsKtTest {
         val perElement = modification<LargeTestModel> { it.listEmbedded.forEach { it.value1 assign "" } }
         assertTrue(condition<LargeTestModel> { it.listEmbedded.any { it.value1 eq "x" } }.readsResultOf(perElement))
         assertFalse(condition<LargeTestModel> { it.listEmbedded.any { it.value2 eq 3 } }.readsResultOf(perElement))
-
-        assertTrue(condition<LargeTestModel> { it.fullTextSearch("x") }.readsResultOf(modification { it.int assign 2 }))
-    }
-
-    @Test
-    fun nestedFullTextSearchReadsTheWholeTextIndex() {
-        val textPaths = listOf(path<LargeTestModel>().string.properties)
-        val maskedText = modification<LargeTestModel> { it.string assign "" }
-        val underInt = path<LargeTestModel>().int.mapCondition(Condition.FullTextSearch("secret"))
-
-        assertTrue(underInt.readsResultOf(maskedText, textPaths), "MongoDB searches the model's text index wherever the search sits")
-        assertTrue(underInt.readsResultOf(maskedText))
-        assertFalse(underInt.readsResultOf(modification { it.short assign 2 }, textPaths))
-        assertTrue(
-            path<LargeTestModel>().embedded.mapCondition(Condition.FullTextSearch("secret"))
-                .readsResultOf(modification { it.embedded.value2 assign 0 }, textPaths),
-            "in memory it searches the value it sits on",
-        )
     }
 
     @Test

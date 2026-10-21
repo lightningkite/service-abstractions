@@ -213,6 +213,10 @@ public class LoggingTelemetryBackend(
             out.flush()
         }
     }
+
+    override suspend fun flush() {
+        out.flush()
+    }
 }
 
 // ── File-private coroutine context types ──────────────────────────────────────

@@ -7,6 +7,7 @@ import com.lightningkite.services.SettingContext
 import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.Table
+import com.lightningkite.services.data.TextIndex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -81,11 +82,28 @@ public class PostgresCollection<T : Any>(
         return telemetryTrace(operation, attributes = attrs, action = block)
     }
 
+    private val textIndexColumns: List<Column<*>>? =
+        serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields?.map { field ->
+            val column = table.col[DataClassPathSerializer(serializer).fromString(field).colName]
+            check(column != null && column.columnType is StringColumnType) {
+                "@TextIndex field $field on ${serializer.descriptor.serialName} must be a String for Postgres"
+            }
+            column
+        }
+
+    // Claude: the query must repeat this expression exactly, or Postgres won't use the index.
+    private fun JdbcTransaction.textSearchVector(columns: List<Column<*>>): String =
+        columns.joinToString(" || ' ' || ", "to_tsvector('english'::regconfig, ", ")") { "coalesce(${identity(it)}, '')" }
+
     @OptIn(ExperimentalSerializationApi::class)
     internal val prepare = scope.async(Dispatchers.Unconfined, start = CoroutineStart.LAZY) {
         t {
             additiveSchemaStatements(exposedTables).forEach {
                 exec(it)
+            }
+            if (textIndexColumns != null) {
+                val indexName = db.identifierManager.quoteIfNecessary("${table.tableName}_text_search")
+                exec("CREATE INDEX IF NOT EXISTS $indexName ON ${identity(table)} USING GIN ((${textSearchVector(textIndexColumns)}))")
             }
         }
     }
@@ -434,6 +452,60 @@ public class PostgresCollection<T : Any>(
         count
     }
 
+    override suspend fun findByTextIndex(
+        query: String,
+        condition: Condition<T>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<ScoredResult<T>> {
+        val columns = checkNotNull(textIndexColumns) { "findByTextIndex needs a @TextIndex on ${serializer.descriptor.serialName}" }
+        val textQuery = TextQuery.fromString(query)
+        if (limit <= 0 || (textQuery.exact.isEmpty() && textQuery.fuzzy.isEmpty())) return emptyFlow()
+        // Claude: quoting every term stops websearch_to_tsquery from reading a plain "or" as an operator.
+        val search = (textQuery.fuzzy + textQuery.exact).map { "\"$it\"" }
+            .plus(textQuery.reject.map { "-\"$it\"" })
+            .joinToString(" ")
+        return flow {
+            val results = traced(
+                operation = "findByTextIndex",
+                extraBlock = {
+                    put(com.lightningkite.services.database.Database.TelemetryKeys.limit, limit.toLong())
+                    put(com.lightningkite.services.database.Database.TelemetryKeys.skip, skip.toLong())
+                }
+            ) { span ->
+                val results = t {
+                    val vector = textSearchVector(columns)
+                    val rank = object : ExpressionWithColumnType<Float>() {
+                        override val columnType: IColumnType<Float> = FloatColumnType()
+                        override fun toQueryBuilder(queryBuilder: QueryBuilder) = queryBuilder {
+                            append("ts_rank($vector, ")
+                            appendTsQuery(search)
+                            // Claude: normalization 1 divides by 1 + log(length), so shorter text ranks higher.
+                            append(", 1)")
+                        }
+                    }
+                    val matches = object : Op<Boolean>() {
+                        override fun toQueryBuilder(queryBuilder: QueryBuilder) = queryBuilder {
+                            append("$vector @@ ")
+                            appendTsQuery(search)
+                        }
+                    }
+                    table
+                        .select(table.columns + rank)
+                        .where { matches and condition(condition, serializer, table, format).asOp() }
+                        .orderBy(rank to SortOrder.DESC)
+                        .limit(limit).offset(skip.toLong())
+                        .toList()
+                        .map { ScoredResult(format.decode(serializer, it), it[rank]) }
+                }
+                span.enrich(TelemetryAttributes { put(com.lightningkite.services.database.Database.TelemetryKeys.resultCount, results.size.toLong()) })
+                results
+            }
+            results.forEach { emit(it) }
+        }
+    }
+
     override suspend fun findSimilar(
         vectorField: DataClassPath<T, Embedding>,
         params: DenseVectorSearchParams,
@@ -595,6 +667,12 @@ public class PostgresCollection<T : Any>(
         results.forEach { emit(it) }
     }
 
+}
+
+private fun QueryBuilder.appendTsQuery(search: String) {
+    append("websearch_to_tsquery('english'::regconfig, ")
+    registerArgument(TextColumnType(), search)
+    append(")")
 }
 
 // ===== pgvector distance operators =====

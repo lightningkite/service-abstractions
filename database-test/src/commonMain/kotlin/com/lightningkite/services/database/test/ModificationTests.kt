@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.data.toEmailAddress
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -1049,30 +1050,6 @@ abstract class ModificationTests() {
     }
 
     @Test
-    fun test_List_popFirst() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_List_popFirst"))
-        val item = LargeTestModel(list = listOf(1, 2, 3))
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> { it.list.dropFirst() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(listOf(2, 3), result.list)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
-    fun test_List_popLast() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_List_popLast"))
-        val item = LargeTestModel(list = listOf(1, 2, 3))
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> { it.list.dropLast() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(listOf(1, 2), result.list)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
     fun test_List_matching() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_List_matching"))
         val item = LargeTestModel(list = listOf(1, 2, 3))
@@ -1134,30 +1111,6 @@ abstract class ModificationTests() {
     }
 
     @Test
-    fun test_Set_popFirst() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Set_popFirst"))
-        val item = LargeTestModel(set = setOf(1, 2, 3))
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> { it.set.dropFirst() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(setOf(2, 3), result.set)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
-    fun test_Set_popLast() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Set_popLast"))
-        val item = LargeTestModel(set = setOf(1, 2, 3))
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> { it.set.dropLast() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(setOf(1, 2), result.set)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
     fun test_Set_matching() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Set_matching"))
         val item = LargeTestModel(set = setOf(1, 2, 3))
@@ -1166,30 +1119,6 @@ abstract class ModificationTests() {
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(setOf(1, 2, 6), result.set)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
-    open fun test_Map_setField() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_setField"))
-        val item = LargeTestModel(map = mapOf("a" to 1))
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> { it.map += mapOf("b" to 2) }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(mapOf("a" to 1, "b" to 2), result.map)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
-    open fun test_Map_unsetField() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_Map_setField"))
-        val item = LargeTestModel(map = mapOf("a" to 1, "b" to 2))
-        collection.insertOne(item)
-        val modification = modification<LargeTestModel> { it.map.removeKeys(setOf("a")) }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(mapOf("b" to 2), result.map)
         assertEquals(modification(item), result)
     }
 

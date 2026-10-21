@@ -311,9 +311,8 @@ emits a correlated subquery instead of a column comparison.
 
 | Condition (DSL) | Emitted SQL shape |
 |---|---|
-| `tags.any { it eq "scifi" }` (`ListAnyElements` / `SetAnyElements`) | `EXISTS (SELECT 1 FROM Author__tags WHERE owner_id = Author._id AND value = 'scifi')` |
-| `tags.all { it neq "x" }` (`ListAllElements` / `SetAllElements`) | `NOT EXISTS (SELECT 1 FROM … WHERE owner_id = Author._id AND NOT (<cond>))` |
-| `books.size eq 2` (`ListSizesEquals` / `SetSizesEquals`) | `(SELECT COUNT(*) FROM Author__books WHERE owner_id = Author._id) = 2` |
+| `tags.any { it eq "scifi" }` (`CollectionAnyElements`) | `EXISTS (SELECT 1 FROM Author__tags WHERE owner_id = Author._id AND value = 'scifi')` |
+| `tags.all { it neq "x" }` (`CollectionAllElements`) | `NOT EXISTS (SELECT 1 FROM … WHERE owner_id = Author._id AND NOT (<cond>))` |
 | `ratings.containsKey("editor")` (`Exists`, maps) | `EXISTS (SELECT 1 FROM Author__ratings WHERE owner_id = Author._id AND key = 'editor')` |
 | `ratings.get("editor") { it gt 3 }` (`OnKey`, maps) | `EXISTS (… WHERE owner_id = … AND key = 'editor' AND value > 3)` |
 

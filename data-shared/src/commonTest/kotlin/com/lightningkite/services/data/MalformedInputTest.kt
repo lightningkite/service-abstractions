@@ -18,8 +18,8 @@ class MalformedInputTest {
 
     @Test
     fun `our own validating serializers reject as serialization failures`() {
-        assertFailsWith<SerializationException> { format.decodeFromString(EmailAddressSerializer, "not-an-email") }
-        assertFailsWith<SerializationException> { format.decodeFromString(PhoneNumberSerializer, "12345") }
+        assertFailsWith<SerializationException> { format.decodeFromString(EmailAddress.serializer(), "not-an-email") }
+        assertFailsWith<SerializationException> { format.decodeFromString(PhoneNumber.serializer(), "12345") }
         assertFailsWith<SerializationException> { format.decodeFromString(RatioSerializer, "half") }
         assertFailsWith<SerializationException> { format.decodeFromString(RatioSerializer, "1/0") }
         assertFailsWith<SerializationException> {
@@ -44,7 +44,7 @@ class MalformedInputTest {
 
     @Test
     fun `well formed input still decodes`() {
-        assertEquals("a@b.com", format.decodeFromString(EmailAddressSerializer, "a@b.com").raw)
+        assertEquals("a@b.com", format.decodeFromString(EmailAddress.serializer(), "a@b.com").raw)
         assertEquals(LocalDate(2020, 1, 1), format.decodeFromString(LocalDate.serializer(), "2020-01-01"))
         assertEquals(12, format.decodeFromString(Int.serializer(), "12"))
     }

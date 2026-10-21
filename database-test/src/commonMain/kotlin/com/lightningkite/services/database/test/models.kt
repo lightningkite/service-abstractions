@@ -176,6 +176,7 @@ data class ValueClassContainingTest(
     val direct: ValueClass = ValueClass("direct"),
     val set: Set<ValueClass> = setOf(ValueClass("set")),
     val wrappedInt: IntWrapper = IntWrapper(42),
+    val length: Length = Length(1.0),
 ) : HasId<Uuid>
 
 @Queryable
@@ -284,6 +285,25 @@ data class VectorTestModel(
 ) : HasId<Uuid> {
     companion object
 }
+
+@Queryable
+@TextIndex(["title", "body", "details.summary"])
+data class TextSearchTestModel(
+    override val _id: Uuid = Uuid.random(),
+    val title: String = "",
+    val body: String = "",
+    val author: String = "",
+    @Index val category: String = "",
+    val details: TextSearchDetails = TextSearchDetails(),
+) : HasId<Uuid> {
+    companion object
+}
+
+@Queryable
+data class TextSearchDetails(
+    val summary: String = "",
+    val secret: String = "",
+)
 
 @Queryable
 data class SparseVectorTestModel(

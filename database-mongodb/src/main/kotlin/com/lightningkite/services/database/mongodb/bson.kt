@@ -1,5 +1,6 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.data.Length.Companion.meters
 import com.lightningkite.services.data.TextIndex
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
@@ -76,24 +77,10 @@ private fun <T> Condition<T>.dump(
 
         is Condition.Equal -> into.sub(key)["\$eq"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.NotEqual -> into.sub(key)["\$ne"] = value.let { bson.stringifyAny(serializer, it) }
-        is Condition.SetAllElements<*> -> {
-            val innerSerializer = serializer.listElement()!! as KSerializer<Any?>
-            val matchDoc = Document()
-            (Condition.Not(condition as Condition<Any?>)).dump(
-                innerSerializer,
-                into = matchDoc,
-                key = null,
-                atlasSearch = atlasSearch,
-                bson = bson
-            )
-            into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
-            // $elemMatch never matches a null element with a condition on its fields, so a null element can't fail one.
-            if (innerSerializer.descriptor.isNullable && !(condition as Condition<Any?>)(null)) into.sub(key)["\$ne"] = null
-        }
         // by Claude - Atlas $vectorSearch doesn't support $elemMatch in pre-filters.
         // When atlasSearch=true, dump the inner condition directly on the key instead;
         // MongoDB scalar operators ($eq, $in, etc.) on array fields already match element-wise.
-        is Condition.SetAnyElements<*> -> if (atlasSearch) {
+        is Condition.CollectionAnyElements<*, *> -> if (atlasSearch) {
             (condition as Condition<Any?>).dump(
                 serializer.listElement()!! as KSerializer<Any?>,
                 into,
@@ -106,7 +93,7 @@ private fun <T> Condition<T>.dump(
                 (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
         }
 
-        is Condition.ListAllElements<*> -> {
+        is Condition.CollectionAllElements<*, *> -> {
             val innerSerializer = serializer.listElement()!! as KSerializer<Any?>
             val matchDoc = Document()
             (Condition.Not(condition as Condition<Any?>)).dump(
@@ -120,23 +107,6 @@ private fun <T> Condition<T>.dump(
             // $elemMatch never matches a null element with a condition on its fields, so a null element can't fail one.
             if (innerSerializer.descriptor.isNullable && !(condition as Condition<Any?>)(null)) into.sub(key)["\$ne"] = null
         }
-
-
-        is Condition.ListAnyElements<*> -> if (atlasSearch) {
-            (condition as Condition<Any?>).dump(
-                serializer.listElement()!! as KSerializer<Any?>,
-                into,
-                key,
-                atlasSearch = atlasSearch,
-                bson = bson
-            )
-        } else {
-            into.sub(key)["\$elemMatch"] =
-                (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
-        }
-
-        is Condition.Exists<*> -> into[if (key == null) this.key else "$key.${this.key}"] =
-            documentOf("\$exists" to true)
 
         is Condition.GreaterThan -> into.sub(key)["\$gt"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.LessThan -> into.sub(key)["\$lt"] = value.let { bson.stringifyAny(serializer, it) }
@@ -198,21 +168,6 @@ private fun <T> Condition<T>.dump(
             }
         }
 
-        // Like IfNotNull: OnKey never matches a missing key in memory, but $ne, $nin and $not do.
-        is Condition.OnKey<*> -> {
-            val path = if (key == null) this.key else "$key.${this.key}"
-            val valueSerializer = serializer.mapValueElement() as KSerializer<Any?>
-            if (!condition.matchesNullInMongo(atlasSearch)) {
-                (condition as Condition<Any?>).dump(valueSerializer, into, path, atlasSearch = atlasSearch, bson = bson)
-            } else {
-                into["\$and"] = listOfNotNull(
-                    documentOf(path to documentOf("\$exists" to true)),
-                    (condition as Condition<Any?>).takeUnless { it is Condition.Always }
-                        ?.dump(valueSerializer, key = path, atlasSearch = atlasSearch, bson = bson),
-                )
-            }
-        }
-
         is Condition.GeoDistance -> {
             // $nearSphere with GeoJSON geometry works on both MongoDB and DocumentDB.
             // $geoWithin/$centerSphere was the old form but $centerSphere is not supported by DocumentDB.
@@ -221,9 +176,9 @@ private fun <T> Condition<T>.dump(
                     "type" to "Point",
                     "coordinates" to listOf(this.value.longitude, this.value.latitude)
                 ),
-                "\$maxDistance" to this.lessThanKilometers * 1000.0  // km → meters
+                "\$maxDistance" to this.lessThan.meters
             )
-            if (this.greaterThanKilometers > 0.0) geoDoc["\$minDistance"] = this.greaterThanKilometers * 1000.0
+            if (this.greaterThan > 0.meters) geoDoc["\$minDistance"] = this.greaterThan.meters
             into.sub(key)["\$nearSphere"] = geoDoc
         }
 
@@ -232,37 +187,9 @@ private fun <T> Condition<T>.dump(
         is Condition.StringContains ->
             into.sub(key)["\$regex"] = BsonRegularExpression(Regex.escape(this.value), if (this.ignoreCase) "i" else "")
 
-        is Condition.RawStringContains ->
-            into.sub(key)["\$regex"] = BsonRegularExpression(Regex.escape(this.value), if (this.ignoreCase) "i" else "")
-
         is Condition.RegexMatches ->
             into.sub(key)["\$regex"] = BsonRegularExpression(this.pattern, if (this.ignoreCase) "i" else "")
 
-        is Condition.FullTextSearch -> {
-            if (atlasSearch) {
-                val terms = value.split(' ')
-                val ser = DataClassPathSerializer(serializer)
-                val paths = serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields?.map {
-                    ser.fromString(it) as DataClassPath<T, String>
-                }?.takeIf { it.isNotEmpty() } ?: return into
-                val subs = terms.filter { !it.termShouldUseFuzzySearch() }
-                    .map { term ->
-                        Condition.Or(paths.map { it.mapCondition(Condition.StringContains(term, true)) })
-                    }
-                if (subs.isNotEmpty()) {
-                    if (this.requireAllTermsPresent)
-                        Condition.And(subs).dump(serializer, into, key, atlasSearch, bson = bson)
-                    else
-                        Condition.Or(subs).dump(serializer, into, key, atlasSearch, bson = bson)
-                }
-            } else into["\$text"] = documentOf(
-                "\$search" to value,
-                "\$caseSensitive" to false
-            )
-        }
-
-        is Condition.SetSizesEquals<*> -> into.sub(key)["\$size"] = count
-        is Condition.ListSizesEquals<*> -> into.sub(key)["\$size"] = count
         is Condition.OnField<*, *> -> (condition as Condition<Any?>).dump(
             this.key.serializer as KSerializer<Any?>,
             into,
@@ -312,9 +239,8 @@ private fun <T> Condition<T>.dump(
 // False only where it's certain that this condition's translation can't match a null or missing value.
 private fun Condition<*>.matchesNullInMongo(atlasSearch: Boolean): Boolean = when (this) {
     is Condition.Never, is Condition.GreaterThan, is Condition.LessThan, is Condition.GreaterThanOrEqual,
-    is Condition.LessThanOrEqual, is Condition.StringContains, is Condition.RawStringContains, is Condition.RegexMatches,
+    is Condition.LessThanOrEqual, is Condition.StringContains, is Condition.RegexMatches,
     is Condition.IntBitsClear, is Condition.IntBitsSet, is Condition.IntBitsAnyClear, is Condition.IntBitsAnySet,
-    is Condition.ListSizesEquals<*>, is Condition.SetSizesEquals<*>, is Condition.Exists<*>, is Condition.OnKey<*>,
     is Condition.IfNotNull<*>, is Condition.IfIsType<*, *>, is Condition.GeoDistance -> false
     is Condition.Equal -> value == null
     is Condition.Inside -> values.any { it == null }
@@ -323,8 +249,7 @@ private fun Condition<*>.matchesNullInMongo(atlasSearch: Boolean): Boolean = whe
     // A missing parent makes the field missing too.
     is Condition.OnField<*, *> -> condition.matchesNullInMongo(atlasSearch)
     // $elemMatch needs an array; with atlasSearch these put the element condition straight on the field instead.
-    is Condition.ListAnyElements<*> -> atlasSearch && condition.matchesNullInMongo(atlasSearch)
-    is Condition.SetAnyElements<*> -> atlasSearch && condition.matchesNullInMongo(atlasSearch)
+    is Condition.CollectionAnyElements<*, *> -> atlasSearch && condition.matchesNullInMongo(atlasSearch)
     else -> true
 }
 
@@ -359,8 +284,6 @@ private fun <T> Modification<T>.dump(
         is Modification.CoerceAtMost -> into["\$min", key] = value.let { bson.stringifyAny(serializer, it) }
         is Modification.Increment -> into["\$inc", key] = by.let { bson.stringifyAny(serializer, it) }
         is Modification.Multiply -> into["\$mul", key] = by.let { bson.stringifyAny(serializer, it) }
-        is Modification.AppendString -> TODO("Appending strings is not supported yet")
-        is Modification.AppendRawString -> TODO("Appending raw strings is not supported yet")
         // IfNotNull and IfIsType only get here once something else does their check: the update's filter or an array
         // filter (see [bson] and [perElement]). Update operators can't.
         is Modification.IfNotNull<*> -> (modification as Modification<Any?>).dump(
@@ -403,8 +326,6 @@ private fun <T> Modification<T>.dump(
         is Modification.ListRemoveInstances<*> -> into["\$pullAll", key] =
             items.let { bson.stringifyAny(serializer as KSerializer<List<Any?>>, it) }
 
-        is Modification.ListDropFirst<*> -> into["\$pop", key] = -1
-        is Modification.ListDropLast<*> -> into["\$pop", key] = 1
         is Modification.ListPerElement<*> -> perElement(
             condition as Condition<Any?>,
             modification as Modification<Any?>,
@@ -423,8 +344,6 @@ private fun <T> Modification<T>.dump(
         is Modification.SetRemoveInstances<*> -> into["\$pullAll", key] =
             items.let { bson.stringifyAny(serializer as KSerializer<Set<Any?>>, it) }
 
-        is Modification.SetDropFirst<*> -> into["\$pop", key] = -1
-        is Modification.SetDropLast<*> -> into["\$pop", key] = 1
         is Modification.SetPerElement<*> -> perElement(
             condition as Condition<Any?>,
             modification as Modification<Any?>,
@@ -433,15 +352,6 @@ private fun <T> Modification<T>.dump(
             key,
             bson
         )
-
-        is Modification.Combine<*> -> map.forEach {
-            into.sub("\$set")[if (key == null) it.key else "$key.${it.key}"] =
-                it.value.let { bson.stringifyAny(serializer.mapValueElement() as KSerializer<Any?>, it) }
-        }
-
-        is Modification.RemoveKeys<*> -> this.fields.forEach {
-            into.sub("\$unset")[if (key == null) it else "$key.${it}"] = ""
-        }
     }
     return update
 }
@@ -476,8 +386,20 @@ private fun perElement(
     key: String?,
     bson: KBson,
 ) {
-    for ((check, parts) in modification.checkedParts().groupBy({ it.first }, { it.second })) {
-        val filter = Condition.And(listOf(condition, check)).simplify()
+    val parts = modification.checkedParts().map { (check, part) -> Condition.And(listOf(condition, check)).simplify() to part }
+    val pending = update.pendingElementParts
+    if (pending != null) pending.getOrPut(key) { PendingElementParts(elementSerializer) }.parts += parts
+    else dumpElementParts(parts.groupBy({ it.first }, { it.second }).toList(), elementSerializer, update, key, bson)
+}
+
+private fun dumpElementParts(
+    targets: List<Pair<Condition<Any?>, List<Modification<Any?>>>>,
+    elementSerializer: KSerializer<Any?>,
+    update: UpdateWithOptions,
+    key: String?,
+    bson: KBson,
+) {
+    for ((filter, parts) in targets) {
         if (filter is Condition.Always) {
             Modification.Chain(parts).dump(elementSerializer, update, "$key.$[]", bson)
         } else {
@@ -488,6 +410,24 @@ private fun perElement(
             )
             Modification.Chain(parts).dump(elementSerializer, update, "$key.$[$identifier]", bson)
         }
+    }
+}
+
+// Claude: DocumentDB applies only the first array filter an element matches. This makes one filter per combination of
+// the conditions the parts check, each carrying every part whose conditions hold, so each element matches exactly one.
+private fun disjoint(
+    parts: List<Pair<Condition<Any?>, Modification<Any?>>>,
+): List<Pair<Condition<Any?>, List<Modification<Any?>>>> {
+    fun atoms(condition: Condition<Any?>): List<Condition<Any?>> =
+        if (condition is Condition.And) condition.conditions.flatMap(::atoms) else listOf(condition)
+    val partAtoms = parts.map { (filter, part) -> atoms(filter).filter { it !is Condition.Always }.toSet() to part }
+    val all = partAtoms.flatMap { it.first }.distinct()
+    return (0 until (1 shl all.size)).mapNotNull { mask ->
+        val holding = all.filterIndexed { i, _ -> (mask and (1 shl i)) != 0 }.toSet()
+        val applying = partAtoms.filter { holding.containsAll(it.first) }.map { it.second }
+        if (applying.isEmpty()) return@mapNotNull null
+        val filter = Condition.And(all.map { if (it in holding) it else Condition.Not(it) }).simplify()
+        if (filter is Condition.Never) null else filter to applying
     }
 }
 
@@ -502,6 +442,13 @@ internal data class UpdateWithOptions(
     var options: UpdateOptions = UpdateOptions(),
     /** The notNull/asType checks outside lists, which the update's filter must include. */
     val check: Document? = null,
+    /** Every list's per-element parts, for [disjoint] to split once all are known; null when filters may overlap. */
+    val pendingElementParts: MutableMap<String?, PendingElementParts>? = null,
+)
+
+internal class PendingElementParts(
+    val elementSerializer: KSerializer<Any?>,
+    val parts: MutableList<Pair<Condition<Any?>, Modification<Any?>>> = mutableListOf(),
 )
 
 internal fun <T> Condition<T>.bson(serializer: KSerializer<T>, atlasSearch: Boolean = false, bson: KBson): Document =
@@ -528,12 +475,26 @@ internal fun Document.pruneEmptyModifiers(): Document {
  * [UpdateWithOptions.check]: a row failing any of them isn't written at all. Inside a list, [perElement] uses array filters.
  */
 @Suppress("UNCHECKED_CAST")
-internal fun <T> Modification<T>.bson(serializer: KSerializer<T>, bson: KBson): UpdateWithOptions {
+internal fun <T> Modification<T>.bson(
+    serializer: KSerializer<T>,
+    bson: KBson,
+    overlappingArrayFilters: Boolean = true,
+): UpdateWithOptions {
     val anySerializer = serializer as KSerializer<Any?>
     val parts = (this as Modification<Any?>).checkedParts()
     val check = Condition.And(parts.map { it.first }.distinct()).simplify()
-    val update = UpdateWithOptions(check = if (check is Condition.Always) null else check.bson(anySerializer, bson = bson))
+    val update = UpdateWithOptions(
+        check = if (check is Condition.Always) null else check.bson(anySerializer, bson = bson),
+        pendingElementParts = if (overlappingArrayFilters) null else LinkedHashMap(),
+    )
     Modification.Chain(parts.map { it.second }).dump(anySerializer, update, null, bson)
+    // Claude: dumping a list's parts can add a nested list's parts, so this runs until none are left.
+    val pending = update.pendingElementParts
+    while (!pending.isNullOrEmpty()) {
+        val key = pending.keys.first()
+        val list = pending.remove(key)!!
+        dumpElementParts(disjoint(list.parts), list.elementSerializer, update, key, bson)
+    }
     update.document.pruneEmptyModifiers()
     return update
 }

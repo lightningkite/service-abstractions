@@ -3,6 +3,7 @@
 package com.lightningkite.services.database.test
 
 // by Claude - Additional imports for comprehensive value class testing
+import com.lightningkite.services.data.Length.Companion.meters
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.runTest
@@ -302,6 +303,33 @@ abstract class InlinePropertiesTests {
     }
 
     @Test
+    fun test_length_gt_innerValue() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_length_gt_innerValue"))
+        val lower = ValueClassContainingTest(length = 10.0.meters)
+        val higher = ValueClassContainingTest(length = 100.0.meters)
+        val manualList = listOf(lower, higher)
+        collection.insertOne(lower)
+        collection.insertOne(higher)
+        val condition = condition<ValueClassContainingTest> { it.length.meters gt 50.0 }
+        val results = collection.find(condition).toList()
+        assertContains(results, higher)
+        assertTrue(lower !in results)
+        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
+    }
+
+    @Test
+    fun test_length_inc_innerValue() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_length_inc_innerValue"))
+        val item = ValueClassContainingTest(length = 10.0.meters)
+        collection.insertOne(item)
+        val modification = modification<ValueClassContainingTest> { it.length.meters += 5.0 }
+        collection.updateOneById(item._id, modification)
+        val result = collection.get(item._id)!!
+        assertEquals(15.0.meters, result.length)
+        assertEquals(modification(item), result)
+    }
+
+    @Test
     fun test_wrappedInt_lt_innerValue() = runTest {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_lt_innerValue"))
         val lower = ValueClassContainingTest(wrappedInt = IntWrapper(10))
@@ -448,38 +476,6 @@ abstract class InlinePropertiesTests {
         collection.insertOne(matching)
         collection.insertOne(notMatching)
         val condition = condition<ExtendedValueClassTest> { it.list.all { it.value.contains("a") } }
-        val results = collection.find(condition).toList()
-        assertContains(results, matching)
-        assertTrue(notMatching !in results)
-        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-    }
-
-    @Suppress("DEPRECATION")
-    @Test
-    fun test_valueclassSet_sizesEquals() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassSet_sizesEquals"))
-        val matching = ValueClassContainingTest(set = setOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
-        val notMatching = ValueClassContainingTest(set = setOf(ValueClass("a")))
-        val manualList = listOf(matching, notMatching)
-        collection.insertOne(matching)
-        collection.insertOne(notMatching)
-        val condition = condition<ValueClassContainingTest> { it.set.sizesEquals(3) }
-        val results = collection.find(condition).toList()
-        assertContains(results, matching)
-        assertTrue(notMatching !in results)
-        assertEquals(manualList.filter { condition(it) }.sortedBy { it._id }, results.sortedBy { it._id })
-    }
-
-    @Suppress("DEPRECATION")
-    @Test
-    fun test_valueclassList_sizesEquals() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_sizesEquals"))
-        val matching = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b")))
-        val notMatching = ExtendedValueClassTest(list = listOf(ValueClass("a")))
-        val manualList = listOf(matching, notMatching)
-        collection.insertOne(matching)
-        collection.insertOne(notMatching)
-        val condition = condition<ExtendedValueClassTest> { it.list.sizesEquals(2) }
         val results = collection.find(condition).toList()
         assertContains(results, matching)
         assertTrue(notMatching !in results)
@@ -741,30 +737,6 @@ abstract class InlinePropertiesTests {
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(listOf(ValueClass("b")), result.list)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
-    fun test_valueclassList_dropFirst() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_dropFirst"))
-        val item = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
-        collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.list.dropFirst() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(listOf(ValueClass("b"), ValueClass("c")), result.list)
-        assertEquals(modification(item), result)
-    }
-
-    @Test
-    fun test_valueclassList_dropLast() = runTest {
-        val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_dropLast"))
-        val item = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
-        collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.list.dropLast() }
-        collection.updateOneById(item._id, modification)
-        val result = collection.get(item._id)!!
-        assertEquals(listOf(ValueClass("a"), ValueClass("b")), result.list)
         assertEquals(modification(item), result)
     }
 
