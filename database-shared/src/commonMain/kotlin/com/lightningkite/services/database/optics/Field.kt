@@ -20,9 +20,17 @@ import kotlinx.serialization.internal.GeneratedSerializer
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
+/**
+ * A [Lens] onto one serialized field of [A], identified by its [name].
+ *
+ * `@Queryable` models get a generated field for each property, such as `User.email`, and [KSerializer.fields] lists
+ * them for any generated serializer. Conditions and modifications mapped through a field are wrapped in
+ * [Condition.OnField] and [Modification.OnField].
+ */
 public sealed interface Field<A, B> : Lens<A, B> {
     override val serializer: KSerializer<B>
 
+    /** The serial name of this field. */
     public val name: String
 
     override val fields: List<Field<*, *>> get() = listOf(this)
@@ -30,15 +38,25 @@ public sealed interface Field<A, B> : Lens<A, B> {
     override fun get(source: A): B
     override fun set(source: A, value: B): A
 
+    /** The annotations on this field, including those on its type's serializer. */
     public val annotations: List<Annotation> get() = listOf()
+
+    /** The [annotations] that can be represented as a [SerializableAnnotation]. */
     public val serializableAnnotations: List<SerializableAnnotation>
         get() = annotations.mapNotNull(SerializableAnnotation::parseOrNull)
 
+    /** The default value of this field, or `null` if it has none or computes a new one each time. */
     public val default: B? get() = null
+
+    /**
+     * Kotlin code for a default that is computed each time, such as `"Uuid.random()"`.
+     *
+     * Returns `null` if the default is fixed, absent or not recognized.
+     */
     public val defaultCode: String? get() = null
 
     /**
-     * Whether this [Field] is a handle to an inline `value class` field.
+     * Whether this [Field] is a lens to an inline `value class` field.
      *
      * ```kotlin
      * @Queryable
@@ -60,6 +78,7 @@ public sealed interface Field<A, B> : Lens<A, B> {
     public fun setCopy(receiver: A, value: B): A = set(receiver, value)
 
 
+    /** A [Field] for the element at [index] of the generated serializer [parent]. */
     @Suppress("UNCHECKED_CAST")
     @OptIn(InternalSerializationApi::class)
     public class Generated<A, B>(
@@ -142,6 +161,7 @@ public sealed interface Field<A, B> : Lens<A, B> {
             other is Generated<*, *> && other.parent.isEqual(this.parent) && other.index == this.index
     }
 
+    /** A [Field] of a [VirtualInstance], whose type is resolved into a serializer by [registry] and [context]. */
     public class FromVirtualField(
         public val source: VirtualField,
         public val registry: SerializationRegistry,
@@ -165,6 +185,11 @@ public sealed interface Field<A, B> : Lens<A, B> {
 
 private val serNameToProperties = ConcurrentMap<String, Array<Field<*, *>>>()
 
+/**
+ * The fields of this serializer, in declaration order.
+ *
+ * Returns `null` if this is neither a generated serializer nor a [VirtualStruct].
+ */
 @OptIn(InternalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
 public val <T> KSerializer<T>.fields: Array<Field<T, *>>?

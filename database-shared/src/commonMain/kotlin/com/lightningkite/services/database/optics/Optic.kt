@@ -18,7 +18,7 @@ public sealed interface OpticOn<T> {
     /**
      * The fields this optic passes through, from the outermost to the innermost.
      *
-     * Steps that aren't fields, such as [NotNullOptic], add no properties, so an [IdentityLens] has none.
+     * Steps that aren't fields, such as [NotNullOptic], add no fields, so an [IdentityLens] has none.
      */
     public val fields: List<Field<*, *>>
 }

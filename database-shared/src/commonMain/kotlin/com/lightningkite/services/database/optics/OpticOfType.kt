@@ -63,8 +63,8 @@ public class OpticOfType<A, B, VARIANT : B>(
     override fun hashCode(): Int = wraps.hashCode() * 31 + discriminator.hashCode()
 }
 
-public fun <A, B, VARIANT : B> Optic<A, B>.asType(serializer: KSerializer<VARIANT>): OpticOfType<A, B, VARIANT> =
+public fun <A, B, VARIANT : B> Optic<A, B>.asType(serializer: KSerializer<VARIANT>): Optic<A, VARIANT> =
     OpticOfType(this, serializer)
 
-public inline fun <A, B, reified VARIANT : B> Optic<A, B>.asType(): OpticOfType<A, B, VARIANT> =
+public inline fun <A, B, reified VARIANT : B> Optic<A, B>.asType(): Optic<A, VARIANT> =
     OpticOfType(this, serializer())
