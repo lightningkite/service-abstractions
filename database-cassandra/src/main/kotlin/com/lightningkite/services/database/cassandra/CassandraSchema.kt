@@ -30,7 +30,7 @@ public data class CassandraSchema<T : Any>(
             serializer: KSerializer<T>,
             tableName: String,
         ): CassandraSchema<T> {
-            val properties = serializer.serializableProperties
+            val properties = serializer.fields
                 ?: throw IllegalArgumentException("Serializer ${serializer.descriptor.serialName} has no serializable properties")
 
             val partitionKeys = mutableListOf<PropertyInfo<T, *>>()

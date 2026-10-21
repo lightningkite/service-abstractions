@@ -19,7 +19,7 @@ public class ComputedColumnsHandler<T : Any>(
     @Suppress("UNCHECKED_CAST")
     public fun computeDerivedValues(model: T, currentValues: Map<String, Any?>): Map<String, Any?> {
         val result = currentValues.toMutableMap()
-        val properties = serializer.serializableProperties ?: return result
+        val properties = serializer.fields ?: return result
 
         for ((columnName, info) in schema.computedColumns) {
             val computedValue = computeValue(model, info, properties)

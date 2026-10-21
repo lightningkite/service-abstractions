@@ -236,7 +236,7 @@ public data class UpdateRestrictions<T>(
          * ```
          */
         public fun Optic<T, *>.cannotBeModified() {
-            fields.add(Part(property = this, requires = Condition.Never, limitedTo = Condition.Always))
+            this@Builder.fields.add(Part(property = this, requires = Condition.Never, limitedTo = Condition.Always))
         }
 
         /**
@@ -257,7 +257,7 @@ public data class UpdateRestrictions<T>(
          */
         public fun Optic<T, *>.canBeModified() {
             if (mode == Mode.Blacklist) return
-            fields.add(Part(property = this, requires = Condition.Always, limitedTo = Condition.Always))
+            this@Builder.fields.add(Part(property = this, requires = Condition.Always, limitedTo = Condition.Always))
         }
 
         /**
@@ -284,7 +284,7 @@ public data class UpdateRestrictions<T>(
          * @param condition The condition that must be met on the existing record
          */
         public infix fun Optic<T, *>.requires(condition: Condition<T>) {
-            fields.add(Part(property = this, requires = condition, limitedTo = Condition.Always))
+            this@Builder.fields.add(Part(property = this, requires = condition, limitedTo = Condition.Always))
         }
 
         /**
@@ -314,7 +314,7 @@ public data class UpdateRestrictions<T>(
          * @param valueMust Lambda that returns a condition the new value must satisfy
          */
         public inline fun <reified V> Optic<T, V>.mustBe(valueMust: (Lens<V, V>) -> Condition<V>) {
-            fields.add(Part(property = this, requires = Condition.Always, limitedTo = this.condition(valueMust)))
+            this@Builder.fields.add(Part(property = this, requires = Condition.Always, limitedTo = this.condition(valueMust)))
         }
 
         /**
@@ -348,7 +348,7 @@ public data class UpdateRestrictions<T>(
             requires: Condition<T>,
             valueMust: (Lens<V, V>) -> Condition<V>,
         ) {
-            fields.add(Part(property = this, requires = requires, limitedTo = this.condition(valueMust)))
+            this@Builder.fields.add(Part(property = this, requires = requires, limitedTo = this.condition(valueMust)))
         }
 
         /**

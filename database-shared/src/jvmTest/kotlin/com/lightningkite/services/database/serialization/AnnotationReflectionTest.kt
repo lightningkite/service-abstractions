@@ -143,12 +143,12 @@ class AnnotationReflectionTest {
         val description: String,
     ) : HasId<Uuid>
 
-    // by Claude - Test that serializableProperties includes References annotation
+    // by Claude - Test that fields includes References annotation
     @Test
-    fun `serializableProperties includes References annotation`() {
+    fun `fields includes References annotation`() {
         val ser = serializer<ModelWithForeignKey>()
         val props = ser.fields
-        assertNotNull(props, "serializableProperties should not be null")
+        assertNotNull(props, "fields should not be null")
 
         val referencedIdProp = props.find { it.name == "referencedId" }
         assertNotNull(referencedIdProp, "referencedId property should exist")

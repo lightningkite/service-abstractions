@@ -4,6 +4,7 @@ import com.lightningkite.services.database.KSerializerWithDefault
 import com.lightningkite.services.database.SealedTypeDiscriminator
 import com.lightningkite.services.database.listElement
 import com.lightningkite.services.database.nullElement
+import com.lightningkite.services.database.serializableOptions
 import com.lightningkite.services.database.variantShortName
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException

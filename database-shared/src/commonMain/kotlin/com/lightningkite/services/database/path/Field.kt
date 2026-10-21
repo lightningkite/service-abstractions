@@ -5,8 +5,6 @@ import com.lightningkite.services.database.GenericPlaceholderException
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.SerializableAnnotation
 import com.lightningkite.services.database.SerializationRegistry
-import com.lightningkite.services.database.StubPolymorphicDecoder
-import com.lightningkite.services.database.StubPolymorphicEncoder
 import com.lightningkite.services.database.VirtualField
 import com.lightningkite.services.database.VirtualInstance
 import com.lightningkite.services.database.VirtualStruct
@@ -18,10 +16,7 @@ import com.lightningkite.services.database.set
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import kotlinx.serialization.*
-import kotlinx.serialization.descriptors.PolymorphicKind
-import kotlinx.serialization.internal.AbstractPolymorphicSerializer
 import kotlinx.serialization.internal.GeneratedSerializer
-import kotlinx.serialization.json.JsonNames
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
@@ -190,39 +185,3 @@ public val <T> KSerializer<T>.fields: Array<Field<T, *>>?
             )
         }.toTypedArray()
     }
-
-public data class SealedSerializableOption<out T>(
-    val index: Int,
-    val name: String,
-    val secondaryNames: Set<String> = setOf(),
-    val serializer: KSerializer<@UnsafeVariance T>,
-)
-
-@OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
-@Suppress("UNCHECKED_CAST")
-public val <T> KSerializer<T>.serializableOptions: Array<SealedSerializableOption<T>>?
-    get() {
-        val poly = this as? AbstractPolymorphicSerializer<*> ?: return null
-        if (descriptor.kind != PolymorphicKind.SEALED) return null
-        val subDesc = descriptor.getElementDescriptor(1)
-        return Array(subDesc.elementsCount) { i ->
-            val name = subDesc.getElementName(i)
-            val secondaryNames = subDesc.getElementAnnotations(i)
-                .filterIsInstance<JsonNames>()
-                .flatMap { it.names.toList() }
-                .toSet()
-            val ser = poly.findPolymorphicSerializerOrNull(StubPolymorphicDecoder, name) as? KSerializer<T>
-                ?: return null
-            SealedSerializableOption(i, name, secondaryNames, ser)
-        }
-    }
-
-@OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
-@Suppress("UNCHECKED_CAST")
-public fun <T> KSerializer<T>.serializableOptionsIdentify(item: T): SealedSerializableOption<T>? {
-    val poly = this as? AbstractPolymorphicSerializer<Any> ?: return null
-    if (descriptor.kind != PolymorphicKind.SEALED) return null
-    val ser = poly.findPolymorphicSerializerOrNull(StubPolymorphicEncoder, item as Any) ?: return null
-    return serializableOptions?.firstOrNull { it.serializer.descriptor.serialName == ser.descriptor.serialName }
-        ?.let { it as SealedSerializableOption<T>? }
-}

@@ -75,7 +75,7 @@ class FieldGenerationTest {
         condition<SampleGeneric.Nested.DoubleNested> { it.value eq 0 }
 
         Sample.x
-        Sample.properties
+        Sample.fields
     }
 
     @Test

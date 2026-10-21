@@ -8,7 +8,7 @@ import kotlinx.serialization.modules.EmptySerializersModule
 import kotlin.test.Test
 
 // Reproduces the crash where registering a generic model that carries a Partial of its own
-// type parameter fails because the generic placeholder has no serializableProperties.
+// type parameter fails because the generic placeholder has no fields.
 @Serializable
 data class PartialGenericContent(val a: String, val b: Int)
 

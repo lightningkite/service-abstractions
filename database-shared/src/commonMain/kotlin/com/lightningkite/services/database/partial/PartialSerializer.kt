@@ -27,7 +27,7 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
             // metadata/KSchema generation, for Partial<A> where A is an unsubstituted generic placeholder. In
             // both cases the partial is metadata-only (never actually serialized), so an empty field set is correct.
             ?: if (source.descriptor.serialName == "kotlin.Nothing" || source is SerializationRegistry.GenericPlaceholderSerializer) listOf()
-            else throw IllegalArgumentException("Failed to make partial serializer: ${source.descriptor.serialName} has no serializableProperties")
+            else throw IllegalArgumentException("Failed to make partial serializer: ${source.descriptor.serialName} has no fields")
     }
     private val childSerializers by lazy {
         unwrappedChildSerializers.mapIndexed { index, it ->

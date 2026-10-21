@@ -113,7 +113,7 @@ private fun KSerializer<*>.buildSchema(module: SerializersModule, maxDepth: Int)
     }
 
     // Synthetic single-field object for a non-object argument (see ValueWrappedToolArgSerializer).
-    // The descriptor is built by hand, so serializableProperties is unavailable; emit directly.
+    // The descriptor is built by hand, so fields is unavailable; emit directly.
     if (this is ValueWrappedToolArgSerializer<*>) {
         return buildJsonObject {
             put("type", "object")

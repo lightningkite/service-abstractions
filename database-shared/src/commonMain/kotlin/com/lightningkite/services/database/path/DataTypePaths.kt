@@ -11,7 +11,7 @@ import kotlin.jvm.JvmName
 
 @Suppress("UNCHECKED_CAST")
 private fun <T, V> KSerializer<T>.wrapped(): Field<T, V> =
-    serializableProperties!!.single() as Field<T, V>
+    fields!!.single() as Field<T, V>
 
 @get:JvmName("pathIsRawString_raw") public val <K, T : IsRawString> Optic<K, T>.raw: Optic<K, String> get() = this + serializer.wrapped()
 @get:JvmName("pathUuidV7_raw") public val <K> Optic<K, UuidV7>.raw: Optic<K, kotlin.uuid.Uuid> get() = this + UuidV7.serializer().wrapped()

@@ -102,7 +102,7 @@ public class CassandraSerialization(
      */
     @Suppress("UNCHECKED_CAST")
     public fun <T : Any> getFieldValue(obj: T, fieldName: String, serializer: KSerializer<T>): Any? {
-        val props = serializer.serializableProperties ?: return null
+        val props = serializer.fields ?: return null
         val prop = props.find { it.name == fieldName } ?: return null
         return prop.get(obj)
     }

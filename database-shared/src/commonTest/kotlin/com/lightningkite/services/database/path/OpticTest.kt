@@ -3,6 +3,7 @@ package com.lightningkite.services.database.path
 import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.path.legacy.*
+import com.lightningkite.services.database.path.legacy.DataClassPathSelf
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
