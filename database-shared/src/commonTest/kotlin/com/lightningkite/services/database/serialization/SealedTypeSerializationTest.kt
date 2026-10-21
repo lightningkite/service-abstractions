@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 class SealedTypeSerializationTest {
     private val conditionSerializer = Condition.serializer(Polymorphic.serializer())
     private val modificationSerializer = Modification.serializer(Polymorphic.serializer())
-    private val pathSerializer = OpticOnSerializer(Polymorphic.serializer())
+    private val pathSerializer = AnyOpticSerializer(Polymorphic.serializer())
 
     @Test
     fun conditionRoundTrips() {

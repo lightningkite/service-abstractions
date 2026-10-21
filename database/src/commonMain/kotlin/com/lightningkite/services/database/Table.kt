@@ -156,7 +156,7 @@ public interface Table<Model : Any> {
      * Query for items in the collection.
      */
     public suspend fun findPartial(
-        fields: Set<OpticOn<Model>>,
+        fields: Set<AnyOptic<Model>>,
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>> = listOf(),
         skip: Int = 0,

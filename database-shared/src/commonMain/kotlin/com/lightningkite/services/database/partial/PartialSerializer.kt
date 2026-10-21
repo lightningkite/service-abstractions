@@ -90,7 +90,7 @@ public class PartialSerializer<T>(public val source: KSerializer<T>) : KSerializ
     }
 }
 
-public fun <K> OpticOn<K>.setMap(key: K, out: Partial<K>) {
+public fun <K> AnyOptic<K>.setMap(key: K, out: Partial<K>) {
     if (fields.isEmpty()) throw IllegalStateException("Path $this cannot be set for partial")
     @Suppress("UNCHECKED_CAST")
     var current = out as Partial<Any?>

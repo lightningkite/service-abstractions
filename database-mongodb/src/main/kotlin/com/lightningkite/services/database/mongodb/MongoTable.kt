@@ -41,8 +41,8 @@ public class MongoTable<Model : Any>(
 ) : Table<Model>, Namespaced {
     internal val bson: KBson = KBson(context.internalSerializersModule)
 
-    public val indexedTextFields: List<OpticOn<Model>>? by lazy {
-        val ser = OpticOnSerializer(serializer)
+    public val indexedTextFields: List<AnyOptic<Model>>? by lazy {
+        val ser = AnyOpticSerializer(serializer)
         serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields?.map {
             ser.fromString(it)
         }
@@ -205,7 +205,7 @@ public class MongoTable<Model : Any>(
                         if (atlasSearch) {
                             val name = "default"
                             val keys = documentOf()
-                            val ser = OpticOnSerializer(serializer)
+                            val ser = AnyOpticSerializer(serializer)
                             val mongoPaths = it.fields.map { ser.fromString(it).mongo.split('.') }
                             for (key in it.fields) {
                                 val path = ser.fromString(key)

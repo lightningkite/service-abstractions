@@ -86,7 +86,7 @@ public class PostgresCollection<T : Any>(
 
     private val textIndexColumns: List<Column<*>>? =
         serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields?.map { field ->
-            val column = table.col[OpticOnSerializer(serializer).fromString(field).colName]
+            val column = table.col[AnyOpticSerializer(serializer).fromString(field).colName]
             check(column != null && column.columnType is StringColumnType) {
                 "@TextIndex field $field on ${serializer.descriptor.serialName} must be a String for Postgres"
             }

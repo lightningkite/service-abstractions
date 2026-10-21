@@ -141,7 +141,7 @@ class FieldGenerationTest {
 
     @Test
     fun sealedClassVariantPathStrings() {
-        val serializer = OpticOnSerializer(PolymorphicClass.serializer())
+        val serializer = AnyOpticSerializer(PolymorphicClass.serializer())
         val nested = PolymorphicClass.path.asFoo.name
         val topLevel = PolymorphicClass.path.asPolymorphicClassTopLevel.id
         assertEquals("<Foo>.name", serializer.asString(nested))

@@ -8,10 +8,10 @@ import kotlinx.serialization.Serializable
 /**
  * An [Optic] on [T] whose target type is unknown, for storing or serializing paths to any type.
  *
- * Every [OpticOn] is an [Optic]; use [coerceToOptic] to get it back as one.
+ * Every [AnyOptic] is an [Optic]; use [coerceToOptic] to get it back as one.
  */
-@Serializable(OpticOnSerializer::class)
-public sealed interface OpticOn<T> {
+@Serializable(AnyOpticSerializer::class)
+public sealed interface AnyOptic<T> {
     /** Returns the target of this optic within [source], or `null` if it is not present. */
     public fun get(source: T): Any?
 
@@ -24,7 +24,7 @@ public sealed interface OpticOn<T> {
 }
 
 /** Returns this as an [Optic] with an unknown target type. */
-public fun <T> OpticOn<T>.coerceToOptic(): Optic<T, *> =
+public fun <T> AnyOptic<T>.coerceToOptic(): Optic<T, *> =
     when (this) {
         is Optic<T, *> -> this
     }
@@ -32,11 +32,27 @@ public fun <T> OpticOn<T>.coerceToOptic(): Optic<T, *> =
 /**
  * A serializable reference to a part [B] of a value [A], which may not be present.
  *
- * Optics compose with [plus]: `User.address + Address.city` focuses on a user's city.
- * See [Lens] for optics whose target is always present.
+ * An optic can read and replace its target on a value in memory, and it can turn a [Condition] or [Modification]
+ * on the target into one on the whole value, which is how queries reach into nested fields. It serializes as a
+ * dotted path such as `"address?.city"`.
+ *
+ * Optics compose with [plus], and `@Queryable` generates a property for each field, so `User.address.notNull.city`
+ * is `NotNullOptic(User.address) + Address.city`. Steps that may find nothing, such as [notNull], [elements] and
+ * sealed variants, make the result an optic rather than a [Lens]:
+ *
+ * ```kotlin
+ * @Queryable data class User(val name: String, val address: Address?)
+ * @Queryable data class Address(val city: String)
+ *
+ * val city: Optic<User, String> = User.address.notNull.city
+ * city.get(User("Ann", Address("Provo")))  // "Provo"
+ * city.get(User("Bob", null))              // null
+ * city.set(User("Bob", null), "Provo")     // unchanged, since Bob has no address to change
+ * userTable.find(city eq "Provo")
+ * ```
  */
 @Serializable(OpticSerializer::class)
-public interface Optic<A, B> : OpticOn<A> {
+public interface Optic<A, B> : AnyOptic<A> {
     public val serializer: KSerializer<B>
 
     /** Returns the target of this optic within [source], or `null` if it is not present. */
@@ -72,7 +88,17 @@ public interface Optic<A, B> : OpticOn<A> {
     }
 }
 
-/** An [Optic] whose target is always present, so [get] never fails. */
+/**
+ * An [Optic] whose target is always present, so [get] never returns `null` for a missing target.
+ *
+ * Every [Field] is a lens, and lenses compose into lenses, so a path made only of fields stays statically a lens:
+ *
+ * ```kotlin
+ * val name: Lens<User, String> = User.name
+ * name.get(user)         // the user's name, never missing
+ * name.set(user, "Ann")  // the same as user.copy(name = "Ann")
+ * ```
+ */
 public interface Lens<A, B> : Optic<A, B> {
     override fun get(source: A): B
     override fun getOrThrow(source: A): B = get(source)

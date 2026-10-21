@@ -24,7 +24,7 @@ data class OpticInner(val value: String = "")
 data class OpticHolder(val path: Optic<OpticOuter, String>)
 
 @Serializable
-data class OpticOnHolder(val path: OpticOn<OpticOuter>)
+data class OpticOnHolder(val path: AnyOptic<OpticOuter>)
 
 class OpticTest {
     // Claude: stands in for a real prism, so composing a lens with a non-lens optic can be tested.
@@ -149,7 +149,7 @@ class OpticTest {
 
     @Test
     fun anySerializerReadsPathsToAnyType() {
-        val serializer = OpticOnSerializer(OpticOuter.serializer())
+        val serializer = AnyOpticSerializer(OpticOuter.serializer())
         assertEquals(OpticOuter.middle + OpticMiddle.inner, Json.decodeFromString(serializer, "\"middle.inner\""))
         assertEquals(OpticOuter.middle + OpticMiddle.inner + OpticInner.value, Json.decodeFromString(serializer, "\"middle.inner.value\""))
     }
@@ -169,7 +169,7 @@ class OpticTest {
     @Test
     fun asOpticReturnsTheSameOptic() {
         val optic = OpticOuter.middle + OpticMiddle.inner
-        val any: OpticOn<OpticOuter> = optic
+        val any: AnyOptic<OpticOuter> = optic
         assertSame(optic, any.coerceToOptic())
     }
 

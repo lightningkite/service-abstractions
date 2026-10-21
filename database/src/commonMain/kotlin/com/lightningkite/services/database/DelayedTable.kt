@@ -49,7 +49,7 @@ public open class DelayedTable<Model : Any>(
     ): Flow<Model> = wraps.find(condition, orderBy, skip, limit, maxQueryMs).onStart { doDelay() }
 
     override suspend fun findPartial(
-        fields: Set<OpticOn<Model>>,
+        fields: Set<AnyOptic<Model>>,
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>>,
         skip: Int,

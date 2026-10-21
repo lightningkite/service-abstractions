@@ -43,7 +43,7 @@ public data class Mask<T>(
         }
     }
 
-    public operator fun invoke(on: OpticOn<T>): Condition<T> {
+    public operator fun invoke(on: AnyOptic<T>): Condition<T> {
         val totalConditions = ArrayList<Condition<T>>()
         for (pair in pairs) {
             if (pair.second.affects(on)) totalConditions.add(pair.first)
@@ -210,7 +210,7 @@ private fun <V> Modification<*>.forOptic(list: List<Field<*, *>>): Modification<
     }
 }
 
-public fun Modification<*>.affects(path: OpticOn<*>): Boolean = affects(path.fields)
+public fun Modification<*>.affects(path: AnyOptic<*>): Boolean = affects(path.fields)
 // Paths overlap when one is a prefix of the other: writing `a` rewrites `a.b`, and writing `a.b` changes `a`.
 private fun Modification<*>.affects(list: List<Field<*, *>>): Boolean =
     affectsPaths().any { it.take(list.size) == list.take(it.size) }
@@ -262,7 +262,7 @@ private fun Modification<*>.readCondition(): Condition<*>? {
     }
 }
 
-public fun Condition<*>.reads(path: OpticOn<*>): Boolean = reads(path.fields)
+public fun Condition<*>.reads(path: AnyOptic<*>): Boolean = reads(path.fields)
 private fun Condition<*>.reads(list: List<Field<*, *>>): Boolean {
     return when (this) {
         is Condition.OnField<*, *> -> if (list.first() == this.key) {
@@ -280,21 +280,21 @@ private fun Condition<*>.reads(list: List<Field<*, *>>): Boolean {
     }
 }
 
-public fun <T> Condition<T>.readPaths(): Set<OpticOn<T>> {
-    val out = HashSet<OpticOn<T>>()
+public fun <T> Condition<T>.readPaths(): Set<AnyOptic<T>> {
+    val out = HashSet<AnyOptic<T>>()
     emitReadPaths { out.add(it) }
     return out
 }
 
 @OptIn(ExperimentalSerializationApi::class)
 @Suppress("UNCHECKED_CAST")
-public fun <T> Condition<T>.emitReadPaths(out: (OpticOn<T>) -> Unit): Unit = emitReadPaths(
+public fun <T> Condition<T>.emitReadPaths(out: (AnyOptic<T>) -> Unit): Unit = emitReadPaths(
     IdentityLens(
         NothingSerializer() as KSerializer<T>
     )
-) { out(it as OpticOn<T>) }
+) { out(it as AnyOptic<T>) }
 
-private fun Condition<*>.emitReadPaths(soFar: Optic<*, *>, out: (OpticOn<*>) -> Unit) {
+private fun Condition<*>.emitReadPaths(soFar: Optic<*, *>, out: (AnyOptic<*>) -> Unit) {
     @Suppress("UNCHECKED_CAST")
     when (this) {
         is Condition.Always -> {}

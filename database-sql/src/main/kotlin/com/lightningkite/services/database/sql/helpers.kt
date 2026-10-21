@@ -8,7 +8,7 @@ import org.jetbrains.exposed.v1.core.*
 // Properties whose owner is a Kotlin value/inline class (property.inline) don't get their own
 // path segment: value classes are collapsed away when the schema registers columns (mirroring
 // kotlinx serialization's transparent encodeInline), so they must be skipped here too.
-internal val OpticOn<*>.colName: String
+internal val AnyOptic<*>.colName: String
     get() = fields.filterNot { it.isInline }.joinToString("__") { it.name }
 
 // Create a typed SQL literal from a column type and value

@@ -2,7 +2,7 @@
 
 package com.lightningkite.services.database
 
-import com.lightningkite.services.database.optics.OpticOnSerializer
+import com.lightningkite.services.database.optics.AnyOpticSerializer
 
 import com.lightningkite.services.data.ExperimentalLightningServer
 import kotlinx.serialization.*
@@ -310,7 +310,7 @@ internal fun KSerializer<*>.typeParametersSerializersOrNull2(): Array<KSerialize
 
     is PrimitiveKind.STRING -> {
         (this as? SortPartSerializer<*>)?.inner?.let { arrayOf(it) }
-            ?: (this as? OpticOnSerializer<*>)?.root?.let { arrayOf(it) }
+            ?: (this as? AnyOpticSerializer<*>)?.root?.let { arrayOf(it) }
     }
 
     else -> null
@@ -341,7 +341,7 @@ private fun KSerializer<*>.typeParameterSerializersOrNullImpl(): Array<KSerializ
     PrimitiveKind.STRING -> {
         if (descriptor.serialName == "kotlin.String") emptyArray()
         else (this as? SortPartSerializer<*>)?.inner?.let { arrayOf(it) }
-            ?: (this as? OpticOnSerializer<*>)?.root?.let { arrayOf(it) }
+            ?: (this as? AnyOpticSerializer<*>)?.root?.let { arrayOf(it) }
     }
 
     PrimitiveKind.BOOLEAN -> if (descriptor.serialName == "kotlin.Boolean") emptyArray() else null

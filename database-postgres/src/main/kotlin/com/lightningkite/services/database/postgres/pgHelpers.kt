@@ -10,7 +10,7 @@ import org.jetbrains.exposed.v1.core.QueryParameter
 // SerialDescriptorTable.columnType's `isInline` branch). A property whose declaring class is inline
 // (`Field.isInline`) therefore contributes no segment of its own to the physical column name -
 // e.g. `path.wrappedInt.int` must resolve to column "wrappedInt", not "wrappedInt__int".
-internal val OpticOn<*>.colName: String
+internal val AnyOptic<*>.colName: String
     get() = fields.filterNot { it.isInline }.joinToString("__") { it.name }
 internal fun <T> sqlLiteralOfSomeKind(type: IColumnType<T & Any>, value: T) = QueryParameter(value, type)
 

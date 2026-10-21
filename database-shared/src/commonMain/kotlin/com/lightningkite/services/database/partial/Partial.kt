@@ -96,11 +96,11 @@ public inline fun <reified T> partialOf(builder: PartialBuilder<T>.(Lens<T, T>) 
     }.partial
 
 
-public fun <T> partialOf(item: T, paths: Iterable<OpticOn<T>>): Partial<T> = Partial<T>().apply {
+public fun <T> partialOf(item: T, paths: Iterable<AnyOptic<T>>): Partial<T> = Partial<T>().apply {
     paths.forEach { it.setMap(item, this) }
 }
 
-public fun <T> partialOf(item: T, paths: Array<out OpticOn<T>>): Partial<T> = Partial<T>().apply {
+public fun <T> partialOf(item: T, paths: Array<out AnyOptic<T>>): Partial<T> = Partial<T>().apply {
     paths.forEach { it.setMap(item, this) }
 }
 

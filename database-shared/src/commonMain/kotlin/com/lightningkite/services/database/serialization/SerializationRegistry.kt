@@ -3,7 +3,7 @@ package com.lightningkite.services.database
 
 import com.lightningkite.services.database.optics.*
 
-import com.lightningkite.services.database.optics.OpticOnSerializer
+import com.lightningkite.services.database.optics.AnyOpticSerializer
 
 import com.lightningkite.services.data.*
 import kotlinx.datetime.*
@@ -427,7 +427,7 @@ public class SerializationRegistry(public val module: SerializersModule) {
                 it[0]
             )
         }
-        register(OpticOnSerializer(NothingSerializer()).descriptor.serialName) { OpticOnSerializer(it[0]) }
+        register(AnyOpticSerializer(NothingSerializer()).descriptor.serialName) { AnyOpticSerializer(it[0]) }
         register(Partial.serializer(NothingSerializer()).descriptor.serialName) { Partial.serializer(it[0]) }
         register(VirtualAlias.serializer())
         register(VirtualTypeParameter.serializer())

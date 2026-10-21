@@ -25,7 +25,7 @@ public class SortPartSerializer<T>(public val inner: KSerializer<T>) : KSerializ
         )
     )
 
-    private val sub = OpticOnSerializer(inner)
+    private val sub = AnyOpticSerializer(inner)
 
     override fun deserialize(decoder: Decoder): SortPart<T> {
         val value = decoder.decodeString()

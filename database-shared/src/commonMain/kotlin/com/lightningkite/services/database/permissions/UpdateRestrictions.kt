@@ -125,7 +125,7 @@ public data class UpdateRestrictions<T>(
     @OptIn(ExperimentalSerializationApi::class)
     @Queryable
     public data class Part<T>(
-        @JsonNames("path") val property: OpticOn<T>,
+        @JsonNames("path") val property: AnyOptic<T>,
         @JsonNames("limitedIf") val requires: Condition<T>,
         val limitedTo: Condition<T>,
     )

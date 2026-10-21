@@ -7,7 +7,7 @@ import kotlinx.serialization.KSerializer
 public typealias DataClassPath<K, V> = Optic<K, V>
 
 @Deprecated("Renamed to OpticOn", ReplaceWith("OpticOn<K>", "com.lightningkite.services.database.optics.OpticOn"))
-public typealias DataClassPathPartial<K> = OpticOn<K>
+public typealias DataClassPathPartial<K> = AnyOptic<K>
 
 @Deprecated("Renamed to IdentityLens", ReplaceWith("IdentityLens<K>", "com.lightningkite.services.database.optics.IdentityLens"))
 public typealias DataClassPathSelf<K> = IdentityLens<K>
@@ -31,7 +31,7 @@ public typealias DataClassPathList<K, V> = ListElementsOptic<K, V>
 public typealias DataClassPathSet<K, V> = SetElementsOptic<K, V>
 
 @Deprecated("Renamed to OpticOnSerializer", ReplaceWith("OpticOnSerializer<T>", "com.lightningkite.services.database.optics.OpticOnSerializer"))
-public typealias DataClassPathSerializer<T> = OpticOnSerializer<T>
+public typealias DataClassPathSerializer<T> = AnyOpticSerializer<T>
 
 @Deprecated("Renamed to OpticWithValue", ReplaceWith("OpticWithValue<A, V>"))
 public typealias DataClassPathWithValue<A, V> = OpticWithValue<A, V>
@@ -43,13 +43,13 @@ public typealias SerializableProperty<A, B> = Field<A, B>
 public val <T> KSerializer<T>.serializableProperties: Array<Field<T, *>>? get() = fields
 
 @Deprecated("Renamed to fields", ReplaceWith("fields"))
-public val OpticOn<*>.properties: List<Field<*, *>> get() = fields
+public val AnyOptic<*>.properties: List<Field<*, *>> get() = fields
 
 @Deprecated("Renamed to isInline", ReplaceWith("isInline"))
 public val Field<*, *>.inline: Boolean get() = isInline
 
 @Deprecated("Use get instead", ReplaceWith("get(key)"))
-public fun <K> OpticOn<K>.getAny(key: K): Any? = get(key)
+public fun <K> AnyOptic<K>.getAny(key: K): Any? = get(key)
 
 @Suppress("UNCHECKED_CAST")
 @Deprecated(
@@ -60,10 +60,10 @@ public fun <K> OpticOn<K>.getAny(key: K): Any? = get(key)
     ),
     DeprecationLevel.ERROR
 )
-public fun <K> OpticOn<K>.setAny(key: K, any: Any?): K = (coerceToOptic() as Optic<K, Any?>).set(key, any)
+public fun <K> AnyOptic<K>.setAny(key: K, any: Any?): K = (coerceToOptic() as Optic<K, Any?>).set(key, any)
 
 @Deprecated("Use coerceToOptic().serializer instead", ReplaceWith("coerceToOptic().serializer", "com.lightningkite.services.database.optics.coerceToOptic"))
-public val OpticOn<*>.serializerAny: KSerializer<*> get() = coerceToOptic().serializer
+public val AnyOptic<*>.serializerAny: KSerializer<*> get() = coerceToOptic().serializer
 
 @Deprecated("Compose with plus instead", ReplaceWith("this + prop", "com.lightningkite.services.database.optics.plus"))
 public operator fun <K, V, V2> Optic<K, V>.get(prop: Field<V, V2>): Optic<K, V2> = this + prop

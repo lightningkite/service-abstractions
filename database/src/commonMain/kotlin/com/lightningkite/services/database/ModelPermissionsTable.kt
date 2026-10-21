@@ -21,7 +21,7 @@ public open class ModelPermissionsTable<Model : Any>(
 ) : Table<Model> {
     override val serializer: KSerializer<Model> get() = wraps.serializer
     private val textIndexFields = serializer.descriptor.annotations.filterIsInstance<TextIndex>()
-        .firstOrNull()?.fields?.map { OpticOnSerializer(serializer).fromString(it) }
+        .firstOrNull()?.fields?.map { AnyOpticSerializer(serializer).fromString(it) }
         ?: listOf()
 
     override suspend fun find(
@@ -97,7 +97,7 @@ public open class ModelPermissionsTable<Model : Any>(
     }
 
     override suspend fun findPartial(
-        fields: Set<OpticOn<Model>>,
+        fields: Set<AnyOptic<Model>>,
         condition: Condition<Model>,
         orderBy: List<SortPart<Model>>,
         skip: Int,

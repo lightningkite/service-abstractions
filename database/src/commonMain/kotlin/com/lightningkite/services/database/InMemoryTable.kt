@@ -44,9 +44,9 @@ public open class InMemoryTable<Model : Any>(
 
     private fun idOf(model: Model): Any? = idProp.get(model)
 
-    private val textIndexFields: List<OpticOn<Model>>? =
+    private val textIndexFields: List<AnyOptic<Model>>? =
         serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
-            ?.map { OpticOnSerializer(serializer).fromString(it) }
+            ?.map { AnyOpticSerializer(serializer).fromString(it) }
 
     /** Place items into [data] keyed by `_id`. Bypasses unique checks; intended for trusted preload paths. */
     public fun preload(items: Iterable<Model>) {

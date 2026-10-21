@@ -63,4 +63,4 @@ public fun <T> Codec<T>.fromDocument(doc: Document, registry: CodecRegistry): T 
     )
 }
 
-public val OpticOn<*>.mongo: String get() = fields.filter { !it.isInline }.joinToString(".") { it.name }
+public val AnyOptic<*>.mongo: String get() = fields.filter { !it.isInline }.joinToString(".") { it.name }

@@ -5,7 +5,6 @@ import com.lightningkite.services.database.optics.*
 
 
 import com.lightningkite.services.data.Description
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
 
@@ -42,7 +41,7 @@ import kotlinx.serialization.descriptors.PrimitiveKind
 @Serializable(SortPartSerializer::class)
 @Description("The name of the property to sort by.  Prepend a '-' if you wish to sort descending.  Prepend '~' if you wish to ignore case.")
 public data class SortPart<T>(
-    val field: OpticOn<T>,
+    val field: AnyOptic<T>,
     val ascending: Boolean = true,
     val ignoreCase: Boolean = false,
 ) {
