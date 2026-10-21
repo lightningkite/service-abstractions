@@ -54,7 +54,7 @@
 - **basis**: `SettingContext.reportException` passes the whole ambient attribute stack, not just the innermost `telemetryAttributes` layer.
 
 ### Added
-- **database-native**: `native://`, a local SQLite database for Android, iOS, macOS, the JVM, and the web (OPFS), on `androidx.sqlite`. Conditions, modifications, sorting, and aggregates run as SQL; tables gain columns for new fields automatically.
+- **database-sqlite**: `native://`, a local SQLite database for Android, iOS, macOS, the JVM, and the web (OPFS), on `androidx.sqlite`. Conditions, modifications, sorting, and aggregates run as SQL; tables gain columns for new fields automatically.
 - **database-mapformat**: New multiplatform module holding `mapformat` and the child-table collection handler shared by the SQL drivers (moved out of `database`; see BREAKING_CHANGES_1.3.md §10).
 - `OpenTelemetrySub.span` helper adopted across cache, files, and email-inbound modules with sanitized span attributes.
 - **telemetry-sentry**: `SentryTelemetryBackend` wraps another backend and also sends `reportError`s to Sentry: `sentry://<key>@<host>/<projectId>/<wrapped telemetry URL>`. Attributes become tags, the OTel trace ID is tagged `trace_id`, exception messages pass through `TelemetrySanitization`.
