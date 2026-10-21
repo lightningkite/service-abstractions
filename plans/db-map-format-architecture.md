@@ -36,7 +36,7 @@ The **database layer** handles:
 
 ```kotlin
 /**
- * Converts between Kotlin serialization values and database-native values.
+ * Converts between Kotlin serialization values and database-sqlite values.
  */
 interface ValueConverter<K : Any, D : Any> {
     val descriptor: SerialDescriptor

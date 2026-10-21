@@ -242,7 +242,7 @@ If a missing field should count, say so: `(it.x eq null) or (it.x.notNull neq v)
 and `isSelfReferential` lived in `database`'s JVM source set.
 **Now:** they live in the new multiplatform module `database-mapformat`, same packages.
 
-**Why:** the new SQLite driver (`database-native`) needs them on every platform, and `database`
+**Why:** the new SQLite driver (`database-sqlite`) needs them on every platform, and `database`
 itself never used them; only the relational drivers do.
 
 **Migration:** code that uses `mapformat` directly adds a dependency on the
