@@ -53,7 +53,7 @@ abstract class ConcurrencyTests {
         inParallel(concurrency) {
             collection.updateOneIgnoringResult(
                 Condition { it._id eq model._id },
-                modification { it.int plusAssign 1 },
+                Modification { it.int plusAssign 1 },
             )
         }
 
@@ -73,7 +73,7 @@ abstract class ConcurrencyTests {
         val olds = inParallel(concurrency) {
             collection.updateOne(
                 Condition { it._id eq model._id },
-                modification { it.int plusAssign 1 },
+                Modification { it.int plusAssign 1 },
             ).old?.int
         }
 
@@ -121,7 +121,7 @@ abstract class ConcurrencyTests {
         val winners = inParallel(concurrency) {
             collection.updateOne(
                 Condition { (it._id eq model._id) and (it.boolean eq false) },
-                modification { it.boolean assign true },
+                Modification { it.boolean assign true },
             ).old
         }.filterNotNull()
 
@@ -143,7 +143,7 @@ abstract class ConcurrencyTests {
             } else {
                 collection.updateOneIgnoringResult(
                     Condition { it.int eq index + 1 },
-                    modification { it.string assign "touched" },
+                    Modification { it.string assign "touched" },
                 )
                 null
             }

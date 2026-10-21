@@ -47,7 +47,7 @@ abstract class ReturnContractTests {
 
         val change = collection.updateOne(
             Condition { it.int eq 1 },
-            modification { it.string assign "after" },
+            Modification { it.string assign "after" },
         )
 
         assertEquals(original, change.old)
@@ -62,7 +62,7 @@ abstract class ReturnContractTests {
 
         val matching = Condition<LargeTestModel> { it.int gt 3 }
         val before = collection.find(matching).toList().toSet()
-        val changes = collection.updateMany(matching, modification { it.boolean assign true })
+        val changes = collection.updateMany(matching, Modification { it.boolean assign true })
 
         assertEquals(3, changes.changes.size)
         assertEquals(before, changes.changes.map { it.old!! }.toSet())
@@ -80,7 +80,7 @@ abstract class ReturnContractTests {
         b.insert(rows)
 
         val matching = Condition<LargeTestModel> { it.int gt 3 }
-        val mark = modification<LargeTestModel> { it.boolean assign true }
+        val mark = Modification<LargeTestModel> { it.boolean assign true }
         assertEquals(a.updateMany(matching, mark).changes.size, b.updateManyIgnoringResult(matching, mark))
     }
 
@@ -115,7 +115,7 @@ abstract class ReturnContractTests {
         val collection = table("rct_upsertInsert")
         val model = LargeTestModel(int = 1)
 
-        val result = collection.upsertOne(Condition { it._id eq model._id }, modification { it.boolean assign true }, model)
+        val result = collection.upsertOne(Condition { it._id eq model._id }, Modification { it.boolean assign true }, model)
 
         assertNull(result.old, "nothing existed, so there is no old row to report")
         assertEquals(model, result.new)
@@ -130,7 +130,7 @@ abstract class ReturnContractTests {
 
         val result = collection.upsertOne(
             Condition { it._id eq model._id },
-            modification { it.boolean assign true },
+            Modification { it.boolean assign true },
             LargeTestModel(int = 99),
         )
 
@@ -143,7 +143,7 @@ abstract class ReturnContractTests {
     fun upsertOneIgnoringResult_reportsWhetherARowExisted() = runTest {
         val collection = table("rct_upsertIgnoring")
         val model = LargeTestModel(int = 1)
-        val mark = modification<LargeTestModel> { it.boolean assign true }
+        val mark = Modification<LargeTestModel> { it.boolean assign true }
 
         assertEquals(false, collection.upsertOneIgnoringResult(Condition { it._id eq model._id }, mark, model))
         assertEquals(true, collection.upsertOneIgnoringResult(Condition { it._id eq model._id }, mark, model))

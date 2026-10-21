@@ -148,7 +148,7 @@ class GeneratedPropertyTests {
         assertEquals(LongWrapper(5L), prop.set(LongWrapper(0L), 5L))
 
         val cond = Condition<LongWrapper> { it.long eq 5L }
-        val mod = modification<LongWrapper> { it.long assign 5L }
+        val mod = Modification<LongWrapper> { it.long assign 5L }
 
         assertEquals(true, cond(LongWrapper(5L)))
         assertEquals(false, cond(LongWrapper(0L)))
@@ -171,7 +171,7 @@ class GeneratedPropertyTests {
         )
 
         val cond2 = Condition<ClassWithWrappedValue> { it.long.long eq 5L }
-        val mod2 = modification<ClassWithWrappedValue> { it.long.long assign 5L }
+        val mod2 = Modification<ClassWithWrappedValue> { it.long.long assign 5L }
 
         assertEquals(true, cond2(ClassWithWrappedValue(LongWrapper(5L))))
         assertEquals(false, cond2(ClassWithWrappedValue(LongWrapper(0L))))

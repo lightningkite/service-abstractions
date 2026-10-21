@@ -75,7 +75,7 @@ class SqliteDatabaseTest {
         table.insert(Level.entries.map { Task(level = it) })
         assertEquals(Level.entries, table.find(Condition.Always, sort { it.level.ascending() }).toList().map { it.level })
         assertEquals(listOf(Level.Medium), table.find(Condition { it.level gt Level.High }).toList().map { it.level })
-        table.updateMany(Condition.Always, modification { it.level coerceAtMost Level.High })
+        table.updateMany(Condition.Always, Modification { it.level coerceAtMost Level.High })
         assertEquals(listOf(Level.Low, Level.High, Level.High), table.find(Condition.Always, sort { it.level.ascending() }).toList().map { it.level })
         database.disconnect()
     }
@@ -109,7 +109,7 @@ class SqliteDatabaseTest {
         assertEquals(listOf(newer), table.find(Condition { it.priority eq 1 }).toList())
         // SQL sees the default written into the older row, not a null.
         assertEquals(1, table.count(Condition { it.priority eq 3 }))
-        table.updateOne(Condition { it._id eq note._id }, modification { it.priority += 1 })
+        table.updateOne(Condition { it._id eq note._id }, Modification { it.priority += 1 })
         assertEquals(4, table.find(Condition { it._id eq note._id }).toList().single().priority)
         reopened.disconnect()
     }
@@ -123,10 +123,10 @@ class SqliteDatabaseTest {
         accounts.insert(listOf(Account(email = "c@x.com")))
         assertFailsWith<UniqueViolationException> { accounts.insert(listOf(Account(email = "a@x.com"))) }
         assertFailsWith<UniqueViolationException> {
-            accounts.updateOne(Condition { it.email eq "c@x.com" }, modification { it.handle assign "b" })
+            accounts.updateOne(Condition { it.email eq "c@x.com" }, Modification { it.handle assign "b" })
         }
         assertFailsWith<UniqueViolationException> {
-            accounts.upsertOne(Condition { it.email eq "nobody@x.com" }, modification { }, Account(email = "b@x.com"))
+            accounts.upsertOne(Condition { it.email eq "nobody@x.com" }, Modification { }, Account(email = "b@x.com"))
         }
         assertEquals(3, accounts.count())
         database.disconnect()
@@ -174,16 +174,16 @@ class SqliteDatabaseTest {
             assertEquals(modification(before), change.new, "after $modification")
             assertEquals(change.new, table.find(Condition.Always).toList().single())
         }
-        check(modification { it.tags += listOf("w") })
-        check(modification { it.tags.removeAll { it eq "y" } })
-        check(modification { it.labels += setOf("q", "r") })
-        check(modification { it.labels.removeAll { it eq "p" } })
-        check(modification { it.places.forEach { it.visits += 10 } })
+        check(Modification { it.tags += listOf("w") })
+        check(Modification { it.tags.removeAll { it eq "y" } })
+        check(Modification { it.labels += setOf("q", "r") })
+        check(Modification { it.labels.removeAll { it eq "p" } })
+        check(Modification { it.places.forEach { it.visits += 10 } })
         // A collection inside a list element is stored as JSON, so changing it is done in Kotlin.
-        check(modification { it.places.forEachIf({ it.name eq "home" }) { it.aliases += listOf("hq") } }, inSql = false)
-        check(modification { it.tags assign listOf("only") })
-        check(modification { it.labels assign setOf("a", "b") })
-        check(modification { it.title assign "b"; it.tags += listOf("again") })
+        check(Modification { it.places.forEachIf({ it.name eq "home" }) { it.aliases += listOf("hq") } }, inSql = false)
+        check(Modification { it.tags assign listOf("only") })
+        check(Modification { it.labels assign setOf("a", "b") })
+        check(Modification { it.title assign "b"; it.tags += listOf("again") })
         database.disconnect()
     }
 
@@ -195,9 +195,9 @@ class SqliteDatabaseTest {
         val b = Membership(MembershipKey("g", "b"), listOf("member"))
         table.insert(listOf(a, b))
         assertEquals(listOf(b), table.find(Condition { it.roles.any { it eq "member" } }).toList())
-        table.updateOne(Condition { it._id eq a._id }, modification { it.roles += listOf("owner") })
+        table.updateOne(Condition { it._id eq a._id }, Modification { it.roles += listOf("owner") })
         val moved = MembershipKey("h", "a")
-        table.updateOne(Condition { it._id eq a._id }, modification { it._id assign moved })
+        table.updateOne(Condition { it._id eq a._id }, Modification { it._id assign moved })
         assertEquals(
             setOf(Membership(moved, listOf("admin", "owner")), b),
             table.find(Condition.Always).toList().toSet(),

@@ -21,7 +21,7 @@ class SealedTypeSerializationTest {
 
     @Test
     fun modificationRoundTrips() {
-        val modification = modification<Polymorphic> { it.asBar.id += 1 }
+        val modification = Modification<Polymorphic> { it.asBar.id += 1 }
         val encoded = Json.encodeToString(modificationSerializer, modification)
         assertEquals(modification, Json.decodeFromString(modificationSerializer, encoded))
     }
@@ -33,7 +33,7 @@ class SealedTypeSerializationTest {
             Json.decodeFromString(conditionSerializer, """{"Foo":{"name":{"Equal":"a"}}}""")
         )
         assertEquals(
-            modification<Polymorphic> { it.asBar.id += 1 },
+            Modification<Polymorphic> { it.asBar.id += 1 },
             Json.decodeFromString(modificationSerializer, """{"Bar":{"id":{"Increment":1}}}""")
         )
     }

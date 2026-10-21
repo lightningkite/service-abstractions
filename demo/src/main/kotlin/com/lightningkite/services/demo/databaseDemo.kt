@@ -5,7 +5,6 @@ import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.Serializable
 import kotlin.uuid.Uuid
 
 /**
@@ -31,7 +30,7 @@ fun main() = runBlocking {
     println("Open tasks: $open")
 
     val firstOpen = open.first()
-    tasks.updateOneById(firstOpen._id, modification<Task> { it.done assign true })
+    tasks.updateOneById(firstOpen._id, Modification<Task> { it.done assign true })
     println("After completing '${firstOpen.title}': ${tasks.find(Condition.Always).toList()}")
 
     val removed = tasks.deleteMany(Task.path.done eq true)

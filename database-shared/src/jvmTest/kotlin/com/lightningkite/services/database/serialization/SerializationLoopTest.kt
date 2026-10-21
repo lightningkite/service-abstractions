@@ -179,7 +179,7 @@ class SerializationLoopTest {
     @Test
     fun complexModificationExample() {
         // Complex example combining multiple modification types
-        loop("Complex Modification", modification<LargeTestModel> { it ->
+        loop("Complex Modification", Modification<LargeTestModel> { it ->
             it.int += 1
             it.int coerceAtMost 100
             it.list += listOf(99)
@@ -193,5 +193,5 @@ class SerializationLoopTest {
 
     // Helper to create modifications with the LargeTestModel type
     private inline fun modification(crossinline setup: ModificationBuilder<LargeTestModel>.(Lens<LargeTestModel, LargeTestModel>) -> Unit): Modification<LargeTestModel> =
-        modification<LargeTestModel>(setup)
+        Modification<LargeTestModel>(setup)
 }

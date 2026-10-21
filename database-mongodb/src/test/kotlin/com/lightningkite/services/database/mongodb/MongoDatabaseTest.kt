@@ -115,7 +115,7 @@ open class MongodbModificationTests : ModificationTests() {
         val failing = LargeTestModel(embeddedNullable = null, intNullable = 5)
         val passing = LargeTestModel(embeddedNullable = ClassUsedForEmbedding("a", 2), intNullable = 5)
         collection.insert(listOf(failing, passing))
-        val modification = modification<LargeTestModel> {
+        val modification = Modification<LargeTestModel> {
             it.int assign 7
             it.embeddedNullable.notNull.value1 assign "changed"
             it.intNullable.notNull coerceAtMost 3
@@ -131,7 +131,7 @@ open class MongodbModificationTests : ModificationTests() {
         val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("LargeTestModel_test_notNull_unchangedRowsStillMatch"))
         val item = LargeTestModel(intNullable = null)
         collection.insert(listOf(item, LargeTestModel(intNullable = 5)))
-        val modification = modification<LargeTestModel> { it.intNullable.notNull += 1 }
+        val modification = Modification<LargeTestModel> { it.intNullable.notNull += 1 }
         val byId = Condition<LargeTestModel> { it._id eq item._id }
 
         assertEquals(EntryChange<LargeTestModel>(null, null), collection.updateOne(byId, modification))
@@ -174,7 +174,7 @@ class MongodbSealedPathTests : SealedPathTests() {
         val collection = database.prepare(DatabaseTableDefinition<SealedPathTestModel>("SealedPathTestModel_test_asType_chain_otherVariant"))
         val item = SealedPathTestModel(shape = Shape.Square(2, "a"), payment = Payment.Card(10, "1111"))
         collection.insertOne(item)
-        val change = collection.updateOneById(item._id, modification {
+        val change = collection.updateOneById(item._id, Modification {
             it.shape.asCircle.radius += 1
             it.shape.asSquare.label assign "changed"
             it.payment.asCard.amount += 5

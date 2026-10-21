@@ -80,3 +80,20 @@ public inline fun <reified T> condition(setup: (Lens<T, T>) -> Condition<T>): Co
 
 @Deprecated("Renamed to Condition to match kotlin naming conventions", ReplaceWith("Condition(setup)", "com.lightningkite.services.database.Condition"))
 public fun condition(boolean: Boolean): Condition<Any?> = Condition(boolean)
+
+@Deprecated("Renamed to Modification to match kotlin naming conventions", ReplaceWith("Modification(setup)", "com.lightningkite.services.database.Modification"))
+public inline fun <reified T> modification(setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit): Modification<T> {
+    return ModificationBuilder<T>().apply {
+        setup(this, path())
+    }.build()
+}
+
+@Deprecated("Renamed to Modification to match kotlin naming conventions", ReplaceWith("Modification(path, setup)", "com.lightningkite.services.database.Modification"))
+public inline fun <T> modification(
+    path: Lens<T, T>,
+    setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
+): Modification<T> {
+    return ModificationBuilder<T>().apply {
+        setup(this, path)
+    }.build()
+}

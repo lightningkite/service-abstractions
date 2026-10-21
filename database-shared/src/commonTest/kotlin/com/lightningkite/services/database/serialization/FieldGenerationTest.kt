@@ -4,7 +4,6 @@ package com.lightningkite.services.database
 import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.data.Queryable
-import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -86,7 +85,7 @@ class FieldGenerationTest {
         assertFalse(isFooNamedA(Polymorphic.Foo("b")))
         assertFalse(isFooNamedA(Polymorphic.Bar(1)))
 
-        val bumpBar = modification<Polymorphic> { it.asBar.id += 1 }
+        val bumpBar = Modification<Polymorphic> { it.asBar.id += 1 }
         assertEquals(Polymorphic.Bar(2), bumpBar(Polymorphic.Bar(1)))
         assertEquals(Polymorphic.Foo("a"), bumpBar(Polymorphic.Foo("a")))
     }
@@ -114,7 +113,7 @@ class FieldGenerationTest {
         assertFalse(isFooNamedA(PolymorphicClassTopLevel(1)))
         assertFalse(isFooNamedA(PolymorphicClass.Empty))
 
-        val bumpTopLevel = modification<PolymorphicClass> { it.asPolymorphicClassTopLevel.id += 1 }
+        val bumpTopLevel = Modification<PolymorphicClass> { it.asPolymorphicClassTopLevel.id += 1 }
         assertEquals(PolymorphicClassTopLevel(2), bumpTopLevel(PolymorphicClassTopLevel(1)))
         assertEquals(PolymorphicClass.Foo("a"), bumpTopLevel(PolymorphicClass.Foo("a")))
     }

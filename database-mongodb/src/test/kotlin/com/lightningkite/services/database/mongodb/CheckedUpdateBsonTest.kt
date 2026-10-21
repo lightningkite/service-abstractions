@@ -21,7 +21,7 @@ class CheckedUpdateBsonTest {
 
     @Test
     fun checks_goIntoFilter() {
-        val update = modification<LargeTestModel> {
+        val update = Modification<LargeTestModel> {
             it.int += 1
             it.embeddedNullable.notNull.value1 assign "x"
             it.intNullable.notNull += 1
@@ -45,7 +45,7 @@ class CheckedUpdateBsonTest {
     // DocumentDB applies only the first array filter an element matches, so no element may match two.
     @Test
     fun withoutOverlappingArrayFilters_eachElementMatchesOneFilter() {
-        val update = modification<NullableInListTestModel> {
+        val update = Modification<NullableInListTestModel> {
             it.items.forEach { it.embed1.notNull.value2 += 1 }
             it.items.forEachIf(
                 condition = { it.name eq "a" },

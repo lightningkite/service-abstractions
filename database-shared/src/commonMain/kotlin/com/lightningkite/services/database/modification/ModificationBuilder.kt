@@ -7,13 +7,13 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.serializer
 import kotlin.jvm.JvmName
 
-public inline fun <reified T> modification(setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit): Modification<T> {
+public inline fun <reified T> Modification(setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit): Modification<T> {
     return ModificationBuilder<T>().apply {
         setup(this, path())
     }.build()
 }
 
-public inline fun <T> modification(
+public inline fun <T> Modification(
     path: Lens<T, T>,
     setup: ModificationBuilder<T>.(Lens<T, T>) -> Unit,
 ): Modification<T> {

@@ -47,9 +47,9 @@ abstract class ScaleAndBoundaryTests {
     @Test
     fun writesOnAnEmptyTableReportDoingNothing() = runTest {
         val collection = table("sbt_emptyWrites")
-        assertNull(collection.updateOne(Condition.Always, modification { it.boolean assign true }).old)
-        assertEquals(false, collection.updateOneIgnoringResult(Condition.Always, modification { it.boolean assign true }))
-        assertEquals(0, collection.updateManyIgnoringResult(Condition.Always, modification { it.boolean assign true }))
+        assertNull(collection.updateOne(Condition.Always, Modification { it.boolean assign true }).old)
+        assertEquals(false, collection.updateOneIgnoringResult(Condition.Always, Modification { it.boolean assign true }))
+        assertEquals(0, collection.updateManyIgnoringResult(Condition.Always, Modification { it.boolean assign true }))
         assertNull(collection.deleteOne(Condition.Always))
         assertEquals(false, collection.deleteOneIgnoringOld(Condition.Always))
         assertEquals(emptyList(), collection.deleteMany(Condition.Always))
@@ -95,7 +95,7 @@ abstract class ScaleAndBoundaryTests {
         val collection = table("sbt_bulkUpdate")
         collection.insert((1..BULK).map { LargeTestModel(int = it) })
 
-        assertEquals(BULK, collection.updateManyIgnoringResult(Condition.Always, modification { it.boolean assign true }))
+        assertEquals(BULK, collection.updateManyIgnoringResult(Condition.Always, Modification { it.boolean assign true }))
         assertEquals(BULK, collection.count(Condition { it.boolean eq true }))
     }
 

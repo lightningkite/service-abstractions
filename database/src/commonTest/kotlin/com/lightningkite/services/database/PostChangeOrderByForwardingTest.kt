@@ -3,7 +3,6 @@ package com.lightningkite.services.database
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.Queryable
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.uuid.ExperimentalUuidApi
@@ -62,7 +61,7 @@ class PostChangeOrderByForwardingTest {
         val wrapped = spy.postChange { _, _ -> }
         val order = sort<ForwardingTestModel> { it.order.descending() }
 
-        wrapped.updateOneIgnoringResult(Condition.Always, modification { it.order assign 1 }, order)
+        wrapped.updateOneIgnoringResult(Condition.Always, Modification { it.order assign 1 }, order)
         assertEquals(order, spy.lastUpdateOrderBy, "postChange's updateOneIgnoringResult must forward orderBy")
 
         wrapped.replaceOneIgnoringResult(Condition.Always, ForwardingTestModel(order = 2), order)
@@ -75,7 +74,7 @@ class PostChangeOrderByForwardingTest {
         val wrapped = spy.postNewValue { }
         val order = sort<ForwardingTestModel> { it.order.descending() }
 
-        wrapped.updateOneIgnoringResult(Condition.Always, modification { it.order assign 1 }, order)
+        wrapped.updateOneIgnoringResult(Condition.Always, Modification { it.order assign 1 }, order)
         assertEquals(order, spy.lastUpdateOrderBy, "postNewValue's updateOneIgnoringResult must forward orderBy")
 
         wrapped.replaceOneIgnoringResult(Condition.Always, ForwardingTestModel(order = 2), order)

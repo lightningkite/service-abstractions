@@ -4,7 +4,6 @@ package com.lightningkite.services.database.validation
 
 import com.lightningkite.services.data.*
 import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.modification
 import com.lightningkite.services.database.optics.notNull
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.*
@@ -132,11 +131,11 @@ class ValidationTest {
         assertFails(SampleWithFile(file = File("nottext")))
         assertFails(SampleWithFile(fileWithMetadata = FileWithMetadata(File("nottext"))), failures = 2)
 
-        assertPasses(modification<SampleWithFile> { it.file assign File("text") })
-        assertFails(modification<SampleWithFile> { it.file assign File("nottext") })
+        assertPasses(Modification<SampleWithFile> { it.file assign File("text") })
+        assertFails(Modification<SampleWithFile> { it.file assign File("nottext") })
 
-        assertPasses(modification<SampleWithFile> { it.fileWithMetadata.notNull.file assign File("text") })
-        assertFails(modification<SampleWithFile> { it.fileWithMetadata.notNull.file assign File("nottext") })
+        assertPasses(Modification<SampleWithFile> { it.fileWithMetadata.notNull.file assign File("text") })
+        assertFails(Modification<SampleWithFile> { it.fileWithMetadata.notNull.file assign File("nottext") })
         assertFails(
             Modification.Chain<SampleWithFile>(
                 listOf(
@@ -207,8 +206,8 @@ class ValidationTest {
     fun testModificationValidation() {
         assertPasses(Modification.Assign(Sample("ASDFA")))
         assertFails(Modification.Assign(Sample("ASDFAB")))
-        assertPasses(modification<Sample> { it.x assign "ASDFA" })
-        assertFails(modification<Sample> { it.x assign "ASDFAB" })
+        assertPasses(Modification<Sample> { it.x assign "ASDFA" })
+        assertFails(Modification<Sample> { it.x assign "ASDFAB" })
     }
 
     @Test
@@ -226,8 +225,8 @@ class ValidationTest {
         assertPasses(CustomSample(sample = Sample()))
         assertFails(CustomSample(sample = Sample("xyz")))
 
-        assertPasses(modification<CustomSample> { it.sample assign Sample() })
-        assertFails(modification<CustomSample> { it.sample assign Sample("xyz") })
+        assertPasses(Modification<CustomSample> { it.sample assign Sample() })
+        assertFails(Modification<CustomSample> { it.sample assign Sample("xyz") })
     }
 
     @Test
@@ -429,7 +428,7 @@ class ValidationTest {
     fun testModificationsDoNotWarnSpuriously() {
         // Modification serializers defer validation to the original field's annotations via
         // ShouldValidateSub, which historically produced bogus "invalid type" warnings.
-        assertEquals(emptySet(), warningPaths(modification<Sample> { it.x assign "ASDFA" }))
+        assertEquals(emptySet(), warningPaths(Modification<Sample> { it.x assign "ASDFA" }))
         assertEquals(emptySet(), warningPaths(Modification.Assign(Sample("ASDFA"))))
     }
 
@@ -437,9 +436,9 @@ class ValidationTest {
     fun testModificationOfEmptyCollectionDoesNotWarn() {
         // The wrapper here is Modification<List<String>> - a sealed class, not a collection - so the
         // empty-collection suppression has to look at type arguments rather than the descriptor kind.
-        assertEquals(emptySet(), warningPaths(modification<Sample> { it.z assign listOf() }))
-        assertEquals(emptySet(), warningPaths(modification<Sample> { it.z assign listOf("ok") }))
-        assertEquals(emptySet(), warningPaths(modification<Sample> { it.yNullable assign null }))
+        assertEquals(emptySet(), warningPaths(Modification<Sample> { it.z assign listOf() }))
+        assertEquals(emptySet(), warningPaths(Modification<Sample> { it.z assign listOf("ok") }))
+        assertEquals(emptySet(), warningPaths(Modification<Sample> { it.yNullable assign null }))
     }
 
     @Test
@@ -448,14 +447,14 @@ class ValidationTest {
         // trip through a modification serializer, and validation must still reach the elements.
         assertEquals(
             setOf("a"),
-            warningPaths(modification<BadSample> { it.a assign "fdsa" }),
+            warningPaths(Modification<BadSample> { it.a assign "fdsa" }),
             "@MaxSize on a String is misapplied whether or not it is wrapped in a Modification"
         )
         assertEquals(
             mapOf("z.Assign.0" to "Too long; maximum 5 characters allowed"),
             validators.validateSkipSuspending(
                 validators.serializersModule.serializer<Modification<Sample>>(),
-                modification<Sample> { it.z assign listOf("toolong") }
+                Modification<Sample> { it.z assign listOf("toolong") }
             )
         )
     }

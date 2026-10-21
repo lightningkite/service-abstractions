@@ -77,7 +77,7 @@ abstract class InlinePropertiesTests {
         val id = items.first()._id
         collection.updateOneById(
             id,
-            modification {
+            Modification {
                 it.wrappedInt.int assign 42
                 it.direct.value assign "hello world"
             }
@@ -88,7 +88,7 @@ abstract class InlinePropertiesTests {
         val before = collection.all().map { it.wrappedInt.int }.toList()
         collection.updateMany(
             Condition.Always,
-            modification { it.wrappedInt.int += 1 }
+            Modification { it.wrappedInt.int += 1 }
         )
         assertEquals(before.map { IntWrapper(it + 1) }, collection.all().map { it.wrappedInt }.toList())
     }
@@ -324,7 +324,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_length_inc_innerValue"))
         val item = ValueClassContainingTest(length = 10.0.meters)
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.length.meters += 5.0 }
+        val modification = Modification<ValueClassContainingTest> { it.length.meters += 5.0 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(15.0.meters, result.length)
@@ -591,7 +591,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_multiply"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int *= 3 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int *= 3 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(30), result.wrappedInt)
@@ -603,7 +603,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_decrement"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int += -30 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int += -30 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(70), result.wrappedInt)
@@ -615,7 +615,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtMost"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(50), result.wrappedInt)
@@ -627,7 +627,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtMost_miss"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(30))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtMost 50 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(30), result.wrappedInt)  // Unchanged, already below threshold
@@ -639,7 +639,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtLeast"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(10))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(50), result.wrappedInt)
@@ -651,7 +651,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_wrappedInt_coerceAtLeast_miss"))
         val item = ValueClassContainingTest(wrappedInt = IntWrapper(100))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
+        val modification = Modification<ValueClassContainingTest> { it.wrappedInt.int coerceAtLeast 50 }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(100), result.wrappedInt)  // Unchanged, already above threshold
@@ -668,7 +668,7 @@ abstract class InlinePropertiesTests {
         val item = ValueClassContainingTest(set = setOf(ValueClass("a")))
         collection.insertOne(item)
         val modification =
-            modification<ValueClassContainingTest> { it.set.addAll(setOf(ValueClass("b"), ValueClass("c"))) }
+            Modification<ValueClassContainingTest> { it.set.addAll(setOf(ValueClass("b"), ValueClass("c"))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(setOf(ValueClass("a"), ValueClass("b"), ValueClass("c")), result.set)
@@ -680,7 +680,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ValueClassContainingTest>("test_valueclassSet_removeAll_byCondition"))
         val item = ValueClassContainingTest(set = setOf(ValueClass("aa"), ValueClass("ab"), ValueClass("bc")))
         collection.insertOne(item)
-        val modification = modification<ValueClassContainingTest> { it.set.removeAll { it.value.contains("a") } }
+        val modification = Modification<ValueClassContainingTest> { it.set.removeAll { it.value.contains("a") } }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(setOf(ValueClass("bc")), result.set)
@@ -693,7 +693,7 @@ abstract class InlinePropertiesTests {
         val item = ValueClassContainingTest(set = setOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
         collection.insertOne(item)
         val modification =
-            modification<ValueClassContainingTest> { it.set.removeAll(setOf(ValueClass("a"), ValueClass("c"))) }
+            Modification<ValueClassContainingTest> { it.set.removeAll(setOf(ValueClass("a"), ValueClass("c"))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(setOf(ValueClass("b")), result.set)
@@ -710,7 +710,7 @@ abstract class InlinePropertiesTests {
         val item = ExtendedValueClassTest(list = listOf(ValueClass("a")))
         collection.insertOne(item)
         val modification =
-            modification<ExtendedValueClassTest> { it.list.addAll(listOf(ValueClass("b"), ValueClass("c"))) }
+            Modification<ExtendedValueClassTest> { it.list.addAll(listOf(ValueClass("b"), ValueClass("c"))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")), result.list)
@@ -722,7 +722,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_valueclassList_removeAll_byCondition"))
         val item = ExtendedValueClassTest(list = listOf(ValueClass("aa"), ValueClass("ab"), ValueClass("bc")))
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.list.removeAll { it.value.contains("a") } }
+        val modification = Modification<ExtendedValueClassTest> { it.list.removeAll { it.value.contains("a") } }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(listOf(ValueClass("bc")), result.list)
@@ -735,7 +735,7 @@ abstract class InlinePropertiesTests {
         val item = ExtendedValueClassTest(list = listOf(ValueClass("a"), ValueClass("b"), ValueClass("c")))
         collection.insertOne(item)
         val modification =
-            modification<ExtendedValueClassTest> { it.list.removeAll(listOf(ValueClass("a"), ValueClass("c"))) }
+            Modification<ExtendedValueClassTest> { it.list.removeAll(listOf(ValueClass("a"), ValueClass("c"))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(listOf(ValueClass("b")), result.list)
@@ -748,7 +748,7 @@ abstract class InlinePropertiesTests {
         val item = ExtendedValueClassTest(listInt = listOf(IntWrapper(1)))
         collection.insertOne(item)
         val modification =
-            modification<ExtendedValueClassTest> { it.listInt.addAll(listOf(IntWrapper(2), IntWrapper(3))) }
+            Modification<ExtendedValueClassTest> { it.listInt.addAll(listOf(IntWrapper(2), IntWrapper(3))) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(listOf(IntWrapper(1), IntWrapper(2), IntWrapper(3)), result.listInt)
@@ -764,7 +764,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableValueclass_assign_null"))
         val item = ExtendedValueClassTest(directNullable = ValueClass("initial"))
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.directNullable assign null }
+        val modification = Modification<ExtendedValueClassTest> { it.directNullable assign null }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(null, result.directNullable)
@@ -776,7 +776,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableValueclass_assign_value"))
         val item = ExtendedValueClassTest(directNullable = null)
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.directNullable assign ValueClass("assigned") }
+        val modification = Modification<ExtendedValueClassTest> { it.directNullable assign ValueClass("assigned") }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(ValueClass("assigned"), result.directNullable)
@@ -788,7 +788,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedInt_assign_null"))
         val item = ExtendedValueClassTest(wrappedIntNullable = IntWrapper(42))
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.wrappedIntNullable assign null }
+        val modification = Modification<ExtendedValueClassTest> { it.wrappedIntNullable assign null }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(null, result.wrappedIntNullable)
@@ -800,7 +800,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedInt_assign_value"))
         val item = ExtendedValueClassTest(wrappedIntNullable = null)
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.wrappedIntNullable assign IntWrapper(100) }
+        val modification = Modification<ExtendedValueClassTest> { it.wrappedIntNullable assign IntWrapper(100) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(IntWrapper(100), result.wrappedIntNullable)
@@ -812,7 +812,7 @@ abstract class InlinePropertiesTests {
         val collection = database.prepare(DatabaseTableDefinition<ExtendedValueClassTest>("test_nullableWrappedUuid_assign_null"))
         val item = ExtendedValueClassTest(wrappedUuidNullable = UuidWrapper(Uuid.random()))
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.wrappedUuidNullable assign null }
+        val modification = Modification<ExtendedValueClassTest> { it.wrappedUuidNullable assign null }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(null, result.wrappedUuidNullable)
@@ -825,7 +825,7 @@ abstract class InlinePropertiesTests {
         val testUuid = Uuid.random()
         val item = ExtendedValueClassTest(wrappedUuidNullable = null)
         collection.insertOne(item)
-        val modification = modification<ExtendedValueClassTest> { it.wrappedUuidNullable assign UuidWrapper(testUuid) }
+        val modification = Modification<ExtendedValueClassTest> { it.wrappedUuidNullable assign UuidWrapper(testUuid) }
         collection.updateOneById(item._id, modification)
         val result = collection.get(item._id)!!
         assertEquals(UuidWrapper(testUuid), result.wrappedUuidNullable)

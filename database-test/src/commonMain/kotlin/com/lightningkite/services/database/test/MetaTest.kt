@@ -14,7 +14,7 @@ abstract class MetaTest {
         val c = database.prepare(DatabaseTableDefinition<MetaTestModel>())
         val toInsert = MetaTestModel(
             condition = Condition { it.int gt 3 },
-            modification = modification { it.int += 2 }
+            modification = Modification { it.int += 2 }
         )
         c.insertOne(toInsert)
         val results = c.find(Condition.Always).toList()

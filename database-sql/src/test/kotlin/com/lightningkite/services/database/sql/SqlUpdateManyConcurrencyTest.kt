@@ -48,7 +48,7 @@ class SqlUpdateManyConcurrencyTest {
         inParallel(concurrency) { index ->
             collection.updateManyIgnoringResult(
                 Condition { it._id eq model._id },
-                modification { it.list += index },
+                Modification { it.list += index },
             )
         }
 

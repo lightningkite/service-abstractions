@@ -31,7 +31,7 @@ class ConditionalModificationTest {
         // A document written before the field existed.
         raw(name).updateOne(Filters.empty(), BsonDocument("\$unset", BsonDocument("embeddedNullable", BsonString(""))))
 
-        collection.updateOneById(item._id, modification { it.embeddedNullable.notNull.value1 assign "forged" })
+        collection.updateOneById(item._id, Modification { it.embeddedNullable.notNull.value1 assign "forged" })
 
         val stored = raw(name).find(Filters.empty()).first()
         assertFalse(stored.containsKey("embeddedNullable"), "Stored: $stored")
@@ -48,8 +48,8 @@ class ConditionalModificationTest {
         collection.insertOne(item)
         val before = raw(name).find(Filters.empty()).first()
 
-        collection.updateOneById(item._id, modification { it.shape.asCircle.radius += 1 })
-        collection.updateOneById(item._id, modification { it.shapes.forEach { it.asCircle.radius += 1 } })
+        collection.updateOneById(item._id, Modification { it.shape.asCircle.radius += 1 })
+        collection.updateOneById(item._id, Modification { it.shapes.forEach { it.asCircle.radius += 1 } })
 
         assertEquals(before, raw(name).find(Filters.empty()).first())
     }
@@ -60,7 +60,7 @@ class ConditionalModificationTest {
         val collection = db().prepare(DatabaseTableDefinition<LargeTestModel>("ConditionalModificationTest_listRemove"))
         val item = LargeTestModel(intNullable = 1, list = listOf(1, 5))
         collection.insertOne(item)
-        val modification = modification<LargeTestModel> {
+        val modification = Modification<LargeTestModel> {
             it.intNullable.notNull += 1
             it.list.removeAll { it gt 3 }
         }

@@ -234,7 +234,7 @@ class SqlBasicTest {
 
         val change = collection.updateOne(
             Condition.Always,
-            modification { it.int assign 42 }
+            Modification { it.int assign 42 }
         )
         assertEquals(5, change.old?.int)
         assertEquals(42, change.new?.int)

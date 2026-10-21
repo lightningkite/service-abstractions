@@ -132,16 +132,16 @@ abstract class MaskedPermissionsTests {
         )
         suspend fun write(modification: Modification<LargeTestModel>) = table.updateOne(Condition { it._id eq row._id }, modification)
 
-        assertNull(write(modification { it.listEmbedded.forEachIf({ it.value1 eq "secret" }) { it.value2 assign 2 } }).new)
-        assertNull(write(modification { it.listEmbedded.removeAll { it.value1 eq "secret" } }).new)
-        assertNull(write(modification { it.listEmbedded -= ClassUsedForEmbedding("secret", 0) }).new)
-        assertNull(write(modification { it.setEmbedded -= ClassUsedForEmbedding("secret", 3) }).new)
-        assertNull(write(modification { it.setEmbedded += ClassUsedForEmbedding("secret", 3) }).new)
+        assertNull(write(Modification { it.listEmbedded.forEachIf({ it.value1 eq "secret" }) { it.value2 assign 2 } }).new)
+        assertNull(write(Modification { it.listEmbedded.removeAll { it.value1 eq "secret" } }).new)
+        assertNull(write(Modification { it.listEmbedded -= ClassUsedForEmbedding("secret", 0) }).new)
+        assertNull(write(Modification { it.setEmbedded -= ClassUsedForEmbedding("secret", 3) }).new)
+        assertNull(write(Modification { it.setEmbedded += ClassUsedForEmbedding("secret", 3) }).new)
         assertEquals(row, raw.get(row._id))
 
-        val unfiltered = write(modification { it.listEmbedded.forEach { it.value2 assign 1 } }).new
+        val unfiltered = write(Modification { it.listEmbedded.forEach { it.value2 assign 1 } }).new
         assertEquals(listOf(ClassUsedForEmbedding("masked", 1), ClassUsedForEmbedding("masked", 1)), unfiltered?.listEmbedded)
-        assertNotNull(write(modification { it.listEmbedded.forEachIf({ it.value2 eq 1 }) { it.value2 assign 2 } }).new)
+        assertNotNull(write(Modification { it.listEmbedded.forEachIf({ it.value2 eq 1 }) { it.value2 assign 2 } }).new)
     }
 
     @Test
@@ -157,7 +157,7 @@ abstract class MaskedPermissionsTests {
         )
         val hidden = raw.insertOne(LargeTestModel(byte = 0, int = 1234))
         val masked = raw.insertOne(LargeTestModel(byte = 1, int = 1234))
-        val touch = modification<LargeTestModel> { it.boolean assign true }
+        val touch = Modification<LargeTestModel> { it.boolean assign true }
 
         assertEquals(1, table.updateManyIgnoringResult(Condition.Always, touch), "only the readable row is writable")
         assertEquals(0, table.updateManyIgnoringResult(Condition { it.int eq 1234 }, touch))

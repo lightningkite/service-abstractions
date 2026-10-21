@@ -67,7 +67,7 @@ class PostgresLogLeakTest {
         // Exercise modification path (uses formatSingleExpression / format).
         collection.updateOne(
             Condition<LargeTestModel> { it.int eq 42 },
-            modification<LargeTestModel> { it.int assign 43 }
+            Modification<LargeTestModel> { it.int assign 43 }
         )
 
         // Flush anything buffered before we restore stdout.

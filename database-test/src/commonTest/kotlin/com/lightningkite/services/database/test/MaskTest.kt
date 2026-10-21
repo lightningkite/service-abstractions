@@ -35,9 +35,9 @@ class MaskTest {
 
     @Test
     fun modification() {
-        val matchingMod = modification<LargeTestModel> { it.embedded.value1 assign "" }
-        val notMatchingModA = modification<LargeTestModel> { it.embedded.value2 assign 2 }
-        val notMatchingModB = modification<LargeTestModel> { it.int assign 2 }
+        val matchingMod = Modification<LargeTestModel> { it.embedded.value1 assign "" }
+        val notMatchingModA = Modification<LargeTestModel> { it.embedded.value2 assign 2 }
+        val notMatchingModB = Modification<LargeTestModel> { it.int assign 2 }
 
         val mask = updateRestrictions<LargeTestModel> { it.embedded.value1 requires it.never }
 
@@ -55,9 +55,9 @@ class MaskTest {
             )
         }
 
-        assertTrue(mask(modification { it.embedded.value2 assign 5 }) is Condition.Always)
-        assertTrue(mask(modification { it.embedded.value2 assign 4 }) is Condition.Never)
-        assertTrue(mask(modification { it.embedded.value2 += 4 }) is Condition.Never)
+        assertTrue(mask(Modification { it.embedded.value2 assign 5 }) is Condition.Always)
+        assertTrue(mask(Modification { it.embedded.value2 assign 4 }) is Condition.Never)
+        assertTrue(mask(Modification { it.embedded.value2 += 4 }) is Condition.Never)
     }
 
     @Test

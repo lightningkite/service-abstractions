@@ -33,7 +33,7 @@ class DeprecatedApiTest {
 
     @Test
     fun oldModificationLookupsStillWork() {
-        val modification = modification<LargeTestModel> { it.int assign 3 }
+        val modification = Modification<LargeTestModel> { it.int assign 3 }
         assertEquals(Modification.Assign(3), modification.forDataClassPath(LargeTestModel.int))
         assertEquals(3, modification.valueSetForDataClassPath(LargeTestModel.int))
     }
