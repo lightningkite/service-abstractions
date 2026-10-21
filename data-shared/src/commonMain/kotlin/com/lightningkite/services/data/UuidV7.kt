@@ -27,7 +27,15 @@ public value class UuidV7 private constructor(public val raw: Uuid) : Comparable
          *
          * @param uuid The raw [Uuid] to be wrapped. Must be V7.
          * */
-        public fun fromRaw(uuid: Uuid) : UuidV7 = UuidV7(uuid)
+        public fun fromRawUnchecked(uuid: Uuid) : UuidV7 = UuidV7(uuid)
+
+        /**
+         * Returns [uuid] as a [UuidV7], or `null` if its version bits are not 7.
+         */
+        public fun fromRaw(uuid: Uuid): UuidV7? {
+            val version = uuid.toLongs { mostSignificantBits, _ -> (mostSignificantBits ushr 12) and 0xF }
+            return if (version == 7L) UuidV7(uuid) else null
+        }
 
         /**
          * Generates a new [UuidV7]
