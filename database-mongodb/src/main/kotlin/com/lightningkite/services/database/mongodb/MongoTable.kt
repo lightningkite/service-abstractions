@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.data.*
@@ -9,6 +11,7 @@ import com.lightningkite.services.telemetry.telemetryTrace
 import com.mongodb.MongoCommandException
 import com.mongodb.client.model.*
 import com.mongodb.client.model.Aggregates
+import com.mongodb.client.model.Field
 import com.mongodb.client.model.Aggregates.match
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.Filters.ne
@@ -38,8 +41,8 @@ public class MongoTable<Model : Any>(
 ) : Table<Model>, Namespaced {
     internal val bson: KBson = KBson(context.internalSerializersModule)
 
-    public val indexedTextFields: List<DataClassPathPartial<Model>>? by lazy {
-        val ser = DataClassPathSerializer(serializer)
+    public val indexedTextFields: List<AnyOptic<Model>>? by lazy {
+        val ser = AnyOpticSerializer(serializer)
         serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields?.map {
             ser.fromString(it)
         }
@@ -202,7 +205,7 @@ public class MongoTable<Model : Any>(
                         if (atlasSearch) {
                             val name = "default"
                             val keys = documentOf()
-                            val ser = DataClassPathSerializer(serializer)
+                            val ser = AnyOpticSerializer(serializer)
                             val mongoPaths = it.fields.map { ser.fromString(it).mongo.split('.') }
                             for (key in it.fields) {
                                 val path = ser.fromString(key)
@@ -221,7 +224,7 @@ public class MongoTable<Model : Any>(
                                     }
                                 }
 
-                                val type = path.serializerAny.unwrap()
+                                val type = path.serializer.unwrap()
                                 val mongoType = when (type.descriptor.serialName) {
                                     "kotlin.Boolean" -> "boolean"
                                     "kotlinx.datetime.Instant" -> "date"
@@ -879,7 +882,7 @@ public class MongoTable<Model : Any>(
 
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
+        groupBy: Optic<Model, Key>,
     ): Map<Key, Int> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return mapOf()
@@ -909,10 +912,10 @@ public class MongoTable<Model : Any>(
         Aggregate.StandardDeviationSample -> Accumulators.stdDevSamp("value", "\$" + propertyName)
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: DataClassPath<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Double? {
         val cs = condition.simplify()
         if (cs is Condition.Never) return null
@@ -934,11 +937,11 @@ public class MongoTable<Model : Any>(
         }
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>,
+        groupBy: Optic<Model, Key>,
+        property: Optic<Model, out Number?>,
     ): Map<Key, Double?> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return mapOf()
@@ -1114,7 +1117,7 @@ public class MongoTable<Model : Any>(
     }
 
     override suspend fun findSimilar(
-        vectorField: DataClassPath<Model, Embedding>,
+        vectorField: Optic<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,
@@ -1205,7 +1208,7 @@ public class MongoTable<Model : Any>(
     }
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<Model, SparseEmbedding>,
+        vectorField: Optic<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,

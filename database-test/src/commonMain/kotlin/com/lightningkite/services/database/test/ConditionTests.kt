@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.data.GeoCoordinate
 import com.lightningkite.services.data.Length.Companion.kilometers
 import com.lightningkite.services.data.toEmailAddress
@@ -3042,7 +3044,7 @@ abstract class ConditionTests() {
     val testDataUuidMin = Uuid.fromLongs(0L, 1L)
     val testDataUuidMax = Uuid.fromLongs(0L, Int.MAX_VALUE.toLong() + 1L)
     fun testDataUuid(id: Int) = Uuid.fromLongs(0L, id.toLong() + 1L)
-    val <T> DataClassPath<T, Uuid>.isTestData: Condition<T> get() = gte(testDataUuidMin) and lte(testDataUuidMax)
+    val <T> Optic<T, Uuid>.isTestData: Condition<T> get() = gte(testDataUuidMin) and lte(testDataUuidMax)
 
     @Test
     fun test_UUID_between() = runTest {

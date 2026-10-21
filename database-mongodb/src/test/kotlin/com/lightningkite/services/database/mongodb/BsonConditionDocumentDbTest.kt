@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.data.GeoCoordinate
 import com.lightningkite.services.data.Length.Companion.kilometers
 import com.lightningkite.services.database.*
@@ -24,12 +26,12 @@ class BsonConditionDocumentDbTest {
     private val geoSerializer = GeoTest.serializer()
 
     @Suppress("UNCHECKED_CAST")
-    private val stringProp = largeSerializer.serializableProperties!!
-        .first { it.name == "string" } as SerializableProperty<LargeTestModel, String>
+    private val stringProp = largeSerializer.fields!!
+        .first { it.name == "string" } as Field<LargeTestModel, String>
 
     @Suppress("UNCHECKED_CAST")
-    private val geoProp = geoSerializer.serializableProperties!!
-        .first { it.name == "geo" } as SerializableProperty<GeoTest, GeoCoordinate>
+    private val geoProp = geoSerializer.fields!!
+        .first { it.name == "geo" } as Field<GeoTest, GeoCoordinate>
 
     // ─── Regex conditions ────────────────────────────────────────────────────
 

@@ -1,12 +1,14 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.database.*
 import kotlin.test.*
 
 class PathsKtTest {
 
     @Test
-    fun testModificationSerializableProperty() {
+    fun testModificationField() {
         (path<LargeTestModel>().int).let { modification ->
             assertTrue(modification<LargeTestModel> { it.int assign 3 }.affects(modification))
             assertTrue(modification<LargeTestModel> { it.int += 3 }.affects(modification))
@@ -69,7 +71,7 @@ class PathsKtTest {
     }
 
     @Test
-    fun testConditionSerializableProperty() {
+    fun testConditionField() {
         (path<LargeTestModel>().int).let { modification ->
             assertTrue((path<LargeTestModel>().int eq 3).reads(modification))
             assertTrue((path<LargeTestModel>().int gt 3).reads(modification))

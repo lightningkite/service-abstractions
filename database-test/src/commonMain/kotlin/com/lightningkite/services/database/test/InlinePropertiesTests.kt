@@ -2,6 +2,8 @@
 
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.*
+
 // by Claude - Additional imports for comprehensive value class testing
 import com.lightningkite.services.data.Length.Companion.meters
 import com.lightningkite.services.database.*
@@ -832,7 +834,7 @@ abstract class InlinePropertiesTests {
 
     // endregion
 
-    // region SerializableProperty get/setCopy Tests
+    // region Field get/setCopy Tests
 
     @Test
     fun test_serializableProperty_get_valueclass() {
@@ -900,7 +902,7 @@ abstract class InlinePropertiesTests {
 
     // endregion
 
-    // region by Claude - Inline SerializableProperty get/setCopy Tests (raw inner value accessors)
+    // region by Claude - Inline Field get/setCopy Tests (raw inner value accessors)
 
     @Test
     fun test_serializableProperty_inline_get_ValueClass_value() {
@@ -961,9 +963,9 @@ abstract class InlinePropertiesTests {
     @Test
     fun test_serializableProperty_inline_isInline() {
         // Verify the inline flag is set correctly for inline properties
-        assertTrue(ValueClass.value.inline)
-        assertTrue(IntWrapper.int.inline)
-        assertTrue(UuidWrapper.uuid.inline)
+        assertTrue(ValueClass.value.isInline)
+        assertTrue(IntWrapper.int.isInline)
+        assertTrue(UuidWrapper.uuid.isInline)
     }
 
     // endregion

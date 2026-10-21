@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.postgres
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
@@ -84,7 +86,7 @@ public class PostgresCollection<T : Any>(
 
     private val textIndexColumns: List<Column<*>>? =
         serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields?.map { field ->
-            val column = table.col[DataClassPathSerializer(serializer).fromString(field).colName]
+            val column = table.col[AnyOpticSerializer(serializer).fromString(field).colName]
             check(column != null && column.columnType is StringColumnType) {
                 "@TextIndex field $field on ${serializer.descriptor.serialName} must be a String for Postgres"
             }
@@ -119,8 +121,8 @@ public class PostgresCollection<T : Any>(
             val part = orderBy[index]
             val column = table.col[part.field.colName]!!
             val expression: Expression<*> = if (
-                part.field.serializerAny.descriptor.kind == PrimitiveKind.STRING &&
-                serializationOverride(part.field.serializerAny.descriptor) == null
+                part.field.coerceToOptic().serializer.descriptor.kind == PrimitiveKind.STRING &&
+                serializationOverride(part.field.coerceToOptic().serializer.descriptor) == null
             ) {
                 // TODO: Check database default collation to skip extra work
                 if (part.ignoreCase) (column as Column<String>).lowerCase()
@@ -172,7 +174,7 @@ public class PostgresCollection<T : Any>(
         result
     }
 
-    override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> =
+    override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: Optic<T, Key>): Map<Key, Int> =
         traced(
             operation = "groupCount",
             extraBlock = { put(com.lightningkite.services.database.Database.TelemetryKeys.groupBy, groupBy.colName) }
@@ -191,10 +193,10 @@ public class PostgresCollection<T : Any>(
             result
         }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<T>,
-        property: DataClassPath<T, N>,
+        property: Optic<T, out Number?>,
     ): Double? = traced(
         operation = "aggregate",
         extraBlock = {
@@ -218,11 +220,11 @@ public class PostgresCollection<T : Any>(
         }
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<T>,
-        groupBy: DataClassPath<T, Key>,
-        property: DataClassPath<T, N>,
+        groupBy: Optic<T, Key>,
+        property: Optic<T, out Number?>,
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
         extraBlock = {
@@ -507,7 +509,7 @@ public class PostgresCollection<T : Any>(
     }
 
     override suspend fun findSimilar(
-        vectorField: DataClassPath<T, Embedding>,
+        vectorField: Optic<T, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<T>,
         maxQueryMs: Long,
@@ -592,7 +594,7 @@ public class PostgresCollection<T : Any>(
     }
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<T, SparseEmbedding>,
+        vectorField: Optic<T, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<T>,
         maxQueryMs: Long,

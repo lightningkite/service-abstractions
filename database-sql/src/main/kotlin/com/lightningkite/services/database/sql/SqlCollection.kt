@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.sql
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.Namespaced
@@ -188,7 +190,7 @@ public class SqlCollection<T : Any>(
         orderBy.map {
             val base = schema.mainTable.col[it.field.colName]!!
             val expr: Expression<*> =
-                if (it.field.serializerAny.descriptor.kind == PrimitiveKind.STRING && serializationOverride(it.field.serializerAny.descriptor) == null) {
+                if (it.field.coerceToOptic().serializer.descriptor.kind == PrimitiveKind.STRING && serializationOverride(it.field.coerceToOptic().serializer.descriptor) == null) {
                     if (it.ignoreCase) (base as Column<String>).lowerCase()
                     else if (currentDialect is PostgreSQLDialect) BinaryCollated(base as Column<String>)
                     else base
@@ -392,7 +394,7 @@ public class SqlCollection<T : Any>(
         result
     }
 
-    override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: DataClassPath<T, Key>): Map<Key, Int> = traced(
+    override suspend fun <Key> groupCount(condition: Condition<T>, groupBy: Optic<T, Key>): Map<Key, Int> = traced(
         operation = "groupCount",
         extraBlock = { put(com.lightningkite.services.database.Database.TelemetryKeys.groupBy, groupBy.colName) }
     ) { span ->
@@ -414,10 +416,10 @@ public class SqlCollection<T : Any>(
         result
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<T>,
-        property: DataClassPath<T, N>,
+        property: Optic<T, out Number?>,
     ): Double? = traced(
         operation = "aggregate",
         extraBlock = {
@@ -443,11 +445,11 @@ public class SqlCollection<T : Any>(
         }
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<T>,
-        groupBy: DataClassPath<T, Key>,
-        property: DataClassPath<T, N>,
+        groupBy: Optic<T, Key>,
+        property: Optic<T, out Number?>,
     ): Map<Key, Double?> = traced(
         operation = "groupAggregate",
         extraBlock = {
@@ -800,7 +802,7 @@ public class SqlCollection<T : Any>(
     ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("Text search is not supported by the generic SQL driver")
 
     override suspend fun findSimilar(
-        vectorField: DataClassPath<T, Embedding>,
+        vectorField: Optic<T, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<T>,
         maxQueryMs: Long,
@@ -809,7 +811,7 @@ public class SqlCollection<T : Any>(
     )
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<T, SparseEmbedding>,
+        vectorField: Optic<T, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<T>,
         maxQueryMs: Long,

@@ -6,7 +6,7 @@ import com.google.devtools.ksp.symbol.*
 import java.util.Locale.getDefault
 
 /**
- * KSP (Kotlin Symbol Processor) that generates type-safe DataClassPath field accessors.
+ * KSP (Kotlin Symbol Processor) that generates type-safe optic field accessors.
  *
  * This processor scans for classes annotated with @Queryable or @GenerateDataClassPaths
  * and generates extension properties that enable type-safe field references in database queries.
@@ -22,11 +22,12 @@ import java.util.Locale.getDefault
  *
  * It generates:
  * ```kotlin
- * val User.Companion.path: DataClassPath<User, User>
- * val User_name: SerializableProperty<User, String>
- * val User_age: SerializableProperty<User, Int>
- * val <ROOT> DataClassPath<ROOT, User>.name: DataClassPath<ROOT, String>
- * val <ROOT> DataClassPath<ROOT, User>.age: DataClassPath<ROOT, Int>
+ * val User.Companion.path: IdentityLens<User>
+ * val User_name: Field<User, String>
+ * val User_age: Field<User, Int>
+ * val <ROOT> Optic<ROOT, User>.name: Optic<ROOT, String>
+ * val <ROOT> Lens<ROOT, User>.name: Lens<ROOT, String>
+ * (and the same for age)
  * ```
  *
  * This enables queries like: `User.path.age gte 18`
@@ -50,7 +51,7 @@ import java.util.Locale.getDefault
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 19) {
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 24) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("Queryable") != null || annotation("GenerateDataClassPaths") != null
 
@@ -120,6 +121,7 @@ class TableGenerator(
                 .plus(
                     listOf(
                         "com.lightningkite.services.database.*",
+                        "com.lightningkite.services.database.optics.*",
                         "com.lightningkite.services.data.*",
                         "kotlin.reflect.*",
                         "kotlinx.serialization.*",
@@ -190,7 +192,7 @@ class TableGenerator(
             if (declaration.typeParameters.isNotEmpty()) {
                 appendLine("// Skipped $classReference: generic sealed types are not supported")
             } else {
-                appendLine("public inline val $classReference.Companion.path: DataClassPath<$classReference, $classReference> get() = com.lightningkite.services.database.path<$classReference>()")
+                appendLine("public inline val $classReference.Companion.path: IdentityLens<$classReference> get() = com.lightningkite.services.database.path<$classReference>()")
                 declaration.getSealedSubclasses()
                     .filter { it.needsDcp() && it.isSerializable() }
                     .forEach { variant ->
@@ -199,7 +201,7 @@ class TableGenerator(
                         if (variant.typeParameters.isNotEmpty()) {
                             appendLine("// Skipped $classReference.$propName: generic sealed variants are not supported")
                         } else {
-                            appendLine("@get:JvmName(\"path${simpleName}_$propName\") public val <ROOT> DataClassPath<ROOT, $classReference>.$propName: DataClassPath<ROOT, $variantReference> get() = this.asType($variantReference.serializer())")
+                            appendLine("@get:JvmName(\"path${simpleName}_$propName\") public val <ROOT> Optic<ROOT, $classReference>.$propName: Optic<ROOT, $variantReference> get() = this.asType($variantReference.serializer())")
                         }
                     }
             }
@@ -282,7 +284,7 @@ class TableGenerator(
                         "reified " + it.name.asString() + ": " + (it.bounds.firstOrNull()
                             ?.toKotlin() ?: "Any?")
                     }
-                }> $classReference.Companion.path(): DataClassPath<$typeReference, $typeReference> = com.lightningkite.services.database.path<$typeReference>()"
+                }> $classReference.Companion.path(): IdentityLens<$typeReference> = com.lightningkite.services.database.path<$typeReference>()"
             )
 
             fun appendGenericCompanionHelper(name: String) {
@@ -305,19 +307,19 @@ class TableGenerator(
             }
 
             appendGenericCompanionHelper("path")
-            +"DataClassPath<$typeReference, $typeReference>"
+            +"IdentityLens<$typeReference>"
             +" = "
             +"com.lightningkite.services.database.path($classReference.Companion.serializer("
             +declaration.typeParameters.joinToString { it.name.asString().lowercase() }
             +"))"
             appendLine()
 
-            appendGenericCompanionHelper("properties")
-            +"Array<SerializableProperty<$typeReference, *>> {\n"
+            appendGenericCompanionHelper("fields")
+            +"Array<Field<$typeReference, *>> {\n"
             +"  val serializer = $classReference.Companion.serializer("
                 +declaration.typeParameters.joinToString { it.name.asString().lowercase() }
                 +") as GeneratedSerializer<$typeReference>\n"
-            +"  return Array(${fields.size}) { index -> SerializableProperty.Generated<$typeReference, Any?>(serializer, index) }\n"
+            +"  return Array(${fields.size}) { index -> Field.Generated<$typeReference, Any?>(serializer, index) }\n"
             +"}"
             appendLine()
 
@@ -336,27 +338,33 @@ class TableGenerator(
                             it.name.asString() + ": " + (it.bounds.firstOrNull()
                                 ?.toKotlin() ?: "Any?")
                         }
-                    }> KSerializer<${typeReference}>.$serPropName: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = SerializableProperty.Generated(this as GeneratedSerializer<$typeReference>, $index)"
+                    }> KSerializer<${typeReference}>.$serPropName: Field<$typeReference, ${field.kotlinType.toKotlin()}> get() = Field.Generated(this as GeneratedSerializer<$typeReference>, $index)"
                 )
-                appendInlinePropertyAnnotation()
-                appendLine(
-                    "@get:JvmName(\"${prefix}_path_$propName\") public val <ROOT, ${
-                        declaration.typeParameters.joinToString(", ") {
-                            it.name.asString() + ": " + (it.bounds.firstOrNull()
-                                ?.toKotlin() ?: "Any?")
-                        }
-                    }> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[this.serializer.$serPropName]"
-                )
+                // Claude: a Lens overload too, so a path of fields stays statically a Lens.
+                for ((optic, jvmName) in listOf("Optic" to "path", "Lens" to "lens")) {
+                    appendInlinePropertyAnnotation()
+                    appendLine(
+                        "@get:JvmName(\"${prefix}_${jvmName}_$propName\") public val <ROOT, ${
+                            declaration.typeParameters.joinToString(", ") {
+                                it.name.asString() + ": " + (it.bounds.firstOrNull()
+                                    ?.toKotlin() ?: "Any?")
+                            }
+                        }> $optic<ROOT, $typeReference>.${field.name}: $optic<ROOT, ${field.kotlinType.toKotlin()}> get() = this + this.serializer.$serPropName"
+                    )
+                }
             }
         } else {
-            appendLine("public inline val $typeReference.Companion.path: DataClassPath<$typeReference, $typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
-            appendLine("public val ${typeReference}.Companion.properties: Array<SerializableProperty<$typeReference, *>> get() = serializer().serializableProperties!!")
+            appendLine("public inline val $typeReference.Companion.path: IdentityLens<$typeReference> get() = com.lightningkite.services.database.path<$typeReference>()")
+            appendLine("public val ${typeReference}.Companion.fields: Array<Field<$typeReference, *>> get() = serializer().fields!!")
             for ((index, field) in fields.withIndex()) {
                 appendInlinePropertyAnnotation()
-                appendLine("public val ${typeReference}.Companion.${field.name}: SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}> get() = properties[$index] as SerializableProperty<$typeReference, ${field.kotlinType.toKotlin()}>")
-                appendInlinePropertyAnnotation()
+                appendLine("public val ${typeReference}.Companion.${field.name}: Field<$typeReference, ${field.kotlinType.toKotlin()}> get() = fields[$index] as Field<$typeReference, ${field.kotlinType.toKotlin()}>")
                 val serPropName = "${simpleName}_${field.name}"
-                appendLine("@get:JvmName(\"path$serPropName\") public val <ROOT> DataClassPath<ROOT, $typeReference>.${field.name}: DataClassPath<ROOT, ${field.kotlinType.toKotlin()}> get() = this[${typeReference}.${field.name}]")
+                // Claude: a Lens overload too, so a path of fields stays statically a Lens.
+                for ((optic, jvmName) in listOf("Optic" to "path", "Lens" to "lens")) {
+                    appendInlinePropertyAnnotation()
+                    appendLine("@get:JvmName(\"$jvmName$serPropName\") public val <ROOT> $optic<ROOT, $typeReference>.${field.name}: $optic<ROOT, ${field.kotlinType.toKotlin()}> get() = this + ${typeReference}.${field.name}")
+                }
             }
         }
     } catch (e: Exception) {

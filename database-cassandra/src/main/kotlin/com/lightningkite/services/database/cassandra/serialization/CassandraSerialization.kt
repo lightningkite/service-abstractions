@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.cassandra.serialization
 
+import com.lightningkite.services.database.optics.*
+
 import com.datastax.oss.driver.api.core.cql.Row
 import com.datastax.oss.driver.api.core.data.UdtValue
 import com.datastax.oss.driver.api.core.type.DataType
@@ -8,7 +10,6 @@ import com.datastax.oss.driver.api.core.type.ListType
 import com.datastax.oss.driver.api.core.type.MapType
 import com.datastax.oss.driver.api.core.type.SetType
 import com.datastax.oss.driver.api.core.type.UserDefinedType
-import com.lightningkite.services.database.serializableProperties
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.*
@@ -101,7 +102,7 @@ public class CassandraSerialization(
      */
     @Suppress("UNCHECKED_CAST")
     public fun <T : Any> getFieldValue(obj: T, fieldName: String, serializer: KSerializer<T>): Any? {
-        val props = serializer.serializableProperties ?: return null
+        val props = serializer.fields ?: return null
         val prop = props.find { it.name == fieldName } ?: return null
         return prop.get(obj)
     }

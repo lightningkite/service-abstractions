@@ -1,5 +1,7 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.*
 import com.lightningkite.services.data.*
 import com.lightningkite.services.kfile.KFile
@@ -250,24 +252,24 @@ public class PrepareFirstTable<MODEL : Any>(
 
     override suspend fun <Key> groupCount(
         condition: Condition<MODEL>,
-        groupBy: DataClassPath<MODEL, Key>
+        groupBy: Optic<MODEL, Key>
     ): Map<Key, Int> {
         return prepare.await().groupCount(condition, groupBy)
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<MODEL>,
-        property: DataClassPath<MODEL, N>
+        property: Optic<MODEL, out Number?>
     ): Double? {
         return prepare.await().aggregate(aggregate, condition, property)
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<MODEL>,
-        groupBy: DataClassPath<MODEL, Key>,
-        property: DataClassPath<MODEL, N>
+        groupBy: Optic<MODEL, Key>,
+        property: Optic<MODEL, out Number?>
     ): Map<Key, Double?> {
         return prepare.await().groupAggregate(aggregate, condition, groupBy, property)
     }
@@ -371,7 +373,7 @@ public class PrepareFirstTable<MODEL : Any>(
     }
 
     override suspend fun findSimilar(
-        vectorField: DataClassPath<MODEL, Embedding>,
+        vectorField: Optic<MODEL, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<MODEL>,
         maxQueryMs: Long
@@ -380,7 +382,7 @@ public class PrepareFirstTable<MODEL : Any>(
     }
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<MODEL, SparseEmbedding>,
+        vectorField: Optic<MODEL, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<MODEL>,
         maxQueryMs: Long

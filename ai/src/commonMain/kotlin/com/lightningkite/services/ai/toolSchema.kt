@@ -2,6 +2,8 @@
 
 package com.lightningkite.services.ai
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.data.Description
 import com.lightningkite.services.data.DisplayName
 import com.lightningkite.services.database.MySealedClassSerializerInterface
@@ -10,7 +12,6 @@ import com.lightningkite.services.database.getContextual
 import com.lightningkite.services.database.innerElement
 import com.lightningkite.services.database.innerElement2
 import com.lightningkite.services.database.nullElement
-import com.lightningkite.services.database.serializableProperties
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
@@ -24,7 +25,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -113,7 +113,7 @@ private fun KSerializer<*>.buildSchema(module: SerializersModule, maxDepth: Int)
     }
 
     // Synthetic single-field object for a non-object argument (see ValueWrappedToolArgSerializer).
-    // The descriptor is built by hand, so serializableProperties is unavailable; emit directly.
+    // The descriptor is built by hand, so fields is unavailable; emit directly.
     if (this is ValueWrappedToolArgSerializer<*>) {
         return buildJsonObject {
             put("type", "object")
@@ -234,7 +234,7 @@ private fun KSerializer<*>.classSchema(
 
     // @MutuallyExclusive — anyOf of single-property objects, one per non-null field value.
     if (descriptor.annotations.any { it is MutuallyExclusive }) {
-        val props = serializableProperties
+        val props = this@classSchema.fields
             ?: throw IllegalStateException("No serializable properties on ${descriptor.serialName}")
         return buildJsonObject {
             title?.let { put("title", it) }
@@ -254,7 +254,7 @@ private fun KSerializer<*>.classSchema(
     }
 
     // Plain class: collect visible properties, emit type=object with properties + required.
-    val props = serializableProperties
+    val props = this@classSchema.fields
         ?.filter { prop ->
             prop.annotations.none { it is HideFromLlm } &&
                     prop.annotations.none { it is LlmReadOnly }
@@ -280,7 +280,7 @@ private fun KSerializer<*>.classSchema(
 }
 
 private fun propertySchema(
-    prop: com.lightningkite.services.database.SerializableProperty<*, *>,
+    prop: Field<*, *>,
     module: SerializersModule,
     parentMaxDepth: Int,
 ): JsonObject {

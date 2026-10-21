@@ -54,7 +54,7 @@ data class ClassUsedForEmbedding(
     var value2: Int = 1,
 )
 
-@Serializable
+@Queryable
 data class UnreasonablyComplex(
     val string: String = "",
     val int: Int = 0,

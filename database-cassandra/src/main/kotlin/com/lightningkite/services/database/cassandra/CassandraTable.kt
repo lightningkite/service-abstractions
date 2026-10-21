@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.cassandra
 
+import com.lightningkite.services.database.optics.*
+
 import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.cql.*
 import com.datastax.oss.driver.api.core.servererrors.InvalidQueryException
@@ -692,11 +694,11 @@ public class CassandraTable<Model : Any>(
     @Suppress("UNCHECKED_CAST")
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
+        groupBy: Optic<Model, Key>,
     ): Map<Key, Int> {
         // Cassandra doesn't natively support GROUP BY with COUNT for arbitrary columns
         // We have to materialize and count client-side. groupBy.get() always returns Key?
-        // regardless of whether Key itself is nullable (see DataClassPath.dropUnrepresentableNullGroup's
+        // regardless of whether Key itself is nullable (see Optic.dropUnrepresentableNullGroup's
         // KDoc), so every row is counted here -- including a null key -- and
         // dropUnrepresentableNullGroup decides afterward whether that null group is legitimate
         // (nullable Key) or an artifact that must be dropped (non-nullable Key).
@@ -708,10 +710,10 @@ public class CassandraTable<Model : Any>(
         return groupBy.dropUnrepresentableNullGroup(results)
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: DataClassPath<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Double? {
         // Cassandra doesn't support arbitrary aggregations well
         // We compute client-side
@@ -749,11 +751,11 @@ public class CassandraTable<Model : Any>(
     }
 
     @Suppress("UNCHECKED_CAST")
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>,
+        groupBy: Optic<Model, Key>,
+        property: Optic<Model, out Number?>,
     ): Map<Key, Double?> {
         // Group-aggregate client-side. As in groupCount above, every row's key (including a null
         // one) is accumulated here, and dropUnrepresentableNullGroup decides afterward whether a
@@ -1210,7 +1212,7 @@ public class CassandraTable<Model : Any>(
     ): Flow<ScoredResult<Model>> = throw UnsupportedOperationException("Text search is not supported by Apache Cassandra")
 
     override suspend fun findSimilar(
-        vectorField: DataClassPath<Model, Embedding>,
+        vectorField: Optic<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,
@@ -1223,7 +1225,7 @@ public class CassandraTable<Model : Any>(
     }
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<Model, SparseEmbedding>,
+        vectorField: Optic<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,

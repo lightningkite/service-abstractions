@@ -1,5 +1,7 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.optics.*
+
 import kotlinx.coroutines.flow.toList
 import kotlin.collections.map
 
@@ -785,7 +787,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
             wraps.find(condition).collect {
                 val altMod = interceptor(it, modification)
                 val id = field.get(it)
-                all.add(wraps.updateOne(DataClassPathSelf(serializer).get(field).eq(id), altMod))
+                all.add(wraps.updateOne((IdentityLens(serializer) + field).eq(id), altMod))
             }
             return CollectionChanges(all)
         }
@@ -800,7 +802,7 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
             wraps.find(condition).collect {
                 val altMod = interceptor(it, modification)
                 val id = field.get(it)
-                if (wraps.updateOneIgnoringResult(DataClassPathSelf(serializer).get(field).eq(id), altMod)) count++
+                if (wraps.updateOneIgnoringResult((IdentityLens(serializer) + field).eq(id), altMod)) count++
             }
             return count
         }

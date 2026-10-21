@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
 import com.lightningkite.services.database.test.*

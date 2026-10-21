@@ -1,0 +1,212 @@
+package com.lightningkite.services.database.optics
+
+import com.lightningkite.services.database.Condition
+import com.lightningkite.services.database.GenericPlaceholderException
+import com.lightningkite.services.database.Modification
+import com.lightningkite.services.database.SerializableAnnotation
+import com.lightningkite.services.database.SerializationRegistry
+import com.lightningkite.services.database.VirtualField
+import com.lightningkite.services.database.VirtualInstance
+import com.lightningkite.services.database.VirtualStruct
+import com.lightningkite.services.database.default
+import com.lightningkite.services.database.get
+import com.lightningkite.services.database.internal.ConcurrentMap
+import com.lightningkite.services.database.internal.getOrPutConcurrent
+import com.lightningkite.services.database.set
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
+import kotlinx.serialization.*
+import kotlinx.serialization.internal.GeneratedSerializer
+import kotlin.time.Instant
+import kotlin.uuid.Uuid
+
+/**
+ * A [Lens] onto one serialized field of [A], identified by its [name].
+ *
+ * `@Queryable` models get a generated field for each property, such as `User.email`, and [KSerializer.fields] lists
+ * them for any generated serializer. Conditions and modifications mapped through a field are wrapped in
+ * [Condition.OnField] and [Modification.OnField].
+ */
+public sealed interface Field<A, B> : Lens<A, B> {
+    override val serializer: KSerializer<B>
+
+    /** The serial name of this field. */
+    public val name: String
+
+    override val fields: List<Field<*, *>> get() = listOf(this)
+
+    override fun get(source: A): B
+    override fun set(source: A, value: B): A
+
+    /** The annotations on this field, including those on its type's serializer. */
+    public val annotations: List<Annotation> get() = listOf()
+
+    /** The [annotations] that can be represented as a [SerializableAnnotation]. */
+    public val serializableAnnotations: List<SerializableAnnotation>
+        get() = annotations.mapNotNull(SerializableAnnotation::parseOrNull)
+
+    /** The default value of this field, or `null` if it has none or computes a new one each time. */
+    public val default: B? get() = null
+
+    /**
+     * Kotlin code for a default that is computed each time, such as `"Uuid.random()"`.
+     *
+     * Returns `null` if the default is fixed, absent or not recognized.
+     */
+    public val defaultCode: String? get() = null
+
+    /**
+     * Whether this [Field] is a lens to an inline `value class` field.
+     *
+     * ```kotlin
+     * @Queryable
+     * @JvmInline
+     * value class IntWrapper(val int: Int)
+     *
+     * assertTrue(IntWrapper.int.isInline)
+     * ```
+     * */
+    public val isInline: Boolean get() = false
+
+    override fun mapCondition(condition: Condition<B>): Condition<A> =
+        Condition.OnField(this, condition)
+
+    override fun mapModification(modification: Modification<B>): Modification<A> =
+        Modification.OnField(this, modification)
+
+    @Deprecated("Use set instead", ReplaceWith("set(receiver, value)"))
+    public fun setCopy(receiver: A, value: B): A = set(receiver, value)
+
+
+    /** A [Field] for the element at [index] of the generated serializer [parent]. */
+    @Suppress("UNCHECKED_CAST")
+    @OptIn(InternalSerializationApi::class)
+    public class Generated<A, B>(
+        public val parent: GeneratedSerializer<A>,
+        public val index: Int,
+    ) : Field<A, B> {
+        override val name: String by lazy { parent.descriptor.getElementName(index) }
+        override val serializer: KSerializer<B> by lazy { parent.childSerializers()[index] as KSerializer<B> }
+        override fun set(source: A, value: B): A = parent.set(source, index, serializer, value)
+        override fun get(source: A): B = (parent as KSerializer<A>).get(source, index, serializer)
+        override val annotations: List<Annotation> by lazy {
+            parent.descriptor.getElementAnnotations(index) + serializer.descriptor.annotations
+        }
+
+        @OptIn(ExperimentalSerializationApi::class)
+        override val serializableAnnotations: List<SerializableAnnotation> by lazy {
+            annotations
+                .mapNotNull { SerializableAnnotation.parseOrNull(it) }
+        }
+        override val isInline: Boolean get() = parent.descriptor.isInline
+
+        // by Claude - Detect dynamic defaults (Uuid.random(), Clock.System.now(), etc.) by deserializing twice
+        @OptIn(ExperimentalSerializationApi::class)
+        private val defaultInfo: Pair<B?, String?> by lazy {
+            // Skip for non-optional fields (no defaults)
+            if (!parent.descriptor.isElementOptional(index)) {
+                null to null
+            } else {
+                try {
+                    // Deserialize twice to detect dynamic defaults
+                    val instance1 = (parent as KSerializer<A>).default()
+                    val instance2 = (parent as KSerializer<A>).default()
+
+                    val value1 = get(instance1)
+                    val value2 = get(instance2)
+
+                    if (value1 != value2) {
+                        // Dynamic default detected - determine type
+                        when {
+                            value1 is Uuid && value2 is Uuid -> null to "Uuid.random()"
+                            value1 is Instant && value2 is Instant -> null to "Clock.System.now()"
+                            value1 is LocalDate && value2 is LocalDate -> null to "Clock.System.nowLocal().date"
+                            value1 is LocalTime && value2 is LocalTime -> null to "Clock.System.nowLocal().time"
+                            else -> null to null // Unknown dynamic default
+                        }
+                    } else {
+                        // Static default - return the value
+                        value1 to null
+                    }
+                } catch (e: GenericPlaceholderException) {
+                    // Field involves a generic type parameter that can't be deserialized
+                    null to null
+                }
+            }
+        }
+
+        override val default: B? get() = defaultInfo.first
+        override val defaultCode: String? get() = defaultInfo.second
+
+        override fun toString(): String = name
+        override fun hashCode(): Int = parent.descriptor.serialName.hashCode() + index
+
+        private fun GeneratedSerializer<*>.isEqual(other: GeneratedSerializer<*>): Boolean {
+            val myParams = this.typeParametersSerializers()
+            val otherParams = other.typeParametersSerializers()
+
+            return this.descriptor.serialName == other.descriptor.serialName &&
+                    myParams.size == otherParams.size &&
+                    (myParams.isEmpty() ||
+                            myParams.withIndex().all { (index, p1) ->
+                                val p2 = otherParams[index]
+                                if (p1 is GeneratedSerializer<*>) {
+                                    if (p2 is GeneratedSerializer<*>) p1.isEqual(p2)
+                                    else false
+                                } else (p1.descriptor.serialName == p2.descriptor.serialName)
+                            })
+        }
+
+        override fun equals(other: Any?): Boolean =
+            other is Generated<*, *> && other.parent.isEqual(this.parent) && other.index == this.index
+    }
+
+    /** A [Field] of a [VirtualInstance], whose type is resolved into a serializer by [registry] and [context]. */
+    public class FromVirtualField(
+        public val source: VirtualField,
+        public val registry: SerializationRegistry,
+        public val context: Map<String, KSerializer<*>>,
+    ) : Field<VirtualInstance, Any?> {
+        override val name: String get() = source.name
+        override val serializer: KSerializer<Any?> by lazy { source.type.serializer(registry, context) }
+        override val annotations: List<Annotation> get() = listOf()
+        override val serializableAnnotations: List<SerializableAnnotation> get() = source.annotations
+        override fun get(source: VirtualInstance): Any? = source.values[this@FromVirtualField.source.index]
+        override fun set(source: VirtualInstance, value: Any?): VirtualInstance =
+            VirtualInstance(source.type, source.values.toMutableList().also {
+                it[this@FromVirtualField.source.index] = value
+            })
+
+        override fun toString(): String = source.name
+        override fun hashCode(): Int = source.hashCode()
+        override fun equals(other: Any?): Boolean = other is FromVirtualField && other.source == source
+    }
+}
+
+private val serNameToProperties = ConcurrentMap<String, Array<Field<*, *>>>()
+
+/**
+ * The fields of this serializer, in declaration order.
+ *
+ * Returns `null` if this is neither a generated serializer nor a [VirtualStruct].
+ */
+@OptIn(InternalSerializationApi::class)
+@Suppress("UNCHECKED_CAST")
+public val <T> KSerializer<T>.fields: Array<Field<T, *>>?
+    get() {
+        if (this is VirtualStruct.Concrete) return this.fields as Array<Field<T, *>>
+        return if (this !is GeneratedSerializer<*>) null
+        else if (this.typeParametersSerializers().isEmpty()) serNameToProperties.getOrPutConcurrent(this.descriptor.serialName) {
+            (0..<descriptor.elementsCount).map<Int, Field<T, *>> { index ->
+                Field.Generated<T, Any?>(
+                    this as GeneratedSerializer<T>,
+                    index
+                )
+            }.toTypedArray()
+        } as Array<Field<T, *>> else (0..<descriptor.elementsCount).map<Int, Field<T, *>> { index ->
+            Field.Generated<T, Any?>(
+                this as GeneratedSerializer<T>,
+                index
+            )
+        }.toTypedArray()
+    }

@@ -2,9 +2,9 @@ package com.lightningkite.services.database.sqlite
 
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.mapformat.ChildRow
 import com.lightningkite.services.database.mapformat.MapFormatConfig
+import com.lightningkite.services.database.optics.Field
 import com.lightningkite.services.database.nullElement
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.SerialKind
@@ -73,7 +73,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                 }
             }
             is Modification.OnField<*, *> -> {
-                val key = modification.key as SerializableProperty<Any?, Any?>
+                val key = modification.key as Field<Any?, Any?>
                 val fieldPath = fieldPath(path, key)
                 val inner = modification.modification as Modification<Any?>
                 val innerWrap = { it: Modification<Any?> -> wrap(Modification.OnField(key, it)) }
@@ -237,7 +237,7 @@ internal class SqliteModifications(private val schema: SqliteSchema, private val
                     )
                 }
                 is Modification.OnField<*, *> -> {
-                    val key = modification.key as SerializableProperty<Any?, Any?>
+                    val key = modification.key as Field<Any?, Any?>
                     val fieldPath = fieldPath(path, key)
                     visit(modification.modification as Modification<Any?>, fieldPath, key.serializer, guard)
                 }

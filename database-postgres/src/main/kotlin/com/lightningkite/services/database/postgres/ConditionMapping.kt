@@ -2,12 +2,12 @@
 
 package com.lightningkite.services.database.postgres
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.database.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.descriptors.*
 import org.jetbrains.exposed.v1.core.*
-import org.jetbrains.exposed.v1.jdbc.*
 import org.jetbrains.exposed.v1.core.ops.SingleValueInListOp
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
@@ -51,7 +51,7 @@ internal data class FieldSet2<V>(
         single to sqlLiteralOfSomeKind(single.columnType, formatSingle(value))
 
     @Suppress("UNCHECKED_CAST")
-    fun sub(property: SerializableProperty<V, *>): FieldSet2<Any?> {
+    fun sub(property: Field<V, *>): FieldSet2<Any?> {
         // TODO: This is fugly, fix. Inline check can probably be made before matching filters.
         val matched = fields.filter { it.key == property.name || it.key.startsWith(property.name + "__") }
             .mapKeys { it.key.substringAfter(property.name).removePrefix("__") }
@@ -264,7 +264,7 @@ private fun <T> condition(
 
         is Condition.OnField<*, *> -> condition<Any?>(
             condition.condition as Condition<Any?>,
-            fieldSet.sub(condition.key as SerializableProperty<T, Any?>)
+            fieldSet.sub(condition.key as Field<T, Any?>)
         )
 
         // Postgres doesn't support sealed types yet; see the planned design at PolymorphicKind.SEALED in SerialDescriptorTable.kt.
@@ -535,7 +535,7 @@ private fun <T> FieldModifier.modification(
         }
 
         is Modification.OnField<*, *> -> {
-            val key = modification.key as SerializableProperty<T, Any?>
+            val key = modification.key as Field<T, Any?>
             val d = fieldSet.serializer.descriptor
             // by Claude - mirrors FieldSet2.sub: navigating into an inline/value class's sole wrapped
             // member targets the SAME physical column as the value class itself, so the accumulated

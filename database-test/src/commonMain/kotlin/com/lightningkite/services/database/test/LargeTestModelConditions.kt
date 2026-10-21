@@ -1,7 +1,8 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.database.Condition
-import com.lightningkite.services.database.SerializableProperty
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
@@ -14,8 +15,8 @@ object LargeTestModelConditions {
     )
 
     class ComparableType<T : Comparable<T>>(
-        val field: SerializableProperty<LargeTestModel, T>,
-        val nullable: SerializableProperty<LargeTestModel, T?>,
+        val field: Field<LargeTestModel, T>,
+        val nullable: Field<LargeTestModel, T?>,
         val low: T,
         val middle: T,
         val high: T,
@@ -97,7 +98,7 @@ object LargeTestModelConditions {
     }
 
     class OtherType<T>(
-        val field: SerializableProperty<LargeTestModel, T>,
+        val field: Field<LargeTestModel, T>,
         val first: T,
         val second: T,
     )

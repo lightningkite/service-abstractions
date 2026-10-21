@@ -1,7 +1,8 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.data.Length.Companion.meters
-import com.lightningkite.services.data.TextIndex
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
 import com.lightningkite.services.database.mongodb.bson.serializationOverrides
@@ -194,7 +195,7 @@ private fun <T> Condition<T>.dump(
             this.key.serializer as KSerializer<Any?>,
             into,
             key =
-                if (this.key.inline) key
+                if (this.key.isInline) key
                 else if (key == null) this.key.name
                 else "$key.${this.key.name}",
             atlasSearch = atlasSearch,
@@ -311,7 +312,7 @@ private fun <T> Modification<T>.dump(
             this.key.serializer as KSerializer<Any?>,
             update,
             key =
-                if (this.key.inline) key
+                if (this.key.isInline) key
                 else if (key == null) this.key.name
                 else "$key.${this.key.name}",
             bson = bson
@@ -362,7 +363,7 @@ private fun <T> Modification<T>.dump(
 private fun Modification<Any?>.checkedParts(): List<Pair<Condition<Any?>, Modification<Any?>>> = when (this) {
     is Modification.Chain -> modifications.flatMap { it.checkedParts() }
     is Modification.OnField<*, *> -> (modification as Modification<Any?>).checkedParts().map { (check, part) ->
-        val field = this.key as SerializableProperty<Any?, Any?>
+        val field = this.key as Field<Any?, Any?>
         (if (check is Condition.Always) check else Condition.OnField(field, check)) to Modification.OnField(field, part)
     }
     is Modification.IfNotNull<*> -> (modification as Modification<Any?>).checkedParts().map { (check, part) ->

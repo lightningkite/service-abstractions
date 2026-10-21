@@ -1,0 +1,562 @@
+@file:Suppress("PackageDirectoryMismatch")
+package com.lightningkite.services.database
+
+import com.lightningkite.services.database.optics.*
+
+import com.lightningkite.services.data.Queryable
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
+
+/**
+ * Defines restrictions on which fields can be modified in database update operations and under what conditions.
+ *
+ * [UpdateRestrictions] provides fine-grained control over update operations by specifying rules for individual
+ * fields. Each field can have:
+ * - Required conditions that must be met before the field can be modified
+ * - Constraints on what values the field can be changed to
+ *
+ * ## Modes
+ *
+ * There are two fundamental modes that determine the default behavior:
+ *
+ * - **[Mode.Blacklist]** (default): All fields are modifiable by default unless explicitly restricted.
+ *   Use this when you want to block specific fields or add conditions to certain fields.
+ *
+ * - **[Mode.Whitelist]**: All fields are blocked by default unless explicitly allowed.
+ *   Use this when you want tight control and only permit modifications to specific fields.
+ *
+ * ## Usage Example
+ *
+ * ```kotlin
+ * @Serializable
+ * data class User(
+ *     val _id: UUID,
+ *     val email: String,
+ *     val role: Role,
+ *     val isActive: Boolean,
+ *     val credits: Int
+ * )
+ *
+ * // Blacklist mode: restrict specific fields
+ * val userRestrictions = updateRestrictions<User> { user ->
+ *     // Users can't modify their own role
+ *     user.role.cannotBeModified()
+ *
+ *     // Credits can only be modified by admins
+ *     user.credits requires (user.role eq Role.Admin)
+ *
+ *     // isActive can only be set to true (no deactivation via this path)
+ *     user.isActive.mustBe { it eq true }
+ * }
+ *
+ * // Whitelist mode: only allow specific fields
+ * val restrictiveRestrictions = updateRestrictions<User>(mode = Mode.Whitelist) { user ->
+ *     // Only these fields can be modified
+ *     user.email.canBeModified()
+ *     user.isActive.canBeModified()
+ * }
+ *
+ * // Apply restrictions to a modification
+ * val modification = user.email assign "newemail@example.com"
+ * val requiredCondition = userRestrictions(modification)
+ * // Use requiredCondition in your update query
+ * table.updateMany(
+ *     condition = requiredCondition and (user._id eq userId),
+ *     modification = modification
+ * )
+ * ```
+ *
+ * @param T The data class type being restricted
+ * @param mode The restriction mode ([Mode.Blacklist] or [Mode.Whitelist])
+ * @param fields List of field-specific restrictions
+ */
+@Queryable
+public data class UpdateRestrictions<T>(
+    public val mode: Mode = Mode.Blacklist,
+    public val fields: List<Part<T>>,
+) {
+    /**
+     * Determines the default behavior for fields not explicitly mentioned in [fields].
+     *
+     * - **[Whitelist]**: Field modifications are blocked by default.
+     *
+     * - **[Blacklist]**: Field modifications are allowed by default.
+     */
+    @Serializable
+    public enum class Mode {
+        /** All fields can be modified except explicitly restricted ones */
+        Blacklist,
+
+        /** Only explicitly allowed fields can be modified */
+        Whitelist,
+    }
+
+    /**
+     * Represents a restriction rule for a specific field.
+     *
+     * A [Part] defines both when a field can be modified and what values it can be changed to.
+     *
+     * @param property The field path being restricted (e.g., `User.path.email`)
+     * @param requires The condition that must be satisfied on the *existing* record before this field can be modified.
+     *   - [Condition.Always]: Field can always be modified (subject to [limitedTo])
+     *   - [Condition.Never]: Field cannot be modified at all
+     *   - Custom condition: Field can only be modified if the existing record matches this condition
+     *
+     * @param limitedTo Restricts what values the field can be changed *to*.
+     *   - [Condition.Always]: Field can be changed to any value (subject to [requires])
+     *   - [Condition.Never]: Field cannot be changed (used internally when modification is blocked)
+     *   - Custom condition: The new value must satisfy this condition after the update.  A write that doesn't set
+     *     every part it reads (e.g. a sub-field write, or one under `notNull`, `asType` or `forEachIf`) is only allowed
+     *     on rows that already satisfy it, which is added to the update's condition (see [requiredBefore]).
+     *     Read masks don't apply to that condition.
+     *
+     * ## Example
+     *
+     * ```kotlin
+     * // Credits can't go negative, and only admins can change them
+     * Part(
+     *     property = User.path.credits,
+     *     requires = User.path.role eq Role.Admin,  // Must be admin to modify
+     *     limitedTo = User.path.credits gte 0
+     * )
+     * ```
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    @Queryable
+    public data class Part<T>(
+        @JsonNames("path") val property: AnyOptic<T>,
+        @JsonNames("limitedIf") val requires: Condition<T>,
+        val limitedTo: Condition<T>,
+    )
+
+    /**
+     * Evaluates the restrictions against a [Modification] and returns the [Condition] that must be met
+     * for the modification to be allowed.
+     *
+     * This operator analyzes which fields are affected by the [Modification] and combines the [Part.requires]
+     * conditions for those fields. It also checks any [Part.limitedTo] constraints against the modification, adding
+     * those it can only keep holding (see [requiredBefore]).
+     *
+     * ## Return Values
+     *
+     * - [Condition.Always]: The modification is allowed on any record
+     * - [Condition.Never]: The modification is completely blocked (no records can be modified this way)
+     * - Specific condition: The modification is only allowed on records matching this condition
+     *
+     * ## Behavior by Mode
+     *
+     * In both modes, every rule whose field the modification writes (including by writing a parent of it) applies.
+     *
+     * - **[Mode.Blacklist]**: If no restricted fields are affected, returns [Condition.Always] (modification allowed)
+     * - **[Mode.Whitelist]**: Every path the modification writes must have a rule on it or on one of its parents,
+     *   or this returns [Condition.Never].  A rule on `a` allows writing `a.b`; a rule on `a.b` doesn't allow writing `a`.
+     *
+     * ## Usage
+     *
+     * ```kotlin
+     * val restrictions = updateRestrictions<User> { user ->
+     *     user.role requires (user.role eq Role.Admin)
+     * }
+     *
+     * val mod = User.path.role assign Role.Admin
+     * val condition = restrictions(mod)  // Returns: user.role eq Role.Admin
+     *
+     * // Use in update operation
+     * table.updateMany(
+     *     condition = condition and (User.path._id eq userId),
+     *     modification = mod
+     * )
+     * ```
+     *
+     * @param on The modification to evaluate
+     * @return The condition that must be met for this modification to be allowed
+     */
+    public operator fun invoke(on: Modification<T>): Condition<T> {
+        if (mode == Mode.Whitelist && on.affectsPaths().any { written ->
+                fields.none { written.take(it.property.fields.size) == it.property.fields }
+            }) return Condition.Never
+
+        val appliedConditions = LinkedHashSet<Condition<T>>()
+        for (field in fields) {
+            if (on.affects(field.property)) {
+                val limitedToBefore = field.limitedTo.requiredBefore(on)
+                if (limitedToBefore == Condition.Never) return Condition.Never
+                if (limitedToBefore != Condition.Always) appliedConditions.add(limitedToBefore)
+                if (field.requires == Condition.Never) return Condition.Never
+                if (field.requires != Condition.Always) appliedConditions.add(field.requires)
+            }
+        }
+
+        val distinct = appliedConditions.toList()
+
+        return when (distinct.size) {
+            0 -> Condition.Always
+            1 -> distinct[0]
+            else -> Condition.And(distinct)
+        }
+    }
+
+    /**
+     * Builder for constructing [UpdateRestrictions] using a DSL.
+     *
+     * The builder provides methods to define restrictions on individual fields:
+     * - [cannotBeModified] / [canBeModified]: Block or allow field modifications
+     * - [requires]: Require conditions on the existing record
+     * - [mustBe]: Restrict what values a field can be changed to
+     *
+     * Typically used via the [updateRestrictions] DSL function rather than directly.
+     *
+     * @param mode The restriction mode ([Mode.Whitelist] or [Mode.Blacklist])
+     * @param fields Accumulates the field restrictions as they're defined
+     */
+    public class Builder<T>(
+        mode: Mode,
+        public val fields: ArrayList<Part<T>> = ArrayList(),
+    ) {
+        public var mode: Mode = mode
+            private set
+
+        /**
+         * Completely blocks modifications to this field.
+         *
+         * Blocks any modification that writes this field, in either mode.  In [Mode.Whitelist], use it to carve a
+         * field out of an allowed parent: with `it.a.canBeModified(); it.a.secret.cannotBeModified()`, writes to
+         * `a.other` are allowed, while writes to `a.secret` or to `a` as a whole are blocked.
+         *
+         * ## Example
+         * ```kotlin
+         * updateRestrictions<User> { user ->
+         *     // ID cannot be changed
+         *     user._id.cannotBeModified()
+         *
+         *     // Creation timestamp cannot be changed
+         *     user.createdAt.cannotBeModified()
+         * }
+         * ```
+         */
+        public fun Optic<T, *>.cannotBeModified() {
+            this@Builder.fields.add(Part(property = this, requires = Condition.Never, limitedTo = Condition.Always))
+        }
+
+        /**
+         * Allows unrestricted modifications to this field.
+         *
+         * In [Mode.Whitelist], this explicitly allows the field to be modified.
+         * In [Mode.Blacklist], this is a no-op (fields are already allowed by default).
+         *
+         * ## Example
+         * ```kotlin
+         * updateRestrictions<User>(mode = Mode.Whitelist) { user ->
+         *     // Only these fields can be modified
+         *     user.email.canBeModified()
+         *     user.displayName.canBeModified()
+         *     // All other fields are blocked
+         * }
+         * ```
+         */
+        public fun Optic<T, *>.canBeModified() {
+            if (mode == Mode.Blacklist) return
+            this@Builder.fields.add(Part(property = this, requires = Condition.Always, limitedTo = Condition.Always))
+        }
+
+        /**
+         * Makes this field only modifiable when the existing record matches the specified [condition].
+         *
+         * The [condition] is evaluated against the *current* state of the record before the update.
+         * If the condition is not met, the update will not affect any records.
+         * Read masks don't apply to [condition], so whether an update matched can reveal a masked value it tests.
+         *
+         * ## Example
+         * ```kotlin
+         * updateRestrictions<User> { user ->
+         *     // Only admins can modify the role field
+         *     user.role requires (user.role eq Role.Admin)
+         *
+         *     // Users can only modify their own email
+         *     user.email requires (user._id eq currentUserId)
+         *
+         *     // Suspended users cannot modify their profile
+         *     user.displayName requires (user.status neq Status.Suspended)
+         * }
+         * ```
+         *
+         * @param condition The condition that must be met on the existing record
+         */
+        public infix fun Optic<T, *>.requires(condition: Condition<T>) {
+            this@Builder.fields.add(Part(property = this, requires = condition, limitedTo = Condition.Always))
+        }
+
+        /**
+         * Restricts what values this field can be changed to, without restricting who can change it.
+         *
+         * The [valueMust] lambda receives a path to the field's value and returns a condition
+         * that the new value must satisfy.  A write that doesn't set the whole field is only allowed on rows that
+         * already satisfy it; see [Part.limitedTo].
+         *
+         * ## Example
+         * ```kotlin
+         * updateRestrictions<User> { user ->
+         *     // Email must be valid format (simplified example)
+         *     user.email.mustBe { it contains "@" }
+         *
+         *     // Age must be reasonable
+         *     user.age.mustBe { (it gte 0) and (it lt 150) }
+         *
+         *     // Status can't be set to Deleted
+         *     user.status.mustBe { it neq Status.Deleted }
+         *
+         *     // Credits can't go negative.  The condition sees only the new value, not the old one.
+         *     user.credits.mustBe { it gte 0 }
+         * }
+         * ```
+         *
+         * @param valueMust Lambda that returns a condition the new value must satisfy
+         */
+        public inline fun <reified V> Optic<T, V>.mustBe(valueMust: (Lens<V, V>) -> Condition<V>) {
+            this@Builder.fields.add(Part(property = this, requires = Condition.Always, limitedTo = this.condition(valueMust)))
+        }
+
+        /**
+         * Makes this field only modifiable when [requires] is met, and restricts what values it can be changed to.
+         *
+         * Combines two types of restrictions:
+         * 1. The existing record must match [requires] (checked before update)
+         * 2. The new value must satisfy the condition from [valueMust] after the modification is applied
+         *
+         * ## Example
+         * ```kotlin
+         * updateRestrictions<User> { user ->
+         *     // Admins can change credits, but only to positive values
+         *     user.credits.requires(
+         *         requires = user.role eq Role.Admin,
+         *         valueMust = { it gt 0 }
+         *     )
+         *
+         *     // Moderators can change status, but not to Admin
+         *     user.role.requires(
+         *         requires = user.role eq Role.Moderator,
+         *         valueMust = { it neq Role.Admin }
+         *     )
+         * }
+         * ```
+         *
+         * @param requires Condition on the existing record
+         * @param valueMust Lambda that returns a condition the new value must satisfy
+         */
+        public inline fun <reified V> Optic<T, V>.requires(
+            requires: Condition<T>,
+            valueMust: (Lens<V, V>) -> Condition<V>,
+        ) {
+            this@Builder.fields.add(Part(property = this, requires = requires, limitedTo = this.condition(valueMust)))
+        }
+
+        /**
+         * Includes all restrictions from another [UpdateRestrictions] instance into this builder.
+         *
+         * This is useful for composing restrictions from multiple sources or layering
+         * base restrictions with additional rules.
+         *
+         * **Important**: If the included [mask] is in a different [Mode], this builder will
+         * be put into the most restrictive mode specified (i.e. [Mode.Whitelist])
+         *
+         * ## Example
+         * ```kotlin
+         * // Base restrictions that apply to all users
+         * val baseRestrictions = updateRestrictions<User> { user ->
+         *     user._id.cannotBeModified()
+         *     user.createdAt.cannotBeModified()
+         * }
+         *
+         * // Additional restrictions for non-admin operations
+         * val userRestrictions = updateRestrictions<User> { user ->
+         *     include(baseRestrictions)  // Include base rules
+         *     user.role.cannotBeModified()  // Add additional rules
+         *     user.permissions.cannotBeModified()
+         * }
+         * ```
+         *
+         * @param mask The restrictions to include
+         * @throws IllegalArgumentException if [mask] has a different mode than this builder
+         */
+        public fun include(mask: UpdateRestrictions<T>) {
+            mode = maxOf(mode, mask.mode)
+            fields.addAll(mask.fields)
+        }
+
+        public fun build(): UpdateRestrictions<T> = UpdateRestrictions(mode, fields)
+    }
+}
+
+
+/**
+ * DSL for defining [UpdateRestrictions] in a type-safe way.
+ *
+ * This function provides a convenient builder syntax for creating update restrictions.
+ * The builder lambda receives the root [Lens] for the type [T], allowing you
+ * to reference fields in a type-safe manner.
+ *
+ * ## Mode
+ *
+ * [mode] specifies the default behavior for unspecified fields:
+ *
+ *   - [UpdateRestrictions.Mode.Blacklist] (default): All fields allowed unless restricted
+ *   - [UpdateRestrictions.Mode.Whitelist]: All fields blocked unless explicitly allowed
+ *
+ * ## Examples
+ *
+ * ### Basic Blacklist (restricting specific fields)
+ * ```kotlin
+ * val restrictions = updateRestrictions<User> { user ->
+ *     user._id.cannotBeModified()
+ *     user.createdAt.cannotBeModified()
+ *     user.role requires (user.role eq Role.Admin)
+ * }
+ * ```
+ *
+ * ### Whitelist (only allowing specific fields)
+ * ```kotlin
+ * val publicProfileRestrictions = updateRestrictions<User>(mode = Mode.Whitelist) { user ->
+ *     user.displayName.canBeModified()
+ *     user.bio.canBeModified()
+ *     user.avatarUrl.canBeModified()
+ *     // Everything else is blocked
+ * }
+ * ```
+ *
+ * ### Complex restrictions with value constraints
+ * ```kotlin
+ * val accountRestrictions = updateRestrictions<Account> { account ->
+ *     // Balance can only be modified by system
+ *     account.balance requires (account.updatedBy eq "SYSTEM")
+ *
+ *     // Status changes require approval, and can't be set to Deleted
+ *     account.status.requires(
+ *         requires = account.approvedBy neq null,
+ *         valueMust = { it neq Status.Deleted }
+ *     )
+ *
+ *     // Credit limit can't go negative
+ *     account.creditLimit.mustBe { it gte 0 }
+ * }
+ * ```
+ *
+ * ### Composing restrictions
+ * ```kotlin
+ * val baseRestrictions = updateRestrictions<User> { user ->
+ *     user._id.cannotBeModified()
+ * }
+ *
+ * val extendedRestrictions = updateRestrictions<User> { user ->
+ *     include(baseRestrictions)
+ *     user.role.cannotBeModified()
+ * }
+ * ```
+ *
+ * @return Configured [UpdateRestrictions] instance ready to be applied to modifications
+ */
+public inline fun <reified T> updateRestrictions(
+    mode: UpdateRestrictions.Mode = UpdateRestrictions.Mode.Blacklist,
+    builder: UpdateRestrictions.Builder<T>.(Lens<T, T>) -> Unit,
+): UpdateRestrictions<T> {
+    return UpdateRestrictions.Builder<T>(mode).apply { builder(path<T>()) }.build()
+}
+
+/**
+ * Convenience function for creating blacklist-mode [UpdateRestrictions].
+ *
+ * This is equivalent to calling `updateRestrictions(mode = UpdateRestrictions.Mode.Blacklist)`.
+ * In blacklist mode, all fields are allowed by default unless explicitly restricted.
+ *
+ * ## Example
+ * ```kotlin
+ * val restrictions = blacklistRestrictions<User> { user ->
+ *     user._id.cannotBeModified()
+ *     user.role requires (user.role eq Role.Admin)
+ * }
+ * ```
+ *
+ * @param T The data class type being restricted
+ * @param builder Lambda to configure field restrictions
+ * @return [UpdateRestrictions] in blacklist mode
+ * @see updateRestrictions
+ */
+public inline fun <reified T> blacklistRestrictions(
+    builder: UpdateRestrictions.Builder<T>.(Lens<T, T>) -> Unit,
+): UpdateRestrictions<T> =
+    updateRestrictions(UpdateRestrictions.Mode.Blacklist, builder)
+
+/**
+ * Convenience function for creating whitelist-mode [UpdateRestrictions].
+ *
+ * This is equivalent to calling `updateRestrictions(mode = UpdateRestrictions.Mode.Whitelist)`.
+ * In whitelist mode, all fields are blocked by default unless explicitly allowed.
+ *
+ * ## Example
+ * ```kotlin
+ * val restrictions = whitelistRestrictions<User> { user ->
+ *     user.email.canBeModified()
+ *     user.username.canBeModified()
+ *     // All other fields are blocked
+ * }
+ * ```
+ *
+ * @param T The data class type being restricted
+ * @param builder Lambda to configure field restrictions
+ * @return [UpdateRestrictions] in whitelist mode
+ * @see updateRestrictions
+ */
+public inline fun <reified T> whitelistRestrictions(
+    builder: UpdateRestrictions.Builder<T>.(Lens<T, T>) -> Unit,
+): UpdateRestrictions<T> =
+    updateRestrictions(UpdateRestrictions.Mode.Whitelist, builder)
+
+/**
+ * Creates a copy of these [ModelPermissions] with additional update restrictions layered on top.
+ *
+ * This extension function allows you to build upon existing restrictions without replacing them.
+ * The new restrictions are added using the same [UpdateRestrictions.Mode] as the original.
+ *
+ * ## Usage
+ *
+ * This is particularly useful for:
+ * - Adding context-specific restrictions to base permissions
+ * - Layering user-specific constraints on top of role-based permissions
+ * - Temporarily tightening permissions for specific operations
+ *
+ * ## Example
+ * ```kotlin
+ * val basePermissions = ModelPermissions<User>(
+ *     read = Condition.Always,
+ *     update = User.path.role eq Role.Admin,
+ *     updateRestrictions = updateRestrictions {
+ *         it._id.cannotBeModified()
+ *     }
+ * )
+ *
+ * // Add additional restrictions for a specific context
+ * val restrictedPermissions = basePermissions.withAdditionalUpdateRestrictions { user ->
+ *     // Now also prevent modifying creation date
+ *     user.createdAt.cannotBeModified()
+ *     // And require approval for role changes
+ *     user.role requires (user.approvedBy neq null)
+ * }
+ * // Result has both original restrictions (_id) AND new ones (createdAt, role)
+ * ```
+ *
+ * @param T The model type
+ * @param builder Lambda to configure additional field restrictions
+ * @return New [ModelPermissions] with combined restrictions
+ */
+public inline fun <reified T> ModelPermissions<T>.withAdditionalUpdateRestrictions(
+    builder: UpdateRestrictions.Builder<T>.(Lens<T, T>) -> Unit,
+): ModelPermissions<T> =
+    copy(
+        updateRestrictions = updateRestrictions(this.updateRestrictions.mode) {
+            include(updateRestrictions)
+            builder(it)
+        }
+    )
+
+@Deprecated("Renamed", ReplaceWith("UpdateRestrictions.Part"))
+public typealias UpdateRestrictionsPart<T> = UpdateRestrictions.Part<T>

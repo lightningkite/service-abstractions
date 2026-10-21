@@ -10,7 +10,7 @@ plugins {
 }
 
 dependencies {
-    // KSP generates DataClassPath objects (@Queryable) for the database demo -
+    // KSP generates optics (@Queryable) for the database demo -
     // this must be `ksp(...)`, not `api(...)`, or the generator never runs.
     ksp(project(":database-processor"))
 

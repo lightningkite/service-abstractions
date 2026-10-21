@@ -1,10 +1,10 @@
 package com.lightningkite.services.database.sql
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.SerializableProperty
 import com.lightningkite.services.database.listElement
-import com.lightningkite.services.database.mapKeyElement
 import com.lightningkite.services.database.mapValueElement
 import com.lightningkite.services.database.nullElement
 import kotlinx.serialization.KSerializer
@@ -49,14 +49,14 @@ internal data class SqlFieldSet<V>(
         single to sqlLiteralOfSomeKind(single.columnType, formatSingle(value))
 
     @Suppress("UNCHECKED_CAST")
-    fun sub(property: SerializableProperty<V, *>): SqlFieldSet<Any?> {
+    fun sub(property: Field<V, *>): SqlFieldSet<Any?> {
         val newFieldPath = if (fieldPath.isEmpty()) property.name else "${fieldPath}__${property.name}"
         // Navigating through the sole wrapped property of a Kotlin value class (property.inline)
         // does not consume a storage segment: SqlSchema.registerColumns/registerChildColumns
         // collapse value classes away when building column names, mirroring kotlinx
         // serialization's transparent encodeInline. So the columns stay exactly the same;
         // only the serializer (and reported field path) changes.
-        return if (property.inline) {
+        return if (property.isInline) {
             SqlFieldSet(
                 serializer = property.serializer as KSerializer<Any?>,
                 fields = fields,
@@ -211,7 +211,7 @@ private fun <T> condition(
         }
 
         is Condition.OnField<*, *> -> {
-            val subProperty = condition.key as SerializableProperty<T, Any?>
+            val subProperty = condition.key as Field<T, Any?>
             val newPath = if (fieldSet.fieldPath.isEmpty()) subProperty.name else "${fieldSet.fieldPath}__${subProperty.name}"
 
             // Check if this navigates to a child table
@@ -408,7 +408,7 @@ internal fun <T> Modification<T>.isScalarOnly(schema: SqlSchema, path: String = 
         // Navigating through a value class's wrapped property (key.inline) doesn't consume a
         // storage segment — see SqlFieldSet.sub() — so it must not extend the path either, or
         // the childTables membership check below would look for a path that was never registered.
-        val newPath = if (key.inline) path
+        val newPath = if (key.isInline) path
             else if (path.isEmpty()) key.name else "${path}__${key.name}"
         (modification as Modification<Any?>).isScalarOnly(schema, newPath)
     }
@@ -544,14 +544,14 @@ private fun <T> FieldModifier.scalarModification(
             // Value class hop (modification.key.inline): no storage segment consumed, so neither
             // the field-name prefix nor the path grows here — mirrors SqlFieldSet.sub() and the
             // isScalarOnly() path tracking above.
-            val newPath = if (modification.key.inline) path
+            val newPath = if (modification.key.isInline) path
                 else if (path.isEmpty()) modification.key.name else "${path}__${modification.key.name}"
             // Skip if this navigates to a child table field
             if (!schema.childTables.containsKey(newPath)) {
-                val nextModifier = if (modification.key.inline) this else sub(modification.key.name)
+                val nextModifier = if (modification.key.isInline) this else sub(modification.key.name)
                 nextModifier.scalarModification(
                     modification.modification as Modification<Any?>,
-                    fieldSet.sub(modification.key as SerializableProperty<T, Any?>),
+                    fieldSet.sub(modification.key as Field<T, Any?>),
                     schema,
                     newPath,
                 )

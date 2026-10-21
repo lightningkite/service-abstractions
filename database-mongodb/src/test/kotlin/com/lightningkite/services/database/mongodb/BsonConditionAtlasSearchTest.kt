@@ -3,6 +3,8 @@
 // Atlas-compatible operators ($eq/$in) instead of $elemMatch when atlasSearch=true.
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.mongodb.bson.KBson
 import com.lightningkite.services.database.test.LargeTestModel
@@ -23,17 +25,17 @@ class BsonConditionAtlasSearchTest {
 
     private val bson = KBson()
     private val serializer = LargeTestModel.serializer()
-    private val props = serializer.serializableProperties!!
+    private val props = serializer.fields!!
 
     // Get properties by name to build conditions manually (like KnowledgeBaseTools does)
     @Suppress("UNCHECKED_CAST")
-    private val setProp = props.first { it.name == "set" } as SerializableProperty<LargeTestModel, Set<Int>>
+    private val setProp = props.first { it.name == "set" } as Field<LargeTestModel, Set<Int>>
 
     @Suppress("UNCHECKED_CAST")
-    private val listProp = props.first { it.name == "list" } as SerializableProperty<LargeTestModel, List<Int>>
+    private val listProp = props.first { it.name == "list" } as Field<LargeTestModel, List<Int>>
 
     @Suppress("UNCHECKED_CAST")
-    private val intProp = props.first { it.name == "int" } as SerializableProperty<LargeTestModel, Int>
+    private val intProp = props.first { it.name == "int" } as Field<LargeTestModel, Int>
 
     // Helper: build OnField(setProp, CollectionAnyElements(innerCondition))
     private fun setAny(inner: Condition<Int>): Condition<LargeTestModel> =

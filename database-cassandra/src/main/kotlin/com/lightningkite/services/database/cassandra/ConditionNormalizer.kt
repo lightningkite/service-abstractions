@@ -1,5 +1,7 @@
 package com.lightningkite.services.database.cassandra
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.database.Condition
 
 /**
@@ -87,7 +89,7 @@ public object ConditionNormalizer {
             is Condition.OnField<*, *> -> {
                 val normalizedInner = normalizeNot(inner.condition as Condition<Any?>)
                 Condition.OnField(
-                    inner.key as com.lightningkite.services.database.SerializableProperty<T, Any?>,
+                    inner.key as com.lightningkite.services.database.optics.Field<T, Any?>,
                     normalizedInner
                 )
             }

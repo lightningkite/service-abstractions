@@ -1,0 +1,480 @@
+@file:Suppress("PackageDirectoryMismatch", "OPT_IN_USAGE", "OPT_IN_OVERRIDE")
+
+package com.lightningkite.services.database
+
+import com.lightningkite.services.database.optics.AnyOpticSerializer
+
+import com.lightningkite.services.data.ExperimentalLightningServer
+import kotlinx.serialization.*
+import kotlinx.serialization.builtins.*
+import kotlinx.serialization.descriptors.*
+import kotlinx.serialization.encoding.*
+import kotlinx.serialization.internal.GeneratedSerializer
+import kotlinx.serialization.modules.EmptySerializersModule
+import kotlinx.serialization.modules.SerializersModule
+import kotlin.reflect.*
+
+
+public abstract class WrappingSerializer<OUTER, INNER>(public val name: String) : KSerializer<OUTER> {
+    public abstract fun getDeferred(): KSerializer<INNER>
+    public abstract fun inner(it: OUTER): INNER
+    public abstract fun outer(it: INNER): OUTER
+    public val to: KSerializer<INNER> by lazy { getDeferred() }
+    // No eager kind: touching `to` here would force getDeferred() from the base constructor, before the
+    // subclass has assigned its own fields (e.g. `inner`), yielding a null and an NPE.  Let the kind defer too.
+    override val descriptor: SerialDescriptor = LazySerialDescriptor(name) { to.descriptor }
+    override fun deserialize(decoder: Decoder): OUTER = outer(decoder.decodeSerializableValue(to))
+    override fun serialize(encoder: Encoder, value: OUTER): Unit =
+        encoder.encodeSerializableValue(to, inner(value))
+}
+
+@OptIn(ExperimentalSerializationApi::class, SealedSerializationApi::class)
+@ExperimentalLightningServer("This is highly likely to change, given that it's using unstable KotlinX serialization stuff.")
+public class LazySerialDescriptor(override val serialName: String, kind: SerialKind? = null, private val additionalAnnotations: List<Annotation> = listOf(), deferred: () -> SerialDescriptor) : SerialDescriptor {
+
+    private val original: SerialDescriptor by lazy(deferred)
+
+    /**
+     * The descriptor this instance forwards structural queries to, once [deferred] has been forced.
+     * Exposed so callers doing graph analysis over descriptors (e.g. detecting self-referential types
+     * in [com.lightningkite.services.database.isSelfReferential]) can see through this wrapper to what
+     * it actually represents - [equals]/[hashCode] compare by [original] too, but that alone doesn't let
+     * a caller walk the chain when [original] is itself another wrapper.
+     */
+    public val wrapped: SerialDescriptor get() = original
+
+    // When no kind is given, fall back to the deferred descriptor's kind lazily rather than forcing it eagerly.
+    private val explicitKind: SerialKind? = kind
+    override val kind: SerialKind get() = explicitKind ?: original.kind
+
+    override val elementsCount: Int
+        get() = original.elementsCount
+
+    override fun getElementName(index: Int): String = original.getElementName(index)
+    override fun getElementIndex(name: String): Int = original.getElementIndex(name)
+    override fun getElementAnnotations(index: Int): List<Annotation> = original.getElementAnnotations(index)
+    override fun getElementDescriptor(index: Int): SerialDescriptor = original.getElementDescriptor(index)
+    override fun isElementOptional(index: Int): Boolean = original.isElementOptional(index)
+
+    @ExperimentalSerializationApi
+    override val annotations: List<Annotation> by lazy {
+        original.annotations + additionalAnnotations
+    }
+
+    @ExperimentalSerializationApi
+    override val isInline: Boolean
+        get() = original.isInline
+
+    @ExperimentalSerializationApi
+    override val isNullable: Boolean
+        get() = original.isNullable
+
+    override fun equals(other: Any?): Boolean = other is LazySerialDescriptor && other.original == original
+    override fun hashCode(): Int = original.hashCode()
+}
+
+@OptIn(SealedSerializationApi::class)
+@ExperimentalLightningServer("This is highly likely to change, given that it's using unstable KotlinX serialization stuff.")
+public class InliningSerialDescriptor(override val serialName: String, private val inner: SerialDescriptor): SerialDescriptor {
+    override val kind: SerialKind get() = StructureKind.CLASS
+    override val elementsCount: Int = 1
+    override fun getElementName(index: Int): String = "value"
+    override fun getElementIndex(name: String): Int = if (name == "value") 0 else -1
+    override fun getElementAnnotations(index: Int): List<Annotation> = listOf()
+    override fun getElementDescriptor(index: Int): SerialDescriptor = inner
+    override fun isElementOptional(index: Int): Boolean = false
+    override val isInline: Boolean get() = true
+
+    override fun equals(other: Any?): Boolean = other is InliningSerialDescriptor && other.serialName == serialName && other.inner == inner
+    override fun hashCode(): Int = serialName.hashCode() * 31 + inner.hashCode()
+}
+
+
+@OptIn(SealedSerializationApi::class)
+@ExperimentalLightningServer("This is highly likely to change, given that it's using unstable KotlinX serialization stuff.")
+public class PrimitiveDescriptorWithAnnotations(override val serialName: String, override val kind: SerialKind, override val annotations: List<Annotation>) : SerialDescriptor {
+    override val elementsCount: Int get() = 0
+    override fun getElementName(index: Int): String = error()
+    override fun getElementIndex(name: String): Int = error()
+    override fun isElementOptional(index: Int): Boolean = error()
+    override fun getElementDescriptor(index: Int): SerialDescriptor = error()
+    override fun getElementAnnotations(index: Int): List<Annotation> = error()
+    override fun toString(): String = "PrimitiveDescriptor($serialName)"
+    private fun error(): Nothing = throw IllegalStateException("Primitive descriptor does not have elements")
+
+    override fun equals(other: Any?): Boolean = other is PrimitiveDescriptorWithAnnotations && other.serialName == serialName && other.kind == kind && other.annotations == annotations
+    override fun hashCode(): Int = serialName.hashCode() * 31 + kind.hashCode() * 31 + annotations.hashCode()
+}
+
+public class KSerializerKey(private val kSerializer: KSerializer<*>, private val nullable: Boolean) {
+    public constructor(kSerializer: KSerializer<*>) : this(
+        kSerializer = if (kSerializer.descriptor.isNullable) kSerializer.innerElement() else kSerializer,
+        nullable = kSerializer.descriptor.isNullable
+    )
+
+    private val sub = kSerializer.typeParametersSerializersOrNull2()?.map { KSerializerKey(it) } ?: listOf()
+    private val storedHashCode =
+        kSerializer::class.hashCode() hashWith sub.hashCode() hashWith kSerializer.descriptor.serialName hashWith nullable
+
+    override fun hashCode(): Int = storedHashCode
+
+    override fun equals(other: Any?): Boolean =
+        other is KSerializerKey
+                && this.kSerializer.descriptor.serialName == other.kSerializer.descriptor.serialName
+                && this.nullable == other.nullable
+                && this.kSerializer::class == other.kSerializer::class
+                && this.sub == other.sub
+
+    override fun toString(): String = kSerializer.toString()
+}
+
+
+@Suppress("NOTHING_TO_INLINE")
+private inline infix fun Int.hashWith(other: Int): Int = this * 31 + other
+
+@Suppress("NOTHING_TO_INLINE")
+private inline infix fun Int.hashWith(other: Any): Int = this * 31 + other.hashCode()
+
+
+private class FoundSerializerSignal(val serializer: KSerializer<*>) : Throwable()
+
+@OptIn(ExperimentalSerializationApi::class)
+private object FakerDecoder : AbstractDecoder() {
+    override val serializersModule: SerializersModule = EmptySerializersModule()
+    override fun decodeBoolean() = false
+    override fun decodeByte() = 0.toByte()
+    override fun decodeChar() = ' '
+    override fun decodeDouble() = 0.0
+    override fun decodeFloat() = 0f
+    override fun decodeInt() = 0
+    override fun decodeLong() = 0L
+    override fun decodeShort() = 0.toShort()
+    override fun decodeString() = ""
+    override fun decodeEnum(enumDescriptor: SerialDescriptor): Int = 0
+    override fun decodeCollectionSize(descriptor: SerialDescriptor): Int = 0
+    override fun decodeElementIndex(descriptor: SerialDescriptor): Int = CompositeDecoder.DECODE_DONE
+    override fun decodeNotNullMark(): Boolean = true
+}
+
+private class FakerClassDecoder : AbstractDecoder() {
+    override val serializersModule: SerializersModule = EmptySerializersModule()
+    override fun decodeBoolean() = false
+    override fun decodeByte() = 0.toByte()
+    override fun decodeChar() = ' '
+    override fun decodeDouble() = 0.0
+    override fun decodeFloat() = 0f
+    override fun decodeInt() = 0
+    override fun decodeLong() = 0L
+    override fun decodeShort() = 0.toShort()
+    override fun decodeString() = ""
+    override fun decodeEnum(enumDescriptor: SerialDescriptor): Int = 0
+    override fun decodeCollectionSize(descriptor: SerialDescriptor): Int = 0
+    val stack = ArrayList<Int>()
+    var counter = 0
+    override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
+        return counter++.let {
+            if (it >= descriptor.elementsCount) CompositeDecoder.DECODE_DONE else it
+        }
+    }
+
+    override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder =
+        if (descriptor.kind == StructureKind.CLASS) {
+            stack.add(counter)
+            counter = 0
+            this
+        } else FakerDecoder
+
+    override fun endStructure(descriptor: SerialDescriptor) {
+        stack.removeLastOrNull()?.let { counter = it }
+    }
+
+    override fun decodeNotNullMark(): Boolean = true
+}
+
+private val ANY = Any()
+
+@Suppress("UNCHECKED_CAST")
+private class CheatingBastardDecoder(
+    var count: Int = 0,
+    override val serializersModule: SerializersModule = EmptySerializersModule(),
+) : AbstractDecoder() {
+    var counter = 0
+    override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
+        return counter++.let {
+            if (it >= descriptor.elementsCount) CompositeDecoder.DECODE_DONE else it
+        }
+    }
+
+    override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
+        if (count == 0) throw FoundSerializerSignal(deserializer as KSerializer<*>)
+        count--
+        // we don't need a viable value
+        return ANY as T
+        /*if (deserializer.descriptor.kind == StructureKind.CLASS) FakerClassDecoder().decodeSerializableValue(deserializer)
+        else FakerDecoder.decodeSerializableValue(deserializer)*/
+    }
+
+    override fun decodeBoolean(): Boolean {
+        throw FoundSerializerSignal(Boolean.serializer())
+    }
+
+    override fun decodeByte(): Byte {
+        throw FoundSerializerSignal(Byte.serializer())
+    }
+
+    override fun decodeShort(): Short {
+        throw FoundSerializerSignal(Short.serializer())
+    }
+
+    override fun decodeInt(): Int {
+        throw FoundSerializerSignal(Int.serializer())
+    }
+
+    override fun decodeLong(): Long {
+        throw FoundSerializerSignal(Long.serializer())
+    }
+
+    override fun decodeFloat(): Float {
+        throw FoundSerializerSignal(Float.serializer())
+    }
+
+    override fun decodeDouble(): Double {
+        throw FoundSerializerSignal(Double.serializer())
+    }
+
+    override fun decodeChar(): Char {
+        throw FoundSerializerSignal(Char.serializer())
+    }
+
+    override fun decodeString(): String {
+        throw FoundSerializerSignal(String.serializer())
+    }
+
+    override fun decodeEnum(enumDescriptor: SerialDescriptor): Int =
+        throw FoundSerializerSignal(SerializationRegistry.master.get(enumDescriptor.serialName, arrayOf())!!)
+//    override fun decodeEnum(enumDescriptor: SerialDescriptor): Int = throw UnsupportedOperationException("Can't analyze enums.  Sorry.")
+}
+
+public fun KSerializer<*>.innerElement(): KSerializer<*> = try {
+    if (this is WrappingSerializer<*, *>) this.to.innerElement() else {
+        this.deserialize(CheatingBastardDecoder(0))
+        throw Exception("${this.descriptor.serialName} ($this) did not have an inner element")
+    }
+} catch (e: FoundSerializerSignal) {
+    e.serializer
+}
+
+public fun KSerializer<*>.innerElement2(): KSerializer<*> = try {
+    if (this is WrappingSerializer<*, *>) this.to.innerElement2() else {
+        this.deserialize(CheatingBastardDecoder(1))
+        throw Exception("${this.descriptor.serialName} ($this) did not have a second inner element")
+    }
+} catch (e: FoundSerializerSignal) {
+    e.serializer
+}
+
+public fun KSerializer<*>.innerElement3(): KSerializer<*> = try {
+    if (this is WrappingSerializer<*, *>) this.to.innerElement3() else {
+        this.deserialize(CheatingBastardDecoder(2))
+        throw Exception("${this.descriptor.serialName} ($this) did not have a third inner element")
+    }
+} catch (e: FoundSerializerSignal) {
+    e.serializer
+}
+
+public fun KSerializer<*>.listElement(): KSerializer<*>? =
+    if (descriptor.kind == StructureKind.LIST) this.innerElement() else null
+
+public fun KSerializer<*>.mapKeyElement(): KSerializer<*>? =
+    if (descriptor.kind == StructureKind.MAP) this.innerElement() else null
+
+public fun KSerializer<*>.mapValueElement(): KSerializer<*>? =
+    if (descriptor.kind == StructureKind.MAP) this.innerElement2() else null
+
+@OptIn(ExperimentalSerializationApi::class)
+public fun KSerializer<*>.nullElement(): KSerializer<*>? {
+    return if (this.descriptor.isNullable) this.innerElement()
+    else null
+}
+
+@OptIn(InternalSerializationApi::class)
+internal fun KSerializer<*>.typeParametersSerializersOrNull2(): Array<KSerializer<*>>? = when (descriptor.kind) {
+    is StructureKind.LIST -> arrayOf(innerElement())
+    is StructureKind.MAP -> arrayOf(innerElement2())
+    is StructureKind.CLASS -> {
+        (this as? GeneratedSerializer<*>)?.typeParametersSerializers()
+            ?: (this as? ConditionSerializer<*>)?.inner?.let { arrayOf(it) }
+            ?: (this as? ModificationSerializer<*>)?.inner?.let { arrayOf(it) }
+            ?: (this as? PartialSerializer<*>)?.source?.let { arrayOf(it) }
+    }
+
+    is PrimitiveKind.STRING -> {
+        (this as? SortPartSerializer<*>)?.inner?.let { arrayOf(it) }
+            ?: (this as? AnyOpticSerializer<*>)?.root?.let { arrayOf(it) }
+    }
+
+    else -> null
+}
+
+private val pairSerialName = PairSerializer(NothingSerializer(), NothingSerializer()).descriptor.serialName
+private val tripleSerialName =
+    TripleSerializer(NothingSerializer(), NothingSerializer(), NothingSerializer()).descriptor.serialName
+
+@OptIn(InternalSerializationApi::class)
+private fun KSerializer<*>.typeParameterSerializersOrNullImpl(): Array<KSerializer<*>>? = when (descriptor.kind) {
+    StructureKind.LIST -> arrayOf(innerElement())
+    StructureKind.MAP -> arrayOf(innerElement(), innerElement2())
+    StructureKind.CLASS -> {
+        @Suppress("UNCHECKED_CAST")
+        (this as? GeneratedSerializer<*>)?.typeParametersSerializers()
+            ?: (this as? ConditionSerializer<*>)?.inner?.let { arrayOf(it) }
+            ?: (this as? ModificationSerializer<*>)?.inner?.let { arrayOf(it) }
+            ?: (this as? PartialSerializer<*>)?.source?.let { arrayOf(it) }
+            ?: (this as? VirtualStruct.Concrete)?.arguments as? Array<KSerializer<*>>
+            ?: when (descriptor.serialName) {
+                pairSerialName -> arrayOf(innerElement(), innerElement2())
+                tripleSerialName -> arrayOf(innerElement(), innerElement2(), innerElement3())
+                else -> null
+            }
+    }
+
+    PrimitiveKind.STRING -> {
+        if (descriptor.serialName == "kotlin.String") emptyArray()
+        else (this as? SortPartSerializer<*>)?.inner?.let { arrayOf(it) }
+            ?: (this as? AnyOpticSerializer<*>)?.root?.let { arrayOf(it) }
+    }
+
+    PrimitiveKind.BOOLEAN -> if (descriptor.serialName == "kotlin.Boolean") emptyArray() else null
+    PrimitiveKind.BYTE -> if (descriptor.serialName == "kotlin.Byte") emptyArray() else null
+    PrimitiveKind.CHAR -> if (descriptor.serialName == "kotlin.Char") emptyArray() else null
+    PrimitiveKind.DOUBLE -> if (descriptor.serialName == "kotlin.Double") emptyArray() else null
+    PrimitiveKind.FLOAT -> if (descriptor.serialName == "kotlin.Float") emptyArray() else null
+    PrimitiveKind.INT -> if (descriptor.serialName == "kotlin.Int") emptyArray() else null
+    PrimitiveKind.LONG -> if (descriptor.serialName == "kotlin.Long") emptyArray() else null
+    PrimitiveKind.SHORT -> if (descriptor.serialName == "kotlin.Short") emptyArray() else null
+
+    else -> null
+}
+
+public fun KSerializer<*>.typeParametersSerializersOrNull(): Array<KSerializer<*>>? =
+    if (descriptor.isNullable) typeParameterSerializersOrNullImpl()
+        ?: nullElement()?.typeParameterSerializersOrNullImpl()
+    else typeParameterSerializersOrNullImpl()
+
+@OptIn(InternalSerializationApi::class)
+public fun KSerializer<*>.childSerializersOrNull(): Array<KSerializer<*>>? =
+    (this as? GeneratedSerializer<*>)?.childSerializers()
+        ?: (this as? VirtualStruct.Concrete)?.fields?.map { it.serializer }?.toTypedArray()
+        ?: (this as? MySealedClassSerializerInterface<*>)?.options?.map { it.serializer }?.toTypedArray()
+        ?: when (descriptor.serialName) {
+            "kotlin.String",
+            "kotlin.Boolean",
+            "kotlin.Byte",
+            "kotlin.Char",
+            "kotlin.Double",
+            "kotlin.Float",
+            "kotlin.Int",
+            "kotlin.Long",
+            "kotlin.Short",
+                -> emptyArray()
+
+            pairSerialName -> arrayOf(innerElement(), innerElement2())
+            tripleSerialName -> arrayOf(innerElement(), innerElement2(), innerElement3())
+
+            else -> null
+        }
+
+public fun KSerializer<*>.childAndTypeParameterSerializersOrNull(): Array<KSerializer<*>>? {
+    val children = childSerializersOrNull()
+    val params = typeParametersSerializersOrNull()
+    return when {
+        children == null && params == null -> null
+        children == null -> params
+        params == null -> children
+        else -> children.plus(params)
+    }
+}
+
+
+@Suppress("UNCHECKED_CAST")
+internal val <T> KSerializer<T>.nullable2: KSerializer<T?> get() = if (this.descriptor.isNullable) this as KSerializer<T?> else (this as KSerializer<Any>).nullable as KSerializer<T?>
+
+@Suppress("UNCHECKED_CAST")
+public inline fun <reified T> serializerOrContextual(): KSerializer<T> =
+    serializerOrContextual(typeOf<T>()) as KSerializer<T>
+
+public fun serializerOrContextual(type: KType): KSerializer<*> {
+    val args = type.arguments.map { serializerOrContextual(it.type!!) }
+    val kclass = type.classifier as KClass<*>
+    return try {
+        EmptySerializersModule().serializer(
+            kClass = kclass,
+            typeArgumentsSerializers = args,
+            isNullable = type.isMarkedNullable
+        )
+    } catch (e: SerializationException) {
+        ContextualSerializer(kclass, null, args.toTypedArray()).let {
+            @Suppress("UNCHECKED_CAST")
+            if (type.isMarkedNullable) (it as KSerializer<Any>).nullable
+            else it
+        }
+    }
+}
+
+/**
+ * Resolve [serializer] the same way real (de)serialization would: if it's a
+ * [kotlinx.serialization.ContextualSerializer] (or wraps one), this returns whichever serializer
+ * it would actually delegate to at runtime — a module registration if [this] has one, otherwise the
+ * serializer's own built-in fallback (see [kotlinx.serialization.ContextualSerializer]'s "fallback
+ * serializer" behavior). That fallback is a private implementation detail of `ContextualSerializer`,
+ * so it can't be read directly; this recovers it by feeding the serializer a decoder that captures
+ * whichever serializer it asks to decode with, same trick as [innerElement].
+ *
+ * Throws [SerializationException] if the type is truly unregistered and has no fallback, matching
+ * what would happen if you tried to actually decode with [serializer].
+ */
+@Suppress("UNCHECKED_CAST")
+public fun <T> SerializersModule.getContextual(serializer: KSerializer<T>): KSerializer<T> {
+    return try {
+        serializer.deserialize(CheatingBastardDecoder(0, this))
+        serializer
+    } catch (e: FoundSerializerSignal) {
+        e.serializer as KSerializer<T>
+    }
+}
+
+internal fun SerializersModule.contextualSerializerIfHandled(type: KType): KSerializer<*> {
+    val args = type.arguments.map { contextualSerializerIfHandled(it.type!!) }
+    val kclass = type.classifier as KClass<*>
+    return try {
+        getContextual(type)?.let { c ->
+            ContextualSerializer(kclass, null, args.toTypedArray()).let {
+                @Suppress("UNCHECKED_CAST")
+                if (type.isMarkedNullable) (it as KSerializer<Any>).nullable
+                else it
+            }
+        } ?: EmptySerializersModule().serializer(
+            kClass = kclass,
+            typeArgumentsSerializers = args,
+            isNullable = type.isMarkedNullable
+        )
+    } catch (e: SerializationException) {
+        ContextualSerializer(kclass, null, args.toTypedArray()).let {
+            @Suppress("UNCHECKED_CAST")
+            if (type.isMarkedNullable) (it as KSerializer<Any>).nullable
+            else it
+        }
+    }
+}
+
+internal fun SerializersModule.serializerPreferContextual(type: KType): KSerializer<*> {
+    return this.getContextual(
+        type.classifier as KClass<*>,
+        type.arguments.map { serializerPreferContextual(it.type!!) }) ?: serializer(type)
+}
+
+internal fun SerializersModule.getContextual(type: KType): KSerializer<*>? {
+    return this.getContextual(
+        type.classifier as KClass<*>,
+        type.arguments.map { getContextual(it.type!!) ?: serializer(it.type!!) })
+}

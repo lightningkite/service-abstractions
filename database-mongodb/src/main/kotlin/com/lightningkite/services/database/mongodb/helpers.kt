@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.mongodb
 
-import com.lightningkite.services.database.DataClassPathPartial
+import com.lightningkite.services.database.optics.*
+
 import com.mongodb.client.model.changestream.UpdateDescription
 import org.bson.*
 import org.bson.codecs.*
@@ -62,4 +63,4 @@ public fun <T> Codec<T>.fromDocument(doc: Document, registry: CodecRegistry): T 
     )
 }
 
-public val DataClassPathPartial<*>.mongo: String get() = properties.filter { !it.inline }.joinToString(".") { it.name }
+public val AnyOptic<*>.mongo: String get() = fields.filter { !it.isInline }.joinToString(".") { it.name }

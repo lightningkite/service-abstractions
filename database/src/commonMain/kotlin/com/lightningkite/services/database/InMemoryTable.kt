@@ -1,5 +1,7 @@
 package com.lightningkite.services.database
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.data.IndexUniqueness
 import com.lightningkite.services.data.TextIndex
 import kotlinx.atomicfu.*
@@ -37,14 +39,14 @@ public open class InMemoryTable<Model : Any>(
     private inline fun <R> traced(block: () -> R): R = block()
 
     @Suppress("UNCHECKED_CAST")
-    private val idProp: SerializableProperty<Model, Any?> =
-        serializer.serializableProperties!!.first { it.name == "_id" } as SerializableProperty<Model, Any?>
+    private val idProp: Field<Model, Any?> =
+        serializer.fields!!.first { it.name == "_id" } as Field<Model, Any?>
 
     private fun idOf(model: Model): Any? = idProp.get(model)
 
-    private val textIndexFields: List<DataClassPathPartial<Model>>? =
+    private val textIndexFields: List<AnyOptic<Model>>? =
         serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
-            ?.map { DataClassPathSerializer(serializer).fromString(it) }
+            ?.map { AnyOpticSerializer(serializer).fromString(it) }
 
     /** Place items into [data] keyed by `_id`. Bypasses unique checks; intended for trusted preload paths. */
     public fun preload(items: Iterable<Model>) {
@@ -88,7 +90,7 @@ public open class InMemoryTable<Model : Any>(
                 if (index.unique in
                     setOf(IndexUniqueness.Unique, IndexUniqueness.UniqueNullSparse)
                 ) {
-                    val fields = serializer.serializableProperties!!.filter { index.fields.contains(it.name) }
+                    val fields = serializer.fields!!.filter { index.fields.contains(it.name) }
                     val isPrimaryKey = index.fields.size == 1 && index.fields[0] == "_id"
                     uniqueIndexChecks.update { it ->
                         it.plus({ changes: List<EntryChange<Model>> ->
@@ -205,7 +207,7 @@ public open class InMemoryTable<Model : Any>(
                 lock.withLock {
                     // Claude: scored against every row, since word rarity and average length are table-wide.
                     val models = data.values.toList()
-                    val scores = textQuery.scores(models.map { model -> fields.map { it.getAny(model)?.toString() ?: "" } })
+                    val scores = textQuery.scores(models.map { model -> fields.map { it.get(model)?.toString() ?: "" } })
                     models.zip(scores)
                         .mapNotNull { (model, score) -> if (score != null && condition(model)) ScoredResult(model, score) else null }
                         .sortedByDescending { it.score }
@@ -227,7 +229,7 @@ public open class InMemoryTable<Model : Any>(
     @Suppress("UNCHECKED_CAST")
     override suspend fun <Key> groupCount(
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
+        groupBy: Optic<Model, Key>,
     ): Map<Key, Int> = traced {
         lock.withLock {
             val groups = data.values.asSequence().filter { condition(it) }
@@ -236,10 +238,10 @@ public open class InMemoryTable<Model : Any>(
         }
     }
 
-    override suspend fun <N : Number?> aggregate(
+    override suspend fun aggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        property: DataClassPath<Model, N>,
+        property: Optic<Model, out Number?>,
     ): Double? = traced {
         lock.withLock {
             data.values.asSequence()
@@ -248,11 +250,11 @@ public open class InMemoryTable<Model : Any>(
         }
     }
 
-    override suspend fun <N : Number?, Key> groupAggregate(
+    override suspend fun <Key> groupAggregate(
         aggregate: Aggregate,
         condition: Condition<Model>,
-        groupBy: DataClassPath<Model, Key>,
-        property: DataClassPath<Model, N>,
+        groupBy: Optic<Model, Key>,
+        property: Optic<Model, out Number?>,
     ): Map<Key, Double?> = traced {
         lock.withLock {
             val groups = data.values.asSequence()
@@ -419,7 +421,7 @@ public open class InMemoryTable<Model : Any>(
     // ===== Vector Search Implementation =====
 
     override suspend fun findSimilar(
-        vectorField: DataClassPath<Model, Embedding>,
+        vectorField: Optic<Model, Embedding>,
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,
@@ -444,7 +446,7 @@ public open class InMemoryTable<Model : Any>(
     }
 
     override suspend fun findSimilarSparse(
-        vectorField: DataClassPath<Model, SparseEmbedding>,
+        vectorField: Optic<Model, SparseEmbedding>,
         params: SparseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,

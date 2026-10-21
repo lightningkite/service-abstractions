@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.cassandra
 
-import com.lightningkite.services.database.serializableProperties
+import com.lightningkite.services.database.optics.*
+
 import kotlinx.serialization.KSerializer
 
 /**
@@ -18,7 +19,7 @@ public class ComputedColumnsHandler<T : Any>(
     @Suppress("UNCHECKED_CAST")
     public fun computeDerivedValues(model: T, currentValues: Map<String, Any?>): Map<String, Any?> {
         val result = currentValues.toMutableMap()
-        val properties = serializer.serializableProperties ?: return result
+        val properties = serializer.fields ?: return result
 
         for ((columnName, info) in schema.computedColumns) {
             val computedValue = computeValue(model, info, properties)
@@ -32,7 +33,7 @@ public class ComputedColumnsHandler<T : Any>(
     private fun computeValue(
         model: T,
         info: ComputedColumnInfo<T>,
-        properties: Array<out com.lightningkite.services.database.SerializableProperty<T, *>>,
+        properties: Array<out com.lightningkite.services.database.optics.Field<T, *>>,
     ): Any? {
         return when (info.transform) {
             ComputedTransform.LOWERCASE -> {
@@ -67,7 +68,7 @@ public class ComputedColumnsHandler<T : Any>(
     private fun computeGeohash(
         model: T,
         sourceProperties: List<String>,
-        properties: Array<out com.lightningkite.services.database.SerializableProperty<T, *>>,
+        properties: Array<out com.lightningkite.services.database.optics.Field<T, *>>,
         precision: Int,
     ): String? {
         if (sourceProperties.size < 2) return null

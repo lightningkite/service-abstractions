@@ -1,25 +1,15 @@
 package com.lightningkite.services.database.sql
 
-import com.lightningkite.services.database.DataClassPath
-import com.lightningkite.services.database.DataClassPathPartial
-import com.lightningkite.services.database.SerializableProperty
+import com.lightningkite.services.database.optics.*
+
 import org.jetbrains.exposed.v1.core.*
-import org.jetbrains.exposed.v1.jdbc.*
 
 // Flatten a path's properties into a "__"-joined column name, matching SqlSchema's registration.
 // Properties whose owner is a Kotlin value/inline class (property.inline) don't get their own
 // path segment: value classes are collapsed away when the schema registers columns (mirroring
 // kotlinx serialization's transparent encodeInline), so they must be skipped here too.
-private fun colNameOf(properties: List<SerializableProperty<*, *>>): String =
-    properties.filterNot { it.inline }.joinToString("__") { it.name }
-
-// Extension to get flattened column name from a DataClassPath (joins property names with "__")
-internal val DataClassPath<*, *>.colName: String
-    get() = colNameOf(properties)
-
-// Extension to get flattened column name from a DataClassPathPartial (joins property names with "__")
-internal val DataClassPathPartial<*>.colName: String
-    get() = colNameOf(properties)
+internal val AnyOptic<*>.colName: String
+    get() = fields.filterNot { it.isInline }.joinToString("__") { it.name }
 
 // Create a typed SQL literal from a column type and value
 @Suppress("UNCHECKED_CAST")

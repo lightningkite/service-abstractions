@@ -1,10 +1,10 @@
 package com.lightningkite.services.database.mongodb
 
+import com.lightningkite.services.database.optics.*
+
 import com.lightningkite.services.data.Queryable
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Modification
-import com.lightningkite.services.database.SerializableProperty
-import com.lightningkite.services.database.serializableProperties
 import org.bson.BsonDocument
 import org.bson.BsonInt32
 import org.bson.BsonString
@@ -52,10 +52,10 @@ class BsonTest {
     fun testIfIsTypeCondition() {
         val bson = KBson()
         val holderSer = PolymorphicHolder.serializer()
-        val valueProp = holderSer.serializableProperties!!
-            .first { it.name == "value" } as SerializableProperty<PolymorphicHolder, Polymorphic>
-        val innerProp = Polymorphic.Class.serializer().serializableProperties!!
-            .first { it.name == "inner" } as SerializableProperty<Polymorphic.Class, Int>
+        val valueProp = holderSer.fields!!
+            .first { it.name == "value" } as Field<PolymorphicHolder, Polymorphic>
+        val innerProp = Polymorphic.Class.serializer().fields!!
+            .first { it.name == "inner" } as Field<Polymorphic.Class, Int>
 
         assertEquals(
             Document("value._t", Document("\$eq", Polymorphic.Object.serializer().descriptor.serialName)),
@@ -110,10 +110,10 @@ class BsonTest {
     fun testIfIsTypeModification() {
         val bson = KBson()
         val holderSer = PolymorphicHolder.serializer()
-        val valueProp = holderSer.serializableProperties!!
-            .first { it.name == "value" } as SerializableProperty<PolymorphicHolder, Polymorphic>
-        val innerProp = Polymorphic.Class.serializer().serializableProperties!!
-            .first { it.name == "inner" } as SerializableProperty<Polymorphic.Class, Int>
+        val valueProp = holderSer.fields!!
+            .first { it.name == "value" } as Field<PolymorphicHolder, Polymorphic>
+        val innerProp = Polymorphic.Class.serializer().fields!!
+            .first { it.name == "inner" } as Field<Polymorphic.Class, Int>
 
         // Update operators can't check the variant, so the check goes into the filter.
         val checkedModification = Modification.OnField(
