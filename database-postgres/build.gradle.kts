@@ -10,6 +10,7 @@ plugins {
 
 dependencies {
     api(project(path = ":database"))
+    api(project(path = ":database-mapformat"))
     api(libs.exposed.core)
     api(libs.exposed.javaTime)
     api(libs.exposed.jdbc)

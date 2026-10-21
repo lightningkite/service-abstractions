@@ -236,6 +236,21 @@ If a missing field should count, say so: `(it.x eq null) or (it.x.notNull neq v)
 
 ---
 
+## 10. `mapformat` moved out of `database` into `database-mapformat`
+
+**Was:** `com.lightningkite.services.database.mapformat` (`MapFormat`, `MapEncoder`, `MapDecoder`, ...)
+and `isSelfReferential` lived in `database`'s JVM source set.
+**Now:** they live in the new multiplatform module `database-mapformat`, same packages.
+
+**Why:** the new SQLite driver (`database-native`) needs them on every platform, and `database`
+itself never used them; only the relational drivers do.
+
+**Migration:** code that uses `mapformat` directly adds a dependency on the
+`database-mapformat` artifact. `database-sql` and `database-postgres`
+already depend on it.
+
+---
+
 ## Also worth a release note (not breaking, but behavioural)
 
 - **`RegexMatches` is now unanchored everywhere.** The in-memory evaluator changed from

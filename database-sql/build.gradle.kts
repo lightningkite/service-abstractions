@@ -12,6 +12,7 @@ plugins {
 dependencies {
     api(project(path = ":basis"))
     api(project(path = ":database"))
+    api(project(path = ":database-mapformat"))
     testImplementation(project(path = ":database-test"))
     testImplementation(libs.kotlin.test)
     api(libs.exposed.core)
