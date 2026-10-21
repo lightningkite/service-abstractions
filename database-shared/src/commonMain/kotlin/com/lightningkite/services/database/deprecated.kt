@@ -52,7 +52,14 @@ public val Field<*, *>.inline: Boolean get() = isInline
 public fun <K> OpticOn<K>.getAny(key: K): Any? = get(key)
 
 @Suppress("UNCHECKED_CAST")
-@Deprecated("Use set on an Optic instead", ReplaceWith("(coerceToOptic() as Optic<K, Any?>).set(key, any)", "com.lightningkite.services.database.optics.coerceToOptic"))
+@Deprecated(
+    "Use set on an Optic instead",
+    ReplaceWith(
+        "(coerceToOptic() as Optic<K, Any?>).set(key, any)",
+        "com.lightningkite.services.database.optics.coerceToOptic"
+    ),
+    DeprecationLevel.ERROR
+)
 public fun <K> OpticOn<K>.setAny(key: K, any: Any?): K = (coerceToOptic() as Optic<K, Any?>).set(key, any)
 
 @Deprecated("Use coerceToOptic().serializer instead", ReplaceWith("coerceToOptic().serializer", "com.lightningkite.services.database.optics.coerceToOptic"))

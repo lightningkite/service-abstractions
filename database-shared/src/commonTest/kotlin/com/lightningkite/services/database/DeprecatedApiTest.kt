@@ -19,7 +19,6 @@ class DeprecatedApiTest {
         val path: DataClassPathPartial<LargeTestModel> = LargeTestModel.embedded + ClassUsedForEmbedding.value1
         val model = LargeTestModel(embedded = ClassUsedForEmbedding(value1 = "a"))
         assertEquals("a", path.getAny(model))
-        assertEquals("b", path.setAny(model, "b").embedded.value1)
         assertEquals(path.fields, path.properties)
         assertEquals(kotlinx.serialization.serializer<String>().descriptor, path.serializerAny.descriptor)
         assertEquals(LargeTestModel.serializer().fields!!.toList(), LargeTestModel.serializer().serializableProperties!!.toList())
