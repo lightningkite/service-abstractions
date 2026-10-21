@@ -361,10 +361,12 @@ class TableGenerator(
         } else {
             appendPathDeprecation("Lens<$typeReference>()", "com.lightningkite.services.database.optics.Lens")
             appendLine("public val $typeReference.Companion.path: IdentityLens<$typeReference> get() = IdentityLens($typeReference.serializer())")
-            appendLine("public val ${typeReference}.Companion.fields: Array<Field<$typeReference, *>> get() = serializer().fields!!")
+            // Claude: a model field named `fields` takes this name instead.
+            if (fields.none { it.name == "fields" })
+                appendLine("public val ${typeReference}.Companion.fields: Array<Field<$typeReference, *>> get() = serializer().fields!!")
             for ((index, field) in fields.withIndex()) {
                 appendInlinePropertyAnnotation()
-                appendLine("public val ${typeReference}.Companion.${field.name}: Field<$typeReference, ${field.kotlinType.toKotlin()}> get() = fields[$index] as Field<$typeReference, ${field.kotlinType.toKotlin()}>")
+                appendLine("public val ${typeReference}.Companion.${field.name}: Field<$typeReference, ${field.kotlinType.toKotlin()}> get() = serializer().fields!![$index] as Field<$typeReference, ${field.kotlinType.toKotlin()}>")
                 val serPropName = "${simpleName}_${field.name}"
                 // Claude: a Lens overload too, so a path of fields stays statically a Lens.
                 for ((optic, jvmName) in listOf("Optic" to "path", "Lens" to "lens")) {

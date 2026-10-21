@@ -6,7 +6,7 @@ import kotlinx.serialization.KSerializer
 @Deprecated("Renamed to Optic", ReplaceWith("Optic<K, V>", "com.lightningkite.services.database.optics.Optic"))
 public typealias DataClassPath<K, V> = Optic<K, V>
 
-@Deprecated("Renamed to OpticOn", ReplaceWith("OpticOn<K>", "com.lightningkite.services.database.optics.OpticOn"))
+@Deprecated("Renamed to AnyOptic", ReplaceWith("AnyOptic<K>", "com.lightningkite.services.database.optics.AnyOptic"))
 public typealias DataClassPathPartial<K> = AnyOptic<K>
 
 @Deprecated("Renamed to IdentityLens", ReplaceWith("IdentityLens<K>", "com.lightningkite.services.database.optics.IdentityLens"))
@@ -30,7 +30,7 @@ public typealias DataClassPathList<K, V> = ListElementsOptic<K, V>
 @Deprecated("Renamed to SetElementsOptic", ReplaceWith("SetElementsOptic<K, V>", "com.lightningkite.services.database.optics.SetElementsOptic"))
 public typealias DataClassPathSet<K, V> = SetElementsOptic<K, V>
 
-@Deprecated("Renamed to OpticOnSerializer", ReplaceWith("OpticOnSerializer<T>", "com.lightningkite.services.database.optics.OpticOnSerializer"))
+@Deprecated("Renamed to AnyOpticSerializer", ReplaceWith("AnyOpticSerializer<T>", "com.lightningkite.services.database.optics.AnyOpticSerializer"))
 public typealias DataClassPathSerializer<T> = AnyOpticSerializer<T>
 
 @Deprecated("Renamed to OpticWithValue", ReplaceWith("OpticWithValue<A, V>"))
