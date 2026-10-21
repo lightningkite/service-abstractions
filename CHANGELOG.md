@@ -34,6 +34,7 @@
 - **email-inbound-imap**: Webhook POST retried 3× with 1s/2s/4s backoff.
 
 ### Bug Fixes
+- **database-sql**: Collections nested inside a list or set element, struct-valued map entries, nullable struct elements, and sealed or self-referential elements were lost or failed to read back; they now round-trip.
 - **database-mongodb**: `forEach` (a per-element modification with no condition) produced an empty array filter, which MongoDB rejects; it now uses `$[]`.
 - **cache-redis**: CAS Lua script — sentinel for "no TTL" changed `nil` → `""`, and `if ARGV[2] then` (always true in Lua) fixed to `if ARGV[2] ~= ''`. Previously CAS-without-TTL called `PSETEX` with a bad arg.
 - **database-mongodb**: `MongoTable.findOneAndDelete` is now atomic (was non-atomic find-then-delete; could double-process under contention).
@@ -44,6 +45,8 @@
 - **pubsub-aws (DynamoDB)**: `collect()` filters out the `seq=0` counter row on bootstrap — first subscribers previously missed the backlog's first record.
 
 ### Added
+- **database-native**: `native://`, a local SQLite database for Android, iOS, macOS, the JVM, and the web (OPFS), on `androidx.sqlite`. Conditions, modifications, sorting, and aggregates run as SQL; tables gain columns for new fields automatically.
+- **database-mapformat**: New multiplatform module holding `mapformat` and the child-table collection handler shared by the SQL drivers (moved out of `database`; see BREAKING_CHANGES_1.3.md §10).
 - `OpenTelemetrySub.span` helper adopted across cache, files, and email-inbound modules with sanitized span attributes.
 
 ### Removed

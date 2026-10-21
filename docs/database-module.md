@@ -64,6 +64,7 @@ val db: Database = settings.database("main-db", context)
 - `mongodb://host:port/dbname` - MongoDB
 - `postgresql://host:port/dbname` - PostgreSQL
 - `file:///path/to/data.json` - JSON file storage (dev/testing)
+- `native://<location>` - A local SQLite database on the device, from `database-native`: Android, iOS, macOS, JVM, and the web (see `SqliteDatabase` for what `<location>` means on each, and the files a web app must serve)
 - `delay://100-500ms/mongodb://...` - Add artificial latency (testing)
 
 ### 3. Get a Table
