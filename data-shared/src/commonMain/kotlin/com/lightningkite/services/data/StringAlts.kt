@@ -197,7 +197,8 @@ public inline fun String.trimmedCaseless(): TrimmedCaselessString = TrimmedCasel
  * String value class representing a validated email address.
  *
  * Automatically normalizes email addresses to lowercase and trimmed format.
- * Validates against RFC 5322 email format on creation.
+ * Validates against RFC 5322 email format on creation. The one exception is the empty string ([EMPTY]),
+ * which means "not provided yet"; only the primary constructor produces it, and [toEmailAddress] still throws on blank input.
  *
  * ## Features
  *
@@ -222,17 +223,30 @@ public inline fun String.trimmedCaseless(): TrimmedCaselessString = TrimmedCasel
  */
 @Serializable
 @JvmInline
-public value class EmailAddress @Deprecated("Use String.toEmailAddress()") constructor(override val raw: String) :
-    IsRawString {
+public value class EmailAddress @Deprecated("Use String.toEmailAddress()") constructor(override val raw: String) : IsRawString {
     init {
-        requireNormalized(raw == raw.trim().lowercase() && emailRegex.matches(raw)) {
+        requireNormalized(raw.isEmpty() || (raw == raw.trim().lowercase() && emailRegex.matches(raw))) {
             "$raw is not a lowercase, trimmed email address."
         }
     }
 
     public companion object {
+        /** The empty placeholder for "not provided yet", for use as a default in draft models. */
+        @Suppress("DEPRECATION")
+        public val EMPTY: EmailAddress = EmailAddress("")
+
         private val commentRegex = Regex("\\([^)]+\\)")
+
+        /** RFC 5322-compliant email validation regex. */
+        public val emailRegex: Regex =
+            Regex("(?:[a-z0-9!#\$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#\$%&'*+/=?^_`{|}~-]+)*|\"(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21\\x23-\\x5b\\x5d-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21-\\x5a\\x53-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])+)\\])")
     }
+
+    /** Whether this is [EMPTY], meaning "not provided yet". */
+    public fun isEmpty(): Boolean = raw.isEmpty()
+
+    /** Whether this holds a real value, i.e. is not [EMPTY]. */
+    public fun isNotEmpty(): Boolean = raw.isNotEmpty()
 
     override fun toString(): String = raw
 
@@ -274,31 +288,13 @@ public value class EmailAddress @Deprecated("Use String.toEmailAddress()") const
      *
      * Useful for detecting duplicate accounts or grouping emails by user.
      */
-    public fun toProbableBaseEmailAddress(): EmailAddress = "$probableAccount@$domain".toEmailAddress()
+    public fun toProbableBaseEmailAddress(): EmailAddress =
+        if (isEmpty()) this else "$probableAccount@$domain".toEmailAddress()
 
     /** Converts to a mailto: URL. */
     public val url: String get() = "mailto:$raw"
 
     override fun mapRaw(action: (String) -> String): EmailAddress = raw.let(action).toEmailAddress()
-}
-
-/** RFC 5322-compliant email validation regex. */
-private val emailRegex =
-    Regex("(?:[a-z0-9!#\$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#\$%&'*+/=?^_`{|}~-]+)*|\"(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21\\x23-\\x5b\\x5d-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f\\x21-\\x5a\\x53-\\x7f]|\\\\[\\x01-\\x09\\x0b\\x0c\\x0e-\\x7f])+)\\])")
-
-/**
- * Converts this string to an [EmailAddress], normalizing and validating it.
- *
- * Automatically trims whitespace and converts to lowercase before validation.
- *
- * @return Validated and normalized EmailAddress
- * @throws IllegalArgumentException if the string is not a valid email address
- */
-@Suppress("DEPRECATION")
-public fun String.toEmailAddress(): EmailAddress {
-    val fixed = this.trim().lowercase()
-    if (emailRegex.matches(fixed)) return EmailAddress(fixed)
-    else throw IllegalArgumentException("$fixed is not an email address.")
 }
 
 /**
@@ -311,16 +307,27 @@ public fun String.toEmailAddress(): EmailAddress {
 @Suppress("DEPRECATION")
 public fun String.toEmailAddressOrNull(): EmailAddress? {
     val fixed = this.trim().lowercase()
-    return if (emailRegex.matches(fixed)) EmailAddress(fixed) else null
+    return if (EmailAddress.emailRegex.matches(fixed)) EmailAddress(fixed) else null
 }
 
+/**
+ * Converts this string to an [EmailAddress], normalizing and validating it.
+ *
+ * Automatically trims whitespace and converts to lowercase before validation.
+ *
+ * @return Validated and normalized EmailAddress
+ * @throws IllegalArgumentException if the string is not a valid email address
+ */
+@Suppress("DEPRECATION")
+public fun String.toEmailAddress(): EmailAddress =
+    toEmailAddressOrNull() ?: throw IllegalArgumentException("$this is not an email address.")
 
-/** Serializer for [PhoneNumber]. */
 /**
  * String value class representing a phone number in E.164 format.
  *
  * Stores phone numbers as: `+` + country code + subscriber number (no formatting).
- * Follows RFC 2806 for tel: URL format.
+ * Follows RFC 2806 for tel: URL format. The one exception is the empty string ([EMPTY]), which means
+ * "not provided yet"; only the primary constructor produces it, and [toPhoneNumber] still throws on blank input.
  *
  * ## Features
  *
@@ -351,10 +358,22 @@ public fun String.toEmailAddressOrNull(): EmailAddress? {
 public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constructor(override val raw: String) :
     IsRawString {
     init {
-        requireNormalized(raw.startsWith('+') && raw == raw.lowercase() && raw.none { it in punctuation }) {
+        requireNormalized(raw.isEmpty() || (raw.startsWith('+') && raw == raw.lowercase() && raw.none { it in punctuation })) {
             "$raw is not a phone number in '+<country code><number>' form."
         }
     }
+
+    public companion object {
+        /** The empty placeholder for "not provided yet", for use as a default in draft models. */
+        @Suppress("DEPRECATION")
+        public val EMPTY: PhoneNumber = PhoneNumber("")
+    }
+
+    /** Whether this is [EMPTY], meaning "not provided yet". */
+    public fun isEmpty(): Boolean = raw.isEmpty()
+
+    /** Whether this holds a real value, i.e. is not [EMPTY]. */
+    public fun isNotEmpty(): Boolean = raw.isNotEmpty()
 
     // TODO: API Recommendation - Add support for more regional formatting (UK, EU, etc.)
     //  Currently only US +1 numbers get formatted in toString()
@@ -374,24 +393,6 @@ public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constru
 /** Characters to strip from phone number input. */
 private val punctuation = setOf(' ', '-', '.', ',', '(', ')', '[', ']', '<', '>')
 
-/**
- * Converts this string to a [PhoneNumber] in E.164 format.
- *
- * - Strips common punctuation and spaces
- * - Numbers starting with + are kept as-is
- * - 10-digit numbers get +1 (US) prefix automatically
- *
- * @return Normalized PhoneNumber in E.164 format
- * @throws IllegalArgumentException if format is invalid
- */
-@Suppress("DEPRECATION")
-public fun String.toPhoneNumber(): PhoneNumber {
-    val fixed = this.lowercase().filter { it !in punctuation }
-
-    return if (fixed.startsWith('+')) PhoneNumber(fixed)
-    else if (fixed.length == 10) PhoneNumber("+1$fixed")
-    else throw IllegalArgumentException("Phone numbers should begin with a '+' and your country code.")
-}
 
 /**
  * Converts this string to a [PhoneNumber], returning null if invalid.
@@ -406,3 +407,16 @@ public fun String.toPhoneNumberOrNull(): PhoneNumber? {
     else if (fixed.length == 10) PhoneNumber("+1$fixed")
     else null
 }
+
+/**
+ * Converts this string to a [PhoneNumber] in E.164 format.
+ *
+ * - Strips common punctuation and spaces
+ * - Numbers starting with + are kept as-is
+ * - 10-digit numbers get +1 (US) prefix automatically
+ *
+ * @return Normalized PhoneNumber in E.164 format
+ * @throws IllegalArgumentException if format is invalid
+ */
+public fun String.toPhoneNumber(): PhoneNumber =
+    toPhoneNumberOrNull() ?: throw IllegalArgumentException("Phone numbers should begin with a '+' and your country code.")
