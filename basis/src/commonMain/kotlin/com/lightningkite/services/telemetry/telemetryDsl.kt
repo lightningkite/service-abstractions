@@ -3,6 +3,7 @@ package com.lightningkite.services.telemetry
 import com.lightningkite.services.Namespaced
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 
 
@@ -53,9 +54,15 @@ public suspend fun <T> Namespaced.telemetryTrace(
     action: suspend (TelemetryTrace) -> T,
 ): T {
     val owner = this
+    val backend = if (currentCoroutineContext()[Untraced] != null) TelemetryBackend.Noop else context.telemetryBackend
     return telemetryAttributes(attributes) {
-        context.telemetryBackend.span(owner, opName, currentTelemetryAttributes(), dimensions, action)
+        backend.span(owner, opName, currentTelemetryAttributes(), dimensions, action)
     }
+}
+
+/** In a coroutine context, [telemetryTrace] records nothing: no spans, no RED metrics. */
+public object Untraced : CoroutineContext.Element, CoroutineContext.Key<Untraced> {
+    override val key: CoroutineContext.Key<*> get() = this
 }
 
 /**

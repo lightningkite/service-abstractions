@@ -10,6 +10,28 @@ import com.lightningkite.services.telemetry.TelemetryBackend
 import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryTrace
 import com.lightningkite.services.telemetry.TelemetrySanitization
+import com.lightningkite.services.telemetry.TelemetryBatch
+import com.lightningkite.services.telemetry.RecordedSpan
+import com.lightningkite.services.telemetry.RecordedError
+import com.lightningkite.services.telemetry.TraceParent
+import io.opentelemetry.api.common.Value
+import io.opentelemetry.api.trace.SpanContext
+import io.opentelemetry.api.trace.SpanKind
+import io.opentelemetry.api.trace.TraceFlags
+import io.opentelemetry.api.trace.TraceState
+import io.opentelemetry.context.Context
+import io.opentelemetry.context.propagation.TextMapGetter
+import io.opentelemetry.sdk.common.InstrumentationLibraryInfo
+import io.opentelemetry.sdk.common.InstrumentationScopeInfo
+import io.opentelemetry.sdk.logs.data.Body
+import io.opentelemetry.sdk.logs.data.LogRecordData
+import io.opentelemetry.sdk.trace.data.EventData
+import io.opentelemetry.sdk.trace.data.LinkData
+import io.opentelemetry.sdk.trace.data.SpanData
+import io.opentelemetry.sdk.trace.data.StatusData
+import kotlin.coroutines.coroutineContext
+import kotlin.time.Clock
+import kotlin.time.Instant
 import com.lightningkite.services.telemetry.MetricUnit
 import com.lightningkite.services.Namespaced
 import com.lightningkite.services.telemetry.currentTelemetryAttributes
@@ -58,6 +80,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import org.slf4j.LoggerFactory
 import org.slf4j.event.Level as Slf4jLevel
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -82,6 +105,9 @@ import kotlin.time.toJavaDuration
 public class OtelTelemetryBackend(
     private val sdk: OpenTelemetry,
     private val sanitization: TelemetrySanitization = TelemetrySanitization.Strict,
+    // ingest writes to these directly: the SDK's API can't replay a span with foreign ids and timestamps.
+    private val spanExporter: SpanExporter? = null,
+    private val logExporter: LogRecordExporter? = null,
 ) : TelemetryBackend {
     private val subs = ConcurrentHashMap<String, OpenTelemetrySub>()
     private val reds = ConcurrentHashMap<String, Red>()
@@ -109,7 +135,12 @@ public class OtelTelemetryBackend(
         val system = owner.name
         val sub = subFor(system)
         val red = redFor(system)
-        return sub.spanBuilder("$system.$opName").apply { putAll(attributes) }.use { span ->
+        val builder = sub.spanBuilder("$system.$opName").apply { putAll(attributes) }
+        val remoteParent = coroutineContext[TraceParent]
+        if (remoteParent != null && !Span.current().spanContext.isValid) {
+            builder.setParent(W3CTraceContextPropagator.getInstance().extract(Context.root(), remoteParent.header, TraceParentGetter))
+        }
+        return builder.use { span ->
             val metricSpan = OtelTelemetryTrace(span, sub)
             val start = System.nanoTime()
             try {
@@ -211,64 +242,147 @@ public class OtelTelemetryBackend(
         }
     }
 
+    /**
+     * Exports client records with their own ids, timestamps (shifted by the batch's clock skew) and
+     * resource. They feed no metrics: client-chosen names and values would drive metric cardinality.
+     */
+    override fun ingest(batch: TelemetryBatch) {
+        if (spanExporter == null || logExporter == null) {
+            throw UnsupportedOperationException("This OtelTelemetryBackend was built without exporters, so it can't ingest client telemetry.")
+        }
+        val skew = Clock.System.now() - batch.sentAt
+        fun Instant.epochNanos(): Long = (this + skew).let { it.epochSeconds * 1_000_000_000 + it.nanosecondsOfSecond }
+        val resource = Resource.create(batch.resource.toOtel())
+
+        val spans = ArrayList<SpanData>()
+        for (span in batch.spans) {
+            val attributes = span.attributes.toOtel().toBuilder()
+            val events = ArrayList<EventData>()
+            var status = StatusData.unset()
+            when (span.outcome) {
+                RecordedSpan.Outcome.Ok -> {}
+                RecordedSpan.Outcome.Cancelled -> events += EventData.create(span.end.epochNanos(), "Cancelled", Attributes.empty())
+                RecordedSpan.Outcome.Error -> status = StatusData.create(StatusCode.ERROR, span.error?.message?.let(sanitization::sanitizeExceptionMessage) ?: "")
+            }
+            span.error?.let {
+                events += EventData.create(span.end.epochNanos(), "exception", it.toOtel())
+                attributes.put(errorFingerprintKey, it.fingerprint)
+            }
+            spans += IngestedSpanData(
+                name = "${span.owner}.${span.operation}",
+                spanContext = SpanContext.create(span.traceId, span.spanId, TraceFlags.getSampled(), TraceState.getDefault()),
+                parentSpanContext = span.parentSpanId?.let { SpanContext.create(span.traceId, it, TraceFlags.getSampled(), TraceState.getDefault()) }
+                    ?: SpanContext.getInvalid(),
+                status = status,
+                startEpochNanos = span.start.epochNanos(),
+                endEpochNanos = span.end.epochNanos(),
+                attributes = attributes.build(),
+                events = events,
+                scope = InstrumentationScopeInfo.create(span.owner),
+                resource = resource,
+            )
+        }
+        if (spans.isNotEmpty()) spanExporter.export(spans).warnOnFailure("spans")
+
+        val logs = batch.logs.map { log ->
+            val attributes = log.attributes.toOtel().toBuilder()
+            log.error?.let {
+                attributes.putAll(it.toOtel())
+                attributes.put(errorFingerprintKey, it.fingerprint)
+            }
+            IngestedLogRecordData(
+                resource = resource,
+                timestampEpochNanos = log.time.epochNanos(),
+                spanContext = if (log.traceId != null && log.spanId != null) SpanContext.create(log.traceId, log.spanId, TraceFlags.getSampled(), TraceState.getDefault())
+                    else SpanContext.getInvalid(),
+                severity = when (log.level) {
+                    LogLevel.Trace -> Severity.TRACE
+                    LogLevel.Debug -> Severity.DEBUG
+                    LogLevel.Info -> Severity.INFO
+                    LogLevel.Warn -> Severity.WARN
+                    LogLevel.Error -> Severity.ERROR
+                },
+                body = log.message,
+                attributes = attributes.build(),
+            )
+        }
+        if (logs.isNotEmpty()) logExporter.export(logs).warnOnFailure("logs")
+    }
+
+    private fun RecordedError.toOtel(): Attributes = Attributes.builder()
+        .put(AttributeKey.stringKey("exception.type"), type)
+        .put(AttributeKey.stringKey("exception.message"), sanitization.sanitizeExceptionMessage(message))
+        .put(AttributeKey.stringKey("exception.stacktrace"), sanitization.sanitizeExceptionMessage(stacktrace))
+        .build()
+
     public companion object {
         internal val errorFingerprintKey: AttributeKey<String> = AttributeKey.stringKey("error.fingerprint")
 
         init {
             TelemetryBackend.Settings.register("log") { _, settings, context ->
                 val resource = resource(context.projectName)
+                val spans = settings.limitSpans(LoggingSpanExporter.create())
+                val logs = settings.limitLogs(SystemOutLogRecordExporter.create())
                 val sdk = OpenTelemetrySdk.builder()
                     .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-                    .setTracerProvider(settings.buildTracerProvider(LoggingSpanExporter.create()).setResource(resource).build())
+                    .setTracerProvider(settings.buildTracerProvider(spans).setResource(resource).build())
                     .setMeterProvider(settings.buildMeterProvider(LoggingMetricExporter.create()).setResource(resource).build())
-                    .setLoggerProvider(settings.buildLoggerProvider(SystemOutLogRecordExporter.create()).setResource(resource).build())
+                    .setLoggerProvider(settings.buildLoggerProvider(logs).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk, silenceConsole = true)
-                OtelTelemetryBackend(sdk, context.telemetrySanitization)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization, spans, logs)
             }
             TelemetryBackend.Settings.register("console") { _, settings, context ->
                 val resource = resource(context.projectName)
+                val spans = settings.limitSpans(PrintSpanExporter)
+                val logs = settings.limitLogs(PrintLogExporter)
                 val sdk = OpenTelemetrySdk.builder()
                     .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-                    .setTracerProvider(settings.buildTracerProvider(PrintSpanExporter).setResource(resource).build())
+                    .setTracerProvider(settings.buildTracerProvider(spans).setResource(resource).build())
                     .setMeterProvider(settings.buildMeterProvider(PrintMetricExporter).setResource(resource).build())
-                    .setLoggerProvider(settings.buildLoggerProvider(PrintLogExporter).setResource(resource).build())
+                    .setLoggerProvider(settings.buildLoggerProvider(logs).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk)
-                OtelTelemetryBackend(sdk, context.telemetrySanitization)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization, spans, logs)
             }
             TelemetryBackend.Settings.register("otlp-grpc") { _, settings, context ->
                 val target = "http://${settings.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4317"}"
                 val resource = resource(context.projectName)
+                val spans = settings.limitSpans(OtlpGrpcSpanExporter.builder().setEndpoint(target).build())
+                val logs = settings.limitLogs(OtlpGrpcLogRecordExporter.builder().setEndpoint(target).build())
                 val sdk = OpenTelemetrySdk.builder()
-                    .setTracerProvider(settings.buildTracerProvider(OtlpGrpcSpanExporter.builder().setEndpoint(target).build()).setResource(resource).build())
+                    .setTracerProvider(settings.buildTracerProvider(spans).setResource(resource).build())
                     .setMeterProvider(settings.buildMeterProvider(OtlpGrpcMetricExporter.builder().setEndpoint(target).build()).setResource(resource).build())
-                    .setLoggerProvider(settings.buildLoggerProvider(OtlpGrpcLogRecordExporter.builder().setEndpoint(target).build()).setResource(resource).build())
+                    .setLoggerProvider(settings.buildLoggerProvider(logs).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk)
-                OtelTelemetryBackend(sdk, context.telemetrySanitization)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization, spans, logs)
             }
             TelemetryBackend.Settings.register("otlp-http") { _, settings, context ->
                 val target = "http://${settings.url.substringAfter("://", "").takeUnless { it.isBlank() } ?: "localhost:4318"}"
                 val resource = resource(context.projectName)
+                val spans = settings.limitSpans(OtlpHttpSpanExporter.builder().setEndpoint("$target/v1/traces").build())
+                val logs = settings.limitLogs(OtlpHttpLogRecordExporter.builder().setEndpoint("$target/v1/logs").build())
                 val sdk = OpenTelemetrySdk.builder()
-                    .setTracerProvider(settings.buildTracerProvider(OtlpHttpSpanExporter.builder().setEndpoint("$target/v1/traces").build()).setResource(resource).build())
+                    .setTracerProvider(settings.buildTracerProvider(spans).setResource(resource).build())
                     .setMeterProvider(settings.buildMeterProvider(OtlpHttpMetricExporter.builder().setEndpoint("$target/v1/metrics").build()).setResource(resource).build())
-                    .setLoggerProvider(settings.buildLoggerProvider(OtlpHttpLogRecordExporter.builder().setEndpoint("$target/v1/logs").build()).setResource(resource).build())
+                    .setLoggerProvider(settings.buildLoggerProvider(logs).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk)
-                OtelTelemetryBackend(sdk, context.telemetrySanitization)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization, spans, logs)
             }
             TelemetryBackend.Settings.register("otlp-https") { _, settings, context ->
                 val target = "https://${settings.url.substringAfter("://", "")}"
                 val resource = resource(context.projectName)
+                val spans = settings.limitSpans(OtlpHttpSpanExporter.builder().setEndpoint("$target/v1/traces").build())
+                val logs = settings.limitLogs(OtlpHttpLogRecordExporter.builder().setEndpoint("$target/v1/logs").build())
                 val sdk = OpenTelemetrySdk.builder()
-                    .setTracerProvider(settings.buildTracerProvider(OtlpHttpSpanExporter.builder().setEndpoint("$target/v1/traces").build()).setResource(resource).build())
+                    .setTracerProvider(settings.buildTracerProvider(spans).setResource(resource).build())
                     .setMeterProvider(settings.buildMeterProvider(OtlpHttpMetricExporter.builder().setEndpoint("$target/v1/metrics").build()).setResource(resource).build())
-                    .setLoggerProvider(settings.buildLoggerProvider(OtlpHttpLogRecordExporter.builder().setEndpoint("$target/v1/logs").build()).setResource(resource).build())
+                    .setLoggerProvider(settings.buildLoggerProvider(logs).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk)
-                OtelTelemetryBackend(sdk, context.telemetrySanitization)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization, spans, logs)
             }
             TelemetryBackend.Settings.register("dev") { _, settings, context ->
                 val urlWithoutScheme = settings.url.substringAfter("://", "").let {
@@ -282,14 +396,16 @@ public class OtelTelemetryBackend(
                 val metricFrequency = queryParams["metric_frequency"]?.let { Duration.parseOrNull(it) } ?: 60.seconds
                 val config = DevExporterConfig(color = colorEnabled, output = outputFile, logCorrelationDelayMs = logDelayMs)
                 val resource = resource(context.projectName.ifBlank { "dev" })
+                val spans = DevSpanExporter(config)
+                val logs = DevLogExporter(config)
                 val sdk = OpenTelemetrySdk.builder()
                     .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-                    .setTracerProvider(SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(DevSpanExporter(config))).setResource(resource).setSpanLimits(settings.spanLimits.make()).build())
+                    .setTracerProvider(SdkTracerProvider.builder().setSampler(followLocalParents(Sampler.alwaysOn())).addSpanProcessor(SimpleSpanProcessor.create(spans)).setResource(resource).setSpanLimits(settings.spanLimits.make()).build())
                     .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(PeriodicMetricReader.builder(DevMetricExporter(config)).setInterval(metricFrequency.toJavaDuration()).build()).setResource(resource).build())
-                    .setLoggerProvider(SdkLoggerProvider.builder().addLogRecordProcessor(SimpleLogRecordProcessor.create(DevLogExporter(config))).setResource(resource).build())
+                    .setLoggerProvider(SdkLoggerProvider.builder().addLogRecordProcessor(SimpleLogRecordProcessor.create(logs)).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk, silenceConsole = true)
-                OtelTelemetryBackend(sdk, context.telemetrySanitization)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization, spans, logs)
             }
             TelemetryBackend.Settings.register("debounced-dev") { _, settings, context ->
                 val urlWithoutScheme = settings.url.substringAfter("://", "").let {
@@ -305,14 +421,16 @@ public class OtelTelemetryBackend(
                 val metricFrequency = queryParams["metric_frequency"]?.let { Duration.parseOrNull(it) } ?: 60.seconds
                 val config = DevExporterConfig(color = colorEnabled, output = outputFile, debounceWindowMs = debounceWindowMs, debounceMinCount = debounceMinCount, logCorrelationDelayMs = logDelayMs)
                 val resource = resource(context.projectName.ifBlank { "dev" })
+                val spans = DebouncedDevSpanExporter(config)
+                val logs = DevLogExporter(config)
                 val sdk = OpenTelemetrySdk.builder()
                     .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-                    .setTracerProvider(SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(DebouncedDevSpanExporter(config))).setResource(resource).setSpanLimits(settings.spanLimits.make()).build())
+                    .setTracerProvider(SdkTracerProvider.builder().setSampler(followLocalParents(Sampler.alwaysOn())).addSpanProcessor(SimpleSpanProcessor.create(spans)).setResource(resource).setSpanLimits(settings.spanLimits.make()).build())
                     .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(PeriodicMetricReader.builder(DevMetricExporter(config)).setInterval(metricFrequency.toJavaDuration()).build()).setResource(resource).build())
-                    .setLoggerProvider(SdkLoggerProvider.builder().addLogRecordProcessor(SimpleLogRecordProcessor.create(DevLogExporter(config))).setResource(resource).build())
+                    .setLoggerProvider(SdkLoggerProvider.builder().addLogRecordProcessor(SimpleLogRecordProcessor.create(logs)).setResource(resource).build())
                     .build()
                 otelLoggingSetup(sdk, silenceConsole = true)
-                OtelTelemetryBackend(sdk, context.telemetrySanitization)
+                OtelTelemetryBackend(sdk, context.telemetrySanitization, spans, logs)
             }
         }
 
@@ -367,11 +485,8 @@ private fun buildResolvedMap(base: TelemetryAttributes, enriched: Map<TelemetryK
     return result
 }
 
-/** OTel key cache: maps a [TelemetryKey] to the corresponding [AttributeKey], allocated once per process. */
-private val keyCache = ConcurrentHashMap<TelemetryKey<*>, AttributeKey<*>>()
-
-@Suppress("UNCHECKED_CAST")
-private fun TelemetryKey<*>.toOtelKey(): AttributeKey<*> = keyCache.getOrPut(this) {
+// Not cached: ingested client telemetry brings arbitrary key names, and a cache would grow with every one.
+private fun TelemetryKey<*>.toOtelKey(): AttributeKey<*> =
     when (this) {
         is TelemetryKey.OfString      -> AttributeKey.stringKey(name)
         is TelemetryKey.OfLong        -> AttributeKey.longKey(name)
@@ -382,7 +497,6 @@ private fun TelemetryKey<*>.toOtelKey(): AttributeKey<*> = keyCache.getOrPut(thi
         is TelemetryKey.OfDoubleList  -> AttributeKey.doubleArrayKey(name)
         is TelemetryKey.OfBooleanList -> AttributeKey.booleanArrayKey(name)
     }
-}
 
 /** Records `enrich`ed attributes onto the span and remembers them so RED dimensions can read them.
  *  Log calls are routed through [logger] (SLF4J), which the OTel Logback appender will automatically
@@ -464,10 +578,17 @@ private fun Span.put(key: TelemetryKey<*>, value: Any?) {
 // ── TelemetryBackend.Settings → OTel SDK builders ────────────────────────────
 
 private fun TelemetryBackend.Settings.Sampling.make(): Sampler = if (parentBased) {
-    Sampler.parentBasedBuilder(Sampler.traceIdRatioBased(ratio)).build()
+    followLocalParents(Sampler.traceIdRatioBased(ratio))
 } else {
     Sampler.traceIdRatioBased(ratio)
 }
+
+// A remote parent is a client's `traceparent` (see TraceParent). It links the trace, but an untrusted caller
+// must not decide whether we record: a `-00` flag would hide our errors, a `-01` flag would bypass our ratio.
+internal fun followLocalParents(root: Sampler): Sampler = Sampler.parentBasedBuilder(root)
+    .setRemoteParentSampled(root)
+    .setRemoteParentNotSampled(root)
+    .build()
 
 private fun TelemetryBackend.Settings.SpanLimitSettings.make(): SpanLimits =
     SpanLimits.builder()
@@ -479,11 +600,17 @@ private fun TelemetryBackend.Settings.SpanLimitSettings.make(): SpanLimits =
         .setMaxNumberOfAttributesPerLink(maxNumberOfAttributesPerLink)
         .build()
 
-private fun TelemetryBackend.Settings.buildTracerProvider(exporter: SpanExporter): SdkTracerProviderBuilder {
-    val wrapped = maxSpansPerSecond?.let { RateLimitedSpanExporter(exporter, it) } ?: exporter
-    val sampler = sampling?.make()
+private fun TelemetryBackend.Settings.limitSpans(exporter: SpanExporter): SpanExporter =
+    maxSpansPerSecond?.let { RateLimitedSpanExporter(exporter, it) } ?: exporter
+
+private fun TelemetryBackend.Settings.limitLogs(exporter: LogRecordExporter): LogRecordExporter {
+    val safe = SafeLogRecordExporter(exporter, logLimits.maxBodyLength, logLimits.maxStackTraceDepth)
+    return maxLogsPerSecond?.let { RateLimitedLogRecordExporter(safe, it) } ?: safe
+}
+
+private fun TelemetryBackend.Settings.buildTracerProvider(wrapped: SpanExporter): SdkTracerProviderBuilder {
     return SdkTracerProvider.builder()
-        .let { if (sampler != null) it.setSampler(sampler) else it }
+        .setSampler(sampling?.make() ?: followLocalParents(Sampler.alwaysOn()))
         .addSpanProcessor(
             traceReportBatching?.let {
                 BatchSpanProcessor.builder(wrapped)
@@ -497,9 +624,7 @@ private fun TelemetryBackend.Settings.buildTracerProvider(exporter: SpanExporter
         .setSpanLimits(spanLimits.make())
 }
 
-private fun TelemetryBackend.Settings.buildLoggerProvider(exporter: LogRecordExporter): SdkLoggerProviderBuilder {
-    val safe = SafeLogRecordExporter(exporter, logLimits.maxBodyLength, logLimits.maxStackTraceDepth)
-    val wrapped = maxLogsPerSecond?.let { RateLimitedLogRecordExporter(safe, it) } ?: safe
+private fun TelemetryBackend.Settings.buildLoggerProvider(wrapped: LogRecordExporter): SdkLoggerProviderBuilder {
     return SdkLoggerProvider.builder().addLogRecordProcessor(
         logReportBatching?.let {
             BatchLogRecordProcessor.builder(wrapped)
@@ -518,3 +643,68 @@ private fun TelemetryBackend.Settings.buildMeterProvider(exporter: MetricExporte
             .setInterval((metricReportBatching?.frequency ?: 5.seconds).inWholeMilliseconds, TimeUnit.MILLISECONDS)
             .build()
     )
+
+private val ingestLogger = LoggerFactory.getLogger("com.lightningkite.services.otel.ingest")
+
+private fun CompletableResultCode.warnOnFailure(what: String) = whenComplete {
+    if (!isSuccess) ingestLogger.warn("Exporting ingested client $what failed", failureThrowable)
+}
+
+private object TraceParentGetter : TextMapGetter<String> {
+    override fun keys(carrier: String): Iterable<String> = listOf("traceparent")
+    override fun get(carrier: String?, key: String): String? = if (key == "traceparent") carrier else null
+}
+
+private class IngestedSpanData(
+    private val name: String,
+    private val spanContext: SpanContext,
+    private val parentSpanContext: SpanContext,
+    private val status: StatusData,
+    private val startEpochNanos: Long,
+    private val endEpochNanos: Long,
+    private val attributes: Attributes,
+    private val events: List<EventData>,
+    private val scope: InstrumentationScopeInfo,
+    private val resource: Resource,
+) : SpanData {
+    override fun getName(): String = name
+    override fun getKind(): SpanKind = SpanKind.INTERNAL
+    override fun getSpanContext(): SpanContext = spanContext
+    override fun getParentSpanContext(): SpanContext = parentSpanContext
+    override fun getStatus(): StatusData = status
+    override fun getStartEpochNanos(): Long = startEpochNanos
+    override fun getAttributes(): Attributes = attributes
+    override fun getEvents(): List<EventData> = events
+    override fun getLinks(): List<LinkData> = listOf()
+    override fun getEndEpochNanos(): Long = endEpochNanos
+    override fun hasEnded(): Boolean = true
+    override fun getTotalRecordedEvents(): Int = events.size
+    override fun getTotalRecordedLinks(): Int = 0
+    override fun getTotalAttributeCount(): Int = attributes.size()
+    @Deprecated("Superseded by getInstrumentationScopeInfo")
+    override fun getInstrumentationLibraryInfo(): InstrumentationLibraryInfo = InstrumentationLibraryInfo.create(scope.name, scope.version)
+    override fun getInstrumentationScopeInfo(): InstrumentationScopeInfo = scope
+    override fun getResource(): Resource = resource
+}
+
+private class IngestedLogRecordData(
+    private val resource: Resource,
+    private val timestampEpochNanos: Long,
+    private val spanContext: SpanContext,
+    private val severity: Severity,
+    private val body: String,
+    private val attributes: Attributes,
+) : LogRecordData {
+    override fun getResource(): Resource = resource
+    override fun getInstrumentationScopeInfo(): InstrumentationScopeInfo = InstrumentationScopeInfo.create("client")
+    override fun getTimestampEpochNanos(): Long = timestampEpochNanos
+    override fun getObservedTimestampEpochNanos(): Long = timestampEpochNanos
+    override fun getSpanContext(): SpanContext = spanContext
+    override fun getSeverity(): Severity = severity
+    override fun getSeverityText(): String = severity.name
+    @Deprecated("Superseded by getBodyValue")
+    override fun getBody(): Body = Body.string(body)
+    override fun getBodyValue(): Value<*> = Value.of(body)
+    override fun getAttributes(): Attributes = attributes
+    override fun getTotalAttributeCount(): Int = attributes.size()
+}
