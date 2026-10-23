@@ -131,9 +131,9 @@ public class AnyOpticSerializer<T>(public val root: KSerializer<T>) : KSerialize
  * Deserializing throws a [SerializationException] if the path does not end at [target].
  */
 public class OpticSerializer<T, V>(
-    root: KSerializer<T>,
+    private val root: KSerializer<T>,
     private val target: KSerializer<V>,
-) : KSerializer<Optic<T, V>> {
+) : KSerializerWithDefault<Optic<T, V>> {
     private val untyped = AnyOpticSerializer(root)
 
     override val descriptor: SerialDescriptor =
@@ -142,6 +142,11 @@ public class OpticSerializer<T, V>(
     override fun serialize(encoder: Encoder, value: Optic<T, V>) {
         untyped.serialize(encoder, value)
     }
+
+    @Suppress("UNCHECKED_CAST")
+    override val default: Optic<T, V>
+        get() = root.fields?.firstOrNull { it.serializer.descriptor == target.descriptor } as? Field<T, V>
+            ?: throw IllegalStateException("${root.descriptor.serialName} has no field of type ${target.descriptor.serialName} for a default optic")
 
     override fun deserialize(decoder: Decoder): Optic<T, V> {
         val path = untyped.deserialize(decoder)
@@ -155,9 +160,9 @@ public class OpticSerializer<T, V>(
 
 /** Requires [kotlinx.serialization.UseContextualSerialization] on `Number?` for the file. */
 public class NumberOpticSerializer<T>(
-    root: KSerializer<T>,
+    private val root: KSerializer<T>,
     number: KSerializer<Number?>
-) : KSerializer<Optic<T, out Number?>> {
+) : KSerializerWithDefault<Optic<T, out Number?>> {
     private val untyped = AnyOpticSerializer(root)
 
     override val descriptor: SerialDescriptor =
@@ -167,18 +172,26 @@ public class NumberOpticSerializer<T>(
         untyped.serialize(encoder, value)
     }
 
+    private val numberDescriptors = listOf(
+        Double.serializer(),
+        Float.serializer(),
+        Int.serializer(),
+        Long.serializer(),
+        Short.serializer(),
+        Byte.serializer()
+    ).map { it.descriptor }
+
+    private fun KSerializer<*>.isNumber() = (nullElement() ?: this).descriptor in numberDescriptors
+
+    @Suppress("UNCHECKED_CAST")
+    override val default: Optic<T, out Number?>
+        get() = root.fields?.firstOrNull { it.serializer.isNumber() } as? Field<T, out Number?>
+            ?: throw IllegalStateException("${root.descriptor.serialName} has no Number? field for a default optic")
+
     override fun deserialize(decoder: Decoder): Optic<T, out Number?> {
         val path = untyped.deserialize(decoder)
-        val accepted = listOf(
-            Double.serializer(),
-            Float.serializer(),
-            Int.serializer(),
-            Long.serializer(),
-            Short.serializer(),
-            Byte.serializer()
-        ).map { it.descriptor }
 
-        if ((path.serializer.nullElement() ?: path.serializer).descriptor !in accepted)
+        if (!path.serializer.isNumber())
             throw SerializationException("Path $path ends at ${path.serializer.descriptor.serialName}, but a Number? type was expected")
 
         @Suppress("UNCHECKED_CAST")
