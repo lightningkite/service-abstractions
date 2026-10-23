@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.processor
 
 import com.google.devtools.ksp.KspExperimental
+import com.google.devtools.ksp.isAbstract
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import java.util.Locale.getDefault
@@ -193,6 +194,15 @@ class TableGenerator(
             } else {
                 appendPathDeprecation("Lens<$classReference>()", "com.lightningkite.services.database.optics.Lens")
                 appendLine("public val $classReference.Companion.path: IdentityLens<$classReference> get() = IdentityLens($classReference.serializer())")
+                for (property in sharedProperties(declaration)) {
+                    val name = property.simpleName.asString()
+                    val type = property.type.toKotlin()
+                    appendLine("public val $classReference.Companion.$name: Lens<$classReference, $type> get() = SealedTypeLens($classReference.serializer(), \"$name\")")
+                    // Claude: a Lens overload too, so a path of fields stays statically a Lens.
+                    for ((optic, jvmName) in listOf("Optic" to "path", "Lens" to "lens")) {
+                        appendLine("@get:JvmName(\"$jvmName${simpleName}_$name\") public val <ROOT> $optic<ROOT, $classReference>.$name: $optic<ROOT, $type> get() = this + $classReference.$name")
+                    }
+                }
                 declaration.getSealedSubclasses()
                     .filter { it.needsDcp() && it.isSerializable() }
                     .forEach { variant ->
@@ -208,6 +218,28 @@ class TableGenerator(
         } catch (e: Exception) {
             appendLine("/*" + e.stackTraceToString() + "*/")
         }
+    }
+
+    /**
+     * The abstract properties of the sealed interface that every serializable variant has as a serialized field of
+     * exactly the same type. A variant that implements one with a getter or a narrower type leaves it out.
+     */
+    private fun sharedProperties(declaration: KSClassDeclaration): List<KSPropertyDeclaration> {
+        val variants = declaration.sealedOptions().distinct().toList()
+        if (variants.isEmpty()) return emptyList()
+        val variantFields = variants.map { variant ->
+            if (variant.typeParameters.isNotEmpty() || variant.primaryConstructor == null) emptyList()
+            else variant.fields()
+        }
+        return declaration.getAllProperties()
+            .filter { it.isAbstract() }
+            .filter { property ->
+                val type = property.type.resolve()
+                variantFields.all { fields ->
+                    fields.any { it.name == property.simpleName.asString() && it.kotlinType.resolve() == type }
+                }
+            }
+            .toList()
     }
 
     private fun KSClassDeclaration.serialName(): String =
