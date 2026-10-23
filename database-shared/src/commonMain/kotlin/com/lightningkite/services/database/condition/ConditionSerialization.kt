@@ -151,8 +151,7 @@ private val stringOptions: List<MySealedClassSerializer.Option<Condition<String>
 // A value class's descriptor can't say whether it's Comparable, but wrapping one comparable value it almost always is.
 @Suppress("UNCHECKED_CAST")
 private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> =
-    ((if (inner.descriptor.isInline) comparableOptions(inner as KSerializer<String>) as List<MySealedClassSerializer.Option<Condition<T>, *>>
-    else commonOptions(inner)) + inner.fields!!.let {
+    (commonOptions(inner) + inner.serializableProperties!!.let {
         it.mapIndexed { index, ser ->
             @Suppress("UNCHECKED_CAST")
             MySealedClassSerializer.Option<Condition<T>, Condition.OnField<T, Any?>>(

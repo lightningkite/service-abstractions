@@ -542,27 +542,28 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
-        if (simplifiedModification.isNothing) return EntryChange(null, null)
-        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
-        return telemetryTrace("upsertOne") {
-            access {
-                // TODO: Ugly hack for handling weird upserts
-                if (m.upsert(model, serializer, bson)) {
-                    findOneAndUpdate(filter, m.document, m.findOneAndUpdateOptions())
-                        ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
-                        ?: EntryChange(null, model)
-                } else {
-                    findOneAndUpdate(filter.andCheck(m.check), m.document, m.findOneAndUpdateOptions())
-                        ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
-                        ?: existingUnchanged(filter, m)
-                        ?: run {
-                            insertOne(bson.stringify(serializer, model)); EntryChange(
-                            null,
-                            model
-                        )
-                        }
-                }
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch, overlappingArrayFilters = supportsOverlappingArrayFilters)
+        if (simplifiedModification.isNothing) return telemetryTrace("upsertOne") { access {
+            find(filter).limit(1).firstOrNull()?.let { bson.parse(serializer, it) }?.let { EntryChange(it, it) }
+                ?: run { insertOne(bson.stringify(serializer, model)); EntryChange(null, model) }
+        } }
+        val m = simplifiedModification.bson(serializer, bson = bson)
+        return telemetryTrace("upsertOne") { access {
+            // TODO: Ugly hack for handling weird upserts
+            if (m.upsert(model, serializer, bson)) {
+                findOneAndUpdate(filter, m.document, m.findOneAndUpdateOptions())
+                    ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                    ?: EntryChange(null, model)
+            } else {
+                findOneAndUpdate(filter.andCheck(m.check), m.document, m.findOneAndUpdateOptions())
+                    ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                    ?: existingUnchanged(filter, m)
+                    ?: run {
+                        insertOne(bson.stringify(serializer, model)); EntryChange(
+                        null,
+                        model
+                    )
+                    }
             }
         }
     }
@@ -575,26 +576,22 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         val simplifiedModification = modification.simplify()
-        if (simplifiedModification.isNothing) return false
-        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
-        return telemetryTrace("upsertOneIgnoringResult") {
-            access {
-                // TODO: Ugly hack for handling weird upserts
-                if (m.upsert(model, serializer, bson = bson)) {
-                    updateOne(filter, m.document, m.options).matchedCount > 0
+        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch, overlappingArrayFilters = supportsOverlappingArrayFilters)
+        if (simplifiedModification.isNothing) return telemetryTrace("upsertOneIgnoringResult") { access {
+            if (find(filter).limit(1).firstOrNull() != null) true
+            else { insertOne(bson.stringify(serializer, model)); false }
+        } }
+        val m = simplifiedModification.bson(serializer, bson = bson)
+        return telemetryTrace("upsertOneIgnoringResult") { access {
+            // TODO: Ugly hack for handling weird upserts
+            if (m.upsert(model, serializer, bson = bson)) {
+                updateOne(filter, m.document, m.options).matchedCount > 0
+            } else {
+                if (updateOne(filter.andCheck(m.check), m.document, m.options).matchedCount != 0L || existingUnchanged(filter, m) != null) {
+                    true
                 } else {
-                    if (updateOne(
-                            filter.andCheck(m.check),
-                            m.document,
-                            m.options
-                        ).matchedCount != 0L || existingUnchanged(filter, m) != null
-                    ) {
-                        true
-                    } else {
-                        insertOne(bson.stringify(serializer, model))
-                        false
-                    }
+                    insertOne(bson.stringify(serializer, model))
+                    false
                 }
             }
         }
