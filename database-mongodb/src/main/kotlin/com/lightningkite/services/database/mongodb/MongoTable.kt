@@ -542,28 +542,40 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch, overlappingArrayFilters = supportsOverlappingArrayFilters)
-        if (simplifiedModification.isNothing) return telemetryTrace("upsertOne") { access {
-            find(filter).limit(1).firstOrNull()?.let { bson.parse(serializer, it) }?.let { EntryChange(it, it) }
-                ?: run { insertOne(bson.stringify(serializer, model)); EntryChange(null, model) }
-        } }
-        val m = simplifiedModification.bson(serializer, bson = bson)
-        return telemetryTrace("upsertOne") { access {
-            // TODO: Ugly hack for handling weird upserts
-            if (m.upsert(model, serializer, bson)) {
-                findOneAndUpdate(filter, m.document, m.findOneAndUpdateOptions())
-                    ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
-                    ?: EntryChange(null, model)
-            } else {
-                findOneAndUpdate(filter.andCheck(m.check), m.document, m.findOneAndUpdateOptions())
-                    ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
-                    ?: existingUnchanged(filter, m)
-                    ?: run {
-                        insertOne(bson.stringify(serializer, model)); EntryChange(
-                        null,
-                        model
-                    )
-                    }
+        val filter = cs.bson(
+            serializer,
+            bson = bson,
+            atlasSearch = atlasSearch,
+        )
+        if (simplifiedModification.isNothing) return telemetryTrace("upsertOne") {
+            access {
+                find(filter).limit(1).firstOrNull()?.let { bson.parse(serializer, it) }?.let { EntryChange(it, it) }
+                    ?: run { insertOne(bson.stringify(serializer, model)); EntryChange(null, model) }
+            }
+        }
+        val m = simplifiedModification.bson(
+            serializer,
+            bson = bson,
+            overlappingArrayFilters = supportsOverlappingArrayFilters
+        )
+        return telemetryTrace("upsertOne") {
+            access {
+                // TODO: Ugly hack for handling weird upserts
+                if (m.upsert(model, serializer, bson)) {
+                    findOneAndUpdate(filter, m.document, m.findOneAndUpdateOptions())
+                        ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                        ?: EntryChange(null, model)
+                } else {
+                    findOneAndUpdate(filter.andCheck(m.check), m.document, m.findOneAndUpdateOptions())
+                        ?.let { bson.parse(serializer, it) }?.let { EntryChange(it, modification(it)) }
+                        ?: existingUnchanged(filter, m)
+                        ?: run {
+                            insertOne(bson.stringify(serializer, model)); EntryChange(
+                            null,
+                            model
+                        )
+                        }
+                }
             }
         }
     }
@@ -576,22 +588,41 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         val simplifiedModification = modification.simplify()
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch, overlappingArrayFilters = supportsOverlappingArrayFilters)
-        if (simplifiedModification.isNothing) return telemetryTrace("upsertOneIgnoringResult") { access {
-            if (find(filter).limit(1).firstOrNull() != null) true
-            else { insertOne(bson.stringify(serializer, model)); false }
-        } }
-        val m = simplifiedModification.bson(serializer, bson = bson)
-        return telemetryTrace("upsertOneIgnoringResult") { access {
-            // TODO: Ugly hack for handling weird upserts
-            if (m.upsert(model, serializer, bson = bson)) {
-                updateOne(filter, m.document, m.options).matchedCount > 0
-            } else {
-                if (updateOne(filter.andCheck(m.check), m.document, m.options).matchedCount != 0L || existingUnchanged(filter, m) != null) {
-                    true
+        val filter = cs.bson(
+            serializer,
+            bson = bson,
+            atlasSearch = atlasSearch,
+        )
+        if (simplifiedModification.isNothing) return telemetryTrace("upsertOneIgnoringResult") {
+            access {
+                if (find(filter).limit(1).firstOrNull() != null) true
+                else {
+                    insertOne(bson.stringify(serializer, model)); false
+                }
+            }
+        }
+        val m = simplifiedModification.bson(
+            serializer,
+            bson = bson,
+            overlappingArrayFilters = supportsOverlappingArrayFilters
+        )
+        return telemetryTrace("upsertOneIgnoringResult") {
+            access {
+                // TODO: Ugly hack for handling weird upserts
+                if (m.upsert(model, serializer, bson = bson)) {
+                    updateOne(filter, m.document, m.options).matchedCount > 0
                 } else {
-                    insertOne(bson.stringify(serializer, model))
-                    false
+                    if (updateOne(
+                            filter.andCheck(m.check),
+                            m.document,
+                            m.options
+                        ).matchedCount != 0L || existingUnchanged(filter, m) != null
+                    ) {
+                        true
+                    } else {
+                        insertOne(bson.stringify(serializer, model))
+                        false
+                    }
                 }
             }
         }
@@ -606,7 +637,11 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return EntryChange(null, null)
-        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
+        val m = simplifiedModification.bson(
+            serializer,
+            bson = bson,
+            overlappingArrayFilters = supportsOverlappingArrayFilters
+        )
         // With orderBy, this updates the first row that passes the modification's check.
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
         val before = telemetryTrace("updateOne") {
@@ -633,7 +668,11 @@ public class MongoTable<Model : Any>(
         if (orderBy.isNotEmpty()) return updateOne(cs, modification, orderBy).old != null
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return false
-        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
+        val m = simplifiedModification.bson(
+            serializer,
+            bson = bson,
+            overlappingArrayFilters = supportsOverlappingArrayFilters
+        )
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
         return telemetryTrace("updateOneIgnoringResult") {
             access {
@@ -650,7 +689,11 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return CollectionChanges()
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return CollectionChanges()
-        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
+        val m = simplifiedModification.bson(
+            serializer,
+            bson = bson,
+            overlappingArrayFilters = supportsOverlappingArrayFilters
+        )
         val changes = ArrayList<EntryChange<Model>>()
         // TODO: Don't love that we have to do this in chunks, but I guess we'll live.  Could this be done with pipelines?
         telemetryTrace("updateMany") {
@@ -660,7 +703,11 @@ public class MongoTable<Model : Any>(
                 ).collectChunked(1000) { list ->
                     val parsed = list.asSequence().map { bson.parse(serializer, it) }.toList()
                     val chunkChanges = parsed.map { EntryChange(it, modification(it)) }
-                    updateMany(Filters.`in`("_id", list.map { it["_id"] }).andCheck(m.check), m.document, m.options)
+                    updateMany(
+                        Filters.`in`("_id", list.map { it["_id"] }).andCheck(m.check),
+                        m.document,
+                        m.options
+                    )
                     changes.addAll(chunkChanges)
                 }
             }
@@ -676,7 +723,11 @@ public class MongoTable<Model : Any>(
         if (cs is Condition.Never) return 0
         val simplifiedModification = modification.simplify()
         if (simplifiedModification.isNothing) return 0
-        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
+        val m = simplifiedModification.bson(
+            serializer,
+            bson = bson,
+            overlappingArrayFilters = supportsOverlappingArrayFilters
+        )
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
         return telemetryTrace("updateManyIgnoringResult") {
             access {
@@ -739,7 +790,13 @@ public class MongoTable<Model : Any>(
         val remove = ArrayList<Model>()
         telemetryTrace("deleteMany") {
             access {
-                withDocumentClass<BsonDocument>().find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
+                withDocumentClass<BsonDocument>().find(
+                    cs.bson(
+                        serializer,
+                        bson = bson,
+                        atlasSearch = atlasSearch
+                    )
+                )
                     .collectChunked(1000) { list ->
                         deleteMany(Filters.`in`("_id", list.map { it["_id"] }))
                         list.asSequence().map { bson.parse(serializer, it) }
@@ -889,7 +946,14 @@ public class MongoTable<Model : Any>(
                     listOf(
                         Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
                         Aggregates.group("\$" + groupBy.mongo, Accumulators.sum("count", 1)),
-                    ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(match(ne("_id", null)))
+                    ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(
+                        match(
+                            ne(
+                                "_id",
+                                null
+                            )
+                        )
+                    )
                 )
                     .toList()
                     .associate {
@@ -948,7 +1012,14 @@ public class MongoTable<Model : Any>(
                     listOf(
                         Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
                         Aggregates.group("\$" + groupBy.mongo, aggregate.asValueBson(property.mongo)),
-                    ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(match(ne("_id", null)))
+                    ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(
+                        match(
+                            ne(
+                                "_id",
+                                null
+                            )
+                        )
+                    )
                 )
                     .toList()
                     .associate {
@@ -1066,11 +1137,25 @@ public class MongoTable<Model : Any>(
                         })
                     }
                     val phrases =
-                        textQuery.exact.map { documentOf("phrase" to documentOf("query" to it, "path" to paths)) }
+                        textQuery.exact.map {
+                            documentOf(
+                                "phrase" to documentOf(
+                                    "query" to it,
+                                    "path" to paths
+                                )
+                            )
+                        }
                     val compound = documentOf("must" to words + phrases)
                     if (textQuery.reject.isNotEmpty()) {
                         compound["mustNot"] =
-                            textQuery.reject.map { documentOf("phrase" to documentOf("query" to it, "path" to paths)) }
+                            textQuery.reject.map {
+                                documentOf(
+                                    "phrase" to documentOf(
+                                        "query" to it,
+                                        "path" to paths
+                                    )
+                                )
+                            }
                     }
                     // Claude: $search already returns results by score, so no sort stage is needed.
                     buildList {
@@ -1181,7 +1266,8 @@ public class MongoTable<Model : Any>(
                     .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
                     .mapNotNull { doc ->
                         val score =
-                            doc.getNumber("vector_search_score")?.doubleValue()?.toFloat() ?: return@mapNotNull null
+                            doc.getNumber("vector_search_score")?.doubleValue()?.toFloat()
+                                ?: return@mapNotNull null
 
                         // Apply minScore filter if specified
                         val minScore = params.minScore
