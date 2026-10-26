@@ -49,6 +49,7 @@ class OpenAiWireTest {
             ),
             stream = true,
             module = EmptySerializersModule(),
+            supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
         assertEquals("gpt-4o-mini", body["model"]!!.jsonPrimitive.content)
         assertEquals(true, body["stream"]!!.jsonPrimitive.content.toBoolean())
@@ -79,6 +80,7 @@ class OpenAiWireTest {
             ),
             stream = false,
             module = EmptySerializersModule(),
+            supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
         assertNull(body["stream"])
         assertEquals(256, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
@@ -117,6 +119,7 @@ class OpenAiWireTest {
             ),
             stream = false,
             module = EmptySerializersModule(),
+            supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
         val tc = body["tool_choice"]!!.jsonObject
         assertEquals("function", tc["type"]!!.jsonPrimitive.content)
@@ -144,6 +147,7 @@ class OpenAiWireTest {
             ),
             stream = false,
             module = EmptySerializersModule(),
+            supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
         val messages = body["messages"]!!.jsonArray
         assertEquals(3, messages.size)
@@ -179,6 +183,7 @@ class OpenAiWireTest {
             ),
             stream = false,
             module = EmptySerializersModule(),
+            supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
         val assistant = body["messages"]!!.jsonArray[0].jsonObject
         // content must be present (as null) when tool_calls are the only content.
@@ -206,6 +211,7 @@ class OpenAiWireTest {
             ),
             stream = false,
             module = EmptySerializersModule(),
+            supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
         val messages = body["messages"]!!.jsonArray
         assertEquals(2, messages.size)
@@ -234,6 +240,7 @@ class OpenAiWireTest {
             ),
             stream = false,
             module = EmptySerializersModule(),
+            supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
         val content = body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
         assertEquals(2, content.size)
@@ -262,6 +269,7 @@ class OpenAiWireTest {
             ),
             stream = false,
             module = EmptySerializersModule(),
+            supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
         val content = body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
         assertEquals("data:image/jpeg;base64,abc123==",
@@ -378,26 +386,14 @@ class OpenAiWireTest {
     // --- Edge cases added for review fixes --------------------------------------
 
     /**
-     * An assistant message with no text AND no tool calls (attachment-only here) must serialize
+     * An assistant message with no text AND no tool calls (reasoning-only here) must serialize
      * `content=""` rather than null — OpenAI rejects null content when tool_calls are absent.
      */
     @Test
     fun assistantMessageWithoutTextOrToolCallsSerializesEmptyStringContent() {
-        val body = buildRequestBody(
-            model = "gpt-4o",
-            prompt = LlmPrompt(
-                messages = listOf(
-                    LlmMessage.Agent(
-                        listOf(
-                            LlmPart.Attachment(
-                                LlmAttachment.Url(MediaType("image/png"), "https://e.com/x.png")
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            stream = false,
-            module = EmptySerializersModule(),
+        val body = requestFor(
+            LlmPrompt(messages = listOf(LlmMessage.Agent(listOf(LlmPart.Reasoning("thinking"))))),
+            OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
         val assistant = body["messages"]!!.jsonArray[0].jsonObject
         assertEquals("assistant", assistant["role"]!!.jsonPrimitive.content)
@@ -408,45 +404,103 @@ class OpenAiWireTest {
         assertNull(assistant["tool_calls"])
     }
 
-    /**
-     * Non-image attachments (audio, pdf, etc.) cannot be expressed over Chat Completions and
-     * must fail loudly rather than be silently mis-serialized as image_url.
-     */
+    private fun requestFor(prompt: LlmPrompt, supportedMediaTypes: List<MediaType>): JsonObject = buildRequestBody(
+        model = "test-model",
+        prompt = prompt,
+        stream = false,
+        module = EmptySerializersModule(),
+        supportedMediaTypes = supportedMediaTypes,
+    )
+
+    private fun userContent(attachment: LlmAttachment, supportedMediaTypes: List<MediaType>): JsonArray =
+        requestFor(
+            LlmPrompt(messages = listOf(LlmMessage.User(listOf(LlmPart.Attachment(attachment))))),
+            supportedMediaTypes,
+        )["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
+
     @Test
-    fun nonImageAttachmentThrows() {
-        val ex = assertFailsWith<IllegalArgumentException> {
-            buildRequestBody(
-                model = "gpt-4o",
-                prompt = LlmPrompt(
-                    messages = listOf(
-                        LlmMessage.User(
-                            listOf(
-                                LlmPart.Attachment(
-                                    LlmAttachment.Url(MediaType("audio/wav"), "https://e.com/a.wav")
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-                stream = false,
-                module = EmptySerializersModule(),
-            )
-        }
-        assertTrue(
-            ex.message!!.contains("image attachments", ignoreCase = true),
-            "Expected a helpful error mentioning image-only support; got: ${ex.message}",
+    fun base64PdfBecomesFilePart() {
+        val content = userContent(
+            LlmAttachment.Base64(MediaType.Application.Pdf, "JVBERi0="),
+            OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
         )
+        val part = content.single().jsonObject
+        assertEquals("file", part["type"]!!.jsonPrimitive.content)
+        val file = part["file"]!!.jsonObject
+        assertEquals("document-1.pdf", file["filename"]!!.jsonPrimitive.content)
+        assertEquals("data:application/pdf;base64,JVBERi0=", file["file_data"]!!.jsonPrimitive.content)
     }
 
-    /**
-     * The model catalog must pick the longest matching prefix so `gpt-4o-audio-preview-*`
-     * routes to the audio entry, not the base `gpt-4o` entry.
-     */
+    @Test
+    fun base64AudioBecomesInputAudio() {
+        val audioModel = listOf(MediaType.Audio.WAV, MediaType.Audio.MPEG)
+        val wav = userContent(LlmAttachment.Base64(MediaType.Audio.WAV, "UklGRg=="), audioModel).single().jsonObject
+        assertEquals("input_audio", wav["type"]!!.jsonPrimitive.content)
+        assertEquals("UklGRg==", wav["input_audio"]!!.jsonObject["data"]!!.jsonPrimitive.content)
+        assertEquals("wav", wav["input_audio"]!!.jsonObject["format"]!!.jsonPrimitive.content)
+
+        val mp3 = userContent(LlmAttachment.Base64(MediaType.Audio.MPEG, "SUQz"), audioModel).single().jsonObject
+        assertEquals("mp3", mp3["input_audio"]!!.jsonObject["format"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun attachmentsChatCompletionsCantCarryBecomeNotes() {
+        val gpt4o = OpenAiModelCatalog.supportedMediaTypes("gpt-4o")
+        val unsupported = listOf(
+            // Not in the model's supported types.
+            LlmAttachment.Base64(MediaType.Audio.WAV, "UklGRg=="),
+            LlmAttachment.Base64(MediaType.Image.SVG, "PHN2Zz4="),
+            // Supported type, but Chat Completions has no URL form for it.
+            LlmAttachment.Url(MediaType.Application.Pdf, "https://e.com/doc.pdf"),
+        )
+        unsupported.forEach { attachment ->
+            val part = userContent(attachment, gpt4o).single().jsonObject
+            assertEquals("text", part["type"]!!.jsonPrimitive.content)
+            assertEquals(attachment.notSentNote().text, part["text"]!!.jsonPrimitive.content)
+        }
+        val audioUrl = LlmAttachment.Url(MediaType.Audio.WAV, "https://e.com/a.wav")
+        val part = userContent(audioUrl, listOf(MediaType.Audio.WAV)).single().jsonObject
+        assertEquals(audioUrl.notSentNote().text, part["text"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun systemAssistantAndToolAttachmentsBecomeNotes() {
+        val image = LlmAttachment.Base64(MediaType.Image.PNG, "iVBORw0K")
+        val note = image.notSentNote().text
+        val body = requestFor(
+            LlmPrompt(
+                systemPrompt = listOf(LlmPart.Text("Be brief. "), LlmPart.Attachment(image)),
+                messages = listOf(
+                    LlmMessage.Agent(listOf(LlmPart.Text("Here: "), LlmPart.Attachment(image))),
+                    LlmMessage.ToolResult(toolCallId = "call_1", parts = listOf(LlmPart.Attachment(image))),
+                ),
+            ),
+            OpenAiModelCatalog.supportedMediaTypes("gpt-4o"),
+        )
+        val messages = body["messages"]!!.jsonArray
+        assertEquals("Be brief. $note", messages[0].jsonObject["content"]!!.jsonPrimitive.content)
+        assertEquals("Here: $note", messages[1].jsonObject["content"]!!.jsonPrimitive.content)
+        assertEquals(note, messages[2].jsonObject["content"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun uncataloguedModelsReadImagesOnly() {
+        val localModel = OpenAiModelCatalog.supportedMediaTypes("qwen2.5-vl-7b-instruct")
+        assertEquals(listOf(MediaType.Image.Any), localModel)
+
+        val image = userContent(LlmAttachment.Base64(MediaType.Image.AVIF, "AAAA"), localModel).single().jsonObject
+        assertEquals("image_url", image["type"]!!.jsonPrimitive.content)
+
+        val pdf = LlmAttachment.Base64(MediaType.Application.Pdf, "JVBERi0=")
+        val part = userContent(pdf, localModel).single().jsonObject
+        assertEquals(pdf.notSentNote().text, part["text"]!!.jsonPrimitive.content)
+    }
+
     @Test
     fun modelCatalogUsesLongestPrefixMatch() {
-        val audio = OpenAiModelCatalog.lookup("gpt-4o-audio-preview-2024-10-01")
-        assertNotNull(audio)
-        assertEquals("gpt-4o-audio-preview", audio.idPrefix)
+        val sol = OpenAiModelCatalog.lookup("gpt-5.6-sol-2026-06-01")
+        assertNotNull(sol)
+        assertEquals("gpt-5.6-sol", sol.idPrefix)
 
         val plain = OpenAiModelCatalog.lookup("gpt-4o-2024-11-20")
         assertNotNull(plain)

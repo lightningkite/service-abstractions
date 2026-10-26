@@ -221,31 +221,6 @@ class BedrockWireTest {
         assertEquals("STOP", (stops[0] as JsonPrimitive).content)
     }
 
-    @Test fun urlImageRejected() {
-        val prompt = LlmPrompt(
-            messages = listOf(
-                LlmMessage.User(
-                    listOf(
-                        LlmPart.Attachment(
-                            com.lightningkite.services.ai.LlmAttachment.Url(
-                                mediaType = com.lightningkite.services.data.MediaType("image/png"),
-                                url = "https://example.com/x.png",
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        )
-        var threw = false
-        try {
-            BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
-        } catch (e: IllegalArgumentException) {
-            threw = true
-            assertTrue("URL" in (e.message ?: ""))
-        }
-        assertTrue(threw, "URL attachments must be rejected for Bedrock")
-    }
-
     /**
      * End-to-end verification of the stream event dispatch: feed the handler the same frame
      * sequence Bedrock produces for "stream one text chunk, finish with metadata" and make

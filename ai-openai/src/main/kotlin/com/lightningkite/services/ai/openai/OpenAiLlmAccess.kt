@@ -73,11 +73,12 @@ public class OpenAiLlmAccess(
                 description = catalogEntry?.description,
                 usdPerMillionInputTokens = catalogEntry?.inputPrice ?: 0.0,
                 usdPerMillionOutputTokens = catalogEntry?.outputPrice ?: 0.0,
+                usdPerMillionCacheReadTokens = catalogEntry?.cacheReadPrice,
+                // OpenAI caches automatically at no surcharge, so a cache write costs plain input.
+                usdPerMillionCacheWriteTokens = catalogEntry?.inputPrice,
                 roughIntelligenceRanking = catalogEntry?.ranking ?: 0.5,
                 supportsToolCalling = catalogEntry?.supportsToolCalling ?: true,
-                supportsImageInput = catalogEntry?.supportsImageInput ?: false,
-                supportsVideoInput = catalogEntry?.supportsVideoInput ?: false,
-                supportsAudioInput = catalogEntry?.supportsAudioInput ?: false,
+                supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes(entry.id),
                 supportsImageOutput = catalogEntry?.supportsImageOutput ?: false,
                 supportsAudioOutput = catalogEntry?.supportsAudioOutput ?: false,
                 supportsReasoning = catalogEntry?.supportsReasoning ?: false,
@@ -93,6 +94,7 @@ public class OpenAiLlmAccess(
             prompt = prompt,
             stream = true,
             module = context.internalSerializersModule,
+            supportedMediaTypes = OpenAiModelCatalog.supportedMediaTypes(model.id),
         )
         try {
             client.preparePost("$baseUrl/chat/completions") {

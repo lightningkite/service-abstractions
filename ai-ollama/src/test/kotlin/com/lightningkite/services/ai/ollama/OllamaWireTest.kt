@@ -1,5 +1,6 @@
 package com.lightningkite.services.ai.ollama
 
+import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmModelId
@@ -8,6 +9,7 @@ import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
+import com.lightningkite.services.data.MediaType
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -24,6 +26,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -204,11 +207,8 @@ class OllamaWireTest {
     }
 
     @Test
-    fun base64ImageGoesInImagesArray() {
-        val attachment = com.lightningkite.services.ai.LlmAttachment.Base64(
-            mediaType = com.lightningkite.services.data.MediaType("image/png"),
-            base64 = "abc123",
-        )
+    fun base64ImageGoesInImagesArrayForVisionModels() {
+        val attachment = LlmAttachment.Base64(MediaType.Image.PNG, "abc123")
         val prompt = LlmPrompt(
             messages = listOf(
                 LlmMessage.User(
@@ -219,55 +219,49 @@ class OllamaWireTest {
                 ),
             ),
         )
-        val body = OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = true)
+        val body = OllamaWireBuilder.buildChatRequest("llava:7b", prompt, EmptySerializersModule(), stream = true)
         val userMsg = body["messages"]!!.jsonArray[0].jsonObject
         val images = userMsg["images"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("abc123"), images)
+        assertEquals("What's in this image?", userMsg["content"]!!.jsonPrimitive.content)
     }
 
-    /**
-     * Ollama's `images` field only accepts image bytes. A non-image attachment (e.g. a PDF)
-     * must fail loudly rather than be silently stuffed into `images` as garbage the model
-     * receives with no error.
-     */
     @Test
-    fun nonImageAttachmentThrows() {
-        val attachment = com.lightningkite.services.ai.LlmAttachment.Base64(
-            mediaType = com.lightningkite.services.data.MediaType("application/pdf"),
-            base64 = "abc123",
+    fun attachmentsOllamaCantTakeBecomeNotes() {
+        val unsupported = listOf(
+            "llava:7b" to LlmAttachment.Base64(MediaType.Application.Pdf, "JVBERi0="),
+            "llava:7b" to LlmAttachment.Url(MediaType.Image.PNG, "https://example.com/img.png"),
+            "llama3.2:3b" to LlmAttachment.Base64(MediaType.Image.PNG, "abc123"),
         )
-        val prompt = LlmPrompt(
-            messages = listOf(
-                LlmMessage.User(
-                    listOf(LlmPart.Attachment(attachment)),
-                ),
-            ),
-        )
-        assertFailsWith<IllegalArgumentException> {
-            OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = true)
+        unsupported.forEach { (model, attachment) ->
+            val prompt = LlmPrompt(messages = listOf(LlmMessage.User(listOf(LlmPart.Attachment(attachment)))))
+            val userMsg = OllamaWireBuilder.buildChatRequest(model, prompt, EmptySerializersModule(), stream = true)["messages"]!!
+                .jsonArray[0].jsonObject
+            assertNull(userMsg["images"], "$model with ${attachment.mediaType}")
+            assertEquals(attachment.notSentNote().text, userMsg["content"]!!.jsonPrimitive.content)
         }
     }
 
     @Test
-    fun urlImageRejectedOnNativeWire() {
-        val attachment = com.lightningkite.services.ai.LlmAttachment.Url(
-            mediaType = com.lightningkite.services.data.MediaType("image/png"),
-            url = "https://example.com/img.png",
-        )
+    fun systemAndToolResultAttachmentsBecomeNotes() {
+        val image = LlmAttachment.Base64(MediaType.Image.PNG, "abc123")
+        val note = image.notSentNote().text
         val prompt = LlmPrompt(
+            systemPrompt = listOf(LlmPart.Text("Be brief."), LlmPart.Attachment(image)),
             messages = listOf(
-                LlmMessage.User(
-                    listOf(LlmPart.Attachment(attachment)),
-                ),
+                LlmMessage.ToolResult(toolCallId = "call_1", parts = listOf(LlmPart.Attachment(image))),
             ),
         )
-        var threw = false
-        try {
-            OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = true)
-        } catch (e: IllegalArgumentException) {
-            threw = true
-        }
-        assertTrue(threw, "Expected IllegalArgumentException for URL image attachment")
+        val messages = OllamaWireBuilder.buildChatRequest("llava:7b", prompt, EmptySerializersModule(), stream = true)["messages"]!!.jsonArray
+        assertEquals("Be brief.\n\n$note", messages[0].jsonObject["content"]!!.jsonPrimitive.content)
+        assertEquals(note, messages[1].jsonObject["content"]!!.jsonPrimitive.content)
+        assertNull(messages[1].jsonObject["images"])
+    }
+
+    @Test
+    fun onlyVisionModelsReadImages() {
+        assertEquals(listOf(MediaType.Image.Any), OllamaWire.supportedMediaTypes("llava:13b"))
+        assertEquals(emptyList<MediaType>(), OllamaWire.supportedMediaTypes("llama3.2:3b"))
     }
 
     // ------------------------------------------------------------------------------------

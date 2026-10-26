@@ -24,6 +24,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -138,19 +139,22 @@ internal data class ModelListEntry(
  * Build the full request JSON body for `POST /v1/chat/completions`.
  *
  * @param stream Adds `stream: true` and `stream_options.include_usage: true` when set.
+ * @param supportedMediaTypes Attachment types [model] reads (see [OpenAiModelCatalog.supportedMediaTypes]);
+ *   any other attachment is sent as [LlmAttachment.notSentNote] text.
  */
 internal fun buildRequestBody(
     model: String,
     prompt: LlmPrompt,
     stream: Boolean,
     module: SerializersModule,
+    supportedMediaTypes: List<MediaType>,
 ): JsonObject = buildJsonObject {
     put("model", model)
     putJsonArray("messages") {
         // System prompt: render systemPrompt parts + shared context as system-role messages.
         buildSystemMessages(prompt).forEach { add(it) }
         prompt.messages.forEach { message ->
-            buildOpenAiMessages(message).forEach { add(it) }
+            buildOpenAiMessages(message, supportedMediaTypes).forEach { add(it) }
         }
     }
     if (prompt.tools.isNotEmpty()) {
@@ -212,13 +216,16 @@ private fun encodeToolChoice(choice: LlmToolChoice): JsonElement = when (choice)
  *
  * - User/Agent → exactly one message.
  * - ToolResult → one tool message with role=tool.
+ *
+ * Only user messages carry attachments; assistant and tool messages take text, so their
+ * attachments become [LlmAttachment.notSentNote] text.
  */
-internal fun buildOpenAiMessages(message: LlmMessage): List<JsonObject> {
+internal fun buildOpenAiMessages(message: LlmMessage, supportedMediaTypes: List<MediaType>): List<JsonObject> {
     return when (message) {
-        is LlmMessage.User -> listOf(buildSystemOrUser("user", message.parts))
+        is LlmMessage.User -> listOf(buildUserMessage(message.parts, supportedMediaTypes))
         is LlmMessage.Agent -> listOf(buildAssistantMessage(message.parts))
         is LlmMessage.ToolResult -> {
-            val text = message.parts.filterIsInstance<LlmPart.Text>().joinToString("") { it.text }
+            val text = textWithAttachmentNotes(message.parts)
             listOf(buildJsonObject {
                 put("role", "tool")
                 put("tool_call_id", message.toolCallId)
@@ -230,39 +237,80 @@ internal fun buildOpenAiMessages(message: LlmMessage): List<JsonObject> {
 }
 
 /**
- * Build a system/user message. Uses a plain string for text-only content and a content-array
- * (with `{type:"text",...}` / `{type:"image_url",...}` parts) when attachments are present.
+ * Uses a plain string for text-only content and a content array when attachments are present.
+ * Chat Completions takes images by URL or data URL, PDFs only as base64 `file` parts, and audio
+ * only as base64 wav/mp3 `input_audio` parts.
  */
-private fun buildSystemOrUser(role: String, content: List<LlmPart.ContentOnly>): JsonObject {
+private fun buildUserMessage(content: List<LlmPart.ContentOnly>, supportedMediaTypes: List<MediaType>): JsonObject {
+    fun JsonArrayBuilder.addText(text: String) = addJsonObject {
+        put("type", "text")
+        put("text", text)
+    }
+
     val hasAttachment = content.any { it is LlmPart.Attachment }
     return buildJsonObject {
-        put("role", role)
-        if (hasAttachment) {
-            putJsonArray("content") {
-                content.forEach { part ->
-                    when (part) {
-                        is LlmPart.Text -> addJsonObject {
-                            put("type", "text")
-                            put("text", part.text)
+        put("role", "user")
+        if (!hasAttachment) {
+            put("content", textWithAttachmentNotes(content))
+            return@buildJsonObject
+        }
+        var pdfCount = 0
+        putJsonArray("content") {
+            content.forEach { part ->
+                when (part) {
+                    is LlmPart.Text -> addText(part.text)
+                    is LlmPart.Attachment -> {
+                        val attachment = part.attachment
+                        val mediaType = attachment.mediaType
+                        val audioFormat = when {
+                            MediaType.Audio.WAV.accepts(mediaType) -> "wav"
+                            MediaType.Audio.MPEG.accepts(mediaType) -> "mp3"
+                            else -> null
                         }
-                        is LlmPart.Attachment -> add(encodeAttachment(part.attachment))
+                        when {
+                            supportedMediaTypes.none { it.accepts(mediaType) } -> addText(notSent(attachment).text)
+                            MediaType.Image.Any.accepts(mediaType) -> addJsonObject {
+                                put("type", "image_url")
+                                putJsonObject("image_url") {
+                                    when (attachment) {
+                                        is LlmAttachment.Url -> put("url", attachment.url)
+                                        is LlmAttachment.Base64 -> put("url", "data:$mediaType;base64,${attachment.base64}")
+                                    }
+                                }
+                            }
+                            attachment is LlmAttachment.Base64 && MediaType.Application.Pdf.accepts(mediaType) -> {
+                                pdfCount++
+                                addJsonObject {
+                                    put("type", "file")
+                                    putJsonObject("file") {
+                                        put("filename", "document-$pdfCount.pdf")
+                                        put("file_data", "data:application/pdf;base64,${attachment.base64}")
+                                    }
+                                }
+                            }
+                            attachment is LlmAttachment.Base64 && audioFormat != null -> addJsonObject {
+                                put("type", "input_audio")
+                                putJsonObject("input_audio") {
+                                    put("data", attachment.base64)
+                                    put("format", audioFormat)
+                                }
+                            }
+                            else -> addText(notSent(attachment).text)
+                        }
                     }
                 }
             }
-        } else {
-            val text = content.filterIsInstance<LlmPart.Text>().joinToString("") { it.text }
-            put("content", text)
         }
     }
 }
 
 private fun buildAssistantMessage(content: List<LlmPart>): JsonObject = buildJsonObject {
     put("role", "assistant")
-    val text = content.filterIsInstance<LlmPart.Text>().joinToString("") { it.text }
+    val text = textWithAttachmentNotes(content)
     val toolCalls = content.filterIsInstance<LlmPart.ToolCall>()
     // OpenAI requires `content` on assistant messages. null is accepted when tool_calls is
-    // present, but with neither text nor tool_calls (e.g. attachment-only or fully-stripped
-    // assistant messages) the API rejects null/absent content — use empty string instead.
+    // present, but with neither text nor tool_calls (e.g. a reasoning-only assistant message)
+    // the API rejects null/absent content — use empty string instead.
     put(
         "content",
         when {
@@ -289,7 +337,7 @@ private fun buildAssistantMessage(content: List<LlmPart>): JsonObject = buildJso
 
 /**
  * Build system-role messages from [LlmPrompt.systemPrompt] and shared tool context.
- * Returns an empty list when neither is present.
+ * Returns an empty list when neither is present. System messages take text only.
  */
 internal fun buildSystemMessages(prompt: LlmPrompt): List<JsonObject> {
     val parts = buildList {
@@ -297,39 +345,23 @@ internal fun buildSystemMessages(prompt: LlmPrompt): List<JsonObject> {
         addAll(prompt.systemPrompt)
     }
     if (parts.isEmpty()) return emptyList()
-    return listOf(buildSystemOrUser("system", parts))
+    return listOf(buildJsonObject {
+        put("role", "system")
+        put("content", textWithAttachmentNotes(parts))
+    })
 }
 
-private fun encodeAttachment(attachment: LlmAttachment): JsonObject {
-    requireImageMediaType(attachment.mediaType)
-    return buildJsonObject {
-        when (attachment) {
-            is LlmAttachment.Url -> {
-                put("type", "image_url")
-                putJsonObject("image_url") {
-                    put("url", attachment.url)
-                }
-            }
-            is LlmAttachment.Base64 -> {
-                put("type", "image_url")
-                putJsonObject("image_url") {
-                    put("url", "data:${attachment.mediaType};base64,${attachment.base64}")
-                }
-            }
-        }
+private fun textWithAttachmentNotes(parts: List<LlmPart>): String = parts.joinToString("") { part ->
+    when (part) {
+        is LlmPart.Text -> part.text
+        is LlmPart.Attachment -> notSent(part.attachment).text
+        is LlmPart.Reasoning, is LlmPart.ToolCall -> ""
     }
 }
 
-/**
- * OpenAI Chat Completions only accepts image attachments (via `image_url`). Non-image types
- * (audio, video, files, etc.) must be handled by the Responses API or by providing a text
- * transcription/summary. Fail fast rather than silently sending the wrong wire format.
- */
-private fun requireImageMediaType(mediaType: MediaType) {
-    require(mediaType.type == "image") {
-        "OpenAI Chat Completions only accepts image attachments; got media type $mediaType. " +
-            "Use the Responses API for audio/file inputs, or provide a text transcription."
-    }
+private fun notSent(attachment: LlmAttachment): LlmPart.Text {
+    wireLogger.warn { "Chat Completions can't carry this ${attachment.mediaType} attachment; sending a note instead." }
+    return attachment.notSentNote()
 }
 
 // --- Stream parsing --------------------------------------------------------------

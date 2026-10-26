@@ -104,7 +104,6 @@ public class OllamaLlmAccess(
         val tags: OllamaTagsResponse = response.body()
         tags.models.map { entry ->
             val modelName = entry.name
-            val isVision = VISION_MODEL_PATTERNS.any { it in modelName.lowercase() }
             LlmModelInfo(
                 id = LlmModelId(id = modelName, access = this.name),
                 name = modelName,
@@ -113,7 +112,7 @@ public class OllamaLlmAccess(
                 usdPerMillionOutputTokens = 0.0,
                 roughIntelligenceRanking = estimateOllamaRanking(modelName, entry.details?.parameter_size),
                 supportsToolCalling = true,
-                supportsImageInput = isVision,
+                supportedMediaTypes = OllamaWire.supportedMediaTypes(modelName),
             )
         }
     }
@@ -298,8 +297,6 @@ internal object OllamaWireBuilder {
         stream: Boolean,
     ) = OllamaWire.buildChatRequest(model, prompt, module, stream)
 }
-
-private val VISION_MODEL_PATTERNS = listOf("llava", "bakllava", "moondream", "cogvlm", "llama-vision", "minicpm-v")
 
 /**
  * Rough intelligence ranking heuristic from an Ollama model identifier plus its reported

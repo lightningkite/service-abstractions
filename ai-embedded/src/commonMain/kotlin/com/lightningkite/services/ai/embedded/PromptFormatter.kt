@@ -51,7 +51,7 @@ public object PromptFormatter {
         val systemText = prompt.systemPrompt.joinToString("") { part ->
             when (part) {
                 is LlmPart.Text -> part.text
-                is LlmPart.Attachment -> "[attachment]"
+                is LlmPart.Attachment -> part.attachment.notSentNote().text
             }
         }
         if (systemText.isNotEmpty()) {
@@ -64,7 +64,7 @@ public object PromptFormatter {
                     val text = message.parts.joinToString("") { part ->
                         when (part) {
                             is LlmPart.Text -> part.text
-                            is LlmPart.Attachment -> "[attachment]"
+                            is LlmPart.Attachment -> part.attachment.notSentNote().text
                         }
                     }
                     appendMessage("user", text, template)
@@ -75,7 +75,7 @@ public object PromptFormatter {
                             is LlmPart.Text -> part.text
                             is LlmPart.Reasoning -> ""
                             is LlmPart.ToolCall -> ""
-                            is LlmPart.Attachment -> "[attachment]"
+                            is LlmPart.Attachment -> part.attachment.notSentNote().text
                         }
                     }
                     if (text.isNotEmpty()) {
@@ -88,7 +88,7 @@ public object PromptFormatter {
                     val text = message.parts.joinToString("") { part ->
                         when (part) {
                             is LlmPart.Text -> part.text
-                            is LlmPart.Attachment -> "[attachment]"
+                            is LlmPart.Attachment -> part.attachment.notSentNote().text
                         }
                     }
                     appendMessage("user", text, template)

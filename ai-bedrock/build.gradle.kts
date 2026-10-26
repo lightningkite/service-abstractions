@@ -94,6 +94,7 @@ kotlin {
             dependencies {
                 implementation(project(":ai-test"))
                 implementation(project(":test"))
+                implementation(libs.ktor.client.mock)
             }
         }
     }

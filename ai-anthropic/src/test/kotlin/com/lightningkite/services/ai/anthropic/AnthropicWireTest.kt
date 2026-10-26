@@ -33,7 +33,6 @@ import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -280,33 +279,80 @@ class AnthropicWireTest {
         assertEquals("https://example.com/cat.jpg", source["url"]!!.jsonPrimitive.content)
     }
 
-    /**
-     * Anthropic needs a distinct `type: "document"` block for PDFs, which this codebase doesn't
-     * implement yet. Sending a non-image attachment must fail fast rather than build a malformed
-     * `{"type":"image","source":{"media_type":"application/pdf",...}}` request that Anthropic's
-     * API would reject anyway, with a much less helpful error.
-     */
+    private fun firstUserBlock(attachment: LlmAttachment): JsonObject {
+        val body = bodyFor(
+            "claude-haiku-4-5",
+            LlmPrompt(messages = listOf(LlmMessage.User(listOf(LlmPart.Attachment(attachment))))),
+        )
+        return body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray[0].jsonObject
+    }
+
     @Test
-    fun nonImageAttachmentThrows() {
-        assertFailsWith<IllegalArgumentException> {
-            AnthropicWire.buildRequestBody(
-                modelId = "claude-haiku-4-5",
-                requested = LlmPrompt(
-                    messages = listOf(
-                        LlmMessage.User(
-                            listOf(
-                                LlmPart.Attachment(
-                                    LlmAttachment.Base64(MediaType.Application.Pdf, "aGVsbG8="),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-                module = EmptySerializersModule(),
-                stream = false,
-                defaultMaxTokens = 1024,
-            )
-        }
+    fun pdfBase64BecomesDocument() {
+        val block = firstUserBlock(LlmAttachment.Base64(MediaType.Application.Pdf, "aGVsbG8="))
+        assertEquals("document", block["type"]!!.jsonPrimitive.content)
+        val source = block["source"]!!.jsonObject
+        assertEquals("base64", source["type"]!!.jsonPrimitive.content)
+        assertEquals("application/pdf", source["media_type"]!!.jsonPrimitive.content)
+        assertEquals("aGVsbG8=", source["data"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun pdfUrlBecomesUrlDocument() {
+        val block = firstUserBlock(LlmAttachment.Url(MediaType.Application.Pdf, "https://example.com/a.pdf"))
+        assertEquals("document", block["type"]!!.jsonPrimitive.content)
+        val source = block["source"]!!.jsonObject
+        assertEquals("url", source["type"]!!.jsonPrimitive.content)
+        assertEquals("https://example.com/a.pdf", source["url"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun plainTextBase64BecomesTextDocument() {
+        val block = firstUserBlock(LlmAttachment.Base64(MediaType.Text.Plain, "aGVsbG8="))
+        assertEquals("document", block["type"]!!.jsonPrimitive.content)
+        val source = block["source"]!!.jsonObject
+        assertEquals("text", source["type"]!!.jsonPrimitive.content)
+        assertEquals("text/plain", source["media_type"]!!.jsonPrimitive.content)
+        assertEquals("hello", source["data"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun unsupportedAttachmentBecomesNote() {
+        val attachment = LlmAttachment.Base64(MediaType.Application.Zip, "aGVsbG8=")
+        val block = firstUserBlock(attachment)
+        assertEquals("text", block["type"]!!.jsonPrimitive.content)
+        assertEquals(attachment.notSentNote().text, block["text"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun textUrlBecomesNote() {
+        val attachment = LlmAttachment.Url(MediaType.Text.Plain, "https://example.com/a.txt")
+        val block = firstUserBlock(attachment)
+        assertEquals("text", block["type"]!!.jsonPrimitive.content)
+        assertEquals(attachment.notSentNote().text, block["text"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun undecodableTextBecomesNote() {
+        val attachment = LlmAttachment.Base64(MediaType.Text.Plain, "not base64!")
+        val block = firstUserBlock(attachment)
+        assertEquals(attachment.notSentNote().text, block["text"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun systemPromptAttachmentBecomesNote() {
+        val attachment = LlmAttachment.Base64(MediaType.Image.PNG, "aGVsbG8=")
+        val body = bodyFor(
+            "claude-haiku-4-5",
+            LlmPrompt(
+                systemPrompt = listOf(LlmPart.Text("You are helpful."), LlmPart.Attachment(attachment)),
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("Hello")))),
+            ),
+        )
+        assertEquals(
+            "You are helpful.\n\n${attachment.notSentNote().text}",
+            body["system"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content,
+        )
     }
 
     @Test

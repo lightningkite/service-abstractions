@@ -2,6 +2,7 @@ package com.lightningkite.services.ai.openai
 
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.ai.LlmAccess
+import com.lightningkite.services.data.MediaType
 import java.net.URLDecoder
 
 /**
@@ -122,11 +123,13 @@ internal fun resolveEnvVars(value: String): String {
  * Known OpenAI models with local metadata (display name, pricing, rough ranking). Used to augment
  * the bare `/v1/models` list with information the API doesn't expose.
  *
- * Prices are USD per **million** tokens. These are inherently stale — refresh when models change.
- * Sources: https://openai.com/api/pricing/ as of 2025-10.
+ * Prices are USD per **million** tokens: input, cached input, output. OpenAI has no cache-write charge.
+ * These are inherently stale — refresh when models change.
+ * Sources: https://openai.com/api/pricing/ and https://developers.openai.com/api/docs/models as of 2026-10.
+ * Responses-only models (`-pro`, `-deep-research`, `gpt-5.6-cyber`) are left out: this client speaks Chat Completions.
  *
  * Lookup is **longest-prefix** against the OpenAI model id: `gpt-4o-2024-11-20` matches `gpt-4o`,
- * and `gpt-4o-audio-preview-2024-10-01` matches `gpt-4o-audio-preview` rather than `gpt-4o`.
+ * and `gpt-4o-mini-2024-07-18` matches `gpt-4o-mini` rather than `gpt-4o`.
  */
 internal object OpenAiModelCatalog {
     internal data class Entry(
@@ -134,12 +137,11 @@ internal object OpenAiModelCatalog {
         val displayName: String,
         val description: String?,
         val inputPrice: Double,
+        val cacheReadPrice: Double,
         val outputPrice: Double,
         val ranking: Double,
         val supportsToolCalling: Boolean = true,
-        val supportsImageInput: Boolean = false,
-        val supportsVideoInput: Boolean = false,
-        val supportsAudioInput: Boolean = false,
+        val supportedMediaTypes: List<MediaType>,
         val supportsImageOutput: Boolean = false,
         val supportsAudioOutput: Boolean = false,
         val supportsReasoning: Boolean = false,
@@ -147,34 +149,47 @@ internal object OpenAiModelCatalog {
         val maxOutputTokens: Int? = null,
     )
 
+    // Chat Completions reads PNG, JPEG, WEBP and non-animated GIF images, and PDFs on vision models.
+    private val imagesAndPdf = listOf(
+        MediaType.Image.PNG,
+        MediaType.Image.JPEG,
+        MediaType.Image.WebP,
+        MediaType.Image.GIF,
+        MediaType.Application.Pdf,
+    )
+
     private val entries: List<Entry> = listOf(
-        Entry("gpt-5.4-pro", "GPT-5.4 Pro", "Premium GPT-5.4; high-context reasoning.", 30.00, 180.00, 0.98, supportsImageInput = true, supportsReasoning = true, maxContextTokens = 1_000_000, maxOutputTokens = 100_000),
-        Entry("gpt-5.4", "GPT-5.4", "Flagship GPT-5.4.", 2.50, 15.00, 0.95, supportsImageInput = true, supportsReasoning = true, maxContextTokens = 1_000_000, maxOutputTokens = 100_000),
-        Entry("gpt-5.4-mini", "GPT-5.4 Mini", "Mid-tier GPT-5.4.", 0.75, 4.50, 0.8, supportsImageInput = true, supportsReasoning = true, maxContextTokens = 1_000_000, maxOutputTokens = 100_000),
-        Entry("gpt-5.4-nano", "GPT-5.4 Nano", "Smallest GPT-5.4; ultra-cheap.", 0.20, 1.25, 0.6, supportsImageInput = true, maxContextTokens = 1_000_000, maxOutputTokens = 100_000),
-        Entry("gpt-5-nano", "GPT-5 Nano", "Legacy GPT-5 small.", 0.05, 0.40, 0.6, supportsImageInput = true, maxContextTokens = 128_000, maxOutputTokens = 16_384),
-        Entry("gpt-5-mini", "GPT-5 Mini", "Legacy GPT-5 mid.", 0.25, 2.00, 0.8, supportsImageInput = true, maxContextTokens = 1_000_000, maxOutputTokens = 100_000),
-        Entry("gpt-5", "GPT-5", "Legacy flagship GPT-5 (2025).", 1.25, 10.00, 0.95, supportsImageInput = true, maxContextTokens = 1_000_000, maxOutputTokens = 100_000),
-        Entry("gpt-4.1-nano", "GPT-4.1 Nano", "Smallest GPT-4.1.", 0.10, 0.40, 0.55, supportsImageInput = true, maxContextTokens = 1_000_000, maxOutputTokens = 32_768),
-        Entry("gpt-4.1-mini", "GPT-4.1 Mini", "Mid-tier GPT-4.1.", 0.40, 1.60, 0.75, supportsImageInput = true, maxContextTokens = 1_000_000, maxOutputTokens = 32_768),
-        Entry("gpt-4.1", "GPT-4.1", "Full GPT-4.1 capabilities.", 2.00, 8.00, 0.85, supportsImageInput = true, maxContextTokens = 1_000_000, maxOutputTokens = 32_768),
-        Entry("gpt-4o-mini", "GPT-4o Mini", "Cheap fast multimodal.", 0.15, 0.60, 0.65, supportsImageInput = true, maxContextTokens = 128_000, maxOutputTokens = 16_384),
-        // Audio-in/audio-out variant of GPT-4o; priced substantially above the plain gpt-4o
-        // tier because audio tokens cost more. Listed as a longer prefix so longest-match
-        // routes `gpt-4o-audio-preview-*` here rather than to the base `gpt-4o` entry.
-        // TODO: verify pricing against https://openai.com/api/pricing/
-        Entry("gpt-4o-audio-preview", "GPT-4o Audio", "Multimodal GPT-4o with audio I/O.", 2.50, 10.00, 0.85, supportsImageInput = true, supportsAudioInput = true, supportsAudioOutput = true, maxContextTokens = 128_000, maxOutputTokens = 16_384),
-        Entry("gpt-4o", "GPT-4o", "Full multimodal GPT-4o.", 2.50, 10.00, 0.85, supportsImageInput = true, maxContextTokens = 128_000, maxOutputTokens = 16_384),
-        Entry("o4-mini-deep-research", "o4-mini Deep Research", "Reasoning with research capability.", 1.00, 4.00, 0.88, supportsReasoning = true, maxContextTokens = 200_000, maxOutputTokens = 100_000),
-        Entry("o4-mini", "o4-mini", "Reasoning, mid-tier.", 1.10, 4.40, 0.85, supportsImageInput = true, supportsReasoning = true, maxContextTokens = 200_000, maxOutputTokens = 100_000),
-        Entry("o3-deep-research", "o3 Deep Research", "Flagship reasoning research.", 5.00, 20.00, 0.95, supportsReasoning = true, maxContextTokens = 200_000, maxOutputTokens = 100_000),
-        Entry("o3-mini", "o3-mini", "Reasoning, cheaper.", 1.10, 4.40, 0.80, supportsReasoning = true, maxContextTokens = 200_000, maxOutputTokens = 100_000),
-        Entry("o3", "o3", "Full reasoning model.", 2.00, 8.00, 0.90, supportsImageInput = true, supportsReasoning = true, maxContextTokens = 200_000, maxOutputTokens = 100_000),
-        Entry("o1-mini", "o1-mini", "Legacy reasoning.", 3.00, 12.00, 0.75, supportsReasoning = true, maxContextTokens = 128_000, maxOutputTokens = 65_536),
-        Entry("o1", "o1", "Legacy reasoning flagship.", 15.00, 60.00, 0.80, supportsReasoning = true, maxContextTokens = 200_000, maxOutputTokens = 100_000),
-        Entry("gpt-3.5-turbo", "GPT-3.5 Turbo", "Legacy.", 0.50, 1.50, 0.35, maxContextTokens = 16_385, maxOutputTokens = 4_096),
+        Entry("gpt-6-astra", "GPT-6 Astra", "Top GPT-6 tier.", 10.00, 1.00, 50.00, 0.99, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-6.1-sol", "GPT-6.1 Sol", "Flagship GPT-6.1.", 2.00, 0.10, 10.00, 0.97, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-6.1-terra", "GPT-6.1 Terra", "Mid-tier GPT-6.1.", 1.00, 0.05, 5.00, 0.9, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-6-sol", "GPT-6 Sol", "Flagship GPT-6.", 2.00, 0.20, 10.00, 0.96, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-6-luna", "GPT-6 Luna", "Smallest GPT-6; ultra-cheap.", 0.10, 0.01, 0.50, 0.75, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        // `gpt-5.6` is an alias of `gpt-5.6-sol`; without this entry it would fall through to `gpt-5`.
+        Entry("gpt-5.6", "GPT-5.6 Sol", "Flagship GPT-5.6.", 4.00, 0.40, 20.00, 0.96, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-5.6-sol", "GPT-5.6 Sol", "Flagship GPT-5.6.", 4.00, 0.40, 20.00, 0.96, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-5.6-terra", "GPT-5.6 Terra", "Mid-tier GPT-5.6.", 2.00, 0.20, 12.00, 0.88, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-5.6-luna", "GPT-5.6 Luna", "Smallest GPT-5.6.", 0.20, 0.02, 1.20, 0.72, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-5.5", "GPT-5.5", "GPT-5.5 flagship.", 5.00, 0.50, 30.00, 0.96, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-5.4", "GPT-5.4", "GPT-5.4 flagship.", 2.50, 0.25, 15.00, 0.95, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 1_050_000, maxOutputTokens = 128_000),
+        Entry("gpt-5.4-mini", "GPT-5.4 Mini", "Mid-tier GPT-5.4.", 0.75, 0.075, 4.50, 0.8, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 400_000, maxOutputTokens = 128_000),
+        Entry("gpt-5.4-nano", "GPT-5.4 Nano", "Smallest GPT-5.4. Deprecated; shuts down 2027-04-01.", 0.20, 0.02, 1.25, 0.6, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 400_000, maxOutputTokens = 128_000),
+        Entry("gpt-5.2", "GPT-5.2", "Previous flagship.", 1.75, 0.175, 14.00, 0.93, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 400_000, maxOutputTokens = 128_000),
+        Entry("gpt-5.1", "GPT-5.1", "Deprecated; shuts down 2027-04-01.", 1.25, 0.125, 10.00, 0.92, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 400_000, maxOutputTokens = 128_000),
+        Entry("gpt-5", "GPT-5", "Deprecated; shuts down 2026-12-11.", 1.25, 0.125, 10.00, 0.9, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 400_000, maxOutputTokens = 128_000),
+        Entry("gpt-5-mini", "GPT-5 Mini", "Deprecated; shuts down 2026-12-11.", 0.25, 0.025, 2.00, 0.8, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 400_000, maxOutputTokens = 128_000),
+        Entry("gpt-5-nano", "GPT-5 Nano", "Deprecated; shuts down 2026-12-11.", 0.05, 0.005, 0.40, 0.6, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 400_000, maxOutputTokens = 128_000),
+        Entry("gpt-4.1", "GPT-4.1", "Deprecated; shuts down 2027-01-14.", 2.00, 0.50, 8.00, 0.85, supportedMediaTypes = imagesAndPdf, maxContextTokens = 1_047_576, maxOutputTokens = 32_768),
+        Entry("gpt-4.1-mini", "GPT-4.1 Mini", "Deprecated; shuts down 2027-01-14.", 0.40, 0.10, 1.60, 0.75, supportedMediaTypes = imagesAndPdf, maxContextTokens = 1_047_576, maxOutputTokens = 32_768),
+        Entry("gpt-4o", "GPT-4o", "Deprecated; shuts down 2027-01-14.", 2.50, 1.25, 10.00, 0.85, supportedMediaTypes = imagesAndPdf, maxContextTokens = 128_000, maxOutputTokens = 16_384),
+        Entry("gpt-4o-mini", "GPT-4o Mini", "Deprecated; shuts down 2027-01-14.", 0.15, 0.075, 0.60, 0.65, supportedMediaTypes = imagesAndPdf, maxContextTokens = 128_000, maxOutputTokens = 16_384),
+        Entry("o3", "o3", "Reasoning model. Deprecated; shuts down 2026-12-11.", 2.00, 0.50, 8.00, 0.9, supportedMediaTypes = imagesAndPdf, supportsReasoning = true, maxContextTokens = 200_000, maxOutputTokens = 100_000),
     )
 
     fun lookup(modelId: String): Entry? =
         entries.filter { modelId.startsWith(it.idPrefix) }.maxByOrNull { it.idPrefix.length }
+
+    /** Models outside the catalog (LM Studio, vLLM, OpenRouter, …) are assumed to read images only. */
+    fun supportedMediaTypes(modelId: String): List<MediaType> =
+        lookup(modelId)?.supportedMediaTypes ?: listOf(MediaType.Image.Any)
 }
+

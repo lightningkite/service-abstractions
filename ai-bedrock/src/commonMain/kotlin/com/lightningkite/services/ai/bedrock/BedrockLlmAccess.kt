@@ -3,9 +3,12 @@ package com.lightningkite.services.ai.bedrock
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.ai.LlmAccess
+import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmException
+import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmModelId
 import com.lightningkite.services.ai.LlmModelInfo
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
@@ -14,24 +17,31 @@ import com.lightningkite.services.http.client
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.accept
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.URLProtocol
+import io.ktor.http.Url
+import io.ktor.http.contentLength
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
+import io.ktor.utils.io.readBuffer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.JsonObject
+import kotlinx.io.readByteArray
 import kotlinx.serialization.modules.SerializersModule
+import kotlin.io.encoding.Base64
 import kotlin.time.Clock
 
 /**
@@ -46,6 +56,12 @@ import kotlin.time.Clock
  *   so refreshable (STS / SSO / assume-role / IMDS) sources can rotate expiring credentials.
  *   Use the [AwsCredentials] secondary constructor for a fixed key pair.
  * @property clock Source of "now" for signatures. Exposed primarily for deterministic tests.
+ * @property downloadUrlAttachments when true, each [LlmAttachment.Url] in a prompt is downloaded (https only, no
+ *   redirects, at most 25 MB) and sent as bytes, since Bedrock can't fetch links itself; a failed download is sent as
+ *   [LlmAttachment.notSentNote]. When false, URL attachments are always sent as that note.
+ *   Security: this makes the server fetch whatever link the prompt contains, including links to internal
+ *   hosts (server-side request forgery). Enable it only when attachment URLs come from trusted sources.
+ * @property httpClient sends the Bedrock requests and the attachment downloads.
  */
 public class BedrockLlmAccess(
     override val name: String,
@@ -53,6 +69,8 @@ public class BedrockLlmAccess(
     public val region: String,
     private val credentialsProvider: AwsCredentialsProvider,
     private val clock: AmzDateClock = AmzDateClock.Default,
+    public val downloadUrlAttachments: Boolean = false,
+    private val httpClient: HttpClient = client,
 ) : LlmAccess {
 
     /**
@@ -66,9 +84,9 @@ public class BedrockLlmAccess(
         region: String,
         credentials: AwsCredentials,
         clock: AmzDateClock = AmzDateClock.Default,
-    ) : this(name, context, region, AwsCredentialsProvider.static(credentials), clock)
-
-    private val httpClient: HttpClient = client.config { /* no extra config needed */ }
+        downloadUrlAttachments: Boolean = false,
+        httpClient: HttpClient = client,
+    ) : this(name, context, region, AwsCredentialsProvider.static(credentials), clock, downloadUrlAttachments, httpClient)
 
     private val module: SerializersModule get() = context.internalSerializersModule
 
@@ -78,7 +96,8 @@ public class BedrockLlmAccess(
 
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         try {
-            val body = BedrockWire.buildRequestBody(model.id, prompt, module).toString().encodeToByteArray()
+            val sent = if (downloadUrlAttachments) withUrlsDownloaded(model, prompt) else prompt
+            val body = BedrockWire.buildRequestBody(model.id, sent, module).toString().encodeToByteArray()
             // Two forms of the path: the wire path keeps the model id's literal ':' (what we
             // actually PUT on the socket), while the signing path percent-encodes it to %3A.
             // AWS recomputes its canonical request by URI-encoding each segment of the path it
@@ -142,6 +161,47 @@ public class BedrockLlmAccess(
         }
     }
 
+    // A public link could redirect to an internal host, so downloads don't follow redirects.
+    private val downloadClient: HttpClient = httpClient.config { followRedirects = false }
+
+    private suspend fun withUrlsDownloaded(model: LlmModelId, prompt: LlmPrompt): LlmPrompt {
+        val sendable = BedrockWire.mediaTypes(model.id)
+        suspend fun downloaded(part: LlmPart.ContentOnly): LlmPart.ContentOnly {
+            val attachment = (part as? LlmPart.Attachment)?.attachment as? LlmAttachment.Url ?: return part
+            // Not worth fetching what would be sent as a note anyway.
+            if (sendable.none { it.accepts(attachment.mediaType) }) return part
+            val sent = try {
+                check(Url(attachment.url).protocol == URLProtocol.HTTPS) { "only https links are downloaded" }
+                downloadClient.prepareGet(attachment.url).execute { response ->
+                    check(response.status.isSuccess()) { "the server answered ${response.status}" }
+                    val declaredLength = response.contentLength()
+                    check(declaredLength == null || declaredLength <= MAX_DOWNLOAD_BYTES) {
+                        "Content-Length $declaredLength is over $MAX_DOWNLOAD_BYTES bytes"
+                    }
+                    val body = response.bodyAsChannel().readBuffer(MAX_DOWNLOAD_BYTES + 1)
+                    check(body.size <= MAX_DOWNLOAD_BYTES) { "the body is over $MAX_DOWNLOAD_BYTES bytes" }
+                    LlmAttachment.Base64(attachment.mediaType, Base64.encode(body.readByteArray()))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                downloadLogger.warn(e) { "Couldn't download the ${attachment.mediaType} attachment at ${attachment.url}; sending a note instead." }
+                attachment
+            }
+            return LlmPart.Attachment(sent)
+        }
+        // The system prompt is left alone: Bedrock takes only text there, so its attachments become notes regardless.
+        return prompt.copy(
+            messages = prompt.messages.map { message ->
+                when (message) {
+                    is LlmMessage.User -> message.copy(parts = message.parts.map { downloaded(it) })
+                    is LlmMessage.ToolResult -> message.copy(parts = message.parts.map { downloaded(it) })
+                    is LlmMessage.Agent -> message.copy(parts = message.parts.map { if (it is LlmPart.ContentOnly) downloaded(it) else it })
+                }
+            },
+        )
+    }
+
     private fun HttpRequestBuilder.addSigned(signed: Map<String, String>) {
         for ((k, v) in signed) headers.append(k, v)
     }
@@ -173,7 +233,7 @@ public class BedrockLlmAccess(
          * this list is updated.
          *
          * The full Bedrock catalogue is large and regional; we include the Claude, Nova, and
-         * Llama models most users of this library actually pick.
+         * Llama models most users of this library actually pick. [LlmModelInfo.supportedMediaTypes] is what the wire sends.
          */
         public val KNOWN_MODELS: List<LlmModelInfo> = listOf(
             LlmModelInfo(
@@ -186,7 +246,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.25,
                 roughIntelligenceRanking = 1.0,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -201,7 +260,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 1.0,
                 roughIntelligenceRanking = 0.98,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -216,7 +274,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.20,
                 roughIntelligenceRanking = 0.97,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -231,7 +288,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.50,
                 roughIntelligenceRanking = 0.95,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -246,7 +302,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.50,
                 roughIntelligenceRanking = 0.92,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -261,7 +316,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.50,
                 roughIntelligenceRanking = 0.91,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -276,7 +330,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.50,
                 roughIntelligenceRanking = 0.90,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -291,7 +344,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.50,
                 roughIntelligenceRanking = 0.88,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
             ),
             LlmModelInfo(
@@ -304,7 +356,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.10,
                 roughIntelligenceRanking = 0.93,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -319,7 +370,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.20,
                 roughIntelligenceRanking = 0.90,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -334,7 +384,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.30,
                 roughIntelligenceRanking = 0.87,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -349,7 +398,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.30,
                 roughIntelligenceRanking = 0.85,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 200_000,
             ),
@@ -363,7 +411,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.01,
                 roughIntelligenceRanking = 0.85,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 128_000,
@@ -378,7 +425,6 @@ public class BedrockLlmAccess(
                 usdPerMillionCacheReadTokens = 0.10,
                 roughIntelligenceRanking = 0.75,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
                 maxContextTokens = 200_000,
                 maxOutputTokens = 64_000,
@@ -391,8 +437,6 @@ public class BedrockLlmAccess(
                 usdPerMillionOutputTokens = 3.20,
                 roughIntelligenceRanking = 0.80,
                 supportsToolCalling = true,
-                supportsImageInput = true,
-                supportsVideoInput = true,
                 maxContextTokens = 300_000,
                 maxOutputTokens = 10_000,
             ),
@@ -404,8 +448,6 @@ public class BedrockLlmAccess(
                 usdPerMillionOutputTokens = 0.24,
                 roughIntelligenceRanking = 0.65,
                 supportsToolCalling = true,
-                supportsImageInput = true,
-                supportsVideoInput = true,
                 maxContextTokens = 300_000,
                 maxOutputTokens = 5120,
             ),
@@ -428,7 +470,6 @@ public class BedrockLlmAccess(
                 usdPerMillionOutputTokens = 0.77,
                 roughIntelligenceRanking = 0.90,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 32_768,
             ),
@@ -440,7 +481,6 @@ public class BedrockLlmAccess(
                 usdPerMillionOutputTokens = 0.36,
                 roughIntelligenceRanking = 0.75,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 maxContextTokens = 10_000_000,
                 maxOutputTokens = 32_768,
             ),
@@ -455,7 +495,7 @@ public class BedrockLlmAccess(
                 maxContextTokens = 128_000,
                 maxOutputTokens = 4_096,
             ),
-        )
+        ).map { it.copy(supportedMediaTypes = BedrockWire.mediaTypes(it.id.id)) }
 
         /**
          * [claude], a `global.` Claude profile from [KNOWN_MODELS], as the profile that keeps requests inside
@@ -488,6 +528,10 @@ public enum class BedrockGeography(public val prefix: String) {
 }
 
 private val bedrockStreamLogger = KotlinLogging.logger("BedrockStream")
+
+private val downloadLogger = KotlinLogging.logger("BedrockAttachmentDownload")
+
+private const val MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
 
 private const val BEDROCK_STREAM_CHUNK_SIZE = 8192
 

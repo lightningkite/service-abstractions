@@ -9,6 +9,8 @@ import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.toJsonSchema
+import com.lightningkite.services.data.MediaType
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -20,6 +22,9 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.modules.SerializersModule
+import kotlin.io.encoding.Base64
+
+private val logger = KotlinLogging.logger("AnthropicWire")
 
 /**
  * Wire-format helpers translating between [LlmPrompt] and Anthropic's Messages API JSON.
@@ -28,6 +33,10 @@ import kotlinx.serialization.modules.SerializersModule
  * an HTTP stack. The actual request is assembled from these pieces in [AnthropicLlmAccess].
  */
 internal object AnthropicWire {
+
+    private val imageTypes = listOf(MediaType.Image.JPEG, MediaType.Image.PNG, MediaType.Image.GIF, MediaType.Image.WebP)
+    private val textDocumentTypes = listOf(MediaType.Text.Plain, MediaType.Text.CSV, MediaType("text/markdown"), MediaType.Text.Html)
+    val supportedMediaTypes: List<MediaType> = imageTypes + MediaType.Application.Pdf + textDocumentTypes
 
     /**
      * Build a full POST /v1/messages body from the high-level [prompt].
@@ -65,8 +74,13 @@ internal object AnthropicWire {
         val systemText = listOfNotNull(
             sharedContext,
             prompt.systemPrompt
-                .filterIsInstance<LlmPart.Text>()
-                .joinToString("\n\n") { it.text }
+                .joinToString("\n\n") { part ->
+                    // `system` takes text blocks only.
+                    when (part) {
+                        is LlmPart.Text -> part.text
+                        is LlmPart.Attachment -> notSent(part.attachment).text
+                    }
+                }
                 .ifEmpty { null }
         ).joinToString("\n\n")
         if (systemText.isNotEmpty()) {
@@ -212,32 +226,50 @@ internal object AnthropicWire {
         is LlmPart.Attachment -> attachmentBlock(part.attachment)
     }
 
-    /**
-     * Anthropic's Messages API has a distinct `type: "document"` block for PDFs, separate from
-     * `type: "image"`; this codebase doesn't implement it yet (a feature for later). Fail fast on
-     * non-image media types rather than mislabeling them as `"image"`, which Anthropic rejects as
-     * a malformed request anyway — just with a much less helpful error.
-     */
-    private fun attachmentBlock(attachment: LlmAttachment): JsonObject = buildJsonObject {
-        put("type", "image")
-        when (attachment) {
-            is LlmAttachment.Base64 -> {
-                require(attachment.mediaType.type == "image") {
-                    "Anthropic attachments only support image media types in this codebase " +
-                        "(no document/PDF block implemented yet); got media type ${attachment.mediaType}."
-                }
-                putJsonObject("source") {
+    private fun attachmentBlock(attachment: LlmAttachment): JsonObject {
+        val mediaType = attachment.mediaType
+        fun base64OrUrlSource() = buildJsonObject {
+            when (attachment) {
+                is LlmAttachment.Base64 -> {
                     put("type", "base64")
-                    put("media_type", attachment.mediaType.toString())
+                    put("media_type", mediaType.withoutParameters.toString())
                     put("data", attachment.base64)
                 }
-            }
-
-            is LlmAttachment.Url -> putJsonObject("source") {
-                put("type", "url")
-                put("url", attachment.url)
+                is LlmAttachment.Url -> {
+                    put("type", "url")
+                    put("url", attachment.url)
+                }
             }
         }
+        return when {
+            imageTypes.any { it.accepts(mediaType) } -> buildJsonObject {
+                put("type", "image")
+                put("source", base64OrUrlSource())
+            }
+            MediaType.Application.Pdf.accepts(mediaType) -> buildJsonObject {
+                put("type", "document")
+                put("source", base64OrUrlSource())
+            }
+            // Text documents go inline, always labeled text/plain; Anthropic can't fetch them from a URL.
+            attachment is LlmAttachment.Base64 && textDocumentTypes.any { it.accepts(mediaType) } -> {
+                val text = runCatching { Base64.decode(attachment.base64).decodeToString() }.getOrNull()
+                    ?: return contentOnlyBlock(notSent(attachment))
+                buildJsonObject {
+                    put("type", "document")
+                    putJsonObject("source") {
+                        put("type", "text")
+                        put("media_type", "text/plain")
+                        put("data", text)
+                    }
+                }
+            }
+            else -> contentOnlyBlock(notSent(attachment))
+        }
+    }
+
+    private fun notSent(attachment: LlmAttachment): LlmPart.Text {
+        logger.warn { "Anthropic can't take a ${attachment.mediaType} attachment here; sending a note instead" }
+        return attachment.notSentNote()
     }
 
     /** Decode a tool-call argument JSON string to an object for the wire; fail fast if invalid. */

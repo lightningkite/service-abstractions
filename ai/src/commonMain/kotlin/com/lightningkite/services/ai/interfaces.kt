@@ -173,9 +173,11 @@ public data class LlmModelInfo(
      */
     val roughIntelligenceRanking: Double = 0.5,
     val supportsToolCalling: Boolean = false,
-    val supportsImageInput: Boolean = false,
-    val supportsVideoInput: Boolean = false,
-    val supportsAudioInput: Boolean = false,
+    /**
+     * Attachment types the model reads; may contain wildcards such as [MediaType.Image.Any]. Match with [MediaType.accepts].
+     * Other attachments are replaced with [LlmAttachment.notSentNote] before sending.
+     */
+    val supportedMediaTypes: List<MediaType> = emptyList(),
     val supportsImageOutput: Boolean = false,
     val supportsAudioOutput: Boolean = false,
     val supportsReasoning: Boolean = false,
@@ -462,11 +464,20 @@ public fun LlmMessage.Agent.firstToolCall(): LlmToolCall? =
 
 /**
  * Image/file content. Exactly one of [Url] or [Base64] is supplied — which one works
- * depends on the provider (most accept both for images).
+ * depends on the provider (most accept both for images). An attachment a model can't read
+ * is replaced with [notSentNote] rather than failing the request; see [LlmModelInfo.supportedMediaTypes].
  */
 @Serializable
 public sealed class LlmAttachment {
     public abstract val mediaType: MediaType
+
+    /** Stands in for this attachment where it can't be sent, so the model knows something was there. */
+    public fun notSentNote(): LlmPart.Text = LlmPart.Text(
+        when (this) {
+            is Url -> "[Attachment not sent: $mediaType at $url isn't supported here]"
+            is Base64 -> "[Attachment not sent: $mediaType isn't supported here]"
+        }
+    )
 
     @Serializable public data class Url(
         override val mediaType: MediaType,

@@ -30,10 +30,8 @@ internal object OpenAiTestConfig {
     }
 
     /**
-     * Cheapest GA OpenAI model that still supports the full feature surface the shared
-     * suite exercises (tools, vision, streaming). `gpt-4o-mini` is currently the cheapest
-     * model that passes every capability test; `gpt-4.1-nano` is slightly cheaper but
-     * has weaker tool-calling reliability.
+     * A cheap OpenAI model that supports the full feature surface the shared
+     * suite exercises (tools, vision, PDFs, streaming).
      */
     val cheapModel: LlmModelId = LlmModelId("gpt-4o-mini")
 

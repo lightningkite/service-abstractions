@@ -9,6 +9,8 @@ import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
 import com.lightningkite.services.ai.toJsonSchema
+import com.lightningkite.services.data.MediaType
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -39,6 +41,8 @@ import kotlinx.serialization.modules.SerializersModule
  */
 internal object OllamaWire {
 
+    private val logger = KotlinLogging.logger("OllamaWire")
+
     internal val json: Json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = false
@@ -63,8 +67,13 @@ internal object OllamaWire {
         putJsonArray("messages") {
             // Collect all system-level content: systemPrompt, shared context, tool choice hint.
             val systemParts = buildList {
-                // System prompt parts (text only)
-                prompt.systemPrompt.filterIsInstance<LlmPart.Text>().forEach { add(it.text) }
+                // System messages take text only.
+                prompt.systemPrompt.forEach { part ->
+                    when (part) {
+                        is LlmPart.Text -> add(part.text)
+                        is LlmPart.Attachment -> add(notSent(part.attachment).text)
+                    }
+                }
                 // Shared context from tools
                 prompt.collectSharedContext()?.let { add(it) }
                 // Tool choice hint
@@ -76,8 +85,9 @@ internal object OllamaWire {
                     put("content", systemParts.joinToString("\n\n"))
                 })
             }
+            val supportedMediaTypes = supportedMediaTypes(model)
             prompt.messages.forEach { msg ->
-                add(messageToJson(msg))
+                add(messageToJson(msg, supportedMediaTypes))
             }
         }
 
@@ -114,22 +124,16 @@ internal object OllamaWire {
      * Ollama is lenient about missing tool_name. We still surface `tool_call_id` for wire-level
      * parity with OpenAI-style callers that mix this adapter in; Ollama ignores unknown fields.
      */
-    private fun messageToJson(msg: LlmMessage): JsonObject = buildJsonObject {
+    private fun messageToJson(msg: LlmMessage, supportedMediaTypes: List<MediaType>): JsonObject = buildJsonObject {
         when (msg) {
             is LlmMessage.User -> {
                 put("role", "user")
-                val textParts = msg.parts.filterIsInstance<LlmPart.Text>()
-                val attachments = msg.parts.filterIsInstance<LlmPart.Attachment>().map { it.attachment }
-                put("content", textParts.joinToString("") { it.text })
-                emitAttachments(attachments)
+                putContentAndImages(msg.parts, supportedMediaTypes)
             }
             is LlmMessage.Agent -> {
                 put("role", "assistant")
-                val textParts = msg.parts.filterIsInstance<LlmPart.Text>()
-                val attachments = msg.parts.filterIsInstance<LlmPart.Attachment>().map { it.attachment }
+                putContentAndImages(msg.parts, supportedMediaTypes)
                 val toolCalls = msg.parts.filterIsInstance<LlmPart.ToolCall>()
-                put("content", textParts.joinToString("") { it.text })
-                emitAttachments(attachments)
                 if (toolCalls.isNotEmpty()) {
                     putJsonArray("tool_calls") {
                         toolCalls.forEach { tc ->
@@ -154,43 +158,50 @@ internal object OllamaWire {
             }
             is LlmMessage.ToolResult -> {
                 put("role", "tool")
-                val textParts = msg.parts.filterIsInstance<LlmPart.Text>()
-                put("content", textParts.joinToString("") { it.text })
+                // Tool messages take text only.
+                putContentAndImages(msg.parts, supportedMediaTypes = emptyList())
                 put("tool_call_id", msg.toolCallId)
             }
         }
     }
 
     /**
-     * Emit base64 image attachments into the `images` array. Throws if any URL attachments
-     * are present, since Ollama's native API does not support image URLs, and if any
-     * attachment isn't an image — Ollama's `images` field only accepts image bytes, so a
-     * non-image attachment (e.g. a PDF) stuffed in there would be silently fed to the model
-     * as garbage rather than rejected.
+     * Ollama's native API takes attachments only as base64 image bytes in `images`; there is no
+     * URL form. Every other attachment goes into `content` as [LlmAttachment.notSentNote] text.
      */
-    private fun JsonObjectBuilder.emitAttachments(attachments: List<LlmAttachment>) {
-        if (attachments.isEmpty()) return
-        val base64s = attachments.mapNotNull {
-            when (it) {
-                is LlmAttachment.Base64 -> {
-                    require(it.mediaType.type == "image") {
-                        "Ollama's native API only accepts image attachments; got media type ${it.mediaType}."
+    private fun JsonObjectBuilder.putContentAndImages(parts: List<LlmPart>, supportedMediaTypes: List<MediaType>) {
+        val content = StringBuilder()
+        val images = mutableListOf<String>()
+        for (part in parts) {
+            when (part) {
+                is LlmPart.Text -> content.append(part.text)
+                is LlmPart.Attachment -> {
+                    val attachment = part.attachment
+                    if (attachment is LlmAttachment.Base64 && supportedMediaTypes.any { it.accepts(attachment.mediaType) }) {
+                        images.add(attachment.base64)
+                    } else {
+                        content.append(notSent(attachment).text)
                     }
-                    it.base64
                 }
-                is LlmAttachment.Url -> null
+                is LlmPart.Reasoning, is LlmPart.ToolCall -> {}
             }
         }
-        val urls = attachments.filterIsInstance<LlmAttachment.Url>()
-        if (urls.isNotEmpty()) {
-            throw IllegalArgumentException(
-                "Ollama native API does not accept image URLs; convert to LlmAttachment.Base64 before calling."
-            )
-        }
-        if (base64s.isNotEmpty()) {
-            putJsonArray("images") { base64s.forEach { add(it) } }
+        put("content", content.toString())
+        if (images.isNotEmpty()) {
+            putJsonArray("images") { images.forEach { add(it) } }
         }
     }
+
+    private fun notSent(attachment: LlmAttachment): LlmPart.Text {
+        logger.warn { "Ollama can't take this ${attachment.mediaType} attachment; sending a note instead." }
+        return attachment.notSentNote()
+    }
+
+    private val visionModelPatterns = listOf("llava", "bakllava", "moondream", "cogvlm", "vision", "minicpm-v")
+
+    /** Ollama reads images only, and only on vision models, which we recognize by name. */
+    internal fun supportedMediaTypes(model: String): List<MediaType> =
+        if (visionModelPatterns.any { it in model.lowercase() }) listOf(MediaType.Image.Any) else emptyList()
 
     /**
      * Return a tool choice hint string for Ollama's system prompt. Ollama has no first-class

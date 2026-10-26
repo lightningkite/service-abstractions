@@ -52,21 +52,25 @@ public fun awsSdkProfileCredentials(profile: String): AwsCredentialsProvider =
  * Build [LlmAccess.Settings] for a Bedrock model whose credentials come from the AWS SDK. No
  * secret ever appears in the URL — resolution happens through the SDK's credential chain.
  *
- * Produces `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>]`.
+ * Produces `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>][&downloadUrlAttachments=true]`.
  *
  * @param modelId Bedrock model id (e.g. `anthropic.claude-3-5-haiku-20241022-v1:0`).
  * @param region AWS region; falls back to `AWS_REGION`, then `us-east-1`.
  * @param profile optional named profile; when null the full default credential chain is used.
+ * @param downloadUrlAttachments see [BedrockLlmAccess.downloadUrlAttachments]; it lets prompts make the server fetch
+ *   any link (server-side request forgery), so enable it only when attachment URLs come from trusted sources.
  */
 public fun LlmAccess.Settings.Companion.bedrockSdk(
     modelId: String,
     region: String? = null,
     profile: String? = null,
+    downloadUrlAttachments: Boolean = false,
 ): LlmAccess.Settings {
     BedrockSdkLlm.ensureRegistered()
     val params = buildList {
         region?.let { add("region=$it") }
         profile?.let { add("profile=$it") }
+        if (downloadUrlAttachments) add("downloadUrlAttachments=true")
     }
     val query = if (params.isEmpty()) "" else "?" + params.joinToString("&")
     return LlmAccess.Settings("bedrock-sdk://$modelId$query")
@@ -77,7 +81,7 @@ public fun LlmAccess.Settings.Companion.bedrockSdk(
  * credentials via the AWS SDK (see [awsSdkCredentials]) and otherwise delegates to the
  * pure-Kotlin [BedrockLlmAccess].
  *
- * URL shape: `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>]`.
+ * URL shape: `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>][&downloadUrlAttachments=true]`.
  */
 public object BedrockSdkLlm {
     init {
@@ -101,6 +105,7 @@ public object BedrockSdkLlm {
                     context = context,
                     region = region,
                     credentialsProvider = provider,
+                    downloadUrlAttachments = params["downloadUrlAttachments"]?.toBooleanStrictOrNull() ?: false,
                 )
             }
         }
