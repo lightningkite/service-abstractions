@@ -5,10 +5,12 @@ import com.lightningkite.services.Service
 import com.lightningkite.services.Setting
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.UrlSettingParser
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Single-turn LLM access. Implementations provide [stream]; non-streaming [inference]
@@ -55,34 +57,76 @@ public interface LlmAccess : Service {
 
 /**
  * Non-streaming convenience: collect the full stream into a single [LlmResult].
+ *
+ * A call that fails transiently ([LlmException.ServerError], [LlmException.RateLimit], [LlmException.Transport]) is
+ * made again, up to [INFERENCE_ATTEMPTS] times in all, waiting 1s, then 2s, then 4s, or the provider's
+ * [LlmException.RateLimit.retryAfter]. Nothing reaches the caller before the whole response has arrived, so a retry
+ * repeats only the cost. Any other failure, and the last transient one, is thrown.
  */
 public suspend fun LlmAccess.inference(model: LlmModelId, prompt: LlmPrompt): LlmResult {
+    var wait = 1.seconds
+    repeat(INFERENCE_ATTEMPTS - 1) {
+        try {
+            return collectResult(model, prompt)
+        } catch (e: LlmException) {
+            if (e !is LlmException.ServerError && e !is LlmException.RateLimit && e !is LlmException.Transport) throw e
+            delay((e as? LlmException.RateLimit)?.retryAfter ?: wait)
+            wait *= 2
+        }
+    }
+    return collectResult(model, prompt)
+}
+
+public const val INFERENCE_ATTEMPTS: Int = 4
+
+private suspend fun LlmAccess.collectResult(model: LlmModelId, prompt: LlmPrompt): LlmResult {
+    // Parts keep the order the model produced them in: Claude rejects or drops a replayed reasoning block
+    // once anything before it has changed, and moving a block is a change.
+    val parts = mutableListOf<LlmPart>()
     val reasoning = StringBuilder()
     val text = StringBuilder()
-    val attachments = mutableListOf<LlmAttachment>()
-    val toolCalls = mutableListOf<LlmToolCall>()
+    fun endReasoning() {
+        if (reasoning.isNotEmpty()) parts.add(LlmPart.Reasoning(reasoning.toString()))
+        reasoning.clear()
+    }
+    fun endText() {
+        if (text.isNotEmpty()) parts.add(LlmPart.Text(text.toString()))
+        text.clear()
+    }
     var stopReason: LlmStopReason = LlmStopReason.EndTurn
     var usage = LlmUsage(0, 0)
     stream(model, prompt).collect { event ->
         when (event) {
-            is LlmStreamEvent.ReasoningDelta -> reasoning.append(event.text)
-            is LlmStreamEvent.TextDelta -> text.append(event.text)
-            is LlmStreamEvent.AttachmentEmitted -> attachments.add(event.attachment)
-            is LlmStreamEvent.ToolCallEmitted -> toolCalls.add(
-                LlmToolCall(event.id, event.name, event.inputJson)
-            )
+            is LlmStreamEvent.ReasoningDelta -> {
+                endText()
+                reasoning.append(event.text)
+                if (event.signature != null || event.redactedData != null) {
+                    parts.add(LlmPart.Reasoning(reasoning.toString(), event.signature, event.redactedData))
+                    reasoning.clear()
+                }
+            }
+            is LlmStreamEvent.TextDelta -> {
+                endReasoning()
+                text.append(event.text)
+            }
+            is LlmStreamEvent.AttachmentEmitted -> {
+                endReasoning()
+                endText()
+                parts.add(LlmPart.Attachment(event.attachment))
+            }
+            is LlmStreamEvent.ToolCallEmitted -> {
+                endReasoning()
+                endText()
+                parts.add(LlmPart.ToolCall(LlmToolCall(event.id, event.name, event.inputJson)))
+            }
             is LlmStreamEvent.Finished -> {
                 stopReason = event.stopReason
                 usage = event.usage
             }
         }
     }
-    val parts = buildList<LlmPart> {
-        if (reasoning.isNotEmpty()) add(LlmPart.Reasoning(reasoning.toString()))
-        if (text.isNotEmpty()) add(LlmPart.Text(text.toString()))
-        attachments.forEach { add(LlmPart.Attachment(it)) }
-        toolCalls.forEach { add(LlmPart.ToolCall(it)) }
-    }
+    endReasoning()
+    endText()
     return LlmResult(
         message = LlmMessage.Agent(parts),
         stopReason = stopReason,
@@ -92,8 +136,8 @@ public suspend fun LlmAccess.inference(model: LlmModelId, prompt: LlmPrompt): Ll
 
 /**
  * Reasoning effort hint. Providers that take an effort enum (OpenAI, Bedrock Nova, newer
- * Ollama models) consume this directly. Providers that take a token budget (Anthropic,
- * Gemini) ignore this in favor of [LlmPrompt.reasoningBudgetTokens]. Providers that
+ * Ollama models, Claude 4.6+) consume this directly. Providers that take a token budget
+ * (Claude 4.5 and older, Gemini) prefer [LlmPrompt.reasoningBudgetTokens]. Providers that
  * don't expose a reasoning knob ignore both.
  *
  * `Off` requests no reasoning where the provider supports a toggle; otherwise treated
@@ -168,14 +212,16 @@ public data class LlmPrompt(
      * - OpenAI o-series / gpt-5: `reasoning.effort` (`Minimal` only on gpt-5).
      * - Bedrock Nova: `reasoning_config.effort` (`Minimal` rounds up to `Low`).
      * - Ollama: `think` field (bool or enum, model-dependent).
-     * - Anthropic / Bedrock Claude: ignored — use [reasoningBudgetTokens] instead.
+     * - Anthropic / Bedrock Claude: `output_config.effort` with adaptive thinking (Claude 4.6+), or
+     *   bucketed into `thinking.budget_tokens` on older models. See [ClaudeModel].
      * `Off` disables reasoning where the provider supports a toggle.
      * Null = provider default.
      */
     val reasoningEffort: LlmReasoningEffort? = null,
     /**
      * Reasoning token budget. Mapped per-provider:
-     * - Anthropic / Bedrock Claude: `thinking.budget_tokens` (must be ≥1024 and < [maxTokens]).
+     * - Anthropic / Bedrock Claude 4.5 and older: `thinking.budget_tokens` (must be ≥1024 and < [maxTokens]).
+     *   Newer Claude models reject a budget; they take [reasoningEffort]. See [ClaudeModel].
      * - Gemini: `thinking_config.thinking_budget` (-1=dynamic, 0=off).
      * - OpenAI / Nova / Ollama: ignored — use [reasoningEffort] instead.
      * Null = provider default.
@@ -338,18 +384,37 @@ public sealed interface LlmPart {
 
     /**
      * Model-emitted chain-of-thought / "thinking" output, distinct from the final answer.
+     * One part per reasoning block the model produced.
      *
-     * Producers: only models with reasoning capability (Claude extended thinking, OpenAI
-     * o-series, DeepSeek R1, Gemma reasoning variants, etc.). Most models never emit this.
+     * Producers: only models with reasoning capability (Claude thinking, OpenAI o-series,
+     * DeepSeek R1, Gemma reasoning variants, etc.). Most models never emit this.
      *
-     * Round-trip: receive-only in this release. If a [Reasoning] block is included in an
-     * outgoing prompt, providers MAY drop it. Providers MUST NOT fail the request because
-     * of it.
+     * Round-trip: pass parts back unchanged, in the agent message they came in. Providers that
+     * replay reasoning (Anthropic, Bedrock) send back the parts carrying a [signature] or
+     * [redactedData] and drop the rest; other providers drop reasoning. Providers MUST NOT fail
+     * the request because of it.
      *
-     * Ordering: when present, reasoning blocks always precede the final [Text] / [ToolCall]
-     * blocks within an agent message — matching the order the model produced them.
+     * Ordering: parts keep the order the model produced them in, which usually puts reasoning
+     * before the final [Text] / [ToolCall] blocks.
+     *
+     * @property text The reasoning text. Empty when the provider withholds it (Claude's default
+     *   `display: "omitted"`, or a redacted block).
+     * @property signature Provider-opaque proof that [text] came from the model (Anthropic
+     *   `signature`, Bedrock `reasoningText.signature`); needed to replay the block.
+     * @property redactedData Provider-opaque encrypted reasoning withheld for safety (Anthropic
+     *   `redacted_thinking.data`, Bedrock `redactedContent`). A redacted block has no [text] or [signature].
      */
-    @Serializable public data class Reasoning(val text: String) : LlmPart
+    @Serializable public data class Reasoning(
+        val text: String,
+        val signature: String? = null,
+        val redactedData: String? = null,
+    ) : LlmPart {
+        init {
+            require(redactedData == null || (text.isEmpty() && signature == null)) {
+                "A redacted reasoning block carries only redactedData, no text or signature."
+            }
+        }
+    }
 
     /** An assistant-produced call to a tool. */
     @Serializable public data class ToolCall(val call: LlmToolCall) : LlmPart
@@ -431,18 +496,19 @@ public enum class LlmStopReason {
 
 @Serializable
 public data class LlmUsage(
+    /** All input tokens of the request, including those read from or written to the prompt cache. */
     val inputTokens: Int,
     val outputTokens: Int,
     /**
      * Input tokens that were served from the provider's prompt cache rather than re-processed.
-     * A subset of [inputTokens]: if the caller wants total billable input it should still use
-     * [inputTokens] - [cacheReadTokens]. Zero if the provider does not support prompt caching
+     * A subset of [inputTokens], as is [cacheWriteTokens]; input billed at the normal rate is
+     * [inputTokens] - [cacheReadTokens] - [cacheWriteTokens]. Zero if the provider does not support prompt caching
      * or the request missed the cache. Providers that don't expose cache-read metrics should
      * leave this at 0.
      */
     val cacheReadTokens: Int = 0,
     /**
-     * Input tokens that were written to the provider's prompt cache on this request.
+     * Input tokens that were written to the provider's prompt cache on this request; a subset of [inputTokens].
      * Cache writes typically cost ~25% more than normal input tokens; cache reads cost ~90% less.
      * Zero if the provider does not support prompt caching, the request missed the cache,
      * or the provider does not expose cache-write metrics (e.g. OpenAI).
@@ -469,10 +535,18 @@ public sealed class LlmStreamEvent {
      * [TextDelta]: delta granularity is implementation-defined; callers concatenate
      * across all `ReasoningDelta` events.
      *
+     * A delta carrying [signature] or [redactedData] (see [LlmPart.Reasoning]) ends the current
+     * reasoning block; its [text], usually empty, is the block's last chunk. Providers that don't
+     * sign reasoning set neither, so their reasoning block ends when other output starts.
+     *
      * Streams from reasoning-capable models typically emit ALL reasoning deltas before
      * any [TextDelta] / [ToolCallEmitted]. Adapters preserve this ordering.
      */
-    public data class ReasoningDelta(val text: String) : LlmStreamEvent()
+    public data class ReasoningDelta(
+        val text: String,
+        val signature: String? = null,
+        val redactedData: String? = null,
+    ) : LlmStreamEvent()
 
     /**
      * An assistant-generated attachment.

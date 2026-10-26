@@ -35,7 +35,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
             prompt = LlmPrompt(
                 messages = listOf(userMessage("Respond with only the word HELLO and nothing else.")),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val text = result.message.plainText()
@@ -63,7 +62,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
                     userMessage("What is the capital of France? Answer in one short sentence."),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val text = result.message.plainText()
@@ -105,7 +103,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
                 ),
                 stopSequences = listOf("HALT"),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val text = result.message.plainText()
@@ -135,7 +132,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
                     userMessage("Write a long essay about the history of Rome, at least 500 words."),
                 ),
                 maxTokens = 10,
-                temperature = 0.0,
             ),
         )
         assertEquals(
@@ -172,7 +168,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
                     userMessage("Solve: if 3x + 7 = 22, what is x? Show your reasoning step by step."),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val reasoningBlocks = result.message.parts.filterIsInstance<LlmPart.Reasoning>()
@@ -196,12 +191,12 @@ public abstract class TextGenerationTests : LlmAccessTests() {
      *
      * Many providers honor this; a few (local Ollama quantizations, some cross-model routing
      * layers) do not. We tolerate minor whitespace differences but expect the content to be
-     * the same sentence. Skip the test wholesale if the provider is known to not support
-     * deterministic temperature.
+     * the same sentence. Skipped when [deterministicAtTemperatureZero] is false.
      */
     @Test
     public fun temperatureDeterminism(): Unit = runTest(timeout = 120.seconds) {
         skipIfServiceAbsent()
+        Assume.assumeTrue("Model is not deterministic at temperature 0", deterministicAtTemperatureZero)
         val prompt = LlmPrompt(
             messages = listOf(userMessage("In exactly one short sentence, define entropy.")),
             maxTokens = testMaxTokens,

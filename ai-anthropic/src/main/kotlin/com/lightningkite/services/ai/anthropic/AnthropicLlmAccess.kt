@@ -158,7 +158,7 @@ public class AnthropicLlmAccess(
             emit(
                 LlmStreamEvent.Finished(
                     stopReason = state.stopReason,
-                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
+                    usage = state.usage(),
                 ),
             )
         }
@@ -349,15 +349,11 @@ public class AnthropicLlmAccess(
         var stopReason: LlmStopReason = LlmStopReason.EndTurn
         var finished: Boolean = false
 
+        // Anthropic's input_tokens counts only what wasn't read from or written to the cache; LlmUsage.inputTokens is all of it.
+        fun usage(): LlmUsage = LlmUsage(inputTokens + cacheReadTokens + cacheWriteTokens, outputTokens, cacheReadTokens, cacheWriteTokens)
+
         /** Per-index tool-call accumulator; index refers to Anthropic's content array position. */
         val toolsInFlight: HashMap<Int, ToolCallInProgress> = HashMap()
-
-        /**
-         * Indices of active `thinking` content blocks. Used to disambiguate `thinking_delta`
-         * and `signature_delta` events (both of which are only emitted for thinking blocks)
-         * and to drop per-block bookkeeping on `content_block_stop`.
-         */
-        val thinkingBlocks: HashSet<Int> = HashSet()
     }
 
     internal data class ToolCallInProgress(
@@ -424,7 +420,10 @@ private suspend fun handleSseEvent(
                     id = block["id"]!!.jsonPrimitive.content,
                     name = block["name"]!!.jsonPrimitive.content,
                 )
-                "thinking" -> state.thinkingBlocks += index
+                // A redacted block arrives whole here; its stop event carries nothing more.
+                "redacted_thinking" -> emit(
+                    LlmStreamEvent.ReasoningDelta("", redactedData = block["data"]!!.jsonPrimitive.content)
+                )
             }
             false
         }
@@ -440,10 +439,10 @@ private suspend fun handleSseEvent(
                     val text = delta["thinking"]?.jsonPrimitive?.content ?: ""
                     if (text.isNotEmpty()) emit(LlmStreamEvent.ReasoningDelta(text))
                 }
-                // Signature deltas carry opaque round-trip data for multi-turn extended
-                // thinking with tool use, which v1 of this abstraction doesn't support.
-                // Dropping silently is safe: it only affects outbound multi-turn replays.
-                "signature_delta" -> {}
+                // Sent once per thinking block, just before its content_block_stop.
+                "signature_delta" -> emit(
+                    LlmStreamEvent.ReasoningDelta("", signature = delta["signature"]!!.jsonPrimitive.content)
+                )
                 "input_json_delta" -> {
                     val index = event["index"]?.jsonPrimitive?.content?.toIntOrNull() ?: return false
                     val fragment = delta["partial_json"]?.jsonPrimitive?.content ?: return false
@@ -461,7 +460,6 @@ private suspend fun handleSseEvent(
                 val args = call.argsJson.toString().ifEmpty { "{}" }
                 emit(LlmStreamEvent.ToolCallEmitted(id = call.id, name = call.name, inputJson = args))
             }
-            state.thinkingBlocks -= index
             false
         }
 
@@ -480,7 +478,7 @@ private suspend fun handleSseEvent(
             emit(
                 LlmStreamEvent.Finished(
                     stopReason = state.stopReason,
-                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
+                    usage = state.usage(),
                 ),
             )
             true

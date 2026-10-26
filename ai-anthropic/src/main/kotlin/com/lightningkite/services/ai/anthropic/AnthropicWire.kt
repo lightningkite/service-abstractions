@@ -1,10 +1,10 @@
 package com.lightningkite.services.ai.anthropic
 
+import com.lightningkite.services.ai.ClaudeModel
 import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
-import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
@@ -36,7 +36,9 @@ internal object AnthropicWire {
      * @param prompt the prompt to translate
      * @param module serializers module used to resolve @Contextual tool-arg serializers
      * @param stream when true, requests SSE streaming
-     * @param defaultMaxTokens used when [LlmPrompt.maxTokens] is null (Anthropic requires the field)
+     * @param defaultMaxTokens room for the answer when [LlmPrompt.maxTokens] is null (Anthropic requires the
+     *   field); a thinking budget is added on top, since thinking counts toward `max_tokens`.
+     * @throws com.lightningkite.services.ai.LlmException.InvalidRequest for a prompt the model would reject.
      */
     fun buildRequestBody(
         modelId: String,
@@ -45,8 +47,10 @@ internal object AnthropicWire {
         stream: Boolean,
         defaultMaxTokens: Int,
     ): JsonObject = buildJsonObject {
+        val claude = ClaudeModel(modelId)
+        claude.requireSupports(prompt)
         put("model", modelId)
-        put("max_tokens", prompt.maxTokens ?: defaultMaxTokens)
+        put("max_tokens", prompt.maxTokens ?: (defaultMaxTokens + (claude.thinkingBudget(prompt) ?: 0)))
         put("stream", stream)
 
         prompt.temperature?.let { put("temperature", it) }
@@ -54,12 +58,7 @@ internal object AnthropicWire {
             putJsonArray("stop_sequences") { prompt.stopSequences.forEach { add(it) } }
         }
 
-        anthropicThinkingBudget(prompt)?.let { budget ->
-            putJsonObject("thinking") {
-                put("type", "enabled")
-                put("budget_tokens", budget)
-            }
-        }
+        claude.thinkingFields(prompt)?.forEach { (key, value) -> put(key, value) }
 
         // Anthropic carries system as a top-level field, not a message role.
         // When caching the system prompt we must use the array-of-blocks form
@@ -128,10 +127,8 @@ internal object AnthropicWire {
                 is LlmMessage.Agent -> addJsonObject {
                     put("role", "assistant")
                     putJsonArray("content") {
-                        // Reasoning blocks are receive-only in v1; round-tripping them back to
-                        // Anthropic would require the provider-opaque signature data that the
-                        // SSE parser intentionally drops. Filter here instead of failing.
-                        val blocks = msg.parts.filter { it !is LlmPart.Reasoning }
+                        // Unsigned reasoning (from another provider) can't be replayed: Anthropic requires the signature.
+                        val blocks = msg.parts.filter { it !is LlmPart.Reasoning || it.signature != null || it.redactedData != null }
                         blocks.forEachIndexed { index, part ->
                             val json = agentPartBlock(part)
                             // Attach cache_control to the LAST content block when the message
@@ -195,11 +192,16 @@ internal object AnthropicWire {
             put("input", parseInputJson(part.call.inputJson))
         }
 
-        // Reasoning blocks must be filtered out by [buildMessages] before reaching here
-        // because v1 can't round-trip them (missing signature data). Reaching this branch
-        // is a bug in the caller path.
-        is LlmPart.Reasoning ->
-            error("LlmPart.Reasoning must be filtered by buildMessages; it is receive-only in v1")
+        is LlmPart.Reasoning -> buildJsonObject {
+            if (part.redactedData != null) {
+                put("type", "redacted_thinking")
+                put("data", part.redactedData)
+            } else {
+                put("type", "thinking")
+                put("thinking", part.text)
+                put("signature", part.signature)
+            }
+        }
     }
 
     /** Serialize a [LlmPart.ContentOnly] (text or attachment) to Anthropic's content-block JSON shape. */
@@ -282,22 +284,5 @@ internal object AnthropicWire {
     /** Local Json instance; Anthropic never sends comments/trailing commas, so defaults suffice. */
     val jsonCodec: kotlinx.serialization.json.Json = kotlinx.serialization.json.Json {
         ignoreUnknownKeys = true
-    }
-
-    /**
-     * Resolve Anthropic's `thinking.budget_tokens` from prompt fields.
-     * Explicit [LlmPrompt.reasoningBudgetTokens] wins; otherwise [LlmPrompt.reasoningEffort]
-     * buckets to a budget. Returns null when reasoning is disabled or unset.
-     * Minimum 1024 enforced by Anthropic.
-     */
-    fun anthropicThinkingBudget(prompt: LlmPrompt): Int? {
-        prompt.reasoningBudgetTokens?.let { return it.coerceAtLeast(1024) }
-        return when (prompt.reasoningEffort) {
-            null, LlmReasoningEffort.Off -> null
-            LlmReasoningEffort.Minimal -> 1024
-            LlmReasoningEffort.Low -> 2048
-            LlmReasoningEffort.Medium -> 8192
-            LlmReasoningEffort.High -> 16384
-        }
     }
 }

@@ -41,7 +41,6 @@ public abstract class MultimodalTests : LlmAccessTests() {
                     ),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val text = result.message.plainText().lowercase()
@@ -77,7 +76,6 @@ public abstract class MultimodalTests : LlmAccessTests() {
                     ),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val text = result.message.plainText().lowercase()

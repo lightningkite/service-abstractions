@@ -5,6 +5,7 @@ import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmModelId
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
+import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
 import com.lightningkite.services.ai.LlmToolCall
@@ -12,6 +13,7 @@ import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -19,6 +21,7 @@ import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -78,6 +81,41 @@ class BedrockWireTest {
         assertEquals("call-1", (toolResult["toolUseId"] as JsonPrimitive).content)
         val inner = (toolResult["content"] as JsonArray)[0] as JsonObject
         assertEquals("42", (inner["text"] as JsonPrimitive).content)
+    }
+
+    @Test fun parallelToolResultsAndAFollowingUserMessageShareOneUserMessage() {
+        val prompt = LlmPrompt(
+            messages = listOf(
+                LlmMessage.Agent(listOf(
+                    LlmPart.ToolCall(LlmToolCall("call-1", "weather", """{"city":"Ogden"}""")),
+                    LlmPart.ToolCall(LlmToolCall("call-2", "weather", """{"city":"Provo"}""")),
+                )),
+                LlmMessage.ToolResult(toolCallId = "call-1", parts = listOf(LlmPart.Text("Sunny"))),
+                LlmMessage.ToolResult(toolCallId = "call-2", parts = listOf(LlmPart.Text("Rain"))),
+                LlmMessage.User(listOf(LlmPart.Text("Thanks"))),
+            ),
+        )
+        val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
+        val messages = body["messages"] as JsonArray
+        assertEquals(listOf("assistant", "user"), messages.map { ((it as JsonObject)["role"] as JsonPrimitive).content })
+        val content = ((messages[1] as JsonObject)["content"] as JsonArray).map { it as JsonObject }
+        assertEquals(
+            listOf("call-1", "call-2"),
+            content.take(2).map { ((it["toolResult"] as JsonObject)["toolUseId"] as JsonPrimitive).content },
+        )
+        assertEquals("Thanks", (content[2]["text"] as JsonPrimitive).content)
+    }
+
+    @Test fun consecutiveUserMessagesBecomeOne() {
+        val prompt = LlmPrompt(
+            messages = listOf(
+                LlmMessage.User(listOf(LlmPart.Text("Hi"))),
+                LlmMessage.User(listOf(LlmPart.Text("Are you there?"))),
+            ),
+        )
+        val messages = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())["messages"] as JsonArray
+        assertEquals(1, messages.size)
+        assertEquals(2, ((messages[0] as JsonObject)["content"] as JsonArray).size)
     }
 
     @Test fun toolCallEncodesInputAsJsonObject() {
@@ -306,9 +344,8 @@ class BedrockWireTest {
 
     /**
      * Bedrock extended thinking (Claude reasoning via Converse) emits reasoning as a
-     * `reasoningContent` block on contentBlockDelta. Text fragments must surface as
-     * [LlmStreamEvent.ReasoningDelta]; signature fragments (opaque, non-round-trippable in v1)
-     * must be ignored silently.
+     * `reasoningContent` block on contentBlockDelta. Text fragments surface as
+     * [LlmStreamEvent.ReasoningDelta], and the signature as a final delta that ends the block.
      */
     @Test fun streamEmitsReasoningDeltas() = runTest {
         val state = BedrockStreamState()
@@ -341,18 +378,103 @@ class BedrockWireTest {
         }
 
         val reasoning = emitted.filterIsInstance<LlmStreamEvent.ReasoningDelta>()
-        assertEquals(2, reasoning.size)
-        assertEquals("Let me think... ", reasoning[0].text)
-        assertEquals("2+2=4", reasoning[1].text)
+        assertEquals(
+            listOf(
+                LlmStreamEvent.ReasoningDelta("Let me think... "),
+                LlmStreamEvent.ReasoningDelta("2+2=4"),
+                LlmStreamEvent.ReasoningDelta("", signature = "opaque-sig"),
+            ),
+            reasoning,
+        )
 
         val text = emitted.filterIsInstance<LlmStreamEvent.TextDelta>().single()
         assertEquals("The answer is 4.", text.text)
     }
 
-    /**
-     * [LlmPart.Reasoning] is receive-only in v1 — outgoing messages carrying reasoning
-     * blocks must not leak empty content objects to Bedrock (which would reject them).
-     */
+    @Test fun streamEmitsRedactedReasoningAsItsOwnBlock() = runTest {
+        val emitted = mutableListOf<LlmStreamEvent>()
+        handleBedrockEvent(
+            EventStreamMessage(
+                headers = mapOf(":event-type" to "contentBlockDelta", ":message-type" to "event"),
+                payload = """{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"ZW5jcnlwdGVk"}}}"""
+                    .encodeToByteArray(),
+            ),
+            BedrockStreamState(),
+        ) { emitted.add(it) }
+        assertEquals(listOf<LlmStreamEvent>(LlmStreamEvent.ReasoningDelta("", redactedData = "ZW5jcnlwdGVk")), emitted)
+    }
+
+    @Test fun signedReasoningIsSentBackFirstAndUnchanged() {
+        val prompt = LlmPrompt(
+            messages = listOf(
+                LlmMessage.User(listOf(LlmPart.Text("weather?"))),
+                LlmMessage.Agent(listOf(
+                    LlmPart.Reasoning("Need the weather.", signature = "sig-A"),
+                    LlmPart.Reasoning("", redactedData = "ZW5jcnlwdGVk"),
+                    LlmPart.ToolCall(LlmToolCall("call-1", "weather", """{"city":"Ogden"}""")),
+                )),
+                LlmMessage.ToolResult(toolCallId = "call-1", parts = listOf(LlmPart.Text("Sunny"))),
+            ),
+        )
+        val body = BedrockWire.buildRequestBody("global.anthropic.claude-sonnet-5-5", prompt, EmptySerializersModule())
+        val content = (((body["messages"] as JsonArray)[1] as JsonObject)["content"] as JsonArray).map { it as JsonObject }
+        assertEquals(
+            Json.parseToJsonElement("""{"reasoningContent":{"reasoningText":{"text":"Need the weather.","signature":"sig-A"}}}"""),
+            content[0],
+        )
+        assertEquals(Json.parseToJsonElement("""{"reasoningContent":{"redactedContent":"ZW5jcnlwdGVk"}}"""), content[1])
+        assertTrue("toolUse" in content[2])
+    }
+
+    @Test fun currentClaudeGetsAdaptiveThinkingInAdditionalFields() {
+        val prompt = LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
+            reasoningEffort = LlmReasoningEffort.Medium,
+        )
+        val body = BedrockWire.buildRequestBody("global.anthropic.claude-sonnet-5-5", prompt, EmptySerializersModule())
+        assertEquals(
+            Json.parseToJsonElement("""{"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"medium"}}"""),
+            body["additionalModelRequestFields"],
+        )
+        assertNull(body["inferenceConfig"])
+    }
+
+    @Test fun olderClaudeGetsMaxTokensAboveTheThinkingBudget() {
+        val prompt = LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
+            reasoningEffort = LlmReasoningEffort.High,
+        )
+        val body = BedrockWire.buildRequestBody("global.anthropic.claude-haiku-4-5-20251001-v1:0", prompt, EmptySerializersModule())
+        val thinking = (body["additionalModelRequestFields"] as JsonObject)["thinking"] as JsonObject
+        assertEquals(16384, (thinking["budget_tokens"] as JsonPrimitive).content.toInt())
+        assertEquals(16384 + 4096, ((body["inferenceConfig"] as JsonObject)["maxTokens"] as JsonPrimitive).content.toInt())
+    }
+
+    @Test fun claudeRejectionsFailBeforeSending() {
+        val tools = listOf(LlmToolDescriptor("weather", "d", serializer<WeatherArgs>()))
+        val messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q"))))
+        assertFailsWith<LlmException.InvalidRequest> {
+            BedrockWire.buildRequestBody("global.anthropic.claude-opus-5-5", LlmPrompt(messages = messages, temperature = 0.2), EmptySerializersModule())
+        }
+        assertFailsWith<LlmException.InvalidRequest> {
+            BedrockWire.buildRequestBody(
+                "global.anthropic.claude-opus-5-5",
+                LlmPrompt(messages = messages, tools = tools, toolChoice = LlmToolChoice.Required),
+                EmptySerializersModule(),
+            )
+        }
+        assertFailsWith<LlmException.InvalidRequest> {
+            BedrockWire.buildRequestBody(
+                "anthropic.claude-sonnet-4-5-20250929-v1:0",
+                LlmPrompt(messages = messages, reasoningEffort = LlmReasoningEffort.Medium, maxTokens = 2000),
+                EmptySerializersModule(),
+            )
+        }
+        // Non-Claude models aren't held to Claude's rules.
+        BedrockWire.buildRequestBody("amazon.nova-lite-v1:0", LlmPrompt(messages = messages, temperature = 0.2), EmptySerializersModule())
+    }
+
+    /** Reasoning without a signature (e.g. from another provider) can't be replayed, so it's dropped. */
     @Test fun reasoningContentDroppedFromOutgoingMessages() {
         val prompt = LlmPrompt(
             messages = listOf(
@@ -406,7 +528,7 @@ class BedrockWireTest {
     }
 
     /**
-     * The `metadata` event carries the final usage counts. When `cacheReadInputTokenCount` is
+     * The `metadata` event carries the final usage counts. When `cacheReadInputTokens` is
      * present (newer models on cache-hit requests), its value must surface on the emitted
      * [LlmUsage.cacheReadTokens].
      */
@@ -417,14 +539,14 @@ class BedrockWireTest {
             headers = mapOf(":event-type" to "metadata", ":message-type" to "event"),
             payload = """
                 {"usage":{"inputTokens":1500,"outputTokens":42,"totalTokens":1542,
-                "cacheReadInputTokenCount":1200,"cacheWriteInputTokenCount":300}}
+                "cacheReadInputTokens":1200,"cacheWriteInputTokens":300}}
             """.trimIndent().encodeToByteArray(),
         )
 
         handleBedrockEvent(metadataEvent, state) { emitted.add(it) }
 
         val finished = emitted.filterIsInstance<LlmStreamEvent.Finished>().single()
-        assertEquals(1500, finished.usage.inputTokens)
+        assertEquals(3000, finished.usage.inputTokens)  // 1500 uncached + 1200 read + 300 written
         assertEquals(42, finished.usage.outputTokens)
         assertEquals(1200, finished.usage.cacheReadTokens)
         assertEquals(300, finished.usage.cacheWriteTokens)
