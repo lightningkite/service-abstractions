@@ -270,6 +270,8 @@ public class PostgresCollection<T : Any>(
             val existing = findOne(condition)
             if (existing == null) {
                 EntryChange(null, insert(listOf(model)).first())
+            } else if (modification.isNothing) {
+                EntryChange(existing, existing)
             } else
                 updateOne(condition, modification)
         }
@@ -285,6 +287,8 @@ public class PostgresCollection<T : Any>(
             if (existing == null) {
                 insert(listOf(model))
                 false
+            } else if (modification.isNothing) {
+                true
             } else
                 updateOneIgnoringResult(condition, modification, listOf())
         }

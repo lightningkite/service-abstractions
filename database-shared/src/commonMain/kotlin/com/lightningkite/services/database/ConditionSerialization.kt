@@ -183,7 +183,9 @@ private fun <T : IsRawString> rawStringOptions(element: KSerializer<T>): List<My
                 ) { it is Condition.RawStringContains })
 
 private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> =
-    (commonOptions(inner) + inner.serializableProperties!!.let {
+    @Suppress("UNCHECKED_CAST")
+    ((if (inner.descriptor.isInline) comparableOptions(inner as KSerializer<String>) as List<MySealedClassSerializer.Option<Condition<T>, *>>
+    else commonOptions(inner)) + inner.serializableProperties!!.let {
         it.mapIndexed { index, ser ->
             @Suppress("UNCHECKED_CAST")
             MySealedClassSerializer.Option<Condition<T>, Condition.OnField<T, Any?>>(

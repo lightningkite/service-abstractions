@@ -193,6 +193,9 @@ public class CheckMimeFileScanner(
                 Signature(Segment(0, ubyteArrayOf(0x47u, 0x49u, 0x46u, 0x38u, 0x37u, 0x61u))), // 47 49 46 38 37 61
                 Signature(Segment(0, ubyteArrayOf(0x47u, 0x49u, 0x46u, 0x38u, 0x39u, 0x61u))), // 47 49 46 38 39 61
             ),
+            MediaType.Image.ICO to listOf(
+                Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x01u, 0x00u))), // 00 00 01 00
+            ),
             MediaType.Image.JPEG to listOf(
                 Signature(Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xDBu))),                                                         // FF D8 FF DB
                 Signature(Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xE0u, 0x00u, 0x10u, 0x4Au, 0x46u, 0x49u, 0x46u, 0x00u, 0x01u))), // FF D8 FF E0 00 10 4A 46 49 46 00 01
@@ -202,6 +205,9 @@ public class CheckMimeFileScanner(
                     Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xE0u)),
                     Segment(6, ubyteArrayOf(0x45u, 0x78u, 0x69u, 0x66u, 0x00u, 0x00u))
                 ),
+            ),
+            MediaType.Image.JXL to listOf(
+                Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x00u, 0x0Cu, 0x4Au, 0x58u, 0x4Cu, 0x20u, 0x0Du, 0x0Au, 0x87u, 0x0Au))), // 00 00 00 0C 4A 58 4C 20 0D 0A 87 0A
             ),
             MediaType.Image.PNG to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x89u, 0x50u, 0x4Eu, 0x47u, 0x0Du, 0x0Au, 0x1Au, 0x0Au))), // 89 50 4E 47 0D 0A 1A 0A
@@ -220,6 +226,10 @@ public class CheckMimeFileScanner(
                     Segment(0, ubyteArrayOf(0x52u, 0x49u, 0x46u, 0x46u)),
                     Segment(8, ubyteArrayOf(0x57u, 0x45u, 0x42u, 0x50u))
                 ),
+            ),
+            MediaType.Image.XIcon to listOf(
+                Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x01u, 0x00u))), // 00 00 01 00
+                Signature(Segment(0, ubyteArrayOf(0x42u, 0x41u, 0x28u, 0x00u, 0x00u, 0x00u, 0x2Eu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u))), // 42 41 28 00 00 00 2E 00 00 00 00 00 00 00
             ),
             MediaType.Video.AVI to listOf(
                 Signature(Segment(4, ubyteArrayOf(0x41u, 0x56u, 0x49u, 0x20u))),    // 41 56 49 20
