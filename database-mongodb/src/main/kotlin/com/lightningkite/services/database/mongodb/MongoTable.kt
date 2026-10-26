@@ -542,9 +542,14 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return EntryChange(null, null)
         val simplifiedModification = modification.simplify()
-        if (simplifiedModification.isNothing) return EntryChange(null, null)
-        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
+        if (simplifiedModification.isNothing) return telemetryTrace("upsertOne") {
+            access {
+                find(filter).limit(1).firstOrNull()?.let { bson.parse(serializer, it) }?.let { EntryChange(it, it) }
+                    ?: run { insertOne(bson.stringify(serializer, model)); EntryChange(null, model) }
+            }
+        }
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         return telemetryTrace("upsertOne") {
             access {
                 // TODO: Ugly hack for handling weird upserts
@@ -575,9 +580,14 @@ public class MongoTable<Model : Any>(
         val cs = condition.simplify()
         if (cs is Condition.Never) return false
         val simplifiedModification = modification.simplify()
-        if (simplifiedModification.isNothing) return false
-        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
+        if (simplifiedModification.isNothing) return telemetryTrace("upsertOneIgnoringResult") {
+            access {
+                if (find(filter).limit(1).firstOrNull() != null) true
+                else { insertOne(bson.stringify(serializer, model)); false }
+            }
+        }
+        val m = simplifiedModification.bson(serializer, bson = bson, overlappingArrayFilters = supportsOverlappingArrayFilters)
         return telemetryTrace("upsertOneIgnoringResult") {
             access {
                 // TODO: Ugly hack for handling weird upserts

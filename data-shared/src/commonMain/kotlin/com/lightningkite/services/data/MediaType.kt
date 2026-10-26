@@ -51,55 +51,79 @@ public data class MediaType(val type: String, val subtype: String, val parameter
             Text.Html,
             Text.Xml,
         )
-        private val mapping = listOf(
+
+        // These are best guess items. Some items like mp4, actually exist in both Audio and Video because
+        // they are multimedia containers. This map assumes to most likely use case of the type.
+        private val extensionTypeMap = mapOf(
             "bin" to Application.OctetStream,
-            "cbor" to Application.Cbor,
-            "json" to Application.Json,
             "bson" to Application.Bson,
-            "js" to Application.JavaScript,
+            "cbor" to Application.Cbor,
+            "docx" to Application.Docx,
+            "json" to Application.Json,
+            "pdf" to Application.Pdf,
+            "pptx" to Application.Pptx,
+            "xlsx" to Application.Xlsx,
             "xml" to Application.Xml,
             "zip" to Application.Zip,
-            "wav" to Audio.WAV,
+
+            "aac" to Audio.AAC,
+            "flac" to Audio.FLAC,
+            "m4a" to Audio.MP4,
             "mp3" to Audio.MP3,
-            "mpg" to Video.MPEG,
-            "mpeg" to Video.MPEG,
-            "mp4" to Video.MP4,
-            "ogg" to Video.OGG,
-            "mov" to Video.QuickTime,
-            "txt" to Text.Plain,
+            "oga" to Audio.OGG,
+            "ogg" to Audio.OGG,
+            "opus" to Audio.OPUS,
+            "wav" to Audio.WAV,
+            "weba" to Audio.WEBM,
+
+            "apng" to Image.APNG,
+            "avif" to Image.AVIF,
+            "bmp" to Image.BMP,
+            "gif" to Image.GIF,
+            "ico" to Image.XIcon,
+            "jp2" to Image.JPEG2000,
+            "jpeg" to Image.JPEG,
+            "jpg" to Image.JPEG,
+            "jxl" to Image.JXL,
+            "png" to Image.PNG,
+            "svg" to Image.SVG,
+            "tiff" to Image.Tiff,
+            "webp" to Image.WebP,
+
             "css" to Text.CSS,
             "csv" to Text.CSV,
             "htm" to Text.Html,
             "html" to Text.Html,
             "js" to Text.JavaScript,
-            "xml" to Text.Xml,
-            "gif" to Image.GIF,
-            "jpg" to Image.JPEG,
-            "jpeg" to Image.JPEG,
-            "png" to Image.PNG,
-            "svg" to Image.SVG,
-            "webp" to Image.WebP,
-            "tiff" to Image.Tiff,
-            "bmp" to Image.BMP,
-            "jp2" to Image.JPEG2000,
-            "pdf" to Application.Pdf,
-            "xlsx" to Application.Xlsx,
-            "docx" to Application.Docx,
-            "pptx" to Application.Pptx,
+            "txt" to Text.Plain,
+            "yaml" to Text.Yaml,
+            "yml" to Text.Yaml,
+
+            "avi" to Video.AVI,
+            "mkv" to Video.MKV,
+            "mov" to Video.QuickTime,
+            "mp4v" to Video.MP4,
+            "mpg4" to Video.MP4,
+            "mp4" to Video.MP4,
+            "mpeg" to Video.MPEG,
+            "mpg" to Video.MPEG,
+            "ogv" to Video.OGG,
+            "webm" to Video.WEBM,
         )
 
         /**
          * Gets a content type based on a file extension.
          */
-        private val extensionToType = mapping.associate { it }
-        private val typeToExtension = mapping.associate { it.second to it.first }
+        private val reversedMappings = extensionTypeMap.entries.associate { it.value to it.key }
         public fun fromExtension(extension: String): MediaType =
-            extensionToType[extension.lowercase()] ?: Application.OctetStream
+            extensionTypeMap[extension.lowercase()] ?: Application.OctetStream
     }
 
     public val withoutParameters: MediaType get() = MediaType(type, subtype)
-    public val extension: String get() = typeToExtension[this.withoutParameters] ?: "unknown"
+    public val extension: String get() = reversedMappings[this.withoutParameters] ?: "unknown"
 
+
+    // This is not an exhaustive list of mime types, these are just the most common MimeTypes.
 
     /**
      * Provides a list of standard subtypes of an `application` content type.
@@ -153,6 +177,7 @@ public data class MediaType(val type: String, val subtype: String, val parameter
         public val OGG: MediaType = MediaType("audio", "ogg")
         public val OPUS: MediaType = MediaType("audio", "opus")
         public val WAV: MediaType = MediaType("audio", "wav")
+        public val WEBM: MediaType = MediaType("audio", "webm")
     }
 
     /**
@@ -165,8 +190,10 @@ public data class MediaType(val type: String, val subtype: String, val parameter
         public val AVIF: MediaType = MediaType("image", "avif")
         public val BMP: MediaType = MediaType("image", "bmp")
         public val GIF: MediaType = MediaType("image", "gif")
+        public val ICO: MediaType = MediaType("image", "vnd.microsoft.icon")
         public val JPEG2000: MediaType = MediaType("image", "jp2")
         public val JPEG: MediaType = MediaType("image", "jpeg")
+        public val JXL: MediaType = MediaType("image", "jxl")
         public val PNG: MediaType = MediaType("image", "png")
         public val SVG: MediaType = MediaType("image", "svg+xml")
         public val Tiff: MediaType = MediaType("image", "tiff")
