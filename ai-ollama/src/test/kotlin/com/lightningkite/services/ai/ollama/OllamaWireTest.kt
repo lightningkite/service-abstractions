@@ -114,19 +114,19 @@ class OllamaWireTest {
     }
 
     @Test
-    fun toolChoiceSpecificAddsSystemHint() {
+    fun forcedToolChoiceFailsBeforeSending() {
         val tool = LlmToolDescriptor("tool_x", "d", serializer<WeatherArgs>())
-        val prompt = LlmPrompt(
-            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
-            tools = listOf(tool),
-            toolChoice = LlmToolChoice.Specific("tool_x"),
-        )
-        val body = OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = true)
-        val messages = body["messages"]!!.jsonArray
-        // Must have a system message at start mentioning tool_x.
-        assertEquals("system", messages[0].jsonObject["role"]!!.jsonPrimitive.content)
-        val sysText = messages[0].jsonObject["content"]!!.jsonPrimitive.content
-        assertTrue(sysText.contains("tool_x"), "Expected system hint to mention tool_x, got: $sysText")
+        for (choice in listOf(LlmToolChoice.Required, LlmToolChoice.Specific("tool_x"))) {
+            val prompt = LlmPrompt(
+                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
+                tools = listOf(tool),
+                toolChoice = choice,
+            )
+            val e = assertFailsWith<LlmException.InvalidRequest> {
+                OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = true)
+            }
+            assertTrue("LlmToolChoice.Auto" in e.message!!, e.message)
+        }
     }
 
     @Test

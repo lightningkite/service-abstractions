@@ -1,6 +1,14 @@
 package com.lightningkite.services.ai.anthropic
 
+import com.lightningkite.services.SettingContext
+import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.data.MediaType
+import com.lightningkite.services.ai.LlmAccess
+import com.lightningkite.services.ai.LlmModelInfo
+import com.lightningkite.services.ai.LlmReasoningEffort
+import com.lightningkite.services.ai.inference
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asFlow
 import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
@@ -51,7 +59,7 @@ class AnthropicWireTest {
     fun userTextOnly() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.User(listOf(LlmPart.Text("Hi"))),
                 ),
@@ -77,7 +85,7 @@ class AnthropicWireTest {
     fun systemPromptLiftedToTopLevel() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 systemPrompt = listOf(LlmPart.Text("You are helpful."), LlmPart.Text("Be concise.")),
                 messages = listOf(
                     LlmMessage.User(listOf(LlmPart.Text("Hello"))),
@@ -101,7 +109,7 @@ class AnthropicWireTest {
     fun customMaxTokensOverrideWins() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
                 maxTokens = 256,
                 temperature = 0.5,
@@ -122,7 +130,7 @@ class AnthropicWireTest {
         val descriptor = LlmToolDescriptor("get_weather", "Look up weather", serializer<WeatherArgs>())
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("weather?")))),
                 tools = listOf(descriptor),
                 toolChoice = LlmToolChoice.Auto,
@@ -148,7 +156,7 @@ class AnthropicWireTest {
     fun toolChoiceRequiredMapsToAny() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
                 toolChoice = LlmToolChoice.Required,
@@ -164,7 +172,7 @@ class AnthropicWireTest {
     fun toolChoiceSpecificIncludesName() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 tools = listOf(LlmToolDescriptor("pick_me", "d", serializer<WeatherArgs>())),
                 toolChoice = LlmToolChoice.Specific("pick_me"),
@@ -185,7 +193,7 @@ class AnthropicWireTest {
         // rule is enforced via `tool_choice: {"type": "none"}`, not by hiding the tools.
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
                 toolChoice = LlmToolChoice.None,
@@ -208,7 +216,7 @@ class AnthropicWireTest {
         // Without declared tools there's nothing to forbid, so we emit neither field.
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 toolChoice = LlmToolChoice.None,
             ),
@@ -224,7 +232,7 @@ class AnthropicWireTest {
     fun imageAttachmentBase64() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.User(
                         listOf(
@@ -253,7 +261,7 @@ class AnthropicWireTest {
     fun imageAttachmentUrl() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.User(
                         listOf(
@@ -285,7 +293,7 @@ class AnthropicWireTest {
         assertFailsWith<IllegalArgumentException> {
             AnthropicWire.buildRequestBody(
                 modelId = "claude-haiku-4-5",
-                prompt = LlmPrompt(
+                requested = LlmPrompt(
                     messages = listOf(
                         LlmMessage.User(
                             listOf(
@@ -307,7 +315,7 @@ class AnthropicWireTest {
     fun toolCallAndResultRoundTrip() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.User(listOf(LlmPart.Text("Weather in SF?"))),
                     LlmMessage.Agent(
@@ -360,7 +368,7 @@ class AnthropicWireTest {
     fun toolResultErrorFlagPresent() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.ToolResult(
                         toolCallId = "toolu_abc",
@@ -375,6 +383,121 @@ class AnthropicWireTest {
         )
         val block = body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray[0].jsonObject
         assertEquals("true", block["is_error"]!!.jsonPrimitive.content)
+    }
+
+    // ============================= Model-specific rules =============================
+
+    private fun bodyFor(modelId: String, prompt: LlmPrompt) = AnthropicWire.buildRequestBody(
+        modelId = modelId,
+        requested = prompt,
+        module = EmptySerializersModule(),
+        stream = true,
+        defaultMaxTokens = 4096,
+    )
+
+    @Test
+    fun currentModelsGetAdaptiveThinkingWithEffort() {
+        val body = bodyFor("claude-opus-5-5", LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
+            reasoningEffort = LlmReasoningEffort.High,
+        ))
+        assertEquals("adaptive", body["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertNull(body["thinking"]!!.jsonObject["budget_tokens"])
+        assertEquals("high", body["output_config"]!!.jsonObject["effort"]!!.jsonPrimitive.content)
+        assertEquals(4096, body["max_tokens"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun budgetModelsGetMaxTokensAboveTheBudgetWhenUnset() {
+        val body = bodyFor("claude-haiku-4-5", LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
+            reasoningEffort = LlmReasoningEffort.Medium,
+        ))
+        val thinking = body["thinking"]!!.jsonObject
+        assertEquals("enabled", thinking["type"]!!.jsonPrimitive.content)
+        assertEquals(8192, thinking["budget_tokens"]!!.jsonPrimitive.content.toInt())
+        assertEquals(8192 + 4096, body["max_tokens"]!!.jsonPrimitive.content.toInt())
+        assertNull(body["output_config"])
+    }
+
+    @Test
+    fun aSmallMaxTokensShrinksTheBudget() {
+        val body = bodyFor("claude-haiku-4-5", LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
+            reasoningEffort = LlmReasoningEffort.High,
+            maxTokens = 4096,
+        ))
+        assertEquals(2048, body["thinking"]!!.jsonObject["budget_tokens"]!!.jsonPrimitive.content.toInt())
+        assertEquals(4096, body["max_tokens"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun whatTheModelRejectsIsLeftOut() {
+        val body = bodyFor("claude-opus-5-5", LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
+            tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
+            toolChoice = LlmToolChoice.Specific("t"),
+            temperature = 0.0,
+        ))
+        assertNull(body["temperature"])
+        assertEquals("auto", body["tool_choice"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun offDisablesThinkingWhereOmittingItWouldThink() {
+        val prompt = LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
+            reasoningEffort = LlmReasoningEffort.Off,
+        )
+        assertEquals("disabled", bodyFor("claude-opus-5", prompt)["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertNull(bodyFor("claude-opus-5-5", prompt)["thinking"])
+    }
+
+    // ============================= Thinking round trip =============================
+
+    @Test
+    fun thinkingBlocksStreamOnePartEachWithTheirSignatures() = runTest {
+        val events = mutableListOf<LlmStreamEvent>()
+        val state = AnthropicLlmAccess.SseState()
+        for (line in THINKING_STREAM.lineSequence()) {
+            processSseLine(line, state) { events.add(it) }
+        }
+        val parts = ScriptedLlm(events).inference(LlmModelId("claude-opus-5-5"), LlmPrompt(messages = emptyList())).message.parts
+        assertEquals(
+            listOf(
+                LlmPart.Reasoning("Need the weather.", signature = "sig-A"),
+                LlmPart.Reasoning("", redactedData = "encrypted-B"),
+                LlmPart.ToolCall(LlmToolCall("toolu_1", "get_weather", """{"city":"SF"}""")),
+            ),
+            parts,
+        )
+    }
+
+    @Test
+    fun signedReasoningIsSentBackFirstAndUnchanged() {
+        val messages = AnthropicWire.buildMessages(listOf(
+            LlmMessage.User(listOf(LlmPart.Text("weather?"))),
+            LlmMessage.Agent(listOf(
+                LlmPart.Reasoning("Need the weather.", signature = "sig-A"),
+                LlmPart.Reasoning("", redactedData = "encrypted-B"),
+                LlmPart.Reasoning("unsigned, from another provider"),
+                LlmPart.ToolCall(LlmToolCall("toolu_1", "get_weather", """{"city":"SF"}""")),
+            )),
+        ))
+        val content = messages[1].jsonObject["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("thinking", "redacted_thinking", "tool_use"), content.map { it["type"]!!.jsonPrimitive.content })
+        assertEquals("Need the weather.", content[0]["thinking"]!!.jsonPrimitive.content)
+        assertEquals("sig-A", content[0]["signature"]!!.jsonPrimitive.content)
+        assertEquals("encrypted-B", content[1]["data"]!!.jsonPrimitive.content)
+    }
+
+    /** Replays canned events, so a parsed SSE stream can go through [inference]. */
+    private class ScriptedLlm(private val events: List<LlmStreamEvent>) : LlmAccess {
+        override val name: String = "scripted"
+        override val context: SettingContext get() = error("unused")
+        override suspend fun getModels(): List<LlmModelInfo> = emptyList()
+        override suspend fun healthCheck(): HealthStatus = HealthStatus(HealthStatus.Level.OK)
+        override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = events.asFlow()
     }
 
     // ============================= SSE parsing =============================
@@ -662,7 +785,7 @@ class AnthropicWireTest {
             processSseLine(line, state) { events.add(it) }
         }
         val finished = events.filterIsInstance<LlmStreamEvent.Finished>().single()
-        assertEquals(1500, finished.usage.inputTokens)
+        assertEquals(3000, finished.usage.inputTokens)  // 1500 uncached + 1200 read + 300 written
         assertEquals(1200, finished.usage.cacheReadTokens)
         assertEquals(300, finished.usage.cacheWriteTokens)
         assertEquals(5, finished.usage.outputTokens)
@@ -724,6 +847,48 @@ class AnthropicWireTest {
 
             event: message_delta
             data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":40}}
+
+            event: message_stop
+            data: {"type":"message_stop"}
+        """.trimIndent()
+
+        // A signed thinking block, a redacted one, then a tool call.
+        private val THINKING_STREAM = """
+            event: message_start
+            data: {"type":"message_start","message":{"id":"msg_think","role":"assistant","usage":{"input_tokens":50}}}
+
+            event: content_block_start
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Need the "}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"weather."}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-A"}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":0}
+
+            event: content_block_start
+            data: {"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":"encrypted-B"}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":1}
+
+            event: content_block_start
+            data: {"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{}}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"SF\"}"}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":2}
+
+            event: message_delta
+            data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":30}}
 
             event: message_stop
             data: {"type":"message_stop"}

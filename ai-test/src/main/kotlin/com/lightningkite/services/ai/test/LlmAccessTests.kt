@@ -86,10 +86,10 @@ public abstract class LlmAccessTests {
 
     /**
      * True when the model produces the same output prefix for the same prompt at temperature 0,
-     * which the streaming suite relies on to compare a streamed call against a separate
-     * non-streamed call. Some models (e.g. Amazon Nova) are not deterministic even at
-     * temperature 0; set false to skip `streamConcatenatesToInference` for them. Streaming
-     * correctness is still covered by the other streaming tests.
+     * which `temperatureDeterminism` and `streamConcatenatesToInference` rely on; these are the only
+     * tests that send a temperature. Some models (e.g. Amazon Nova) are not deterministic even at
+     * temperature 0, and Claude 4.7+ rejects temperature outright; set false for them to skip
+     * `temperatureDeterminism` and the equality check in `streamConcatenatesToInference`.
      */
     public open val deterministicAtTemperatureZero: Boolean = true
 

@@ -493,16 +493,16 @@ internal suspend fun handleBedrockEvent(
                 val fragment = toolUseDelta.str("input") ?: ""
                 state.toolsInFlight[index]?.argsJson?.append(fragment)
             }
-            // Bedrock extended-thinking delta: {"reasoningContent":{"text": "..."}} carries
-            // chain-of-thought text, and {"reasoningContent":{"signature": "..."}} carries the
-            // opaque signature needed to replay reasoning back to the provider. Signatures are
-            // not round-trippable in v1, so drop them silently.
+            // A reasoningContent delta is one of `text`, `signature` (once, ending a block), or `redactedContent`
+            // (a whole redacted block).
             val reasoningDelta = delta.obj("reasoningContent")
             if (reasoningDelta != null) {
                 val reasoningText = reasoningDelta.str("text")
                 if (reasoningText != null && reasoningText.isNotEmpty()) {
                     emit(LlmStreamEvent.ReasoningDelta(reasoningText))
                 }
+                reasoningDelta.str("signature")?.let { emit(LlmStreamEvent.ReasoningDelta("", signature = it)) }
+                reasoningDelta.str("redactedContent")?.let { emit(LlmStreamEvent.ReasoningDelta("", redactedData = it)) }
             }
             false
         }
@@ -527,14 +527,14 @@ internal suspend fun handleBedrockEvent(
                 usage.int("outputTokens")?.let { state.outputTokens = it }
                 // Prompt-caching tokens are only reported by newer models (Claude 3.5 Sonnet,
                 // Nova) on cache hits — absent on older models and cache misses.
-                usage.int("cacheReadInputTokenCount")?.let { state.cacheReadTokens = it }
-                usage.int("cacheWriteInputTokenCount")?.let { state.cacheWriteTokens = it }
+                usage.int("cacheReadInputTokens")?.let { state.cacheReadTokens = it }
+                usage.int("cacheWriteInputTokens")?.let { state.cacheWriteTokens = it }
             }
             state.finished = true
             emit(
                 LlmStreamEvent.Finished(
                     stopReason = state.stopReason,
-                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
+                    usage = state.usage(),
                 ),
             )
             true

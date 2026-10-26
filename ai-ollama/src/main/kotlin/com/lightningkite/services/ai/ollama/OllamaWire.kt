@@ -1,6 +1,7 @@
 package com.lightningkite.services.ai.ollama
 
 import com.lightningkite.services.ai.LlmAttachment
+import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
@@ -46,8 +47,9 @@ internal object OllamaWire {
     /**
      * Build the JSON body for POST /api/chat.
      *
-     * [LlmPrompt.toolChoice] is advisory: Ollama's native API has no field for tool choice,
-     * so we emit a hint via the system prompt when the caller requires or forbids tool use.
+     * Ollama's native API has no field for tool choice: [LlmToolChoice.None] becomes a system-prompt
+     * hint, and a forced choice ([LlmToolChoice.Required] / [LlmToolChoice.Specific]) throws
+     * [LlmException.InvalidRequest].
      */
     internal fun buildChatRequest(
         model: String,
@@ -194,13 +196,16 @@ internal object OllamaWire {
 
     /**
      * Return a tool choice hint string for Ollama's system prompt. Ollama has no first-class
-     * tool choice field, so we surface the intent as a system-level instruction.
+     * tool choice field, so [LlmToolChoice.None] becomes a system-level instruction (tools are also
+     * left out of the request). A forced call can't be guaranteed that way, so it fails instead.
      */
     private fun toolChoiceHint(choice: LlmToolChoice): String? = when (choice) {
         LlmToolChoice.Auto -> null
         LlmToolChoice.None -> "Do not call any tools in this turn. Respond with natural-language text only."
-        LlmToolChoice.Required -> "You MUST call at least one tool in this turn."
-        is LlmToolChoice.Specific -> "You MUST call the tool named '${choice.name}' in this turn."
+        LlmToolChoice.Required, is LlmToolChoice.Specific -> throw LlmException.InvalidRequest(
+            "Ollama can't force a tool call (LlmToolChoice.$choice); use LlmToolChoice.Auto, " +
+                "say in the prompt which tool to call, and check that it was called.",
+        )
     }
 
     private fun toolToJson(tool: LlmToolDescriptor<*>, module: SerializersModule): JsonObject =

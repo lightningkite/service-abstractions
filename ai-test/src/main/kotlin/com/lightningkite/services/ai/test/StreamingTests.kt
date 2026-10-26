@@ -25,7 +25,7 @@ import kotlin.time.Duration.Companion.seconds
  *   - the flow is a sequence of [LlmStreamEvent] values
  *   - it terminates with exactly one [LlmStreamEvent.Finished] frame as the last event
  *   - tool-call events carry complete, parseable JSON (not partial deltas)
- *   - concatenated text deltas equal the non-streaming [inference] text at temperature 0
+ *   - concatenated text deltas equal the non-streaming [inference] text (at temperature 0, when supported)
  *   - the stream is cancel-safe
  */
 public abstract class StreamingTests : LlmAccessTests() {
@@ -50,7 +50,6 @@ public abstract class StreamingTests : LlmAccessTests() {
             prompt = LlmPrompt(
                 messages = listOf(userMessage("Say hello in three words.")),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         ).toList()
         val finishedFrames = events.filterIsInstance<LlmStreamEvent.Finished>()
@@ -88,7 +87,7 @@ public abstract class StreamingTests : LlmAccessTests() {
         val prompt = LlmPrompt(
             messages = listOf(userMessage("In one short sentence, say what a unit test is.")),
             maxTokens = testMaxTokens,
-            temperature = 0.0,
+            temperature = 0.0.takeIf { deterministicAtTemperatureZero },
         )
         val streamed = service.stream(cheapModel, prompt).toList()
             .filterIsInstance<LlmStreamEvent.TextDelta>()
@@ -127,7 +126,6 @@ public abstract class StreamingTests : LlmAccessTests() {
                 messages = listOf(userMessage("What's the current weather in Osaka?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         ).toList()
         val toolEvents = events.filterIsInstance<LlmStreamEvent.ToolCallEmitted>()
@@ -169,7 +167,6 @@ public abstract class StreamingTests : LlmAccessTests() {
                 messages = listOf(userMessage("Hi! What's the current weather in Denver?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         assertTrue(
@@ -213,7 +210,6 @@ public abstract class StreamingTests : LlmAccessTests() {
                     userMessage("Solve: if 3x + 7 = 22, what is x? Show your reasoning step by step."),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         ).toList()
         val lastReasoningIdx = events.indexOfLast { it is LlmStreamEvent.ReasoningDelta }
@@ -256,7 +252,6 @@ public abstract class StreamingTests : LlmAccessTests() {
                     ),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         ).take(1).toList()
         assertEquals(

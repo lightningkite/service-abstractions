@@ -53,7 +53,6 @@ public abstract class CachingTests : LlmAccessTests() {
                 userMessage("Respond with only the word PONG.").copy(cacheBoundary = true),
             ),
             maxTokens = testMaxTokens ?: 64,
-            temperature = 0.0,
         )
 
         // First call: populates the cache (or hits it if a prior run already wrote it —

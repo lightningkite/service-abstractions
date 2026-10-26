@@ -42,7 +42,6 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
                 tools = listOf(weatherTool),
                 toolChoice = LlmToolChoice.Auto,
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         assertEquals(
@@ -79,7 +78,6 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
                 tools = listOf(weatherTool),
                 toolChoice = LlmToolChoice.Required,
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         assertEquals(
@@ -115,7 +113,6 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
                 tools = listOf(weatherTool, currentTimeTool),
                 toolChoice = LlmToolChoice.Specific("get_weather"),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         assertEquals(
@@ -154,7 +151,6 @@ public abstract class ToolChoiceTests : LlmAccessTests() {
                 tools = listOf(weatherTool),
                 toolChoice = LlmToolChoice.None,
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         assertEquals(

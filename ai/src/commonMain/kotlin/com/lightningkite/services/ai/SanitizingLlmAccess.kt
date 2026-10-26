@@ -51,8 +51,9 @@ public class SanitizingLlmAccess(
                         if (restored.isNotEmpty()) emit(LlmStreamEvent.TextDelta(restored))
                     }
                     is LlmStreamEvent.ReasoningDelta -> {
-                        val restored = reasoningRestorer.feed(event.text)
-                        if (restored.isNotEmpty()) emit(LlmStreamEvent.ReasoningDelta(restored))
+                        val endsBlock = event.signature != null || event.redactedData != null
+                        val restored = reasoningRestorer.feed(event.text) + if (endsBlock) reasoningRestorer.flush() else ""
+                        if (restored.isNotEmpty() || endsBlock) emit(event.copy(text = restored))
                     }
                     is LlmStreamEvent.ToolCallEmitted -> emit(
                         LlmStreamEvent.ToolCallEmitted(
@@ -214,7 +215,7 @@ private fun LlmMessage.sanitizeMessage(mapping: SanitizationMapping): LlmMessage
 
 private fun LlmPart.sanitizePart(mapping: SanitizationMapping): LlmPart = when (this) {
     is LlmPart.Text -> LlmPart.Text(mapping.sanitize(text))
-    is LlmPart.Reasoning -> LlmPart.Reasoning(mapping.sanitize(text))
+    is LlmPart.Reasoning -> copy(text = mapping.sanitize(text))
     is LlmPart.ToolCall -> LlmPart.ToolCall(
         LlmToolCall(call.id, call.name, mapping.sanitize(call.inputJson))
     )
