@@ -127,4 +127,29 @@ class OpticSerializationTest {
     fun squareBracketVariantsNoLongerDeserialize() {
         assertFailsWith<SerializationException> { Json.decodeFromString(AnyOpticSerializer(Polymorphic.serializer()), "\"[Foo].name\"") }
     }
+
+    @Test
+    fun sealedTypeSharedPropertiesRoundTrip() {
+        val serializer = AnyOpticSerializer(Shape.serializer())
+        assertEquals("label", serializer.asString(Shape.label))
+        assertEquals(Shape.label, serializer.fromString("label"))
+        val json = Json.encodeToString(serializer, Shape.path.label)
+        assertEquals("\"label\"", json)
+        assertEquals(Shape.label, Json.decodeFromString(serializer, json))
+    }
+
+    @Test
+    fun sealedTypeSharedPropertyDecodedBehavesLikeGenerated() {
+        val decoded = AnyOpticSerializer(Shape.serializer()).fromString("label").coerceToOptic() as Optic<Shape, String>
+        assertEquals("a", decoded.get(Shape.Square("a", 1)))
+        assertEquals(Shape.Triangle("b"), decoded.set(Shape.Triangle("a"), "b"))
+    }
+
+    @Test
+    fun sealedTypePropertiesNotSharedByEveryVariantDoNotDeserialize() {
+        val serializer = AnyOpticSerializer(Shape.serializer())
+        assertFailsWith<SerializationException> { serializer.fromString("size") }
+        // Square has no field `sides`; it is a getter.
+        assertFailsWith<SerializationException> { serializer.fromString("sides") }
+    }
 }

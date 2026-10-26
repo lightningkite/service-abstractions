@@ -148,11 +148,14 @@ private val stringOptions: List<MySealedClassSerializer.Option<Condition<String>
         ) { it is Condition.RegexMatches },
     )
 
-// A value class's descriptor can't say whether it's Comparable, but wrapping one comparable value it almost always is.
 @Suppress("UNCHECKED_CAST")
-private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> =
-    ((if (inner.descriptor.isInline) comparableOptions(inner as KSerializer<String>) as List<MySealedClassSerializer.Option<Condition<T>, *>>
-    else commonOptions(inner)) + inner.fields!!.let {
+private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> {
+    val common =
+        // A value class's descriptor can't say whether it's Comparable, but wrapping one comparable value it almost always is.
+        if (inner.descriptor.isInline) comparableOptions(inner as KSerializer<Comparable<Any?>>) as List<MySealedClassSerializer.Option<Condition<T>, *>>
+        else commonOptions(inner)
+
+    return common + inner.fields!!.let {
         it.mapIndexed { index, ser ->
             @Suppress("UNCHECKED_CAST")
             MySealedClassSerializer.Option<Condition<T>, Condition.OnField<T, Any?>>(
@@ -163,7 +166,8 @@ private fun <T : Any> classOptionsReflective(inner: KSerializer<T>): List<MySeal
                 priority = 80
             ) { it is Condition.OnField<*, *> && it.key.name == inner.descriptor.getElementName(index) }
         }
-    })
+    }
+}
 
 private fun <T> polymorphicOptions(supertype: KSerializer<T>): List<MySealedClassSerializer.Option<Condition<T>, *>> =
     commonOptions(supertype) + supertype.serializableOptions!!.map { option ->
