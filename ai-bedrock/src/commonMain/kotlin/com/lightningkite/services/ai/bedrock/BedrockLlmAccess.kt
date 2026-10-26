@@ -456,7 +456,35 @@ public class BedrockLlmAccess(
                 maxOutputTokens = 4_096,
             ),
         )
+
+        /**
+         * [claude], a `global.` Claude profile from [KNOWN_MODELS], as the profile that keeps requests inside
+         * [geography], e.g. for data residency. Regional profiles cost 10% more than global ones.
+         * Not every model has a profile in every geography; Bedrock rejects the call if this one doesn't.
+         */
+        public fun regionalClaude(claude: LlmModelInfo, geography: BedrockGeography): LlmModelInfo {
+            val globalId = claude.id.id
+            require(globalId.startsWith("global.anthropic.")) { "Not a global Claude profile: $globalId" }
+            val premium = 1.1
+            return claude.copy(
+                id = claude.id.copy(id = geography.prefix + globalId.removePrefix("global")),
+                name = "${claude.name} (${geography.name})",
+                usdPerMillionInputTokens = claude.usdPerMillionInputTokens * premium,
+                usdPerMillionOutputTokens = claude.usdPerMillionOutputTokens * premium,
+                usdPerMillionCacheWriteTokens = claude.usdPerMillionCacheWriteTokens?.times(premium),
+                usdPerMillionCacheReadTokens = claude.usdPerMillionCacheReadTokens?.times(premium),
+            )
+        }
     }
+}
+
+/** A Bedrock cross-region inference geography, by the prefix its profile ids start with. */
+public enum class BedrockGeography(public val prefix: String) {
+    US("us"),
+    EU("eu"),
+    APAC("apac"),
+    AU("au"),
+    JP("jp"),
 }
 
 private val bedrockStreamLogger = KotlinLogging.logger("BedrockStream")
