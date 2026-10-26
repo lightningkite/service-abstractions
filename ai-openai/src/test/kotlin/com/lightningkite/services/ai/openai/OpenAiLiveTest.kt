@@ -48,7 +48,6 @@ class OpenAiLiveTest {
                     ),
                 ),
                 maxTokens = 20,
-                temperature = 0.0,
             ),
         )
         val text = result.message.plainText()
@@ -75,7 +74,6 @@ class OpenAiLiveTest {
                     ),
                 ),
                 maxTokens = 30,
-                temperature = 0.0,
             ),
         ).toList()
         assertTrue(events.any { it is LlmStreamEvent.TextDelta }, "Expected at least one TextDelta")

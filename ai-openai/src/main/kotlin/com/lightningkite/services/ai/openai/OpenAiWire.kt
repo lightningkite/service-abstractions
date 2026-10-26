@@ -172,7 +172,6 @@ internal fun buildRequestBody(
     prompt.maxTokens?.let {
         put("max_completion_tokens", it)
     }
-    prompt.temperature?.let { put("temperature", it) }
     if (prompt.stopSequences.isNotEmpty()) {
         putJsonArray("stop") { prompt.stopSequences.forEach { add(it) } }
     }
@@ -184,28 +183,17 @@ internal fun buildRequestBody(
 }
 
 /**
- * Resolve OpenAI's `reasoning_effort` value. Explicit [LlmPrompt.reasoningEffort] wins;
- * otherwise [LlmPrompt.reasoningBudgetTokens] buckets into the nearest enum so
- * cross-provider configs with only a budget set still route through. Returns null when
- * no reasoning is requested or it is explicitly Off (OpenAI has no off toggle — omitting
+ * Resolve OpenAI's `reasoning_effort` value. Returns null when
+ * no reasoning is requested or [LlmPrompt.reasoningEffort] is Off (OpenAI has no off toggle — omitting
  * the field uses the model default; for non-reasoning models OpenAI ignores the field).
  */
 private fun openAiReasoningEffort(prompt: LlmPrompt): String? {
-    prompt.reasoningEffort?.let { effort ->
-        return when (effort) {
-            LlmReasoningEffort.Off -> null
-            LlmReasoningEffort.Minimal -> "minimal"
-            LlmReasoningEffort.Low -> "low"
-            LlmReasoningEffort.Medium -> "medium"
-            LlmReasoningEffort.High -> "high"
-        }
-    }
-    val budget = prompt.reasoningBudgetTokens ?: return null
-    return when {
-        budget <= 1024 -> "minimal"
-        budget <= 4096 -> "low"
-        budget <= 12288 -> "medium"
-        else -> "high"
+    return when (prompt.reasoningEffort) {
+        null, LlmReasoningEffort.Off -> null
+        LlmReasoningEffort.Minimal -> "minimal"
+        LlmReasoningEffort.Low -> "low"
+        LlmReasoningEffort.Medium -> "medium"
+        LlmReasoningEffort.High -> "high"
     }
 }
 

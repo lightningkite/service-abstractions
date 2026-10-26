@@ -212,13 +212,11 @@ class BedrockWireTest {
         val prompt = LlmPrompt(
             messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q")))),
             maxTokens = 200,
-            temperature = 0.3,
             stopSequences = listOf("STOP"),
         )
         val body = BedrockWire.buildRequestBody("test-model", prompt, EmptySerializersModule())
         val inf = body["inferenceConfig"] as JsonObject
         assertEquals(200, (inf["maxTokens"] as JsonPrimitive).content.toInt())
-        assertEquals(0.3, (inf["temperature"] as JsonPrimitive).content.toDouble())
         val stops = inf["stopSequences"] as JsonArray
         assertEquals("STOP", (stops[0] as JsonPrimitive).content)
     }
@@ -455,7 +453,7 @@ class BedrockWireTest {
         val messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q"))))
         val current = BedrockWire.buildRequestBody(
             "global.anthropic.claude-opus-5-5",
-            LlmPrompt(messages = messages, tools = tools, toolChoice = LlmToolChoice.Required, temperature = 0.2),
+            LlmPrompt(messages = messages, tools = tools, toolChoice = LlmToolChoice.Required),
             EmptySerializersModule(),
         )
         assertNull(current["inferenceConfig"])
@@ -466,9 +464,6 @@ class BedrockWireTest {
             EmptySerializersModule(),
         )
         assertNull(tooSmall["additionalModelRequestFields"])
-        // Non-Claude models aren't held to Claude's rules.
-        val nova = BedrockWire.buildRequestBody("amazon.nova-lite-v1:0", LlmPrompt(messages = messages, temperature = 0.2), EmptySerializersModule())
-        assertEquals(0.2, ((nova["inferenceConfig"] as JsonObject)["temperature"] as JsonPrimitive).content.toDouble())
     }
 
     /** Reasoning without a signature (e.g. from another provider) can't be replayed, so it's dropped. */

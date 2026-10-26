@@ -89,12 +89,10 @@ internal object OllamaWire {
             }
         }
 
-        val hasOptions = prompt.temperature != null ||
-            prompt.maxTokens != null ||
+        val hasOptions = prompt.maxTokens != null ||
             prompt.stopSequences.isNotEmpty()
         if (hasOptions) {
             putJsonObject("options") {
-                prompt.temperature?.let { put("temperature", it) }
                 prompt.maxTokens?.let { put("num_predict", it) }
                 if (prompt.stopSequences.isNotEmpty()) {
                     putJsonArray("stop") { prompt.stopSequences.forEach { add(it) } }
@@ -221,24 +219,16 @@ internal object OllamaWire {
     /**
      * Resolve Ollama's `think` field. Ollama accepts a boolean toggle (older versions)
      * or a level string `"low" | "medium" | "high"` (newer thinking-capable models).
-     * `Off` -> `false`, anything else -> level string. Budget alone (no effort) maps to
-     * a bucketed level. Returns null when reasoning is unset.
+     * `Off` -> `false`, anything else -> level string. Returns null when reasoning is unset.
      */
     private fun ollamaThink(prompt: LlmPrompt): JsonElement? {
-        prompt.reasoningEffort?.let { effort ->
-            return when (effort) {
-                LlmReasoningEffort.Off -> JsonPrimitive(false)
-                LlmReasoningEffort.Minimal, LlmReasoningEffort.Low -> JsonPrimitive("low")
-                LlmReasoningEffort.Medium -> JsonPrimitive("medium")
-                LlmReasoningEffort.High -> JsonPrimitive("high")
-            }
+        return when (prompt.reasoningEffort) {
+            null -> null
+            LlmReasoningEffort.Off -> JsonPrimitive(false)
+            LlmReasoningEffort.Minimal, LlmReasoningEffort.Low -> JsonPrimitive("low")
+            LlmReasoningEffort.Medium -> JsonPrimitive("medium")
+            LlmReasoningEffort.High -> JsonPrimitive("high")
         }
-        val budget = prompt.reasoningBudgetTokens ?: return null
-        return JsonPrimitive(when {
-            budget <= 4096 -> "low"
-            budget <= 12288 -> "medium"
-            else -> "high"
-        })
     }
 }
 

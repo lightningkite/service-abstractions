@@ -36,7 +36,6 @@ abstract class BedrockMatrixStreaming : StreamingTests() {
     override val cheapModel: LlmModelId get() = profile.model
     override val servicePresent: Boolean get() = profile.servicePresent
     override val reportsUsage: Boolean get() = profile.reportsUsage
-    override val deterministicAtTemperatureZero: Boolean get() = profile.deterministicAtTemperatureZero
     override val testMaxTokens: Int? get() = profile.testMaxTokens
 }
 

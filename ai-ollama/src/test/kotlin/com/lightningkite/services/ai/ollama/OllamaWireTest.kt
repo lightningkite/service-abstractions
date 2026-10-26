@@ -61,13 +61,11 @@ class OllamaWireTest {
             messages = listOf(
                 LlmMessage.User(listOf(LlmPart.Text("hi"))),
             ),
-            temperature = 0.42,
             maxTokens = 512,
             stopSequences = listOf("END", "STOP"),
         )
         val body = OllamaWireBuilder.buildChatRequest("m", prompt, EmptySerializersModule(), stream = false)
         val options = body["options"]!!.jsonObject
-        assertEquals("0.42", options["temperature"]!!.jsonPrimitive.content)
         assertEquals(512, options["num_predict"]!!.jsonPrimitive.content.toInt())
         val stop = options["stop"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("END", "STOP"), stop)

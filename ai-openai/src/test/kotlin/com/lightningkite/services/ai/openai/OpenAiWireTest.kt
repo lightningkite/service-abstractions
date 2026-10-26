@@ -38,7 +38,7 @@ private data class WeatherArgs(val city: String, val unit: String = "celsius")
 class OpenAiWireTest {
 
     @Test
-    fun simpleTextRequestOmitsToolsAndStopAndTemperature() {
+    fun simpleTextRequestOmitsToolsAndStop() {
         val body = buildRequestBody(
             model = "gpt-4o-mini",
             prompt = LlmPrompt(
@@ -55,7 +55,6 @@ class OpenAiWireTest {
         assertEquals(true, body["stream_options"]!!.jsonObject["include_usage"]!!.jsonPrimitive.content.toBoolean())
         assertNull(body["tools"])
         assertNull(body["tool_choice"])
-        assertNull(body["temperature"])
         assertNull(body["stop"])
         assertNull(body["max_completion_tokens"])
         assertNull(body["max_tokens"])
@@ -76,7 +75,6 @@ class OpenAiWireTest {
                 tools = listOf(tool),
                 toolChoice = LlmToolChoice.Required,
                 maxTokens = 256,
-                temperature = 0.1,
                 stopSequences = listOf("END"),
             ),
             stream = false,
@@ -85,7 +83,6 @@ class OpenAiWireTest {
         assertNull(body["stream"])
         assertEquals(256, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
         assertNull(body["max_tokens"])
-        assertEquals("0.1", body["temperature"]!!.jsonPrimitive.content)
         assertEquals(JsonArray(listOf(JsonPrimitive("END"))), body["stop"])
         assertEquals("required", body["tool_choice"]!!.jsonPrimitive.content)
 

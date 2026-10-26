@@ -52,7 +52,6 @@ internal object AnthropicWire {
         put("max_tokens", prompt.maxTokens ?: (defaultMaxTokens + (claude.thinkingBudget(prompt) ?: 0)))
         put("stream", stream)
 
-        prompt.temperature?.let { put("temperature", it) }
         if (prompt.stopSequences.isNotEmpty()) {
             putJsonArray("stop_sequences") { prompt.stopSequences.forEach { add(it) } }
         }

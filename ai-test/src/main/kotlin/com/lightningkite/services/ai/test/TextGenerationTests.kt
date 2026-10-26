@@ -185,32 +185,4 @@ public abstract class TextGenerationTests : LlmAccessTests() {
             "Reasoning block text must be non-empty; got '${reasoningBlocks.first().text}'",
         )
     }
-
-    /**
-     * At temperature 0, two identical calls should produce the same text.
-     *
-     * Many providers honor this; a few (local Ollama quantizations, some cross-model routing
-     * layers) do not. We tolerate minor whitespace differences but expect the content to be
-     * the same sentence. Skipped when [deterministicAtTemperatureZero] is false.
-     */
-    @Test
-    public fun temperatureDeterminism(): Unit = runTest(timeout = 120.seconds) {
-        skipIfServiceAbsent()
-        Assume.assumeTrue("Model is not deterministic at temperature 0", deterministicAtTemperatureZero)
-        val prompt = LlmPrompt(
-            messages = listOf(userMessage("In exactly one short sentence, define entropy.")),
-            maxTokens = testMaxTokens,
-            temperature = 0.0,
-        )
-        val a = service.inference(cheapModel, prompt).message.plainText().trim()
-        val b = service.inference(cheapModel, prompt).message.plainText().trim()
-        // Lenient: at temperature 0 expect the first ~20 characters to match, which catches
-        // hard non-determinism (different sentence) without tripping on trailing whitespace.
-        val prefixA = a.take(20)
-        val prefixB = b.take(20)
-        assertTrue(
-            prefixA == prefixB || a == b,
-            "Temperature 0 should produce similar responses. Got:\n  A: '$a'\n  B: '$b'",
-        )
-    }
 }

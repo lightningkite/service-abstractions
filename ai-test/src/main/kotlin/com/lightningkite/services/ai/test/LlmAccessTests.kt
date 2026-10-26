@@ -85,15 +85,6 @@ public abstract class LlmAccessTests {
     public open val respectsToolChoiceAutoRestraint: Boolean = true
 
     /**
-     * True when the model produces the same output prefix for the same prompt at temperature 0,
-     * which `temperatureDeterminism` and `streamConcatenatesToInference` rely on; these are the only
-     * tests that send a temperature. Some models (e.g. Amazon Nova) are not deterministic even at
-     * temperature 0, and Claude 4.7+ rejects temperature outright; set false for them to skip
-     * `temperatureDeterminism` and the equality check in `streamConcatenatesToInference`.
-     */
-    public open val deterministicAtTemperatureZero: Boolean = true
-
-    /**
      * True if the model returns chain-of-thought / reasoning content as a separate
      * LlmPart.Reasoning block alongside the final answer. Most models don't.
      * Reasoning-capable: Claude extended thinking, OpenAI o-series, DeepSeek R1, Gemma reasoning variants.

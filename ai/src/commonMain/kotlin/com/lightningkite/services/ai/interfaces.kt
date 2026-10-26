@@ -135,10 +135,10 @@ private suspend fun LlmAccess.collectResult(model: LlmModelId, prompt: LlmPrompt
 }
 
 /**
- * Reasoning effort hint. Providers that take an effort enum (OpenAI, Bedrock Nova, newer
- * Ollama models, Claude 4.6+) consume this directly. Providers that take a token budget
- * (Claude 4.5 and older, Gemini) prefer [LlmPrompt.reasoningBudgetTokens]. Providers that
- * don't expose a reasoning knob ignore both.
+ * Reasoning effort hint. Providers that take an effort level (OpenAI, Bedrock Nova, newer
+ * Ollama models, Claude 4.6+) map it to their nearest level; providers that take a token
+ * budget (Claude 4.5 and older, DeepSeek) map it to a budget. Providers without a reasoning
+ * knob ignore it.
  *
  * `Off` requests no reasoning where the provider supports a toggle; otherwise treated
  * the same as null (provider default).
@@ -161,6 +161,10 @@ public data class LlmModelInfo(
     val description: String? = null,
     val usdPerMillionInputTokens: Double,
     val usdPerMillionOutputTokens: Double,
+    /** Price of writing a prompt prefix into the cache (Anthropic's 5-minute rate). Null means unknown. */
+    val usdPerMillionCacheWriteTokens: Double? = null,
+    /** Price of input read back from the cache. Null means unknown. */
+    val usdPerMillionCacheReadTokens: Double? = null,
     /**
      * Subjective quality ranking in [0.0, 1.0]. Higher = more capable.
      * Intended as a rough sort hint when picking among available models.
@@ -179,7 +183,22 @@ public data class LlmModelInfo(
     val maxContextTokens: Int? = null,
     /** Maximum output tokens the model can produce. Null means unknown. */
     val maxOutputTokens: Int? = null,
-)
+) {
+    /**
+     * Approximate USD cost of [usage] at this model's list prices, or null when [usage] has cache tokens
+     * whose price is unknown. Ignores batch discounts, regional premiums, and long-prompt surcharges.
+     */
+    public fun usdCost(usage: LlmUsage): Double? {
+        val cacheRead = if (usage.cacheReadTokens == 0) 0.0
+        else usage.cacheReadTokens * (usdPerMillionCacheReadTokens ?: return null)
+        val cacheWrite = if (usage.cacheWriteTokens == 0) 0.0
+        else usage.cacheWriteTokens * (usdPerMillionCacheWriteTokens ?: return null)
+        val uncachedInput = usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens
+        val input = uncachedInput * usdPerMillionInputTokens
+        val output = usage.outputTokens * usdPerMillionOutputTokens
+        return (input + cacheRead + cacheWrite + output) / 1_000_000
+    }
+}
 
 
 /**
@@ -205,8 +224,6 @@ public data class LlmPrompt(
      * (required by some providers, e.g. Anthropic).
      */
     val maxTokens: Int? = null,
-    /** Ignored by models that reject it (Claude 4.7+, and older Claude while reasoning). */
-    val temperature: Double? = null,
     val stopSequences: List<String> = emptyList(),
     /**
      * Reasoning effort level. Mapped per-provider:
@@ -219,15 +236,6 @@ public data class LlmPrompt(
      * Null = provider default.
      */
     val reasoningEffort: LlmReasoningEffort? = null,
-    /**
-     * Reasoning token budget. Mapped per-provider:
-     * - Anthropic / Bedrock Claude 4.5 and older: `thinking.budget_tokens` (at least 1024, at most half of [maxTokens]).
-     *   Newer Claude models take the nearest [reasoningEffort] instead. See [ClaudeModel].
-     * - Gemini: `thinking_config.thinking_budget` (-1=dynamic, 0=off).
-     * - OpenAI / Nova / Ollama: ignored — use [reasoningEffort] instead.
-     * Null = provider default.
-     */
-    val reasoningBudgetTokens: Int? = null,
 ) {
     /**
      * Collects all [LlmSharedContext] from [tools], deduplicates, and joins their content.

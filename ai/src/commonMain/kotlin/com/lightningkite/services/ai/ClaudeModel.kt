@@ -26,9 +26,6 @@ public class ClaudeModel(public val id: String) {
     // Thinking takes `budget_tokens` on 4.5 and older, which reject adaptive thinking; 4.7+ reject a budget.
     private val usesBudgetThinking: Boolean = !atLeast(4, 6)
 
-    // `temperature` is rejected on every request from 4.7 on; older models reject it only with thinking on.
-    private val rejectsSampling: Boolean = atLeast(4, 7)
-
     // Opus/Sonnet 5.5+ and Fable/Mythos 5.1+ reject `tool_choice` `any`/`tool` on every request (Haiku 5.5 accepts it);
     // every model rejects it with budget thinking on.
     private val rejectsForcedToolChoice: Boolean = when (family) {
@@ -46,31 +43,18 @@ public class ClaudeModel(public val id: String) {
     }
 
     /**
-     * [prompt] without what this model would reject, so one prompt runs on every Claude model:
-     * - `temperature` is dropped where the model rejects it.
-     * - A forced tool call ([LlmToolChoice.Required] / [LlmToolChoice.Specific]) becomes [LlmToolChoice.Auto] on
-     *   models that reject it. On models that think to a budget, thinking is turned off instead, keeping the call forced.
-     * - A [LlmPrompt.reasoningBudgetTokens] without an effort becomes the nearest effort on models that take one.
+     * [prompt] without what this model would reject, so one prompt runs on every Claude model: a forced tool call
+     * ([LlmToolChoice.Required] / [LlmToolChoice.Specific]) becomes [LlmToolChoice.Auto] on models that reject it.
+     * On models that think to a budget, thinking is turned off instead, keeping the call forced.
      */
     public fun supported(prompt: LlmPrompt): LlmPrompt {
         val forced = prompt.toolChoice == LlmToolChoice.Required || prompt.toolChoice is LlmToolChoice.Specific
-        val budget = prompt.reasoningBudgetTokens
-        val effort = when {
-            forced && !rejectsForcedToolChoice && thinkingBudget(prompt) != null -> LlmReasoningEffort.Off
-            !usesBudgetThinking && prompt.reasoningEffort == null && budget != null -> when {
-                budget <= 4096 -> LlmReasoningEffort.Low
-                budget <= 12288 -> LlmReasoningEffort.Medium
-                else -> LlmReasoningEffort.High
-            }
-            else -> prompt.reasoningEffort
+        return when {
+            !forced -> prompt
+            rejectsForcedToolChoice -> prompt.copy(toolChoice = LlmToolChoice.Auto)
+            thinkingBudget(prompt) != null -> prompt.copy(reasoningEffort = LlmReasoningEffort.Off)
+            else -> prompt
         }
-        val adjusted = prompt.copy(
-            toolChoice = if (forced && rejectsForcedToolChoice) LlmToolChoice.Auto else prompt.toolChoice,
-            reasoningEffort = effort,
-        )
-        val thinks = if (usesBudgetThinking) thinkingBudget(adjusted) != null
-        else effort != null && effort != LlmReasoningEffort.Off
-        return adjusted.copy(temperature = adjusted.temperature.takeUnless { rejectsSampling || thinks })
     }
 
     /**
@@ -79,14 +63,14 @@ public class ClaudeModel(public val id: String) {
      * when that is below the 1024-token minimum, the model doesn't think.
      */
     public fun thinkingBudget(prompt: LlmPrompt): Int? {
-        if (!usesBudgetThinking || prompt.reasoningEffort == LlmReasoningEffort.Off) return null
-        val requested = (prompt.reasoningBudgetTokens ?: when (prompt.reasoningEffort) {
+        if (!usesBudgetThinking) return null
+        val requested = when (prompt.reasoningEffort) {
             null, LlmReasoningEffort.Off -> return null
             LlmReasoningEffort.Minimal -> 1024
             LlmReasoningEffort.Low -> 2048
             LlmReasoningEffort.Medium -> 8192
             LlmReasoningEffort.High -> 16384
-        }).coerceAtLeast(1024)
+        }
         val maxTokens = prompt.maxTokens ?: return requested
         return minOf(requested, maxTokens / 2).takeIf { it >= 1024 }
     }

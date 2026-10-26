@@ -49,7 +49,6 @@ public class EmbeddedLlmAccess internal constructor(
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> {
         val formattedPrompt = PromptFormatter.format(prompt, chatTemplate)
         val maxTokens = prompt.maxTokens ?: 1024
-        val temperature = prompt.temperature ?: 0.7
 
         return flow {
             val outputTokens = StringBuilder()
@@ -58,7 +57,7 @@ public class EmbeddedLlmAccess internal constructor(
             engine.generate(
                 text = formattedPrompt,
                 maxTokens = maxTokens,
-                temperature = temperature,
+                temperature = 0.7,
                 stopSequences = prompt.stopSequences,
             ).collect { token ->
                 outputTokens.append(token)

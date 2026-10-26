@@ -10,18 +10,14 @@ import kotlin.test.assertNull
 class ClaudeModelTest {
     private fun prompt(
         effort: LlmReasoningEffort? = null,
-        budget: Int? = null,
         maxTokens: Int? = null,
-        temperature: Double? = null,
         toolChoice: LlmToolChoice = LlmToolChoice.Auto,
     ) = LlmPrompt(
         messages = listOf(userMessage("hi")),
         tools = listOf(LlmToolDescriptor("weather", "Look up weather", serializer<String>())),
         toolChoice = toolChoice,
         maxTokens = maxTokens,
-        temperature = temperature,
         reasoningEffort = effort,
-        reasoningBudgetTokens = budget,
     )
 
     private fun json(text: String): JsonObject = Json.parseToJsonElement(text) as JsonObject
@@ -82,32 +78,8 @@ class ClaudeModelTest {
         }
         // Older models don't think unless asked; the newest can't stop.
         for (id in listOf("claude-opus-4-8", "claude-haiku-4-5", "claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5", "claude-fable-5-1")) {
-            assertNull(ClaudeModel(id).thinkingFields(prompt(effort = LlmReasoningEffort.Off, budget = 4000)), id)
+            assertNull(ClaudeModel(id).thinkingFields(prompt(effort = LlmReasoningEffort.Off)), id)
         }
-    }
-
-    @Test
-    fun aBudgetBecomesTheNearestEffortOnAdaptiveModels() {
-        val claude = ClaudeModel("claude-sonnet-5-5")
-        assertEquals(LlmReasoningEffort.Low, claude.supported(prompt(budget = 4000)).reasoningEffort)
-        assertEquals(LlmReasoningEffort.High, claude.supported(prompt(budget = 20000)).reasoningEffort)
-        assertEquals(LlmReasoningEffort.Minimal, claude.supported(prompt(effort = LlmReasoningEffort.Minimal, budget = 20000)).reasoningEffort)
-        assertEquals(4000, ClaudeModel("claude-haiku-4-5").thinkingBudget(prompt(budget = 4000)))
-    }
-
-    @Test
-    fun temperatureIsDroppedOnCurrentModels() {
-        for (id in listOf("claude-opus-4-7", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1")) {
-            assertNull(ClaudeModel(id).supported(prompt(temperature = 0.0)).temperature, id)
-        }
-    }
-
-    @Test
-    fun temperatureIsDroppedWithThinkingOnOlderModels() {
-        assertEquals(0.0, ClaudeModel("claude-haiku-4-5").supported(prompt(temperature = 0.0)).temperature)
-        assertEquals(0.0, ClaudeModel("claude-sonnet-4-6").supported(prompt(temperature = 0.0)).temperature)
-        assertNull(ClaudeModel("claude-haiku-4-5").supported(prompt(temperature = 0.0, effort = LlmReasoningEffort.Low)).temperature)
-        assertNull(ClaudeModel("claude-sonnet-4-6").supported(prompt(temperature = 0.0, effort = LlmReasoningEffort.Low)).temperature)
     }
 
     @Test

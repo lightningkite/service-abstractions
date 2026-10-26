@@ -140,10 +140,9 @@ internal object BedrockWire {
 
         // A thinking budget counts toward maxTokens and must stay below it.
         val maxTokens = prompt.maxTokens ?: claude?.thinkingBudget(prompt)?.let { it + CLAUDE_ANSWER_TOKENS }
-        if (maxTokens != null || prompt.temperature != null || prompt.stopSequences.isNotEmpty()) {
+        if (maxTokens != null || prompt.stopSequences.isNotEmpty()) {
             putJsonObject("inferenceConfig") {
                 maxTokens?.let { put("maxTokens", it) }
-                prompt.temperature?.let { put("temperature", it) }
                 if (prompt.stopSequences.isNotEmpty()) {
                     putJsonArray("stopSequences") { prompt.stopSequences.forEach { add(it) } }
                 }
@@ -323,23 +322,21 @@ internal object BedrockWire {
      * `additionalModelRequestFields` for models other than Claude (see [ClaudeModel.thinkingFields]).
      * Returns null when no reasoning is requested.
      *
-     * - DeepSeek (`*deepseek*`): `thinking: { type: "enabled", budget_tokens }`. Budget comes from
-     *   [LlmPrompt.reasoningBudgetTokens] or is bucketed from [LlmPrompt.reasoningEffort].
+     * - DeepSeek (`*deepseek*`): `thinking: { type: "enabled", budget_tokens }`. Budget is bucketed
+     *   from [LlmPrompt.reasoningEffort].
      * - Nova (`amazon.nova-*`): `reasoning_config: { type: "enabled" }` —
      *   Nova doesn't take effort/budget granularity, just on/off.
      * - Other models: ignored.
      */
     fun bedrockReasoningFields(modelId: String, prompt: LlmPrompt): JsonObject? {
         val effort = prompt.reasoningEffort
-        val budget = prompt.reasoningBudgetTokens
-        if (effort == null && budget == null) return null
-        if (effort == LlmReasoningEffort.Off && budget == null) return null
+        if (effort == null || effort == LlmReasoningEffort.Off) return null
 
         val lower = modelId.lowercase()
         return when {
             lower.contains("deepseek") -> {
-                val resolved = budget?.coerceAtLeast(1024) ?: when (effort) {
-                    null, LlmReasoningEffort.Off -> return null
+                val resolved = when (effort) {
+                    LlmReasoningEffort.Off -> return null
                     LlmReasoningEffort.Minimal -> 1024
                     LlmReasoningEffort.Low -> 2048
                     LlmReasoningEffort.Medium -> 8192

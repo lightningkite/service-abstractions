@@ -112,7 +112,6 @@ class AnthropicWireTest {
             requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
                 maxTokens = 256,
-                temperature = 0.5,
                 stopSequences = listOf("STOP"),
             ),
             module = EmptySerializersModule(),
@@ -120,7 +119,6 @@ class AnthropicWireTest {
             defaultMaxTokens = 9999,
         )
         assertEquals(256, body["max_tokens"]!!.jsonPrimitive.content.toInt())
-        assertEquals("0.5", body["temperature"]!!.jsonPrimitive.content)
         val stops = body["stop_sequences"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("STOP"), stops)
     }
@@ -437,9 +435,7 @@ class AnthropicWireTest {
             messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
             tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
             toolChoice = LlmToolChoice.Specific("t"),
-            temperature = 0.0,
         ))
-        assertNull(body["temperature"])
         assertEquals("auto", body["tool_choice"]!!.jsonObject["type"]!!.jsonPrimitive.content)
     }
 
@@ -580,10 +576,12 @@ class AnthropicWireTest {
         assertEquals("claude-sonnet-4-5", dated.id.id)
         assertEquals(3.0, dated.usdPerMillionInputTokens)
 
-        // Exact id matches unchanged.
+        // Exact id matches unchanged, even when a shorter entry is also a prefix.
         val exact = AnthropicLlmAccess.findKnownModel("claude-opus-4-5")
         assertNotNull(exact)
         assertEquals("claude-opus-4-5", exact.id.id)
+        assertEquals("claude-opus-5-5", AnthropicLlmAccess.findKnownModel("claude-opus-5-5")?.id?.id)
+        assertEquals("claude-opus-5", AnthropicLlmAccess.findKnownModel("claude-opus-5")?.id?.id)
 
         // Unrelated id returns null so the inference fallback can run.
         assertNull(AnthropicLlmAccess.findKnownModel("gpt-4o"))
