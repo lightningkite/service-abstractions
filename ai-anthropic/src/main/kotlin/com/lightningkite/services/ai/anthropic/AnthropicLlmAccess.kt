@@ -109,7 +109,7 @@ public class AnthropicLlmAccess(
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         val body = AnthropicWire.buildRequestBody(
             modelId = model.id,
-            prompt = prompt,
+            requested = prompt,
             module = module,
             stream = true,
             defaultMaxTokens = defaultMaxTokens,

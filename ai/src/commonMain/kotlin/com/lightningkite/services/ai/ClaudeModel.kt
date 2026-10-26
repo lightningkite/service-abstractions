@@ -37,24 +37,69 @@ public class ClaudeModel(public val id: String) {
         else -> atLeast(5, 5)
     }
 
-    /** The `budget_tokens` for [prompt] on a model that thinks to a budget; null when it doesn't. */
+    // From 5 on, a model thinks when `thinking` is omitted. Opus 5, Sonnet 5 and Haiku 5.5 can be stopped with
+    // `disabled`; Fable/Mythos and Opus/Sonnet 5.5+ reject it and always think.
+    private val turnsThinkingOffExplicitly: Boolean = atLeast(5, 0) && when (family) {
+        "haiku" -> true
+        "fable", "mythos" -> false
+        else -> !atLeast(5, 5)
+    }
+
+    /**
+     * [prompt] without what this model would reject, so one prompt runs on every Claude model:
+     * - `temperature` is dropped where the model rejects it.
+     * - A forced tool call ([LlmToolChoice.Required] / [LlmToolChoice.Specific]) becomes [LlmToolChoice.Auto] on
+     *   models that reject it. On models that think to a budget, thinking is turned off instead, keeping the call forced.
+     * - A [LlmPrompt.reasoningBudgetTokens] without an effort becomes the nearest effort on models that take one.
+     */
+    public fun supported(prompt: LlmPrompt): LlmPrompt {
+        val forced = prompt.toolChoice == LlmToolChoice.Required || prompt.toolChoice is LlmToolChoice.Specific
+        val budget = prompt.reasoningBudgetTokens
+        val effort = when {
+            forced && !rejectsForcedToolChoice && thinkingBudget(prompt) != null -> LlmReasoningEffort.Off
+            !usesBudgetThinking && prompt.reasoningEffort == null && budget != null -> when {
+                budget <= 4096 -> LlmReasoningEffort.Low
+                budget <= 12288 -> LlmReasoningEffort.Medium
+                else -> LlmReasoningEffort.High
+            }
+            else -> prompt.reasoningEffort
+        }
+        val adjusted = prompt.copy(
+            toolChoice = if (forced && rejectsForcedToolChoice) LlmToolChoice.Auto else prompt.toolChoice,
+            reasoningEffort = effort,
+        )
+        val thinks = if (usesBudgetThinking) thinkingBudget(adjusted) != null
+        else effort != null && effort != LlmReasoningEffort.Off
+        return adjusted.copy(temperature = adjusted.temperature.takeUnless { rejectsSampling || thinks })
+    }
+
+    /**
+     * The `budget_tokens` for [prompt] on a model that thinks to a budget; null when it doesn't.
+     * A budget takes at most half of [LlmPrompt.maxTokens], leaving the rest for the answer;
+     * when that is below the 1024-token minimum, the model doesn't think.
+     */
     public fun thinkingBudget(prompt: LlmPrompt): Int? {
-        if (!usesBudgetThinking) return null
-        prompt.reasoningBudgetTokens?.let { return it.coerceAtLeast(1024) }
-        return when (prompt.reasoningEffort) {
-            null, LlmReasoningEffort.Off -> null
+        if (!usesBudgetThinking || prompt.reasoningEffort == LlmReasoningEffort.Off) return null
+        val requested = (prompt.reasoningBudgetTokens ?: when (prompt.reasoningEffort) {
+            null, LlmReasoningEffort.Off -> return null
             LlmReasoningEffort.Minimal -> 1024
             LlmReasoningEffort.Low -> 2048
             LlmReasoningEffort.Medium -> 8192
             LlmReasoningEffort.High -> 16384
-        }
+        }).coerceAtLeast(1024)
+        val maxTokens = prompt.maxTokens ?: return requested
+        return minOf(requested, maxTokens / 2).takeIf { it >= 1024 }
     }
 
     /**
-     * The `thinking` and `output_config` request fields for [prompt], or null when it asks for no reasoning.
+     * The `thinking` and `output_config` request fields for a [supported] prompt, or null to send neither.
      * Anthropic puts them at the top level of the body, Bedrock Converse in `additionalModelRequestFields`.
      */
     public fun thinkingFields(prompt: LlmPrompt): JsonObject? {
+        if (prompt.reasoningEffort == LlmReasoningEffort.Off) {
+            if (!turnsThinkingOffExplicitly) return null
+            return buildJsonObject { putJsonObject("thinking") { put("type", "disabled") } }
+        }
         if (usesBudgetThinking) {
             val budget = thinkingBudget(prompt) ?: return null
             return buildJsonObject {
@@ -65,12 +110,7 @@ public class ClaudeModel(public val id: String) {
             }
         }
         val effort = when (prompt.reasoningEffort) {
-            null, LlmReasoningEffort.Off -> {
-                if (prompt.reasoningBudgetTokens != null) throw LlmException.InvalidRequest(
-                    "$id takes a reasoning effort, not a token budget; set LlmPrompt.reasoningEffort instead of reasoningBudgetTokens.",
-                )
-                return null
-            }
+            null, LlmReasoningEffort.Off -> return null
             LlmReasoningEffort.Minimal, LlmReasoningEffort.Low -> "low"
             LlmReasoningEffort.Medium -> "medium"
             LlmReasoningEffort.High -> "high"
@@ -83,28 +123,5 @@ public class ClaudeModel(public val id: String) {
             }
             putJsonObject("output_config") { put("effort", effort) }
         }
-    }
-
-    /** Throws [LlmException.InvalidRequest] for a [prompt] this model would reject, before it is sent. */
-    public fun requireSupports(prompt: LlmPrompt) {
-        val thinking = thinkingFields(prompt) != null
-        if (prompt.temperature != null && (rejectsSampling || thinking)) throw LlmException.InvalidRequest(
-            "$id rejects temperature" + (if (rejectsSampling) "" else " while reasoning is on") +
-                "; leave LlmPrompt.temperature unset and steer with the prompt instead.",
-        )
-        val forced = prompt.toolChoice == LlmToolChoice.Required || prompt.toolChoice is LlmToolChoice.Specific
-        if (forced && prompt.tools.isNotEmpty() && (rejectsForcedToolChoice || (thinking && usesBudgetThinking))) {
-            throw LlmException.InvalidRequest(
-                "$id rejects forcing a tool call (LlmToolChoice.${prompt.toolChoice})" +
-                    (if (rejectsForcedToolChoice) "" else " while reasoning is on") +
-                    "; use LlmToolChoice.Auto, say in the prompt which tool to call, and check that it was called.",
-            )
-        }
-        val budget = thinkingBudget(prompt)
-        val maxTokens = prompt.maxTokens
-        if (budget != null && maxTokens != null && maxTokens <= budget) throw LlmException.InvalidRequest(
-            "$id needs maxTokens above its thinking budget ($budget tokens, which count toward maxTokens); " +
-                "got maxTokens=$maxTokens. Raise maxTokens, lower the reasoning effort or budget, or leave maxTokens unset.",
-        )
     }
 }

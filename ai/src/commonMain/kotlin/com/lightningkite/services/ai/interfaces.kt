@@ -205,6 +205,7 @@ public data class LlmPrompt(
      * (required by some providers, e.g. Anthropic).
      */
     val maxTokens: Int? = null,
+    /** Ignored by models that reject it (Claude 4.7+, and older Claude while reasoning). */
     val temperature: Double? = null,
     val stopSequences: List<String> = emptyList(),
     /**
@@ -220,8 +221,8 @@ public data class LlmPrompt(
     val reasoningEffort: LlmReasoningEffort? = null,
     /**
      * Reasoning token budget. Mapped per-provider:
-     * - Anthropic / Bedrock Claude 4.5 and older: `thinking.budget_tokens` (must be ≥1024 and < [maxTokens]).
-     *   Newer Claude models reject a budget; they take [reasoningEffort]. See [ClaudeModel].
+     * - Anthropic / Bedrock Claude 4.5 and older: `thinking.budget_tokens` (at least 1024, at most half of [maxTokens]).
+     *   Newer Claude models take the nearest [reasoningEffort] instead. See [ClaudeModel].
      * - Gemini: `thinking_config.thinking_budget` (-1=dynamic, 0=off).
      * - OpenAI / Nova / Ollama: ignored — use [reasoningEffort] instead.
      * Null = provider default.
@@ -262,7 +263,14 @@ public sealed class LlmToolChoice {
      * accept the request.
      */
     @Serializable public data object None : LlmToolChoice()
+
+    /**
+     * Must call some tool. A best effort: models that can't be forced (Claude Opus/Sonnet 5.5+, Fable 5.1+)
+     * get [Auto] instead, so check that a tool was called and say in the prompt which one you expect.
+     */
     @Serializable public data object Required : LlmToolChoice()
+
+    /** Must call the tool named [name]. A best effort, like [Required]. */
     @Serializable public data class Specific(val name: String) : LlmToolChoice()
 }
 

@@ -450,28 +450,25 @@ class BedrockWireTest {
         assertEquals(16384 + 4096, ((body["inferenceConfig"] as JsonObject)["maxTokens"] as JsonPrimitive).content.toInt())
     }
 
-    @Test fun claudeRejectionsFailBeforeSending() {
+    @Test fun whatClaudeRejectsIsLeftOut() {
         val tools = listOf(LlmToolDescriptor("weather", "d", serializer<WeatherArgs>()))
         val messages = listOf(LlmMessage.User(listOf(LlmPart.Text("q"))))
-        assertFailsWith<LlmException.InvalidRequest> {
-            BedrockWire.buildRequestBody("global.anthropic.claude-opus-5-5", LlmPrompt(messages = messages, temperature = 0.2), EmptySerializersModule())
-        }
-        assertFailsWith<LlmException.InvalidRequest> {
-            BedrockWire.buildRequestBody(
-                "global.anthropic.claude-opus-5-5",
-                LlmPrompt(messages = messages, tools = tools, toolChoice = LlmToolChoice.Required),
-                EmptySerializersModule(),
-            )
-        }
-        assertFailsWith<LlmException.InvalidRequest> {
-            BedrockWire.buildRequestBody(
-                "anthropic.claude-sonnet-4-5-20250929-v1:0",
-                LlmPrompt(messages = messages, reasoningEffort = LlmReasoningEffort.Medium, maxTokens = 2000),
-                EmptySerializersModule(),
-            )
-        }
+        val current = BedrockWire.buildRequestBody(
+            "global.anthropic.claude-opus-5-5",
+            LlmPrompt(messages = messages, tools = tools, toolChoice = LlmToolChoice.Required, temperature = 0.2),
+            EmptySerializersModule(),
+        )
+        assertNull(current["inferenceConfig"])
+        assertEquals(Json.parseToJsonElement("""{"auto":{}}"""), (current["toolConfig"] as JsonObject)["toolChoice"])
+        val tooSmall = BedrockWire.buildRequestBody(
+            "anthropic.claude-sonnet-4-5-20250929-v1:0",
+            LlmPrompt(messages = messages, reasoningEffort = LlmReasoningEffort.Medium, maxTokens = 2000),
+            EmptySerializersModule(),
+        )
+        assertNull(tooSmall["additionalModelRequestFields"])
         // Non-Claude models aren't held to Claude's rules.
-        BedrockWire.buildRequestBody("amazon.nova-lite-v1:0", LlmPrompt(messages = messages, temperature = 0.2), EmptySerializersModule())
+        val nova = BedrockWire.buildRequestBody("amazon.nova-lite-v1:0", LlmPrompt(messages = messages, temperature = 0.2), EmptySerializersModule())
+        assertEquals(0.2, ((nova["inferenceConfig"] as JsonObject)["temperature"] as JsonPrimitive).content.toDouble())
     }
 
     /** Reasoning without a signature (e.g. from another provider) can't be replayed, so it's dropped. */

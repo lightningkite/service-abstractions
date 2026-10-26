@@ -33,22 +33,21 @@ internal object AnthropicWire {
      * Build a full POST /v1/messages body from the high-level [prompt].
      *
      * @param modelId the Anthropic model id (e.g. `claude-haiku-4-5`)
-     * @param prompt the prompt to translate
+     * @param requested the prompt to translate; what the model would reject is left out (see [ClaudeModel.supported])
      * @param module serializers module used to resolve @Contextual tool-arg serializers
      * @param stream when true, requests SSE streaming
      * @param defaultMaxTokens room for the answer when [LlmPrompt.maxTokens] is null (Anthropic requires the
      *   field); a thinking budget is added on top, since thinking counts toward `max_tokens`.
-     * @throws com.lightningkite.services.ai.LlmException.InvalidRequest for a prompt the model would reject.
      */
     fun buildRequestBody(
         modelId: String,
-        prompt: LlmPrompt,
+        requested: LlmPrompt,
         module: SerializersModule,
         stream: Boolean,
         defaultMaxTokens: Int,
     ): JsonObject = buildJsonObject {
         val claude = ClaudeModel(modelId)
-        claude.requireSupports(prompt)
+        val prompt = claude.supported(requested)
         put("model", modelId)
         put("max_tokens", prompt.maxTokens ?: (defaultMaxTokens + (claude.thinkingBudget(prompt) ?: 0)))
         put("stream", stream)

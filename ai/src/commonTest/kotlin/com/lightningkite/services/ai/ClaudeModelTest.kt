@@ -5,9 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class ClaudeModelTest {
     private fun prompt(
@@ -68,68 +66,74 @@ class ClaudeModelTest {
 
     @Test
     fun noReasoningRequestedSendsNoThinking() {
-        assertNull(ClaudeModel("claude-opus-5-5").thinkingFields(prompt()))
-        assertNull(ClaudeModel("claude-opus-5-5").thinkingFields(prompt(effort = LlmReasoningEffort.Off)))
-        assertNull(ClaudeModel("claude-haiku-4-5").thinkingFields(prompt(effort = LlmReasoningEffort.Off)))
-    }
-
-    @Test
-    fun aBudgetAloneIsRejectedOnAdaptiveModels() {
-        val e = assertFailsWith<LlmException.InvalidRequest> {
-            ClaudeModel("claude-sonnet-5-5").requireSupports(prompt(budget = 4000))
+        for (id in listOf("claude-opus-5-5", "claude-opus-5", "claude-haiku-4-5")) {
+            assertNull(ClaudeModel(id).thinkingFields(prompt()), id)
         }
-        assertTrue("reasoningEffort" in e.message!!, e.message)
     }
 
     @Test
-    fun temperatureIsRejectedOnCurrentModels() {
+    fun offDisablesThinkingWhereOmittingItWouldThink() {
+        for (id in listOf("claude-opus-5", "claude-sonnet-5", "claude-haiku-5-5")) {
+            assertEquals(
+                json("""{"thinking":{"type":"disabled"}}"""),
+                ClaudeModel(id).thinkingFields(prompt(effort = LlmReasoningEffort.Off)),
+                id,
+            )
+        }
+        // Older models don't think unless asked; the newest can't stop.
+        for (id in listOf("claude-opus-4-8", "claude-haiku-4-5", "claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5", "claude-fable-5-1")) {
+            assertNull(ClaudeModel(id).thinkingFields(prompt(effort = LlmReasoningEffort.Off, budget = 4000)), id)
+        }
+    }
+
+    @Test
+    fun aBudgetBecomesTheNearestEffortOnAdaptiveModels() {
+        val claude = ClaudeModel("claude-sonnet-5-5")
+        assertEquals(LlmReasoningEffort.Low, claude.supported(prompt(budget = 4000)).reasoningEffort)
+        assertEquals(LlmReasoningEffort.High, claude.supported(prompt(budget = 20000)).reasoningEffort)
+        assertEquals(LlmReasoningEffort.Minimal, claude.supported(prompt(effort = LlmReasoningEffort.Minimal, budget = 20000)).reasoningEffort)
+        assertEquals(4000, ClaudeModel("claude-haiku-4-5").thinkingBudget(prompt(budget = 4000)))
+    }
+
+    @Test
+    fun temperatureIsDroppedOnCurrentModels() {
         for (id in listOf("claude-opus-4-7", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1")) {
-            val e = assertFailsWith<LlmException.InvalidRequest>(id) {
-                ClaudeModel(id).requireSupports(prompt(temperature = 0.0))
-            }
-            assertTrue(id in e.message!! && "temperature" in e.message!!, e.message)
+            assertNull(ClaudeModel(id).supported(prompt(temperature = 0.0)).temperature, id)
         }
     }
 
     @Test
-    fun temperatureIsRejectedWithThinkingOnOlderModels() {
-        ClaudeModel("claude-haiku-4-5").requireSupports(prompt(temperature = 0.0))
-        ClaudeModel("claude-sonnet-4-6").requireSupports(prompt(temperature = 0.0))
-        assertFailsWith<LlmException.InvalidRequest> {
-            ClaudeModel("claude-haiku-4-5").requireSupports(prompt(temperature = 0.0, effort = LlmReasoningEffort.Low))
-        }
-        assertFailsWith<LlmException.InvalidRequest> {
-            ClaudeModel("claude-sonnet-4-6").requireSupports(prompt(temperature = 0.0, effort = LlmReasoningEffort.Low))
-        }
+    fun temperatureIsDroppedWithThinkingOnOlderModels() {
+        assertEquals(0.0, ClaudeModel("claude-haiku-4-5").supported(prompt(temperature = 0.0)).temperature)
+        assertEquals(0.0, ClaudeModel("claude-sonnet-4-6").supported(prompt(temperature = 0.0)).temperature)
+        assertNull(ClaudeModel("claude-haiku-4-5").supported(prompt(temperature = 0.0, effort = LlmReasoningEffort.Low)).temperature)
+        assertNull(ClaudeModel("claude-sonnet-4-6").supported(prompt(temperature = 0.0, effort = LlmReasoningEffort.Low)).temperature)
     }
 
     @Test
-    fun forcedToolChoiceIsRejectedOnModelsThatRejectIt() {
+    fun forcedToolChoiceBecomesAutoOnModelsThatRejectIt() {
         for (id in listOf("claude-opus-5-5", "global.anthropic.claude-sonnet-5-5", "claude-fable-5-1", "claude-mythos-5-1")) {
             for (choice in listOf(LlmToolChoice.Required, LlmToolChoice.Specific("weather"))) {
-                val e = assertFailsWith<LlmException.InvalidRequest>("$id $choice") {
-                    ClaudeModel(id).requireSupports(prompt(toolChoice = choice))
-                }
-                assertTrue(id in e.message!! && "LlmToolChoice.Auto" in e.message!!, e.message)
+                assertEquals(LlmToolChoice.Auto, ClaudeModel(id).supported(prompt(toolChoice = choice)).toolChoice, "$id $choice")
             }
         }
         for (id in listOf("claude-haiku-5-5", "claude-opus-5", "claude-fable-5", "claude-sonnet-4-6", "claude-haiku-4-5")) {
-            ClaudeModel(id).requireSupports(prompt(toolChoice = LlmToolChoice.Required))
+            assertEquals(LlmToolChoice.Required, ClaudeModel(id).supported(prompt(toolChoice = LlmToolChoice.Required)).toolChoice, id)
         }
-        // Adaptive thinking accepts a forced call (the model skips thinking); budget thinking doesn't.
-        ClaudeModel("claude-opus-4-8").requireSupports(prompt(toolChoice = LlmToolChoice.Required, effort = LlmReasoningEffort.High))
-        assertFailsWith<LlmException.InvalidRequest> {
-            ClaudeModel("claude-haiku-4-5").requireSupports(prompt(toolChoice = LlmToolChoice.Required, effort = LlmReasoningEffort.High))
-        }
+        // Adaptive thinking accepts a forced call (the model skips thinking); budget thinking doesn't, so it's turned off.
+        val adaptive = ClaudeModel("claude-opus-4-8").supported(prompt(toolChoice = LlmToolChoice.Required, effort = LlmReasoningEffort.High))
+        assertEquals(LlmReasoningEffort.High, adaptive.reasoningEffort)
+        val budget = ClaudeModel("claude-haiku-4-5").supported(prompt(toolChoice = LlmToolChoice.Required, effort = LlmReasoningEffort.High))
+        assertEquals(LlmToolChoice.Required, budget.toolChoice)
+        assertNull(ClaudeModel("claude-haiku-4-5").thinkingFields(budget))
     }
 
     @Test
-    fun maxTokensMustExceedTheThinkingBudget() {
-        val e = assertFailsWith<LlmException.InvalidRequest> {
-            ClaudeModel("claude-haiku-4-5").requireSupports(prompt(effort = LlmReasoningEffort.Medium, maxTokens = 4096))
-        }
-        assertTrue("8192" in e.message!! && "4096" in e.message!!, e.message)
-        ClaudeModel("claude-haiku-4-5").requireSupports(prompt(effort = LlmReasoningEffort.Medium, maxTokens = 9000))
-        ClaudeModel("claude-opus-5-5").requireSupports(prompt(effort = LlmReasoningEffort.High, maxTokens = 1000))
+    fun aThinkingBudgetTakesAtMostHalfOfMaxTokens() {
+        val haiku = ClaudeModel("claude-haiku-4-5")
+        assertEquals(8192, haiku.thinkingBudget(prompt(effort = LlmReasoningEffort.Medium)))
+        assertEquals(4500, haiku.thinkingBudget(prompt(effort = LlmReasoningEffort.Medium, maxTokens = 9000)))
+        assertNull(haiku.thinkingBudget(prompt(effort = LlmReasoningEffort.Medium, maxTokens = 2000)))
+        assertNull(ClaudeModel("claude-opus-5-5").thinkingBudget(prompt(effort = LlmReasoningEffort.High, maxTokens = 1000)))
     }
 }

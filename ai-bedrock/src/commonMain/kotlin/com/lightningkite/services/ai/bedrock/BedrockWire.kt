@@ -51,16 +51,15 @@ internal object BedrockWire {
      *
      * Bedrock splits system messages out of the main message list: they go in the top-level
      * `system` array. All other messages map 1:1 to Converse `messages`.
-     *
-     * @throws LlmException.InvalidRequest for a prompt a Claude model would reject.
+     * For Claude models, what the model would reject is left out of [requested] (see [ClaudeModel.supported]).
      */
     fun buildRequestBody(
         modelId: String,
-        prompt: LlmPrompt,
+        requested: LlmPrompt,
         module: SerializersModule,
     ): JsonObject = buildJsonObject {
         val claude = if ("claude" in modelId.lowercase()) ClaudeModel(modelId) else null
-        claude?.requireSupports(prompt)
+        val prompt = claude?.supported(requested) ?: requested
         // Bedrock's Converse ToolChoice union is {auto, any, tool} — there is no `none`.
         // To honour the LlmToolChoice.None contract (tools still declared so prior
         // toolUse/toolResult blocks in history validate) we keep the tools array, coerce

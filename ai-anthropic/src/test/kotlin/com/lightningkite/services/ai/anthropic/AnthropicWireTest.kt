@@ -59,7 +59,7 @@ class AnthropicWireTest {
     fun userTextOnly() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.User(listOf(LlmPart.Text("Hi"))),
                 ),
@@ -85,7 +85,7 @@ class AnthropicWireTest {
     fun systemPromptLiftedToTopLevel() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 systemPrompt = listOf(LlmPart.Text("You are helpful."), LlmPart.Text("Be concise.")),
                 messages = listOf(
                     LlmMessage.User(listOf(LlmPart.Text("Hello"))),
@@ -109,7 +109,7 @@ class AnthropicWireTest {
     fun customMaxTokensOverrideWins() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
                 maxTokens = 256,
                 temperature = 0.5,
@@ -130,7 +130,7 @@ class AnthropicWireTest {
         val descriptor = LlmToolDescriptor("get_weather", "Look up weather", serializer<WeatherArgs>())
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("weather?")))),
                 tools = listOf(descriptor),
                 toolChoice = LlmToolChoice.Auto,
@@ -156,7 +156,7 @@ class AnthropicWireTest {
     fun toolChoiceRequiredMapsToAny() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
                 toolChoice = LlmToolChoice.Required,
@@ -172,7 +172,7 @@ class AnthropicWireTest {
     fun toolChoiceSpecificIncludesName() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 tools = listOf(LlmToolDescriptor("pick_me", "d", serializer<WeatherArgs>())),
                 toolChoice = LlmToolChoice.Specific("pick_me"),
@@ -193,7 +193,7 @@ class AnthropicWireTest {
         // rule is enforced via `tool_choice: {"type": "none"}`, not by hiding the tools.
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
                 toolChoice = LlmToolChoice.None,
@@ -216,7 +216,7 @@ class AnthropicWireTest {
         // Without declared tools there's nothing to forbid, so we emit neither field.
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
                 toolChoice = LlmToolChoice.None,
             ),
@@ -232,7 +232,7 @@ class AnthropicWireTest {
     fun imageAttachmentBase64() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.User(
                         listOf(
@@ -261,7 +261,7 @@ class AnthropicWireTest {
     fun imageAttachmentUrl() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.User(
                         listOf(
@@ -293,7 +293,7 @@ class AnthropicWireTest {
         assertFailsWith<IllegalArgumentException> {
             AnthropicWire.buildRequestBody(
                 modelId = "claude-haiku-4-5",
-                prompt = LlmPrompt(
+                requested = LlmPrompt(
                     messages = listOf(
                         LlmMessage.User(
                             listOf(
@@ -315,7 +315,7 @@ class AnthropicWireTest {
     fun toolCallAndResultRoundTrip() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.User(listOf(LlmPart.Text("Weather in SF?"))),
                     LlmMessage.Agent(
@@ -368,7 +368,7 @@ class AnthropicWireTest {
     fun toolResultErrorFlagPresent() {
         val body = AnthropicWire.buildRequestBody(
             modelId = "claude-haiku-4-5",
-            prompt = LlmPrompt(
+            requested = LlmPrompt(
                 messages = listOf(
                     LlmMessage.ToolResult(
                         toolCallId = "toolu_abc",
@@ -389,7 +389,7 @@ class AnthropicWireTest {
 
     private fun bodyFor(modelId: String, prompt: LlmPrompt) = AnthropicWire.buildRequestBody(
         modelId = modelId,
-        prompt = prompt,
+        requested = prompt,
         module = EmptySerializersModule(),
         stream = true,
         defaultMaxTokens = 4096,
@@ -421,37 +421,36 @@ class AnthropicWireTest {
     }
 
     @Test
-    fun maxTokensBelowTheBudgetFailsBeforeSending() {
-        assertFailsWith<LlmException.InvalidRequest> {
-            bodyFor("claude-haiku-4-5", LlmPrompt(
-                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
-                reasoningEffort = LlmReasoningEffort.High,
-                maxTokens = 4096,
-            ))
-        }
+    fun aSmallMaxTokensShrinksTheBudget() {
+        val body = bodyFor("claude-haiku-4-5", LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
+            reasoningEffort = LlmReasoningEffort.High,
+            maxTokens = 4096,
+        ))
+        assertEquals(2048, body["thinking"]!!.jsonObject["budget_tokens"]!!.jsonPrimitive.content.toInt())
+        assertEquals(4096, body["max_tokens"]!!.jsonPrimitive.content.toInt())
     }
 
     @Test
-    fun temperatureOnCurrentModelsFailsBeforeSending() {
-        val e = assertFailsWith<LlmException.InvalidRequest> {
-            bodyFor("claude-sonnet-5-5", LlmPrompt(
-                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
-                temperature = 0.0,
-            ))
-        }
-        assertTrue("claude-sonnet-5-5" in e.message!! && "temperature" in e.message!!, e.message)
+    fun whatTheModelRejectsIsLeftOut() {
+        val body = bodyFor("claude-opus-5-5", LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
+            tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
+            toolChoice = LlmToolChoice.Specific("t"),
+            temperature = 0.0,
+        ))
+        assertNull(body["temperature"])
+        assertEquals("auto", body["tool_choice"]!!.jsonObject["type"]!!.jsonPrimitive.content)
     }
 
     @Test
-    fun forcedToolChoiceOnCurrentModelsFailsBeforeSending() {
-        val e = assertFailsWith<LlmException.InvalidRequest> {
-            bodyFor("claude-opus-5-5", LlmPrompt(
-                messages = listOf(LlmMessage.User(listOf(LlmPart.Text("go")))),
-                tools = listOf(LlmToolDescriptor("t", "d", serializer<WeatherArgs>())),
-                toolChoice = LlmToolChoice.Specific("t"),
-            ))
-        }
-        assertTrue("claude-opus-5-5" in e.message!! && "Specific" in e.message!!, e.message)
+    fun offDisablesThinkingWhereOmittingItWouldThink() {
+        val prompt = LlmPrompt(
+            messages = listOf(LlmMessage.User(listOf(LlmPart.Text("hi")))),
+            reasoningEffort = LlmReasoningEffort.Off,
+        )
+        assertEquals("disabled", bodyFor("claude-opus-5", prompt)["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertNull(bodyFor("claude-opus-5-5", prompt)["thinking"])
     }
 
     // ============================= Thinking round trip =============================
