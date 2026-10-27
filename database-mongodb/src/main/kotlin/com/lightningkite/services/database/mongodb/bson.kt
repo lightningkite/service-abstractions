@@ -483,12 +483,18 @@ internal fun <T> Modification<T>.bson(
 ): UpdateWithOptions {
     val anySerializer = serializer as KSerializer<Any?>
     val parts = (this as Modification<Any?>).checkedParts()
-    val check = Condition.And(parts.map { it.first }.distinct()).simplify()
+    // Claude: a shared-field modification is one part per variant that all write the same thing, each checking its own
+    // type. A row is only one of those types, so equal parts need any of their checks, not all.
+    val groups = if (parts.all { it.first is Condition.Always }) parts.map { listOf(it) }
+    else parts.groupBy { (_, part) ->
+        part.dump(anySerializer, UpdateWithOptions(), null, bson).let { it.document to it.options.arrayFilters }
+    }.values
+    val check = Condition.And(groups.map { group -> Condition.Or(group.map { it.first }.distinct()).simplify() }).simplify()
     val update = UpdateWithOptions(
         check = if (check is Condition.Always) null else check.bson(anySerializer, bson = bson),
         pendingElementParts = if (overlappingArrayFilters) null else LinkedHashMap(),
     )
-    Modification.Chain(parts.map { it.second }).dump(anySerializer, update, null, bson)
+    Modification.Chain(groups.map { it.first().second }).dump(anySerializer, update, null, bson)
     // Claude: dumping a list's parts can add a nested list's parts, so this runs until none are left.
     val pending = update.pendingElementParts
     while (!pending.isNullOrEmpty()) {
