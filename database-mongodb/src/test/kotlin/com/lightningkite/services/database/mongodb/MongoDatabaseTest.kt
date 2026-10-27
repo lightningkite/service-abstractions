@@ -160,6 +160,14 @@ class MongodbDisjointArrayFiltersModificationTests : MongodbModificationTests() 
     }
 }
 
+class MongodbSealedLensTests : SealedLensTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
 class MongodbSealedPathTests : SealedPathTests() {
     override val database: Database = db()
 

@@ -392,3 +392,33 @@ sealed class Payment {
 /** Declared outside [Payment], so its serial name isn't nested under the sealed class's. */
 @Queryable
 data class CashPayment(override val amount: Int = 0, val currency: String = "USD") : Payment()
+
+@Queryable
+sealed interface Notification {
+    val title: String
+    val priority: Int
+
+    // Claude: `unread` is a getter on Sms, so Notification gets no accessor for it.
+    val unread: Boolean
+
+    @Queryable
+    data class Email(override val title: String = "", override val priority: Int = 0, override val unread: Boolean = true, val address: String = "") : Notification
+
+    @Queryable
+    data class Sms(override val title: String = "", override val priority: Int = 0, val number: String = "") : Notification {
+        override val unread: Boolean get() = true
+    }
+
+    @Queryable
+    data class Push(override val title: String = "", override val priority: Int = 0, override val unread: Boolean = true) : Notification
+}
+
+@Queryable
+data class SealedLensTestModel(
+    override val _id: Uuid = Uuid.random(),
+    val notification: Notification = Notification.Push(),
+    val notificationNullable: Notification? = null,
+    val notifications: List<Notification> = listOf(),
+) : HasId<Uuid> {
+    companion object
+}

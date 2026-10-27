@@ -197,14 +197,16 @@ class TableGenerator(
                 for (property in sharedProperties(declaration)) {
                     val name = property.simpleName.asString()
                     val type = property.type.toKotlin()
-                    appendLine("public val $classReference.Companion.$name: Lens<$classReference, $type> get() = SealedTypeLens($classReference.serializer(), \"$name\")")
+                    appendLine("public val $classReference.Companion.$name: Lens<$classReference, $type> get() = SealedSharedFieldLens($classReference.serializer(), \"$name\")")
                     // Claude: a Lens overload too, so a path of fields stays statically a Lens.
                     for ((optic, jvmName) in listOf("Optic" to "path", "Lens" to "lens")) {
                         appendLine("@get:JvmName(\"$jvmName${simpleName}_$name\") public val <ROOT> $optic<ROOT, $classReference>.$name: $optic<ROOT, $type> get() = this + $classReference.$name")
                     }
                 }
-                declaration.getSealedSubclasses()
-                    .filter { it.needsDcp() && it.isSerializable() }
+                // Claude: leaves only. kotlinx flattens nested sealed types, so a path through one can't be read back.
+                declaration.sealedOptions()
+                    .distinct()
+                    .filter { it.needsDcp() }
                     .forEach { variant ->
                         val variantReference = variant.safeLocalReference()
                         val propName = "as${variant.simpleName.asString()}"

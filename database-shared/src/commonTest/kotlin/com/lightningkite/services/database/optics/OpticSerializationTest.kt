@@ -142,7 +142,7 @@ class OpticSerializationTest {
     fun sealedTypeSharedPropertyDecodedBehavesLikeGenerated() {
         val decoded = AnyOpticSerializer(Shape.serializer()).fromString("label").coerceToOptic() as Optic<Shape, String>
         assertEquals("a", decoded.get(Shape.Square("a", 1)))
-        assertEquals(Shape.Triangle("b"), decoded.set(Shape.Triangle("a"), "b"))
+        assertEquals(Shape.Triangle("b", 3, 1), decoded.set(Shape.Triangle("a", 3, 1), "b"))
     }
 
     @Test
@@ -151,5 +151,22 @@ class OpticSerializationTest {
         assertFailsWith<SerializationException> { serializer.fromString("size") }
         // Square has no field `sides`; it is a getter.
         assertFailsWith<SerializationException> { serializer.fromString("sides") }
+    }
+
+    @Test
+    fun nestedSealedTypeSharedPropertyRoundTrips() {
+        val serializer = AnyOpticSerializer(Shape.Polygon.serializer())
+        assertEquals("size", serializer.asString(Shape.Polygon.size))
+        assertEquals(Shape.Polygon.size, serializer.fromString("size"))
+        assertEquals(Shape.Polygon.size, Json.decodeFromString(serializer, Json.encodeToString(serializer, Shape.Polygon.size)))
+        // Circle is a Shape but not a Polygon, so only the Polygon lens can reach `size`.
+        assertFailsWith<SerializationException> { AnyOpticSerializer(Shape.serializer()).fromString("size") }
+    }
+
+    @Test
+    fun sealedTypeSharedPropertyInsideVariantPath() {
+        val serializer = AnyOpticSerializer(Shape.Polygon.serializer())
+        val optic = Shape.Polygon.path.asSquare.label
+        assertEquals(optic, serializer.fromString(serializer.asString(optic)))
     }
 }

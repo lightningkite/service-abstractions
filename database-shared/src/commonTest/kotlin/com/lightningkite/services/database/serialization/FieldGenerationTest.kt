@@ -47,15 +47,23 @@ sealed interface Polymorphic {
 @Queryable
 sealed interface Shape {
     val label: String
-    val sides: Int
 
     @Queryable
-    data class Square(override val label: String, val size: Int) : Shape {
+    sealed interface Polygon : Shape {
+        val size: Int
+        val sides: Int
+    }
+
+    @Queryable
+    data class Square(override val label: String, override val size: Int, val other: String = "hello world") : Polygon {
         override val sides: Int get() = 4
     }
 
     @Queryable
-    data class Triangle(override val label: String, override val sides: Int = 3) : Shape
+    data class Triangle(override val label: String, override val sides: Int = 3, override val size: Int) : Polygon
+
+    @Queryable
+    data class Circle(override val label: String) : Shape
 }
 
 @Queryable
@@ -168,11 +176,11 @@ class FieldGenerationTest {
     fun sealedInterfaceSharedProperties() {
         val label = Shape.label
         assertEquals("a", label.get(Shape.Square("a", 1)))
-        assertEquals(Shape.Triangle("b"), label.set(Shape.Triangle("a"), "b"))
+        assertEquals(Shape.Triangle("b", 3, 1), label.set(Shape.Triangle("a", 3, 1), "b"))
         val condition = Shape.path.label eq "a"
         assertTrue(condition(Shape.Square("a", 1)))
-        assertTrue(condition(Shape.Triangle("a")))
-        assertFalse(condition(Shape.Triangle("b")))
+        assertTrue(condition(Shape.Triangle("a", 3, 1)))
+        assertFalse(condition(Shape.Triangle("b", 3, 1)))
         assertEquals(Shape.Square("z", 1), Shape.path.label.mapModification(Modification.Assign("z"))(Shape.Square("a", 1)))
         // Square's `sides` is a getter, so it gets no accessor: Shape.sides would not compile.
     }

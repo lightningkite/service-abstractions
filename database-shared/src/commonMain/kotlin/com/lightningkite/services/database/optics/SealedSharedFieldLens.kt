@@ -14,7 +14,7 @@ import kotlinx.serialization.KSerializer
  * variant's field, each guarded by that variant's type. It serializes as [name].
  */
 @Suppress("UNCHECKED_CAST")
-public class SealedTypeLens<A, B>(
+public class SealedSharedFieldLens<A, B>(
     public val parent: KSerializer<A>,
     public val name: String,
 ) : Lens<A, B> {
@@ -50,5 +50,5 @@ public class SealedTypeLens<A, B>(
     override fun toString(): String = name
     override fun hashCode(): Int = parent.descriptor.serialName.hashCode() * 31 + name.hashCode()
     override fun equals(other: Any?): Boolean =
-        other is SealedTypeLens<*, *> && other.name == name && other.parent.descriptor.serialName == parent.descriptor.serialName
+        other is SealedSharedFieldLens<*, *> && other.name == name && other.parent.descriptor.serialName == parent.descriptor.serialName
 }
