@@ -77,7 +77,16 @@ data class ContainsPolymorphic(
 @Queryable
 data class PolymorphicClassTopLevel(val id: Int) : PolymorphicClass()
 
+@Queryable
+data class HasPathField(val path: String)
+
 class FieldGenerationTest {
+    @Test
+    fun fieldNamedPathKeepsItsName() {
+        val path: Field<HasPathField, String> = HasPathField.path
+        assertEquals("a", path.get(HasPathField("a")))
+    }
+
     @Test
     fun ifSyntaxWorksWereOk() {
         Condition<Sample> { it.x gt 4 }

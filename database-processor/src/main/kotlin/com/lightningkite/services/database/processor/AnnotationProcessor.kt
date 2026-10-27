@@ -391,9 +391,11 @@ class TableGenerator(
                 }
             }
         } else {
-            appendPathDeprecation("Lens<$typeReference>()", "com.lightningkite.services.database.optics.Lens")
-            appendLine("public val $typeReference.Companion.path: IdentityLens<$typeReference> get() = IdentityLens($typeReference.serializer())")
-            // Claude: a model field named `fields` takes this name instead.
+            // Claude: a model field named `path` or `fields` takes that name instead.
+            if (fields.none { it.name == "path" }) {
+                appendPathDeprecation("Lens<$typeReference>()", "com.lightningkite.services.database.optics.Lens")
+                appendLine("public val $typeReference.Companion.path: IdentityLens<$typeReference> get() = IdentityLens($typeReference.serializer())")
+            }
             if (fields.none { it.name == "fields" })
                 appendLine("public val ${typeReference}.Companion.fields: Array<Field<$typeReference, *>> get() = serializer().fields!!")
             for ((index, field) in fields.withIndex()) {
