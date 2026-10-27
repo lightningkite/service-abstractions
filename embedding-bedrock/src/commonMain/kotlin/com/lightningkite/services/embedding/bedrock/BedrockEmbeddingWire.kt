@@ -68,16 +68,29 @@ internal fun buildCohereRequestBody(texts: List<String>, inputType: String = "se
 }
 
 /**
- * Parse a Cohere embedding response.
- * Response shape: `{"embeddings": [[float...], ...], "texts": [...]}`.
- * Cohere does not report token counts.
+ * Build the JSON body for a Cohere Embed v4 invoke call. Unlike v3, v4 takes an `output_dimension` (1536 when
+ * [dimensions] is null) and names the truncation sides LEFT/RIGHT rather than START/END.
+ */
+internal fun buildCohereV4RequestBody(texts: List<String>, dimensions: Int?, inputType: String = "search_document"): String {
+    val textsArray = texts.joinToString(",") { JsonPrimitive(it).toString() }
+    val dimension = dimensions?.let { ""","output_dimension":$it""" } ?: ""
+    return """{"texts":[$textsArray],"input_type":${JsonPrimitive(inputType)},"embedding_types":["float"]$dimension,"truncate":"RIGHT"}"""
+}
+
+/**
+ * Parse a Cohere embedding response. Cohere does not report token counts.
+ * Response shapes: `{"embeddings": [[float...], ...]}` (v3, and v4's `embeddings_floats`), or
+ * `{"embeddings": {"float": [[float...], ...]}}` (v4's `embeddings_by_type`).
  */
 internal fun parseCohereResponse(body: String): CohereEmbeddingResponse {
-    val root = bedrockEmbeddingJson.parseToJsonElement(body).jsonObject
-    val embeddings = root["embeddings"]!!.jsonArray.map { row ->
-        row.jsonArray.map { it.jsonPrimitive.float }
+    val embeddings = bedrockEmbeddingJson.parseToJsonElement(body).jsonObject["embeddings"]
+    val rows = when (embeddings) {
+        is JsonArray -> embeddings
+        is JsonObject -> embeddings["float"]?.jsonArray
+            ?: throw EmbeddingException.Transport("Cohere returned no float embeddings, only ${embeddings.keys}")
+        else -> throw EmbeddingException.Transport("Cohere response has no embeddings: ${body.take(500)}")
     }
-    return CohereEmbeddingResponse(embeddings = embeddings)
+    return CohereEmbeddingResponse(embeddings = rows.map { row -> row.jsonArray.map { it.jsonPrimitive.float } })
 }
 
 internal data class CohereEmbeddingResponse(
