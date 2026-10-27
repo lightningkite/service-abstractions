@@ -10,23 +10,23 @@ class SealedSharedFieldLensTest {
 
     @Test
     fun getReadsFromWhicheverVariantTheValueIs() {
-        assertEquals("sq", Shape.label.get(square))
-        assertEquals("tri", Shape.label.get(triangle))
-        assertEquals("circ", Shape.label.get(circle))
+        assertEquals("sq", Shape.label<Shape>().get(square))
+        assertEquals("tri", Shape.label<Shape>().get(triangle))
+        assertEquals("circ", Shape.label<Shape>().get(circle))
     }
 
     @Test
     fun setKeepsTheVariantAndOtherFields() {
-        assertEquals(Shape.Square("new", 4), Shape.label.set(square, "new"))
-        assertEquals(Shape.Triangle("new", 3, 2), Shape.label.set(triangle, "new"))
-        assertEquals(Shape.Circle("new"), Shape.label.set(circle, "new"))
+        assertEquals(Shape.Square("new", 4), Shape.label<Shape>().set(square, "new"))
+        assertEquals(Shape.Triangle("new", 3, 2), Shape.label<Shape>().set(triangle, "new"))
+        assertEquals(Shape.Circle("new"), Shape.label<Shape>().set(circle, "new"))
     }
 
     @Test
     fun nestedSealedTypeSharesWhatItsOwnVariantsShare() {
-        assertEquals(4, Shape.Polygon.size.get(square))
-        assertEquals(2, Shape.Polygon.size.get(triangle))
-        assertEquals(Shape.Square("sq", 9), Shape.Polygon.size.set(square, 9))
+        assertEquals(4, Shape.Polygon.size<Shape.Polygon>().get(square))
+        assertEquals(2, Shape.Polygon.size<Shape.Polygon>().get(triangle))
+        assertEquals(Shape.Square("sq", 9), Shape.Polygon.size<Shape.Polygon>().set(square, 9))
     }
 
     @Test
@@ -48,10 +48,10 @@ class SealedSharedFieldLensTest {
 
     @Test
     fun equalityComparesParentAndName() {
-        assertEquals(Shape.label, SealedSharedFieldLens<Shape, String>(Shape.serializer(), "label"))
-        assertEquals(Shape.label.hashCode(), SealedSharedFieldLens<Shape, String>(Shape.serializer(), "label").hashCode())
-        assertNotEquals<Any>(Shape.label, SealedSharedFieldLens<Shape, String>(Shape.serializer(), "other"))
-        assertNotEquals<Any>(Shape.Polygon.size, SealedSharedFieldLens<Shape.Polygon, Int>(Shape.Polygon.serializer(), "label"))
+        assertEquals(Shape.label<Shape>(), SealedSharedFieldLens<Shape, String>(Shape.serializer(), "label"))
+        assertEquals(Shape.label<Shape>().hashCode(), SealedSharedFieldLens<Shape, String>(Shape.serializer(), "label").hashCode())
+        assertNotEquals<Any>(Shape.label<Shape>(), SealedSharedFieldLens<Shape, String>(Shape.serializer(), "other"))
+        assertNotEquals<Any>(Shape.Polygon.size<Shape.Polygon>(), SealedSharedFieldLens<Shape.Polygon, Int>(Shape.Polygon.serializer(), "label"))
     }
 
     @Test
@@ -68,5 +68,33 @@ class SealedSharedFieldLensTest {
     }
 
     @Test
-    fun toStringIsTheName() = assertEquals("label", Shape.label.toString())
+    fun toStringIsTheName() = assertEquals("label", Shape.label<Shape>().toString())
+
+    @Test
+    fun composesAfterALensOnAVariant() {
+        val lens: Lens<Shape.Circle, String> = Lens<Shape.Circle>() + Shape.label()
+        assertEquals("circ", lens.get(circle))
+        assertEquals(Shape.Circle("new"), lens.set(circle, "new"))
+    }
+
+    @Test
+    fun pathPropertyWorksOnAVariant() {
+        val lens: Lens<Shape.Circle, String> = Lens<Shape.Circle>().label
+        assertEquals(Shape.Circle("new"), lens.set(circle, "new"))
+        assertEquals(Shape.Square("new", 4), Lens<Shape.Square>().label.set(square, "new"))
+    }
+
+    // Claude: the same overload shape as MutableReactive.lens in lightning-server-kiteui.
+    private class Box<O>(var value: O)
+    private fun <O, T> Box<O>.lens(optic: Optic<O, T>): String = "optic ${optic.get(value)}"
+    private fun <O, T> Box<O>.lens(lens: Lens<O, T>): T = lens.get(value)
+
+    @Test
+    fun usableWhereTheReceiverIsAVariantOfTheSealedType() {
+        val box = Box(circle)
+        assertEquals("circ", box.lens(Shape.label()))
+        assertEquals("circ", box.lens(Lens<Shape.Circle>().label))
+        val polygons = Box<Shape.Square>(square)
+        assertEquals(4, polygons.lens(Shape.Polygon.size()))
+    }
 }

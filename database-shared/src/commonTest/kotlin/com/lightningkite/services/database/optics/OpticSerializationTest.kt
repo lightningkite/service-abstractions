@@ -131,11 +131,11 @@ class OpticSerializationTest {
     @Test
     fun sealedTypeSharedPropertiesRoundTrip() {
         val serializer = AnyOpticSerializer(Shape.serializer())
-        assertEquals("label", serializer.asString(Shape.label))
-        assertEquals(Shape.label, serializer.fromString("label"))
+        assertEquals("label", serializer.asString(Shape.label<Shape>()))
+        assertEquals(Shape.label<Shape>(), serializer.fromString("label"))
         val json = Json.encodeToString(serializer, Shape.path.label)
         assertEquals("\"label\"", json)
-        assertEquals(Shape.label, Json.decodeFromString(serializer, json))
+        assertEquals(Shape.label<Shape>(), Json.decodeFromString(serializer, json))
     }
 
     @Test
@@ -156,17 +156,19 @@ class OpticSerializationTest {
     @Test
     fun nestedSealedTypeSharedPropertyRoundTrips() {
         val serializer = AnyOpticSerializer(Shape.Polygon.serializer())
-        assertEquals("size", serializer.asString(Shape.Polygon.size))
-        assertEquals(Shape.Polygon.size, serializer.fromString("size"))
-        assertEquals(Shape.Polygon.size, Json.decodeFromString(serializer, Json.encodeToString(serializer, Shape.Polygon.size)))
+        assertEquals("size", serializer.asString(Shape.Polygon.size<Shape.Polygon>()))
+        assertEquals(Shape.Polygon.size<Shape.Polygon>(), serializer.fromString("size"))
+        assertEquals(Shape.Polygon.size<Shape.Polygon>(), Json.decodeFromString(serializer, Json.encodeToString(serializer, Shape.Polygon.size<Shape.Polygon>())))
         // Circle is a Shape but not a Polygon, so only the Polygon lens can reach `size`.
         assertFailsWith<SerializationException> { AnyOpticSerializer(Shape.serializer()).fromString("size") }
     }
 
     @Test
     fun sealedTypeSharedPropertyInsideVariantPath() {
-        val serializer = AnyOpticSerializer(Shape.Polygon.serializer())
-        val optic = Shape.Polygon.path.asSquare.label
+        val serializer = AnyOpticSerializer(Shape.serializer())
+        // Square sits under the nested sealed Polygon, but is still a direct variant of Shape's serializer.
+        val optic = Shape.path.asSquare.label
         assertEquals(optic, serializer.fromString(serializer.asString(optic)))
+        assertEquals(Shape.path.asSquare.other, serializer.fromString(serializer.asString(Shape.path.asSquare.other)))
     }
 }

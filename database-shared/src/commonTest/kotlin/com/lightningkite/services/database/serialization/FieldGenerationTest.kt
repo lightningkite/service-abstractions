@@ -4,6 +4,7 @@ package com.lightningkite.services.database
 import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.data.Queryable
+import com.lightningkite.services.database.optics.Lens
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -150,11 +151,12 @@ class FieldGenerationTest {
         val isEmptyViaPath = Condition<PolymorphicClass> { it.asEmpty isType PolymorphicClass.Empty.serializer() }
         assertTrue(isEmptyViaPath(PolymorphicClass.Empty))
         assertFalse(isEmptyViaPath(PolymorphicClass.Foo("a")))
+        Lens<Shape.Circle>() + Shape.label()
     }
 
     @Test
     fun sealedClassVariantSetOnlyReplacesMatchingVariant() {
-        val asTopLevel = PolymorphicClass.path.asPolymorphicClassTopLevel
+        val asTopLevel = Lens<PolymorphicClass>().asPolymorphicClassTopLevel
         assertEquals(PolymorphicClassTopLevel(5), asTopLevel.set(PolymorphicClassTopLevel(1), PolymorphicClassTopLevel(5)))
         assertEquals(PolymorphicClass.Empty, asTopLevel.set(PolymorphicClass.Empty, PolymorphicClassTopLevel(5)))
         assertEquals(PolymorphicClass.Foo("a"), asTopLevel.id.set(PolymorphicClass.Foo("a"), 5))
@@ -174,7 +176,7 @@ class FieldGenerationTest {
 
     @Test
     fun sealedInterfaceSharedProperties() {
-        val label = Shape.label
+        val label = Shape.label<Shape>()
         assertEquals("a", label.get(Shape.Square("a", 1)))
         assertEquals(Shape.Triangle("b", 3, 1), label.set(Shape.Triangle("a", 3, 1), "b"))
         val condition = Shape.path.label eq "a"

@@ -197,10 +197,11 @@ class TableGenerator(
                 for (property in sharedProperties(declaration)) {
                     val name = property.simpleName.asString()
                     val type = property.type.toKotlin()
-                    appendLine("public val $classReference.Companion.$name: Lens<$classReference, $type> get() = SealedSharedFieldLens($classReference.serializer(), \"$name\")")
+                    // Claude: a function because a property can't take T. The cast is safe: set always returns the variant it was given.
+                    appendLine("public fun <T : $classReference> $classReference.Companion.$name(): Lens<T, $type> = SealedSharedFieldLens<$classReference, $type>($classReference.serializer(), \"$name\") as Lens<T, $type>")
                     // Claude: a Lens overload too, so a path of fields stays statically a Lens.
                     for ((optic, jvmName) in listOf("Optic" to "path", "Lens" to "lens")) {
-                        appendLine("@get:JvmName(\"$jvmName${simpleName}_$name\") public val <ROOT> $optic<ROOT, $classReference>.$name: $optic<ROOT, $type> get() = this + $classReference.$name")
+                        appendLine("@get:JvmName(\"$jvmName${simpleName}_$name\") public val <ROOT, T : $classReference> $optic<ROOT, T>.$name: $optic<ROOT, $type> get() = this + $classReference.$name<T>()")
                     }
                 }
                 // Claude: leaves only. kotlinx flattens nested sealed types, so a path through one can't be read back.
