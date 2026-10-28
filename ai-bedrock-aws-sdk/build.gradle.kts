@@ -12,8 +12,8 @@ dependencies {
     // SDK-backed credential resolution.
     api(project(path = ":ai-bedrock"))
 
-    // Just the AWS SDK credential providers — not a full service client. Brings in the default
-    // provider chain (env, profile, SSO, credential_process, assume-role, IMDS) with refresh.
+    // Just the AWS SDK credential providers, not a full service client. signin is what resolves
+    // `aws login` profiles; SSO profiles would also need sso + ssooidc, and role_arn profiles sts.
     api(libs.aws.auth)
     api(libs.aws.signin)
     implementation(libs.coroutines.core)
@@ -39,5 +39,5 @@ lkLibrary(
     "service-abstractions",
     mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
 ) {
-    description.set("JVM-only AWS SDK credential resolution (profiles, SSO, assume-role, IMDS) for the Bedrock LlmAccess.")
+    description.set("JVM-only AWS SDK credential resolution (profiles including aws login, container and instance roles) for the Bedrock LlmAccess.")
 }

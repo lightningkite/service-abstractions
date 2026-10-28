@@ -12,15 +12,15 @@ import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider as SdkAwsCredentialsProvider
 
 /**
- * Adapt an AWS SDK credential provider to this library's [AwsCredentialsProvider], giving the
- * pure-Kotlin [BedrockLlmAccess] the full AWS credential story on the JVM: environment
- * variables, `~/.aws/credentials` and `~/.aws/config` profiles (including SSO, `sso_session`,
- * `credential_process`, and `role_arn`/`source_profile` assume-role chains), container/ECS
- * roles, and EC2 instance metadata — all with automatic refresh of expiring temporary
- * credentials.
+ * Adapt an AWS SDK credential provider to this library's [AwsCredentialsProvider], so the
+ * pure-Kotlin [BedrockLlmAccess] signs with whatever the SDK resolves: environment variables,
+ * static and `aws login` profiles, `credential_process`, container roles, and EC2 instance
+ * metadata, with expiring credentials refreshed. SSO profiles additionally need
+ * `software.amazon.awssdk:sso` and `ssooidc` on the classpath, and `role_arn` profiles need
+ * `software.amazon.awssdk:sts`; without them the SDK throws when resolving such a profile.
  *
- * The SDK's `resolveCredentials()` is a blocking call (it may hit the filesystem, STS, or
- * IMDS), so it runs on [Dispatchers.IO]. It is invoked once per Bedrock request, so refreshed
+ * The SDK's `resolveCredentials()` can block on files or the network, so it runs on
+ * [Dispatchers.IO]. It is invoked once per Bedrock request, so refreshed
  * credentials take effect on the next call.
  *
  * @param provider any AWS SDK credential provider; defaults to [DefaultCredentialsProvider],
@@ -41,8 +41,8 @@ public fun awsSdkCredentials(
 
 /**
  * Convenience for a single named profile from `~/.aws/credentials` / `~/.aws/config`, resolved
- * with the AWS SDK (so SSO/assume-role/`credential_process` profiles work, unlike the built-in
- * static-only reader in `ai-bedrock`). Equivalent to
+ * with the AWS SDK (so `aws login` and `credential_process` profiles work, unlike the built-in
+ * static-only reader in `ai-bedrock`; see [awsSdkCredentials] for SSO and `role_arn`). Equivalent to
  * `awsSdkCredentials(ProfileCredentialsProvider.create(profile))`.
  */
 public fun awsSdkProfileCredentials(profile: String): AwsCredentialsProvider =
