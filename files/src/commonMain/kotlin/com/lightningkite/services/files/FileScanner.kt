@@ -141,9 +141,9 @@ public class CheckMimeFileScanner(
                 Signature(Segment(0, ubyteArrayOf(0x50u, 0x4Bu, 0x07u, 0x08u))), // 50 4B 07 08
             ),
             MediaType.Application.Xml to listOf(
-                Signature(Segment(0, ubyteArrayOf(0x3Cu, 0x3Fu, 0x78u, 0x6Du, 0x6Cu, 0x20u))),                                                                          // 3C 3F 78 6D 6C 20
-                Signature(Segment(0, ubyteArrayOf(0x3Cu, 0x00u, 0x3Fu, 0x00u, 0x78u, 0x00u, 0x6Du, 0x00u, 0x6Cu, 0x00u, 0x20u))),                                       // 3C 00 3F 00 78 00 6D 00 6C 00 20
                 Signature(Segment(0, ubyteArrayOf(0x3Cu, 0x00u, 0x00u, 0x00u, 0x3Fu, 0x00u, 0x00u, 0x00u, 0x78u, 0x00u, 0x00u, 0x00u, 0x6Du, 0x00u, 0x00u, 0x00u))),    // 3C 00 00 00 3F 00 00 00 78 00 00 00 6D 00 00 00
+                Signature(Segment(0, ubyteArrayOf(0x3Cu, 0x00u, 0x3Fu, 0x00u, 0x78u, 0x00u, 0x6Du, 0x00u, 0x6Cu, 0x00u, 0x20u))),                                       // 3C 00 3F 00 78 00 6D 00 6C 00 20
+                Signature(Segment(0, ubyteArrayOf(0x3Cu, 0x3Fu, 0x78u, 0x6Du, 0x6Cu, 0x20u))),                                                                          // 3C 3F 78 6D 6C 20
             ),
             MediaType.Application.Zip to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x50u, 0x4Bu, 0x03u, 0x04u))), // 50 4B 03 04
@@ -158,21 +158,21 @@ public class CheckMimeFileScanner(
             ),
             MediaType.Audio.MP3 to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x49u, 0x44u, 0x33u))), // 49 44 33
-                Signature(Segment(0, ubyteArrayOf(0xFFu, 0xFBu))), // FF FB
-                Signature(Segment(0, ubyteArrayOf(0xFFu, 0xF3u))), // FF F3
                 Signature(Segment(0, ubyteArrayOf(0xFFu, 0xF2u))), // FF F2
+                Signature(Segment(0, ubyteArrayOf(0xFFu, 0xF3u))), // FF F3
+                Signature(Segment(0, ubyteArrayOf(0xFFu, 0xFBu))), // FF FB
             ),
             MediaType.Audio.MP4 to listOf(
-                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x69u, 0x73u, 0x6Fu, 0x6Du))), // ?? ?? ?? ?? 66 74 79 70 69 73 6F 6D
                 Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x4Du, 0x53u, 0x4Eu, 0x56u))), // ?? ?? ?? ?? 66 74 79 70 4D 53 4E 56
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x69u, 0x73u, 0x6Fu, 0x6Du))), // ?? ?? ?? ?? 66 74 79 70 69 73 6F 6D
             ),
             MediaType.Audio.MPEG to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x01u, 0xB3u))), // 00 00 01 B3
-                Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x01u, 0xBAu))), // 00 00 01 B3
+                Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x01u, 0xBAu))), // 00 00 01 BA
             ),
             MediaType.Audio.OGG to listOf(
-                Signature(Segment(0, ubyteArrayOf(0x4Fu, 0x67u, 0x67u, 0x53u, 0x00u, 0x02u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u))), // 4F 67 67 53 00 02 00 00 00 00 00 00 00 00
                 Signature(Segment(0, ubyteArrayOf(0x4Fu, 0x67u, 0x67u, 0x53u))),                                                                       // 4F 67 67 53
+                Signature(Segment(0, ubyteArrayOf(0x4Fu, 0x67u, 0x67u, 0x53u, 0x00u, 0x02u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u))), // 4F 67 67 53 00 02 00 00 00 00 00 00 00 00
             ),
             MediaType.Audio.OPUS to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x4Fu, 0x67u, 0x67u, 0x53u, 0x00u))), // 4F 67 67 53 00
@@ -198,9 +198,9 @@ public class CheckMimeFileScanner(
             ),
             MediaType.Image.JPEG to listOf(
                 Signature(Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xDBu))),                                                         // FF D8 FF DB
+                Signature(Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xE0u))),                                                         // FF D8 FF E0
                 Signature(Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xE0u, 0x00u, 0x10u, 0x4Au, 0x46u, 0x49u, 0x46u, 0x00u, 0x01u))), // FF D8 FF E0 00 10 4A 46 49 46 00 01
                 Signature(Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xEEu))),                                                         // FF D8 FF EE
-                Signature(Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xE0u))),                                                         // FF D8 FF E0
                 Signature(                                                                                                               // FF D8 FF E1 ?? ?? 45 78 69 66 00 00
                     Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xE0u)),
                     Segment(6, ubyteArrayOf(0x45u, 0x78u, 0x69u, 0x66u, 0x00u, 0x00u))
@@ -216,10 +216,10 @@ public class CheckMimeFileScanner(
                 Signature(Segment(0, ubyteArrayOf(0x3Cu, 0x73u, 0x76u, 0x67u))), // 3C 73 76 67
             ),
             MediaType.Image.Tiff to listOf(
-                Signature(Segment(0, ubyteArrayOf(0x4Du, 0x4Du, 0x00u, 0x2Au))), // 4D 4D 00 2A
-                Signature(Segment(0, ubyteArrayOf(0x4Du, 0x4Du, 0x00u, 0x2Bu))), // 4D 4D 00 2B
                 Signature(Segment(0, ubyteArrayOf(0x49u, 0x49u, 0x2Au, 0x00u))), // 49 49 2A 00
                 Signature(Segment(0, ubyteArrayOf(0x49u, 0x49u, 0x2Bu, 0x00u))), // 49 49 2B 00
+                Signature(Segment(0, ubyteArrayOf(0x4Du, 0x4Du, 0x00u, 0x2Au))), // 4D 4D 00 2A
+                Signature(Segment(0, ubyteArrayOf(0x4Du, 0x4Du, 0x00u, 0x2Bu))), // 4D 4D 00 2B
             ),
             MediaType.Image.WebP to listOf(
                 Signature(                                                  // 52 49 46 46 ?? ?? ?? ?? 57 45 42 50
@@ -239,23 +239,39 @@ public class CheckMimeFileScanner(
                 ),
             ),
             MediaType.Video.OGG to listOf(
-                Signature(Segment(0, ubyteArrayOf(0x4Fu, 0x67u, 0x67u, 0x53u, 0x00u, 0x02u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u))), // 4F 67 67 53 00 02 00 00 00 00 00 00 00 00
                 Signature(Segment(0, ubyteArrayOf(0x4Fu, 0x67u, 0x67u, 0x53u))),                                                                       // 4F 67 67 53
+                Signature(Segment(0, ubyteArrayOf(0x4Fu, 0x67u, 0x67u, 0x53u, 0x00u, 0x02u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u))), // 4F 67 67 53 00 02 00 00 00 00 00 00 00 00
             ),
             MediaType.Video.MKV to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x1Au, 0x45u, 0xDFu, 0xA3u))), // 1A 45 DF A3
             ),
             MediaType.Video.MP4 to listOf(
-                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x69u, 0x73u, 0x6Fu, 0x6Du))), // ?? ?? ?? ?? 66 74 79 70 69 73 6F 6D
-                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x4Du, 0x53u, 0x4Eu, 0x56u))), // ?? ?? ?? ?? 66 74 79 70 4D 53 4E 56
+                Signature(Segment(0, ubyteArrayOf(0x69u, 0x73u, 0x6Fu, 0x6Du))),                                // 69 73 6F 6D
+                Signature(Segment(0, ubyteArrayOf(0x6Du, 0x70u, 0x34u, 0x32u))),                                // 6D 70 34 32
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x4Du, 0x34u, 0x56u, 0x20u))),    // ?? ?? ?? ?? 66 74 79 70 4D 34 56 20
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x4Du, 0x53u, 0x4Eu, 0x56u))),    // ?? ?? ?? ?? 66 74 79 70 4D 53 4E 56
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x61u, 0x76u, 0x63u, 0x31u))),    // ?? ?? ?? ?? 66 74 79 70 61 76 63 31
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x64u, 0x61u, 0x73u, 0x68u))),    // ?? ?? ?? ?? 66 74 79 70 64 61 73 68
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x69u, 0x73u, 0x6Fu, 0x32u))),    // ?? ?? ?? ?? 66 74 79 70 69 73 6F 32
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x69u, 0x73u, 0x6Fu, 0x6Du))),    // ?? ?? ?? ?? 66 74 79 70 69 73 6F 6D
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x6Du, 0x70u, 0x34u, 0x31u))),    // ?? ?? ?? ?? 66 74 79 70 6D 70 34 31
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x6Du, 0x70u, 0x34u, 0x32u))),    // ?? ?? ?? ?? 66 74 79 70 6D 70 34 32
             ),
             MediaType.Video.MPEG to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x01u, 0xB3u))), // 00 00 01 B3
-                Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x01u, 0xBAu))), // 00 00 01 B3
+                Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x01u, 0xBAu))), // 00 00 01 BA
             ),
             MediaType.Video.QuickTime to listOf(
-                Signature(Segment(4, ubyteArrayOf(0x6Du, 0x6Fu, 0x6Fu, 0x76u, 0x00u))), // ?? ?? ?? ?? 6D 6F 6F 76 00
-                Signature(Segment(4, ubyteArrayOf(0x6Du, 0x64u, 0x61u, 0x74u, 0x00u))), // ?? ?? ?? ?? 6D 64 61 74 00
+                Signature(Segment(0, ubyteArrayOf(0x00u, 0x00u, 0x00u, 0x08u, 0x77u, 0x69u, 0x64u, 0x65u))),    // 00 00 00 08 77 69 64 65
+                Signature(Segment(0, ubyteArrayOf(0x71u, 0x74u, 0x20u, 0x20u))),                                // 71 74 20 20
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x72u, 0x65u, 0x65u, 0x00u))),                         // ?? ?? ?? ?? 66 72 65 65 00
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u))),                                // ?? ?? ?? ?? 66 74 79 70
+                Signature(Segment(4, ubyteArrayOf(0x66u, 0x74u, 0x79u, 0x70u, 0x71u, 0x74u, 0x20u, 0x20u))),    // ?? ?? ?? ?? 66 74 79 70 71 74 20 20
+                Signature(Segment(4, ubyteArrayOf(0x6Du, 0x64u, 0x61u, 0x74u, 0x00u))),                         // ?? ?? ?? ?? 6D 64 61 74 00
+                Signature(Segment(4, ubyteArrayOf(0x6Du, 0x6Fu, 0x6Fu, 0x76u))),                                // ?? ?? ?? ?? 6D 6F 6F 76
+                Signature(Segment(4, ubyteArrayOf(0x6Du, 0x6Fu, 0x6Fu, 0x76u, 0x00u))),                         // ?? ?? ?? ?? 6D 6F 6F 76 00
+                Signature(Segment(4, ubyteArrayOf(0x70u, 0x6Eu, 0x6Fu, 0x74u, 0x00u))),                         // ?? ?? ?? ?? 70 6E 6F 74 00
+                Signature(Segment(4, ubyteArrayOf(0x73u, 0x6Bu, 0x69u, 0x70u, 0x00u))),                         // ?? ?? ?? ?? 73 6B 69 70 00
             ),
             MediaType.Video.WEBM to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x6Du, 0x6Fu, 0x6Fu, 0x76u, 0x00u))), // 1A 45 DF A3
