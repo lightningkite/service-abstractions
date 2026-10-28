@@ -280,11 +280,28 @@ data class VectorTestModel(
     override val _id: Uuid = Uuid.random(),
     val title: String = "",
     @Index val category: String = "",
-    @Index val tags: Set<String> = setOf(), // by Claude - for testing vector search with set filters
-    @VectorIndex(dimensions = 3) val embedding: Embedding = Embedding(floatArrayOf()),
+    val tags: Set<String> = setOf(),
+    val review: VectorTestReview? = null,
+    @VectorIndex(dimensions = 3, filters = ["tags", "review.approved"]) val embedding: Embedding = Embedding(floatArrayOf()),
 ) : HasId<Uuid> {
     companion object
 }
+
+/** Declares an object as a vector filter, which Atlas can't index. */
+@Queryable
+data class VectorObjectFilterModel(
+    override val _id: Uuid = Uuid.random(),
+    val review: VectorTestReview? = null,
+    @VectorIndex(dimensions = 3, filters = ["review"]) val embedding: Embedding = Embedding(floatArrayOf()),
+) : HasId<Uuid> {
+    companion object
+}
+
+@Queryable
+data class VectorTestReview(
+    val approved: Boolean = false,
+    val reviewer: String = "",
+)
 
 @Queryable
 @TextIndex(["title", "body", "details.summary"])

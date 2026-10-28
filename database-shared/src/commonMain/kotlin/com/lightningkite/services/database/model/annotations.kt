@@ -87,7 +87,8 @@ public annotation class InlineProperty
  * data class Document(
  *     override val _id: UUID = UUID.random(),
  *     val title: String,
- *     @VectorIndex(dimensions = 1536)
+ *     val approval: Approval?,
+ *     @VectorIndex(dimensions = 1536, filters = ["approval.approved"])
  *     val embedding: Embedding,
  *     @VectorIndex(dimensions = 30000, sparse = true)
  *     val sparseEmbedding: SparseEmbedding,
@@ -106,7 +107,7 @@ public annotation class InlineProperty
  * - indexType "ivfflat" creates: `CREATE INDEX ... USING ivfflat (field vector_cosine_ops)`
  *
  * **In-Memory:**
- * - Annotation is informational only; no index is created
+ * - No index is created, but [filters] are enforced like on Atlas, so a missing declaration fails in tests
  *
  * @param dimensions Expected embedding dimensions (required for index creation)
  * @param metric Default similarity metric for queries on this field
@@ -116,6 +117,9 @@ public annotation class InlineProperty
  *   - "hnsw": Hierarchical Navigable Small World (better query performance)
  *   - "ivfflat": Inverted File Flat (faster builds, lower memory)
  *   - "exact": No approximate index, use exact search
+ * @param filters Paths `findSimilar` on this field may filter by, as dotted paths like `"approval.approved"`.
+ *   Atlas only filters on fields declared in the vector index, and only on scalars: booleans, strings, numbers, dates,
+ *   ObjectIds, UUIDs, or arrays of those.  Single-field `@Index` and `@IndexSet` paths are filters too.
  */
 @SerialInfo
 @Target(AnnotationTarget.PROPERTY)
@@ -125,4 +129,5 @@ public annotation class VectorIndex(
     val metric: SimilarityMetric = SimilarityMetric.Cosine,
     val sparse: Boolean = false,
     val indexType: String = "auto",
+    val filters: Array<String> = [],
 )

@@ -280,6 +280,7 @@ class MongodbVectorSearchTests : VectorSearchTests() {
     // Tests will run if MONGO_VECTOR_TEST_URL environment variable is set
     override val supportsVectorSearch: Boolean = VectorTestDatabase.isAvailable
     override val supportsSparseVectorSearch: Boolean = false // MongoDB doesn't support sparse vectors
+    override val requiresDeclaredVectorFilters: Boolean = true
 
     // MongoDB Atlas requires similarity metric at index creation time, not query time
     override val supportsQueryTimeMetrics: Boolean = false

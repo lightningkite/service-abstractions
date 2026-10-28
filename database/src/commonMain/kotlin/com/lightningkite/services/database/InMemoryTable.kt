@@ -425,24 +425,28 @@ public open class InMemoryTable<Model : Any>(
         params: DenseVectorSearchParams,
         condition: Condition<Model>,
         maxQueryMs: Long,
-    ): Flow<ScoredResult<Model>> = flow {
-        val results = traced {
-            val minScore = params.minScore
-            lock.withLock {
-                data.values.asSequence()
-                    .filter { condition(it) }
-                    .mapNotNull { model ->
-                        val embedding = vectorField.get(model) ?: return@mapNotNull null
-                        val score = EmbeddingSimilarity.similarity(embedding, params.queryVector, params.metric)
-                        if (minScore != null && score < minScore) return@mapNotNull null
-                        ScoredResult(model, score)
-                    }
-                    .sortedByDescending { it.score }
-                    .take(params.limit)
-                    .toList()
+    ): Flow<ScoredResult<Model>> {
+        // Atlas rejects undeclared filters, so this catches the mistake before deployment.
+        serializer.requireVectorSearchFilters(vectorField, condition.simplify())
+        return flow {
+            val results = traced {
+                val minScore = params.minScore
+                lock.withLock {
+                    data.values.asSequence()
+                        .filter { condition(it) }
+                        .mapNotNull { model ->
+                            val embedding = vectorField.get(model) ?: return@mapNotNull null
+                            val score = EmbeddingSimilarity.similarity(embedding, params.queryVector, params.metric)
+                            if (minScore != null && score < minScore) return@mapNotNull null
+                            ScoredResult(model, score)
+                        }
+                        .sortedByDescending { it.score }
+                        .take(params.limit)
+                        .toList()
+                }
             }
+            results.forEach { emit(it) }
         }
-        results.forEach { emit(it) }
     }
 
     override suspend fun findSimilarSparse(

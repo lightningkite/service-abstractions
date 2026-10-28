@@ -36,19 +36,29 @@ private val logger = KotlinLogging.logger("BedrockEmbeddingService")
  * - Cohere models: native batch support
  *
  * @property region AWS region the Bedrock endpoint lives in.
- * @property credentials Credentials used to sign requests.
+ * @property credentialsProvider supplies credentials for signing, consulted once per request so refreshable sources can
+ *   rotate expiring credentials. Use the [AwsCredentials] secondary constructor for a fixed key pair.
  * @property dimensions Vector length for models that let you choose one (Titan V2, Cohere Embed v4); null uses the
  *   model's default. Setting it for a model with a fixed length is an error.
+ * @property httpClient sends the Bedrock requests.
  */
 public class BedrockEmbeddingService(
     override val name: String,
     override val context: SettingContext,
     public val region: String,
-    internal val credentials: AwsCredentials,
+    public val credentialsProvider: AwsCredentialsProvider,
     public val dimensions: Int? = null,
+    private val httpClient: HttpClient = client,
 ) : EmbeddingService {
 
-    private val httpClient: HttpClient = client.config { /* no extra config needed */ }
+    public constructor(
+        name: String,
+        context: SettingContext,
+        region: String,
+        credentials: AwsCredentials,
+        dimensions: Int? = null,
+        httpClient: HttpClient = client,
+    ) : this(name, context, region, AwsCredentialsProvider.static(credentials), dimensions, httpClient)
 
     private val host: String = "bedrock-runtime.$region.amazonaws.com"
 
@@ -163,7 +173,7 @@ public class BedrockEmbeddingService(
             query = "",
             headers = mapOf("content-type" to "application/json"),
             body = bodyBytes,
-            credentials = credentials,
+            credentials = credentialsProvider.resolve(),
             region = region,
             service = "bedrock",
             amzDate = amzDate,
