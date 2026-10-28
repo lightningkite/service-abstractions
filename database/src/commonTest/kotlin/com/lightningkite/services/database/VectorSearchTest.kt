@@ -14,7 +14,7 @@ data class DocumentWithEmbedding(
     override val _id: Uuid = Uuid.random(),
     val title: String,
     val category: String,
-    val embedding: Embedding,
+    @VectorIndex(dimensions = 3, filters = ["category"]) val embedding: Embedding,
 ) : HasId<Uuid>
 
 @OptIn(ExperimentalUuidApi::class)

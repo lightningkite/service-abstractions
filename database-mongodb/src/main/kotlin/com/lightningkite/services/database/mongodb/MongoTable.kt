@@ -94,11 +94,7 @@ public class MongoTable<Model : Any>(
                                 return@launch
                             }
 
-                            // Collect filter fields from @Index annotations
-                            val filterFields = serializer.descriptor.indexes()
-                                .filter { it.fields.size == 1 } // Only single-field indexes can be filters
-                                .map { it.fields.first() }
-                                .filter { it != vectorIndex.field } // Don't include the vector field itself
+                            val filterFields = serializer.vectorSearchFilterPaths(vectorIndex.field)
 
                             val existing = listSearchIndexes().name(indexName).toList().firstOrNull()
                             if (existing == null) {
@@ -1207,6 +1203,7 @@ public class MongoTable<Model : Any>(
 
         val cs = condition.simplify()
         if (cs is Condition.Never) return emptyFlow()
+        serializer.requireVectorSearchFilters(vectorField, cs)
 
         // Map similarity metric to MongoDB Atlas format
         val similarity = when (params.metric) {

@@ -44,6 +44,7 @@ class RamInlinePropertiesTest : InlinePropertiesTests() {
 // by Claude
 class RamVectorSearchTests : VectorSearchTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+    override val requiresDeclaredVectorFilters: Boolean = true
 }
 
 class RamTextSearchTests : TextSearchTests() {

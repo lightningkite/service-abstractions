@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.test
 
 import com.lightningkite.services.database.*
+import com.lightningkite.services.database.optics.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -36,6 +37,9 @@ abstract class VectorSearchTests {
      * If false, tests for Euclidean and DotProduct metrics will be skipped.
      */
     open val supportsQueryTimeMetrics: Boolean = true
+
+    /** Whether findSimilar rejects a condition on a path not declared in `@VectorIndex(filters = ...)`. */
+    open val requiresDeclaredVectorFilters: Boolean = false
 
     /**
      * Delay to wait after inserting documents before querying vector search.
@@ -402,6 +406,70 @@ abstract class VectorSearchTests {
         // doc1 should be first (most similar to query)
         assertEquals("Kotlin Coroutines", results[0].model.title)
         assertEquals("Kotlin Serialization", results[1].model.title)
+    }
+
+    @Test
+    open fun testFindSimilarWithNestedCondition() = runTest {
+        if (!supportsVectorSearch) {
+            println("Vector search not supported, skipping test")
+            return@runTest
+        }
+
+        val collection = database.prepare(DatabaseTableDefinition<VectorTestModel>("testFindSimilarWithNestedCondition"))
+        collection.deleteMany(Condition.Always)
+        waitForVectorSearchSync()
+
+        val approved = VectorTestModel(title = "Approved", review = VectorTestReview(approved = true), embedding = Embedding.of(1f, 0f, 0f))
+        val rejected = VectorTestModel(title = "Rejected", review = VectorTestReview(approved = false), embedding = Embedding.of(1f, 0f, 0f))
+        val unreviewed = VectorTestModel(title = "Unreviewed", embedding = Embedding.of(1f, 0f, 0f))
+        collection.insert(listOf(approved, rejected, unreviewed))
+        waitForVectorSearchSync()
+
+        val results = collection.findSimilar(
+            vectorField = VectorTestModel.path.embedding,
+            params = VectorSearchParams(queryVector = Embedding.of(1f, 0f, 0f), metric = SimilarityMetric.Cosine, limit = 10),
+            condition = VectorTestModel.path.review.notNull.approved eq true
+        ).toList()
+
+        assertEquals(listOf("Approved"), results.map { it.model.title })
+    }
+
+    @Test
+    open fun testFindSimilarWithUndeclaredFilterFails() = runTest {
+        if (!supportsVectorSearch || !requiresDeclaredVectorFilters) {
+            println("Undeclared vector filters not rejected, skipping test")
+            return@runTest
+        }
+
+        val collection = database.prepare(DatabaseTableDefinition<VectorTestModel>("testFindSimilarWithUndeclaredFilterFails"))
+        suspend fun search(condition: Condition<VectorTestModel>) = collection.findSimilar(
+            vectorField = VectorTestModel.path.embedding,
+            params = VectorSearchParams(queryVector = Embedding.of(1f, 0f, 0f), metric = SimilarityMetric.Cosine, limit = 10),
+            condition = condition
+        ).toList()
+
+        val undeclared = assertFailsWith<IllegalArgumentException> { search(VectorTestModel.path.title eq "x") }
+        assertContains(undeclared.message!!, "'title'")
+        assertContains(undeclared.message!!, "@VectorIndex(filters")
+        // An object can't be a filter, only the scalars inside it.
+        val wholeObject = assertFailsWith<IllegalArgumentException> { search(VectorTestModel.path.review eq null) }
+        assertContains(wholeObject.message!!, "'review'")
+    }
+
+    @Test
+    open fun testObjectDeclaredAsVectorFilterFails() = runTest {
+        if (!supportsVectorSearch || !requiresDeclaredVectorFilters) {
+            println("Undeclared vector filters not rejected, skipping test")
+            return@runTest
+        }
+
+        val e = assertFailsWith<IllegalArgumentException> {
+            database.prepare(DatabaseTableDefinition<VectorObjectFilterModel>("testObjectDeclaredAsVectorFilterFails")).findSimilar(
+                vectorField = VectorObjectFilterModel.path.embedding,
+                params = VectorSearchParams(queryVector = Embedding.of(1f, 0f, 0f), metric = SimilarityMetric.Cosine, limit = 10),
+            ).toList()
+        }
+        assertContains(e.message!!, "'review'")
     }
 
     // Sparse vector tests
