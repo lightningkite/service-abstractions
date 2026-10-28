@@ -7,11 +7,10 @@ import com.lightningkite.services.data.*
 import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.plugins.contentnegotiation.*
+import com.lightningkite.services.http.client
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -93,15 +92,6 @@ public class ElevenLabsTextToSpeechService(
     private val baseUrl = "https://api.elevenlabs.io/v1"
 
     private val requestJson = Json { ignoreUnknownKeys = true }
-
-    private val client = com.lightningkite.services.http.client.config {
-        install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-            })
-        }
-    }
 
     override suspend fun listVoices(language: String?): List<VoiceInfo> {
         val response = client.get("$baseUrl/voices") {

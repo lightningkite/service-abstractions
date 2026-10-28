@@ -9,8 +9,7 @@ import com.lightningkite.services.ai.LlmModelInfo
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStreamEvent
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import com.lightningkite.services.http.client
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.preparePost
@@ -20,7 +19,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.LineEnding
 import io.ktor.utils.io.readLine
@@ -48,10 +46,6 @@ public class OpenAiLlmAccess(
     /** Optional OpenAI organization ID, sent as the `OpenAI-Organization` header. */
     public val organization: String? = null,
 ) : LlmAccess {
-
-    private val client: HttpClient = com.lightningkite.services.http.client.config {
-        install(ContentNegotiation) { json(openAiJson) }
-    }
 
     override suspend fun getModels(): List<LlmModelInfo> {
         val response = try {

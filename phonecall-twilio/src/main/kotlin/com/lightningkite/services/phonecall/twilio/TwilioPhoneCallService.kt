@@ -12,14 +12,10 @@ import com.lightningkite.services.phonecall.*
 import com.lightningkite.services.webhooksubservice.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.auth.*
-import io.ktor.client.plugins.auth.providers.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -97,8 +93,7 @@ private val logger = KotlinLogging.logger("TwilioPhoneCallService")
  * @property authUser Authentication username - either Account SID (for auth token) or API Key SID (for API key)
  * @property authSecret Authentication secret - either Auth Token or API Key Secret
  * @property defaultFrom Default sender phone number in E.164 format
- * @param baseClient Base HTTP client to derive the Twilio-authenticated client from. Defaults to
- * the shared production client; tests can pass a `MockEngine`-backed client here instead.
+ * @param baseClient sends the Twilio requests. Tests pass a `MockEngine`-backed client.
  */
 public class TwilioPhoneCallService(
     override val name: String,
@@ -123,23 +118,7 @@ public class TwilioPhoneCallService(
 
     private val baseUrl = "https://api.twilio.com/2010-04-01/Accounts/$account"
 
-    private val client = baseClient.config {
-        install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-            })
-        }
-        install(Auth) {
-            basic {
-                credentials {
-                    BasicAuthCredentials(username = authUser, password = authSecret)
-                }
-                realm = "Twilio API"
-                sendWithoutRequest { true }  // Send auth proactively to avoid 401 challenge
-            }
-        }
-    }
+    private val http: HttpClient = baseClient
 
     // Cached HMAC key spec — SecretKeySpec is thread-safe for reading
     private val hmacKeySpec by lazy { SecretKeySpec(authSecret.toByteArray(Charsets.UTF_8), "HmacSHA1") }
@@ -322,7 +301,7 @@ public class TwilioPhoneCallService(
             put(TelemetryKey.OfString("phonecall.machine_detection"), options.machineDetection.name)
         }) { span ->
                 val response = withContext(SettingContextElement(context)) {
-                    client.submitForm(
+                    http.submitForm(
                         url = "$baseUrl/Calls.json",
                         formParameters = Parameters.build {
                             append("From", from)
@@ -374,7 +353,7 @@ public class TwilioPhoneCallService(
                                 }
                             }
                         }
-                    )
+                    ) { basicAuth(authUser, authSecret) }
                 }
 
                 if (!response.status.isSuccess()) {
@@ -596,12 +575,12 @@ public class TwilioPhoneCallService(
     }) {
         logger.info { "[$name] Hanging up call $callId" }
         val response = withContext(SettingContextElement(context)) {
-            client.submitForm(
+            http.submitForm(
                 url = "$baseUrl/Calls/$callId.json",
                 formParameters = Parameters.build {
                     append("Status", "completed")
                 }
-            )
+            ) { basicAuth(authUser, authSecret) }
         }
 
         if (!response.status.isSuccess()) {
@@ -618,7 +597,7 @@ public class TwilioPhoneCallService(
         put(TelemetryKey.OfString("phonecall.provider"), "twilio")
     }) { span ->
         val response = withContext(SettingContextElement(context)) {
-            client.get("$baseUrl/Calls/$callId.json")
+            http.get("$baseUrl/Calls/$callId.json") { basicAuth(authUser, authSecret) }
         }
 
         if (response.status == HttpStatusCode.NotFound) {
@@ -665,12 +644,12 @@ public class TwilioPhoneCallService(
     }) {
         logger.debug { "[$name] Updating call $callId with TwiML" }
         val response = withContext(SettingContextElement(context)) {
-            client.submitForm(
+            http.submitForm(
                 url = "$baseUrl/Calls/$callId.json",
                 formParameters = Parameters.build {
                     append("Twiml", instructions)
                 }
-            )
+            ) { basicAuth(authUser, authSecret) }
         }
 
         if (!response.status.isSuccess()) {
@@ -733,13 +712,13 @@ public class TwilioPhoneCallService(
             // Look up the phone number SID and configure the voice webhook
             val phoneNumberSid = lookupPhoneNumberSid(defaultFrom)
 
-            val response = client.submitForm(
+            val response = http.submitForm(
                 url = "$baseUrl/IncomingPhoneNumbers/$phoneNumberSid.json",
                 formParameters = Parameters.build {
                     append("VoiceUrl", httpUrl)
                     append("VoiceMethod", "POST")
                 }
-            )
+            ) { basicAuth(authUser, authSecret) }
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
@@ -801,13 +780,13 @@ public class TwilioPhoneCallService(
             // Look up the phone number SID and configure the status callback
             val phoneNumberSid = lookupPhoneNumberSid(defaultFrom)
 
-            val response = client.submitForm(
+            val response = http.submitForm(
                 url = "$baseUrl/IncomingPhoneNumbers/$phoneNumberSid.json",
                 formParameters = Parameters.build {
                     append("StatusCallback", httpUrl)
                     append("StatusCallbackMethod", "POST")
                 }
-            )
+            ) { basicAuth(authUser, authSecret) }
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
@@ -1136,7 +1115,7 @@ public class TwilioPhoneCallService(
         }) { span ->
             val encodedNumber = URLEncoder.encode(phoneNumber, Charsets.UTF_8)
             val response = withContext(SettingContextElement(context)) {
-                client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
+                http.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber") { basicAuth(authUser, authSecret) }
             }
 
             if (!response.status.isSuccess()) {
@@ -1220,7 +1199,7 @@ public class TwilioPhoneCallService(
     override suspend fun healthCheck(): HealthStatus {
         return try {
             // Try to list calls (with limit 1) to verify credentials and Voice API access
-            val response = client.get("$baseUrl/Calls.json?PageSize=1")
+            val response = http.get("$baseUrl/Calls.json?PageSize=1") { basicAuth(authUser, authSecret) }
             if (response.status.isSuccess()) {
                 HealthStatus(HealthStatus.Level.OK, additionalMessage = "Twilio Voice API accessible")
             } else {

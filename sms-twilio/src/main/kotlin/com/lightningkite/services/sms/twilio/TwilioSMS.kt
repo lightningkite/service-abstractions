@@ -11,17 +11,12 @@ import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.sms.SMS
 import com.lightningkite.services.sms.SMSException
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.auth.*
-import io.ktor.client.plugins.auth.providers.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -93,8 +88,7 @@ import kotlin.time.Duration.Companion.seconds
  * @property account Twilio Account SID (starts with AC)
  * @property key Twilio Auth Token
  * @property from Sender phone number in E.164 format (e.g., +15551234567)
- * @param baseClient Base HTTP client to derive the Twilio-authenticated client from. Defaults to
- * the shared production client; tests can pass a `MockEngine`-backed client here instead.
+ * @param baseClient sends the Twilio requests. Tests pass a `MockEngine`-backed client.
  */
 public class TwilioSMS(
     override val name: String,
@@ -105,22 +99,7 @@ public class TwilioSMS(
     baseClient: HttpClient = client,
 ) : SMS {
 
-    private val client = baseClient.config {
-        install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-            })
-        }
-        install(Auth) {
-            basic {
-                credentials {
-                    BasicAuthCredentials(username = account, password = key)
-                }
-                realm = "Twilio API"
-            }
-        }
-    }
+    private val http: HttpClient = baseClient
 
     /**
      * Sends an SMS message using the Twilio API.
@@ -144,14 +123,14 @@ public class TwilioSMS(
             if (attempt > 0) delay(retryDelays[attempt - 1])
 
             val response = withContext(SettingContextElement(context)) {
-                client.submitForm(
+                http.submitForm(
                     url = "https://api.twilio.com/2010-04-01/Accounts/${account}/Messages.json",
                     formParameters = Parameters.build {
                         append("From", from)
                         append("To", to.raw)
                         append("Body", message)
                     }
-                )
+                ) { basicAuth(account, key) }
             }
 
             val statusValue = response.status.value
@@ -183,7 +162,7 @@ public class TwilioSMS(
     override suspend fun healthCheck(): HealthStatus {
         return try {
             val response = withContext(com.lightningkite.services.http.SettingContextElement(context)) {
-                client.get("https://api.twilio.com/2010-04-01/Accounts/${account}.json")
+                http.get("https://api.twilio.com/2010-04-01/Accounts/${account}.json") { basicAuth(account, key) }
             }
             if (response.status.isSuccess()) {
                 HealthStatus(HealthStatus.Level.OK, additionalMessage = "Twilio SMS Service - Account: $account")

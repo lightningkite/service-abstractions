@@ -10,11 +10,9 @@ import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
 import com.lightningkite.services.ai.LlmUsage
+import com.lightningkite.services.http.client
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
@@ -26,7 +24,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.LineEnding
 import io.ktor.utils.io.readLine
@@ -35,7 +32,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -49,14 +48,11 @@ import kotlin.time.Duration.Companion.seconds
  * @param baseUrl Ollama HTTP base URL, e.g. "http://localhost:11434".
  * @param context [SettingContext] used for serializer resolution (tool schema generation)
  *   and potentially for telemetry.
- * @param httpClient Ktor HTTP client. Caller may pass a pre-configured client; otherwise
- *   a dedicated one is created. If created internally, it is closed on [disconnect].
  */
 public class OllamaLlmAccess(
     override val name: String,
     public val baseUrl: String,
     override val context: SettingContext,
-    httpClient: HttpClient? = null,
 ) : LlmAccess {
 
     public companion object {
@@ -67,26 +63,7 @@ public class OllamaLlmAccess(
 
     private val logger = KotlinLogging.logger {}
 
-    private val ownsClient: Boolean = httpClient == null
-
-    private val client: HttpClient = httpClient ?: HttpClient {
-        install(ContentNegotiation) {
-            json(OllamaWire.json)
-        }
-        install(HttpTimeout) {
-            // Long inference + model-load times justify big ceilings; streaming bodies
-            // are still incremental so this is a safety cap, not per-token pacing.
-            requestTimeoutMillis = 10 * 60 * 1000
-            socketTimeoutMillis = 10 * 60 * 1000
-            connectTimeoutMillis = 30 * 1000
-        }
-    }
-
     private val json: Json = OllamaWire.json
-
-    override suspend fun disconnect() {
-        if (ownsClient) client.close()
-    }
 
     override suspend fun healthCheck(): HealthStatus = try {
         val r = client.get("$baseUrl/api/tags")
@@ -101,7 +78,7 @@ public class OllamaLlmAccess(
         if (!response.status.isSuccess()) {
             throw mapOllamaError(response.status, response.bodyAsText(), response)
         }
-        val tags: OllamaTagsResponse = response.body()
+        val tags = json.decodeFromString(OllamaTagsResponse.serializer(), response.bodyAsText())
         tags.models.map { entry ->
             val modelName = entry.name
             LlmModelInfo(
@@ -133,7 +110,9 @@ public class OllamaLlmAccess(
         wrapTransport {
             client.preparePost("$baseUrl/api/chat") {
                 contentType(ContentType.Application.Json)
-                setBody(requestBody)
+                setBody(json.encodeToString(JsonObject.serializer(), requestBody))
+                // Ollama sends nothing while it loads a model, which can take minutes.
+                timeout { socketTimeoutMillis = 10.minutes.inWholeMilliseconds }
             }.execute { response ->
                 if (!response.status.isSuccess()) {
                     throw mapOllamaError(response.status, response.bodyAsText(), response, model)

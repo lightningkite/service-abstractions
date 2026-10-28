@@ -8,15 +8,13 @@ import com.lightningkite.services.email.*
 import com.lightningkite.services.http.client
 import com.lightningkite.services.telemetry.telemetryTrace
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.auth.*
-import io.ktor.client.plugins.auth.providers.*
+import io.ktor.client.request.basicAuth
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 
 /**
- * @param baseClient Base HTTP client to derive the Mailgun-authenticated client from. Defaults to
- * the shared production client; tests can pass a `MockEngine`-backed client here instead.
+ * @param baseClient sends the Mailgun requests. Tests pass a `MockEngine`-backed client.
  */
 public class MailgunEmailService(
     override val name: String,
@@ -26,15 +24,7 @@ public class MailgunEmailService(
     baseClient: HttpClient = client,
 ) : EmailService {
 
-    private val client = baseClient.config {
-        install(Auth) {
-            basic {
-                credentials {
-                    BasicAuthCredentials(username = "api", password = key)
-                }
-            }
-        }
-    }
+    private val http: HttpClient = baseClient
 
     public companion object {
 
@@ -58,7 +48,7 @@ public class MailgunEmailService(
         // Read attachment bytes here (suspend context); FormBuilder.append's bodyBuilder is not suspend.
         val attachmentBytes = email.attachments.map { it to it.typedData.data.bytes() }
 
-        val result = client.submitFormWithBinaryData(
+        val result = http.submitFormWithBinaryData(
             url = "https://api.mailgun.net/v3/$domain/messages",
             formData = formData {
                 // email.from.value (the address the caller actually configured) must be honored when
@@ -90,7 +80,7 @@ public class MailgunEmailService(
                     }
                 }
             },
-        )
+        ) { basicAuth("api", key) }
         email.attachments.forEach { it.typedData.data.close() }
         if (!result.status.isSuccess())
             throw Exception("Got status ${result.status}: ${result.bodyAsText()}")

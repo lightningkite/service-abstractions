@@ -9,14 +9,11 @@ import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.sms.InboundSms
 import com.lightningkite.services.sms.SmsInboundService
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
-import io.ktor.client.plugins.auth.*
-import io.ktor.client.plugins.auth.providers.*
-import io.ktor.client.plugins.contentnegotiation.*
+import com.lightningkite.services.http.client
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonObject
@@ -92,23 +89,6 @@ public class TwilioSmsInboundService(
     private val phoneNumber: String,
 ) : SmsInboundService {
 
-    private val client = com.lightningkite.services.http.client.config {
-        install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-            })
-        }
-        install(Auth) {
-            basic {
-                credentials {
-                    BasicAuthCredentials(username = accountSid, password = authToken)
-                }
-                realm = "Twilio API"
-            }
-        }
-    }
-
     private val baseUrl = "https://api.twilio.com/2010-04-01/Accounts/$accountSid"
 
     // Cached HMAC key spec — SecretKeySpec is thread-safe for reading
@@ -141,7 +121,7 @@ public class TwilioSmsInboundService(
                     append("SmsUrl", httpUrl)
                     append("SmsMethod", "POST")
                 }
-            )
+            ) { basicAuth(accountSid, authToken) }
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
@@ -299,7 +279,7 @@ public class TwilioSmsInboundService(
             put(TelemetryKey.OfString("sms.phone_number"), phoneNumber)
         }) { span ->
             val encodedNumber = URLEncoder.encode(phoneNumber, Charsets.UTF_8)
-            val response = client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber")
+            val response = client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber") { basicAuth(accountSid, authToken) }
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
