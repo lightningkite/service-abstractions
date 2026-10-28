@@ -11,6 +11,7 @@ import com.lightningkite.services.files.ExternalFileSystem
 import com.lightningkite.services.files.test.FileSystemTests
 import io.ktor.client.request.*
 import kotlinx.coroutines.runBlocking
+import org.junit.AssumptionViolatedException
 import reactor.core.publisher.Mono
 import java.time.OffsetDateTime
 import java.util.Base64
@@ -39,6 +40,7 @@ class AzureBlobIdentityTest : FileSystemTests() {
     }
 
     override val system: AzureBlobExternalFileSystem? by lazy {
+        if(System.getenv("USE_LOCAL_AZURE") != "true") throw AssumptionViolatedException("Not using local Azure on this machine")
         val container = BlobServiceClientBuilder()
             .endpoint("https://127.0.0.1:10000/devstoreaccount1")
             .credential(fakeIdentity)

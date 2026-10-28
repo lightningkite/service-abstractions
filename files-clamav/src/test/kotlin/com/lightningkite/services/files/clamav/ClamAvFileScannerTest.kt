@@ -6,6 +6,8 @@ import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.files.*
 import com.lightningkite.services.kfile.KFile
 import kotlinx.coroutines.runBlocking
+import org.junit.AssumptionViolatedException
+import xyz.capybara.clamav.ClamavException
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 
@@ -16,6 +18,7 @@ class ClamAvFileScannerTest {
 
     @Test
     fun test() = runBlocking<Unit> {
+        if(System.getenv("USE_CLAM_AV") != "true") throw AssumptionViolatedException("Not using ClamAV on this machine")
         try {
             Runtime.getRuntime().exec(arrayOf("clamd", "--version"))
         } catch (e: Exception) {
