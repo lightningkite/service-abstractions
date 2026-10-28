@@ -501,7 +501,7 @@ public class MongoTable<Model : Any>(
         return telemetryTrace("replaceOneIgnoringResult") {
             access {
                 replaceOne(
-                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
+                    cs.bson(serializer, bson = bson),
                     bson.stringify(serializer, model)
                 ).matchedCount != 0L
             }
@@ -545,7 +545,6 @@ public class MongoTable<Model : Any>(
         val filter = cs.bson(
             serializer,
             bson = bson,
-            atlasSearch = atlasSearch,
         )
         if (simplifiedModification.isNothing) return telemetryTrace("upsertOne") {
             access {
@@ -591,7 +590,6 @@ public class MongoTable<Model : Any>(
         val filter = cs.bson(
             serializer,
             bson = bson,
-            atlasSearch = atlasSearch,
         )
         if (simplifiedModification.isNothing) return telemetryTrace("upsertOneIgnoringResult") {
             access {
@@ -643,7 +641,7 @@ public class MongoTable<Model : Any>(
             overlappingArrayFilters = supportsOverlappingArrayFilters
         )
         // With orderBy, this updates the first row that passes the modification's check.
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
+        val filter = cs.bson(serializer, bson = bson).andCheck(m.check)
         val before = telemetryTrace("updateOne") {
             access<Model?> {
                 findOneAndUpdate(
@@ -673,7 +671,7 @@ public class MongoTable<Model : Any>(
             bson = bson,
             overlappingArrayFilters = supportsOverlappingArrayFilters
         )
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
+        val filter = cs.bson(serializer, bson = bson).andCheck(m.check)
         return telemetryTrace("updateOneIgnoringResult") {
             access {
                 updateOne(filter, m.document, m.options).matchedCount != 0L
@@ -699,7 +697,7 @@ public class MongoTable<Model : Any>(
         telemetryTrace("updateMany") {
             access {
                 find(
-                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
+                    cs.bson(serializer, bson = bson).andCheck(m.check)
                 ).collectChunked(1000) { list ->
                     val parsed = list.asSequence().map { bson.parse(serializer, it) }.toList()
                     val chunkChanges = parsed.map { EntryChange(it, modification(it)) }
@@ -728,7 +726,7 @@ public class MongoTable<Model : Any>(
             bson = bson,
             overlappingArrayFilters = supportsOverlappingArrayFilters
         )
-        val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch).andCheck(m.check)
+        val filter = cs.bson(serializer, bson = bson).andCheck(m.check)
         return telemetryTrace("updateManyIgnoringResult") {
             access {
                 updateMany(filter, m.document, m.options).matchedCount.toInt()
@@ -742,7 +740,7 @@ public class MongoTable<Model : Any>(
         return telemetryTrace("deleteOne") {
             access {
                 withDocumentClass<BsonDocument>().findOneAndDelete(
-                    cs.bson(serializer, bson = bson, atlasSearch = atlasSearch),
+                    cs.bson(serializer, bson = bson),
                     FindOneAndDeleteOptions()
                         .let { if (orderBy.isEmpty()) it else it.sort(sort(orderBy)) }
                 )?.let { bson.parse(serializer, it) }
@@ -763,7 +761,6 @@ public class MongoTable<Model : Any>(
                     cs.bson(
                         serializer,
                         bson = bson,
-                        atlasSearch = atlasSearch
                     )
                 ).deletedCount > 0
             }
@@ -794,7 +791,6 @@ public class MongoTable<Model : Any>(
                     cs.bson(
                         serializer,
                         bson = bson,
-                        atlasSearch = atlasSearch
                     )
                 )
                     .collectChunked(1000) { list ->
@@ -818,7 +814,6 @@ public class MongoTable<Model : Any>(
                     cs.bson(
                         serializer,
                         bson = bson,
-                        atlasSearch = atlasSearch
                     )
                 ).deletedCount.toInt()
             }
@@ -851,7 +846,7 @@ public class MongoTable<Model : Any>(
                 // $nearSphere (used for GeoDistance) is banned inside aggregate().$match in MongoDB 5+.
                 // Use collection.find() directly when the query contains a geo distance condition.
                 if (hasGeo) {
-                    val filter = cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)
+                    val filter = cs.bson(serializer, bson = bson)
                     val hasCiSort = orderBy.any { s -> s.ignoreCase }
                     withDocumentClass<BsonDocument>().find(filter)
                         .let { if (orderBy.isNotEmpty()) it.sort(sort(orderBy)) else it }
@@ -868,7 +863,7 @@ public class MongoTable<Model : Any>(
                     val hasCiSort = orderBy.any { it.ignoreCase }
                     aggregate<BsonDocument>(
                         buildList {
-                            add(Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)))
+                            add(Aggregates.match(cs.bson(serializer, bson = bson)))
                             if (orderBy.isNotEmpty()) {
                                 if (hasCiSort && !supportsCollation) {
                                     add(addCiFields(orderBy))
@@ -925,10 +920,10 @@ public class MongoTable<Model : Any>(
                     // countDocuments uses aggregate internally; $nearSphere in $match is disallowed in MongoDB 5+.
                     // Fall back to find() which supports geo operators, then count the results.
                     withDocumentClass<BsonDocument>()
-                        .find(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch))
+                        .find(cs.bson(serializer, bson = bson))
                         .toList().size
                 } else {
-                    countDocuments(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)).toInt()
+                    countDocuments(cs.bson(serializer, bson = bson)).toInt()
                 }
             }
         }
@@ -944,7 +939,7 @@ public class MongoTable<Model : Any>(
             access {
                 aggregate<BsonDocument>(
                     listOf(
-                        Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
+                        Aggregates.match(cs.bson(serializer, bson = bson)),
                         Aggregates.group("\$" + groupBy.mongo, Accumulators.sum("count", 1)),
                     ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(
                         match(
@@ -984,7 +979,7 @@ public class MongoTable<Model : Any>(
             access {
                 aggregate(
                     listOf(
-                        Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
+                        Aggregates.match(cs.bson(serializer, bson = bson)),
                         Aggregates.group(null, aggregate.asValueBson(property.mongo))
                     )
                 )
@@ -1010,7 +1005,7 @@ public class MongoTable<Model : Any>(
             access {
                 aggregate(
                     listOf(
-                        Aggregates.match(cs.bson(serializer, bson = bson, atlasSearch = atlasSearch)),
+                        Aggregates.match(cs.bson(serializer, bson = bson)),
                         Aggregates.group("\$" + groupBy.mongo, aggregate.asValueBson(property.mongo)),
                     ) + if (groupBy.serializer.descriptor.isNullable) emptyList() else listOf(
                         match(
@@ -1165,7 +1160,6 @@ public class MongoTable<Model : Any>(
                             Aggregates.match(
                                 cs.bson(
                                     serializer,
-                                    atlasSearch = true,
                                     bson = bson
                                 )
                             )
@@ -1180,7 +1174,7 @@ public class MongoTable<Model : Any>(
                     listOf(
                         Aggregates.match(
                             if (cs is Condition.Always) text
-                            else Filters.and(text, cs.bson(serializer, bson = bson, atlasSearch = false))
+                            else Filters.and(text, cs.bson(serializer, bson = bson))
                         ),
                         Aggregates.addFields(Field("__text_score", documentOf("\$meta" to "textScore"))),
                         Aggregates.sort(Sorts.descending("__text_score")),
@@ -1246,7 +1240,7 @@ public class MongoTable<Model : Any>(
                                 }
                                 // Add filter condition if not always
                                 if (cs !is Condition.Always) {
-                                    this["filter"] = cs.bson(serializer, atlasSearch = true, bson = bson)
+                                    this["filter"] = cs.bson(serializer, vectorSearchFilter = true, bson = bson)
                                 }
                             }
                         ))

@@ -38,7 +38,7 @@ class BsonConditionDocumentDbTest {
     @Test
     fun stringContains_usesBsonRegexType_notSeparateOptionsField() {
         val cond = Condition.OnField(stringProp, Condition.StringContains("hello", ignoreCase = true))
-        val doc = cond.bson(largeSerializer, atlasSearch = false, bson = bson)
+        val doc = cond.bson(largeSerializer, bson = bson)
 
         val stringDoc = doc["string"] as Document
         val regexValue = stringDoc["\$regex"]
@@ -52,7 +52,7 @@ class BsonConditionDocumentDbTest {
     @Test
     fun stringContains_caseSensitive_emptyOptions() {
         val cond = Condition.OnField(stringProp, Condition.StringContains("hello", ignoreCase = false))
-        val doc = cond.bson(largeSerializer, atlasSearch = false, bson = bson)
+        val doc = cond.bson(largeSerializer, bson = bson)
 
         val stringDoc = doc["string"] as Document
         val regexValue = stringDoc["\$regex"]
@@ -66,7 +66,7 @@ class BsonConditionDocumentDbTest {
     @Test
     fun regexMatches_usesBsonRegexType_notSeparateOptionsField() {
         val cond = Condition.OnField(stringProp, Condition.RegexMatches("^hello.*", ignoreCase = true))
-        val doc = cond.bson(largeSerializer, atlasSearch = false, bson = bson)
+        val doc = cond.bson(largeSerializer, bson = bson)
 
         val stringDoc = doc["string"] as Document
         val regexValue = stringDoc["\$regex"]
@@ -81,7 +81,7 @@ class BsonConditionDocumentDbTest {
     fun geoDistance_usesNearSphere_notGeoWithinCenterSphere() {
         val lk = GeoCoordinate(41.727019, -111.8443002)
         val cond = Condition.OnField(geoProp, Condition.GeoDistance(lk, lessThan = 50.0.kilometers))
-        val doc = cond.bson(geoSerializer, atlasSearch = false, bson = bson)
+        val doc = cond.bson(geoSerializer, bson = bson)
 
         val geoDoc = doc["geo"] as Document
         assertNotNull(geoDoc["\$nearSphere"], "Expected \$nearSphere for DocumentDB compatibility")
@@ -106,7 +106,7 @@ class BsonConditionDocumentDbTest {
     fun geoDistance_withMinDistance_includesMinDistanceField() {
         val lk = GeoCoordinate(41.727019, -111.8443002)
         val cond = Condition.OnField(geoProp, Condition.GeoDistance(lk, greaterThan = 50.0.kilometers))
-        val doc = cond.bson(geoSerializer, atlasSearch = false, bson = bson)
+        val doc = cond.bson(geoSerializer, bson = bson)
 
         val geoDoc = doc["geo"] as Document
         val nearDoc = geoDoc["\$nearSphere"] as Document
