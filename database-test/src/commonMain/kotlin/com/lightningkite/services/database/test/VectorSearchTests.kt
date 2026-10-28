@@ -100,7 +100,7 @@ abstract class VectorSearchTests {
         // Search for vectors similar to [1, 0, 0]
         val queryVector = Embedding.of(1f, 0f, 0f)
         val results = collection.findSimilar(
-            vectorField = VectorTestModel.path.embedding,
+            vectorField = VectorTestModel.embedding,
             params = VectorSearchParams(
                 queryVector = queryVector,
                 metric = SimilarityMetric.Cosine,
@@ -148,7 +148,7 @@ abstract class VectorSearchTests {
 
         val queryVector = Embedding.of(1f, 0f, 0f)
         val results = collection.findSimilar(
-            vectorField = VectorTestModel.path.embedding,
+            vectorField = VectorTestModel.embedding,
             params = VectorSearchParams(
                 queryVector = queryVector,
                 metric = SimilarityMetric.Cosine,
@@ -195,13 +195,13 @@ abstract class VectorSearchTests {
 
         val queryVector = Embedding.of(1f, 0f, 0f)
         val results = collection.findSimilar(
-            vectorField = VectorTestModel.path.embedding,
+            vectorField = VectorTestModel.embedding,
             params = VectorSearchParams(
                 queryVector = queryVector,
                 metric = SimilarityMetric.Cosine,
                 limit = 10
             ),
-            condition = VectorTestModel.path.category eq "tech"
+            condition = VectorTestModel.category eq "tech"
         ).toList()
 
         assertEquals(2, results.size)
@@ -235,7 +235,7 @@ abstract class VectorSearchTests {
 
         val queryVector = Embedding.of(1f, 0f, 0f)
         val results = collection.findSimilar(
-            vectorField = VectorTestModel.path.embedding,
+            vectorField = VectorTestModel.embedding,
             params = VectorSearchParams(
                 queryVector = queryVector,
                 metric = SimilarityMetric.Cosine,
@@ -279,7 +279,7 @@ abstract class VectorSearchTests {
 
         val queryVector = Embedding.of(0f, 0f, 0f)
         val results = collection.findSimilar(
-            vectorField = VectorTestModel.path.embedding,
+            vectorField = VectorTestModel.embedding,
             params = VectorSearchParams(
                 queryVector = queryVector,
                 metric = SimilarityMetric.Euclidean,
@@ -326,7 +326,7 @@ abstract class VectorSearchTests {
 
         val queryVector = Embedding.of(1f, 1f, 0f)
         val results = collection.findSimilar(
-            vectorField = VectorTestModel.path.embedding,
+            vectorField = VectorTestModel.embedding,
             params = VectorSearchParams(
                 queryVector = queryVector,
                 metric = SimilarityMetric.DotProduct,
@@ -387,13 +387,13 @@ abstract class VectorSearchTests {
         // Search for vectors similar to [1, 0, 0] but only where tags contain "kotlin"
         val queryVector = Embedding.of(1f, 0f, 0f)
         val results = collection.findSimilar(
-            vectorField = VectorTestModel.path.embedding,
+            vectorField = VectorTestModel.embedding,
             params = VectorSearchParams(
                 queryVector = queryVector,
                 metric = SimilarityMetric.Cosine,
                 limit = 10
             ),
-            condition = VectorTestModel.path.tags.any { it eq "kotlin" }
+            condition = VectorTestModel.tags.any { it eq "kotlin" }
         ).toList()
 
         // Should only return the two kotlin-tagged docs
@@ -437,7 +437,7 @@ abstract class VectorSearchTests {
 
         val queryVector = SparseEmbedding(intArrayOf(0, 2), floatArrayOf(1f, 1f), 10)
         val results = collection.findSimilarSparse(
-            vectorField = SparseVectorTestModel.path.sparseEmbedding,
+            vectorField = SparseVectorTestModel.sparseEmbedding,
             params = VectorSearchParams(
                 queryVector = queryVector,
                 metric = SimilarityMetric.Cosine,

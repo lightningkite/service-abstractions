@@ -4,6 +4,7 @@ package com.lightningkite.services.database
 import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.data.Queryable
+import com.lightningkite.services.database.optics.Lens
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -47,15 +48,23 @@ sealed interface Polymorphic {
 @Queryable
 sealed interface Shape {
     val label: String
-    val sides: Int
 
     @Queryable
-    data class Square(override val label: String, val size: Int) : Shape {
+    sealed interface Polygon : Shape {
+        val size: Int
+        val sides: Int
+    }
+
+    @Queryable
+    data class Square(override val label: String, override val size: Int, val other: String = "hello world") : Polygon {
         override val sides: Int get() = 4
     }
 
     @Queryable
-    data class Triangle(override val label: String, override val sides: Int = 3) : Shape
+    data class Triangle(override val label: String, override val sides: Int = 3, override val size: Int) : Polygon
+
+    @Queryable
+    data class Circle(override val label: String) : Shape
 }
 
 @Queryable
@@ -151,11 +160,12 @@ class FieldGenerationTest {
         val isEmptyViaPath = Condition<PolymorphicClass> { it.asEmpty isType PolymorphicClass.Empty.serializer() }
         assertTrue(isEmptyViaPath(PolymorphicClass.Empty))
         assertFalse(isEmptyViaPath(PolymorphicClass.Foo("a")))
+        Lens<Shape.Circle>() + Shape.label()
     }
 
     @Test
     fun sealedClassVariantSetOnlyReplacesMatchingVariant() {
-        val asTopLevel = PolymorphicClass.path.asPolymorphicClassTopLevel
+        val asTopLevel = Lens<PolymorphicClass>().asPolymorphicClassTopLevel
         assertEquals(PolymorphicClassTopLevel(5), asTopLevel.set(PolymorphicClassTopLevel(1), PolymorphicClassTopLevel(5)))
         assertEquals(PolymorphicClass.Empty, asTopLevel.set(PolymorphicClass.Empty, PolymorphicClassTopLevel(5)))
         assertEquals(PolymorphicClass.Foo("a"), asTopLevel.id.set(PolymorphicClass.Foo("a"), 5))
@@ -175,13 +185,13 @@ class FieldGenerationTest {
 
     @Test
     fun sealedInterfaceSharedProperties() {
-        val label = Shape.label
+        val label = Shape.label<Shape>()
         assertEquals("a", label.get(Shape.Square("a", 1)))
-        assertEquals(Shape.Triangle("b"), label.set(Shape.Triangle("a"), "b"))
+        assertEquals(Shape.Triangle("b", 3, 1), label.set(Shape.Triangle("a", 3, 1), "b"))
         val condition = Shape.path.label eq "a"
         assertTrue(condition(Shape.Square("a", 1)))
-        assertTrue(condition(Shape.Triangle("a")))
-        assertFalse(condition(Shape.Triangle("b")))
+        assertTrue(condition(Shape.Triangle("a", 3, 1)))
+        assertFalse(condition(Shape.Triangle("b", 3, 1)))
         assertEquals(Shape.Square("z", 1), Shape.path.label.mapModification(Modification.Assign("z"))(Shape.Square("a", 1)))
         // Square's `sides` is a getter, so it gets no accessor: Shape.sides would not compile.
     }

@@ -100,11 +100,12 @@ public interface Optic<A, B> : AnyOptic<A> {
  * ```
  */
 public interface Lens<A, B> : Optic<A, B> {
+    /** Returns the target of this lens within [source]. This is guaranteed to succeed. */
     override fun get(source: A): B
+    /** Returns the target of this lens within [source]. Since this is a [Lens] the operation is equivalent to [get], and you should use that instead. */
     override fun getOrThrow(source: A): B = get(source)
 
     /** Returns a lens that focuses on the target of [other] within the target of this lens. */
-    @Suppress("UNCHECKED_CAST")
     public operator fun <C> plus(other: Lens<B, C>): Lens<A, C> =
         (this as Optic<A, B>).plus(other) as Lens<A, C>
 }
