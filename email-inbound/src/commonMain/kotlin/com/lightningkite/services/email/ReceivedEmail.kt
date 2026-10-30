@@ -49,6 +49,8 @@ import kotlin.time.Instant
  * @property spamScore Spam score if provided by the email service (provider-specific scale)
  * @property inReplyTo Message-ID of the email this is replying to (for threading)
  * @property references List of Message-IDs in the email thread (for threading)
+ * @property authentication Sender authentication verdicts; null when the provider doesn't report them.
+ *   The `From` header is trivially forged: check [EmailAuthentication.dmarc] before trusting [from].
  */
 public data class ReceivedEmail(
     val messageId: String,
@@ -66,7 +68,22 @@ public data class ReceivedEmail(
     val spamScore: Double? = null,
     val inReplyTo: String? = null,
     val references: List<String> = emptyList(),
+    val authentication: EmailAuthentication? = null,
 )
+
+/**
+ * Sender authentication results reported by the inbound provider.
+ * A null verdict means the check wasn't run or reported; treat it as unverified.
+ */
+@Serializable
+public data class EmailAuthentication(
+    val spf: EmailAuthVerdict? = null,
+    val dkim: EmailAuthVerdict? = null,
+    val dmarc: EmailAuthVerdict? = null,
+)
+
+@Serializable
+public enum class EmailAuthVerdict { Pass, Fail, Gray, ProcessingFailed }
 
 /**
  * SMTP envelope information for a received email.

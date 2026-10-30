@@ -308,6 +308,23 @@ public class SesEmailInboundService(
             else -> null
         }
 
+        fun authVerdict(verdict: SesVerdict?): EmailAuthVerdict? = when (verdict?.status) {
+            null -> null
+            "PASS" -> EmailAuthVerdict.Pass
+            "FAIL" -> EmailAuthVerdict.Fail
+            "GRAY" -> EmailAuthVerdict.Gray
+            "PROCESSING_FAILED" -> EmailAuthVerdict.ProcessingFailed
+            else -> {
+                logger.warn { "[$name] Unrecognized SES auth verdict '${verdict.status}'; treating as unverified" }
+                null
+            }
+        }
+        val authentication = EmailAuthentication(
+            spf = authVerdict(receipt.spfVerdict),
+            dkim = authVerdict(receipt.dkimVerdict),
+            dmarc = authVerdict(receipt.dmarcVerdict),
+        )
+
         logger.info { "[$name] Parsed email: messageId=$messageId, from=${from.value}, subject=$subject" }
 
         return ReceivedEmail(
@@ -325,7 +342,8 @@ public class SesEmailInboundService(
             envelope = envelope,
             spamScore = spamScore,
             inReplyTo = inReplyTo,
-            references = references
+            references = references,
+            authentication = authentication,
         )
     }
 

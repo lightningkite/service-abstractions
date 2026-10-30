@@ -2,7 +2,7 @@ package com.lightningkite.services.email.ses
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.*
-import com.lightningkite.services.email.EmailInboundService
+import com.lightningkite.services.email.*
 import com.lightningkite.services.webhooksubservice.HttpAdapter
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.test.runTest
@@ -529,6 +529,48 @@ class SesEmailInboundServiceTest {
 
         // Spam score should be high (10.0) for FAIL verdict
         assertEquals(10.0, email.spamScore)
+    }
+
+    private suspend fun parseWithAuthVerdicts(spf: SesVerdict?, dkim: SesVerdict?, dmarc: SesVerdict?): ReceivedEmail {
+        val base = json.decodeFromString<SesNotification>(SnsTestUtils.createSesNotificationMessage())
+        val sesNotification = base.copy(
+            receipt = base.receipt.copy(spfVerdict = spf, dkimVerdict = dkim, dmarcVerdict = dmarc)
+        )
+        val notification = SnsTestUtils.createSignedNotification(
+            type = "Notification",
+            message = json.encodeToString(sesNotification),
+            privateKey = keyPair.private,
+            certUrl = certUrl
+        )
+        return createServiceWithCachedCert().onReceived.parse(
+            queryParameters = emptyList(),
+            headers = emptyMap(),
+            body = TypedData.text(json.encodeToString(notification), MediaType.Application.Json)
+        )
+    }
+
+    @Test
+    fun testParseEmail_authenticationPass() = runTest {
+        val email = parseWithAuthVerdicts(SesVerdict("PASS"), SesVerdict("GRAY"), SesVerdict("PASS"))
+        assertEquals(
+            EmailAuthentication(spf = EmailAuthVerdict.Pass, dkim = EmailAuthVerdict.Gray, dmarc = EmailAuthVerdict.Pass),
+            email.authentication
+        )
+    }
+
+    @Test
+    fun testParseEmail_authenticationDmarcFail() = runTest {
+        val email = parseWithAuthVerdicts(SesVerdict("FAIL"), SesVerdict("PROCESSING_FAILED"), SesVerdict("FAIL"))
+        assertEquals(
+            EmailAuthentication(spf = EmailAuthVerdict.Fail, dkim = EmailAuthVerdict.ProcessingFailed, dmarc = EmailAuthVerdict.Fail),
+            email.authentication
+        )
+    }
+
+    @Test
+    fun testParseEmail_authenticationMissingOrUnknown() = runTest {
+        val email = parseWithAuthVerdicts(spf = null, dkim = SesVerdict("SOMETHING_NEW"), dmarc = null)
+        assertEquals(EmailAuthentication(spf = null, dkim = null, dmarc = null), email.authentication)
     }
 
     @Test
