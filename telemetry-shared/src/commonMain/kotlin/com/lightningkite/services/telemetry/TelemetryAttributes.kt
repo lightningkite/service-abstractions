@@ -1,5 +1,6 @@
 package com.lightningkite.services.telemetry
 
+import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
 
@@ -15,6 +16,7 @@ import kotlin.jvm.JvmInline
  * }
  * ```
  */
+@Serializable(with = TelemetryAttributesSerializer::class)
 @JvmInline
 public value class TelemetryAttributes private constructor(public val map: Map<TelemetryKey<*>, Any>) {
     public constructor(entries: List<TelemetryKey.Entry<*>>) : this(
@@ -31,6 +33,8 @@ public value class TelemetryAttributes private constructor(public val map: Map<T
     public operator fun plus(other: TelemetryAttributes): TelemetryAttributes = TelemetryAttributes(this.map + other.map)
 
     public operator fun minus(other: TelemetryAttributes): TelemetryAttributes = TelemetryAttributes(this.map.minus(other.map.keys))
+
+    public fun filterKeys(predicate: (TelemetryKey<*>) -> Boolean): TelemetryAttributes = TelemetryAttributes(map.filterKeys(predicate))
 
     @Suppress("UNCHECKED_CAST")
     public operator fun <T : Any> get(key: TelemetryKey<T>): T? = map[key] as? T
