@@ -3,6 +3,8 @@ package com.lightningkite.services.email.ses
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.aws.AwsConnections
+import com.lightningkite.services.get
 import com.lightningkite.services.data.*
 import com.lightningkite.services.email.*
 import com.lightningkite.services.telemetry.telemetryTrace
@@ -12,6 +14,9 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import java.net.URI
 import java.net.URL
 import java.security.Signature
@@ -58,37 +63,59 @@ private val logger = KotlinLogging.logger("SesEmailInboundService")
  *
  * ## Important Notes
  *
- * - **150KB SNS limit**: Emails larger than ~150KB may have content stored in S3 instead
- *   of inline. This implementation currently only supports inline content.
+ * - **150KB SNS limit**: SES bounces emails larger than 150KB when the receipt rule uses an SNS
+ *   action. For larger emails (up to 40MB), the receipt rule uses an S3 action that stores the
+ *   raw email in a bucket and notifies SNS without content; configure that bucket with
+ *   `ses://?bucket=<bucket>&region=<region>` (see `awsSesInbound(storeInS3 = true)`) and the
+ *   email is fetched from it.
  * - **Webhook security**: All SNS messages are verified using AWS's X.509 certificate-based
  *   signature verification. The signing certificate URL must be from amazonaws.com.
  * - **Idempotency**: SES may send duplicate notifications; handle by Message-ID
  *
  * @property name Service instance name for logging and identification
  * @property context Service context providing configuration and shared resources
+ * @property emailBucket Where the receipt rule's S3 action stores raw emails; null if emails only arrive inline via SNS
  */
 public class SesEmailInboundService(
     override val name: String,
     override val context: SettingContext,
+    private val emailBucket: EmailBucket? = null,
 ) : EmailInboundService {
+
+    public class EmailBucket(public val name: String, public val s3: S3Client)
 
     public companion object {
         init {
-            EmailInboundService.Settings.register("ses") { name, _, context ->
-                SesEmailInboundService(name, context)
+            EmailInboundService.Settings.register("ses") { name, url, context ->
+                val params = url.substringAfter("?", "").split("&").filter { it.isNotEmpty() }
+                    .associate { it.substringBefore("=") to it.substringAfter("=") }
+                val emailBucket = params["bucket"]?.let { bucket ->
+                    val region = params["region"]
+                        ?: throw IllegalArgumentException("ses:// settings with a bucket need a region too: ses://?bucket=<bucket>&region=<region>")
+                    EmailBucket(
+                        name = bucket,
+                        s3 = S3Client.builder()
+                            .region(Region.of(region))
+                            .httpClient(context[AwsConnections].client)
+                            .overrideConfiguration(context[AwsConnections].clientOverrideConfiguration)
+                            .build()
+                    )
+                }
+                SesEmailInboundService(name, context, emailBucket)
             }
         }
 
         /**
-         * Creates settings for AWS SES inbound email service.
-         *
-         * AWS SES receives emails via SNS notifications. Infrastructure must be configured
-         * separately (via Terraform, CloudFormation, or AWS Console).
-         *
-         * @return Settings configured for SES inbound email
+         * Settings for emails delivered inline by an SNS receipt action (150KB max; SES bounces larger ones).
          */
         public fun EmailInboundService.Settings.Companion.ses(): EmailInboundService.Settings =
             EmailInboundService.Settings("ses://")
+
+        /**
+         * Settings for emails stored in [bucket] by an S3 receipt action (40MB max), which notifies SNS without content.
+         */
+        public fun EmailInboundService.Settings.Companion.ses(bucket: String, region: Region): EmailInboundService.Settings =
+            EmailInboundService.Settings("ses://?bucket=$bucket&region=${region.id()}")
     }
 
     private val json = Json {
@@ -220,17 +247,43 @@ public class SesEmailInboundService(
                     )
                 }
 
-                // Check if content is available inline
-                val rawContent = sesNotification.content
-                    ?: throw UnsupportedOperationException(
-                        "Email content not included in notification (likely stored in S3). " +
-                                "S3-based content retrieval is not yet implemented."
+                val action = sesNotification.receipt.action
+                val rawMime: ByteArray = when {
+                    sesNotification.content != null -> sesNotification.content.toByteArray(Charsets.UTF_8)
+                    action?.type == "S3" -> {
+                        val bucket = emailBucket ?: throw IllegalStateException(
+                            "SES stored the email in S3 bucket '${action.bucketName}', but no bucket is configured. " +
+                                    "Use ses://?bucket=<bucket>&region=<region>."
+                        )
+                        // Any SNS topic can deliver a validly signed message here, so the notification
+                        // must not be able to make us read some other object our role has access to.
+                        if (action.bucketName != bucket.name) throw SecurityException(
+                            "SES notification names bucket '${action.bucketName}', but the configured bucket is '${bucket.name}'"
+                        )
+                        val key = action.objectKey
+                            ?: throw IllegalArgumentException("SES S3 action notification has no objectKey")
+                        telemetryTrace("s3.getObject", attributes = TelemetryAttributes {
+                            put(TelemetryKeys.Messaging.system, "ses")
+                        }) { _ ->
+                            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                try {
+                                    bucket.s3.getObjectAsBytes { it.bucket(bucket.name).key(key) }.asByteArray()
+                                } catch (e: NoSuchKeyException) {
+                                    throw IllegalStateException("Email s3://${bucket.name}/$key not found", e)
+                                }
+                            }
+                        }
+                    }
+                    else -> throw UnsupportedOperationException(
+                        "SES notification has no email content and its receipt action is '${action?.type}', not 'S3'. " +
+                                "Use an SNS action (inline content, 150KB max) or an S3 action with an SNS topic."
                     )
+                }
 
                 telemetryTrace("mime.parse", attributes = TelemetryAttributes {
                     put(TelemetryKeys.Messaging.system, "ses")
                 }) { _ ->
-                    parseReceivedEmail(sesNotification, rawContent)
+                    parseReceivedEmail(sesNotification, rawMime)
                 }
             }
             when (result) {
@@ -249,7 +302,7 @@ public class SesEmailInboundService(
     /**
      * Parse a received email from SES notification and raw MIME content.
      */
-    private fun parseReceivedEmail(notification: SesNotification, rawContent: String): ReceivedEmail {
+    private fun parseReceivedEmail(notification: SesNotification, rawContent: ByteArray): ReceivedEmail {
         val mail = notification.mail
         val receipt = notification.receipt
 

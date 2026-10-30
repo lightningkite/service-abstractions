@@ -16,7 +16,7 @@ class MimeParserDepthTest {
 
     @Test
     fun extractPlainText_deeplyNestedMultipart_throwsInsteadOfOverflowing() {
-        val message = MimeParser.parseRawMime(buildDeeplyNestedRawMime(depth = 100))
+        val message = MimeParser.parseRawMime(buildDeeplyNestedRawMime(depth = 100).toByteArray())
 
         assertFailsWith<IllegalArgumentException> {
             MimeParser.extractPlainText(message)
@@ -25,7 +25,7 @@ class MimeParserDepthTest {
 
     @Test
     fun extractAttachments_deeplyNestedMultipart_throwsInsteadOfOverflowing() {
-        val message = MimeParser.parseRawMime(buildDeeplyNestedRawMime(depth = 100))
+        val message = MimeParser.parseRawMime(buildDeeplyNestedRawMime(depth = 100).toByteArray())
 
         assertFailsWith<IllegalArgumentException> {
             MimeParser.extractAttachments(message)

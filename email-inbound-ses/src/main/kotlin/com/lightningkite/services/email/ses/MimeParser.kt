@@ -26,10 +26,7 @@ internal object MimeParser {
     /**
      * Parse a raw MIME message into a MimeMessage object.
      */
-    fun parseRawMime(rawContent: String): MimeMessage {
-        val inputStream = ByteArrayInputStream(rawContent.toByteArray(Charsets.UTF_8))
-        return MimeMessage(session, inputStream)
-    }
+    fun parseRawMime(rawContent: ByteArray): MimeMessage = MimeMessage(session, ByteArrayInputStream(rawContent))
 
     /**
      * Extract plain text body from a MIME message.

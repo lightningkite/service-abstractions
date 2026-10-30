@@ -7,6 +7,12 @@ import com.lightningkite.services.webhooksubservice.HttpAdapter
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import software.amazon.awssdk.core.ResponseBytes
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.GetObjectResponse
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import java.net.InetSocketAddress
 import java.security.KeyPair
 import java.security.cert.X509Certificate
@@ -479,6 +485,129 @@ class SesEmailInboundServiceTest {
         assertTrue(exception.message?.contains("S3") == true)
     }
 
+    // ==================== S3-stored Email Tests ====================
+
+    private val emailBucketName = "test-ses-inbound-emails"
+
+    /** Fake S3 holding the given objects of [emailBucketName]; anything else is NoSuchKey, as in S3. */
+    private fun fakeS3(objects: Map<String, ByteArray>): S3Client = object : S3Client {
+        override fun serviceName(): String = "s3"
+        override fun close() {}
+        override fun getObjectAsBytes(request: GetObjectRequest): ResponseBytes<GetObjectResponse> {
+            val bytes = objects[request.key()]?.takeIf { request.bucket() == emailBucketName }
+                ?: throw NoSuchKeyException.builder().message("The specified key does not exist.").build()
+            return ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), bytes)
+        }
+    }
+
+    private suspend fun parseS3Notification(service: SesEmailInboundService, action: SesAction?): ReceivedEmail {
+        val sesMessage = SnsTestUtils.createSesNotificationMessage(
+            subject = "Large Email",
+            includeContent = false,
+            action = action,
+        )
+        val notification = SnsTestUtils.createSignedNotification(
+            type = "Notification",
+            message = sesMessage,
+            privateKey = keyPair.private,
+            certUrl = certUrl
+        )
+        return service.onReceived.parse(
+            queryParameters = emptyList(),
+            headers = emptyMap(),
+            body = TypedData.text(json.encodeToString(notification), MediaType.Application.Json)
+        )
+    }
+
+    @Test
+    fun testParseEmail_fromS3() = runTest {
+        // Bigger than the 150KB SNS inline limit, which is the reason emails end up in S3.
+        val largeBody = "Large body line.\n".repeat(20_000)
+        val mime = SnsTestUtils.buildMimeMessage(
+            from = "sender@example.com",
+            to = listOf("recipient@test.local"),
+            subject = "Large Email",
+            plainText = largeBody,
+        )
+        val service = createServiceWithCachedCert(
+            SesEmailInboundService.EmailBucket(emailBucketName, fakeS3(mapOf("ses-message-key" to mime.toByteArray())))
+        )
+
+        val email = parseS3Notification(
+            service,
+            SesAction(type = "S3", topicArn = "arn:aws:sns:us-east-1:123:t", bucketName = emailBucketName, objectKey = "ses-message-key")
+        )
+
+        assertEquals("sender@example.com", email.from.value.raw)
+        assertEquals("Large Email", email.subject)
+        assertEquals(largeBody.trim(), email.plainText?.trim())
+    }
+
+    @Test
+    fun testParseEmail_fromS3_missingObjectThrows() = runTest {
+        val service = createServiceWithCachedCert(SesEmailInboundService.EmailBucket(emailBucketName, fakeS3(emptyMap())))
+
+        val exception = assertFailsWith<IllegalStateException> {
+            parseS3Notification(service, SesAction(type = "S3", bucketName = emailBucketName, objectKey = "gone"))
+        }
+
+        assertTrue(exception.message!!.contains("s3://$emailBucketName/gone"))
+    }
+
+    @Test
+    fun testParseEmail_fromS3_otherBucketRejected() = runTest {
+        val service = createServiceWithCachedCert(
+            SesEmailInboundService.EmailBucket(emailBucketName, fakeS3(mapOf("key" to "irrelevant".toByteArray())))
+        )
+
+        assertFailsWith<SecurityException> {
+            parseS3Notification(service, SesAction(type = "S3", bucketName = "some-other-bucket", objectKey = "key"))
+        }
+    }
+
+    @Test
+    fun testParseEmail_fromS3_noBucketConfiguredThrows() = runTest {
+        val service = createServiceWithCachedCert()
+
+        val exception = assertFailsWith<IllegalStateException> {
+            parseS3Notification(service, SesAction(type = "S3", bucketName = emailBucketName, objectKey = "key"))
+        }
+
+        assertTrue(exception.message!!.contains("no bucket is configured"))
+    }
+
+    @Test
+    fun testParseEmail_noContentNonS3ActionThrows() = runTest {
+        val service = createServiceWithCachedCert(SesEmailInboundService.EmailBucket(emailBucketName, fakeS3(emptyMap())))
+
+        val exception = assertFailsWith<UnsupportedOperationException> {
+            parseS3Notification(service, SesAction(type = "Lambda"))
+        }
+
+        assertTrue(exception.message!!.contains("Lambda"))
+    }
+
+    @Test
+    fun testUrlParsing_sesWithBucket() {
+        val service = EmailInboundService.Settings("ses://?bucket=my-bucket&region=us-west-2")("test-ses", testContext)
+                as SesEmailInboundService
+        assertEquals("test-ses", service.name)
+
+        with(SesEmailInboundService) {
+            assertEquals(
+                "ses://?bucket=my-bucket&region=us-west-2",
+                EmailInboundService.Settings.ses("my-bucket", Region.US_WEST_2).url
+            )
+        }
+    }
+
+    @Test
+    fun testUrlParsing_sesWithBucketWithoutRegionThrows() {
+        assertFailsWith<IllegalArgumentException> {
+            EmailInboundService.Settings("ses://?bucket=my-bucket")("test-ses", testContext)
+        }
+    }
+
     @Test
     fun testParseEmail_spamVerdicts() = runTest {
         val service = createServiceWithCachedCert()
@@ -617,10 +746,11 @@ class SesEmailInboundServiceTest {
      * This bypasses the certificate download step while still testing signature verification.
      */
     @Suppress("UNCHECKED_CAST")
-    private fun createServiceWithCachedCert(): SesEmailInboundService {
+    private fun createServiceWithCachedCert(emailBucket: SesEmailInboundService.EmailBucket? = null): SesEmailInboundService {
         val service = SesEmailInboundService(
             name = "test-ses",
-            context = testContext
+            context = testContext,
+            emailBucket = emailBucket,
         )
 
         // Pre-populate the certificate cache via reflection
