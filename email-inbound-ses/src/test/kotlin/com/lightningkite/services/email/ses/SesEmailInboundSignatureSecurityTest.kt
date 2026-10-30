@@ -30,7 +30,7 @@ class SesEmailInboundSignatureSecurityTest {
         SesEmailInboundService
     }
 
-    private fun service() = SesEmailInboundService(name = "test-ses", context = testContext)
+    private fun service() = SesEmailInboundService(name = "test-ses", context = testContext, topicArn = "arn:aws:sns:us-east-1:123456789012:test-topic")
 
     // ==================== 1. Certificate URL regex ====================
 

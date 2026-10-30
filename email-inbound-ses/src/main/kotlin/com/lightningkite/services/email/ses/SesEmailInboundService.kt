@@ -48,7 +48,7 @@ private val logger = KotlinLogging.logger("SesEmailInboundService")
  * ## URL Format
  *
  * ```
- * ses-inbound://
+ * ses://?topicArn=<arn>[&bucket=<bucket>&region=<region>]
  * ```
  *
  * Configuration is done via AWS console or infrastructure-as-code (Terraform/CloudFormation).
@@ -66,19 +66,23 @@ private val logger = KotlinLogging.logger("SesEmailInboundService")
  * - **150KB SNS limit**: SES bounces emails larger than 150KB when the receipt rule uses an SNS
  *   action. For larger emails (up to 40MB), the receipt rule uses an S3 action that stores the
  *   raw email in a bucket and notifies SNS without content; configure that bucket with
- *   `ses://?bucket=<bucket>&region=<region>` (see `awsSesInbound(storeInS3 = true)`) and the
- *   email is fetched from it.
+ *   `ses://?topicArn=<arn>&bucket=<bucket>&region=<region>` (see `awsSesInbound(storeInS3 = true)`)
+ *   and the email is fetched from it.
  * - **Webhook security**: All SNS messages are verified using AWS's X.509 certificate-based
- *   signature verification. The signing certificate URL must be from amazonaws.com.
+ *   signature verification. The signing certificate URL must be from amazonaws.com. SNS signs
+ *   every topic's messages with the same certificate, so messages from any topic but [topicArn]
+ *   are rejected; otherwise anyone could subscribe the webhook to their own topic and forge emails.
  * - **Idempotency**: SES may send duplicate notifications; handle by Message-ID
  *
  * @property name Service instance name for logging and identification
  * @property context Service context providing configuration and shared resources
+ * @property topicArn The SNS topic SES publishes to; the only topic whose messages are accepted
  * @property emailBucket Where the receipt rule's S3 action stores raw emails; null if emails only arrive inline via SNS
  */
 public class SesEmailInboundService(
     override val name: String,
     override val context: SettingContext,
+    private val topicArn: String,
     private val emailBucket: EmailBucket? = null,
 ) : EmailInboundService {
 
@@ -89,9 +93,13 @@ public class SesEmailInboundService(
             EmailInboundService.Settings.register("ses") { name, url, context ->
                 val params = url.substringAfter("?", "").split("&").filter { it.isNotEmpty() }
                     .associate { it.substringBefore("=") to it.substringAfter("=") }
+                val topicArn = params["topicArn"] ?: throw IllegalArgumentException(
+                    "ses:// settings need the SNS topic SES publishes to, so messages from other topics can be rejected: " +
+                            "ses://?topicArn=<arn>"
+                )
                 val emailBucket = params["bucket"]?.let { bucket ->
                     val region = params["region"]
-                        ?: throw IllegalArgumentException("ses:// settings with a bucket need a region too: ses://?bucket=<bucket>&region=<region>")
+                        ?: throw IllegalArgumentException("ses:// settings with a bucket need a region too: ses://?topicArn=<arn>&bucket=<bucket>&region=<region>")
                     EmailBucket(
                         name = bucket,
                         s3 = S3Client.builder()
@@ -101,21 +109,21 @@ public class SesEmailInboundService(
                             .build()
                     )
                 }
-                SesEmailInboundService(name, context, emailBucket)
+                SesEmailInboundService(name, context, topicArn, emailBucket)
             }
         }
 
         /**
-         * Settings for emails delivered inline by an SNS receipt action (150KB max; SES bounces larger ones).
+         * Settings for emails delivered inline to [topicArn] by an SNS receipt action (150KB max; SES bounces larger ones).
          */
-        public fun EmailInboundService.Settings.Companion.ses(): EmailInboundService.Settings =
-            EmailInboundService.Settings("ses://")
+        public fun EmailInboundService.Settings.Companion.ses(topicArn: String): EmailInboundService.Settings =
+            EmailInboundService.Settings("ses://?topicArn=$topicArn")
 
         /**
-         * Settings for emails stored in [bucket] by an S3 receipt action (40MB max), which notifies SNS without content.
+         * Settings for emails stored in [bucket] by an S3 receipt action (40MB max), which notifies [topicArn] without content.
          */
-        public fun EmailInboundService.Settings.Companion.ses(bucket: String, region: Region): EmailInboundService.Settings =
-            EmailInboundService.Settings("ses://?bucket=$bucket&region=${region.id()}")
+        public fun EmailInboundService.Settings.Companion.ses(topicArn: String, bucket: String, region: Region): EmailInboundService.Settings =
+            EmailInboundService.Settings("ses://?topicArn=$topicArn&bucket=$bucket&region=${region.id()}")
     }
 
     private val json = Json {
@@ -194,6 +202,11 @@ public class SesEmailInboundService(
                 }) { _ ->
                     verifySnsSignature(snsNotification)
                 }
+
+                // TopicArn is covered by the signature, so after verification it can be trusted.
+                if (snsNotification.TopicArn != topicArn) throw SecurityException(
+                    "SNS message is from topic '${snsNotification.TopicArn}', not the configured topic '$topicArn'"
+                )
 
                 // Handle subscription confirmation - auto-confirm and return success response
                 if (snsNotification.Type == "SubscriptionConfirmation") {

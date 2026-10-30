@@ -85,19 +85,28 @@ class SesEmailInboundServiceTest {
 
     // ==================== URL Parsing Tests ====================
 
+    private val testTopicArn = "arn:aws:sns:us-east-1:123456789012:test-topic"
+
     @Test
     fun testUrlParsing_ses() {
-        val settings = EmailInboundService.Settings("ses://")
+        val settings = EmailInboundService.Settings("ses://?topicArn=$testTopicArn")
         val service = settings("test-ses", testContext) as SesEmailInboundService
 
         assertEquals("test-ses", service.name)
     }
 
     @Test
+    fun testUrlParsing_sesWithoutTopicThrows() {
+        assertFailsWith<IllegalArgumentException> {
+            EmailInboundService.Settings("ses://")("test-ses", testContext)
+        }
+    }
+
+    @Test
     fun testHelperFunction() {
         with(SesEmailInboundService) {
-            val settings = EmailInboundService.Settings.ses()
-            assertEquals("ses://", settings.url)
+            val settings = EmailInboundService.Settings.ses(testTopicArn)
+            assertEquals("ses://?topicArn=$testTopicArn", settings.url)
         }
     }
 
@@ -310,6 +319,53 @@ class SesEmailInboundServiceTest {
         )
 
         assertNotNull(email)
+    }
+
+    // ==================== Topic Tests ====================
+
+    // SNS signs messages from every topic with the same certificate, so a valid signature alone does
+    // not prove the message came from our SES topic: anyone can subscribe this webhook to their own.
+    private val attackerTopicArn = "arn:aws:sns:us-east-1:666666666666:attacker-topic"
+
+    @Test
+    fun testNotificationFromOtherTopicRejected() = runTest {
+        val service = createServiceWithCachedCert()
+
+        val notification = SnsTestUtils.createSignedNotification(
+            type = "Notification",
+            message = SnsTestUtils.createSesNotificationMessage(),
+            privateKey = keyPair.private,
+            certUrl = certUrl,
+            topicArn = attackerTopicArn,
+        )
+
+        assertFailsWith<SecurityException> {
+            service.onReceived.parse(
+                queryParameters = emptyList(),
+                headers = emptyMap(),
+                body = TypedData.text(json.encodeToString(notification), MediaType.Application.Json)
+            )
+        }
+    }
+
+    @Test
+    fun testSubscriptionConfirmationFromOtherTopicRejected() = runTest {
+        val service = createServiceWithCachedCert()
+
+        val notification = SnsTestUtils.createSubscriptionConfirmation(
+            privateKey = keyPair.private,
+            certUrl = certUrl,
+            topicArn = attackerTopicArn,
+            subscribeUrl = "https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&TopicArn=$attackerTopicArn"
+        )
+
+        assertFailsWith<SecurityException> {
+            service.onReceived.parse(
+                queryParameters = emptyList(),
+                headers = emptyMap(),
+                body = TypedData.text(json.encodeToString(notification), MediaType.Application.Json)
+            )
+        }
     }
 
     // ==================== SNS Message Type Tests ====================
@@ -589,22 +645,19 @@ class SesEmailInboundServiceTest {
 
     @Test
     fun testUrlParsing_sesWithBucket() {
-        val service = EmailInboundService.Settings("ses://?bucket=my-bucket&region=us-west-2")("test-ses", testContext)
-                as SesEmailInboundService
+        val url = "ses://?topicArn=$testTopicArn&bucket=my-bucket&region=us-west-2"
+        val service = EmailInboundService.Settings(url)("test-ses", testContext) as SesEmailInboundService
         assertEquals("test-ses", service.name)
 
         with(SesEmailInboundService) {
-            assertEquals(
-                "ses://?bucket=my-bucket&region=us-west-2",
-                EmailInboundService.Settings.ses("my-bucket", Region.US_WEST_2).url
-            )
+            assertEquals(url, EmailInboundService.Settings.ses(testTopicArn, "my-bucket", Region.US_WEST_2).url)
         }
     }
 
     @Test
     fun testUrlParsing_sesWithBucketWithoutRegionThrows() {
         assertFailsWith<IllegalArgumentException> {
-            EmailInboundService.Settings("ses://?bucket=my-bucket")("test-ses", testContext)
+            EmailInboundService.Settings("ses://?topicArn=$testTopicArn&bucket=my-bucket")("test-ses", testContext)
         }
     }
 
@@ -737,7 +790,8 @@ class SesEmailInboundServiceTest {
     private fun createService(): SesEmailInboundService {
         return SesEmailInboundService(
             name = "test-ses",
-            context = testContext
+            context = testContext,
+            topicArn = testTopicArn,
         )
     }
 
@@ -750,6 +804,7 @@ class SesEmailInboundServiceTest {
         val service = SesEmailInboundService(
             name = "test-ses",
             context = testContext,
+            topicArn = testTopicArn,
             emailBucket = emailBucket,
         )
 

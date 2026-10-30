@@ -40,6 +40,9 @@ import kotlin.time.Clock
  *    `https://YOUR-NGROK-URL.ngrok.io/webhooks/email`
  *    Protocol: HTTPS
  *
+ * 4. Set `emailInbound` in the settings file to `ses://?topicArn=<your topic ARN>`;
+ *    messages from any other topic are rejected.
+ *
  * The subscription will be **automatically confirmed** when SNS sends the
  * SubscriptionConfirmation message to your webhook.
  *
@@ -96,7 +99,7 @@ object SesEmailInboundLightningServerDemo {
 
 
 object EmailServer : ServerBuilder() {
-    val emailInbound = setting("emailInbound", EmailInboundService.Settings("ses://"))
+    val emailInbound = setting("emailInbound", EmailInboundService.Settings("ses://?topicArn=arn:aws:sns:us-east-1:123456789012:your-topic"))
 
     // Store received emails for inspection
     private val receivedEmails = mutableListOf<ReceivedEmail>()

@@ -103,8 +103,8 @@ internal fun TerraformNeed<EmailInboundService.Settings>.emitSesInbound(
 
     emitter.fulfillSetting(
         name, JsonPrimitive(
-            if (storeInS3) $$"ses://?bucket=${aws_s3_bucket.$${name}_emails.bucket}&region=${aws_s3_bucket.$${name}_emails.region}"
-            else "ses://"
+            if (storeInS3) $$"ses://?topicArn=${aws_sns_topic.$${name}.arn}&bucket=${aws_s3_bucket.$${name}_emails.bucket}&region=${aws_s3_bucket.$${name}_emails.region}"
+            else $$"ses://?topicArn=${aws_sns_topic.$${name}.arn}"
         )
     )
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
