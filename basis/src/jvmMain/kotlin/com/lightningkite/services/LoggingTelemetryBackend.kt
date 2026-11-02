@@ -6,6 +6,8 @@ import com.lightningkite.services.telemetry.InFlight
 import com.lightningkite.services.telemetry.Lease
 import com.lightningkite.services.telemetry.LogLevel
 import com.lightningkite.services.telemetry.MetricUnit
+import com.lightningkite.services.telemetry.RecordedSpan
+import com.lightningkite.services.telemetry.TelemetryBatch
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryBackend
 import com.lightningkite.services.telemetry.TelemetryKey
@@ -20,6 +22,7 @@ import java.util.Collections
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
+import kotlin.time.toJavaInstant
 
 /**
  * [com.lightningkite.services.telemetry.TelemetryBackend] that prints human-readable, ANSI-colored output to the console (or a [PrintWriter]).
@@ -216,6 +219,21 @@ public class LoggingTelemetryBackend(
 
     override suspend fun flush() {
         out.flush()
+    }
+
+    override fun ingest(batch: TelemetryBatch) {
+        val source = batch.resource.fmtInline()
+        synchronized(out) {
+            for (span in batch.spans) {
+                val marker = if (span.outcome == RecordedSpan.Outcome.Ok) "$GREEN✓$RESET" else "$RED✗$RESET"
+                val durationNanos = (span.end - span.start).inWholeNanoseconds
+                out.println("$DIM${timeFormatter.format(span.start.toJavaInstant())}$RESET $marker $BOLD${span.owner}.${span.operation}$RESET $DIM(${formatDuration(durationNanos)}) ${span.outcome} $source$RESET")
+            }
+            for (log in batch.logs) {
+                out.println("$DIM${timeFormatter.format(log.time.toJavaInstant())}$RESET ${log.level} ${log.message} $DIM${log.attributes.fmtInline()} $source$RESET")
+            }
+            out.flush()
+        }
     }
 }
 
