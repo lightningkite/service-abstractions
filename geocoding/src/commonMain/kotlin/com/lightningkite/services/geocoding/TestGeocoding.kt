@@ -82,10 +82,14 @@ public class TestGeocoding(
         val prefix = query.text.normalizedForGeocoding()
         if (prefix.isEmpty()) return emptyList()
         return entries
-            .filter { prefix in it.searchText() }
+            .withIndex()
+            .filter { prefix in it.value.searchText() }
             .take(query.limit)
-            .map { AddressSuggestion(it.label, it.address, it.coordinate) }
+            .map { AddressSuggestion(id = it.index.toString(), label = it.value.label, address = it.value.address) }
     }
+
+    override suspend fun resolve(suggestionId: String, session: AutocompleteSession?): GeocodeResult? =
+        entries.getOrNull(suggestionId.toInt())
 
     /**
      * Always OK. The default health check looks up a real address, which an empty test

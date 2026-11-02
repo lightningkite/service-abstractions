@@ -1,6 +1,7 @@
 package com.lightningkite.services.geocoding.stadia
 
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.Untested
 import com.lightningkite.services.data.GeoCoordinate
 import com.lightningkite.services.geocoding.*
 import com.lightningkite.services.http.client
@@ -40,8 +41,9 @@ import kotlinx.serialization.json.Json
  * - **Authentication is a query parameter**, per Stadia's API. Avoid logging raw request URLs.
  * - **[GeocodeResult.confidence] is Pelias's own 0–1 score** and is not comparable to
  *   other providers' numbers.
- * - **Autocomplete includes coordinates**, so no follow-up lookup is needed.
+ * - **Sessions are ignored.** Stadia bills each request; [resolve] is one more.
  */
+@Untested
 public class StadiaGeocoding(
     override val name: String,
     override val context: SettingContext,
@@ -122,8 +124,14 @@ public class StadiaGeocoding(
                 parameters.append("focus.point.lon", it.longitude.toString())
             }
         }.features.mapNotNull { feature ->
-            feature.toResult()?.let { AddressSuggestion(it.label, it.address, it.coordinate) }
+            val gid = feature.properties.gid ?: return@mapNotNull null
+            feature.toResult()?.let { AddressSuggestion(id = gid, label = it.label, address = it.address) }
         }
+
+    override suspend fun resolve(suggestionId: String, session: AutocompleteSession?): GeocodeResult? =
+        request("place") {
+            parameters.append("ids", suggestionId)
+        }.features.firstNotNullOfOrNull { it.toResult() }
 
     public companion object {
         public const val DEFAULT_HOST: String = "api.stadiamaps.com"
@@ -207,6 +215,7 @@ private data class PeliasGeometry(val coordinates: List<Double> = emptyList())
 
 @Serializable
 private data class PeliasProperties(
+    val gid: String? = null,
     val label: String? = null,
     val name: String? = null,
     @SerialName("housenumber") val houseNumber: String? = null,

@@ -3,6 +3,7 @@ package com.lightningkite.services.geocoding
 import com.lightningkite.services.cache.Cache
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import org.kotlincrypto.hash.sha2.SHA256
 import kotlin.time.Duration
@@ -27,6 +28,9 @@ import kotlin.time.Duration.Companion.days
  *   recognize it next week either, and bad input tends to arrive repeatedly.
  * - **Autocomplete is not cached.** Every keystroke produces a different query, so the
  *   hit rate is near zero while the write traffic is not. Those calls pass straight through.
+ * - **[resolve] is cached by suggestion ID alone**, ignoring the session. A hit leaves a
+ *   Google session unterminated, which Google bills as plain autocomplete requests with
+ *   no Place Details charge.
  * - **Check your provider's terms.** Some licenses restrict how long results may be
  *   stored. Lower [timeToLive] if yours does.
  * - **Cache failures are not swallowed.** If the cache itself errors, the call fails
@@ -70,10 +74,14 @@ public class CachedGeocoding(
 
     override suspend fun reverseGeocode(query: ReverseGeocodeQuery): List<GeocodeResult> =
         cached("reverse", ReverseGeocodeQuery.serializer(), query) { wrapped.reverseGeocode(it) }
+
+    override suspend fun resolve(suggestionId: String, session: AutocompleteSession?): GeocodeResult? =
+        cached("resolve", String.serializer(), suggestionId) { listOfNotNull(wrapped.resolve(it, session)) }
+            .firstOrNull()
 }
 
 /**
- * Answers repeated [geocode] and [reverseGeocode] calls from [cache].
+ * Answers repeated [geocode], [reverseGeocode], and [resolve] calls from [cache].
  *
  * @param timeToLive How long to keep results. The 30-day default suits address lookups;
  * shorten it if your provider's terms restrict storage.

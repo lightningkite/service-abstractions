@@ -1,6 +1,7 @@
 package com.lightningkite.services.geocoding.local
 
 import com.lightningkite.services.SettingContext
+import com.lightningkite.services.Untested
 import com.lightningkite.services.data.GeoCoordinate
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.geocoding.*
@@ -50,6 +51,7 @@ import kotlin.math.cos
  * for the life of the service. Call [connect] during startup to pay that before the
  * first request rather than during it.
  */
+@Untested
 public class LocalGeocoding(
     override val name: String,
     override val context: SettingContext,
@@ -115,9 +117,9 @@ public class LocalGeocoding(
         if (normalized.all { it.isDigit() }) {
             return zipsStartingWith(normalized, query.limit).map { index ->
                 AddressSuggestion(
+                    id = "zip:${data.zipCode(index)}",
                     label = data.zipCode(index),
                     address = Address(postalCode = data.zipCode(index), country = "US"),
-                    coordinate = coordinateOfZip(index),
                 )
             }
         }
@@ -127,10 +129,20 @@ public class LocalGeocoding(
         if (focus != null) matches = matches.sortedBy { focus.distanceTo(it) }
         return matches.take(query.limit).map { index ->
             AddressSuggestion(
+                id = "place:$index",
                 label = placeLabel(index),
                 address = placeAddress(index, postalCode = null),
-                coordinate = coordinateOfPlace(index),
             )
+        }
+    }
+
+    /** Place IDs are dataset indexes, which hold steady because the dataset is bundled. */
+    override suspend fun resolve(suggestionId: String, session: AutocompleteSession?): GeocodeResult? {
+        val value = suggestionId.substringAfter(':')
+        return when (suggestionId.substringBefore(':')) {
+            "zip" -> data.zipIndex(value).takeIf { it >= 0 }?.let { zipResult(it, Address(), region = null) }
+            "place" -> value.toInt().takeIf { it in 0 until data.placeCount }?.let { placeResult(it, postalCode = null) }
+            else -> throw IllegalArgumentException("Not a local geocoding suggestion ID: $suggestionId")
         }
     }
 

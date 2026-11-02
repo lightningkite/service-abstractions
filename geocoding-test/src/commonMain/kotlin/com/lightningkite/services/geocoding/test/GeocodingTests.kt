@@ -25,8 +25,8 @@ import kotlin.test.*
  */
 public abstract class GeocodingTests {
 
-    /** The service under test. */
-    public abstract val geocoding: Geocoding
+    /** The service under test, or null to skip the suite (e.g. live credentials are unavailable). */
+    public abstract val geocoding: Geocoding?
 
     /** An address the service is expected to resolve. */
     public abstract val knownQuery: GeocodeQuery
@@ -46,8 +46,12 @@ public abstract class GeocodingTests {
     /** A prefix that should produce suggestions. Override for providers with narrow data. */
     public open val autocompletePrefix: String get() = "Sacrament"
 
+    /** A well-formed suggestion ID the provider does not know. */
+    public abstract val unknownSuggestionId: String
+
     @Test
     public fun geocodeFindsKnownAddress(): TestResult = runTest {
+        val geocoding = geocoding ?: return@runTest
         val results = geocoding.geocode(knownQuery)
         assertTrue(results.isNotEmpty(), "Expected at least one result for $knownQuery")
         val distance = results.first().coordinate distanceToKilometers knownCoordinate
@@ -59,6 +63,7 @@ public abstract class GeocodingTests {
 
     @Test
     public fun geocodeResultsAreWellFormed(): TestResult = runTest {
+        val geocoding = geocoding ?: return@runTest
         for (result in geocoding.geocode(knownQuery)) {
             assertTrue(result.label.isNotBlank(), "Results must carry a displayable label")
             assertTrue(
@@ -79,17 +84,20 @@ public abstract class GeocodingTests {
 
     @Test
     public fun geocodeRespectsLimit(): TestResult = runTest {
+        val geocoding = geocoding ?: return@runTest
         val results = geocoding.geocode(GeocodeQuery.Text(knownQuery.toSingleLine(), limit = 1))
         assertTrue(results.size <= 1, "Asked for 1 result, got ${results.size}")
     }
 
     @Test
     public fun unrecognizedAddressReturnsEmptyRatherThanThrowing(): TestResult = runTest {
+        val geocoding = geocoding ?: return@runTest
         assertEquals(emptyList(), geocoding.geocode(GeocodeQuery.Text(nonsenseQuery)))
     }
 
     @Test
     public fun reverseGeocodeDescribesKnownCoordinate(): TestResult = runTest {
+        val geocoding = geocoding ?: return@runTest
         val results = geocoding.reverseGeocode(ReverseGeocodeQuery(knownCoordinate))
         assertTrue(results.isNotEmpty(), "Expected a reverse result for $knownCoordinate")
         val distance = results.first().coordinate distanceToKilometers knownCoordinate
@@ -101,10 +109,26 @@ public abstract class GeocodingTests {
 
     @Test
     public fun autocompleteReturnsUsableSuggestions(): TestResult = runTest {
+        val geocoding = geocoding ?: return@runTest
         val suggestions = geocoding.autocomplete(AutocompleteQuery(autocompletePrefix, limit = 5))
         assertTrue(suggestions.isNotEmpty(), "Expected suggestions for '$autocompletePrefix'")
         assertTrue(suggestions.size <= 5, "Asked for 5 suggestions, got ${suggestions.size}")
         assertTrue(suggestions.all { it.label.isNotBlank() }, "Suggestions must carry a label")
+    }
+
+    @Test
+    public fun autocompleteSuggestionsResolve(): TestResult = runTest {
+        val geocoding = geocoding ?: return@runTest
+        val session = AutocompleteSession.random()
+        val suggestion = geocoding.autocomplete(AutocompleteQuery(autocompletePrefix, session = session)).first()
+        val resolved = assertNotNull(geocoding.resolve(suggestion.id, session), "Could not resolve $suggestion")
+        assertTrue(resolved.label.isNotBlank(), "Resolved results must carry a label")
+    }
+
+    @Test
+    public fun resolvingAnUnknownIdReturnsNull(): TestResult = runTest {
+        val geocoding = geocoding ?: return@runTest
+        assertNull(geocoding.resolve(unknownSuggestionId))
     }
 
     @Test
@@ -116,6 +140,7 @@ public abstract class GeocodingTests {
 
     @Test
     public fun healthCheckReports(): TestResult = runTest {
+        val geocoding = geocoding ?: return@runTest
         geocoding.connect()
         assertNotNull(geocoding.healthCheck().level)
         geocoding.disconnect()

@@ -2,7 +2,6 @@ import com.lightningkite.deployhelpers.lkLibrary
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.dokka)
     id("signing")
     alias(libs.plugins.vanniktechMavenPublish)
@@ -10,15 +9,17 @@ plugins {
 
 dependencies {
     api(project(path = ":geocoding"))
+    api(project(path = ":aws-client"))
 
-    implementation(project(":http-client"))
-
-    compileOnly(libs.openTelemetry.api)
+    // Exclude the SDK's bundled default HTTP clients; the shared client pair comes from :aws-client.
+    api(libs.aws.geoPlaces) {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
+    }
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
-    testImplementation(libs.ktor.client.core)
-    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.aws.signin)
     testImplementation(project(path = ":test"))
     testImplementation(project(path = ":geocoding-test"))
 }
@@ -40,5 +41,5 @@ lkLibrary(
     "service-abstractions",
     mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
 ) {
-    description.set("A geocoding implementation using Nominatim / OpenStreetMap.")
+    description.set("A geocoding implementation using Amazon Location Service.")
 }

@@ -59,6 +59,9 @@ public class RateLimitedGeocoding(
 
     override suspend fun autocomplete(query: AutocompleteQuery): List<AddressSuggestion> =
         throttled { wrapped.autocomplete(query) }
+
+    override suspend fun resolve(suggestionId: String, session: AutocompleteSession?): GeocodeResult? =
+        throttled { wrapped.resolve(suggestionId, session) }
 }
 
 /**

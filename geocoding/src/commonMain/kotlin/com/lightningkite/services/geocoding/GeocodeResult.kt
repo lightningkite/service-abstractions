@@ -95,19 +95,17 @@ public data class GeocodeResult(
 /**
  * One type-ahead suggestion from [Geocoding.autocomplete].
  *
+ * Carries no coordinate. Pass [id] to [Geocoding.resolve] once the user picks it, which
+ * returns exactly the place they chose rather than whatever re-geocoding [label] finds.
+ *
+ * @property id The provider's reference to this place. Opaque, and only meaningful to the
+ * provider that produced it.
  * @property label The text to show the user, e.g. `"350 5th Ave, New York, NY, USA"`
  * @property address Components, as far as the provider resolved them
- * @property coordinate Where the suggestion is, **when the provider supplies it**.
- *
- * This is null for providers whose autocomplete returns references rather than
- * positions — notably Google, whose Places Autocomplete returns a place ID and
- * requires a second billed call to resolve coordinates. Callers that need a position
- * should geocode [label] once the user picks a suggestion, which works against every
- * provider and only costs a request for the one suggestion actually chosen.
  */
 @Serializable
 public data class AddressSuggestion(
+    public val id: String,
     public val label: String,
     public val address: Address = Address(),
-    public val coordinate: GeoCoordinate? = null,
 )
