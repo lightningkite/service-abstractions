@@ -12,6 +12,7 @@ dependencies {
     api(project(path = ":geocoding"))
 
     implementation(project(":http-client"))
+    api(libs.azure.identity)
 
     compileOnly(libs.openTelemetry.api)
 
@@ -40,5 +41,5 @@ lkLibrary(
     "service-abstractions",
     mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
 ) {
-    description.set("A geocoding implementation using Nominatim / OpenStreetMap.")
+    description.set("A geocoding implementation using Azure Maps.")
 }

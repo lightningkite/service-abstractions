@@ -67,6 +67,7 @@ aws-signin = { module = "software.amazon.awssdk:signin", version.ref = "awsVersi
 aws-cloudWatch = { module = "software.amazon.awssdk:cloudwatch", version.ref = "awsVersion" }
 aws-crt-client = { module = "software.amazon.awssdk:aws-crt-client", version = { ref = "awsVersion" } }
 aws-nettyNioClient = { module = "software.amazon.awssdk:netty-nio-client", version.ref = "awsVersion" }
+aws-geoPlaces = { module = "software.amazon.awssdk:geoplaces", version.ref = "awsVersion" }
 aws-s3 = { module = "software.amazon.awssdk:s3", version.ref = "awsVersion" }
 aws-urlConnectionClient = { module = "software.amazon.awssdk:url-connection-client", version.ref = "awsVersion" }
 azure-storage-blob = { module = "com.azure:azure-storage-blob", version = "12.35.1" }

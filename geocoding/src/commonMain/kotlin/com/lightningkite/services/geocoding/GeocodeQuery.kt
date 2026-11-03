@@ -3,6 +3,8 @@ package com.lightningkite.services.geocoding
 import com.lightningkite.services.data.GeoCoordinate
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmInline
+import kotlin.uuid.Uuid
 
 /**
  * What to look up when forward geocoding.
@@ -99,6 +101,7 @@ public data class ReverseGeocodeQuery(
  * since "spring" means something very different in Texas than in Ohio.
  * @property country Restrict suggestions to this ISO 3166-1 alpha-2 country code.
  * @property limit Maximum number of suggestions.
+ * @property session Groups this keystroke with the rest of one address entry. See [AutocompleteSession].
  * @see Geocoding.autocomplete
  */
 @Serializable
@@ -107,8 +110,30 @@ public data class AutocompleteQuery(
     public val focus: GeoCoordinate? = null,
     public val country: String? = null,
     public val limit: Int = 5,
+    public val session: AutocompleteSession? = null,
 ) {
     init {
         require(text.isNotBlank()) { "Autocomplete text must not be blank" }
+    }
+}
+
+/**
+ * One user's journey from typing an address to picking a suggestion.
+ *
+ * Create one when the user starts typing, send it with every [AutocompleteQuery], and
+ * pass it to [Geocoding.resolve] for the suggestion they pick. Then discard it: the next
+ * address entry needs a new one.
+ *
+ * Google bills a session as a unit, which is cheaper than billing each keystroke.
+ * Reusing a token after [Geocoding.resolve] invalidates the session, and Google then bills
+ * every call as if no token had been sent. Providers that do not bill by session ignore it.
+ *
+ * Usually created on the client, since one address entry spans many requests to your server.
+ */
+@Serializable
+@JvmInline
+public value class AutocompleteSession(public val token: Uuid) {
+    public companion object {
+        public fun random(): AutocompleteSession = AutocompleteSession(Uuid.random())
     }
 }

@@ -149,10 +149,12 @@ interface Service {
 - **email-javasmtp/**: SMTP implementation
 - **sms/**: SMS service abstraction
 - **sms-twilio/**: Twilio implementation
-- **geocoding/**: Geocoding abstraction (forward, reverse, autocomplete) plus caching and rate-limiting decorators
+- **geocoding/**: Geocoding abstraction (forward, reverse, autocomplete sessions + resolve) plus caching and rate-limiting decorators
 - **geocoding-local/**: Offline US geocoding from a bundled public-domain Census Gazetteer extract; no key, no network
 - **geocoding-stadia/**: Stadia Maps (hosted Pelias) implementation
-- **geocoding-google/**: Google Maps Platform implementation
+- **geocoding-google/**: Google Maps Platform implementation (Places API (New) for autocomplete sessions)
+- **geocoding-aws/**: Amazon Location Service (Places v2) implementation, IAM auth
+- **geocoding-azure/**: Azure Maps Search implementation (subscription key or Entra ID); resolve re-geocodes the suggested address, since Azure has no place IDs
 - **geocoding-nominatim/**: OpenStreetMap Nominatim implementation, self-throttling to its usage policy
 - **pubsub/**: Pub/sub messaging abstraction
 - **notifications/**: Push notification abstraction
