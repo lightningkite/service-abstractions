@@ -127,8 +127,9 @@ class AwsLocationGeocodingTest {
     @Test
     fun anUnknownPlaceResolvesToNull() = runTest {
         client.getPlaceResponse = {
-            throw GeoPlacesException.builder().statusCode(404)
-                .awsErrorDetails(AwsErrorDetails.builder().errorMessage("Not found").build()).build()
+            // What the live service returned for a made-up ID.
+            throw ValidationException.builder().statusCode(400)
+                .awsErrorDetails(AwsErrorDetails.builder().errorMessage("'PlaceId' must be a valid ID.").build()).build()
         }
         assertNull(geocoding().resolve("here:pds:place:gone"))
     }

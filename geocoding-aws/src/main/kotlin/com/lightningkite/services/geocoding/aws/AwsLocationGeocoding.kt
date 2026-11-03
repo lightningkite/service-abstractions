@@ -14,11 +14,11 @@ import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.geoplaces.GeoPlacesAsyncClient
 import software.amazon.awssdk.services.geoplaces.model.AutocompleteIntendedUse
-import software.amazon.awssdk.services.geoplaces.model.GeoPlacesException
 import software.amazon.awssdk.services.geoplaces.model.GeocodeIntendedUse
 import software.amazon.awssdk.services.geoplaces.model.GetPlaceIntendedUse
 import software.amazon.awssdk.services.geoplaces.model.PlaceType
 import software.amazon.awssdk.services.geoplaces.model.ReverseGeocodeIntendedUse
+import software.amazon.awssdk.services.geoplaces.model.ValidationException
 import software.amazon.awssdk.services.geoplaces.model.Address as AwsAddress
 
 /**
@@ -120,9 +120,9 @@ public class AwsLocationGeocoding(
                 request.placeId(suggestionId)
                 request.intendedUse(if (storesResults) GetPlaceIntendedUse.STORAGE else GetPlaceIntendedUse.SINGLE_USE)
             }.await()
-        } catch (e: GeoPlacesException) {
-            if (e.message?.contains("must be a valid ID") == true) return@call null
-            throw e
+        } catch (e: ValidationException) {
+            // AWS answers an unknown place ID with "'PlaceId' must be a valid ID", and the ID is the only input here.
+            return@call null
         }
         result(place.placeType(), place.title(), place.address(), place.position(), place.mapView(), place.estimatedPointAddress(), confidence = null)
     }
