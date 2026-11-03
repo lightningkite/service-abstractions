@@ -47,6 +47,7 @@
 ### Added
 - **database-sqlite**: `native://`, a local SQLite database for Android, iOS, macOS, the JVM, and the web (OPFS), on `androidx.sqlite`. Conditions, modifications, sorting, and aggregates run as SQL; tables gain columns for new fields automatically.
 - **database-mapformat**: New multiplatform module holding `mapformat` and the child-table collection handler shared by the SQL drivers (moved out of `database`; see BREAKING_CHANGES_1.3.md §10).
+- **geocoding-aws**: `TerraformNeed<Geocoding.Settings>.awsLocation(region, storesResults)` Terraform helper: fulfills the `aws-location://` setting and grants the `geo-places` actions on `provider/default`.
 - `OpenTelemetrySub.span` helper adopted across cache, files, and email-inbound modules with sanitized span attributes.
 
 ### Removed

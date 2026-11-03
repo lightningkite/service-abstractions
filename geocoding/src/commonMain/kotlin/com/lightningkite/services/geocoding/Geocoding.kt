@@ -22,6 +22,7 @@ import kotlin.time.Duration.Companion.hours
  * - **StadiaGeocoding** (`stadia://`) — Stadia Maps, a hosted Pelias (`geocoding-stadia`)
  * - **GoogleGeocoding** (`google://`) — Google Maps Platform (`geocoding-google`)
  * - **AwsLocationGeocoding** (`aws-location://`) — Amazon Location Service (`geocoding-aws`)
+ * - **AzureMapsGeocoding** (`azure-maps://`) — Azure Maps (`geocoding-azure`)
  * - **NominatimGeocoding** (`nominatim://`) — OpenStreetMap, free or self-hosted
  *   (`geocoding-nominatim`)
  *
@@ -156,6 +157,7 @@ public interface Geocoding : Service {
      * - `stadia://apiKey` (`geocoding-stadia`)
      * - `google://apiKey` (`geocoding-google`)
      * - `aws-location://[accessKey:secretKey@]region` (`geocoding-aws`)
+     * - `azure-maps://subscriptionKey` or `azure-maps://accountClientId?auth=entra` (`geocoding-azure`)
      * - `nominatim://contactEmail` or `nominatim://contactEmail@your-host` (`geocoding-nominatim`)
      *
      * @property url Connection string selecting the provider and its credentials

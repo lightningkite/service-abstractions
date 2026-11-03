@@ -27,7 +27,8 @@ import software.amazon.awssdk.services.geoplaces.model.Address as AwsAddress
  *
  * Authenticates with IAM like any other AWS service, so it fits deployments that already
  * run on AWS without another vendor key. The role needs `geo-places:Geocode`,
- * `geo-places:ReverseGeocode`, `geo-places:Autocomplete`, and `geo-places:GetPlace`.
+ * `geo-places:ReverseGeocode`, `geo-places:Autocomplete`, and `geo-places:GetPlace`. In Terraform,
+ * `need<Geocoding.Settings>("geocoding").awsLocation()` sets the URL and grants them.
  *
  * ## Supported URL Schemes
  *
@@ -50,7 +51,6 @@ import software.amazon.awssdk.services.geoplaces.model.Address as AwsAddress
  * - **[GeocodeResult.confidence] is AWS's overall match score**, reported only by forward
  *   geocoding.
  */
-@Untested
 public class AwsLocationGeocoding(
     override val name: String,
     override val context: SettingContext,

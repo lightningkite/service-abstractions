@@ -38,10 +38,10 @@ public abstract class GeocodingTests {
     public open val toleranceKilometers: Double get() = 25.0
 
     /**
-     * Text that should match nothing. Override if the default happens to be a real place
-     * in the provider's dataset.
+     * Text that should match nothing. Fuzzy geocoders match any real word, so it has none:
+     * an earlier default containing "nowhere township" correctly matched Nowhere, Oklahoma.
      */
-    public open val nonsenseQuery: String get() = "zzqqxx nowhere township 99999"
+    public open val nonsenseQuery: String get() = "zzqqxx qqvvzz xxzzqq"
 
     /** A prefix that should produce suggestions. Override for providers with narrow data. */
     public open val autocompletePrefix: String get() = "Sacrament"

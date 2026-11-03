@@ -153,6 +153,7 @@ interface Service {
 - **geocoding-stadia/**: Stadia Maps (hosted Pelias) implementation
 - **geocoding-google/**: Google Maps Platform implementation (Places API (New) for autocomplete sessions)
 - **geocoding-aws/**: Amazon Location Service (Places v2) implementation, IAM auth
+- **geocoding-azure/**: Azure Maps Search implementation (subscription key or Entra ID); resolve re-geocodes the suggested address, since Azure has no place IDs
 - **geocoding-nominatim/**: OpenStreetMap Nominatim implementation, self-throttling to its usage policy
 - **pubsub/**: Pub/sub messaging abstraction
 - **notifications/**: Push notification abstraction
