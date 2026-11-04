@@ -10,6 +10,7 @@
 - **email**: `EmailService.sendBulk` default now runs concurrently (`async`/`awaitAll`); one failure cancels siblings (was sequential, best-effort).
 - **files-s3 (JVM)**: `S3FileObject.list()` propagates exceptions instead of returning `null` on error.
 - **notifications-fcm**: `send()` chunks 500 tokens in parallel via `Semaphore(8)`; chunk ordering not preserved. Transport-level chunk failures surface as per-token `Failure` instead of throwing.
+- **files-clamav**: `awsEc2ClamAv` drops `amiId` and `ubuntuVersion`; choose the release with `distro` instead (`ClamAvDistro.Ubuntu2404` matches the old default). Pinning an AMI is no longer possible. `architecture` must now be `amd64` or `arm64`.
 - **pubsub-aws (DynamoDB)**: `doInitialize()` failure is terminal (no retry on next `ensureReady()`).
 - **aws-client**: `AwsConnections.total` default lowered `Int.MAX_VALUE` → `1000`. Health checks may newly flip to DEGRADED/ERROR — tune if needed.
 - **sms-inbound-twilio**: Webhook fails closed (`SecurityException`) when `webhookUrl` is null (was a silent skip).
@@ -49,6 +50,8 @@
 - **database-mapformat**: New multiplatform module holding `mapformat` and the child-table collection handler shared by the SQL drivers (moved out of `database`; see BREAKING_CHANGES_1.3.md §10).
 - **geocoding-aws**: `TerraformNeed<Geocoding.Settings>.awsLocation(region, storesResults)` Terraform helper: fulfills the `aws-location://` setting and grants the `geo-places` actions on `provider/default`.
 - `OpenTelemetrySub.span` helper adopted across cache, files, and email-inbound modules with sanitized span attributes.
+- **files-clamav**: `awsEc2ClamAv` takes a `swapSize`, creating a swap file at first boot. The default of zero creates none and leaves the generated user data unchanged, so existing hosts aren't replaced.
+- **files-clamav**: `awsEc2ClamAv` takes a `distro`: `ClamAvDistro.Ubuntu2404` (the default), `ClamAvDistro.Ubuntu2604` (`@Untested`: not yet run on a real instance), or `ClamAvDistro.AmazonLinux2023`. Amazon Linux resolves the current AL2023 AMI through SSM and installs `clamav`/`clamd`/`clamav-update` with dnf, running clamd as `clamd@scan`. The Ubuntu user data is unchanged, so existing hosts aren't replaced. Ubuntu 26.04 shares the 24.04 script, so switching an existing host between them needs `terraform apply -replace`.
 
 ### Removed
 - `cache-dynamodb-kmp` module (see Breaking Changes).
