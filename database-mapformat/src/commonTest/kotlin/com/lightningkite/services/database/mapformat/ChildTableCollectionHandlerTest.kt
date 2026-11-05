@@ -1,6 +1,7 @@
 package com.lightningkite.services.database.mapformat
 
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmInline
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -52,5 +53,49 @@ class ChildTableCollectionHandlerTest {
         val written = format.encode(Places.serializer(), value)
         assertEquals(mapOf("value__x" to 1, "value__y" to 2), written.children["byName"]!![0].values)
         assertEquals(value, format.decode(Places.serializer(), written))
+    }
+
+    @Serializable
+    @JvmInline
+    value class RowId(val raw: String)
+
+    @Serializable
+    data class Leaf(val id: RowId, val text: String)
+
+    @Serializable
+    data class Node(val leaf: Leaf, val tail: String)
+
+    @Serializable
+    data class Forest(val nodes: List<Node>)
+
+    // A value class inside a nested struct double-popped the struct's field-path tag: the encoder
+    // wrote `text` instead of `leaf__text` (a name no column matches, so the value was dropped),
+    // and the decoder lost the `leaf` prefix and read a key that isn't there.
+    @Test
+    fun valueClassesInsideNestedStructsKeepTheirPrefix() {
+        val value = Forest(listOf(Node(Leaf(RowId("r1"), "hello"), "after")))
+        val written = format.encode(Forest.serializer(), value)
+        assertEquals(
+            mapOf("leaf__id" to "r1", "leaf__text" to "hello", "tail" to "after"),
+            written.children["nodes"]!![0].values,
+        )
+        assertEquals(value, format.decode(Forest.serializer(), written))
+    }
+
+    @Serializable
+    data class WithList(val title: String, val tags: List<String>, val tail: String)
+
+    @Serializable
+    data class Wrap(val w: WithList, val after: String)
+
+    @Serializable
+    data class Bundle(val items: List<Wrap>)
+
+    // Collections consume their own tag (beginStructure/JSON), so decoding one used to pop the
+    // enclosing struct's tag too and the next field read an unprefixed key that isn't there.
+    @Test
+    fun listsInsideNestedStructsKeepTheirPrefix() {
+        val value = Bundle(listOf(Wrap(WithList("t", listOf("a"), "tail"), "after")))
+        assertEquals(value, format.decode(Bundle.serializer(), format.encode(Bundle.serializer(), value)))
     }
 }

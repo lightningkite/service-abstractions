@@ -119,12 +119,10 @@ public class MapEncoder(
         }
 
         serializer.serialize(this, value)
-
-        // For CLASS/OBJECT types, pop the tag that was pushed by encodeSerializableElement
-        // (primitives and converters pop in their encode methods, but classes don't)
-        if (serializer.descriptor.kind == StructureKind.CLASS || serializer.descriptor.kind == StructureKind.OBJECT) {
-            popTag()
-        }
+        // by Claude - no pop here: the tag pushed by encode*Element is consumed either inside
+        // (converters, inline values, collections, JSON pop it themselves) or, for a plain struct,
+        // by the encode*Element that pushed it. Popping here ate the parent's prefix for value
+        // classes nested inside another struct.
     }
 
     override fun <T : Any> encodeNullableSerializableValue(serializer: SerializationStrategy<T>, value: T?) {
@@ -250,8 +248,12 @@ public class MapEncoder(
         serializer: SerializationStrategy<T>,
         value: T,
     ) {
+        val depth = tagStack.size
         pushTag(nested(descriptor.getElementName(index)))
         encodeSerializableValue(serializer, value)
+        // by Claude - pop the tag only if the encode above left it: converters, inline values,
+        // collections and JSON already popped it; a plain struct leaves it for us.
+        while (tagStack.size > depth) popTag()
     }
 
     override fun <T : Any> encodeNullableSerializableElement(
@@ -260,8 +262,10 @@ public class MapEncoder(
         serializer: SerializationStrategy<T>,
         value: T?,
     ) {
+        val depth = tagStack.size
         pushTag(nested(descriptor.getElementName(index)))
         encodeNullableSerializableValue(serializer, value)
+        while (tagStack.size > depth) popTag()
     }
 }
 
