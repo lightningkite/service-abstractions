@@ -1210,28 +1210,4 @@ public class CassandraTable<Model : Any>(
         limit: Int,
         maxQueryMs: Long,
     ): Flow<ScoredResult<Model>> = throw UnsupportedOperationException("Text search is not supported by Apache Cassandra")
-
-    override suspend fun findSimilar(
-        vectorField: Optic<Model, Embedding>,
-        params: DenseVectorSearchParams,
-        condition: Condition<Model>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<Model>> {
-        throw UnsupportedOperationException(
-            "Vector search is not natively supported by Apache Cassandra. " +
-                    "Consider using DataStax Astra DB which provides vector search capabilities, " +
-                    "or implement client-side similarity search."
-        )
-    }
-
-    override suspend fun findSimilarSparse(
-        vectorField: Optic<Model, SparseEmbedding>,
-        params: SparseVectorSearchParams,
-        condition: Condition<Model>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<Model>> {
-        throw UnsupportedOperationException(
-            "Sparse vector search is not supported by Apache Cassandra."
-        )
-    }
 }

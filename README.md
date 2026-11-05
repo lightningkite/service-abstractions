@@ -112,11 +112,14 @@ data class MyServerSettings(
 
 Comprehensive user guides are available for all major modules:
 
+- **[Settings URL Reference](docs/settings-url-reference.md)** - Every URL scheme each service accepts, with parameters and examples
+
 ### Core Services
 
 - **[Database](docs/database-module.md)** - Type-safe database abstraction with MongoDB, PostgreSQL, and in-memory
   implementations
     - [Query DSL Reference](docs/database-query-dsl.md) - Complete guide to Condition and Modification syntax
+    - [Vector Search](docs/database-module.md#vector-search) - `VectorDatabase`: similarity search over Atlas, pgvector, or in memory
 - **[Cache](docs/cache-module.md)** - Unified caching interface for Redis, Memcached, DynamoDB, and in-memory
 - **[Files](docs/files.md)** - File storage abstraction for local filesystem and AWS S3
 

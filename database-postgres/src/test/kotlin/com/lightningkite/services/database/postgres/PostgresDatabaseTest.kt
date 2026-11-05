@@ -308,57 +308,6 @@ class PostgresSortTest : SortTest() {
     }
 }
 
-/**
- * Vector search tests using Testcontainers with pgvector.
- *
- * These tests require Docker to be running. If Docker is unavailable,
- * the tests will be skipped gracefully.
- *
- * The pgvector/pgvector:pg16 Docker image provides PostgreSQL 16 with
- * the pgvector extension pre-installed.
- */
-class PostgresVectorSearchTests : VectorSearchTests() {
-    companion object {
-        // Use environment variable override if set, otherwise use Testcontainers
-        private val manualUrl = System.getenv("POSTGRES_VECTOR_TEST_URL")
-
-        private val containerAvailable: Boolean by lazy {
-            manualUrl != null || PostgresDockerContainer.isAvailable
-        }
-    }
-
-    override val database: com.lightningkite.services.database.Database by lazy {
-        if (manualUrl != null) {
-            // Use manually specified URL (for CI/CD or custom setups)
-            PostgresDatabase("test", TestSettingContext(EmptySerializersModule())) {
-                PooledDatabase(Database.connect(manualUrl, driver = "org.postgresql.Driver"), null)
-            }
-        } else {
-            // Use Testcontainers
-            val container = PostgresDockerContainer.getContainer()
-                ?: throw IllegalStateException("pgvector container not available")
-            PostgresDatabase("test", TestSettingContext(EmptySerializersModule())) {
-                PooledDatabase(
-                    Database.connect(
-                        url = container.jdbcUrl,
-                        user = container.username,
-                        password = container.password,
-                        driver = "org.postgresql.Driver"
-                    ),
-                    null,
-                )
-            }
-        }
-    }
-
-    // pgvector is available when Docker/Testcontainers is running
-    override val supportsVectorSearch: Boolean = containerAvailable
-
-    // Sparse vector support requires additional column type mapping work
-    // pgvector's sparsevec type needs special serialization handling
-    override val supportsSparseVectorSearch: Boolean = false
-}
-
 class PostgresSingleRowOperationTests : SingleRowOperationTests() {
     override val database: com.lightningkite.services.database.Database by lazy {
         PostgresDatabase(

@@ -121,14 +121,14 @@ interface Service {
 
 #### Database Modules
 
-- **database/**: Abstract `Database` and `Table` interfaces, `InMemoryDatabase` implementation
+- **database/**: Abstract `Database` and `Table` interfaces, `InMemoryDatabase` implementation, and vector search: `VectorDatabase`/`VectorIndex`, kept apart from the searched models: entries are only an ID and an embedding, and searches don't filter. `InMemoryDatabase` (`ram`), `MongoDatabase` (`mongodb`, `mongodb+srv`: Atlas) and `PostgresDatabase` (`postgresql`: pgvector) implement it; `vectorIndexed`/`rebuild` keep an index in step with the rows of a table matching a condition. `Table` has no vector search.
 - **database-processor/**: KSP code generator for type-safe database queries
 - **database-mongodb/**: MongoDB implementation
 - **database-postgres/**: PostgreSQL implementation (uses Exposed ORM)
 - **database-jsonfile/**: JSON file-based database (for testing/development)
 - **database-sqlite/**: Local SQLite database on every platform (`native://`), via `androidx.sqlite`; conditions and modifications translate to SQL. JVM tests run here; Apple tests need `xcrun`, and Android needs a device.
 - **database-mapformat/**: Flattens models into columns and child-table rows; shared by `database-sql`, `database-postgres`, and `database-sqlite`
-- **database-test/**: Shared test suite used by all database implementations
+- **database-test/**: Shared test suite used by all database implementations (`VectorIndexTests` for vector databases)
 
 #### Cache Modules
 

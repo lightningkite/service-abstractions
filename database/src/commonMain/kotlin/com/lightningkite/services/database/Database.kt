@@ -99,9 +99,6 @@ public interface Database : Service {
         public val groupBy: TelemetryKey.OfString = TelemetryKey.OfString("db.groupBy")
         public val aggregate: TelemetryKey.OfString = TelemetryKey.OfString("db.aggregate")
         public val property: TelemetryKey.OfString = TelemetryKey.OfString("db.property")
-        public val vectorField: TelemetryKey.OfString = TelemetryKey.OfString("db.vectorField")
-        public val metric: TelemetryKey.OfString = TelemetryKey.OfString("db.metric")
-        public val minScore: TelemetryKey.OfDouble = TelemetryKey.OfDouble("db.minScore")
     }
 
     /**
@@ -370,24 +367,6 @@ public class PrepareFirstTable<MODEL : Any>(
         maxQueryMs: Long
     ): Flow<ScoredResult<MODEL>> {
         return prepare.await().findByTextIndex(query, condition, skip, limit, maxQueryMs)
-    }
-
-    override suspend fun findSimilar(
-        vectorField: Optic<MODEL, Embedding>,
-        params: DenseVectorSearchParams,
-        condition: Condition<MODEL>,
-        maxQueryMs: Long
-    ): Flow<ScoredResult<MODEL>> {
-        return prepare.await().findSimilar(vectorField, params, condition, maxQueryMs)
-    }
-
-    override suspend fun findSimilarSparse(
-        vectorField: Optic<MODEL, SparseEmbedding>,
-        params: SparseVectorSearchParams,
-        condition: Condition<MODEL>,
-        maxQueryMs: Long
-    ): Flow<ScoredResult<MODEL>> {
-        return prepare.await().findSimilarSparse(vectorField, params, condition, maxQueryMs)
     }
 
 }

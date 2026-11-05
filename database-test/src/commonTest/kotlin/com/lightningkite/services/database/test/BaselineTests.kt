@@ -45,12 +45,6 @@ class RamInlinePropertiesTest : InlinePropertiesTests() {
     }
 }
 
-// by Claude
-class RamVectorSearchTests : VectorSearchTests() {
-    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
-    override val requiresDeclaredVectorFilters: Boolean = true
-}
-
 class RamTextSearchTests : TextSearchTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
@@ -113,4 +107,8 @@ class MetadataTest {
 }
 class RamMaskedPermissionsTests : MaskedPermissionsTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
+class RamVectorIndexTests : VectorIndexTests() {
+    override val database: com.lightningkite.services.database.VectorDatabase = InMemoryDatabase("test", context = TestSettingContext())
 }

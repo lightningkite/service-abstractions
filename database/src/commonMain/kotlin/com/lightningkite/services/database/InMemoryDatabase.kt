@@ -26,7 +26,7 @@ public class InMemoryDatabase(
     private val premadeData: PreloadData? = null,
     override val context: SettingContext,
     private val mapFactory: () -> MutableMap<Any?, Any> = { HashMap() },
-) : Database {
+) : Database, VectorDatabase {
     public val collections: ConcurrentMutableMap<DatabaseTableDefinition<*>, InMemoryTable<*>> = ConcurrentMutableMap()
 
     private val json = Json {
@@ -73,4 +73,11 @@ public class InMemoryDatabase(
 
     // In-memory tables need no asynchronous setup, so preparation is just retrieval.
     override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): Table<T> = table(tableDef)
+
+    override fun <ID : Comparable<ID>> index(definition: VectorIndexDefinition<ID>): VectorIndex<ID> = InMemoryVectorIndex(
+        table(DatabaseTableDefinition(VectorIndexEntry.serializer(definition.idSerializer), definition.storageName)),
+        definition.space,
+    )
+
+    override suspend fun <ID : Comparable<ID>> prepare(definition: VectorIndexDefinition<ID>): VectorIndex<ID> = index(definition)
 }
