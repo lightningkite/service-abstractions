@@ -343,48 +343,4 @@ public class JsonFileTable<Model : Any>(
         span.enrich(TelemetryAttributes { put(Database.TelemetryKeys.deleted, count.toLong()) })
         count
     }
-
-    override suspend fun findSimilar(
-        vectorField: Optic<Model, Embedding>,
-        params: DenseVectorSearchParams,
-        condition: Condition<Model>,
-        maxQueryMs: Long
-    ): Flow<ScoredResult<Model>> = flow {
-        val results = traced(
-            operation = "findSimilar",
-            extraBlock = {
-                put(Database.TelemetryKeys.vectorField, vectorField.toString())
-                put(Database.TelemetryKeys.metric, params.metric.toString())
-                put(Database.TelemetryKeys.limit, params.limit.toLong())
-                params.minScore?.let { put(Database.TelemetryKeys.minScore, it.toDouble()) }
-            }
-        ) { span ->
-            val results = super.findSimilar(vectorField, params, condition, maxQueryMs).toList()
-            span.enrich(TelemetryAttributes { put(Database.TelemetryKeys.resultCount, results.size.toLong()) })
-            results
-        }
-        results.forEach { emit(it) }
-    }
-
-    override suspend fun findSimilarSparse(
-        vectorField: Optic<Model, SparseEmbedding>,
-        params: SparseVectorSearchParams,
-        condition: Condition<Model>,
-        maxQueryMs: Long
-    ): Flow<ScoredResult<Model>> = flow {
-        val results = traced(
-            operation = "findSimilarSparse",
-            extraBlock = {
-                put(Database.TelemetryKeys.vectorField, vectorField.toString())
-                put(Database.TelemetryKeys.metric, params.metric.toString())
-                put(Database.TelemetryKeys.limit, params.limit.toLong())
-                params.minScore?.let { put(Database.TelemetryKeys.minScore, it.toDouble()) }
-            }
-        ) { span ->
-            val results = super.findSimilarSparse(vectorField, params, condition, maxQueryMs).toList()
-            span.enrich(TelemetryAttributes { put(Database.TelemetryKeys.resultCount, results.size.toLong()) })
-            results
-        }
-        results.forEach { emit(it) }
-    }
 }

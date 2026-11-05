@@ -801,24 +801,6 @@ public class SqlCollection<T : Any>(
         maxQueryMs: Long,
     ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("Text search is not supported by the generic SQL driver")
 
-    override suspend fun findSimilar(
-        vectorField: Optic<T, Embedding>,
-        params: DenseVectorSearchParams,
-        condition: Condition<T>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException(
-        "Vector search is not supported by the generic SQL driver"
-    )
-
-    override suspend fun findSimilarSparse(
-        vectorField: Optic<T, SparseEmbedding>,
-        params: SparseVectorSearchParams,
-        condition: Condition<T>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException(
-        "Sparse vector search is not supported by the generic SQL driver"
-    )
-
     // ====================== JdbcTransaction Helpers ======================
 
     /**

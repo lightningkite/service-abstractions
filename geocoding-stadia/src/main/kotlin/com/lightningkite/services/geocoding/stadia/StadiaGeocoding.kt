@@ -43,7 +43,6 @@ import kotlinx.serialization.json.Json
  *   other providers' numbers.
  * - **Sessions are ignored.** Stadia bills each request; [resolve] is one more.
  */
-@Untested
 public class StadiaGeocoding(
     override val name: String,
     override val context: SettingContext,

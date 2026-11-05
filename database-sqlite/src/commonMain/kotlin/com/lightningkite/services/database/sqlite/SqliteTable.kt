@@ -8,14 +8,10 @@ import com.lightningkite.services.database.CollectionChanges
 import com.lightningkite.services.database.Condition
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.DatabaseTableDefinition
-import com.lightningkite.services.database.DenseVectorSearchParams
-import com.lightningkite.services.database.Embedding
 import com.lightningkite.services.database.EntryChange
 import com.lightningkite.services.database.Modification
 import com.lightningkite.services.database.ScoredResult
 import com.lightningkite.services.database.SortPart
-import com.lightningkite.services.database.SparseEmbedding
-import com.lightningkite.services.database.SparseVectorSearchParams
 import com.lightningkite.services.database.Table
 import com.lightningkite.services.database.UniqueViolationException
 import com.lightningkite.services.database.aggregateOfNotNull
@@ -476,20 +472,6 @@ public class SqliteTable<T : Any> internal constructor(
         limit: Int,
         maxQueryMs: Long,
     ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("Text search is not supported by the SQLite driver")
-
-    override suspend fun findSimilar(
-        vectorField: Optic<T, Embedding>,
-        params: DenseVectorSearchParams,
-        condition: Condition<T>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("Vector search is not supported by the SQLite driver")
-
-    override suspend fun findSimilarSparse(
-        vectorField: Optic<T, SparseEmbedding>,
-        params: SparseVectorSearchParams,
-        condition: Condition<T>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<T>> = throw UnsupportedOperationException("Sparse vector search is not supported by the SQLite driver")
 
     private companion object {
         // Ids per statement, well under SQLite's limit on bound parameters.

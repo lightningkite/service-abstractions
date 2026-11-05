@@ -77,7 +77,7 @@ public class MongoDatabase(
     public val supportsOverlappingArrayFilters: Boolean = true,
     public val clientSettings: MongoClientSettings,
     override val context: SettingContext,
-) : Database {
+) : Database, VectorDatabase {
 
     public companion object {
         private val isServerless: Boolean by lazy {
@@ -218,6 +218,10 @@ public class MongoDatabase(
                         )
                     }
                     ?: throw IllegalStateException("Invalid mongodb-file URL. The URL should match the pattern: mongodb-file://[FolderPath]?[params]\nAvailable params are: databaseName, version, port")
+            }
+            // Only Atlas, or MongoDB 8.2+ with mongot, runs $vectorSearch, so the embedded schemes aren't offered.
+            for (scheme in listOf("mongodb", "mongodb+srv")) VectorDatabase.Settings.register(scheme) { name, url, context ->
+                Database.Settings.parse(name, url, context) as MongoDatabase
             }
         }
     }
@@ -368,4 +372,14 @@ public class MongoDatabase(
             }
         } as Lazy<MongoTable<T>>).value
     }
+
+    override fun <ID : Comparable<ID>> index(definition: VectorIndexDefinition<ID>): VectorIndex<ID> = mongoIndex(definition)
+
+    private fun <ID : Comparable<ID>> mongoIndex(definition: VectorIndexDefinition<ID>): MongoVectorIndex<ID> = MongoVectorIndex(
+        table(DatabaseTableDefinition(VectorIndexEntry.serializer(definition.idSerializer), definition.storageName)),
+        definition.space,
+    )
+
+    override suspend fun <ID : Comparable<ID>> prepare(definition: VectorIndexDefinition<ID>): VectorIndex<ID> =
+        mongoIndex(definition).also { it.prepareSearchIndex() }
 }

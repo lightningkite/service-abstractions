@@ -108,12 +108,12 @@ interface Service {
 - **database-shared/**: Shared types for database abstraction (`Condition`, `Modification`, `SortPart`)
 
 #### Database Modules
-- **database/**: Abstract `Database` and `Table` interfaces, `InMemoryDatabase` implementation
+- **database/**: Abstract `Database` and `Table` interfaces, `InMemoryDatabase` implementation, and vector search: `VectorDatabase`/`VectorIndex`, kept apart from the searched models: entries are only an ID and an embedding, and searches don't filter. `InMemoryDatabase` (`ram`), `MongoDatabase` (`mongodb`, `mongodb+srv`: Atlas) and `PostgresDatabase` (`postgresql`: pgvector) implement it; `vectorIndexed`/`rebuild` keep an index in step with the rows of a table matching a condition. `Table` has no vector search.
 - **database-processor/**: KSP code generator for type-safe database queries
 - **database-mongodb/**: MongoDB implementation
 - **database-postgres/**: PostgreSQL implementation (uses Exposed ORM)
 - **database-jsonfile/**: JSON file-based database (for testing/development)
-- **database-test/**: Shared test suite used by all database implementations
+- **database-test/**: Shared test suite used by all database implementations (`VectorIndexTests` for vector databases)
 
 #### Cache Modules
 - **cache/**: Abstract `Cache` interface, in-memory MapCache

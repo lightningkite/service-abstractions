@@ -22,7 +22,6 @@ graalVmNative = "1.1.14"
 greenmail = "2.1.14"
 h2 = "2.5.250"
 hikariCP = "7.1.0"
-koogAgents = "0.7.3"
 kotlin = "2.4.20"
 kotlinCrypto = "0.8.0"
 kotlinLogging = "8.0.4"
@@ -93,8 +92,6 @@ freetts = { module = "net.sf.sociaal:freetts", version.ref = "freetts" }
 greenmail = { module = "com.icegreen:greenmail", version.ref = "greenmail" }
 h2 = { module = "com.h2database:h2", version.ref = "h2" }
 hikariCP = { module = "com.zaxxer:HikariCP", version.ref = "hikariCP" }
-koog-agents = { module = "ai.koog.clockfix:koog-agents", version.ref = "koogAgents" }
-koog-vector-storage = { module = "ai.koog.clockfix:vector-storage", version.ref = "koogAgents" }
 kotlin-logging = { module = "io.github.oshai:kotlin-logging", version.ref = "kotlinLogging" }
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }

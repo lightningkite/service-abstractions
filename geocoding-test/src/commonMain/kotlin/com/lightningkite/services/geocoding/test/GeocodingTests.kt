@@ -96,7 +96,7 @@ public abstract class GeocodingTests {
     }
 
     @Test
-    public fun reverseGeocodeDescribesKnownCoordinate(): TestResult = runTest {
+    public open fun reverseGeocodeDescribesKnownCoordinate(): TestResult = runTest {
         val geocoding = geocoding ?: return@runTest
         val results = geocoding.reverseGeocode(ReverseGeocodeQuery(knownCoordinate))
         assertTrue(results.isNotEmpty(), "Expected a reverse result for $knownCoordinate")

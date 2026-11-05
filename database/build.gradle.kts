@@ -46,6 +46,7 @@ kotlin {
             dependencies {
                 api(project(path = ":basis"))
                 api(project(path = ":database-shared"))
+                api(project(path = ":embedding"))
                 api(libs.atomicfu)
             }
             kotlin {

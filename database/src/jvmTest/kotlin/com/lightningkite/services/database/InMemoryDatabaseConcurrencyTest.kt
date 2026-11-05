@@ -23,7 +23,7 @@ class InMemoryDatabaseConcurrencyTest {
     @Test
     fun concurrentFirstAccessYieldsTheSameTableInstance() {
         val db = InMemoryDatabase("test", context = TestSettingContext())
-        val tableDef = DatabaseTableDefinition<DocumentWithEmbedding>("concurrent-first-access")
+        val tableDef = DatabaseTableDefinition<Note>("concurrent-first-access")
 
         val threadCount = 32
         val barrier = CyclicBarrier(threadCount)

@@ -12,7 +12,6 @@ import com.lightningkite.services.database.test.MetaTest
 import com.lightningkite.services.database.test.ModificationTests
 import com.lightningkite.services.database.test.OperationsTests
 import com.lightningkite.services.database.test.SortTest
-import com.lightningkite.services.database.test.VectorSearchTests
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -90,16 +89,6 @@ class CassandraSortTest : SortTest() {
 
 class CassandraMetaTest : MetaTest() {
     override val database: Database get() = db()
-}
-
-class CassandraVectorSearchTests : VectorSearchTests() {
-    override val database: Database get() = db()
-
-    // Cassandra doesn't natively support vector search
-    override val supportsVectorSearch: Boolean = false
-    override val supportsSparseVectorSearch: Boolean = false
-    override val supportsQueryTimeMetrics: Boolean = false
-    override val vectorSearchIndexSyncDelay: Duration = Duration.ZERO
 }
 
 // by Claude - test for Set<String> serialization issue

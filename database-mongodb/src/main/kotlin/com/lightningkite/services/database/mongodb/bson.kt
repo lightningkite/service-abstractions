@@ -63,40 +63,22 @@ private fun <T> Condition<T>.dump(
     serializer: KSerializer<T>,
     into: Document = Document(),
     key: String?,
-    vectorSearchFilter: Boolean,
     bson: KBson,
 ): Document {
     when (this) {
         is Condition.Always -> {}
         is Condition.Never -> into["thisFieldWillNeverExist"] = "no never"
         is Condition.And -> {
-            into["\$and"] = conditions.map { it.dump(serializer, key = key, vectorSearchFilter = vectorSearchFilter, bson = bson) }
+            into["\$and"] = conditions.map { it.dump(serializer, key = key, bson = bson) }
         }
 
         is Condition.Or -> if (conditions.isEmpty()) into["thisFieldWillNeverExist"] = "no never" else into["\$or"] =
-            conditions.map { it.dump(serializer, key = key, vectorSearchFilter = vectorSearchFilter, bson = bson) }
+            conditions.map { it.dump(serializer, key = key, bson = bson) }
 
         is Condition.Equal -> into.sub(key)["\$eq"] = value.let { bson.stringifyAny(serializer, it) }
         is Condition.NotEqual -> into.sub(key)["\$ne"] = value.let { bson.stringifyAny(serializer, it) }
-        // Atlas $vectorSearch filters don't support $elemMatch, so there the element condition goes straight on the
-        // key, which Mongo applies to each element.  That only means the same thing for a single positive test.
-        is Condition.CollectionAnyElements<*, *> -> if (vectorSearchFilter) {
-            require(condition.isOneElementTest()) {
-                "A vector search filter can't express `any { $condition }`: Atlas \$vectorSearch doesn't support \$elemMatch, " +
-                        "so only a single comparison (or an `or` of them) on one element is allowed.  " +
-                        "Filter the rest after the search, or store the combination as its own field."
-            }
-            (condition as Condition<Any?>).dump(
-                serializer.listElement()!! as KSerializer<Any?>,
-                into,
-                key,
-                vectorSearchFilter = vectorSearchFilter,
-                bson = bson
-            )
-        } else {
-            into.sub(key)["\$elemMatch"] =
-                (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
-        }
+        is Condition.CollectionAnyElements<*, *> -> into.sub(key)["\$elemMatch"] =
+            (condition as Condition<Any?>).bson(serializer.listElement()!! as KSerializer<Any?>, bson = bson)
 
         is Condition.CollectionAllElements<*, *> -> {
             val innerSerializer = serializer.listElement()!! as KSerializer<Any?>
@@ -105,8 +87,7 @@ private fun <T> Condition<T>.dump(
                 innerSerializer,
                 into = matchDoc,
                 key = null,
-                vectorSearchFilter = vectorSearchFilter,
-                bson = bson
+                    bson = bson
             )
             into.sub(key)["\$not"] = documentOf("\$elemMatch" to matchDoc)
             // $elemMatch never matches a null element with a condition on its fields, so a null element can't fail one.
@@ -124,13 +105,13 @@ private fun <T> Condition<T>.dump(
             // Mongo compares an array with null element by element, so `$ne: null` would reject [1, null].
             val notNull = if (nonNullSerializer.descriptor.kind == StructureKind.LIST) documentOf("\$type" to "array")
                 else documentOf("\$ne" to null)
-            if (!condition.matchesNullInMongo(vectorSearchFilter)) {
-                (condition as Condition<Any?>).dump(nonNullSerializer, into, key, vectorSearchFilter = vectorSearchFilter, bson = bson)
+            if (!condition.matchesNullInMongo()) {
+                (condition as Condition<Any?>).dump(nonNullSerializer, into, key, bson = bson)
             } else if (key != null) {
                 into["\$and"] = listOfNotNull(
                     documentOf(key to notNull),
                     (condition as Condition<Any?>).takeUnless { it is Condition.Always }
-                        ?.dump(nonNullSerializer, key = key, vectorSearchFilter = vectorSearchFilter, bson = bson),
+                        ?.dump(nonNullSerializer, key = key, bson = bson),
                 )
             } else {
                 // No key means this is a list element inside $elemMatch. The operators there apply to the element itself,
@@ -138,7 +119,7 @@ private fun <T> Condition<T>.dump(
                 // Conditions on the element's fields need no check: $elemMatch never matches a null element with those.
                 // $and/$or/$nor aren't operators on the element, so those forms get no check (and Mongo rejects them here).
                 val inner = (condition as? Condition.NotEqual)?.let { Condition.NotInside(setOf(it.value)) } ?: condition
-                val operators = (inner as Condition<Any?>).dump(nonNullSerializer, key = null, vectorSearchFilter = vectorSearchFilter, bson = bson)
+                val operators = (inner as Condition<Any?>).dump(nonNullSerializer, key = null, bson = bson)
                 into.putAll(operators)
                 if (operators.keys.all { it.startsWith("\$") && it !in setOf("\$and", "\$or", "\$nor") }) into.putAll(notNull)
             }
@@ -158,7 +139,7 @@ private fun <T> Condition<T>.dump(
         is Condition.IntBitsClear -> into.sub(key)["\$bitsAllClear"] = mask.bitPositions()
         is Condition.IntBitsSet -> into.sub(key)["\$bitsAllSet"] = mask.bitPositions()
         is Condition.Not -> {
-            val inner = condition.dump(serializer, key = key, vectorSearchFilter = vectorSearchFilter, bson = bson)
+            val inner = condition.dump(serializer, key = key, bson = bson)
             val isOperatorDocument =
                 inner.keys.all {
                     it.startsWith("$") &&
@@ -202,7 +183,6 @@ private fun <T> Condition<T>.dump(
                 if (this.key.isInline) key
                 else if (key == null) this.key.name
                 else "$key.${this.key.name}",
-            vectorSearchFilter = vectorSearchFilter,
             bson = bson
         )
 
@@ -212,7 +192,7 @@ private fun <T> Condition<T>.dump(
             if (condition is Condition.Equal) {
                 // Encoding the value with the outer (polymorphic) serializer includes the discriminator, so a whole-value
                 // match already implies the type check.
-                (condition as Condition<Any?>).dump(serializer, into, key, vectorSearchFilter, bson)
+                (condition as Condition<Any?>).dump(serializer, into, key, bson)
             } else {
                 if (key == null && condition is Condition.NotEqual) throw IllegalArgumentException(
                     "Condition.IfIsType with Condition.NotEqual cannot be applied to a whole element (such as inside \$elemMatch), " +
@@ -222,7 +202,7 @@ private fun <T> Condition<T>.dump(
                     documentOf("\$eq" to discriminator.serialName)
                 if (condition is Condition.NotEqual) {
                     // The outer serializer is used so the compared value includes the discriminator, matching the stored layout.
-                    (condition as Condition<Any?>).dump(serializer, into, key, vectorSearchFilter, bson)
+                    (condition as Condition<Any?>).dump(serializer, into, key, bson)
                 } else if (condition !is Condition.Always) {
                     (condition as Condition<Any?>).dump(
                         serializer.polymorphicSubSerializer(discriminator.serialName, bson.serializersModule)
@@ -231,7 +211,6 @@ private fun <T> Condition<T>.dump(
                             ),
                         into,
                         key,
-                        vectorSearchFilter = vectorSearchFilter,
                         bson = bson
                     )
                 }
@@ -242,31 +221,20 @@ private fun <T> Condition<T>.dump(
 }
 
 // False only where it's certain that this condition's translation can't match a null or missing value.
-private fun Condition<*>.matchesNullInMongo(vectorSearchFilter: Boolean): Boolean = when (this) {
+private fun Condition<*>.matchesNullInMongo(): Boolean = when (this) {
     is Condition.Never, is Condition.GreaterThan, is Condition.LessThan, is Condition.GreaterThanOrEqual,
     is Condition.LessThanOrEqual, is Condition.StringContains, is Condition.RegexMatches,
     is Condition.IntBitsClear, is Condition.IntBitsSet, is Condition.IntBitsAnyClear, is Condition.IntBitsAnySet,
     is Condition.IfNotNull<*>, is Condition.IfIsType<*, *>, is Condition.GeoDistance -> false
     is Condition.Equal -> value == null
     is Condition.Inside -> values.any { it == null }
-    is Condition.And -> conditions.all { it.matchesNullInMongo(vectorSearchFilter) }
-    is Condition.Or -> conditions.any { it.matchesNullInMongo(vectorSearchFilter) }
+    is Condition.And -> conditions.all { it.matchesNullInMongo() }
+    is Condition.Or -> conditions.any { it.matchesNullInMongo() }
     // A missing parent makes the field missing too.
-    is Condition.OnField<*, *> -> condition.matchesNullInMongo(vectorSearchFilter)
-    // $elemMatch needs an array; in a vector search filter these put the element condition straight on the field instead.
-    is Condition.CollectionAnyElements<*, *> -> vectorSearchFilter && condition.matchesNullInMongo(vectorSearchFilter)
+    is Condition.OnField<*, *> -> condition.matchesNullInMongo()
+    // $elemMatch needs an array.
+    is Condition.CollectionAnyElements<*, *> -> false
     else -> true
-}
-
-// Whether "some element matches this" means the same as "the array field matches this" under Mongo's array semantics.
-// It doesn't for `and` (each part could match a different element) or negations (`$ne` on an array means no element
-// is equal), nor for Always (an empty array has no matching element).
-private fun Condition<*>.isOneElementTest(): Boolean = when (this) {
-    is Condition.Equal, is Condition.Inside, is Condition.GreaterThan, is Condition.LessThan,
-    is Condition.GreaterThanOrEqual, is Condition.LessThanOrEqual, is Condition.CollectionAnyElements<*, *> -> true
-    is Condition.Or -> conditions.all { it.isOneElementTest() }
-    is Condition.OnField<*, *> -> condition.isOneElementTest()
-    else -> false
 }
 
 @OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
@@ -422,7 +390,7 @@ private fun dumpElementParts(
             val identifier = "f${update.options.arrayFilters?.size ?: 0}"
             update.options = update.options.arrayFilters(
                 (update.options.arrayFilters ?: listOf()) +
-                        filter.dump(elementSerializer, key = identifier, vectorSearchFilter = false, bson = bson)
+                        filter.dump(elementSerializer, key = identifier, bson = bson)
             )
             Modification.Chain(parts).dump(elementSerializer, update, "$key.$[$identifier]", bson)
         }
@@ -467,8 +435,8 @@ internal class PendingElementParts(
     val parts: MutableList<Pair<Condition<Any?>, Modification<Any?>>> = mutableListOf(),
 )
 
-internal fun <T> Condition<T>.bson(serializer: KSerializer<T>, vectorSearchFilter: Boolean = false, bson: KBson): Document =
-    Document().also { dump(serializer, it, null, vectorSearchFilter, bson) }
+internal fun <T> Condition<T>.bson(serializer: KSerializer<T>, bson: KBson): Document =
+    Document().also { dump(serializer, it, null, bson) }
 
 /**
  * Removes top-level update modifiers whose operand is empty (e.g. `{ "$set": {} }`). MongoDB silently treats

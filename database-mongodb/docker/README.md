@@ -47,7 +47,7 @@ Set the environment variable and run tests:
 
 ```bash
 MONGO_VECTOR_TEST_URL="mongodb://localhost:27017/test?directConnection=true" \
-  ./gradlew :database-mongodb:test --tests "MongodbVectorSearchTests"
+  ./gradlew :database-mongodb:test --tests "MongodbVectorIndexTests"
 ```
 
 ## Creating a Vector Search Index
