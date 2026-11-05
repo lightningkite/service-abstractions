@@ -219,12 +219,6 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                     "to_port" - 27017
                 }
             }
-        } ?: (emitter as? TerraformEmitterKnownIpAddresses)?.let { emitter ->
-            "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id" - projectId
-                "cidr_block" - $$"${element($${emitter.applicationIpAddresses},0)}/32"
-                "comment" - "Main Compute"
-            }
         } ?: run {
             "resource.mongodbatlas_project_ip_access_list.database" {
                 "project_id" - projectId
@@ -321,11 +315,14 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
                 }
             )
         }
-        (emitter as? TerraformEmitterKnownIpAddresses)?.let { emitter ->
+        (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
+            // One access list entry per NAT gateway public IP
+            val natIps = vpcInfo.natGatewayIps.removePrefix("\${").removeSuffix("}")
             "resource.mongodbatlas_project_ip_access_list.database" {
+                "count" - expression("length($natIps)")
                 "project_id" - projectId
-                "cidr_block" - $$"${element($${emitter.applicationIpAddresses},0)}/32"
-                "comment" - "Main Compute"
+                "cidr_block" - "${expression("$natIps[count.index]")}/32"
+                "comment" - "Main Compute NAT ${expression("count.index")}"
             }
         } ?: run {
             "resource.mongodbatlas_project_ip_access_list.database" {
@@ -435,7 +432,6 @@ context(emitter: TerraformEmitterAws)
 public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
     orgId: String,
     atlasSearch: Boolean = true,
-    backupEnabled: Boolean = true,
     zoneName: String? = null,
     existingProjectId: String? = null,
 ): Unit {
@@ -454,7 +450,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
     emitter.emit(name) {
         val projectName1 = "${emitter.projectPrefix.filter { it.isLetterOrDigit() }}${name}"
         val region1 = emitter.applicationRegion.uppercase().replace("-", "_")
-        val projectId1 = if (existingProjectId == null) {
+        val projectId = if (existingProjectId == null) {
             "resource.mongodbatlas_project.${name}" {
                 "name" - projectName1
                 "org_id" - orgId
@@ -472,11 +468,9 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
             "override_special" - "-_"
         }
         "resource.mongodbatlas_advanced_cluster.${name}" {
-            "project_id" - projectId1
+            "project_id" - projectId
             "name" - projectName1
             "cluster_type" - "REPLICASET"
-
-            "backup_enabled" - backupEnabled
 
             "replication_specs" - listOf(
                 terraformJsonObject {
@@ -511,15 +505,18 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
                 }
             )
         }
-        (emitter as? TerraformEmitterKnownIpAddresses)?.let<TerraformEmitterKnownIpAddresses, Unit> { emitter ->
+        (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
+            // One access list entry per NAT gateway public IP
+            val natIps = vpcInfo.natGatewayIps.removePrefix("\${").removeSuffix("}")
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id" - projectId1
-                "cidr_block" - $$"${element($${emitter.applicationIpAddresses},0)}/32"
-                "comment" - "Main Compute"
+                "count" - expression("length($natIps)")
+                "project_id" - projectId
+                "cidr_block" - "${expression("$natIps[count.index]")}/32"
+                "comment" - "Main Compute NAT ${expression("count.index")}"
             }
         } ?: run {
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id" - projectId1
+                "project_id" - projectId
                 "cidr_block" - "0.0.0.0/0"
                 "comment" - "Anywhere"
             }
