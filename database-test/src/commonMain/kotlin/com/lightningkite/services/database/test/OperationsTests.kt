@@ -1,6 +1,9 @@
 package com.lightningkite.services.database.test
 
+import com.lightningkite.services.database.optics.AnyOptic
 import com.lightningkite.services.database.optics.Lens
+import com.lightningkite.services.database.optics.elements
+import com.lightningkite.services.database.optics.notNull
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -29,6 +32,50 @@ abstract class OperationsTests() {
             condition = Condition.Always
         ).toList()
         assertEquals(partialOf { it.int assign m.int }, result.first())
+    }
+
+    /** Every backend must return exactly what trimming the full models with [partialOf] would. */
+    @Test
+    fun test_partialsMatchTrimmedModels() = runTest {
+        val collection = database.prepare(DatabaseTableDefinition<LargeTestModel>("test_partialsMatchTrimmedModels"))
+        val items = (0..4).map { i ->
+            LargeTestModel(
+                int = i,
+                string = "s$i",
+                embedded = ClassUsedForEmbedding("v$i", i),
+                intNullable = i.takeIf { i % 2 == 0 },
+                embeddedNullable = ClassUsedForEmbedding("n$i", i).takeIf { i % 2 == 1 },
+                listEmbedded = listOf(ClassUsedForEmbedding("l$i", i)),
+            )
+        }
+        collection.insert(items)
+        val model = Lens<LargeTestModel>()
+        val fieldSets: List<Set<AnyOptic<LargeTestModel>>> = listOf(
+            setOf(model.int, model.string),
+            setOf(model._id, model.intNullable),
+            setOf(model.embedded.value1),
+            setOf(model.embeddedNullable),
+            setOf(model.listEmbedded),
+            setOf(model.embeddedNullable.notNull.value2),
+            setOf(model.listEmbedded.elements.value1, model.embedded),
+            // Paths sharing a root field, in both orders.
+            setOf(model.embedded, model.embedded.value1),
+            setOf(model.embedded.value1, model.embedded),
+            setOf(model.embedded.value1, model.embedded.value2),
+            setOf(model.embeddedNullable, model.embeddedNullable.notNull.value1),
+            setOf(model.embeddedNullable.notNull.value1, model.embeddedNullable),
+        )
+        val expectedItems = items.filter { it.int >= 1 }.sortedByDescending { it.int }.drop(1).take(2)
+        for (fields in fieldSets) {
+            val result = collection.findPartial(
+                fields = fields,
+                condition = model.int gte 1,
+                orderBy = listOf(SortPart(model.int, ascending = false)),
+                skip = 1,
+                limit = 2,
+            ).toList()
+            assertEquals(expectedItems.map { partialOf(it, fields) }, result, "Fields: $fields")
+        }
     }
 
     @Test
