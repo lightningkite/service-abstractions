@@ -68,9 +68,7 @@ class ChildTableCollectionHandlerTest {
     @Serializable
     data class Forest(val nodes: List<Node>)
 
-    // A value class inside a nested struct double-popped the struct's field-path tag: the encoder
-    // wrote `text` instead of `leaf__text` (a name no column matches, so the value was dropped),
-    // and the decoder lost the `leaf` prefix and read a key that isn't there.
+    // A value class inside a nested struct test
     @Test
     fun valueClassesInsideNestedStructsKeepTheirPrefix() {
         val value = Forest(listOf(Node(Leaf(RowId("r1"), "hello"), "after")))
