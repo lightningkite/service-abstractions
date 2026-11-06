@@ -251,9 +251,6 @@ public class MapDecoder(
         val depth = tagStack.size
         pushTag(nested(descriptor.getElementName(index)))
         val result = decodeSerializableValue(deserializer)
-        // by Claude - the inner decode pops the tag itself for converters, inline values,
-        // collections, JSON and nulls; only a nested structure decodes on a copy of this stack
-        // and leaves the tag for us. Popping unconditionally ate the parent's prefix.
         while (tagStack.size > depth) tagStack.removeLastOrNull()
         return result
     }
