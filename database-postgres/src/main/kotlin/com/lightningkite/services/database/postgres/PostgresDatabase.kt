@@ -4,6 +4,7 @@ import com.lightningkite.services.telemetry.MetricUnit
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.telemetry.telemetryGauge
 import com.lightningkite.services.database.DatabaseTableDefinition
+import com.lightningkite.services.database.*
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import java.util.concurrent.ConcurrentHashMap
 
@@ -62,7 +63,7 @@ public class PostgresDatabase(
     override val name: String,
     override val context: SettingContext,
     private val makeDb: () -> PooledDatabase,
-) : com.lightningkite.services.database.Database {
+) : com.lightningkite.services.database.Database, VectorDatabase {
     private var _db = lazy(makeDb)
 
     public val db: org.jetbrains.exposed.v1.jdbc.Database get() = _db.value.database
@@ -114,6 +115,9 @@ public class PostgresDatabase(
                         makePooledDatabase(jdbcUrl, "org.postgresql.Driver", pool = split.pool)
                     }
             }
+            VectorDatabase.Settings.register("postgresql") { name, url, context ->
+                com.lightningkite.services.database.Database.Settings.parse(name, url, context) as PostgresDatabase
+            }
         }
     }
 
@@ -136,4 +140,13 @@ public class PostgresDatabase(
     override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): PostgresCollection<T> =
         table(tableDef).also { it.prepare.await() }
 
+    override fun <ID : Comparable<ID>> index(definition: VectorIndexDefinition<ID>): VectorIndex<ID> = postgresIndex(definition)
+
+    private fun <ID : Comparable<ID>> postgresIndex(definition: VectorIndexDefinition<ID>): PostgresVectorIndex<ID> = PostgresVectorIndex(
+        table(DatabaseTableDefinition(VectorIndexEntry.serializer(definition.idSerializer), definition.storageName)),
+        definition.space,
+    )
+
+    override suspend fun <ID : Comparable<ID>> prepare(definition: VectorIndexDefinition<ID>): VectorIndex<ID> =
+        postgresIndex(definition).also { it.prepare() }
 }

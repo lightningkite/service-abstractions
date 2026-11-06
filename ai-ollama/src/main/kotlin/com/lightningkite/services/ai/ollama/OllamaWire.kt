@@ -1,6 +1,7 @@
 package com.lightningkite.services.ai.ollama
 
 import com.lightningkite.services.ai.LlmAttachment
+import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
@@ -8,6 +9,8 @@ import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.LlmToolDescriptor
 import com.lightningkite.services.ai.toJsonSchema
+import com.lightningkite.services.data.MediaType
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -38,6 +41,8 @@ import kotlinx.serialization.modules.SerializersModule
  */
 internal object OllamaWire {
 
+    private val logger = KotlinLogging.logger("OllamaWire")
+
     internal val json: Json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = false
@@ -46,8 +51,9 @@ internal object OllamaWire {
     /**
      * Build the JSON body for POST /api/chat.
      *
-     * [LlmPrompt.toolChoice] is advisory: Ollama's native API has no field for tool choice,
-     * so we emit a hint via the system prompt when the caller requires or forbids tool use.
+     * Ollama's native API has no field for tool choice: [LlmToolChoice.None] becomes a system-prompt
+     * hint, and a forced choice ([LlmToolChoice.Required] / [LlmToolChoice.Specific]) throws
+     * [LlmException.InvalidRequest].
      */
     internal fun buildChatRequest(
         model: String,
@@ -61,8 +67,13 @@ internal object OllamaWire {
         putJsonArray("messages") {
             // Collect all system-level content: systemPrompt, shared context, tool choice hint.
             val systemParts = buildList {
-                // System prompt parts (text only)
-                prompt.systemPrompt.filterIsInstance<LlmPart.Text>().forEach { add(it.text) }
+                // System messages take text only.
+                prompt.systemPrompt.forEach { part ->
+                    when (part) {
+                        is LlmPart.Text -> add(part.text)
+                        is LlmPart.Attachment -> add(notSent(part.attachment).text)
+                    }
+                }
                 // Shared context from tools
                 prompt.collectSharedContext()?.let { add(it) }
                 // Tool choice hint
@@ -74,8 +85,9 @@ internal object OllamaWire {
                     put("content", systemParts.joinToString("\n\n"))
                 })
             }
+            val supportedMediaTypes = supportedMediaTypes(model)
             prompt.messages.forEach { msg ->
-                add(messageToJson(msg))
+                add(messageToJson(msg, supportedMediaTypes))
             }
         }
 
@@ -87,12 +99,10 @@ internal object OllamaWire {
             }
         }
 
-        val hasOptions = prompt.temperature != null ||
-            prompt.maxTokens != null ||
+        val hasOptions = prompt.maxTokens != null ||
             prompt.stopSequences.isNotEmpty()
         if (hasOptions) {
             putJsonObject("options") {
-                prompt.temperature?.let { put("temperature", it) }
                 prompt.maxTokens?.let { put("num_predict", it) }
                 if (prompt.stopSequences.isNotEmpty()) {
                     putJsonArray("stop") { prompt.stopSequences.forEach { add(it) } }
@@ -114,22 +124,16 @@ internal object OllamaWire {
      * Ollama is lenient about missing tool_name. We still surface `tool_call_id` for wire-level
      * parity with OpenAI-style callers that mix this adapter in; Ollama ignores unknown fields.
      */
-    private fun messageToJson(msg: LlmMessage): JsonObject = buildJsonObject {
+    private fun messageToJson(msg: LlmMessage, supportedMediaTypes: List<MediaType>): JsonObject = buildJsonObject {
         when (msg) {
             is LlmMessage.User -> {
                 put("role", "user")
-                val textParts = msg.parts.filterIsInstance<LlmPart.Text>()
-                val attachments = msg.parts.filterIsInstance<LlmPart.Attachment>().map { it.attachment }
-                put("content", textParts.joinToString("") { it.text })
-                emitAttachments(attachments)
+                putContentAndImages(msg.parts, supportedMediaTypes)
             }
             is LlmMessage.Agent -> {
                 put("role", "assistant")
-                val textParts = msg.parts.filterIsInstance<LlmPart.Text>()
-                val attachments = msg.parts.filterIsInstance<LlmPart.Attachment>().map { it.attachment }
+                putContentAndImages(msg.parts, supportedMediaTypes)
                 val toolCalls = msg.parts.filterIsInstance<LlmPart.ToolCall>()
-                put("content", textParts.joinToString("") { it.text })
-                emitAttachments(attachments)
                 if (toolCalls.isNotEmpty()) {
                     putJsonArray("tool_calls") {
                         toolCalls.forEach { tc ->
@@ -154,53 +158,63 @@ internal object OllamaWire {
             }
             is LlmMessage.ToolResult -> {
                 put("role", "tool")
-                val textParts = msg.parts.filterIsInstance<LlmPart.Text>()
-                put("content", textParts.joinToString("") { it.text })
+                // Tool messages take text only.
+                putContentAndImages(msg.parts, supportedMediaTypes = emptyList())
                 put("tool_call_id", msg.toolCallId)
             }
         }
     }
 
     /**
-     * Emit base64 image attachments into the `images` array. Throws if any URL attachments
-     * are present, since Ollama's native API does not support image URLs, and if any
-     * attachment isn't an image — Ollama's `images` field only accepts image bytes, so a
-     * non-image attachment (e.g. a PDF) stuffed in there would be silently fed to the model
-     * as garbage rather than rejected.
+     * Ollama's native API takes attachments only as base64 image bytes in `images`; there is no
+     * URL form. Every other attachment goes into `content` as [LlmAttachment.notSentNote] text.
      */
-    private fun JsonObjectBuilder.emitAttachments(attachments: List<LlmAttachment>) {
-        if (attachments.isEmpty()) return
-        val base64s = attachments.mapNotNull {
-            when (it) {
-                is LlmAttachment.Base64 -> {
-                    require(it.mediaType.type == "image") {
-                        "Ollama's native API only accepts image attachments; got media type ${it.mediaType}."
+    private fun JsonObjectBuilder.putContentAndImages(parts: List<LlmPart>, supportedMediaTypes: List<MediaType>) {
+        val content = StringBuilder()
+        val images = mutableListOf<String>()
+        for (part in parts) {
+            when (part) {
+                is LlmPart.Text -> content.append(part.text)
+                is LlmPart.Attachment -> {
+                    val attachment = part.attachment
+                    if (attachment is LlmAttachment.Base64 && supportedMediaTypes.any { it.accepts(attachment.mediaType) }) {
+                        images.add(attachment.base64)
+                    } else {
+                        content.append(notSent(attachment).text)
                     }
-                    it.base64
                 }
-                is LlmAttachment.Url -> null
+                is LlmPart.Reasoning, is LlmPart.ToolCall -> {}
             }
         }
-        val urls = attachments.filterIsInstance<LlmAttachment.Url>()
-        if (urls.isNotEmpty()) {
-            throw IllegalArgumentException(
-                "Ollama native API does not accept image URLs; convert to LlmAttachment.Base64 before calling."
-            )
-        }
-        if (base64s.isNotEmpty()) {
-            putJsonArray("images") { base64s.forEach { add(it) } }
+        put("content", content.toString())
+        if (images.isNotEmpty()) {
+            putJsonArray("images") { images.forEach { add(it) } }
         }
     }
 
+    private fun notSent(attachment: LlmAttachment): LlmPart.Text {
+        logger.warn { "Ollama can't take this ${attachment.mediaType} attachment; sending a note instead." }
+        return attachment.notSentNote()
+    }
+
+    private val visionModelPatterns = listOf("llava", "bakllava", "moondream", "cogvlm", "vision", "minicpm-v")
+
+    /** Ollama reads images only, and only on vision models, which we recognize by name. */
+    internal fun supportedMediaTypes(model: String): List<MediaType> =
+        if (visionModelPatterns.any { it in model.lowercase() }) listOf(MediaType.Image.Any) else emptyList()
+
     /**
      * Return a tool choice hint string for Ollama's system prompt. Ollama has no first-class
-     * tool choice field, so we surface the intent as a system-level instruction.
+     * tool choice field, so [LlmToolChoice.None] becomes a system-level instruction (tools are also
+     * left out of the request). A forced call can't be guaranteed that way, so it fails instead.
      */
     private fun toolChoiceHint(choice: LlmToolChoice): String? = when (choice) {
         LlmToolChoice.Auto -> null
         LlmToolChoice.None -> "Do not call any tools in this turn. Respond with natural-language text only."
-        LlmToolChoice.Required -> "You MUST call at least one tool in this turn."
-        is LlmToolChoice.Specific -> "You MUST call the tool named '${choice.name}' in this turn."
+        LlmToolChoice.Required, is LlmToolChoice.Specific -> throw LlmException.InvalidRequest(
+            "Ollama can't force a tool call (LlmToolChoice.$choice); use LlmToolChoice.Auto, " +
+                "say in the prompt which tool to call, and check that it was called.",
+        )
     }
 
     private fun toolToJson(tool: LlmToolDescriptor<*>, module: SerializersModule): JsonObject =
@@ -216,24 +230,16 @@ internal object OllamaWire {
     /**
      * Resolve Ollama's `think` field. Ollama accepts a boolean toggle (older versions)
      * or a level string `"low" | "medium" | "high"` (newer thinking-capable models).
-     * `Off` -> `false`, anything else -> level string. Budget alone (no effort) maps to
-     * a bucketed level. Returns null when reasoning is unset.
+     * `Off` -> `false`, anything else -> level string. Returns null when reasoning is unset.
      */
     private fun ollamaThink(prompt: LlmPrompt): JsonElement? {
-        prompt.reasoningEffort?.let { effort ->
-            return when (effort) {
-                LlmReasoningEffort.Off -> JsonPrimitive(false)
-                LlmReasoningEffort.Minimal, LlmReasoningEffort.Low -> JsonPrimitive("low")
-                LlmReasoningEffort.Medium -> JsonPrimitive("medium")
-                LlmReasoningEffort.High -> JsonPrimitive("high")
-            }
+        return when (prompt.reasoningEffort) {
+            null -> null
+            LlmReasoningEffort.Off -> JsonPrimitive(false)
+            LlmReasoningEffort.Minimal, LlmReasoningEffort.Low -> JsonPrimitive("low")
+            LlmReasoningEffort.Medium -> JsonPrimitive("medium")
+            LlmReasoningEffort.High -> JsonPrimitive("high")
         }
-        val budget = prompt.reasoningBudgetTokens ?: return null
-        return JsonPrimitive(when {
-            budget <= 4096 -> "low"
-            budget <= 12288 -> "medium"
-            else -> "high"
-        })
     }
 }
 

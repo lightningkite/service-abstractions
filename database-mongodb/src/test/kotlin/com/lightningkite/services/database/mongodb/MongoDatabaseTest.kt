@@ -160,6 +160,14 @@ class MongodbDisjointArrayFiltersModificationTests : MongodbModificationTests() 
     }
 }
 
+class MongodbSealedLensTests : SealedLensTests() {
+    override val database: Database = db()
+
+    @Test
+    fun start() {
+    }
+}
+
 class MongodbSealedPathTests : SealedPathTests() {
     override val database: Database = db()
 
@@ -265,21 +273,6 @@ class MongodbConcurrencyTests : ConcurrencyTests() {
     }
 }
 
-class MongodbVectorSearchTests : VectorSearchTests() {
-    override val database: Database = vectorDb()
-
-    // Vector search requires MongoDB Atlas or MongoDB 8.2+ with mongot
-    // Tests will run if MONGO_VECTOR_TEST_URL environment variable is set
-    override val supportsVectorSearch: Boolean = VectorTestDatabase.isAvailable
-    override val supportsSparseVectorSearch: Boolean = false // MongoDB doesn't support sparse vectors
-
-    // MongoDB Atlas requires similarity metric at index creation time, not query time
-    override val supportsQueryTimeMetrics: Boolean = false
-
-    // mongot syncs documents via Change Streams which is eventually consistent.
-    // We need to wait for documents to appear in the search index after insertion.
-    override val vectorSearchIndexSyncDelay: Duration = 3.seconds
-}
 class MongodbTextSearchTests : TextSearchTests() {
     override val database: Database = db()
 

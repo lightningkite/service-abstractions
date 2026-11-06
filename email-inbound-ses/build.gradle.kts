@@ -12,6 +12,13 @@ dependencies {
     api(project(path = ":email"))
     api(project(path = ":email-inbound"))
     api(project(path = ":email-javasmtp"))  // For shared SES terraform (awsSesDomain)
+    api(project(path = ":aws-client"))
+    // Large emails are stored in S3 by the receipt rule. Exclude S3's bundled default HTTP clients;
+    // the shared client pair comes from :aws-client.
+    api(libs.aws.s3) {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
+    }
     implementation(libs.angusMail)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlin.logging)

@@ -36,16 +36,29 @@ private val logger = KotlinLogging.logger("BedrockEmbeddingService")
  * - Cohere models: native batch support
  *
  * @property region AWS region the Bedrock endpoint lives in.
- * @property credentials Credentials used to sign requests.
+ * @property credentialsProvider supplies credentials for signing, consulted once per request so refreshable sources can
+ *   rotate expiring credentials. Use the [AwsCredentials] secondary constructor for a fixed key pair.
+ * @property dimensions Vector length for models that let you choose one (Titan V2, Cohere Embed v4); null uses the
+ *   model's default. Setting it for a model with a fixed length is an error.
+ * @property httpClient sends the Bedrock requests.
  */
 public class BedrockEmbeddingService(
     override val name: String,
     override val context: SettingContext,
     public val region: String,
-    internal val credentials: AwsCredentials,
+    public val credentialsProvider: AwsCredentialsProvider,
+    public val dimensions: Int? = null,
+    private val httpClient: HttpClient = client,
 ) : EmbeddingService {
 
-    private val httpClient: HttpClient = client.config { /* no extra config needed */ }
+    public constructor(
+        name: String,
+        context: SettingContext,
+        region: String,
+        credentials: AwsCredentials,
+        dimensions: Int? = null,
+        httpClient: HttpClient = client,
+    ) : this(name, context, region, AwsCredentialsProvider.static(credentials), dimensions, httpClient)
 
     private val host: String = "bedrock-runtime.$region.amazonaws.com"
 
@@ -59,8 +72,9 @@ public class BedrockEmbeddingService(
 
         return try {
             val modelId = model.id
+            // Cross-region inference profiles prefix the id (us.cohere.embed-v4:0), and an ARN wraps it further.
             when {
-                modelId.startsWith("cohere.") -> embedCohere(texts, modelId)
+                "cohere." in modelId -> embedCohere(texts, modelId)
                 else -> embedTitan(texts, modelId)
             }
         } catch (e: CancellationException) {
@@ -80,9 +94,11 @@ public class BedrockEmbeddingService(
         val allEmbeddings = mutableListOf<Embedding>()
         var totalTokens = 0
 
+        val v2 = modelId.contains("v2")
+        require(v2 || dimensions == null) { "$modelId has a fixed vector length; dimensions must not be set" }
         for (text in texts) {
-            val body = if (modelId.contains("v2"))
-                buildTitanV2RequestBody(text)
+            val body = if (v2)
+                buildTitanV2RequestBody(text, dimensions)
             else
                 buildTitanV1RequestBody(text)
 
@@ -126,7 +142,9 @@ public class BedrockEmbeddingService(
     }
 
     private suspend fun embedCohereSingle(texts: List<String>, modelId: String): List<Embedding> {
-        val body = buildCohereRequestBody(texts)
+        val v4 = "cohere.embed-v4" in modelId
+        require(v4 || dimensions == null) { "$modelId has a fixed vector length; dimensions must not be set" }
+        val body = if (v4) buildCohereV4RequestBody(texts, dimensions) else buildCohereRequestBody(texts)
         val responseBody = invokeModel(modelId, body)
         val parsed = parseCohereResponse(responseBody)
         return parsed.embeddings.map { row ->
@@ -155,7 +173,7 @@ public class BedrockEmbeddingService(
             query = "",
             headers = mapOf("content-type" to "application/json"),
             body = bodyBytes,
-            credentials = credentials,
+            credentials = credentialsProvider.resolve(),
             region = region,
             service = "bedrock",
             amzDate = amzDate,
@@ -246,6 +264,15 @@ public class BedrockEmbeddingService(
                 dimensions = 1024,
                 maxInputTokens = 512,
                 usdPerMillionTokens = 0.10,
+            ),
+            EmbeddingModelInfo(
+                // Most regions reach it only through an inference profile: us., eu., or global.cohere.embed-v4:0.
+                id = EmbeddingModelId("cohere.embed-v4:0"),
+                name = "Cohere Embed v4",
+                description = "Cohere's multilingual, multimodal embedding model with a 128K-token context and selectable dimensions (256, 512, 1024, 1536).",
+                dimensions = 1536,
+                maxInputTokens = 128_000,
+                usdPerMillionTokens = 0.12,
             ),
         )
     }

@@ -12,7 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * Model IDs starting with these (e.g., "us.", "eu.") use the inference-profile
  * ARN format instead of foundation-model ARN format.
  */
-private val inferenceProfilePrefixes = listOf("us.", "eu.", "ap.", "us-", "eu-", "ap-")
+private val inferenceProfilePrefixes = listOf("global.", "us.", "eu.", "ap.", "us-", "eu-", "ap-")
 
 internal fun isInferenceProfile(modelId: String): Boolean =
     inferenceProfilePrefixes.any { modelId.startsWith(it) }
@@ -33,14 +33,16 @@ internal fun getBaseModelId(modelId: String): String {
  *
  * - Foundation models: single ARN `arn:aws:bedrock:{region}::foundation-model/{modelId}`
  * - Inference profiles: two ARNs — one for the profile itself and one for the underlying
- *   foundation model with wildcard region (Bedrock routes internally).
+ *   foundation model with wildcard region (Bedrock routes internally). A global profile (`global.`) also needs the
+ *   region-less foundation-model ARN, which is how Bedrock authorizes routing to any region.
  */
 internal fun bedrockModelArns(modelId: String, region: String): List<String> =
     if (isInferenceProfile(modelId)) {
         val baseModelId = getBaseModelId(modelId)
-        listOf(
+        listOfNotNull(
             "arn:aws:bedrock:${region}:*:inference-profile/${modelId}",
-            "arn:aws:bedrock:*::foundation-model/${baseModelId}"
+            "arn:aws:bedrock:*::foundation-model/${baseModelId}",
+            if (modelId.startsWith("global.")) "arn:aws:bedrock:::foundation-model/${baseModelId}" else null,
         )
     } else {
         listOf("arn:aws:bedrock:${region}::foundation-model/${modelId}")

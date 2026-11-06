@@ -4,6 +4,8 @@ import com.lightningkite.services.email.EmailInboundService
 import com.lightningkite.services.email.javasmtp.AwsSesDomainConfiguration
 import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
 
 /**
  * Creates AWS SES inbound email infrastructure using Terraform.
@@ -15,12 +17,13 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * ```kotlin
  * // First, set up shared domain (from email-javasmtp)
- * sesDomain.awsSesDomain(reportingEmail = "dmarc@example.com".toEmailAddress())
+ * val sesDomain = awsSesDomainConfiguration("ses_domain", reportingEmail = "dmarc@example.com".toEmailAddress())
  *
  * // Then configure inbound
  * emailInbound.awsSesInbound(
- *     sesDomainName = "ses_domain",
- *     webhookUrl = "https://api.example.com/webhooks/email"
+ *     sesDomainConfiguration = sesDomain,
+ *     webhookUrl = "https://api.example.com/webhooks/email",
+ *     storeInS3 = true,
  * )
  * ```
  *
@@ -28,8 +31,11 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * 1. MX record routes incoming email to SES
  * 2. SES receipt rule receives the email
- * 3. Receipt rule publishes to SNS topic with full email content
- * 4. SNS delivers to your webhook endpoint
+ * 3. Without [storeInS3], the rule's SNS action publishes the full email to the SNS topic.
+ *    With [storeInS3], the rule's S3 action writes the raw email to the bucket and publishes a
+ *    notification without content (naming the bucket and object key) to the SNS topic.
+ * 4. SNS delivers to your webhook endpoint, and [SesEmailInboundService] fetches the email from
+ *    the bucket if needed.
  *
  * ## Created Resources
  *
@@ -39,23 +45,25 @@ import kotlinx.serialization.json.JsonPrimitive
  * - `aws_ses_active_receipt_rule_set.{name}` - Activates the rule set
  * - `aws_ses_receipt_rule.{name}` - Receipt rule for the domain
  * - `aws_route53_record.{name}_inbound_mx` - MX record for receiving email
- * - `aws_s3_bucket.{name}_emails` - S3 bucket for large emails (if storeInS3 is true)
+ * - `aws_s3_bucket.{name}_emails` - S3 bucket for raw emails (if storeInS3 is true), with a
+ *   lifecycle rule expiring them after [emailRetention]
  *
  * ## Important Notes
  *
- * - **150KB limit**: Emails larger than ~150KB will have content stored in S3 instead of inline.
- *   Set [storeInS3] to true if you expect large emails.
+ * - **150KB limit**: With an SNS action, SES bounces emails larger than 150KB.
+ *   Set [storeInS3] to true to accept emails up to 40MB.
  * - **SNS subscription**: The webhook URL subscription must be confirmed manually or via
  *   handling the SubscriptionConfirmation message in your webhook handler.
  * - **Active receipt rule set**: Only one receipt rule set can be active at a time per account/region.
  * - **Shared domain**: Must call `awsSesDomain()` first to set up domain identity, DKIM, etc.
  *
- * @param sesDomainName The name used when calling [awsSesDomain]. Resources will reference this.
+ * @param sesDomainConfiguration The shared SES domain from `awsSesDomainConfiguration`.
  * @param webhookUrl The HTTPS URL where SNS will POST email notifications.
  *   Must be publicly accessible. For Lambda, this is typically the API Gateway URL.
- * @param storeInS3 If true, stores email content in S3 instead of inline in SNS notification.
+ * @param storeInS3 If true, SES stores every email in S3 and the notification carries only its location.
  *   Required for emails larger than 150KB. Default is false.
  * @param s3BucketPrefix Prefix for the S3 bucket name when [storeInS3] is true.
+ * @param emailRetention How long raw emails stay in the bucket when [storeInS3] is true.
  * @param tlsPolicy TLS policy for receiving email. "Require" enforces TLS, "Optional" allows unencrypted.
  *   Defaults to "Require"; senders that support STARTTLS (effectively all major providers) are unaffected.
  * @param scanEnabled Whether to enable spam and virus scanning. Default is true.
@@ -66,14 +74,39 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
     webhookUrl: String? = null,
     storeInS3: Boolean = false,
     s3BucketPrefix: String = "ses-inbound",
+    emailRetention: Duration = 30.days,
     tlsPolicy: String = "Require",
     scanEnabled: Boolean = true,
-): Unit {
+): Unit = emitSesInbound(
+    sesDomainName = sesDomainConfiguration.name,
+    webhookUrl = webhookUrl,
+    storeInS3 = storeInS3,
+    s3BucketPrefix = s3BucketPrefix,
+    emailRetention = emailRetention,
+    tlsPolicy = tlsPolicy,
+    scanEnabled = scanEnabled,
+)
+
+context(emitter: TerraformEmitterAwsDomain)
+internal fun TerraformNeed<EmailInboundService.Settings>.emitSesInbound(
+    sesDomainName: String,
+    webhookUrl: String?,
+    storeInS3: Boolean,
+    s3BucketPrefix: String,
+    emailRetention: Duration,
+    tlsPolicy: String,
+    scanEnabled: Boolean,
+) {
     if (!EmailInboundService.Settings.supports("ses")) {
         throw IllegalArgumentException("You need to reference SesEmailInboundService in your server definition to use this.")
     }
 
-    emitter.fulfillSetting(name, JsonPrimitive("ses://"))
+    emitter.fulfillSetting(
+        name, JsonPrimitive(
+            if (storeInS3) $$"ses://?topicArn=${aws_sns_topic.$${name}.arn}&bucket=${aws_s3_bucket.$${name}_emails.bucket}&region=${aws_s3_bucket.$${name}_emails.region}"
+            else $$"ses://?topicArn=${aws_sns_topic.$${name}.arn}"
+        )
+    )
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
     emitter.emit(name) {
@@ -111,11 +144,26 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
             """
         }
 
-        // S3 bucket for large emails (if enabled)
         if (storeInS3) {
             "resource.aws_s3_bucket.${name}_emails" {
                 "bucket_prefix" - "${emitter.projectPrefix.lowercase().replace("_", "")}-${s3BucketPrefix}"
                 "force_destroy" - true
+            }
+
+            "resource.aws_s3_bucket_lifecycle_configuration.${name}_emails" {
+                "bucket" - expression("aws_s3_bucket.${name}_emails.id")
+                "rule" - listOf(
+                    terraformJsonObject {
+                        "id" - "expire-emails"
+                        "status" - "Enabled"
+                        "filter" {
+                            "prefix" - ""
+                        }
+                        "expiration" {
+                            "days" - emailRetention.inWholeDays
+                        }
+                    }
+                )
             }
 
             "resource.aws_s3_bucket_policy.${name}_emails" {
@@ -164,20 +212,18 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
                 "scan_enabled" - scanEnabled
                 "tls_policy" - tlsPolicy
 
-                // Store in S3 first, then notify via SNS
+                // No sns_action here: SES bounces emails over 150KB when a rule has one, which
+                // defeats the bucket. The S3 action's own topic gets a notification without content.
                 "s3_action" {
                     "bucket_name" - expression("aws_s3_bucket.${name}_emails.id")
-                    "position" - 1
-                }
-                "sns_action" {
                     "topic_arn" - expression("aws_sns_topic.$name.arn")
-                    "position" - 2
-                    "encoding" - "UTF-8"
+                    "position" - 1
                 }
 
                 "depends_on" - listOf(
                     "aws_ses_active_receipt_rule_set.$name",
-                    "aws_s3_bucket_policy.${name}_emails"
+                    "aws_s3_bucket_policy.${name}_emails",
+                    "aws_sns_topic_policy.$name",
                 )
             }
         } else {
@@ -224,8 +270,8 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
         // Ensure inbound setup depends on shared domain being ready
         "resource.null_resource.${name}_depends_on_domain" {
             "depends_on" - listOf(
-                "aws_ses_domain_identity.${sesDomainConfiguration.name}",
-                "aws_ses_domain_dkim.${sesDomainConfiguration.name}_dkim"
+                "aws_ses_domain_identity.$sesDomainName",
+                "aws_ses_domain_dkim.${sesDomainName}_dkim"
             )
         }
 
@@ -241,10 +287,9 @@ public fun TerraformNeed<EmailInboundService.Settings>.awsSesInbound(
         }
     }
 
-    // Add policy statements for the application to read from S3 if enabled
     if (storeInS3) {
         emitter.policyStatements += AwsPolicyStatement(
-            action = listOf("s3:GetObject", "s3:DeleteObject"),
+            action = listOf("s3:GetObject"),
             resource = listOf(
                 $$"${aws_s3_bucket.$${name}_emails.arn}/*"
             )

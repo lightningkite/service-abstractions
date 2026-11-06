@@ -276,17 +276,6 @@ data class HasGenerics2<T>(
 ) : HasId<Uuid>
 
 @Queryable
-data class VectorTestModel(
-    override val _id: Uuid = Uuid.random(),
-    val title: String = "",
-    @Index val category: String = "",
-    @Index val tags: Set<String> = setOf(), // by Claude - for testing vector search with set filters
-    @VectorIndex(dimensions = 3) val embedding: Embedding = Embedding(floatArrayOf()),
-) : HasId<Uuid> {
-    companion object
-}
-
-@Queryable
 @TextIndex(["title", "body", "details.summary"])
 data class TextSearchTestModel(
     override val _id: Uuid = Uuid.random(),
@@ -304,15 +293,6 @@ data class TextSearchDetails(
     val summary: String = "",
     val secret: String = "",
 )
-
-@Queryable
-data class SparseVectorTestModel(
-    override val _id: Uuid = Uuid.random(),
-    val title: String = "",
-    val sparseEmbedding: SparseEmbedding = SparseEmbedding(intArrayOf(), floatArrayOf(), 0),
-) : HasId<Uuid> {
-    companion object
-}
 
 @Queryable
 @IndexSet(["set1", "set2"], unique = IndexUniqueness.NotUnique)
@@ -392,3 +372,33 @@ sealed class Payment {
 /** Declared outside [Payment], so its serial name isn't nested under the sealed class's. */
 @Queryable
 data class CashPayment(override val amount: Int = 0, val currency: String = "USD") : Payment()
+
+@Queryable
+sealed interface Notification {
+    val title: String
+    val priority: Int
+
+    // Claude: `unread` is a getter on Sms, so Notification gets no accessor for it.
+    val unread: Boolean
+
+    @Queryable
+    data class Email(override val title: String = "", override val priority: Int = 0, override val unread: Boolean = true, val address: String = "") : Notification
+
+    @Queryable
+    data class Sms(override val title: String = "", override val priority: Int = 0, val number: String = "") : Notification {
+        override val unread: Boolean get() = true
+    }
+
+    @Queryable
+    data class Push(override val title: String = "", override val priority: Int = 0, override val unread: Boolean = true) : Notification
+}
+
+@Queryable
+data class SealedLensTestModel(
+    override val _id: Uuid = Uuid.random(),
+    val notification: Notification = Notification.Push(),
+    val notificationNullable: Notification? = null,
+    val notifications: List<Notification> = listOf(),
+) : HasId<Uuid> {
+    companion object
+}

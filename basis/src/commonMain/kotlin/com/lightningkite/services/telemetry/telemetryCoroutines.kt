@@ -7,13 +7,17 @@ import kotlin.coroutines.CoroutineContext
 
 // ---- Ambient attribute plumbing (coroutine context) ----
 
-internal class TelemetryAttributeElement(
-    val attributes: TelemetryAttributes,
-    val parent: TelemetryAttributeElement?,
+/**
+ * The ambient attribute bag in a coroutine context. Usually placed by [telemetryAttributes]; put one in a
+ * context yourself (with `parent = null`) when you build a coroutine context that starts a fresh chain.
+ */
+public class TelemetryAttributeElement(
+    public val attributes: TelemetryAttributes,
+    public val parent: TelemetryAttributeElement?,
 ) : AbstractCoroutineContextElement(Key) {
-    companion object Key : CoroutineContext.Key<TelemetryAttributeElement>
+    public companion object Key : CoroutineContext.Key<TelemetryAttributeElement>
 
-    fun flattened(): TelemetryAttributes {
+    public fun flattened(): TelemetryAttributes {
         if (parent == null) return attributes
         return TelemetryAttributes {
             fun add(element: TelemetryAttributeElement) {

@@ -9,6 +9,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeEncoder
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.modules.*
 import kotlin.reflect.KClass
 
@@ -504,6 +505,8 @@ public class AnnotationValidators private constructor(
             // This cast should always work - SerializationStrategy is almost always KSerializer in practice
             lastSerializer = serializer as KSerializer<T>
             validate(serializer, value)
+            // JsonElement's serializers refuse any encoder but Json's, and its contents carry no annotations to check.
+            if (value is JsonElement) return elementEncoded(SerialKType(serializer))
 
             // Continue serialization - this will recursively encode all fields of this value
             //

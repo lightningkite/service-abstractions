@@ -9,7 +9,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.*
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.reflect.KClass
 import kotlin.reflect.typeOf
@@ -42,6 +42,9 @@ data class ArgSample<T>(
 
 @Queryable
 data class Box<T>(val value: T)
+
+@Serializable
+data class JsonSample(val meta: JsonObject?, @MaxLength(5) val x: String = "asdf")
 
 @Queryable
 data class CustomSample(
@@ -186,6 +189,14 @@ class ValidationTest {
         // annotations cascade through nullability
         assertPasses(Sample(yNullable = null))
         assertFails(Sample(yNullable = 101))
+    }
+
+    @Test
+    fun testJsonElementsAreSkippedButTheirSiblingsChecked() {
+        val json = buildJsonObject { put("nested", buildJsonArray { add(1); add("two") }) }
+        assertPasses(JsonSample(json))
+        assertPasses(JsonSample(null))
+        assertFails(JsonSample(json, x = "too long"))
     }
 
     @Test

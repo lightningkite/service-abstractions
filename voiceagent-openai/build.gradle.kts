@@ -10,18 +10,15 @@ plugins {
 
 dependencies {
     api(project(path = ":voiceagent"))
+    implementation(project(path = ":http-client"))
 
     // Ktor WebSocket client
     implementation(libs.ktor.client.core)
-    implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.websockets)
     implementation(libs.ktor.contentNegotiation)
     implementation(libs.ktor.json)
 
     implementation(libs.coroutines.core)
-
-    // CRaC for AWS Lambda SnapStart support
-    implementation(libs.crac)
 
     // Logging
     implementation(libs.kotlin.logging)

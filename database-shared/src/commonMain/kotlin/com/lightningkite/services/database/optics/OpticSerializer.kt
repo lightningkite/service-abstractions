@@ -42,7 +42,7 @@ public class AnyOpticSerializer<T>(public val root: KSerializer<T>) : KSerialize
     private fun segments(optic: AnyOptic<*>): List<String> = when (optic) {
         is IdentityLens<*> -> listOf()
         is Field<*, *> -> listOf(optic.name)
-        is SealedTypeLens<*, *> -> listOf(optic.name)
+        is SealedSharedFieldLens<*, *> -> listOf(optic.name)
         is ComposedOptic<*, *, *> -> segments(optic.outer) + segments(optic.inner)
         is NotNullOptic<*, *> -> segments(optic.wraps).ifEmpty { listOf("this") }.let { it.dropLast(1) + "${it.last()}?" }
         is CollectionElementsOptic<*, *, *> -> segments(optic.wraps) + "*"
@@ -103,7 +103,7 @@ public class AnyOpticSerializer<T>(public val root: KSerializer<T>) : KSerialize
     private fun Optic<T, Any?>.property(name: String): Optic<T, Any?> {
         val fields = serializer.fields
         if (fields == null && serializer.serializableOptions != null) {
-            val shared = SealedTypeLens<Any?, Any?>(serializer, name)
+            val shared = SealedSharedFieldLens<Any?, Any?>(serializer, name)
             try {
                 shared.serializer // Claude: resolving it checks that every variant has the field.
             } catch (e: IllegalArgumentException) {

@@ -13,9 +13,9 @@ import com.lightningkite.services.telemetry.telemetryCounter
 import com.lightningkite.services.telemetry.telemetryHistogram
 import com.lightningkite.services.telemetry.telemetryInFlight
 import com.lightningkite.services.voiceagent.*
+import com.lightningkite.services.http.client
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
-import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
-import org.crac.*
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Clock
@@ -67,42 +66,12 @@ public class OpenAIVoiceAgentService(
     override val context: SettingContext,
     private val model: String,
     private val apiKey: String,
-) : VoiceAgentService, Resource {
-
-    @Volatile
-    private var httpClient: HttpClient? = null
-    private val clientLock = Any()
+) : VoiceAgentService {
 
     // Shared, service-level metric instruments. These are created once and reused across every
     // session so that aggregate concerns (active sessions, durations, token usage) report under a
     // single instrument. The active-sessions in-flight gauge in particular MUST be shared.
     private val metrics = VoiceAgentMetrics(this)
-
-    init {
-        Core.getGlobalContext().register(this)
-    }
-
-    override fun beforeCheckpoint(context: Context<out Resource>) {
-        // Close HTTP client before checkpoint
-        synchronized(clientLock) {
-            httpClient?.close()
-            httpClient = null
-        }
-    }
-
-    override fun afterRestore(context: Context<out Resource>) {
-        // Client will be recreated on next access
-    }
-
-    private fun getHttpClient(): HttpClient {
-        return httpClient ?: synchronized(clientLock) {
-            httpClient ?: HttpClient(CIO) {
-                install(WebSockets) {
-                    pingIntervalMillis = 30_000
-                }
-            }.also { httpClient = it }
-        }
-    }
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -118,19 +87,12 @@ public class OpenAIVoiceAgentService(
             model = model,
             apiKey = apiKey,
             initialConfig = config,
-            httpClient = getHttpClient(),
+            httpClient = client,
             json = json,
             metrics = metrics,
             clock = context.clock,
             serializersModule = context.internalSerializersModule,
         )
-    }
-
-    override suspend fun disconnect() {
-        synchronized(clientLock) {
-            httpClient?.close()
-            httpClient = null
-        }
     }
 
     override suspend fun healthCheck(): HealthStatus {

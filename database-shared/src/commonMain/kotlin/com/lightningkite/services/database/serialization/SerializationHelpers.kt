@@ -10,6 +10,7 @@ import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.internal.GeneratedSerializer
+import kotlinx.serialization.json.*
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.reflect.*
@@ -320,8 +321,13 @@ private val pairSerialName = PairSerializer(NothingSerializer(), NothingSerializ
 private val tripleSerialName =
     TripleSerializer(NothingSerializer(), NothingSerializer(), NothingSerializer()).descriptor.serialName
 
+// Their serializers decode only from Json, so they can't be probed for type parameters; they have none.
+private val jsonElementSerialNames =
+    listOf(JsonElement.serializer(), JsonObject.serializer(), JsonArray.serializer(), JsonPrimitive.serializer(), JsonNull.serializer())
+        .map { it.descriptor.serialName }.toSet()
+
 @OptIn(InternalSerializationApi::class)
-private fun KSerializer<*>.typeParameterSerializersOrNullImpl(): Array<KSerializer<*>>? = when (descriptor.kind) {
+private fun KSerializer<*>.typeParameterSerializersOrNullImpl(): Array<KSerializer<*>>? = if (descriptor.serialName in jsonElementSerialNames) emptyArray() else when (descriptor.kind) {
     StructureKind.LIST -> arrayOf(innerElement())
     StructureKind.MAP -> arrayOf(innerElement(), innerElement2())
     StructureKind.CLASS -> {

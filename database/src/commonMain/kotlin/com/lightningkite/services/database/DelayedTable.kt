@@ -192,26 +192,6 @@ public open class DelayedTable<Model : Any>(
         doDelay()
         return wraps.findByTextIndex(query, condition, skip, limit, maxQueryMs)
     }
-
-    override suspend fun findSimilar(
-        vectorField: Optic<Model, Embedding>,
-        params: DenseVectorSearchParams,
-        condition: Condition<Model>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<Model>> {
-        doDelay()
-        return wraps.findSimilar(vectorField, params, condition, maxQueryMs)
-    }
-
-    override suspend fun findSimilarSparse(
-        vectorField: Optic<Model, SparseEmbedding>,
-        params: SparseVectorSearchParams,
-        condition: Condition<Model>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<Model>> {
-        doDelay()
-        return wraps.findSimilarSparse(vectorField, params, condition, maxQueryMs)
-    }
 }
 
 public fun <Model : Any> Table<Model>.delayed(range: ClosedRange<Duration>): Table<Model> =

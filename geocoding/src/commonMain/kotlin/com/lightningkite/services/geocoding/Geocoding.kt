@@ -21,6 +21,8 @@ import kotlin.time.Duration.Companion.hours
  *   no API key and no network (requires the `geocoding-local` module)
  * - **StadiaGeocoding** (`stadia://`) — Stadia Maps, a hosted Pelias (`geocoding-stadia`)
  * - **GoogleGeocoding** (`google://`) — Google Maps Platform (`geocoding-google`)
+ * - **AwsLocationGeocoding** (`aws-location://`) — Amazon Location Service (`geocoding-aws`)
+ * - **AzureMapsGeocoding** (`azure-maps://`) — Azure Maps (`geocoding-azure`)
  * - **NominatimGeocoding** (`nominatim://`) — OpenStreetMap, free or self-hosted
  *   (`geocoding-nominatim`)
  *
@@ -47,8 +49,10 @@ import kotlin.time.Duration.Companion.hours
  * // Reverse: coordinate to address
  * val here = geocoding.reverseGeocodeOne(GeoCoordinate(40.7484, -73.9857))
  *
- * // Type-ahead
- * val suggestions = geocoding.autocomplete(AutocompleteQuery("350 5th a"))
+ * // Type-ahead: one session per address entry, then resolve the suggestion picked
+ * val session = AutocompleteSession.random()
+ * val suggestions = geocoding.autocomplete(AutocompleteQuery("350 5th a", session = session))
+ * val picked = geocoding.resolve(suggestions.first().id, session)
  * ```
  *
  * ## Important Gotchas
@@ -67,7 +71,7 @@ import kotlin.time.Duration.Companion.hours
  *   request per second and will ban you for exceeding it. See [rateLimited].
  * - **Terms of use vary.** Several providers forbid storing coordinates long-term or
  *   displaying them on a competitor's map. Check before caching to a database.
- * - **Autocomplete may not include coordinates.** See [AddressSuggestion.coordinate].
+ * - **Autocomplete never includes coordinates.** Call [resolve] for the suggestion picked.
  * - **Health checks cost a request.** See [healthCheckFrequency].
  */
 public interface Geocoding : Service {
@@ -99,6 +103,16 @@ public interface Geocoding : Service {
      * @throws GeocodingException if the provider could not be reached or rejected the request
      */
     public suspend fun autocomplete(query: AutocompleteQuery): List<AddressSuggestion>
+
+    /**
+     * Looks up the place behind a suggestion the user picked from [autocomplete].
+     *
+     * @param suggestionId [AddressSuggestion.id], from this same provider
+     * @param session The session the suggestion was found in. Ends it; see [AutocompleteSession].
+     * @return The place, or null if the provider does not know the ID
+     * @throws GeocodingException if the provider could not be reached or rejected the request
+     */
+    public suspend fun resolve(suggestionId: String, session: AutocompleteSession? = null): GeocodeResult?
 
     /**
      * The address [healthCheck] looks up to prove the provider is answering.
@@ -142,6 +156,8 @@ public interface Geocoding : Service {
      * - `local` — offline US lookups from bundled data (`geocoding-local`)
      * - `stadia://apiKey` (`geocoding-stadia`)
      * - `google://apiKey` (`geocoding-google`)
+     * - `aws-location://[accessKey:secretKey@]region` (`geocoding-aws`)
+     * - `azure-maps://subscriptionKey` or `azure-maps://accountClientId?auth=entra` (`geocoding-azure`)
      * - `nominatim://contactEmail` or `nominatim://contactEmail@your-host` (`geocoding-nominatim`)
      *
      * @property url Connection string selecting the provider and its credentials

@@ -1,14 +1,16 @@
 package com.lightningkite.services.ai.anthropic
 
+import com.lightningkite.services.ai.ClaudeModel
 import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
-import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
 import com.lightningkite.services.ai.toJsonSchema
+import com.lightningkite.services.data.MediaType
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -20,6 +22,9 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.modules.SerializersModule
+import kotlin.io.encoding.Base64
+
+private val logger = KotlinLogging.logger("AnthropicWire")
 
 /**
  * Wire-format helpers translating between [LlmPrompt] and Anthropic's Messages API JSON.
@@ -29,37 +34,38 @@ import kotlinx.serialization.modules.SerializersModule
  */
 internal object AnthropicWire {
 
+    private val imageTypes = listOf(MediaType.Image.JPEG, MediaType.Image.PNG, MediaType.Image.GIF, MediaType.Image.WebP)
+    private val textDocumentTypes = listOf(MediaType.Text.Plain, MediaType.Text.CSV, MediaType("text/markdown"), MediaType.Text.Html)
+    val supportedMediaTypes: List<MediaType> = imageTypes + MediaType.Application.Pdf + textDocumentTypes
+
     /**
      * Build a full POST /v1/messages body from the high-level [prompt].
      *
      * @param modelId the Anthropic model id (e.g. `claude-haiku-4-5`)
-     * @param prompt the prompt to translate
+     * @param requested the prompt to translate; what the model would reject is left out (see [ClaudeModel.supported])
      * @param module serializers module used to resolve @Contextual tool-arg serializers
      * @param stream when true, requests SSE streaming
-     * @param defaultMaxTokens used when [LlmPrompt.maxTokens] is null (Anthropic requires the field)
+     * @param defaultMaxTokens room for the answer when [LlmPrompt.maxTokens] is null (Anthropic requires the
+     *   field); a thinking budget is added on top, since thinking counts toward `max_tokens`.
      */
     fun buildRequestBody(
         modelId: String,
-        prompt: LlmPrompt,
+        requested: LlmPrompt,
         module: SerializersModule,
         stream: Boolean,
         defaultMaxTokens: Int,
     ): JsonObject = buildJsonObject {
+        val claude = ClaudeModel(modelId)
+        val prompt = claude.supported(requested)
         put("model", modelId)
-        put("max_tokens", prompt.maxTokens ?: defaultMaxTokens)
+        put("max_tokens", prompt.maxTokens ?: (defaultMaxTokens + (claude.thinkingBudget(prompt) ?: 0)))
         put("stream", stream)
 
-        prompt.temperature?.let { put("temperature", it) }
         if (prompt.stopSequences.isNotEmpty()) {
             putJsonArray("stop_sequences") { prompt.stopSequences.forEach { add(it) } }
         }
 
-        anthropicThinkingBudget(prompt)?.let { budget ->
-            putJsonObject("thinking") {
-                put("type", "enabled")
-                put("budget_tokens", budget)
-            }
-        }
+        claude.thinkingFields(prompt)?.forEach { (key, value) -> put(key, value) }
 
         // Anthropic carries system as a top-level field, not a message role.
         // When caching the system prompt we must use the array-of-blocks form
@@ -68,8 +74,13 @@ internal object AnthropicWire {
         val systemText = listOfNotNull(
             sharedContext,
             prompt.systemPrompt
-                .filterIsInstance<LlmPart.Text>()
-                .joinToString("\n\n") { it.text }
+                .joinToString("\n\n") { part ->
+                    // `system` takes text blocks only.
+                    when (part) {
+                        is LlmPart.Text -> part.text
+                        is LlmPart.Attachment -> notSent(part.attachment).text
+                    }
+                }
                 .ifEmpty { null }
         ).joinToString("\n\n")
         if (systemText.isNotEmpty()) {
@@ -128,10 +139,8 @@ internal object AnthropicWire {
                 is LlmMessage.Agent -> addJsonObject {
                     put("role", "assistant")
                     putJsonArray("content") {
-                        // Reasoning blocks are receive-only in v1; round-tripping them back to
-                        // Anthropic would require the provider-opaque signature data that the
-                        // SSE parser intentionally drops. Filter here instead of failing.
-                        val blocks = msg.parts.filter { it !is LlmPart.Reasoning }
+                        // Unsigned reasoning (from another provider) can't be replayed: Anthropic requires the signature.
+                        val blocks = msg.parts.filter { it !is LlmPart.Reasoning || it.signature != null || it.redactedData != null }
                         blocks.forEachIndexed { index, part ->
                             val json = agentPartBlock(part)
                             // Attach cache_control to the LAST content block when the message
@@ -195,11 +204,16 @@ internal object AnthropicWire {
             put("input", parseInputJson(part.call.inputJson))
         }
 
-        // Reasoning blocks must be filtered out by [buildMessages] before reaching here
-        // because v1 can't round-trip them (missing signature data). Reaching this branch
-        // is a bug in the caller path.
-        is LlmPart.Reasoning ->
-            error("LlmPart.Reasoning must be filtered by buildMessages; it is receive-only in v1")
+        is LlmPart.Reasoning -> buildJsonObject {
+            if (part.redactedData != null) {
+                put("type", "redacted_thinking")
+                put("data", part.redactedData)
+            } else {
+                put("type", "thinking")
+                put("thinking", part.text)
+                put("signature", part.signature)
+            }
+        }
     }
 
     /** Serialize a [LlmPart.ContentOnly] (text or attachment) to Anthropic's content-block JSON shape. */
@@ -212,32 +226,50 @@ internal object AnthropicWire {
         is LlmPart.Attachment -> attachmentBlock(part.attachment)
     }
 
-    /**
-     * Anthropic's Messages API has a distinct `type: "document"` block for PDFs, separate from
-     * `type: "image"`; this codebase doesn't implement it yet (a feature for later). Fail fast on
-     * non-image media types rather than mislabeling them as `"image"`, which Anthropic rejects as
-     * a malformed request anyway — just with a much less helpful error.
-     */
-    private fun attachmentBlock(attachment: LlmAttachment): JsonObject = buildJsonObject {
-        put("type", "image")
-        when (attachment) {
-            is LlmAttachment.Base64 -> {
-                require(attachment.mediaType.type == "image") {
-                    "Anthropic attachments only support image media types in this codebase " +
-                        "(no document/PDF block implemented yet); got media type ${attachment.mediaType}."
-                }
-                putJsonObject("source") {
+    private fun attachmentBlock(attachment: LlmAttachment): JsonObject {
+        val mediaType = attachment.mediaType
+        fun base64OrUrlSource() = buildJsonObject {
+            when (attachment) {
+                is LlmAttachment.Base64 -> {
                     put("type", "base64")
-                    put("media_type", attachment.mediaType.toString())
+                    put("media_type", mediaType.withoutParameters.toString())
                     put("data", attachment.base64)
                 }
-            }
-
-            is LlmAttachment.Url -> putJsonObject("source") {
-                put("type", "url")
-                put("url", attachment.url)
+                is LlmAttachment.Url -> {
+                    put("type", "url")
+                    put("url", attachment.url)
+                }
             }
         }
+        return when {
+            imageTypes.any { it.accepts(mediaType) } -> buildJsonObject {
+                put("type", "image")
+                put("source", base64OrUrlSource())
+            }
+            MediaType.Application.Pdf.accepts(mediaType) -> buildJsonObject {
+                put("type", "document")
+                put("source", base64OrUrlSource())
+            }
+            // Text documents go inline, always labeled text/plain; Anthropic can't fetch them from a URL.
+            attachment is LlmAttachment.Base64 && textDocumentTypes.any { it.accepts(mediaType) } -> {
+                val text = runCatching { Base64.decode(attachment.base64).decodeToString() }.getOrNull()
+                    ?: return contentOnlyBlock(notSent(attachment))
+                buildJsonObject {
+                    put("type", "document")
+                    putJsonObject("source") {
+                        put("type", "text")
+                        put("media_type", "text/plain")
+                        put("data", text)
+                    }
+                }
+            }
+            else -> contentOnlyBlock(notSent(attachment))
+        }
+    }
+
+    private fun notSent(attachment: LlmAttachment): LlmPart.Text {
+        logger.warn { "Anthropic can't take a ${attachment.mediaType} attachment here; sending a note instead" }
+        return attachment.notSentNote()
     }
 
     /** Decode a tool-call argument JSON string to an object for the wire; fail fast if invalid. */
@@ -282,22 +314,5 @@ internal object AnthropicWire {
     /** Local Json instance; Anthropic never sends comments/trailing commas, so defaults suffice. */
     val jsonCodec: kotlinx.serialization.json.Json = kotlinx.serialization.json.Json {
         ignoreUnknownKeys = true
-    }
-
-    /**
-     * Resolve Anthropic's `thinking.budget_tokens` from prompt fields.
-     * Explicit [LlmPrompt.reasoningBudgetTokens] wins; otherwise [LlmPrompt.reasoningEffort]
-     * buckets to a budget. Returns null when reasoning is disabled or unset.
-     * Minimum 1024 enforced by Anthropic.
-     */
-    fun anthropicThinkingBudget(prompt: LlmPrompt): Int? {
-        prompt.reasoningBudgetTokens?.let { return it.coerceAtLeast(1024) }
-        return when (prompt.reasoningEffort) {
-            null, LlmReasoningEffort.Off -> null
-            LlmReasoningEffort.Minimal -> 1024
-            LlmReasoningEffort.Low -> 2048
-            LlmReasoningEffort.Medium -> 8192
-            LlmReasoningEffort.High -> 16384
-        }
     }
 }

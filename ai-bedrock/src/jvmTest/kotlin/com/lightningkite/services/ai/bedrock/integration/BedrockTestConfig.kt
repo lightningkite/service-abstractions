@@ -103,9 +103,6 @@ class BedrockModelProfile(
     val supportsReasoningContent: Boolean = false,
     val supportsPromptCaching: Boolean = false,
     val reportsUsage: Boolean = true,
-    // Bedrock does not guarantee a streamed call and a separate non-streamed call at temperature 0
-    // produce identical text, for any model — the streaming suite's equality check stays off.
-    val deterministicAtTemperatureZero: Boolean = false,
     val testMaxTokens: Int? = null,
 ) {
     val model: LlmModelId get() = LlmModelId(id)

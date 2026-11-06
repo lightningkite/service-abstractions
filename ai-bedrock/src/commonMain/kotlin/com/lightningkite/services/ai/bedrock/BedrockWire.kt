@@ -1,6 +1,7 @@
 package com.lightningkite.services.ai.bedrock
 
 import com.lightningkite.services.data.MediaType
+import com.lightningkite.services.ai.ClaudeModel
 import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmException
 import com.lightningkite.services.ai.LlmMessage
@@ -11,6 +12,7 @@ import com.lightningkite.services.ai.LlmReasoningEffort
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmToolCall
 import com.lightningkite.services.ai.LlmToolChoice
+import com.lightningkite.services.ai.LlmUsage
 import com.lightningkite.services.ai.toJsonSchema
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.HttpStatusCode
@@ -49,18 +51,48 @@ internal object BedrockWire {
      *
      * Bedrock splits system messages out of the main message list: they go in the top-level
      * `system` array. All other messages map 1:1 to Converse `messages`.
+     * For Claude models, what the model would reject is left out of [requested] (see [ClaudeModel.supported]).
      */
     fun buildRequestBody(
         modelId: String,
-        prompt: LlmPrompt,
+        requested: LlmPrompt,
         module: SerializersModule,
     ): JsonObject = buildJsonObject {
+        val claude = if ("claude" in modelId.lowercase()) ClaudeModel(modelId) else null
+        val prompt = claude?.supported(requested) ?: requested
         // Bedrock's Converse ToolChoice union is {auto, any, tool} — there is no `none`.
         // To honour the LlmToolChoice.None contract (tools still declared so prior
         // toolUse/toolResult blocks in history validate) we keep the tools array, coerce
         // toolChoice back to "auto", and inject a system-message instruction forbidding new
         // tool calls this turn. See interfaces.kt doc for LlmToolChoice.None.
         val suppressToolsPrompt = prompt.tools.isNotEmpty() && prompt.toolChoice == LlmToolChoice.None
+        val sendable = mediaTypes(modelId)
+        var documentCount = 0
+        fun note(attachment: LlmAttachment): JsonObject {
+            wireLogger.warn { "Bedrock can't send a ${attachment.mediaType} attachment here to $modelId; sending a note instead." }
+            return buildJsonObject { put("text", attachment.notSentNote().text) }
+        }
+        fun attachmentBlock(attachment: LlmAttachment): JsonObject {
+            if (attachment !is LlmAttachment.Base64 || sendable.none { it.accepts(attachment.mediaType) }) return note(attachment)
+            val type = attachment.mediaType.withoutParameters
+            val source = buildJsonObject { put("bytes", attachment.base64) }
+            imageFormats[type]?.let { format ->
+                return buildJsonObject { putJsonObject("image") { put("format", format); put("source", source) } }
+            }
+            videoFormats[type]?.let { format ->
+                return buildJsonObject { putJsonObject("video") { put("format", format); put("source", source) } }
+            }
+            documentCount++
+            return buildJsonObject {
+                putJsonObject("document") {
+                    put("format", documentFormats.getValue(type))
+                    // The name reaches the model, so it's ours rather than anything from the caller.
+                    put("name", "Document $documentCount")
+                    put("source", source)
+                }
+            }
+        }
+
         val sharedContext = prompt.collectSharedContext()
         val systemBlocks = buildJsonArray {
             if (sharedContext != null) {
@@ -69,7 +101,7 @@ internal object BedrockWire {
             prompt.systemPrompt.forEach { part ->
                 when (part) {
                     is LlmPart.Text -> addJsonObject { put("text", part.text) }
-                    is LlmPart.Attachment -> {} // Attachment in system prompt not yet supported
+                    is LlmPart.Attachment -> add(note(part.attachment))
                 }
             }
             if (suppressToolsPrompt) {
@@ -79,63 +111,83 @@ internal object BedrockWire {
         if (systemBlocks.isNotEmpty()) put("system", systemBlocks)
 
         putJsonArray("messages") {
-            prompt.messages.forEach { msg ->
-                addJsonObject {
-                    when (msg) {
-                        is LlmMessage.User -> {
-                            put("role", "user")
-                            putJsonArray("content") {
-                                msg.parts.forEach { part -> add(encodeContentOnlyBlock(part)) }
-                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
+            // Converse requires roles to alternate, and every result of an assistant turn in the user message
+            // right after it, ahead of anything else. So each run of same-role messages becomes one message,
+            // and a user run puts its tool results first.
+            val turns = mutableListOf<List<LlmMessage>>()
+            for (msg in prompt.messages) {
+                val previous = turns.lastOrNull()
+                if (previous != null && (previous.last() is LlmMessage.Agent) == (msg is LlmMessage.Agent)) turns[turns.lastIndex] = previous + msg
+                else turns += listOf(msg)
+            }
+            turns.forEach { turn ->
+                val documentsBefore = documentCount
+                val content = mutableListOf<JsonObject>()
+                if (turn.first() is LlmMessage.Agent) {
+                    turn.filterIsInstance<LlmMessage.Agent>().forEach { msg ->
+                        msg.parts.forEach { part ->
+                            when (part) {
+                                is LlmPart.Text -> content += buildJsonObject { put("text", part.text) }
+                                is LlmPart.Attachment -> content += attachmentBlock(part.attachment)
+                                is LlmPart.ToolCall -> content += encodeToolCall(part.call)
+                                // Unsigned reasoning (from another provider) can't be replayed.
+                                is LlmPart.Reasoning -> if (part.signature != null || part.redactedData != null) content += encodeReasoning(part)
                             }
                         }
-                        is LlmMessage.Agent -> {
-                            put("role", "assistant")
-                            putJsonArray("content") {
-                                msg.parts.forEach { part ->
-                                    // Reasoning is receive-only in v1; skip rather than emit
-                                    // an empty content object Bedrock would reject.
-                                    if (part !is LlmPart.Reasoning) add(encodeAgentPart(part))
-                                }
-                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
-                            }
-                        }
-                        is LlmMessage.ToolResult -> {
-                            put("role", "user")
-                            putJsonArray("content") {
-                                add(buildJsonObject {
-                                    putJsonObject("toolResult") {
-                                        put("toolUseId", msg.toolCallId)
-                                        putJsonArray("content") {
-                                            msg.parts.forEach { part ->
-                                                when (part) {
-                                                    is LlmPart.Text -> addJsonObject { put("text", part.text) }
-                                                    is LlmPart.Attachment -> {} // not supported in tool results
-                                                }
-                                            }
-                                        }
-                                        if (msg.isError) put("status", "error")
-                                    }
-                                })
-                                if (msg.cacheBoundary) add(CACHE_POINT_BLOCK)
-                            }
-                        }
+                        if (msg.cacheBoundary) content += CACHE_POINT_BLOCK
                     }
+                } else {
+                    turn.filterIsInstance<LlmMessage.ToolResult>().forEach { result ->
+                        content += buildJsonObject {
+                            putJsonObject("toolResult") {
+                                put("toolUseId", result.toolCallId)
+                                putJsonArray("content") {
+                                    result.parts.forEach { part ->
+                                        when (part) {
+                                            is LlmPart.Text -> addJsonObject { put("text", part.text) }
+                                            is LlmPart.Attachment -> add(attachmentBlock(part.attachment))
+                                        }
+                                    }
+                                }
+                                if (result.isError) put("status", "error")
+                            }
+                        }
+                        if (result.cacheBoundary) content += CACHE_POINT_BLOCK
+                    }
+                    turn.filterIsInstance<LlmMessage.User>().forEach { msg ->
+                        msg.parts.forEach { part ->
+                            when (part) {
+                                is LlmPart.Text -> content += buildJsonObject { put("text", part.text) }
+                                is LlmPart.Attachment -> content += attachmentBlock(part.attachment)
+                            }
+                        }
+                        if (msg.cacheBoundary) content += CACHE_POINT_BLOCK
+                    }
+                }
+                // Converse rejects a message with a document but no text block.
+                if (documentCount > documentsBefore && content.none { "text" in it }) {
+                    content += buildJsonObject { put("text", "(see attached document)") }
+                }
+                addJsonObject {
+                    put("role", if (turn.first() is LlmMessage.Agent) "assistant" else "user")
+                    put("content", JsonArray(content))
                 }
             }
         }
 
-        if (prompt.maxTokens != null || prompt.temperature != null || prompt.stopSequences.isNotEmpty()) {
+        // A thinking budget counts toward maxTokens and must stay below it.
+        val maxTokens = prompt.maxTokens ?: claude?.thinkingBudget(prompt)?.let { it + CLAUDE_ANSWER_TOKENS }
+        if (maxTokens != null || prompt.stopSequences.isNotEmpty()) {
             putJsonObject("inferenceConfig") {
-                prompt.maxTokens?.let { put("maxTokens", it) }
-                prompt.temperature?.let { put("temperature", it) }
+                maxTokens?.let { put("maxTokens", it) }
                 if (prompt.stopSequences.isNotEmpty()) {
                     putJsonArray("stopSequences") { prompt.stopSequences.forEach { add(it) } }
                 }
             }
         }
 
-        bedrockReasoningFields(modelId, prompt)?.let { fields ->
+        val reasoningFields = if (claude != null) claude.thinkingFields(prompt) else bedrockReasoningFields(modelId, prompt)
+        reasoningFields?.let { fields ->
             put("additionalModelRequestFields", fields)
         }
 
@@ -171,78 +223,79 @@ internal object BedrockWire {
         putJsonObject("cachePoint") { put("type", "default") }
     }
 
+    // Room for the answer beside a Claude thinking budget when the caller sets no maxTokens; Anthropic's default.
+    private const val CLAUDE_ANSWER_TOKENS: Int = 4096
+
     internal const val TOOL_SUPPRESSION_INSTRUCTION: String =
         "Do not call any tools on this turn. Respond with text only."
 
-    /** Encode a content-only part (valid in User messages, system prompt, and tool results). */
-    private fun encodeContentOnlyBlock(part: LlmPart.ContentOnly): JsonObject = when (part) {
-        is LlmPart.Text -> buildJsonObject { put("text", part.text) }
+    private fun encodeToolCall(call: LlmToolCall): JsonObject = buildJsonObject {
+        putJsonObject("toolUse") {
+            put("toolUseId", call.id)
+            put("name", call.name)
+            // Bedrock expects the tool arguments as an embedded JSON object (not a
+            // string), so we parse the caller-provided JSON before inlining it.
+            put("input", jsonCodec.parseToJsonElement(call.inputJson.ifEmpty { "{}" }))
+        }
+    }
 
-        is LlmPart.Attachment -> buildJsonObject {
-            val att = part.attachment
-            val format = imageFormatFor(att.mediaType)
-            putJsonObject("image") {
-                put("format", format)
-                putJsonObject("source") {
-                    when (att) {
-                        is LlmAttachment.Base64 -> put("bytes", att.base64)
-                        is LlmAttachment.Url -> throw IllegalArgumentException(
-                            "Bedrock Converse does not support URL image attachments; " +
-                                    "fetch the bytes client-side and pass LlmAttachment.Base64 instead.",
-                        )
-                    }
+    private fun encodeReasoning(part: LlmPart.Reasoning): JsonObject = buildJsonObject {
+        putJsonObject("reasoningContent") {
+            if (part.redactedData != null) {
+                put("redactedContent", part.redactedData)
+            } else {
+                putJsonObject("reasoningText") {
+                    put("text", part.text)
+                    put("signature", part.signature)
                 }
             }
         }
     }
 
-    /** Encode an agent part (text, attachment, or tool call — reasoning is filtered before this). */
-    private fun encodeAgentPart(part: LlmPart): JsonObject = when (part) {
-        is LlmPart.Text -> buildJsonObject { put("text", part.text) }
+    private val imageFormats: Map<MediaType, String> = mapOf(
+        MediaType.Image.PNG to "png",
+        MediaType.Image.JPEG to "jpeg",
+        MediaType.Image.GIF to "gif",
+        MediaType.Image.WebP to "webp",
+    )
 
-        is LlmPart.Attachment -> buildJsonObject {
-            val att = part.attachment
-            val format = imageFormatFor(att.mediaType)
-            putJsonObject("image") {
-                put("format", format)
-                putJsonObject("source") {
-                    when (att) {
-                        is LlmAttachment.Base64 -> put("bytes", att.base64)
-                        is LlmAttachment.Url -> throw IllegalArgumentException(
-                            "Bedrock Converse does not support URL image attachments; " +
-                                    "fetch the bytes client-side and pass LlmAttachment.Base64 instead.",
-                        )
-                    }
-                }
-            }
-        }
+    private val documentFormats: Map<MediaType, String> = mapOf(
+        MediaType.Application.Pdf to "pdf",
+        MediaType("text/csv") to "csv",
+        MediaType("application/msword") to "doc",
+        MediaType.Application.Docx to "docx",
+        MediaType("application/vnd.ms-excel") to "xls",
+        MediaType.Application.Xlsx to "xlsx",
+        MediaType("text/html") to "html",
+        MediaType("text/plain") to "txt",
+        MediaType("text/markdown") to "md",
+    )
 
-        is LlmPart.ToolCall -> buildJsonObject {
-            putJsonObject("toolUse") {
-                put("toolUseId", part.call.id)
-                put("name", part.call.name)
-                // Bedrock expects the tool arguments as an embedded JSON object (not a
-                // string), so we parse the caller-provided JSON before inlining it.
-                put("input", jsonCodec.parseToJsonElement(part.call.inputJson.ifEmpty { "{}" }))
-            }
-        }
+    private val videoFormats: Map<MediaType, String> = mapOf(
+        MediaType("video/x-matroska") to "mkv",
+        MediaType.Video.MKV to "mkv",
+        MediaType.Video.QuickTime to "mov",
+        MediaType.Video.MP4 to "mp4",
+        MediaType.Video.WEBM to "webm",
+        MediaType("video/x-flv") to "flv",
+        MediaType.Video.MPEG to "mpeg",
+        MediaType("video/x-ms-wmv") to "wmv",
+        MediaType("video/3gpp") to "three_gp",
+    )
 
-        // Reasoning is receive-only in v1: filtered out in buildRequestBody before reaching
-        // this function, so reaching this branch indicates a caller bypassed the filter.
-        is LlmPart.Reasoning -> error("LlmPart.Reasoning must be filtered before encoding")
-    }
-
-    /** Map an abstract media type to the Bedrock-accepted image format enum value. */
-    private fun imageFormatFor(mediaType: MediaType): String {
-        val s = mediaType.toString().lowercase()
+    /** Attachment types Bedrock sends to [modelId]; anything else becomes [LlmAttachment.notSentNote]. */
+    fun mediaTypes(modelId: String): List<MediaType> {
+        val id = modelId.lowercase()
+        val images = imageFormats.keys.toList()
+        val documents = documentFormats.keys.toList()
+        val video = videoFormats.keys.toList()
         return when {
-            "png" in s -> "png"
-            "jpeg" in s || "jpg" in s -> "jpeg"
-            "gif" in s -> "gif"
-            "webp" in s -> "webp"
-            else -> throw IllegalArgumentException(
-                "Unsupported image mediaType '$s' for Bedrock; expected png, jpeg, gif, or webp.",
-            )
+            "anthropic.claude" in id -> images + documents
+            "amazon.nova-micro" in id -> emptyList()
+            "amazon.nova" in id -> images + documents + video
+            "meta.llama4" in id -> images
+            "meta.llama3" in id -> emptyList()
+            else -> images + documents
         }
     }
 
@@ -292,27 +345,24 @@ internal object BedrockWire {
 
     /**
      * Build the model-family-specific reasoning fields injected into Bedrock's
-     * `additionalModelRequestFields`. Returns null when no reasoning is requested.
+     * `additionalModelRequestFields` for models other than Claude (see [ClaudeModel.thinkingFields]).
+     * Returns null when no reasoning is requested.
      *
-     * - Claude (`anthropic.*` / `*claude*`): `thinking: { type: "enabled", budget_tokens }`.
-     *   Budget comes from [LlmPrompt.reasoningBudgetTokens] or is bucketed from
-     *   [LlmPrompt.reasoningEffort]. Minimum 1024 enforced by Anthropic.
-     * - DeepSeek (`*deepseek*`): same shape as Claude.
+     * - DeepSeek (`*deepseek*`): `thinking: { type: "enabled", budget_tokens }`. Budget is bucketed
+     *   from [LlmPrompt.reasoningEffort].
      * - Nova (`amazon.nova-*`): `reasoning_config: { type: "enabled" }` —
      *   Nova doesn't take effort/budget granularity, just on/off.
      * - Other models: ignored.
      */
     fun bedrockReasoningFields(modelId: String, prompt: LlmPrompt): JsonObject? {
         val effort = prompt.reasoningEffort
-        val budget = prompt.reasoningBudgetTokens
-        if (effort == null && budget == null) return null
-        if (effort == LlmReasoningEffort.Off && budget == null) return null
+        if (effort == null || effort == LlmReasoningEffort.Off) return null
 
         val lower = modelId.lowercase()
         return when {
-            lower.contains("claude") || lower.contains("anthropic") || lower.contains("deepseek") -> {
-                val resolved = budget?.coerceAtLeast(1024) ?: when (effort) {
-                    null, LlmReasoningEffort.Off -> return null
+            lower.contains("deepseek") -> {
+                val resolved = when (effort) {
+                    LlmReasoningEffort.Off -> return null
                     LlmReasoningEffort.Minimal -> 1024
                     LlmReasoningEffort.Low -> 2048
                     LlmReasoningEffort.Medium -> 8192
@@ -356,6 +406,9 @@ internal class BedrockStreamState {
     var finished: Boolean = false
     val toolsInFlight: HashMap<Int, ToolCallInProgress> = HashMap()
 
+    // Converse's inputTokens counts only what wasn't read from or written to the cache; LlmUsage.inputTokens is all of it.
+    fun usage(): LlmUsage = LlmUsage(inputTokens + cacheReadTokens + cacheWriteTokens, outputTokens, cacheReadTokens, cacheWriteTokens)
+
     // Diagnostics for pinpointing a truncated stream (populated as bytes are consumed):
     var framesSeen: Int = 0
     var lastEventType: String? = null
@@ -384,10 +437,8 @@ internal fun mapBedrockError(
     modelId: LlmModelId? = null,
     cause: Throwable? = null,
 ): LlmException {
-    val msg = message?.takeIf { it.isNotBlank() }
-        ?: type?.let { "Bedrock request failed: $it" }
-        ?: status?.let { "Bedrock request failed with status $it" }
-        ?: "Bedrock request failed"
+    val msg = listOfNotNull(type?.takeIf { it.isNotBlank() }, message?.takeIf { it.isNotBlank() }).joinToString(": ")
+        .ifEmpty { status?.let { "Bedrock request failed with status $it" } ?: "Bedrock request failed" }
     return when (type) {
         "AccessDeniedException", "UnauthorizedException" ->
             LlmException.Auth(msg, cause)

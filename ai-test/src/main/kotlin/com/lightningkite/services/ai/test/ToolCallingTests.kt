@@ -45,7 +45,6 @@ public abstract class ToolCallingTests : LlmAccessTests() {
                 messages = listOf(userMessage("What's the current weather in Tokyo?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         assertEquals(
@@ -80,7 +79,6 @@ public abstract class ToolCallingTests : LlmAccessTests() {
                 messages = listOf(userMessage("What's the weather in Paris right now?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val call = result.message.firstToolCall()
@@ -107,7 +105,6 @@ public abstract class ToolCallingTests : LlmAccessTests() {
                 messages = listOf(userMessage("What's the current weather in Paris?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val call = firstResult.message.firstToolCall()
@@ -127,7 +124,6 @@ public abstract class ToolCallingTests : LlmAccessTests() {
                 ),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val finalText = secondResult.message.plainText()
@@ -164,7 +160,6 @@ public abstract class ToolCallingTests : LlmAccessTests() {
                 ),
                 tools = listOf(weatherTool, currentTimeTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val calls = result.message.toolCalls()
@@ -208,7 +203,6 @@ public abstract class ToolCallingTests : LlmAccessTests() {
                 ),
                 tools = listOf(nestedWeatherTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         assertEquals(

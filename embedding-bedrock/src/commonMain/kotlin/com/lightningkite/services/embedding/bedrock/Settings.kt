@@ -26,6 +26,7 @@ public object BedrockEmbeddingSettings {
  * - `bedrock://<profileName>@<model-id>?region=us-west-2` -- named profile (JVM only)
  *
  * If `region` is not given, `AWS_REGION` env var is consulted, then `us-east-1` as fallback.
+ * `&dimensions=1024` picks the vector length for models that offer a choice (Titan V2, Cohere Embed v4).
  */
 public fun EmbeddingService.Settings.Companion.bedrock(
     modelId: String,
@@ -92,6 +93,7 @@ internal fun registerBedrockEmbeddingUrlScheme() {
             context = context,
             region = region,
             credentials = credentials,
+            dimensions = params["dimensions"]?.toInt(),
         )
     }
 }

@@ -62,40 +62,6 @@ public open class ModelPermissionsTable<Model : Any>(
         ).map { it.copy(model = permissions.mask(it.model)) }
     }
 
-    override suspend fun findSimilar(
-        vectorField: Optic<Model, Embedding>,
-        params: DenseVectorSearchParams,
-        condition: Condition<Model>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<Model>> {
-        return wraps.findSimilar(
-            vectorField = vectorField,
-            params = params,
-            condition = condition and permissions.read and permissions.readMask(
-                condition,
-
-            ) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
-            maxQueryMs = maxQueryMs
-        ).map { it.copy(model = permissions.mask(it.model)) }
-    }
-
-    override suspend fun findSimilarSparse(
-        vectorField: Optic<Model, SparseEmbedding>,
-        params: SparseVectorSearchParams,
-        condition: Condition<Model>,
-        maxQueryMs: Long,
-    ): Flow<ScoredResult<Model>> {
-        return wraps.findSimilarSparse(
-            vectorField = vectorField,
-            params = params,
-            condition = condition and permissions.read and permissions.readMask(
-                condition,
-
-            ) and permissions.readMask.permitSort(listOf(SortPart(vectorField))),
-            maxQueryMs = maxQueryMs
-        ).map { it.copy(model = permissions.mask(it.model)) }
-    }
-
     override suspend fun findPartial(
         fields: Set<AnyOptic<Model>>,
         condition: Condition<Model>,

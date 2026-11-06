@@ -9,10 +9,9 @@ import com.lightningkite.services.embedding.EmbeddingModelInfo
 import com.lightningkite.services.embedding.EmbeddingResult
 import com.lightningkite.services.embedding.EmbeddingService
 import com.lightningkite.services.embedding.EmbeddingUsage
+import com.lightningkite.services.http.client
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -20,8 +19,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
+import kotlin.time.Duration.Companion.minutes
 
 private val logger = KotlinLogging.logger("OllamaEmbeddingService")
 
@@ -35,38 +34,17 @@ private val logger = KotlinLogging.logger("OllamaEmbeddingService")
  * @param name Service instance name (for logs / telemetry).
  * @param baseUrl Ollama HTTP base URL, e.g. "http://localhost:11434".
  * @param context [SettingContext] for serializer resolution and telemetry.
- * @param httpClient Optional pre-configured Ktor client. If null, a dedicated one is created
- *   and closed on [disconnect].
  */
 public class OllamaEmbeddingService(
     override val name: String,
     public val baseUrl: String,
     override val context: SettingContext,
-    httpClient: HttpClient? = null,
 ) : EmbeddingService {
 
     public companion object {
         init {
             OllamaEmbeddingSchemeRegistrar.ensureRegistered()
         }
-    }
-
-    private val ownsClient: Boolean = httpClient == null
-
-    private val client: HttpClient = httpClient ?: HttpClient {
-        install(ContentNegotiation) {
-            json(ollamaEmbeddingJson)
-        }
-        install(HttpTimeout) {
-            // Model loading can take a while; set generous timeouts.
-            requestTimeoutMillis = 10 * 60 * 1000
-            socketTimeoutMillis = 10 * 60 * 1000
-            connectTimeoutMillis = 30 * 1000
-        }
-    }
-
-    override suspend fun disconnect() {
-        if (ownsClient) client.close()
     }
 
     override suspend fun healthCheck(): HealthStatus = try {
@@ -114,6 +92,8 @@ public class OllamaEmbeddingService(
             val response = client.post("$baseUrl/api/embed") {
                 contentType(ContentType.Application.Json)
                 setBody(ollamaEmbeddingJson.encodeToString(OllamaEmbedRequest.serializer(), request))
+                // Ollama sends nothing while it loads a model, which can take minutes.
+                timeout { socketTimeoutMillis = 10.minutes.inWholeMilliseconds }
             }
 
             if (!response.status.isSuccess()) {

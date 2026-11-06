@@ -14,6 +14,21 @@ public data class AwsCredentials(
 )
 
 /**
+ * Supplies [AwsCredentials] for signing. Consulted once per request so that refreshable sources can rotate expiring
+ * temporary credentials. For the AWS SDK's credential chain (profiles including `aws login`, container and instance
+ * roles), depend on the JVM-only `embedding-bedrock-aws-sdk` module.
+ */
+public fun interface AwsCredentialsProvider {
+    public suspend fun resolve(): AwsCredentials
+
+    public companion object {
+        /** Wrap a fixed, already-resolved credential set; no refresh. */
+        public fun static(credentials: AwsCredentials): AwsCredentialsProvider =
+            AwsCredentialsProvider { credentials }
+    }
+}
+
+/**
  * Platform-specific environment-variable lookup.
  *
  * JVM/Android read from [System.getenv]; JS returns null; native targets call `getenv(3)`.

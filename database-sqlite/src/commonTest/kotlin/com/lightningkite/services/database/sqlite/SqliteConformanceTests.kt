@@ -26,6 +26,7 @@ class SqliteReturnContractTests : ReturnContractTests() { override val database:
 class SqliteScaleAndBoundaryTests : ScaleAndBoundaryTests() { override val database: Database = freshDatabase() }
 class SqliteSingleRowOperationTests : SingleRowOperationTests() { override val database: Database = freshDatabase() }
 class SqliteSortTest : SortTest() { override val database: Database = freshDatabase() }
+class SqliteSealedLensTests : SealedLensTests() { override val database: Database = freshDatabase() }
 class SqliteSealedPathTests : SealedPathTests() { override val database: Database = freshDatabase() }
 
 class SqliteConformanceCoverageTest {

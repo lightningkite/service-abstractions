@@ -11,6 +11,7 @@ class LocalGeocodingContractTest : GeocodingTests() {
     override val geocoding: Geocoding = LocalGeocoding("local", TestSettingContext())
     override val knownQuery: GeocodeQuery = GeocodeQuery.Text("Reno, NV")
     override val knownCoordinate: GeoCoordinate = GeoCoordinate(39.5296, -119.8138)
+    override val unknownSuggestionId: String = "place:${Int.MAX_VALUE}"
 }
 
 /**
@@ -128,8 +129,8 @@ class LocalGeocodingTest {
     @Test
     fun autocompleteCompletesCityNames() = runTest {
         val suggestions = geocoding.autocomplete(AutocompleteQuery("Sacrament", limit = 5))
-        assertTrue(suggestions.any { it.label.startsWith("Sacramento") }, "Got $suggestions")
-        assertTrue(suggestions.all { it.coordinate != null }, "Offline suggestions include coordinates")
+        val sacramento = suggestions.first { it.label.startsWith("Sacramento") }
+        assertNear(GeoCoordinate(38.5816, -121.4944), geocoding.resolve(sacramento.id)?.coordinate)
     }
 
     @Test
@@ -137,6 +138,7 @@ class LocalGeocodingTest {
         val suggestions = geocoding.autocomplete(AutocompleteQuery("895", limit = 5))
         assertTrue(suggestions.isNotEmpty())
         assertTrue(suggestions.all { it.label.startsWith("895") }, "Got $suggestions")
+        assertEquals(GeocodePrecision.POSTAL_CODE, geocoding.resolve(suggestions.first().id)?.precision)
     }
 
     @Test

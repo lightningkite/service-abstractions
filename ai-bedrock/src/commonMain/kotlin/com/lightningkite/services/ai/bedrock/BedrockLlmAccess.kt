@@ -3,9 +3,12 @@ package com.lightningkite.services.ai.bedrock
 import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.ai.LlmAccess
+import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmException
+import com.lightningkite.services.ai.LlmMessage
 import com.lightningkite.services.ai.LlmModelId
 import com.lightningkite.services.ai.LlmModelInfo
+import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import com.lightningkite.services.ai.LlmStopReason
 import com.lightningkite.services.ai.LlmStreamEvent
@@ -14,24 +17,31 @@ import com.lightningkite.services.http.client
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.accept
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.URLProtocol
+import io.ktor.http.Url
+import io.ktor.http.contentLength
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
+import io.ktor.utils.io.readBuffer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.JsonObject
+import kotlinx.io.readByteArray
 import kotlinx.serialization.modules.SerializersModule
+import kotlin.io.encoding.Base64
 import kotlin.time.Clock
 
 /**
@@ -46,6 +56,12 @@ import kotlin.time.Clock
  *   so refreshable (STS / SSO / assume-role / IMDS) sources can rotate expiring credentials.
  *   Use the [AwsCredentials] secondary constructor for a fixed key pair.
  * @property clock Source of "now" for signatures. Exposed primarily for deterministic tests.
+ * @property downloadUrlAttachments when true, each [LlmAttachment.Url] in a prompt is downloaded (https only, no
+ *   redirects, at most 25 MB) and sent as bytes, since Bedrock can't fetch links itself; a failed download is sent as
+ *   [LlmAttachment.notSentNote]. When false, URL attachments are always sent as that note.
+ *   Security: this makes the server fetch whatever link the prompt contains, including links to internal
+ *   hosts (server-side request forgery). Enable it only when attachment URLs come from trusted sources.
+ * @property httpClient sends the Bedrock requests and the attachment downloads.
  */
 public class BedrockLlmAccess(
     override val name: String,
@@ -53,6 +69,8 @@ public class BedrockLlmAccess(
     public val region: String,
     private val credentialsProvider: AwsCredentialsProvider,
     private val clock: AmzDateClock = AmzDateClock.Default,
+    public val downloadUrlAttachments: Boolean = false,
+    private val httpClient: HttpClient = client,
 ) : LlmAccess {
 
     /**
@@ -66,9 +84,9 @@ public class BedrockLlmAccess(
         region: String,
         credentials: AwsCredentials,
         clock: AmzDateClock = AmzDateClock.Default,
-    ) : this(name, context, region, AwsCredentialsProvider.static(credentials), clock)
-
-    private val httpClient: HttpClient = client.config { /* no extra config needed */ }
+        downloadUrlAttachments: Boolean = false,
+        httpClient: HttpClient = client,
+    ) : this(name, context, region, AwsCredentialsProvider.static(credentials), clock, downloadUrlAttachments, httpClient)
 
     private val module: SerializersModule get() = context.internalSerializersModule
 
@@ -78,7 +96,8 @@ public class BedrockLlmAccess(
 
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         try {
-            val body = BedrockWire.buildRequestBody(model.id, prompt, module).toString().encodeToByteArray()
+            val sent = if (downloadUrlAttachments) withUrlsDownloaded(model, prompt) else prompt
+            val body = BedrockWire.buildRequestBody(model.id, sent, module).toString().encodeToByteArray()
             // Two forms of the path: the wire path keeps the model id's literal ':' (what we
             // actually PUT on the socket), while the signing path percent-encodes it to %3A.
             // AWS recomputes its canonical request by URI-encoding each segment of the path it
@@ -142,6 +161,47 @@ public class BedrockLlmAccess(
         }
     }
 
+    // A public link could redirect to an internal host, so downloads don't follow redirects.
+    private val downloadClient: HttpClient = httpClient.config { followRedirects = false }
+
+    private suspend fun withUrlsDownloaded(model: LlmModelId, prompt: LlmPrompt): LlmPrompt {
+        val sendable = BedrockWire.mediaTypes(model.id)
+        suspend fun downloaded(part: LlmPart.ContentOnly): LlmPart.ContentOnly {
+            val attachment = (part as? LlmPart.Attachment)?.attachment as? LlmAttachment.Url ?: return part
+            // Not worth fetching what would be sent as a note anyway.
+            if (sendable.none { it.accepts(attachment.mediaType) }) return part
+            val sent = try {
+                check(Url(attachment.url).protocol == URLProtocol.HTTPS) { "only https links are downloaded" }
+                downloadClient.prepareGet(attachment.url).execute { response ->
+                    check(response.status.isSuccess()) { "the server answered ${response.status}" }
+                    val declaredLength = response.contentLength()
+                    check(declaredLength == null || declaredLength <= MAX_DOWNLOAD_BYTES) {
+                        "Content-Length $declaredLength is over $MAX_DOWNLOAD_BYTES bytes"
+                    }
+                    val body = response.bodyAsChannel().readBuffer(MAX_DOWNLOAD_BYTES + 1)
+                    check(body.size <= MAX_DOWNLOAD_BYTES) { "the body is over $MAX_DOWNLOAD_BYTES bytes" }
+                    LlmAttachment.Base64(attachment.mediaType, Base64.encode(body.readByteArray()))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                downloadLogger.warn(e) { "Couldn't download the ${attachment.mediaType} attachment at ${attachment.url}; sending a note instead." }
+                attachment
+            }
+            return LlmPart.Attachment(sent)
+        }
+        // The system prompt is left alone: Bedrock takes only text there, so its attachments become notes regardless.
+        return prompt.copy(
+            messages = prompt.messages.map { message ->
+                when (message) {
+                    is LlmMessage.User -> message.copy(parts = message.parts.map { downloaded(it) })
+                    is LlmMessage.ToolResult -> message.copy(parts = message.parts.map { downloaded(it) })
+                    is LlmMessage.Agent -> message.copy(parts = message.parts.map { if (it is LlmPart.ContentOnly) downloaded(it) else it })
+                }
+            },
+        )
+    }
+
     private fun HttpRequestBuilder.addSigned(signed: Map<String, String>) {
         for ((k, v) in signed) headers.append(k, v)
     }
@@ -167,103 +227,207 @@ public class BedrockLlmAccess(
 
         /**
          * Locally-curated Bedrock model list used by [getModels]. Prices are USD per million
-         * tokens per AWS's public pricing pages; [LlmModelInfo.roughIntelligenceRanking] is
-         * subjective and will rot — refresh whenever this list is updated.
+         * tokens; Claude is listed by its `global.` inference profile, which is invocable in every
+         * region and priced like Anthropic's own API (regional profiles cost 10% more).
+         * [LlmModelInfo.roughIntelligenceRanking] is subjective and will rot — refresh whenever
+         * this list is updated.
          *
          * The full Bedrock catalogue is large and regional; we include the Claude, Nova, and
-         * Llama models most users of this library actually pick.
+         * Llama models most users of this library actually pick. [LlmModelInfo.supportedMediaTypes] is what the wire sends.
          */
         public val KNOWN_MODELS: List<LlmModelInfo> = listOf(
             LlmModelInfo(
-                id = LlmModelId("anthropic.claude-opus-4-6-20260204-v1:0"),
-                name = "Claude Opus 4.6",
-                description = "Anthropic's most capable model (2026) on Bedrock.",
-                usdPerMillionInputTokens = 5.0,
-                usdPerMillionOutputTokens = 25.0,
+                id = LlmModelId("global.anthropic.claude-fable-5-1"),
+                name = "Claude Fable 5.1",
+                description = "Anthropic's most capable widely released model; the hardest reasoning and long-horizon agent work.",
+                usdPerMillionInputTokens = 10.0,
+                usdPerMillionOutputTokens = 50.0,
+                usdPerMillionCacheWriteTokens = 12.5,
+                usdPerMillionCacheReadTokens = 0.25,
+                roughIntelligenceRanking = 1.0,
+                supportsToolCalling = true,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("global.anthropic.claude-fable-5"),
+                name = "Claude Fable 5",
+                description = "Previous Fable; same tier and price as Fable 5.1.",
+                usdPerMillionInputTokens = 10.0,
+                usdPerMillionOutputTokens = 50.0,
+                usdPerMillionCacheWriteTokens = 12.5,
+                usdPerMillionCacheReadTokens = 1.0,
                 roughIntelligenceRanking = 0.98,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 65536,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
             ),
             LlmModelInfo(
-                id = LlmModelId("anthropic.claude-sonnet-4-6-20260217-v1:0"),
-                name = "Claude Sonnet 4.6",
-                description = "Anthropic's balanced flagship (2026) on Bedrock.",
-                usdPerMillionInputTokens = 3.0,
-                usdPerMillionOutputTokens = 15.0,
+                id = LlmModelId("global.anthropic.claude-opus-5-5"),
+                name = "Claude Opus 5.5",
+                description = "Current Opus; strong reasoning, coding and agent work below Fable's price.",
+                usdPerMillionInputTokens = 4.0,
+                usdPerMillionOutputTokens = 20.0,
+                usdPerMillionCacheWriteTokens = 5.0,
+                usdPerMillionCacheReadTokens = 0.20,
+                roughIntelligenceRanking = 0.97,
+                supportsToolCalling = true,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("global.anthropic.claude-opus-5"),
+                name = "Claude Opus 5",
+                description = "Previous Opus.",
+                usdPerMillionInputTokens = 5.0,
+                usdPerMillionOutputTokens = 25.0,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
+                roughIntelligenceRanking = 0.95,
+                supportsToolCalling = true,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("global.anthropic.claude-opus-4-8"),
+                name = "Claude Opus 4.8",
+                description = "Older Opus.",
+                usdPerMillionInputTokens = 5.0,
+                usdPerMillionOutputTokens = 25.0,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
+                roughIntelligenceRanking = 0.92,
+                supportsToolCalling = true,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("global.anthropic.claude-opus-4-7"),
+                name = "Claude Opus 4.7",
+                description = "Older Opus.",
+                usdPerMillionInputTokens = 5.0,
+                usdPerMillionOutputTokens = 25.0,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
+                roughIntelligenceRanking = 0.91,
+                supportsToolCalling = true,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("global.anthropic.claude-opus-4-6-v1"),
+                name = "Claude Opus 4.6",
+                description = "Older Opus.",
+                usdPerMillionInputTokens = 5.0,
+                usdPerMillionOutputTokens = 25.0,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
                 roughIntelligenceRanking = 0.90,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 65536,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
             ),
             LlmModelInfo(
-                id = LlmModelId("anthropic.claude-haiku-4-5-20251001-v1:0"),
-                name = "Claude Haiku 4.5",
-                description = "Anthropic's fast, inexpensive model on Bedrock.",
-                usdPerMillionInputTokens = 1.0,
-                usdPerMillionOutputTokens = 5.0,
-                roughIntelligenceRanking = 0.75,
-                supportsToolCalling = true,
-                supportsImageInput = true,
-                supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 65536,
-            ),
-            LlmModelInfo(
-                id = LlmModelId("anthropic.claude-sonnet-4-5-20250929-v1:0"),
-                name = "Claude Sonnet 4.5",
-                description = "Prior-generation flagship on Bedrock.",
-                usdPerMillionInputTokens = 3.0,
-                usdPerMillionOutputTokens = 15.0,
+                id = LlmModelId("global.anthropic.claude-opus-4-5-20251101-v1:0"),
+                name = "Claude Opus 4.5",
+                description = "Older Opus; thinks to a token budget.",
+                usdPerMillionInputTokens = 5.0,
+                usdPerMillionOutputTokens = 25.0,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
                 roughIntelligenceRanking = 0.88,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 65536,
             ),
             LlmModelInfo(
-                id = LlmModelId("anthropic.claude-sonnet-4-20250514-v1:0"),
-                name = "Claude Sonnet 4",
-                description = "Older generation Sonnet, still available on Bedrock.",
-                usdPerMillionInputTokens = 3.0,
-                usdPerMillionOutputTokens = 15.0,
-                roughIntelligenceRanking = 0.85,
-                supportsToolCalling = true,
-                supportsImageInput = true,
-                supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 16384,
-            ),
-            LlmModelInfo(
-                id = LlmModelId("anthropic.claude-opus-4-1-20250805-v1:0"),
-                name = "Claude Opus 4.1",
-                description = "Older generation top-tier Anthropic model.",
-                usdPerMillionInputTokens = 15.0,
-                usdPerMillionOutputTokens = 75.0,
+                id = LlmModelId("global.anthropic.claude-sonnet-5-5"),
+                name = "Claude Sonnet 5.5",
+                description = "Current Sonnet; fast and capable for everyday coding, agent and business work.",
+                usdPerMillionInputTokens = 2.0,
+                usdPerMillionOutputTokens = 10.0,
+                usdPerMillionCacheWriteTokens = 2.5,
+                usdPerMillionCacheReadTokens = 0.10,
                 roughIntelligenceRanking = 0.93,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 16384,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
             ),
             LlmModelInfo(
-                id = LlmModelId("anthropic.claude-3-5-haiku-20241022-v1:0"),
-                name = "Claude 3.5 Haiku",
-                description = "Legacy fast/cheap Anthropic model.",
-                usdPerMillionInputTokens = 0.80,
-                usdPerMillionOutputTokens = 4.0,
-                roughIntelligenceRanking = 0.55,
+                id = LlmModelId("global.anthropic.claude-sonnet-5"),
+                name = "Claude Sonnet 5",
+                description = "Previous Sonnet.",
+                usdPerMillionInputTokens = 2.0,
+                usdPerMillionOutputTokens = 10.0,
+                usdPerMillionCacheWriteTokens = 2.5,
+                usdPerMillionCacheReadTokens = 0.20,
+                roughIntelligenceRanking = 0.90,
                 supportsToolCalling = true,
-                supportsImageInput = true,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("global.anthropic.claude-sonnet-4-6"),
+                name = "Claude Sonnet 4.6",
+                description = "Older Sonnet.",
+                usdPerMillionInputTokens = 3.0,
+                usdPerMillionOutputTokens = 15.0,
+                usdPerMillionCacheWriteTokens = 3.75,
+                usdPerMillionCacheReadTokens = 0.30,
+                roughIntelligenceRanking = 0.87,
+                supportsToolCalling = true,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("global.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+                name = "Claude Sonnet 4.5",
+                description = "Deprecated; retires 2026-11-30.",
+                usdPerMillionInputTokens = 3.0,
+                usdPerMillionOutputTokens = 15.0,
+                usdPerMillionCacheWriteTokens = 3.75,
+                usdPerMillionCacheReadTokens = 0.30,
+                roughIntelligenceRanking = 0.85,
+                supportsToolCalling = true,
                 supportsReasoning = true,
                 maxContextTokens = 200_000,
-                maxOutputTokens = 8192,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("global.anthropic.claude-haiku-5-5"),
+                name = "Claude Haiku 5.5",
+                description = "Current Haiku; fast and very cheap. Prices are for prompts up to 100K tokens; longer prompts cost 5x.",
+                usdPerMillionInputTokens = 0.10,
+                usdPerMillionOutputTokens = 0.50,
+                usdPerMillionCacheWriteTokens = 0.125,
+                usdPerMillionCacheReadTokens = 0.01,
+                roughIntelligenceRanking = 0.85,
+                supportsToolCalling = true,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("global.anthropic.claude-haiku-4-5-20251001-v1:0"),
+                name = "Claude Haiku 4.5",
+                description = "Previous Haiku; thinks to a token budget.",
+                usdPerMillionInputTokens = 1.0,
+                usdPerMillionOutputTokens = 5.0,
+                usdPerMillionCacheWriteTokens = 1.25,
+                usdPerMillionCacheReadTokens = 0.10,
+                roughIntelligenceRanking = 0.75,
+                supportsToolCalling = true,
+                supportsReasoning = true,
+                maxContextTokens = 200_000,
+                maxOutputTokens = 64_000,
             ),
             LlmModelInfo(
                 id = LlmModelId("amazon.nova-pro-v1:0"),
@@ -273,10 +437,8 @@ public class BedrockLlmAccess(
                 usdPerMillionOutputTokens = 3.20,
                 roughIntelligenceRanking = 0.80,
                 supportsToolCalling = true,
-                supportsImageInput = true,
-                supportsVideoInput = true,
                 maxContextTokens = 300_000,
-                maxOutputTokens = 5120,
+                maxOutputTokens = 10_000,
             ),
             LlmModelInfo(
                 id = LlmModelId("amazon.nova-lite-v1:0"),
@@ -286,8 +448,6 @@ public class BedrockLlmAccess(
                 usdPerMillionOutputTokens = 0.24,
                 roughIntelligenceRanking = 0.65,
                 supportsToolCalling = true,
-                supportsImageInput = true,
-                supportsVideoInput = true,
                 maxContextTokens = 300_000,
                 maxOutputTokens = 5120,
             ),
@@ -310,7 +470,6 @@ public class BedrockLlmAccess(
                 usdPerMillionOutputTokens = 0.77,
                 roughIntelligenceRanking = 0.90,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 maxContextTokens = 1_000_000,
                 maxOutputTokens = 32_768,
             ),
@@ -322,7 +481,6 @@ public class BedrockLlmAccess(
                 usdPerMillionOutputTokens = 0.36,
                 roughIntelligenceRanking = 0.75,
                 supportsToolCalling = true,
-                supportsImageInput = true,
                 maxContextTokens = 10_000_000,
                 maxOutputTokens = 32_768,
             ),
@@ -337,11 +495,43 @@ public class BedrockLlmAccess(
                 maxContextTokens = 128_000,
                 maxOutputTokens = 4_096,
             ),
-        )
+        ).map { it.copy(supportedMediaTypes = BedrockWire.mediaTypes(it.id.id)) }
+
+        /**
+         * [claude], a `global.` Claude profile from [KNOWN_MODELS], as the profile that keeps requests inside
+         * [geography], e.g. for data residency. Regional profiles cost 10% more than global ones.
+         * Not every model has a profile in every geography; Bedrock rejects the call if this one doesn't.
+         */
+        public fun regionalClaude(claude: LlmModelInfo, geography: BedrockGeography): LlmModelInfo {
+            val globalId = claude.id.id
+            require(globalId.startsWith("global.anthropic.")) { "Not a global Claude profile: $globalId" }
+            val premium = 1.1
+            return claude.copy(
+                id = claude.id.copy(id = geography.prefix + globalId.removePrefix("global")),
+                name = "${claude.name} (${geography.name})",
+                usdPerMillionInputTokens = claude.usdPerMillionInputTokens * premium,
+                usdPerMillionOutputTokens = claude.usdPerMillionOutputTokens * premium,
+                usdPerMillionCacheWriteTokens = claude.usdPerMillionCacheWriteTokens?.times(premium),
+                usdPerMillionCacheReadTokens = claude.usdPerMillionCacheReadTokens?.times(premium),
+            )
+        }
     }
 }
 
+/** A Bedrock cross-region inference geography, by the prefix its profile ids start with. */
+public enum class BedrockGeography(public val prefix: String) {
+    US("us"),
+    EU("eu"),
+    APAC("apac"),
+    AU("au"),
+    JP("jp"),
+}
+
 private val bedrockStreamLogger = KotlinLogging.logger("BedrockStream")
+
+private val downloadLogger = KotlinLogging.logger("BedrockAttachmentDownload")
+
+private const val MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
 
 private const val BEDROCK_STREAM_CHUNK_SIZE = 8192
 
@@ -493,16 +683,16 @@ internal suspend fun handleBedrockEvent(
                 val fragment = toolUseDelta.str("input") ?: ""
                 state.toolsInFlight[index]?.argsJson?.append(fragment)
             }
-            // Bedrock extended-thinking delta: {"reasoningContent":{"text": "..."}} carries
-            // chain-of-thought text, and {"reasoningContent":{"signature": "..."}} carries the
-            // opaque signature needed to replay reasoning back to the provider. Signatures are
-            // not round-trippable in v1, so drop them silently.
+            // A reasoningContent delta is one of `text`, `signature` (once, ending a block), or `redactedContent`
+            // (a whole redacted block).
             val reasoningDelta = delta.obj("reasoningContent")
             if (reasoningDelta != null) {
                 val reasoningText = reasoningDelta.str("text")
                 if (reasoningText != null && reasoningText.isNotEmpty()) {
                     emit(LlmStreamEvent.ReasoningDelta(reasoningText))
                 }
+                reasoningDelta.str("signature")?.let { emit(LlmStreamEvent.ReasoningDelta("", signature = it)) }
+                reasoningDelta.str("redactedContent")?.let { emit(LlmStreamEvent.ReasoningDelta("", redactedData = it)) }
             }
             false
         }
@@ -527,14 +717,14 @@ internal suspend fun handleBedrockEvent(
                 usage.int("outputTokens")?.let { state.outputTokens = it }
                 // Prompt-caching tokens are only reported by newer models (Claude 3.5 Sonnet,
                 // Nova) on cache hits — absent on older models and cache misses.
-                usage.int("cacheReadInputTokenCount")?.let { state.cacheReadTokens = it }
-                usage.int("cacheWriteInputTokenCount")?.let { state.cacheWriteTokens = it }
+                usage.int("cacheReadInputTokens")?.let { state.cacheReadTokens = it }
+                usage.int("cacheWriteInputTokens")?.let { state.cacheWriteTokens = it }
             }
             state.finished = true
             emit(
                 LlmStreamEvent.Finished(
                     stopReason = state.stopReason,
-                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
+                    usage = state.usage(),
                 ),
             )
             true

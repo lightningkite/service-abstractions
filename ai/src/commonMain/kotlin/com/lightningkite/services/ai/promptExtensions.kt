@@ -59,7 +59,7 @@ public fun LlmMessage.withCacheBoundary(enabled: Boolean = true): LlmMessage = w
 //  Cache-Preserving Operations
 //
 //  These only append to the message list tail or change fields that are
-//  NOT part of the cached prefix (maxTokens, temperature, toolChoice,
+//  NOT part of the cached prefix (maxTokens, toolChoice,
 //  stopSequences). All existing cache boundaries remain valid.
 // ──────────────────────────────────────────────────────────────────────
 
@@ -110,14 +110,6 @@ public fun LlmPrompt.continueTurn(
  */
 public fun LlmPrompt.withMaxTokens(maxTokens: Int?): LlmPrompt =
     copy(maxTokens = maxTokens)
-
-/**
- * Return a copy with [LlmPrompt.temperature] changed.
- *
- * **Cache-preserving:** temperature is not part of the cached prefix.
- */
-public fun LlmPrompt.withTemperature(temperature: Double?): LlmPrompt =
-    copy(temperature = temperature)
 
 /**
  * Return a copy with [LlmPrompt.toolChoice] changed.

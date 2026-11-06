@@ -12,7 +12,7 @@ import io.ktor.http.*
  * This client is configured with:
  * - **ContentNegotiation**: JSON serialization/deserialization
  * - **WebSockets**: WebSocket support
- * - **Request timeout**: 60 seconds
+ * - **Timeouts**: no total-request cap (streams may run long); 60 seconds idle socket, 30 seconds connect
  *
  * ## Usage in Services
  *

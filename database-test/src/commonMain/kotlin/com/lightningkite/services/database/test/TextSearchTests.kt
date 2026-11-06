@@ -209,7 +209,7 @@ abstract class TextSearchTests {
 
     @Test
     fun throwsWithoutTextIndex() = runTest {
-        val table = database.prepare(DatabaseTableDefinition<VectorTestModel>("textSearchNoIndex"))
+        val table = database.prepare(DatabaseTableDefinition<NotUniqueIndexTestModel>("textSearchNoIndex"))
         assertFailsWith<IllegalStateException> { table.findByTextIndex("anything").toList() }
     }
 

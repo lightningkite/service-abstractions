@@ -63,4 +63,10 @@ public fun <T> Codec<T>.fromDocument(doc: Document, registry: CodecRegistry): T 
     )
 }
 
-public val AnyOptic<*>.mongo: String get() = fields.filter { !it.isInline }.joinToString(".") { it.name }
+public val AnyOptic<*>.mongo: String
+    get() = when (this) {
+        // Claude: a shared-field lens has no `fields`, but Mongo stores every variant's field at the same flat key.
+        is SealedSharedFieldLens<*, *> -> name
+        is ComposedOptic<*, *, *> -> listOf(outer.mongo, inner.mongo).filter { it.isNotEmpty() }.joinToString(".")
+        else -> fields.filter { !it.isInline }.joinToString(".") { it.name }
+    }

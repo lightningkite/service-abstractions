@@ -422,6 +422,39 @@ val userNames = userTable.findPartial(
 
 ---
 
+## Vector Search
+
+Similarity search goes through `VectorDatabase`, in this module, not through `Table`. A `VectorIndex` holds one
+`VectorIndexEntry` per indexed source row: its `_id` and its `embedding`. Source models don't carry embeddings, and
+searches don't filter: choose which rows are indexed instead.
+
+```kotlin
+val vectors: VectorDatabase = VectorDatabase.Settings("mongodb+srv://.../app")("vectors", context)
+val index = vectors.prepare(VectorIndexDefinition("Note", Uuid.serializer(), VectorSpace(EmbeddingModelId("text-embedding-3-small"), 1536)))
+
+val projection = VectorProjection<Note, Uuid>(
+    condition = Condition { it.published eq true },
+    embed = { rows -> embeddings.embedTexts(rows.map { it.text }, model) },
+    reembedWhen = { old, new -> old.text != new.text },
+)
+val notes = database.table<Note>().vectorIndexed(index, projection)
+val hits: List<ScoredResult<Uuid>> = index.search(queryEmbedding, limit = 10)
+```
+
+- **Drivers**: `InMemoryDatabase` (`ram`, brute force), `JsonFileDatabase` (`json-files`, brute force), `MongoDatabase` (`mongodb`/`mongodb+srv`: Atlas `$vectorSearch`,
+  or MongoDB 8.2+ with mongot) and `PostgresDatabase` (`postgresql`: pgvector, HNSW index) are each a `Database` and a
+  `VectorDatabase`. Register `ram` by touching `Database.Settings` first. A `VectorDatabase.Settings` with the same URL as a
+  `Database.Settings` opens a second connection pool; to share one, use the `Database` instance as the `VectorDatabase`.
+- **Syncing**: `vectorIndexed` embeds rows written through the table once they match the condition, re-embeds them when
+  `reembedWhen` says so, and removes them when they're deleted or stop matching. `rebuild` re-embeds every matching row
+  and drops every other entry.
+- **Scores**: cosine similarity, `(1 + cos) / 2`, from 0 to 1. Dimensions come from `VectorSpace`.
+- **Storage** is named `<name>_<model>_<dimensions>`, so changing the embedding model starts an empty index; `rebuild` it
+  before searching. The old one stays until you drop it. Postgres limits the name (plus `_embedding_hnsw`) to 63 characters.
+- **`prepare`** creates the index's storage and search structures (Atlas search index, pgvector extension and HNSW index).
+
+---
+
 ## Health Checks
 
 All database implementations support health checks:

@@ -25,7 +25,7 @@ import kotlin.time.Duration.Companion.seconds
  *   - the flow is a sequence of [LlmStreamEvent] values
  *   - it terminates with exactly one [LlmStreamEvent.Finished] frame as the last event
  *   - tool-call events carry complete, parseable JSON (not partial deltas)
- *   - concatenated text deltas equal the non-streaming [inference] text at temperature 0
+ *   - streamed text deltas carry the answer
  *   - the stream is cancel-safe
  */
 public abstract class StreamingTests : LlmAccessTests() {
@@ -36,7 +36,7 @@ public abstract class StreamingTests : LlmAccessTests() {
     // granularity is not part of the streaming contract — a provider or local runtime may
     // legitimately deliver a short response in a single TextDelta frame. Asserting "at least
     // N deltas" is inherently flaky across models/runtimes (e.g. small local models in
-    // LM Studio). streamConcatenatesToInference covers that streamed text is correct.
+    // LM Studio). streamAndInferenceBothReturnText covers that streamed text arrives.
 
     /**
      * Contract: streams ALWAYS end with exactly one [LlmStreamEvent.Finished] frame, and
@@ -50,7 +50,6 @@ public abstract class StreamingTests : LlmAccessTests() {
             prompt = LlmPrompt(
                 messages = listOf(userMessage("Say hello in three words.")),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         ).toList()
         val finishedFrames = events.filterIsInstance<LlmStreamEvent.Finished>()
@@ -78,17 +77,15 @@ public abstract class StreamingTests : LlmAccessTests() {
     }
 
     /**
-     * Concatenate all [LlmStreamEvent.TextDelta].text values and compare to the text returned
-     * by a non-streaming [inference] call on the same prompt + model. At temperature 0 these
-     * should be identical (deterministic sampling). We tolerate whitespace differences only.
+     * The concatenated [LlmStreamEvent.TextDelta]s and a separate [inference] call both answer.
+     * Their texts aren't compared: without a temperature setting, two calls needn't agree.
      */
     @Test
-    public fun streamConcatenatesToInference(): Unit = runTest(timeout = 90.seconds) {
+    public fun streamAndInferenceBothReturnText(): Unit = runTest(timeout = 90.seconds) {
         skipIfServiceAbsent()
         val prompt = LlmPrompt(
             messages = listOf(userMessage("In one short sentence, say what a unit test is.")),
             maxTokens = testMaxTokens,
-            temperature = 0.0,
         )
         val streamed = service.stream(cheapModel, prompt).toList()
             .filterIsInstance<LlmStreamEvent.TextDelta>()
@@ -97,20 +94,6 @@ public abstract class StreamingTests : LlmAccessTests() {
         val nonStreamed = service.inference(cheapModel, prompt).message.plainText().trim()
         assertTrue(streamed.isNotBlank(), "Streamed text must not be blank")
         assertTrue(nonStreamed.isNotBlank(), "Non-streamed text must not be blank")
-        // Comparing a streamed call against a separate non-streamed call only works if the
-        // model is deterministic at temperature 0. Models that aren't (e.g. Amazon Nova) still
-        // get the not-blank coverage above; skip only the equality check for them.
-        if (deterministicAtTemperatureZero) {
-            // Providers sometimes differ in trailing whitespace / punctuation between the two
-            // code paths even at temperature 0. Compare only the first 20 characters for a
-            // smoke-test of equivalence.
-            assertEquals(
-                nonStreamed.take(20),
-                streamed.take(20),
-                "Streamed and non-streamed prefixes should match at temperature 0.\n" +
-                    "  streamed: '$streamed'\n  nonStreamed: '$nonStreamed'",
-            )
-        }
     }
 
     /**
@@ -127,7 +110,6 @@ public abstract class StreamingTests : LlmAccessTests() {
                 messages = listOf(userMessage("What's the current weather in Osaka?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         ).toList()
         val toolEvents = events.filterIsInstance<LlmStreamEvent.ToolCallEmitted>()
@@ -169,7 +151,6 @@ public abstract class StreamingTests : LlmAccessTests() {
                 messages = listOf(userMessage("Hi! What's the current weather in Denver?")),
                 tools = listOf(weatherTool),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         assertTrue(
@@ -213,7 +194,6 @@ public abstract class StreamingTests : LlmAccessTests() {
                     userMessage("Solve: if 3x + 7 = 22, what is x? Show your reasoning step by step."),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         ).toList()
         val lastReasoningIdx = events.indexOfLast { it is LlmStreamEvent.ReasoningDelta }
@@ -256,7 +236,6 @@ public abstract class StreamingTests : LlmAccessTests() {
                     ),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         ).take(1).toList()
         assertEquals(

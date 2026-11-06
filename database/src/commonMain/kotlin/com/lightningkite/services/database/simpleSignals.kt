@@ -726,7 +726,8 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
             modification: Modification<Model>,
             model: Model,
         ): EntryChange<Model> {
-            val current = wraps.findOne(condition) ?: return wraps.upsertOne(condition, modification, model)
+            val current = wraps.findOne(condition)
+                ?: return wraps.upsertOne(condition, modification, interceptor(model, Modification.Assign(model))(model))
             val changed = interceptor(current, modification)
             return wraps.upsertOne(
                 condition and Condition.OnField(serializer._id(), Condition.Equal(current._id)),
@@ -740,8 +741,11 @@ public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.intercep
             modification: Modification<Model>,
             model: Model,
         ): Boolean {
-            val current =
-                wraps.findOne(condition) ?: return wraps.upsertOneIgnoringResult(condition, modification, model)
+            val current = wraps.findOne(condition) ?: return wraps.upsertOneIgnoringResult(
+                condition,
+                modification,
+                interceptor(model, Modification.Assign(model))(model)
+            )
             val changed = interceptor(current, modification)
             return wraps.upsertOneIgnoringResult(
                 condition and Condition.OnField(

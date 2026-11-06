@@ -12,15 +12,15 @@ import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider as SdkAwsCredentialsProvider
 
 /**
- * Adapt an AWS SDK credential provider to this library's [AwsCredentialsProvider], giving the
- * pure-Kotlin [BedrockLlmAccess] the full AWS credential story on the JVM: environment
- * variables, `~/.aws/credentials` and `~/.aws/config` profiles (including SSO, `sso_session`,
- * `credential_process`, and `role_arn`/`source_profile` assume-role chains), container/ECS
- * roles, and EC2 instance metadata — all with automatic refresh of expiring temporary
- * credentials.
+ * Adapt an AWS SDK credential provider to this library's [AwsCredentialsProvider], so the
+ * pure-Kotlin [BedrockLlmAccess] signs with whatever the SDK resolves: environment variables,
+ * static and `aws login` profiles, `credential_process`, container roles, and EC2 instance
+ * metadata, with expiring credentials refreshed. SSO profiles additionally need
+ * `software.amazon.awssdk:sso` and `ssooidc` on the classpath, and `role_arn` profiles need
+ * `software.amazon.awssdk:sts`; without them the SDK throws when resolving such a profile.
  *
- * The SDK's `resolveCredentials()` is a blocking call (it may hit the filesystem, STS, or
- * IMDS), so it runs on [Dispatchers.IO]. It is invoked once per Bedrock request, so refreshed
+ * The SDK's `resolveCredentials()` can block on files or the network, so it runs on
+ * [Dispatchers.IO]. It is invoked once per Bedrock request, so refreshed
  * credentials take effect on the next call.
  *
  * @param provider any AWS SDK credential provider; defaults to [DefaultCredentialsProvider],
@@ -41,8 +41,8 @@ public fun awsSdkCredentials(
 
 /**
  * Convenience for a single named profile from `~/.aws/credentials` / `~/.aws/config`, resolved
- * with the AWS SDK (so SSO/assume-role/`credential_process` profiles work, unlike the built-in
- * static-only reader in `ai-bedrock`). Equivalent to
+ * with the AWS SDK (so `aws login` and `credential_process` profiles work, unlike the built-in
+ * static-only reader in `ai-bedrock`; see [awsSdkCredentials] for SSO and `role_arn`). Equivalent to
  * `awsSdkCredentials(ProfileCredentialsProvider.create(profile))`.
  */
 public fun awsSdkProfileCredentials(profile: String): AwsCredentialsProvider =
@@ -52,21 +52,25 @@ public fun awsSdkProfileCredentials(profile: String): AwsCredentialsProvider =
  * Build [LlmAccess.Settings] for a Bedrock model whose credentials come from the AWS SDK. No
  * secret ever appears in the URL — resolution happens through the SDK's credential chain.
  *
- * Produces `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>]`.
+ * Produces `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>][&downloadUrlAttachments=true]`.
  *
  * @param modelId Bedrock model id (e.g. `anthropic.claude-3-5-haiku-20241022-v1:0`).
  * @param region AWS region; falls back to `AWS_REGION`, then `us-east-1`.
  * @param profile optional named profile; when null the full default credential chain is used.
+ * @param downloadUrlAttachments see [BedrockLlmAccess.downloadUrlAttachments]; it lets prompts make the server fetch
+ *   any link (server-side request forgery), so enable it only when attachment URLs come from trusted sources.
  */
 public fun LlmAccess.Settings.Companion.bedrockSdk(
     modelId: String,
     region: String? = null,
     profile: String? = null,
+    downloadUrlAttachments: Boolean = false,
 ): LlmAccess.Settings {
     BedrockSdkLlm.ensureRegistered()
     val params = buildList {
         region?.let { add("region=$it") }
         profile?.let { add("profile=$it") }
+        if (downloadUrlAttachments) add("downloadUrlAttachments=true")
     }
     val query = if (params.isEmpty()) "" else "?" + params.joinToString("&")
     return LlmAccess.Settings("bedrock-sdk://$modelId$query")
@@ -77,7 +81,7 @@ public fun LlmAccess.Settings.Companion.bedrockSdk(
  * credentials via the AWS SDK (see [awsSdkCredentials]) and otherwise delegates to the
  * pure-Kotlin [BedrockLlmAccess].
  *
- * URL shape: `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>]`.
+ * URL shape: `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>][&downloadUrlAttachments=true]`.
  */
 public object BedrockSdkLlm {
     init {
@@ -101,6 +105,7 @@ public object BedrockSdkLlm {
                     context = context,
                     region = region,
                     credentialsProvider = provider,
+                    downloadUrlAttachments = params["downloadUrlAttachments"]?.toBooleanStrictOrNull() ?: false,
                 )
             }
         }

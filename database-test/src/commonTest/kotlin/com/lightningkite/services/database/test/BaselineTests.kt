@@ -17,6 +17,10 @@ class RamModificationTests : ModificationTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
 
+class RamSealedLensTests : SealedLensTests() {
+    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
 class RamSealedPathTests : SealedPathTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
@@ -39,11 +43,6 @@ class RamInlinePropertiesTest : InlinePropertiesTests() {
     @Test
     fun start() {
     }
-}
-
-// by Claude
-class RamVectorSearchTests : VectorSearchTests() {
-    override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
 }
 
 class RamTextSearchTests : TextSearchTests() {
@@ -108,4 +107,8 @@ class MetadataTest {
 }
 class RamMaskedPermissionsTests : MaskedPermissionsTests() {
     override val database: Database = InMemoryDatabase("test", context = TestSettingContext())
+}
+
+class RamVectorIndexTests : VectorIndexTests() {
+    override val database: com.lightningkite.services.database.VectorDatabase = InMemoryDatabase("test", context = TestSettingContext())
 }

@@ -7,12 +7,11 @@ import com.lightningkite.services.data.*
 import com.lightningkite.services.telemetry.telemetryTrace
 import com.lightningkite.services.speech.*
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.plugins.contentnegotiation.*
+import com.lightningkite.services.http.client
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.milliseconds
@@ -90,15 +89,6 @@ public class OpenAISpeechToTextService(
     private val baseUrl = "https://api.openai.com/v1"
 
     private val responseJson = Json { ignoreUnknownKeys = true }
-
-    private val client = com.lightningkite.services.http.client.config {
-        install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-            })
-        }
-    }
 
     override suspend fun transcribe(
         audio: TypedData,

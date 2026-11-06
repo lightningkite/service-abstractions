@@ -35,7 +35,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
             prompt = LlmPrompt(
                 messages = listOf(userMessage("Respond with only the word HELLO and nothing else.")),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val text = result.message.plainText()
@@ -63,7 +62,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
                     userMessage("What is the capital of France? Answer in one short sentence."),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val text = result.message.plainText()
@@ -105,7 +103,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
                 ),
                 stopSequences = listOf("HALT"),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val text = result.message.plainText()
@@ -135,7 +132,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
                     userMessage("Write a long essay about the history of Rome, at least 500 words."),
                 ),
                 maxTokens = 10,
-                temperature = 0.0,
             ),
         )
         assertEquals(
@@ -172,7 +168,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
                     userMessage("Solve: if 3x + 7 = 22, what is x? Show your reasoning step by step."),
                 ),
                 maxTokens = testMaxTokens,
-                temperature = 0.0,
             ),
         )
         val reasoningBlocks = result.message.parts.filterIsInstance<LlmPart.Reasoning>()
@@ -188,34 +183,6 @@ public abstract class TextGenerationTests : LlmAccessTests() {
         assertTrue(
             reasoningBlocks.first().text.isNotBlank(),
             "Reasoning block text must be non-empty; got '${reasoningBlocks.first().text}'",
-        )
-    }
-
-    /**
-     * At temperature 0, two identical calls should produce the same text.
-     *
-     * Many providers honor this; a few (local Ollama quantizations, some cross-model routing
-     * layers) do not. We tolerate minor whitespace differences but expect the content to be
-     * the same sentence. Skip the test wholesale if the provider is known to not support
-     * deterministic temperature.
-     */
-    @Test
-    public fun temperatureDeterminism(): Unit = runTest(timeout = 120.seconds) {
-        skipIfServiceAbsent()
-        val prompt = LlmPrompt(
-            messages = listOf(userMessage("In exactly one short sentence, define entropy.")),
-            maxTokens = testMaxTokens,
-            temperature = 0.0,
-        )
-        val a = service.inference(cheapModel, prompt).message.plainText().trim()
-        val b = service.inference(cheapModel, prompt).message.plainText().trim()
-        // Lenient: at temperature 0 expect the first ~20 characters to match, which catches
-        // hard non-determinism (different sentence) without tripping on trailing whitespace.
-        val prefixA = a.take(20)
-        val prefixB = b.take(20)
-        assertTrue(
-            prefixA == prefixB || a == b,
-            "Temperature 0 should produce similar responses. Got:\n  A: '$a'\n  B: '$b'",
         )
     }
 }

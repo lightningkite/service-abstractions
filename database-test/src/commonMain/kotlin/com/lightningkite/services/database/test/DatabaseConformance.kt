@@ -10,7 +10,7 @@ package com.lightningkite.services.database.test
  *
  * Drivers assert against this list with [assertConformanceSuitesCovered]. A driver that genuinely
  * cannot support a suite should still subclass it and override the individual tests it cannot
- * satisfy — or expose a capability flag, as [VectorSearchTests] does — so the reason is recorded in
+ * satisfy — or expose a capability flag — so the reason is recorded in
  * code rather than in an omission.
  *
  * [ConcurrencyTests] is deliberately on this list with no way to opt out: row-level atomicity is a

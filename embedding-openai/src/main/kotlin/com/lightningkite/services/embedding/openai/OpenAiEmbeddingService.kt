@@ -10,8 +10,7 @@ import com.lightningkite.services.embedding.EmbeddingResult
 import com.lightningkite.services.embedding.EmbeddingService
 import com.lightningkite.services.embedding.EmbeddingUsage
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import com.lightningkite.services.http.client
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -20,7 +19,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
 import java.io.IOException
 
 private val logger = KotlinLogging.logger("OpenAiEmbeddingService")
@@ -49,10 +47,6 @@ public class OpenAiEmbeddingService(
                 OpenAiEmbeddingSettings.ensureRegistered()
             }
         }
-    }
-
-    private val client: HttpClient = com.lightningkite.services.http.client.config {
-        install(ContentNegotiation) { json(openAiEmbeddingJson) }
     }
 
     override suspend fun getModels(): List<EmbeddingModelInfo> {

@@ -1,6 +1,8 @@
 package com.lightningkite.services.ai.embedded
 
+import com.lightningkite.services.ai.LlmAttachment
 import com.lightningkite.services.ai.LlmMessage
+import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.ai.LlmPart
 import com.lightningkite.services.ai.LlmPrompt
 import kotlin.test.Test
@@ -84,5 +86,15 @@ class PromptFormatterTest {
         val result = PromptFormatter.format(prompt, ChatTemplate.ChatML)
         assertFalse(result.contains("<|im_start|>system"))
         assertContains(result, "<|im_start|>user\nHello<|im_end|>")
+    }
+
+    @Test
+    fun attachmentsBecomeNotes() {
+        val image = LlmAttachment.Base64(MediaType.Image.PNG, "iVBORw0K")
+        val prompt = LlmPrompt(
+            messages = listOf(LlmMessage.User(parts = listOf(LlmPart.Text("Look: "), LlmPart.Attachment(image))))
+        )
+        val result = PromptFormatter.format(prompt, ChatTemplate.ChatML)
+        assertContains(result, "<|im_start|>user\nLook: ${image.notSentNote().text}<|im_end|>")
     }
 }

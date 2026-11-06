@@ -37,6 +37,7 @@ public object BedrockLlmSettings {
  *   the named profile (JVM only; other targets throw).
  *
  * If `region` is not given, `AWS_REGION` is consulted, then `us-east-1` as a last resort.
+ * Add `downloadUrlAttachments=true` to the query to enable [BedrockLlmAccess.downloadUrlAttachments].
  *
  * @param modelId ignored; kept only so existing call sites that pass a model id (e.g. for
  *   IAM-scoping in terraform) keep compiling. Pass the model as an
@@ -47,6 +48,8 @@ public object BedrockLlmSettings {
  * @param secretAccessKey paired with [accessKeyId] — mandatory when [accessKeyId] is set.
  * @param profile alternative to static creds: reference a profile from `~/.aws/credentials`
  *   (JVM only).
+ * @param downloadUrlAttachments see [BedrockLlmAccess.downloadUrlAttachments]; it lets prompts make the server fetch
+ *   any link (server-side request forgery), so enable it only when attachment URLs come from trusted sources.
  */
 public fun LlmAccess.Settings.Companion.bedrock(
     modelId: String? = null,
@@ -54,6 +57,7 @@ public fun LlmAccess.Settings.Companion.bedrock(
     accessKeyId: String? = null,
     secretAccessKey: String? = null,
     profile: String? = null,
+    downloadUrlAttachments: Boolean = false,
 ): LlmAccess.Settings {
     // Touch BedrockLlmAccess to guarantee the URL scheme is registered.
     @Suppress("UNUSED_EXPRESSION")
@@ -69,7 +73,11 @@ public fun LlmAccess.Settings.Companion.bedrock(
         profile != null -> "$profile@"
         else -> ""
     }
-    val query = region?.let { "?region=$it" } ?: ""
+    val params = buildList {
+        region?.let { add("region=$it") }
+        if (downloadUrlAttachments) add("downloadUrlAttachments=true")
+    }
+    val query = if (params.isEmpty()) "" else "?" + params.joinToString("&")
     return LlmAccess.Settings("bedrock://$authority$query")
 }
 
@@ -112,6 +120,7 @@ internal fun registerBedrockUrlScheme() {
             context = context,
             region = region,
             credentialsProvider = credentialsProvider,
+            downloadUrlAttachments = params["downloadUrlAttachments"]?.toBooleanStrictOrNull() ?: false,
         )
     }
 }

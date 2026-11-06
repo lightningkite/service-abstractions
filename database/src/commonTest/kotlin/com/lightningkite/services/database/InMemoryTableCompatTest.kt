@@ -12,13 +12,13 @@ import kotlin.uuid.ExperimentalUuidApi
 @OptIn(ExperimentalUuidApi::class)
 class InMemoryTableCompatTest {
 
-    private val serializer = DocumentWithEmbedding.serializer()
+    private val serializer = Note.serializer()
 
     @Suppress("DEPRECATION")
     @Test
     fun deprecatedListConstructorSeedsTable() = runTest {
-        val doc1 = DocumentWithEmbedding(title = "a", category = "x", embedding = Embedding.of(1f, 0f))
-        val doc2 = DocumentWithEmbedding(title = "b", category = "y", embedding = Embedding.of(0f, 1f))
+        val doc1 = Note("1", "a", "x")
+        val doc2 = Note("2", "b", "y")
 
         // Old call shape: InMemoryTable(mutableListOf(...), serializer)
         val table = InMemoryTable(mutableListOf(doc1, doc2), serializer)
@@ -31,7 +31,7 @@ class InMemoryTableCompatTest {
     @Test
     fun deprecatedListIsNotRetainedAsBackingStore() = runTest {
         val seed = mutableListOf(
-            DocumentWithEmbedding(title = "a", category = "x", embedding = Embedding.of(1f, 0f))
+            Note("1", "a", "x")
         )
         val table = InMemoryTable(seed, serializer)
 

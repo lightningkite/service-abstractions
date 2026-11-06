@@ -85,15 +85,6 @@ public abstract class LlmAccessTests {
     public open val respectsToolChoiceAutoRestraint: Boolean = true
 
     /**
-     * True when the model produces the same output prefix for the same prompt at temperature 0,
-     * which the streaming suite relies on to compare a streamed call against a separate
-     * non-streamed call. Some models (e.g. Amazon Nova) are not deterministic even at
-     * temperature 0; set false to skip `streamConcatenatesToInference` for them. Streaming
-     * correctness is still covered by the other streaming tests.
-     */
-    public open val deterministicAtTemperatureZero: Boolean = true
-
-    /**
      * True if the model returns chain-of-thought / reasoning content as a separate
      * LlmPart.Reasoning block alongside the final answer. Most models don't.
      * Reasoning-capable: Claude extended thinking, OpenAI o-series, DeepSeek R1, Gemma reasoning variants.

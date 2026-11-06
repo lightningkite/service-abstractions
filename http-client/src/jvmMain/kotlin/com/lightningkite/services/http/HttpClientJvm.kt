@@ -8,8 +8,25 @@ import io.ktor.client.plugins.websocket.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 import okhttp3.Dispatcher
+import okhttp3.OkHttpClient
 import org.crac.*
-import java.util.concurrent.atomic.AtomicReference
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
+
+// OkHttp defaults to h2 + http/1.1, so HTTP/2 is used automatically over TLS via ALPN.
+// Its dispatcher, however, gates concurrent calls at tiny defaults (maxRequests=64,
+// maxRequestsPerHost=5). With HTTP/2 those calls multiplex over a few connections, so the
+// low cap only throttles fanout for no benefit — raise both. Per-host is the one that
+// matters for services that hammer a single API (FCM, OpenAI, S3).
+internal val okHttp: OkHttpClient = OkHttpClient.Builder()
+    .dispatcher(Dispatcher().apply {
+        maxRequests = 1024
+        maxRequestsPerHost = 1024
+    })
+    // On OkHttp, Ktor's `WebSockets { pingIntervalMillis }` sends no pings; only this does.
+    // A missed pong fails the socket, so a silently dropped peer is noticed.
+    .pingInterval(30.seconds.toJavaDuration())
+    .build()
 
 /**
  * JVM-specific HTTP client, backed by the OkHttp engine for HTTP/2 support and with OpenTelemetry
@@ -29,68 +46,36 @@ import java.util.concurrent.atomic.AtomicReference
  * OpenTelemetry instrumentation happens automatically when the SettingContext is available
  * in the coroutine context.
  *
- * ## AWS Lambda SnapStart (CRaC) Support
+ * ## AWS Lambda SnapStart (CRaC)
  *
- * This client properly handles CRaC checkpoint/restore cycles:
- * - Before checkpoint: Closes the HTTP client to release resources
- * - After restore: Recreates the HTTP client for the new execution environment
- *
- * This allows the client to be used both before and after snapshots without issues.
+ * This client is never closed, so services may keep it or a `client.config { }` copy (copies share
+ * its engine).  Only its pooled connections are closed before a checkpoint.
  */
-public actual val client: HttpClient
-    get() = HttpClientHolder.client
-
-/**
- * Holder for HTTP client that supports CRaC checkpoint/restore.
- */
-private object HttpClientHolder : Resource {
-    private val clientRef = AtomicReference<HttpClient?>()
-
-    init {
-        Core.getGlobalContext().register(this)
+public actual val client: HttpClient = HttpClient(OkHttp) {
+    install(ContentNegotiation) {
+        json(Json { ignoreUnknownKeys = true; isLenient = true })
     }
-
-    override fun beforeCheckpoint(context: Context<out Resource>) {
-        // Close the client before checkpoint
-        clientRef.getAndSet(null)?.close()
+    install(WebSockets)
+    install(OpenTelemetryPlugin)
+    // Streaming responses (LLM/SSE) can legitimately run for minutes; a total-request
+    // timeout silently truncates them (and previously produced butchered LLM responses).
+    // Use an idle/socket timeout instead — fail only when NO bytes flow for the window,
+    // which still catches dead connections without capping healthy long streams.
+    install(HttpTimeout) {
+        requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+        socketTimeoutMillis = 60_000
+        connectTimeoutMillis = 30_000
     }
-
-    override fun afterRestore(context: Context<out Resource>) {
-        // Client will be recreated on next access
-    }
-
-    val client: HttpClient
-        get() = clientRef.get() ?: synchronized(this) {
-            clientRef.get() ?: createClient().also { clientRef.set(it) }
-        }
-
-    private fun createClient() = HttpClient(OkHttp) {
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true; isLenient = true })
-        }
-        install(WebSockets)
-        install(OpenTelemetryPlugin)
-        // Streaming responses (LLM/SSE) can legitimately run for minutes; a total-request
-        // timeout silently truncates them (and previously produced butchered LLM responses).
-        // Use an idle/socket timeout instead — fail only when NO bytes flow for the window,
-        // which still catches dead connections without capping healthy long streams.
-        install(HttpTimeout) {
-            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
-            socketTimeoutMillis = 60_000
-            connectTimeoutMillis = 30_000
-        }
-        engine {
-            // OkHttp defaults to h2 + http/1.1, so HTTP/2 is used automatically over TLS via ALPN.
-            // Its dispatcher, however, gates concurrent calls at tiny defaults (maxRequests=64,
-            // maxRequestsPerHost=5). With HTTP/2 those calls multiplex over a few connections, so the
-            // low cap only throttles fanout for no benefit — raise both. Per-host is the one that
-            // matters for services that hammer a single API (FCM, OpenAI, S3).
-            config {
-                dispatcher(Dispatcher().apply {
-                    maxRequests = 1024
-                    maxRequestsPerHost = 1024
-                })
-            }
-        }
+    engine {
+        // Ktor builds its OkHttpClients from this one, so they all share its connection pool.
+        preconfigured = okHttp
     }
 }
+
+// Connections from before a snapshot are dead after the restore.  Closing the whole client instead
+// would break every service that kept it (`JobCancellationException: Parent job is Completed`).
+// CRaC holds resources weakly, so this must stay referenced.
+internal val dropConnectionsBeforeCheckpoint: Resource = object : Resource {
+    override fun beforeCheckpoint(context: Context<out Resource>) = okHttp.connectionPool.evictAll()
+    override fun afterRestore(context: Context<out Resource>) {}
+}.also { Core.getGlobalContext().register(it) }

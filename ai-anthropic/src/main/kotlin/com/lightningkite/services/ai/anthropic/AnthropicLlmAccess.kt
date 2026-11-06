@@ -109,7 +109,7 @@ public class AnthropicLlmAccess(
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> = flow {
         val body = AnthropicWire.buildRequestBody(
             modelId = model.id,
-            prompt = prompt,
+            requested = prompt,
             module = module,
             stream = true,
             defaultMaxTokens = defaultMaxTokens,
@@ -158,7 +158,7 @@ public class AnthropicLlmAccess(
             emit(
                 LlmStreamEvent.Finished(
                     stopReason = state.stopReason,
-                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
+                    usage = state.usage(),
                 ),
             )
         }
@@ -197,108 +197,211 @@ public class AnthropicLlmAccess(
          */
         public val KNOWN_MODELS: List<LlmModelInfo> = listOf(
             LlmModelInfo(
-                id = LlmModelId("claude-opus-4-6"),
-                name = "Claude Opus 4.6",
-                description = "Anthropic's most capable model (2026); strongest reasoning and long-horizon agent performance.",
-                usdPerMillionInputTokens = 5.0,
-                usdPerMillionOutputTokens = 25.0,
+                id = LlmModelId("claude-fable-5-1"),
+                name = "Claude Fable 5.1",
+                description = "Anthropic's most capable widely released model; the hardest reasoning and long-horizon agent work.",
+                usdPerMillionInputTokens = 10.0,
+                usdPerMillionOutputTokens = 50.0,
+                usdPerMillionCacheWriteTokens = 12.5,
+                usdPerMillionCacheReadTokens = 0.25,
+                roughIntelligenceRanking = 1.0,
+                supportsToolCalling = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("claude-fable-5"),
+                name = "Claude Fable 5",
+                description = "Previous Fable; same tier and price as Fable 5.1.",
+                usdPerMillionInputTokens = 10.0,
+                usdPerMillionOutputTokens = 50.0,
+                usdPerMillionCacheWriteTokens = 12.5,
+                usdPerMillionCacheReadTokens = 1.0,
                 roughIntelligenceRanking = 0.98,
                 supportsToolCalling = true,
-                supportsImageInput = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
                 supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 65536,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
             ),
             LlmModelInfo(
-                id = LlmModelId("claude-sonnet-4-6"),
-                name = "Claude Sonnet 4.6",
-                description = "Balanced flagship (2026): strong coding/agent performance at mid-tier cost.",
-                usdPerMillionInputTokens = 3.0,
-                usdPerMillionOutputTokens = 15.0,
+                id = LlmModelId("claude-opus-5-5"),
+                name = "Claude Opus 5.5",
+                description = "Current Opus; strong reasoning, coding and agent work below Fable's price.",
+                usdPerMillionInputTokens = 4.0,
+                usdPerMillionOutputTokens = 20.0,
+                usdPerMillionCacheWriteTokens = 5.0,
+                usdPerMillionCacheReadTokens = 0.20,
+                roughIntelligenceRanking = 0.97,
+                supportsToolCalling = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("claude-opus-5"),
+                name = "Claude Opus 5",
+                description = "Previous Opus.",
+                usdPerMillionInputTokens = 5.0,
+                usdPerMillionOutputTokens = 25.0,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
+                roughIntelligenceRanking = 0.95,
+                supportsToolCalling = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("claude-opus-4-8"),
+                name = "Claude Opus 4.8",
+                description = "Older Opus.",
+                usdPerMillionInputTokens = 5.0,
+                usdPerMillionOutputTokens = 25.0,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
+                roughIntelligenceRanking = 0.92,
+                supportsToolCalling = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("claude-opus-4-7"),
+                name = "Claude Opus 4.7",
+                description = "Older Opus.",
+                usdPerMillionInputTokens = 5.0,
+                usdPerMillionOutputTokens = 25.0,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
+                roughIntelligenceRanking = 0.91,
+                supportsToolCalling = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("claude-opus-4-6"),
+                name = "Claude Opus 4.6",
+                description = "Older Opus.",
+                usdPerMillionInputTokens = 5.0,
+                usdPerMillionOutputTokens = 25.0,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
                 roughIntelligenceRanking = 0.90,
                 supportsToolCalling = true,
-                supportsImageInput = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
                 supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 65536,
-            ),
-            LlmModelInfo(
-                id = LlmModelId("claude-haiku-4-5"),
-                name = "Claude Haiku 4.5",
-                description = "Fast, inexpensive; near-frontier capability on everyday tasks.",
-                usdPerMillionInputTokens = 1.0,
-                usdPerMillionOutputTokens = 5.0,
-                roughIntelligenceRanking = 0.75,
-                supportsToolCalling = true,
-                supportsImageInput = true,
-                supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 8192,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
             ),
             LlmModelInfo(
                 id = LlmModelId("claude-opus-4-5"),
                 name = "Claude Opus 4.5",
-                description = "Prior-generation top-tier Opus; kept for legacy configurations.",
+                description = "Older Opus; thinks to a token budget.",
                 usdPerMillionInputTokens = 5.0,
                 usdPerMillionOutputTokens = 25.0,
-                roughIntelligenceRanking = 0.95,
+                usdPerMillionCacheWriteTokens = 6.25,
+                usdPerMillionCacheReadTokens = 0.50,
+                roughIntelligenceRanking = 0.88,
                 supportsToolCalling = true,
-                supportsImageInput = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
                 supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 65536,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("claude-sonnet-5-5"),
+                name = "Claude Sonnet 5.5",
+                description = "Current Sonnet; fast and capable for everyday coding, agent and business work.",
+                usdPerMillionInputTokens = 2.0,
+                usdPerMillionOutputTokens = 10.0,
+                usdPerMillionCacheWriteTokens = 2.5,
+                usdPerMillionCacheReadTokens = 0.10,
+                roughIntelligenceRanking = 0.93,
+                supportsToolCalling = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("claude-sonnet-5"),
+                name = "Claude Sonnet 5",
+                description = "Previous Sonnet.",
+                usdPerMillionInputTokens = 2.0,
+                usdPerMillionOutputTokens = 10.0,
+                usdPerMillionCacheWriteTokens = 2.5,
+                usdPerMillionCacheReadTokens = 0.20,
+                roughIntelligenceRanking = 0.90,
+                supportsToolCalling = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("claude-sonnet-4-6"),
+                name = "Claude Sonnet 4.6",
+                description = "Older Sonnet.",
+                usdPerMillionInputTokens = 3.0,
+                usdPerMillionOutputTokens = 15.0,
+                usdPerMillionCacheWriteTokens = 3.75,
+                usdPerMillionCacheReadTokens = 0.30,
+                roughIntelligenceRanking = 0.87,
+                supportsToolCalling = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
             ),
             LlmModelInfo(
                 id = LlmModelId("claude-sonnet-4-5"),
                 name = "Claude Sonnet 4.5",
-                description = "Prior-generation Sonnet; mid-tier flagship from late 2025.",
+                description = "Deprecated; retires 2026-11-30.",
                 usdPerMillionInputTokens = 3.0,
                 usdPerMillionOutputTokens = 15.0,
-                roughIntelligenceRanking = 0.88,
-                supportsToolCalling = true,
-                supportsImageInput = true,
-                supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 65536,
-            ),
-            LlmModelInfo(
-                id = LlmModelId("claude-opus-4-1"),
-                name = "Claude Opus 4.1",
-                description = "Older generation Opus; kept for callers pinned to an older snapshot.",
-                usdPerMillionInputTokens = 15.0,
-                usdPerMillionOutputTokens = 75.0,
-                roughIntelligenceRanking = 0.93,
-                supportsToolCalling = true,
-                supportsImageInput = true,
-                supportsReasoning = true,
-                maxContextTokens = 200_000,
-                maxOutputTokens = 16384,
-            ),
-            LlmModelInfo(
-                id = LlmModelId("claude-sonnet-4"),
-                name = "Claude Sonnet 4",
-                description = "Older generation Sonnet; good middle-ground for legacy configs.",
-                usdPerMillionInputTokens = 3.0,
-                usdPerMillionOutputTokens = 15.0,
+                usdPerMillionCacheWriteTokens = 3.75,
+                usdPerMillionCacheReadTokens = 0.30,
                 roughIntelligenceRanking = 0.85,
                 supportsToolCalling = true,
-                supportsImageInput = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
                 supportsReasoning = true,
                 maxContextTokens = 200_000,
-                maxOutputTokens = 16384,
             ),
             LlmModelInfo(
-                id = LlmModelId("claude-3-5-haiku-latest"),
-                name = "Claude 3.5 Haiku",
-                description = "Legacy fast/cheap model; kept for configurations pinned to the 3.x family.",
-                usdPerMillionInputTokens = 0.80,
-                usdPerMillionOutputTokens = 4.0,
-                roughIntelligenceRanking = 0.55,
+                id = LlmModelId("claude-haiku-5-5"),
+                name = "Claude Haiku 5.5",
+                description = "Current Haiku; fast and very cheap. Prices are for prompts up to 100K tokens; longer prompts cost 5x.",
+                usdPerMillionInputTokens = 0.10,
+                usdPerMillionOutputTokens = 0.50,
+                usdPerMillionCacheWriteTokens = 0.125,
+                usdPerMillionCacheReadTokens = 0.01,
+                roughIntelligenceRanking = 0.85,
                 supportsToolCalling = true,
-                supportsImageInput = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
+                supportsReasoning = true,
+                maxContextTokens = 1_000_000,
+                maxOutputTokens = 128_000,
+            ),
+            LlmModelInfo(
+                id = LlmModelId("claude-haiku-4-5"),
+                name = "Claude Haiku 4.5",
+                description = "Previous Haiku; thinks to a token budget.",
+                usdPerMillionInputTokens = 1.0,
+                usdPerMillionOutputTokens = 5.0,
+                usdPerMillionCacheWriteTokens = 1.25,
+                usdPerMillionCacheReadTokens = 0.10,
+                roughIntelligenceRanking = 0.75,
+                supportsToolCalling = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
                 supportsReasoning = true,
                 maxContextTokens = 200_000,
-                maxOutputTokens = 8192,
+                maxOutputTokens = 64_000,
             ),
         )
 
@@ -315,10 +418,11 @@ public class AnthropicLlmAccess(
         /** Fallback for unknown ids returned by /v1/models — pick defaults by family name. */
         internal fun inferPricingFromId(id: String, displayName: String): LlmModelInfo {
             val (inPrice, outPrice, ranking) = when {
-                "opus" in id -> Triple(5.0, 25.0, 0.95)
-                "sonnet" in id -> Triple(3.0, 15.0, 0.85)
-                "haiku" in id -> Triple(1.0, 5.0, 0.70)
-                else -> Triple(3.0, 15.0, 0.50)
+                "fable" in id || "mythos" in id -> Triple(10.0, 50.0, 1.0)
+                "opus" in id -> Triple(4.0, 20.0, 0.97)
+                "sonnet" in id -> Triple(2.0, 10.0, 0.93)
+                "haiku" in id -> Triple(0.10, 0.50, 0.85)
+                else -> Triple(2.0, 10.0, 0.50)
             }
             return LlmModelInfo(
                 id = LlmModelId(id),
@@ -328,9 +432,9 @@ public class AnthropicLlmAccess(
                 usdPerMillionOutputTokens = outPrice,
                 roughIntelligenceRanking = ranking,
                 supportsToolCalling = true,
-                supportsImageInput = true,
+                supportedMediaTypes = AnthropicWire.supportedMediaTypes,
                 supportsReasoning = true,
-                maxContextTokens = 200_000,
+                maxContextTokens = 1_000_000,
             )
         }
     }
@@ -349,15 +453,11 @@ public class AnthropicLlmAccess(
         var stopReason: LlmStopReason = LlmStopReason.EndTurn
         var finished: Boolean = false
 
+        // Anthropic's input_tokens counts only what wasn't read from or written to the cache; LlmUsage.inputTokens is all of it.
+        fun usage(): LlmUsage = LlmUsage(inputTokens + cacheReadTokens + cacheWriteTokens, outputTokens, cacheReadTokens, cacheWriteTokens)
+
         /** Per-index tool-call accumulator; index refers to Anthropic's content array position. */
         val toolsInFlight: HashMap<Int, ToolCallInProgress> = HashMap()
-
-        /**
-         * Indices of active `thinking` content blocks. Used to disambiguate `thinking_delta`
-         * and `signature_delta` events (both of which are only emitted for thinking blocks)
-         * and to drop per-block bookkeeping on `content_block_stop`.
-         */
-        val thinkingBlocks: HashSet<Int> = HashSet()
     }
 
     internal data class ToolCallInProgress(
@@ -424,7 +524,10 @@ private suspend fun handleSseEvent(
                     id = block["id"]!!.jsonPrimitive.content,
                     name = block["name"]!!.jsonPrimitive.content,
                 )
-                "thinking" -> state.thinkingBlocks += index
+                // A redacted block arrives whole here; its stop event carries nothing more.
+                "redacted_thinking" -> emit(
+                    LlmStreamEvent.ReasoningDelta("", redactedData = block["data"]!!.jsonPrimitive.content)
+                )
             }
             false
         }
@@ -440,10 +543,10 @@ private suspend fun handleSseEvent(
                     val text = delta["thinking"]?.jsonPrimitive?.content ?: ""
                     if (text.isNotEmpty()) emit(LlmStreamEvent.ReasoningDelta(text))
                 }
-                // Signature deltas carry opaque round-trip data for multi-turn extended
-                // thinking with tool use, which v1 of this abstraction doesn't support.
-                // Dropping silently is safe: it only affects outbound multi-turn replays.
-                "signature_delta" -> {}
+                // Sent once per thinking block, just before its content_block_stop.
+                "signature_delta" -> emit(
+                    LlmStreamEvent.ReasoningDelta("", signature = delta["signature"]!!.jsonPrimitive.content)
+                )
                 "input_json_delta" -> {
                     val index = event["index"]?.jsonPrimitive?.content?.toIntOrNull() ?: return false
                     val fragment = delta["partial_json"]?.jsonPrimitive?.content ?: return false
@@ -461,7 +564,6 @@ private suspend fun handleSseEvent(
                 val args = call.argsJson.toString().ifEmpty { "{}" }
                 emit(LlmStreamEvent.ToolCallEmitted(id = call.id, name = call.name, inputJson = args))
             }
-            state.thinkingBlocks -= index
             false
         }
 
@@ -480,7 +582,7 @@ private suspend fun handleSseEvent(
             emit(
                 LlmStreamEvent.Finished(
                     stopReason = state.stopReason,
-                    usage = LlmUsage(state.inputTokens, state.outputTokens, state.cacheReadTokens, state.cacheWriteTokens),
+                    usage = state.usage(),
                 ),
             )
             true

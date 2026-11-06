@@ -117,17 +117,18 @@ interface Service {
 - **should-be-standard-library/**: Utility functions that should be in Kotlin stdlib
 - **data/**: Common data types and utilities
 - **database-shared/**: Shared types for database abstraction (`Condition`, `Modification`, `SortPart`)
+- **telemetry-shared/**: Client-safe telemetry types: the upload format (`TelemetryBatch`, `RecordedSpan`/`RecordedLog`/`RecordedError`) and `TelemetryAttributes`/`TelemetryKey`/`TelemetryKeys`/`LogLevel`. No server concepts; `basis` re-exports it.
 
 #### Database Modules
 
-- **database/**: Abstract `Database` and `Table` interfaces, `InMemoryDatabase` implementation
+- **database/**: Abstract `Database` and `Table` interfaces, `InMemoryDatabase` implementation, and vector search: `VectorDatabase`/`VectorIndex`, kept apart from the searched models: entries are only an ID and an embedding, and searches don't filter. `InMemoryDatabase` (`ram`), `JsonFileDatabase` (`json-files`), `MongoDatabase` (`mongodb`, `mongodb+srv`: Atlas) and `PostgresDatabase` (`postgresql`: pgvector) implement it; `vectorIndexed`/`rebuild` keep an index in step with the rows of a table matching a condition. `Table` has no vector search.
 - **database-processor/**: KSP code generator for type-safe database queries
 - **database-mongodb/**: MongoDB implementation
 - **database-postgres/**: PostgreSQL implementation (uses Exposed ORM)
 - **database-jsonfile/**: JSON file-based database (for testing/development)
 - **database-sqlite/**: Local SQLite database on every platform (`native://`), via `androidx.sqlite`; conditions and modifications translate to SQL. JVM tests run here; Apple tests need `xcrun`, and Android needs a device.
 - **database-mapformat/**: Flattens models into columns and child-table rows; shared by `database-sql`, `database-postgres`, and `database-sqlite`
-- **database-test/**: Shared test suite used by all database implementations
+- **database-test/**: Shared test suite used by all database implementations (`VectorIndexTests` for vector databases)
 
 #### Cache Modules
 
@@ -148,10 +149,12 @@ interface Service {
 - **email-javasmtp/**: SMTP implementation
 - **sms/**: SMS service abstraction
 - **sms-twilio/**: Twilio implementation
-- **geocoding/**: Geocoding abstraction (forward, reverse, autocomplete) plus caching and rate-limiting decorators
+- **geocoding/**: Geocoding abstraction (forward, reverse, autocomplete sessions + resolve) plus caching and rate-limiting decorators
 - **geocoding-local/**: Offline US geocoding from a bundled public-domain Census Gazetteer extract; no key, no network
 - **geocoding-stadia/**: Stadia Maps (hosted Pelias) implementation
-- **geocoding-google/**: Google Maps Platform implementation
+- **geocoding-google/**: Google Maps Platform implementation (Places API (New) for autocomplete sessions)
+- **geocoding-aws/**: Amazon Location Service (Places v2) implementation, IAM auth
+- **geocoding-azure/**: Azure Maps Search implementation (subscription key or Entra ID); resolve re-geocodes the suggested address, since Azure has no place IDs
 - **geocoding-nominatim/**: OpenStreetMap Nominatim implementation, self-throttling to its usage policy
 - **pubsub/**: Pub/sub messaging abstraction
 - **notifications/**: Push notification abstraction

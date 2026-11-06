@@ -91,6 +91,7 @@ kotlin {
             dependencies {
                 implementation(project(":embedding-test"))
                 implementation(project(":test"))
+                implementation(libs.ktor.client.mock)
             }
         }
     }
