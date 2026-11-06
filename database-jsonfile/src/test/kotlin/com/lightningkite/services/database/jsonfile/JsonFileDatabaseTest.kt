@@ -2,9 +2,13 @@ package com.lightningkite.services.database.jsonfile
 
 import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.kfile.KFile
-import com.lightningkite.services.database.Database
+import com.lightningkite.services.database.*
 import com.lightningkite.services.database.test.*
+import com.lightningkite.services.embedding.EmbeddingModelId
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.builtins.serializer
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 // Each database gets its own directory. Tables now persist asynchronously, so a shared directory
 // wiped by the next test's setup would race with a prior test's in-flight background save
@@ -84,4 +88,22 @@ class JsonFileConcurrencyTests : ConcurrencyTests() {
 }
 class JsonFileTextSearchTests : TextSearchTests() {
     override val database: Database = db()
+}
+
+class JsonFileVectorIndexTests : VectorIndexTests() {
+    override val database: VectorDatabase = db()
+}
+
+class JsonFileVectorIndexPersistenceTest {
+    @Test
+    fun indexSurvivesReopeningFromUrl() = runTest {
+        val folder = testRoot.then("${dbCounter.incrementAndGet()}")
+        val definition = VectorIndexDefinition("persisted", String.serializer(), VectorSpace(EmbeddingModelId("test-model"), 3))
+        val written = JsonFileDatabase("test", folder, TestSettingContext())
+        written.prepare(definition).upsert(listOf(VectorIndexEntry("a", Embedding.of(1f, 0f, 0f))))
+        written.disconnect()
+
+        val reopened = VectorDatabase.Settings("json-files://${folder.resolved}")("test", TestSettingContext())
+        assertEquals(listOf("a"), reopened.index(definition).search(Embedding.of(1f, 0f, 0f), limit = 5).map { it.model })
+    }
 }

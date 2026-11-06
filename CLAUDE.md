@@ -121,7 +121,7 @@ interface Service {
 
 #### Database Modules
 
-- **database/**: Abstract `Database` and `Table` interfaces, `InMemoryDatabase` implementation, and vector search: `VectorDatabase`/`VectorIndex`, kept apart from the searched models: entries are only an ID and an embedding, and searches don't filter. `InMemoryDatabase` (`ram`), `MongoDatabase` (`mongodb`, `mongodb+srv`: Atlas) and `PostgresDatabase` (`postgresql`: pgvector) implement it; `vectorIndexed`/`rebuild` keep an index in step with the rows of a table matching a condition. `Table` has no vector search.
+- **database/**: Abstract `Database` and `Table` interfaces, `InMemoryDatabase` implementation, and vector search: `VectorDatabase`/`VectorIndex`, kept apart from the searched models: entries are only an ID and an embedding, and searches don't filter. `InMemoryDatabase` (`ram`), `JsonFileDatabase` (`json-files`), `MongoDatabase` (`mongodb`, `mongodb+srv`: Atlas) and `PostgresDatabase` (`postgresql`: pgvector) implement it; `vectorIndexed`/`rebuild` keep an index in step with the rows of a table matching a condition. `Table` has no vector search.
 - **database-processor/**: KSP code generator for type-safe database queries
 - **database-mongodb/**: MongoDB implementation
 - **database-postgres/**: PostgreSQL implementation (uses Exposed ORM)

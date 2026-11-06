@@ -39,7 +39,7 @@ public class VectorIndexDefinition<ID : Comparable<ID>>(
 /**
  * Stores [VectorIndex]es, apart from the models they search.
  *
- * `ram` is [InMemoryDatabase]. database-mongodb registers `mongodb`
+ * `ram` is [InMemoryDatabase]. database-jsonfile registers `json-files`, database-mongodb registers `mongodb`
  * and `mongodb+srv` (Atlas `$vectorSearch`), and database-postgres registers `postgresql` (pgvector): those
  * databases are vector databases too.
  */

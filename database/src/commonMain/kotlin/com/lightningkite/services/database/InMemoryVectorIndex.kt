@@ -5,8 +5,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 
-/** Searches by comparing the query with every entry. */
-internal class InMemoryVectorIndex<ID : Comparable<ID>>(
+/** Searches by comparing the query with every entry; any [Table] can hold the entries. */
+public class InMemoryVectorIndex<ID : Comparable<ID>>(
     private val table: Table<VectorIndexEntry<ID>>,
     override val space: VectorSpace,
 ) : VectorIndex<ID> {

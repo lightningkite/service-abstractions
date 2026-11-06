@@ -441,7 +441,7 @@ val notes = database.table<Note>().vectorIndexed(index, projection)
 val hits: List<ScoredResult<Uuid>> = index.search(queryEmbedding, limit = 10)
 ```
 
-- **Drivers**: `InMemoryDatabase` (`ram`, brute force), `MongoDatabase` (`mongodb`/`mongodb+srv`: Atlas `$vectorSearch`,
+- **Drivers**: `InMemoryDatabase` (`ram`, brute force), `JsonFileDatabase` (`json-files`, brute force), `MongoDatabase` (`mongodb`/`mongodb+srv`: Atlas `$vectorSearch`,
   or MongoDB 8.2+ with mongot) and `PostgresDatabase` (`postgresql`: pgvector, HNSW index) are each a `Database` and a
   `VectorDatabase`. Register `ram` by touching `Database.Settings` first. A `VectorDatabase.Settings` with the same URL as a
   `Database.Settings` opens a second connection pool; to share one, use the `Database` instance as the `VectorDatabase`.

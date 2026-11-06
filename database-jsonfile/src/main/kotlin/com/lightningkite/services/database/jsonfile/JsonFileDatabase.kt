@@ -5,7 +5,12 @@ import com.lightningkite.services.kfile.KFile
 import com.lightningkite.services.kfile.workingDirectory
 import com.lightningkite.services.database.Database
 import com.lightningkite.services.database.DatabaseTableDefinition
+import com.lightningkite.services.database.InMemoryVectorIndex
 import com.lightningkite.services.database.Table
+import com.lightningkite.services.database.VectorDatabase
+import com.lightningkite.services.database.VectorIndex
+import com.lightningkite.services.database.VectorIndexDefinition
+import com.lightningkite.services.database.VectorIndexEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -111,8 +116,7 @@ public class JsonFileDatabase(
     override val name: String,
     public val folder: KFile,
     override val context: SettingContext,
-) :
-    Database {
+) : Database, VectorDatabase {
 
     init {
         folder.createDirectories()
@@ -141,21 +145,13 @@ public class JsonFileDatabase(
             Database.Settings("json-files://$folder")
 
         init {
-            Database.Settings.register("json-files") { name, url, context ->
-                val pathString = url.substringAfter("://")
-                val folder = if (pathString.startsWith("/")) {
-                    // Absolute path - create KFile directly
-                    KFile(pathString)
-                } else {
-                    // Relative path - resolve from working directory
-                    workingDirectory.resolve(pathString)
-                }
-                JsonFileDatabase(
-                    name,
-                    folder,
-                    context
-                )
-            }
+            Database.Settings.register("json-files") { name, url, context -> JsonFileDatabase(name, folder(url), context) }
+            VectorDatabase.Settings.register("json-files") { name, url, context -> JsonFileDatabase(name, folder(url), context) }
+        }
+
+        private fun folder(url: String): KFile {
+            val path = url.substringAfter("://")
+            return if (path.startsWith("/")) KFile(path) else workingDirectory.resolve(path)
         }
     }
 
@@ -190,4 +186,11 @@ public class JsonFileDatabase(
 
     // JsonFileTable loads its file synchronously in its constructor, so preparation is just retrieval.
     override suspend fun <T : Any> prepare(tableDef: DatabaseTableDefinition<T>): Table<T> = table(tableDef)
+
+    override fun <ID : Comparable<ID>> index(definition: VectorIndexDefinition<ID>): VectorIndex<ID> = InMemoryVectorIndex(
+        table(DatabaseTableDefinition(VectorIndexEntry.serializer(definition.idSerializer), definition.storageName)),
+        definition.space,
+    )
+
+    override suspend fun <ID : Comparable<ID>> prepare(definition: VectorIndexDefinition<ID>): VectorIndex<ID> = index(definition)
 }
