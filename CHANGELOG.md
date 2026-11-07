@@ -54,6 +54,7 @@
 - **files-kotlinx-io**: `get()` uses try-open pattern instead of exists-then-open (eliminates TOCTOU race).
 - **pubsub-aws (DynamoDB)**: `collect()` filters out the `seq=0` counter row on bootstrap — first subscribers previously missed the backlog's first record.
 - **basis**: `SettingContext.reportException` passes the whole ambient attribute stack, not just the innermost `telemetryAttributes` layer.
+- **http-client (JS)**: The shared `client` uses Ktor's `Js` engine instead of CIO, which can't open sockets in a browser, so every request failed. `ktor-client-cio` is no longer an `api` dependency on JS (still is on JVM, Android and native).
 
 ### Added
 - **database-sqlite**: `native://`, a local SQLite database for Android, iOS, macOS, the JVM, and the web (OPFS), on `androidx.sqlite`. Conditions, modifications, sorting, and aggregates run as SQL; tables gain columns for new fields automatically.

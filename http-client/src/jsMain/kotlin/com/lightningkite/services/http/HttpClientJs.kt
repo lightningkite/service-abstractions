@@ -1,7 +1,7 @@
 package com.lightningkite.services.http
 
 import io.ktor.client.*
-import io.ktor.client.engine.cio.*
+import io.ktor.client.engine.js.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.websocket.*
@@ -16,7 +16,7 @@ import io.ktor.serialization.kotlinx.json.*
  * Note: Lazy initialization to avoid eager instantiation issues in serverless environments.
  */
 public actual val client: HttpClient by lazy {
-    HttpClient(CIO) {
+    HttpClient(Js) {
         install(ContentNegotiation) {
             json()
         }
@@ -29,9 +29,6 @@ public actual val client: HttpClient by lazy {
             requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
             socketTimeoutMillis = 60_000
             connectTimeoutMillis = 30_000
-        }
-        engine {
-            this.requestTimeout = 0  // disable CIO's own total-request cap; HttpTimeout governs
         }
     }
 }

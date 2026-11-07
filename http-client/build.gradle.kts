@@ -39,7 +39,6 @@ kotlin {
         val commonMain = getByName("commonMain") {
             dependencies {
                 api(project(":basis"))
-                api(libs.ktor.client.cio)
                 api(libs.ktor.client.websockets)
                 api(libs.ktor.contentNegotiation)
                 api(libs.ktor.json)
@@ -52,10 +51,21 @@ kotlin {
                 api(libs.coroutines.testing)
             }
         }
-        val androidMain = getByName("androidMain") {}
+        // CIO can't run in a browser, so JS uses Ktor's Js engine (part of ktor-client-core).
+        val androidMain = getByName("androidMain") {
+            dependencies {
+                api(libs.ktor.client.cio)
+            }
+        }
+        val nativeMain = getByName("nativeMain") {
+            dependencies {
+                api(libs.ktor.client.cio)
+            }
+        }
         val jsMain = getByName("jsMain") {}
         val jvmMain = getByName("jvmMain") {
             dependencies {
+                api(libs.ktor.client.cio)
                 // OkHttp engine: gives the shared JVM client HTTP/2 (multiplexing), which CIO lacks.
                 // High-fanout services (FCM push) and connection reuse across all services benefit.
                 implementation(libs.ktor.client.okhttp)
