@@ -1,7 +1,7 @@
 package com.lightningkite.services.ai.openai
 
 import com.lightningkite.services.ai.LlmAccess
-import org.junit.Test
+import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -11,6 +11,14 @@ class ProvidersTest {
     fun openai() {
         val s = LlmAccess.Settings.openai("gpt-4o", apiKey = "sk-test")
         assertEquals("openai://gpt-4o?apiKey=sk-test", s.url)
+    }
+
+    @Test
+    fun valuesRoundTripThroughTheUrl() {
+        val key = "a+b c&d=e%f/g"
+        val s = LlmAccess.Settings.openai("gpt-4o", apiKey = key)
+        assertEquals(key, parseUrlParams(s.url)["apiKey"])
+        assertEquals("a b+c", parseUrlParams("openai://gpt-4o?apiKey=a+b%2Bc")["apiKey"])
     }
 
     @Test

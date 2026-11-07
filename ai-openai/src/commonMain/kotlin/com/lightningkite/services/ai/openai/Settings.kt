@@ -3,7 +3,7 @@ package com.lightningkite.services.ai.openai
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.ai.LlmAccess
 import com.lightningkite.services.data.MediaType
-import java.net.URLDecoder
+import io.ktor.http.decodeURLQueryComponent
 
 /**
  * Registers the `openai://` URL scheme on [LlmAccess.Settings].
@@ -66,7 +66,7 @@ public object OpenAiLlmSettings {
         LlmAccess.Settings.register("openai") { name, url, context ->
             val params = parseUrlParams(url)
             val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-                ?: System.getenv("OPENAI_API_KEY")
+                ?: getEnv("OPENAI_API_KEY")
                 ?: throw IllegalArgumentException(
                     "OpenAI API key not provided in URL 'apiKey' param or OPENAI_API_KEY env var"
                 )
@@ -101,7 +101,7 @@ internal fun parseUrlParams(url: String): Map<String, String> {
         .mapNotNull { param ->
             val parts = param.split("=", limit = 2)
             if (parts.size == 2) {
-                URLDecoder.decode(parts[0], "UTF-8") to URLDecoder.decode(parts[1], "UTF-8")
+                parts[0].decodeURLQueryComponent(plusIsSpace = true) to parts[1].decodeURLQueryComponent(plusIsSpace = true)
             } else {
                 null
             }
@@ -109,12 +109,12 @@ internal fun parseUrlParams(url: String): Map<String, String> {
         .toMap()
 }
 
-/** Replaces `${VAR}` tokens with `System.getenv("VAR")`; throws if the env var is unset. */
+/** Replaces `${VAR}` tokens with `getEnv("VAR")`; throws if the env var is unset. */
 internal fun resolveEnvVars(value: String): String {
     val envVarPattern = """\$\{([^}]+)\}""".toRegex()
     return envVarPattern.replace(value) { m ->
         val name = m.groupValues[1]
-        System.getenv(name)
+        getEnv(name)
             ?: throw IllegalArgumentException("Environment variable \$$name not set")
     }
 }

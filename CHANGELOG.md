@@ -63,6 +63,7 @@
 - `OpenTelemetrySub.span` helper adopted across cache, files, and email-inbound modules with sanitized span attributes.
 - **files-clamav**: `awsEc2ClamAv` takes a `swapSize`, creating a swap file at first boot. The default of zero creates none and leaves the generated user data unchanged, so existing hosts aren't replaced.
 - **files-clamav**: `awsEc2ClamAv` takes a `distro`: `ClamAvDistro.Ubuntu2404` (the default), `ClamAvDistro.Ubuntu2604` (`@Untested`: not yet run on a real instance), or `ClamAvDistro.AmazonLinux2023`. Amazon Linux resolves the current AL2023 AMI through SSM and installs `clamav`/`clamd`/`clamav-update` with dnf, running clamd as `clamd@scan`. The Ubuntu user data is unchanged, so existing hosts aren't replaced. Ubuntu 26.04 shares the 24.04 script, so switching an existing host between them needs `terraform apply -replace`.
+- **ai-openai**: Multiplatform: Android, JS (browser), iOS and macOS besides the JVM. The API and `openai://` URLs are unchanged. Browsers have no environment variables, so there `apiKey` must be in the URL and `${VAR}` references fail.
 - **telemetry-sentry**: `SentryTelemetryBackend` wraps another backend and also sends `reportError`s to Sentry: `sentry://<key>@<host>/<projectId>/<wrapped telemetry URL>`. Attributes become tags, the OTel trace ID is tagged `trace_id`, exception messages pass through `TelemetrySanitization`.
 
 ### Removed

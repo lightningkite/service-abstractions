@@ -1,7 +1,7 @@
 package com.lightningkite.services.ai.openai
 
 import com.lightningkite.services.ai.LlmAccess
-import java.net.URLEncoder
+import io.ktor.http.encodeURLParameter
 
 /**
  * Convenience builders for [LlmAccess.Settings] targeting OpenAI and every major
@@ -38,7 +38,7 @@ private fun buildOpenAiUrl(
     return LlmAccess.Settings("openai://$modelId$query")
 }
 
-private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
+private fun encode(value: String): String = value.encodeURLParameter(spaceToPlus = true)
 
 // ---------------------------------------------------------------------------
 // OpenAI (direct)

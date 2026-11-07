@@ -24,7 +24,7 @@ import io.ktor.utils.io.LineEnding
 import io.ktor.utils.io.readLine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import java.io.IOException
+import kotlinx.io.IOException
 
 private val logger = KotlinLogging.logger("OpenAiLlmAccess")
 
