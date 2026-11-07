@@ -1,31 +1,31 @@
 package com.lightningkite.services.ai.embedded
 
-import com.lightningkite.services.data.HealthStatus
 import com.lightningkite.services.SettingContext
 import com.lightningkite.services.ai.*
+import com.lightningkite.services.data.HealthStatus
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
 
 /**
  * [LlmAccess] implementation that runs inference on-device using platform-native ML engines.
  *
- * No network calls are made — all computation happens locally. This is suitable for
- * offline-capable, low-latency, privacy-preserving use cases with small models (1-7B params).
+ * No network calls are made except to download the model on web.  Text in, text out:
+ * attachments are replaced by a note, and tools are rejected.
  *
- * Capabilities are limited compared to cloud providers:
- * - Text-in / text-out only (no image, audio, or video)
- * - No tool calling support
- * - No reasoning/chain-of-thought output
- * - Token usage is estimated, not exact
+ * Call [connect] to load the model before streaming.
  */
 public class EmbeddedLlmAccess internal constructor(
     override val name: String,
     override val context: SettingContext,
-    private val config: EmbeddedEngineConfig,
+    internal val config: EmbeddedEngineConfig,
+    private val engine: ChatEngine = EmbeddedLlmEngine(config),
 ) : LlmAccess {
 
-    private val engine = EmbeddedLlmEngine(config)
-    private val chatTemplate = PromptFormatter.templateFor(config.modelName)
+    /** Fraction of the model downloaded during [connect], or null when the platform doesn't report it. */
+    public val loadProgress: StateFlow<Float?> get() = engine.loadProgress
 
     override suspend fun getModels(): List<LlmModelInfo> = listOf(
         LlmModelInfo(
@@ -39,47 +39,66 @@ public class EmbeddedLlmAccess internal constructor(
             supportedMediaTypes = emptyList(),
             supportsImageOutput = false,
             supportsAudioOutput = false,
-            supportsReasoning = false,
+            supportsReasoning = engine.supportsReasoning(),
             maxContextTokens = config.contextSize,
         )
     )
 
     override suspend fun stream(model: LlmModelId, prompt: LlmPrompt): Flow<LlmStreamEvent> {
-        val formattedPrompt = PromptFormatter.format(prompt, chatTemplate)
-        val maxTokens = prompt.maxTokens ?: 1024
-
-        return flow {
-            val outputTokens = StringBuilder()
-            var stopped = false
-
-            engine.generate(
-                text = formattedPrompt,
-                maxTokens = maxTokens,
-                temperature = 0.7,
-                stopSequences = prompt.stopSequences,
-            ).collect { token ->
-                outputTokens.append(token)
-                emit(LlmStreamEvent.TextDelta(token))
+        if (prompt.tools.isNotEmpty()) throw LlmException.InvalidRequest("On-device models don't support tool calling")
+        val systemPrompt = prompt.systemPrompt.joinToString("\n") { it.asText() }.ifEmpty { null }
+        val turns = prompt.messages.map { message ->
+            when (message) {
+                is LlmMessage.User -> ChatTurn(fromUser = true, text = message.parts.joinToString("\n") { it.asText() })
+                is LlmMessage.Agent -> ChatTurn(fromUser = false, text = message.parts.joinToString("") { part ->
+                    when (part) {
+                        is LlmPart.ContentOnly -> part.asText()
+                        is LlmPart.Reasoning -> ""
+                        is LlmPart.ToolCall -> throw LlmException.InvalidRequest("On-device models don't support tool calling")
+                    }
+                })
+                is LlmMessage.ToolResult -> throw LlmException.InvalidRequest("On-device models don't support tool calling")
             }
+        }
+        if (turns.lastOrNull()?.fromUser != true) throw LlmException.InvalidRequest("The last message must be from the user")
 
-            // Determine stop reason: if output hit maxTokens worth of text, it was likely truncated.
-            // This is a rough heuristic since on-device engines may not report exact token counts.
-            val stopReason = if (outputTokens.length >= maxTokens * 3) {
-                LlmStopReason.MaxTokens
-            } else {
-                LlmStopReason.EndTurn
+        return channelFlow {
+            // Text that might be the start of a stop sequence is held back until it can't be.
+            val pending = StringBuilder()
+            val holdBack = (prompt.stopSequences.maxOfOrNull { it.length } ?: 1) - 1
+            var hitStopSequence = false
+            val enableThinking = prompt.reasoningEffort?.let { it != LlmReasoningEffort.Off }
+            val result = engine.generate(systemPrompt, turns, prompt.maxTokens, enableThinking) { output ->
+                if (output !is LlmStreamEvent.TextDelta) {
+                    trySend(output)
+                    return@generate true
+                }
+                pending.append(output.text)
+                val stopAt = prompt.stopSequences.mapNotNull { stop -> pending.indexOf(stop).takeIf { it >= 0 } }.minOrNull()
+                if (stopAt != null) {
+                    if (stopAt > 0) trySend(LlmStreamEvent.TextDelta(pending.substring(0, stopAt)))
+                    hitStopSequence = true
+                    return@generate false
+                }
+                val safeLength = pending.length - holdBack
+                if (safeLength > 0) {
+                    trySend(LlmStreamEvent.TextDelta(pending.substring(0, safeLength)))
+                    pending.deleteRange(0, safeLength)
+                }
+                true
             }
-
-            emit(
+            if (!hitStopSequence && pending.isNotEmpty()) send(LlmStreamEvent.TextDelta(pending.toString()))
+            send(
                 LlmStreamEvent.Finished(
-                    stopReason = stopReason,
-                    usage = LlmUsage(
-                        inputTokens = estimateTokens(formattedPrompt),
-                        outputTokens = estimateTokens(outputTokens.toString()),
-                    )
+                    stopReason = when {
+                        hitStopSequence -> LlmStopReason.StopSequence
+                        result.hitMaxTokens -> LlmStopReason.MaxTokens
+                        else -> LlmStopReason.EndTurn
+                    },
+                    usage = LlmUsage(inputTokens = result.inputTokens, outputTokens = result.outputTokens),
                 )
             )
-        }
+        }.buffer(Channel.UNLIMITED)  // so trySend from the engine's callback never drops text
     }
 
     override suspend fun connect() {
@@ -100,5 +119,7 @@ public class EmbeddedLlmAccess internal constructor(
     }
 }
 
-/** Rough token estimate: ~4 characters per token for English text. */
-private fun estimateTokens(text: String): Int = (text.length / 4).coerceAtLeast(1)
+private fun LlmPart.ContentOnly.asText(): String = when (this) {
+    is LlmPart.Text -> text
+    is LlmPart.Attachment -> attachment.notSentNote().text
+}

@@ -1,38 +1,46 @@
 package com.lightningkite.services.ai.embedded
 
-import kotlinx.coroutines.flow.Flow
+import com.lightningkite.services.ai.LlmStreamEvent
+import kotlinx.coroutines.flow.StateFlow
 
-/**
- * Platform-specific on-device LLM inference engine.
- *
- * Each platform provides an actual implementation backed by a native SDK:
- * - Android: LiteRT-LM
- * - iOS: Core ML
- * - JS/Web: Transformers.js
- */
-internal expect class EmbeddedLlmEngine(config: EmbeddedEngineConfig) {
-    /** Loads the model into memory. Must be called before [generate]. */
+/** Runs one on-device model.  Each engine applies its model's own chat template to the turns. */
+internal interface ChatEngine {
+    /** Fraction of the model downloaded so far, or null when the runtime doesn't report download progress. */
+    val loadProgress: StateFlow<Float?>
+
     suspend fun loadModel()
-
-    /** Unloads the model from memory and releases resources. */
     suspend fun unloadModel()
-
-    /** Whether a model is currently loaded and ready for inference. */
     fun isModelLoaded(): Boolean
 
+    /** Whether the model thinks, with its reasoning reported as [LlmStreamEvent.ReasoningDelta]s.  Needn't be loaded. */
+    suspend fun supportsReasoning(): Boolean
+
     /**
-     * Runs text generation, emitting tokens as they are produced.
-     *
-     * @param text The formatted prompt text
-     * @param maxTokens Maximum tokens to generate
-     * @param temperature Sampling temperature (0.0 = greedy, higher = more random)
-     * @param stopSequences Sequences that terminate generation when encountered
-     * @return Flow of generated token strings
+     * Generates a reply to the last turn, which is always from the user.
+     * [enableThinking] turns the model's reasoning on or off; null leaves the model's default.
+     * [onOutput] receives each [LlmStreamEvent.TextDelta] or [LlmStreamEvent.ReasoningDelta], possibly from another
+     * thread; returning false stops generation early.
      */
-    fun generate(
-        text: String,
-        maxTokens: Int,
-        temperature: Double,
-        stopSequences: List<String>,
-    ): Flow<String>
+    suspend fun generate(
+        systemPrompt: String?,
+        turns: List<ChatTurn>,
+        maxTokens: Int?,
+        enableThinking: Boolean?,
+        onOutput: (LlmStreamEvent) -> Boolean,
+    ): GenerationResult
 }
+
+/**
+ * - Android and desktop: LiteRT-LM's Kotlin API
+ * - iOS (and macOS, for tests): LiteRT-LM's C API
+ * - Web: Transformers.js
+ */
+internal expect class EmbeddedLlmEngine(config: EmbeddedEngineConfig) : ChatEngine
+
+internal data class ChatTurn(val fromUser: Boolean, val text: String)
+
+internal data class GenerationResult(
+    val inputTokens: Int,
+    val outputTokens: Int,
+    val hitMaxTokens: Boolean,
+)

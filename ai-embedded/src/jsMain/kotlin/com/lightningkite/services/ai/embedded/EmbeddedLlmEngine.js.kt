@@ -1,154 +1,135 @@
 package com.lightningkite.services.ai.embedded
 
+import com.lightningkite.services.ai.LlmStreamEvent
 import kotlinx.coroutines.await
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.js.Promise
-
-// External declarations for @huggingface/transformers npm package (v3).
-// TextStreamer supports token-by-token streaming via callback_function.
 
 @JsModule("@huggingface/transformers")
 @JsNonModule
 private external object Transformers {
     val env: dynamic
-
     fun pipeline(task: String, model: String, options: dynamic = definedExternally): Promise<dynamic>
 
-    class TextStreamer(tokenizer: dynamic, options: TextStreamerOptions) {
-        fun put(value: dynamic)
-        fun end()
+    class TextStreamer(tokenizer: dynamic, options: dynamic)
+    class InterruptableStoppingCriteria {
+        fun interrupt()
     }
 }
 
-private external interface TextStreamerOptions {
-    var skip_prompt: Boolean
-    var callback_function: ((text: String) -> Unit)?
-    var token_callback_function: ((token: dynamic) -> Unit)?
-    var decode_kwargs: dynamic
-}
-
-@Suppress("UNCHECKED_CAST_TO_EXTERNAL_INTERFACE")
-private fun textStreamerOptions(block: TextStreamerOptions.() -> Unit): TextStreamerOptions {
-    val obj = js("{}") as TextStreamerOptions
-    obj.block()
-    return obj
-}
-
 /**
- * JS/Web implementation using Transformers.js for on-device inference.
- *
- * Runs ONNX models in the browser via WebAssembly with optional WebGPU acceleration.
- * Models are loaded from HuggingFace Hub or a custom URL.
- *
- * The `modelPath` in config should be a HuggingFace model ID (e.g., "Xenova/phi-2")
- * or a URL pointing to ONNX model files.
+ * Web implementation using Transformers.js: ONNX models run in the browser on WebGPU when available, otherwise WASM.
+ * [EmbeddedEngineConfig.modelPath] is a HuggingFace model ID or URL; the browser caches the download.
  */
 internal actual class EmbeddedLlmEngine actual constructor(
     private val config: EmbeddedEngineConfig,
-) {
+) : ChatEngine {
     private var pipe: dynamic = null
-    private var tokenizer: dynamic = null
 
-    actual suspend fun loadModel() {
-        val modelId = config.modelPath ?: config.modelName
+    private val progress = MutableStateFlow<Float?>(null)
+    override val loadProgress: StateFlow<Float?> = progress
 
-        // Ensure remote model downloads are allowed in bundled environments.
+    override suspend fun loadModel() {
         Transformers.env.allowRemoteModels = true
-
-        // Load the text-generation pipeline from Transformers.js.
-        // This downloads (and caches in IndexedDB) the ONNX model + tokenizer.
-        // dtype "fp32" avoids requiring a quantized model variant.
-        val pipelineOptions = js("{}")
-        pipelineOptions["dtype"] = "fp32"
-        pipe = Transformers.pipeline("text-generation", modelId, pipelineOptions).await()
-
-        // The pipeline object exposes its tokenizer for use with TextStreamer.
-        tokenizer = pipe.tokenizer
-    }
-
-    actual suspend fun unloadModel() {
-        // Transformers.js pipelines can be disposed by nulling the reference.
-        // The WASM memory will be reclaimed by GC.
-        try {
-            pipe?.dispose()
-        } catch (_: Throwable) {
-        }
-        pipe = null
-        tokenizer = null
-    }
-
-    actual fun isModelLoaded(): Boolean = pipe != null
-
-    actual fun generate(
-        text: String,
-        maxTokens: Int,
-        temperature: Double,
-        stopSequences: List<String>,
-    ): Flow<String> = callbackFlow {
-        val currentPipe = pipe ?: throw IllegalStateException("Model not loaded. Call loadModel() first.")
-        val currentTokenizer = tokenizer
-            ?: throw IllegalStateException("Tokenizer not available. Call loadModel() first.")
-
-        val accumulated = StringBuilder()
-        var stopped = false
-
-        // TextStreamer decodes tokens incrementally via callback_function.
-        // skip_prompt = true omits the echoed input prompt from callbacks.
-        val streamer = Transformers.TextStreamer(
-            currentTokenizer,
-            textStreamerOptions {
-                skip_prompt = true
-                callback_function = { chunk ->
-                    if (!stopped) {
-                        // Check for stop sequences in the accumulated output
-                        val stopIndex = findStopSequence(accumulated.toString() + chunk, stopSequences)
-                        if (stopIndex != null) {
-                            // Trim output at the stop sequence boundary
-                            val alreadyEmitted = accumulated.length
-                            if (stopIndex > alreadyEmitted) {
-                                val partial = (accumulated.toString() + chunk).substring(alreadyEmitted, stopIndex)
-                                trySend(partial)
-                            }
-                            stopped = true
-                        } else {
-                            accumulated.append(chunk)
-                            trySend(chunk)
-                        }
-                    }
-                }
-            }
-        )
-
+        config.runtimeUrl?.let { Transformers.env.backends.onnx.wasm.wasmPaths = it }
+        // Progress arrives per file; the model is several files downloaded in parallel.
+        val bytesByFile = HashMap<String, Pair<Double, Double>>()
         val options = js("{}")
-        options["max_new_tokens"] = maxTokens
-        options["temperature"] = temperature
-        options["do_sample"] = temperature > 0.0
-        options["return_full_text"] = false
-        options["streamer"] = streamer
+        options["dtype"] = config.dtype
+        val device = config.device ?: if (hasWebGpuAdapter()) "webgpu" else "wasm"
+        options["device"] = device
+        options["progress_callback"] = { info: dynamic ->
+            if (info.status == "progress") {
+                bytesByFile[info.file as String] = (info.loaded as Number).toDouble() to (info.total as Number).toDouble()
+                progress.value = (bytesByFile.values.sumOf { it.first } / bytesByFile.values.sumOf { it.second }).toFloat()
+            }
+        }
+        val loaded = Transformers.pipeline("text-generation", config.modelPath, options).await()
+        checkNotNull(loaded?.tokenizer) { "Transformers.js didn't return a text-generation pipeline for ${config.modelPath} on $device" }
+        pipe = loaded
+        progress.value = 1f
+    }
 
-        // The pipeline call drives generation; tokens stream via the TextStreamer
-        // callback above. The await completes when generation finishes.
-        (currentPipe(text, options) as Promise<dynamic>).await()
+    override suspend fun unloadModel() {
+        (pipe?.dispose() as Promise<dynamic>?)?.await()
+        pipe = null
+    }
 
-        close()
-        awaitClose()
+    override fun isModelLoaded(): Boolean = pipe != null
+
+    // Transformers.js streams a thinking model's reasoning as ordinary text, so none is reported separately.
+    override suspend fun supportsReasoning(): Boolean = false
+
+    override suspend fun generate(
+        systemPrompt: String?,
+        turns: List<ChatTurn>,
+        maxTokens: Int?,
+        enableThinking: Boolean?,
+        onOutput: (LlmStreamEvent) -> Boolean,
+    ): GenerationResult {
+        val currentPipe = pipe ?: throw IllegalStateException("Model not loaded. Call connect() first.")
+        val messages = buildList {
+            if (systemPrompt != null) add(chatMessage("system", systemPrompt))
+            turns.forEach { add(chatMessage(if (it.fromUser) "user" else "assistant", it.text)) }
+        }.toTypedArray()
+
+        // Chat templates that support thinking (like Qwen3's) read this variable.
+        val templateVariables = js("{}")
+        if (enableThinking != null) templateVariables["enable_thinking"] = enableThinking
+
+        val templateOptions = js("{}")
+        if (enableThinking != null) templateOptions["enable_thinking"] = enableThinking
+        templateOptions["add_generation_prompt"] = true
+        templateOptions["return_tensor"] = false
+        templateOptions["return_dict"] = false
+        val inputTokens = (currentPipe.tokenizer.apply_chat_template(messages, templateOptions) as Array<*>).size
+
+        val stopping = Transformers.InterruptableStoppingCriteria()
+        var outputTokens = 0
+        val streamerOptions = js("{}")
+        streamerOptions["skip_prompt"] = true
+        streamerOptions["skip_special_tokens"] = true
+        streamerOptions["token_callback_function"] = { _: dynamic -> outputTokens++ }
+        streamerOptions["callback_function"] = { text: String ->
+            if (!onOutput(LlmStreamEvent.TextDelta(text))) stopping.interrupt()
+        }
+
+        // Without a cap Transformers.js stops at the model's tiny default max_length.
+        val maxNewTokens = maxTokens ?: 1024
+        val options = js("{}")
+        options["max_new_tokens"] = maxNewTokens
+        options["streamer"] = Transformers.TextStreamer(currentPipe.tokenizer, streamerOptions)
+        options["stopping_criteria"] = stopping
+        options["tokenizer_encode_kwargs"] = templateVariables
+        try {
+            (currentPipe(messages, options) as Promise<dynamic>).await()
+        } catch (e: CancellationException) {
+            stopping.interrupt()
+            throw e
+        }
+        return GenerationResult(
+            inputTokens = inputTokens,
+            outputTokens = outputTokens,
+            hitMaxTokens = outputTokens >= maxNewTokens,
+        )
     }
 }
 
-/**
- * Finds the earliest occurrence of any stop sequence in [text].
- * Returns the start index of the match, or null if none found.
- */
-private fun findStopSequence(text: String, stopSequences: List<String>): Int? {
-    if (stopSequences.isEmpty()) return null
-    var earliest: Int? = null
-    for (seq in stopSequences) {
-        val idx = text.indexOf(seq)
-        if (idx >= 0 && (earliest == null || idx < earliest)) {
-            earliest = idx
-        }
-    }
-    return earliest
+private fun chatMessage(role: String, content: String): dynamic {
+    val message = js("{}")
+    message["role"] = role
+    message["content"] = content
+    return message
+}
+
+// navigator.gpu can exist without a usable GPU (headless browsers, blocklisted drivers), so ask for an adapter the
+// way ONNX Runtime will (Transformers.js sets it to prefer high performance).
+private suspend fun hasWebGpuAdapter(): Boolean {
+    val gpu: dynamic = js("typeof navigator !== 'undefined' ? navigator.gpu : undefined")
+    if (gpu == undefined) return false
+    val options = js("{}")
+    options["powerPreference"] = "high-performance"
+    return (gpu.requestAdapter(options) as Promise<dynamic>).await() != null
 }
