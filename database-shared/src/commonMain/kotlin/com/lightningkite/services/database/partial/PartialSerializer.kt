@@ -95,19 +95,16 @@ public fun <K> AnyOptic<K>.setMap(key: K, out: Partial<K>) {
     @Suppress("UNCHECKED_CAST")
     var current = out as Partial<Any?>
     var value: Any? = key
-    for (prop in fields.dropLast(1)) {
+    for ((index, prop) in fields.withIndex()) {
         @Suppress("UNCHECKED_CAST")
-        value = (prop as Field<Any?, Any?>).get(value)
-        if (value == null) {
-            current.parts[prop] = null
+        prop as Field<Any?, Any?>
+        value = prop.get(value)
+        // Claude: a collection, sealed or inline value can't hold a nested Partial, so paths into one store it whole.
+        if (index == fields.lastIndex || value == null || prop.nestedFields == null) {
+            current.parts[prop] = prop.toPartialEntry(value)
             return
         }
         @Suppress("UNCHECKED_CAST")
-        current = current.parts.getOrPut(prop as Field<Any?, *>) { Partial<Any?>() } as Partial<Any?>
-    }
-    run {
-        @Suppress("UNCHECKED_CAST")
-        val prop = fields.last() as Field<Any?, Any?>
-        current.parts[prop] = prop.toPartialEntry(get(key))
+        current = current.parts.getOrPut(prop) { Partial<Any?>() } as Partial<Any?>
     }
 }
