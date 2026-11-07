@@ -23,7 +23,7 @@ private external object Transformers {
  * Web implementation using Transformers.js: ONNX models run in the browser on WebGPU when available, otherwise WASM.
  * [EmbeddedEngineConfig.modelPath] is a HuggingFace model ID or URL; the browser caches the download.
  */
-internal actual class EmbeddedLlmEngine actual constructor(
+internal class TransformersJsEngine(
     private val config: EmbeddedEngineConfig,
 ) : ChatEngine {
     private var pipe: dynamic = null
@@ -133,3 +133,5 @@ private suspend fun hasWebGpuAdapter(): Boolean {
     options["powerPreference"] = "high-performance"
     return (gpu.requestAdapter(options) as Promise<dynamic>).await() != null
 }
+
+internal actual fun EmbeddedLlmEngine(config: EmbeddedEngineConfig): ChatEngine = TransformersJsEngine(config)

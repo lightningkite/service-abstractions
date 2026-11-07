@@ -35,7 +35,7 @@ internal interface ChatEngine {
  * - iOS (and macOS, for tests): LiteRT-LM's C API
  * - Web: Transformers.js
  */
-internal expect class EmbeddedLlmEngine(config: EmbeddedEngineConfig) : ChatEngine
+internal expect fun EmbeddedLlmEngine(config: EmbeddedEngineConfig): ChatEngine
 
 internal data class ChatTurn(val fromUser: Boolean, val text: String)
 

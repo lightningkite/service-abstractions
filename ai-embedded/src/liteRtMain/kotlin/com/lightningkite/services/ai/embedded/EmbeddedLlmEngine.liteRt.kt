@@ -25,7 +25,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * Android and desktop implementation using Google LiteRT-LM.
  * [EmbeddedEngineConfig.modelPath] is a `.litertlm` file on disk.
  */
-internal actual class EmbeddedLlmEngine actual constructor(
+internal class LiteRtEngine(
     private val config: EmbeddedEngineConfig,
 ) : ChatEngine {
     private var engine: Engine? = null
@@ -126,3 +126,5 @@ internal actual class EmbeddedLlmEngine actual constructor(
         }
     }
 }
+
+internal actual fun EmbeddedLlmEngine(config: EmbeddedEngineConfig): ChatEngine = LiteRtEngine(config)

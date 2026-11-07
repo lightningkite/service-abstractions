@@ -26,7 +26,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * iOS (and macOS, for tests) implementation using LiteRT-LM's C API, the same runtime and `.litertlm` files as
  * Android and desktop.  The app must link and embed `CLiteRTLM.framework`.
  */
-internal actual class EmbeddedLlmEngine actual constructor(
+internal class LiteRtCEngine(
     private val config: EmbeddedEngineConfig,
 ) : ChatEngine {
     private var engine: CPointer<LiteRtLmEngine>? = null
@@ -244,3 +244,5 @@ private data class LiteRtMessage(
 private data class LiteRtContent(val type: String, val text: String)
 
 private val json = Json { ignoreUnknownKeys = true }
+
+internal actual fun EmbeddedLlmEngine(config: EmbeddedEngineConfig): ChatEngine = LiteRtCEngine(config)
