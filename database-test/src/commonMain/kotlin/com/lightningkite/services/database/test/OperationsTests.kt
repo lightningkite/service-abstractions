@@ -31,7 +31,7 @@ abstract class OperationsTests() {
             fields = setOf(Lens<LargeTestModel>().int),
             condition = Condition.Always
         ).toList()
-        assertEquals(partialOf { it.int assign m.int }, result.first())
+        assertEquals(buildPartial { it.int assign m.int }, result.first())
     }
 
     /** Every backend must return exactly what trimming the full models with [partialOf] would. */

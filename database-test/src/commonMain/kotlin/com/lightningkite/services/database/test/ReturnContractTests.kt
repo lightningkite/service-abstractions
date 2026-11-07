@@ -256,7 +256,7 @@ abstract class ReturnContractTests {
         val full = collection.find(matching).toList()
 
         assertEquals(full.size, partials.size)
-        assertEquals(full.map { row -> partialOf<LargeTestModel> { it.int assign row.int } }.toSet(), partials.toSet())
+        assertEquals(full.map { row -> buildPartial<LargeTestModel> { it.int assign row.int } }.toSet(), partials.toSet())
     }
 
     @Test
