@@ -6,6 +6,10 @@ import com.lightningkite.services.data.DataSize.Companion.mebibytes
 import com.lightningkite.services.files.FileScanner
 import com.lightningkite.services.test.TerraformEmitterAwsTestWithVpc
 import com.lightningkite.services.test.assertPlannableAwsVpc
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.serializer
 import java.io.File
 import java.security.MessageDigest
@@ -43,7 +47,6 @@ class TfTest {
                         instanceType = "t3.small",
                         maxFileSize = 25.mebibytes,
                         maxScanSize = 100.mebibytes,
-                        enableSessionManager = false,
                     )
                 )
             }
@@ -200,6 +203,10 @@ class TfTest {
     fun amazonLinuxInstallsWithDnfAndRunsClamdScan() {
         val script = userData(distro = ClamAvDistro.AmazonLinux2023)
         assertContains(script, "\n    dnf install -y clamav clamd clamav-update && break\n")
+        // rpm -q matches only real package names, and on AL2023 the real names are versioned (clamd1.4), so a
+        // name check always failed and stopped the script before clamd was ever started.
+        assertFalse("rpm -q" in script)
+        assertContains(script, "\ntest -x /usr/sbin/clamd && test -x /usr/bin/freshclam && test -f /etc/clamd.d/scan.conf && test -f /etc/freshclam.conf || ")
         assertContains(script, "\nsed -i '/^Example/d' /etc/freshclam.conf /etc/clamd.d/scan.conf\n")
         assertContains(script, "\ncat >> /etc/clamd.d/scan.conf <<'CLAMDCONF'\nTCPSocket 3310\n")
         assertContains(script, "\ncat > /etc/systemd/system/clamd@scan.service.d/10-restart.conf <<'RESTARTCONF'\n")
@@ -277,6 +284,36 @@ class TfTest {
     @Test
     fun swapBelowOneMebibyteIsRejected() {
         assertFailsWith<IllegalArgumentException> { emit(swapSize = DataSize(1024)) }
+    }
+
+    @Test
+    fun applyWaitsForClamdThroughSsm() {
+        for (distro in ClamAvDistro.entries) {
+            val emitter = emitter(distro = distro)
+            val instance = emitter.files.values
+                .map { it.toJsonObject() }
+                .firstNotNullOf { it["resource"]?.jsonObject?.get("aws_instance")?.jsonObject?.get("clamav")?.jsonObject }
+            assertEquals("\${aws_iam_instance_profile.clamav.name}", instance["iam_instance_profile"]?.jsonPrimitive?.content, distro.name)
+            val localExec = instance["provisioner"]!!.jsonObject["local-exec"]!!.jsonObject
+            assertEquals("bash \${path.module}/clamav_ready.sh \${self.id} us-west-2", localExec["command"]!!.jsonPrimitive.content)
+            assertEquals(clamAvReadyWaitScript(3310), emitter.extraFiles.getValue("clamav_ready.sh"))
+        }
+    }
+
+    @Test
+    fun readinessScriptEmbedsTheSsmParametersVerbatim() {
+        val script = clamAvReadyWaitScript(3310)
+        assertTrue(script.startsWith("#!/usr/bin/env bash\n"))
+        // Quoted heredoc with the terminator at column zero, so bash passes the JSON through untouched.
+        assertContains(script, "\nSSM_PARAMETERS=$(cat <<'SSMPARAMETERS'\n${clamAvReadyCheckSsmParameters(3310)}\nSSMPARAMETERS\n)\n")
+    }
+
+    @Test
+    fun readinessCheckProbesTheConfiguredPort() {
+        val commands = Json.parseToJsonElement(clamAvReadyCheckSsmParameters(4410)).jsonObject["commands"]!!.jsonArray
+            .joinToString("\n") { it.jsonPrimitive.content }
+        assertContains(commands, "/dev/tcp/127.0.0.1/4410 && printf 'nPING\\n' >&3")
+        assertContains(commands, "tail -n 80 /var/log/cloud-init-output.log; exit 1")
     }
 
     @Test
