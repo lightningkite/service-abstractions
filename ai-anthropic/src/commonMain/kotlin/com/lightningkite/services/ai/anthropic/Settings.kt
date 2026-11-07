@@ -16,8 +16,11 @@ import com.lightningkite.services.ai.LlmAccess
  *
  * URL format parsed at runtime:
  * ```
- * anthropic://?apiKey=<key>&baseUrl=<url>&version=<header>&maxTokens=<int>
+ * anthropic://?apiKey=<key>&baseUrl=<url>&version=<header>&maxTokens=<int>&directBrowserAccess=<true|false>
  * ```
+ *
+ * `directBrowserAccess=true` lets a web page call Anthropic itself; see
+ * [AnthropicLlmAccess.directBrowserAccess] for why that exposes the key.
  *
  * This scheme configures *access* only (credentials, endpoint) — it is not tied to any one
  * model. Which model to use for a given call is a [com.lightningkite.services.ai.LlmModelId]
@@ -38,7 +41,7 @@ public object AnthropicLlmSettings {
             LlmAccess.Settings.register("anthropic") { name, url, context ->
                 val params = parseUrlParams(url)
                 val apiKey = params["apiKey"]?.let(::resolveEnvVars)
-                    ?: System.getenv("ANTHROPIC_API_KEY")
+                    ?: getEnv("ANTHROPIC_API_KEY")
                     ?: throw IllegalArgumentException(
                         "Anthropic API key not provided in URL or ANTHROPIC_API_KEY environment variable",
                     )
@@ -48,6 +51,7 @@ public object AnthropicLlmSettings {
                     ?: AnthropicLlmAccess.DEFAULT_VERSION
                 val maxTokens = params["maxTokens"]?.toIntOrNull()
                     ?: AnthropicLlmAccess.DEFAULT_MAX_TOKENS
+                val directBrowserAccess = params["directBrowserAccess"]?.toBooleanStrict() ?: false
                 AnthropicLlmAccess(
                     name = name,
                     context = context,
@@ -55,6 +59,7 @@ public object AnthropicLlmSettings {
                     baseUrl = baseUrl,
                     anthropicVersion = version,
                     defaultMaxTokens = maxTokens,
+                    directBrowserAccess = directBrowserAccess,
                 )
             }
         }
@@ -81,16 +86,19 @@ private val registerOnClassLoad: Unit = AnthropicLlmSettings.ensureRegistered()
  *   `ANTHROPIC_API_KEY` environment variable is consulted at instantiation time. Use
  *   `"\${VAR_NAME}"` to reference any env var by name.
  * @param baseUrl optional override for the API root (for proxies/gateways).
+ * @param directBrowserAccess see [AnthropicLlmAccess.directBrowserAccess].
  */
 public fun LlmAccess.Settings.Companion.anthropic(
     modelId: String? = null,
     apiKey: String? = null,
     baseUrl: String? = null,
+    directBrowserAccess: Boolean = false,
 ): LlmAccess.Settings {
     AnthropicLlmSettings.ensureRegistered()
     val parts = buildList {
         apiKey?.let { add("apiKey=$it") }
         baseUrl?.let { add("baseUrl=$it") }
+        if (directBrowserAccess) add("directBrowserAccess=true")
     }
     val query = if (parts.isEmpty()) "" else "?" + parts.joinToString("&")
     return LlmAccess.Settings("anthropic://$query")
@@ -111,11 +119,11 @@ internal fun parseUrlParams(url: String): Map<String, String> {
         .toMap()
 }
 
-/** Expands `${ENV_VAR}` placeholders using [System.getenv]. Leaves unresolved refs untouched. */
+/** Expands `${ENV_VAR}` placeholders using [getEnv]. Leaves unresolved refs untouched. */
 internal fun resolveEnvVars(value: String): String {
     val envVarPattern = """\$\{([^}]+)\}""".toRegex()
     return envVarPattern.replace(value) { matchResult ->
         val envVar = matchResult.groupValues[1]
-        System.getenv(envVar) ?: matchResult.value
+        getEnv(envVar) ?: matchResult.value
     }
 }

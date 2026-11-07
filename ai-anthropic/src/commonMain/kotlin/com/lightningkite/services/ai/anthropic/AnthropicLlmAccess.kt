@@ -51,6 +51,10 @@ import kotlin.time.Duration.Companion.seconds
  * @property baseUrl API root (default `https://api.anthropic.com`).
  * @property anthropicVersion value for the `anthropic-version` header (default `2023-06-01`).
  * @property defaultMaxTokens output-token cap applied when [LlmPrompt.maxTokens] is null.
+ * @property directBrowserAccess sends `anthropic-dangerous-direct-browser-access: true`, without which Anthropic
+ *   refuses requests from a web page (CORS). Security: the API key then lives in the page, where any visitor can
+ *   read it. Enable it only when the visitor supplies their own key; otherwise call Anthropic from a server.
+ * @param httpClient sends the requests.
  */
 public class AnthropicLlmAccess(
     override val name: String,
@@ -59,13 +63,16 @@ public class AnthropicLlmAccess(
     private val baseUrl: String = DEFAULT_BASE_URL,
     private val anthropicVersion: String = DEFAULT_VERSION,
     private val defaultMaxTokens: Int = DEFAULT_MAX_TOKENS,
+    public val directBrowserAccess: Boolean = false,
+    httpClient: HttpClient = client,
 ) : LlmAccess {
 
-    private val httpClient: HttpClient = client.config {
+    private val httpClient: HttpClient = httpClient.config {
         // Anthropic needs the api key on every request; attach once here.
         defaultRequest {
             header("x-api-key", apiKey)
             header("anthropic-version", anthropicVersion)
+            if (directBrowserAccess) header("anthropic-dangerous-direct-browser-access", "true")
         }
     }
 
