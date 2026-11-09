@@ -6,13 +6,14 @@ import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.files.ExternalFile
 import com.lightningkite.services.files.FileScanException
 import com.lightningkite.services.files.FileScanner
-import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKey
+import com.lightningkite.services.telemetry.enrich
 import com.lightningkite.services.telemetry.telemetryTrace
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.tika.io.TikaInputStream
 import org.apache.tika.metadata.Metadata
 import org.apache.tika.mime.MimeTypes
+import org.apache.tika.mime.MimeTypesFactory
 import org.apache.tika.parser.ParseContext
 import org.apache.tika.mime.MediaType as TikaMediaType
 
@@ -91,14 +92,12 @@ public class TikaFileScanner(
     }
 
     public companion object {
+        private val contentTypeKey = TelemetryKey.OfString("content_type")
         private val logger = KotlinLogging.logger("com.lightningkite.services.files.tika.TikaFileScanner")
-        private val mimeTypes: MimeTypes = MimeTypes.getDefaultMimeTypes()
-        private val registry = mimeTypes.mediaTypeRegistry
-
         /**
          * Common non-standard names that Tika doesn't register as aliases, mapped to the canonical name Tika
          * uses. Without these, a correctly formed file claimed with one of these names would be treated as an
-         * unknown type and never checked.
+         * unknown type and never checked. Each canonical name must be a type Tika knows.
          */
         private val extraAliases: Map<String, String> = mapOf(
             "image/jpg" to "image/jpeg",
@@ -112,6 +111,23 @@ public class TikaFileScanner(
             "video/matroska" to "video/x-matroska",
             "audio/matroska" to "audio/x-matroska",
         )
+
+        /**
+         * The same database [MimeTypes.getDefaultMimeTypes] loads, including the app's own customizations (every
+         * `custom-mimetypes.xml` at the root of the classpath and the file named by the `tika.custom-mimetypes`
+         * system property), plus [extraAliases].
+         *
+         * It's a separate instance so the aliases don't change Tika's behavior for anything else in the JVM.
+         * Adding them to its registry is safe because nothing else can see it until it's fully set up.
+         */
+        private val mimeTypes: MimeTypes = MimeTypesFactory.create(
+            "tika-mimetypes.xml", "custom-mimetypes.xml", MimeTypes::class.java.classLoader,
+        ).apply {
+            extraAliases.forEach { (alias, canonical) ->
+                mediaTypeRegistry.addAlias(TikaMediaType.parse(canonical), TikaMediaType.parse(alias))
+            }
+        }
+        private val registry = mimeTypes.mediaTypeRegistry
 
         public fun FileScanner.Settings.Companion.tika(
             allowUnknownTypes: Boolean = true,
@@ -158,8 +174,7 @@ public class TikaFileScanner(
 
         /** The Tika type for [type], or null if Tika doesn't know it (so it can't be checked). */
         private fun canonical(type: MediaType): TikaMediaType? {
-            val base = "${type.type}/${type.subtype}".lowercase()
-            val parsed = TikaMediaType.parse(extraAliases[base] ?: base) ?: return null
+            val parsed = TikaMediaType.parse("${type.type}/${type.subtype}".lowercase()) ?: return null
             val normalized = registry.normalize(parsed)
             return normalized.takeIf { mimeTypes.getRegisteredMimeType(it.toString()) != null }
         }
@@ -186,7 +201,7 @@ public class TikaFileScanner(
         // end-of-file, so short files are read whole.
         val item = file.getRange(0L until mimeTypes.minLength.toLong()) ?: throw FileScanException("File does not exist")
         val bytes = item.use { it.data.bytes() }
-        span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("content_type"), item.mediaType.toString()) })
+        span.enrich(contentTypeKey to item.mediaType.toString())
 
         mismatch(item.mediaType, bytes)?.let {
             throw FileScanException("Mime type mismatch; claimed ${item.mediaType.type}/${item.mediaType.subtype} but $it")

@@ -11,6 +11,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 class TikaFileScannerTest {
 
@@ -111,19 +112,58 @@ class TikaFileScannerTest {
     }
 
     @Test
-    fun unknownClaimedTypesAreAllowedByDefault(): Unit = runBlocking {
-        scan(elf, MediaType("application/x-something-custom"))
-        scan(png, MediaType.Any)
+    fun extraAliasesAreKnownTypes() {
+        // Each of TikaFileScanner's extraAliases must be checked against content, not treated as an unknown type.
+        val aliases = listOf(
+            "image/jpg", "image/pjpeg", "image/apng",
+            "audio/mp3", "audio/x-mp3", "audio/mpeg3", "audio/x-mpeg-3",
+            "audio/webm", "video/matroska", "audio/matroska",
+        )
+        for (alias in aliases) {
+            val result = scanner.mismatch(MediaType(alias), elf)
+            assert(result?.startsWith("content was detected as") == true) { "$alias: $result" }
+        }
+        assertEquals(null, scanner.mismatch(MediaType("image/pjpeg"), jpeg))
+        assertEquals(null, scanner.mismatch(MediaType("image/apng"), png))
+        assertEquals(null, scanner.mismatch(MediaType("audio/webm"), webm))
     }
 
     @Test
-    fun unknownClaimedTypesCanBeBlocked(): Unit = runBlocking {
-        val blocking = TikaFileScanner("blocking", context, allowUnknownTypes = false)
-        assertFailsWith<FileScanException> { scan(elf, MediaType("application/x-something-custom"), blocking) }
-        assertFailsWith<FileScanException> { scan(png, MediaType.Any, blocking) }
+    fun customMimetypesFromTheClasspathAreLoaded() {
+        // Defined in the test resources' custom-mimetypes.xml, which Tika's own default instance also loads.
+        assertNotNull(org.apache.tika.mime.MimeTypes.getDefaultMimeTypes().getRegisteredMimeType("application/x-lk-test"))
+        val custom = "LKTEST".encodeToByteArray() + ByteArray(100)
+        assertEquals(null, scanner.mismatch(MediaType("application/x-lk-test"), custom))
+        assertEquals(null, scanner.mismatch(MediaType("application/x-lk-test-alias"), custom))
+        assertEquals("content was detected as application/x-lk-test", scanner.mismatch(MediaType.Image.PNG, custom))
+        assertEquals(
+            "content doesn't have the x-lk-test signature",
+            scanner.mismatch(MediaType("application/x-lk-test"), ByteArray(116) { it.toByte() }),
+        )
+    }
+
+    @Test
+    fun extraAliasesDoNotChangeTikasDefaults() {
+        val defaults = org.apache.tika.mime.MimeTypes.getDefaultMimeTypes()
+        assertEquals(null, defaults.getRegisteredMimeType("image/jpg"))
+    }
+
+    @Test
+    fun unknownClaimedTypesAreBlockedByDefault(): Unit = runBlocking {
+        assertRejected(elf, MediaType("application/x-something-custom"))
+        assertRejected(png, MediaType.Any)
         // Known types are still checked as usual.
-        scan(png, MediaType.Image.PNG, blocking)
-        scan("a,b".encodeToByteArray(), MediaType.Text.CSV, blocking)
+        scan(png, MediaType.Image.PNG)
+        scan("a,b".encodeToByteArray(), MediaType.Text.CSV)
+    }
+
+    @Test
+    fun unknownClaimedTypesCanBeAllowed(): Unit = runBlocking {
+        val allowing = TikaFileScanner("allowing", context, allowUnknownTypes = true)
+        scan(elf, MediaType("application/x-something-custom"), allowing)
+        scan(png, MediaType.Any, allowing)
+        // Known types are still checked as usual.
+        assertFailsWith<FileScanException> { scan(png, MediaType.Image.JPEG, allowing) }
     }
 
     @Test
@@ -143,7 +183,11 @@ class TikaFileScannerTest {
     @Test
     fun allowedUnknownTypesAreIgnoredWhenAllowing(): Unit = runBlocking {
         // Only a warning is logged; every unknown type still passes, listed or not.
-        val allowing = TikaFileScanner("allowing", context, allowedUnknownTypes = setOf(MediaType("application/bson")))
+        val allowing = TikaFileScanner(
+            "allowing", context,
+            allowUnknownTypes = true,
+            allowedUnknownTypes = setOf(MediaType("application/bson")),
+        )
         scan(ByteArray(16), MediaType("application/bson"), allowing)
         scan(ByteArray(16), MediaType("application/x-other"), allowing)
     }
@@ -158,9 +202,10 @@ class TikaFileScannerTest {
     @Test
     fun settingsUrl(): Unit = runBlocking {
         assertEquals("tika://", FileScanner.Settings.tika().url)
-        val default = FileScanner.Settings.tika()("tika", context)
+        val default = FileScanner.Settings("tika://")("tika", context)
         assertIs<TikaFileScanner>(default)
-        assertEquals(true, default.allowUnknownTypes)
+        assertEquals(false, default.allowUnknownTypes)
+        assertEquals(emptySet(), default.allowedUnknownTypes)
     }
 
     @Test
@@ -180,9 +225,11 @@ class TikaFileScannerTest {
         assertEquals(true, allow.allowUnknownTypes)
 
         assertFailsWith<IllegalArgumentException> { FileScanner.Settings("tika://?unknownTypes=maybe")("tika", context) }
-        val ignoredList = FileScanner.Settings("tika://?allowedUnknownTypes=application/bson")("tika", context)
-        assertIs<TikaFileScanner>(ignoredList)
-        assertEquals(true, ignoredList.allowUnknownTypes)
+        // Unknown types are blocked by default, so the list applies without unknownTypes=block.
+        val listOnly = FileScanner.Settings("tika://?allowedUnknownTypes=application/bson")("tika", context)
+        assertIs<TikaFileScanner>(listOnly)
+        assertEquals(false, listOnly.allowUnknownTypes)
+        assertEquals(setOf(MediaType("application/bson")), listOnly.allowedUnknownTypes)
         assertFailsWith<IllegalArgumentException> {
             FileScanner.Settings("tika://?unknownTypes=block&allowedUnknownTypes=bson")("tika", context)
         }
