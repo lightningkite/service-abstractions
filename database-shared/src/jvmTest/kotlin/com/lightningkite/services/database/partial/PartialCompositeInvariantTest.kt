@@ -27,7 +27,7 @@ class PartialCompositeInvariantTest {
 
     @Test
     fun partialBuilderAssign_compositeValue() {
-        val partial = partialOf<LargeTestModel> {
+        val partial = buildPartial<LargeTestModel> {
             it.embedded assign ClassUsedForEmbedding(value1 = "x", value2 = 7)
         }
         val stored = partial.parts[embeddedProp]
@@ -45,7 +45,7 @@ class PartialCompositeInvariantTest {
 
     @Test
     fun partialBuilderAssign_compositeValue_roundTrips() {
-        val partial = partialOf<LargeTestModel> {
+        val partial = buildPartial<LargeTestModel> {
             it.embedded assign ClassUsedForEmbedding(value1 = "x", value2 = 7)
         }
         val json = Json.encodeToString(Partial.serializer(LargeTestModel.serializer()), partial)
