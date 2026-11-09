@@ -213,7 +213,7 @@ public fun <T, V> Modification<T>.map(
         }
 
         is Modification.Assign -> Modification.Assign(
-            field.setCopy(
+            field.set(
                 this.value,
                 onModification(Modification.Assign(field.get(this.value))).let { it as Modification.Assign<V> }.value
             )

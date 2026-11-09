@@ -248,16 +248,10 @@ public class MapDecoder(
         deserializer: DeserializationStrategy<T>,
         previousValue: T?,
     ): T {
-        val elemDesc = descriptor.getElementDescriptor(index)
+        val depth = tagStack.size
         pushTag(nested(descriptor.getElementName(index)))
         val result = decodeSerializableValue(deserializer)
-        // For CLASS/OBJECT types, the tag was used by the child decoder but not popped from parent
-        // For primitives/converters, the tag was already popped
-        if (elemDesc.kind == StructureKind.CLASS || elemDesc.kind == StructureKind.OBJECT ||
-            elemDesc.kind == StructureKind.LIST || elemDesc.kind == StructureKind.MAP
-        ) {
-            tagStack.removeLastOrNull()
-        }
+        while (tagStack.size > depth) tagStack.removeLastOrNull()
         return result
     }
 
@@ -267,15 +261,10 @@ public class MapDecoder(
         deserializer: DeserializationStrategy<T?>,
         previousValue: T?,
     ): T? {
-        val elemDesc = descriptor.getElementDescriptor(index)
+        val depth = tagStack.size
         pushTag(nested(descriptor.getElementName(index)))
         val result = if (decodeNotNullMark()) decodeSerializableValue(deserializer) else decodeNull()
-        // For CLASS/OBJECT types and collections, pop the unused tag
-        if (elemDesc.kind == StructureKind.CLASS || elemDesc.kind == StructureKind.OBJECT ||
-            elemDesc.kind == StructureKind.LIST || elemDesc.kind == StructureKind.MAP
-        ) {
-            tagStack.removeLastOrNull()
-        }
+        while (tagStack.size > depth) tagStack.removeLastOrNull()
         return result
     }
 }

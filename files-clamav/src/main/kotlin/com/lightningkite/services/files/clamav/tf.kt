@@ -7,6 +7,9 @@ import com.lightningkite.services.data.DataSize.Companion.mebibytes
 import com.lightningkite.services.files.FileScanner
 import com.lightningkite.services.terraform.*
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.putJsonArray
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -75,10 +78,13 @@ public class ReusableClamAvSetting(
  *   security group
  * - `aws_network_interface`: a dedicated ENI, so the private IP baked into the settings URL survives
  *   instance replacement (a new AMI or a changed [userDataExtra] replaces the instance, not the ENI)
- * - `aws_iam_role` / `aws_iam_role_policy_attachment` / `aws_iam_instance_profile`: SSM Session Manager
- *   access for operators (see [enableSessionManager]) — there is no SSH key and no public IP
+ * - `aws_iam_role` / `aws_iam_role_policy_attachment` / `aws_iam_instance_profile`: `AmazonSSMManagedInstanceCore`,
+ *   used by the readiness check below and by operators (`aws ssm start-session`) — there is no SSH key and no
+ *   public IP
  * - `aws_instance`: the host itself, whose user data installs clamav, pulls virus definitions, and
- *   configures clamd to listen on TCP
+ *   configures clamd to listen on TCP. A creation-time `local-exec` provisioner then waits, through SSM Run
+ *   Command, for that user data to finish and for clamd to answer on [port], and fails the apply if it does
+ *   not. The failed instance is tainted, so the next apply replaces it.
  *
  * ## Requirements
  *
@@ -87,6 +93,9 @@ public class ReusableClamAvSetting(
  * - **Outbound internet access**: the private subnet needs a NAT gateway. `freshclam` downloads virus
  *   definitions over HTTPS on first boot and hourly thereafter, and Session Manager also needs egress.
  *   A subnet with no route out will produce an instance where clamd never starts (see below).
+ * - **`bash` and the AWS CLI where terraform runs**: the readiness check is a `local-exec` provisioner. Its
+ *   credentials need `ssm:DescribeInstanceInformation`, `ssm:SendCommand` and `ssm:GetCommandInvocation`, and
+ *   it targets [TerraformEmitterAws.applicationRegion].
  *
  * ## Sizing
  *
@@ -111,9 +120,10 @@ public class ReusableClamAvSetting(
  *   [port] itself from its config file, so if clamd dies nothing reactivates it for a TCP client; the
  *   connection is simply refused. That is why the generated user data installs an explicit
  *   `Restart=always` drop-in (`clamav-daemon.service` on Ubuntu, `clamd@scan.service` on Amazon Linux).
- * - **First boot takes a few minutes**: terraform reports the instance as created as soon as it is
- *   running, well before the definition download finishes. Expect the scanner's health check to report
- *   ERROR for a short while after an apply.
+ * - **First boot takes a few minutes, and the apply waits for it**: the readiness check holds the apply
+ *   until user data has finished, which includes the definition download, typically several minutes and at
+ *   most about 40. If it fails, the provisioner output ends with the tail of `/var/log/cloud-init-output.log`.
+ *   Instances created before the check existed are not re-checked, because it only runs at creation.
  * - **Single instance, no failover**: this is one EC2 instance. It is a single point of failure, and
  *   [FileScanner] fails closed, so uploads will be rejected while it is down. If that is unacceptable,
  *   put a network load balancer in front of an autoscaling group instead.
@@ -131,8 +141,6 @@ public class ReusableClamAvSetting(
  *   archive-expansion ceiling, so it should equal or exceed [maxFileSize].
  * @param maxThreads Concurrent scans clamd will run. Each in-flight scan costs memory on top of the database.
  * @param rootVolumeSizeGb Root EBS volume size. The signature database alone is well over a gigabyte.
- * @param enableSessionManager Attach an instance profile granting `AmazonSSMManagedInstanceCore` so
- *   operators can `aws ssm start-session` into the host. There is no other way in — no public IP, no key pair.
  * @param kmsKey Key for the encrypted root volume. Defaults to the deployment-wide `encryptionKey`.
  * @param userDataExtra Shell appended to the generated user data, after clamd is up. Changing it replaces
  *   the instance.
@@ -160,7 +168,6 @@ public fun awsEc2ClamAv(
     maxScanSize: DataSize = 400.mebibytes,
     maxThreads: Int = 12,
     rootVolumeSizeGb: Int = 20,
-    enableSessionManager: Boolean = true,
     kmsKey: KmsKeySource? = null,
     userDataExtra: String = "",
     swapSize: DataSize? = null,
@@ -193,6 +200,7 @@ public fun awsEc2ClamAv(
     }
 
 
+    @OptIn(Untested::class)
     val amiSsmParameter = when (distro) {
         ClamAvDistro.Ubuntu2404 ->
             "/aws/service/canonical/ubuntu/server/24.04/stable/current/$architecture/hvm/ebs-gp3/ami-id"
@@ -269,40 +277,38 @@ public fun awsEc2ClamAv(
             }
         }
 
-        val instanceProfile = if (enableSessionManager) {
-            "resource.aws_iam_role.${name}" {
-                "name" - "${emitter.projectPrefix}-${name}-clamav"
-                "assume_role_policy" - $$"""
-                    {
-                        "Version": "2012-10-17",
-                        "Statement": [
-                            {
-                                "Action": "sts:AssumeRole",
-                                "Effect": "Allow",
-                                "Principal": { "Service": "ec2.amazonaws.com" }
-                            }
-                        ]
-                    }
-                """.trimIndent()
-            }
-            "resource.aws_iam_role_policy_attachment.${name}_ssm" {
-                "role" - expression("aws_iam_role.${name}.name")
-                "policy_arn" - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-            }
-            "resource.aws_iam_instance_profile.${name}" {
-                "name" - "${emitter.projectPrefix}-${name}-clamav"
-                "role" - expression("aws_iam_role.${name}.name")
-            }
-            expression("aws_iam_instance_profile.${name}.name")
-        } else null
+        // Always attached: the creation-time provisioner below reaches the host through SSM Run Command, and
+        // operators use the same role for Session Manager.
+        "resource.aws_iam_role.${name}" {
+            "name" - "${emitter.projectPrefix}-${name}-clamav"
+            "assume_role_policy" - $$"""
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": { "Service": "ec2.amazonaws.com" }
+                        }
+                    ]
+                }
+            """.trimIndent()
+        }
+        "resource.aws_iam_role_policy_attachment.${name}_ssm" {
+            "role" - expression("aws_iam_role.${name}.name")
+            "policy_arn" - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        }
+        "resource.aws_iam_instance_profile.${name}" {
+            "name" - "${emitter.projectPrefix}-${name}-clamav"
+            "role" - expression("aws_iam_role.${name}.name")
+        }
 
         "resource.aws_instance.${name}" {
             "ami" - ami
             "instance_type" - instanceType
-            instanceProfile?.let { "iam_instance_profile" - it }
-            "network_interface" {
+            "iam_instance_profile" - expression("aws_iam_instance_profile.${name}.name")
+            "primary_network_interface" {
                 "network_interface_id" - expression("aws_network_interface.${name}.id")
-                "device_index" - 0
             }
             "root_block_device" {
                 "volume_size" - rootVolumeSizeGb
@@ -328,6 +334,14 @@ public fun awsEc2ClamAv(
             "user_data" - expression("local.${name}_init")
             // The daemon is configured entirely from user data, so a config change has to rebuild the host.
             "user_data_replace_on_change" - true
+
+            // EC2 reports the instance running long before user data finishes, so without this the apply
+            // succeeds even when clamd never comes up. A creation-time provisioner, rather than a separate
+            // resource, so that a failure taints the instance and the next apply replaces it.
+            emitter.emitExtra("${name}_ready.sh", clamAvReadyWaitScript(port))
+            "provisioner.local-exec" {
+                "command" - $$"bash ${path.module}/$${name}_ready.sh ${self.id} $${emitter.applicationRegion}"
+            }
 
             "lifecycle" {
                 "ignore_changes" - listOf("ami")
@@ -392,7 +406,6 @@ public fun TerraformNeed<FileScanner.Settings>.awsEc2ClamAv(
     maxScanSize: DataSize = 400.mebibytes,
     maxThreads: Int = 12,
     rootVolumeSizeGb: Int = 20,
-    enableSessionManager: Boolean = true,
     kmsKey: KmsKeySource? = null,
     userDataExtra: String = "",
     swapSize: DataSize? = null,
@@ -409,7 +422,6 @@ public fun TerraformNeed<FileScanner.Settings>.awsEc2ClamAv(
         maxScanSize = maxScanSize,
         maxThreads = maxThreads,
         rootVolumeSizeGb = rootVolumeSizeGb,
-        enableSessionManager = enableSessionManager,
         kmsKey = kmsKey,
         userDataExtra = userDataExtra,
         swapSize = swapSize,
@@ -432,8 +444,9 @@ public fun TerraformNeed<FileScanner.Settings>.awsEc2ClamAv(
  *
  * Every retry loop is followed by an assertion on what it was supposed to achieve, and the script ends by
  * probing [port] itself. The retries give up silently, so without those checks a host that failed to
- * install or failed to fetch definitions still runs the rest of the script and terraform still reports a
- * successful apply — the breakage would only show up later as uploads failing closed.
+ * install or failed to fetch definitions would still run the rest of the script and cloud-init would report
+ * success. Terraform never sees this script's exit code directly; the instance's creation-time provisioner
+ * (see [clamAvReadyWaitScript]) is what turns a failure here into a failed apply.
  *
  * The Ubuntu output without swap is byte-for-byte what earlier versions generated. Keep it that way: the
  * instance has `user_data_replace_on_change`, so any change to those bytes replaces every existing host.
@@ -450,6 +463,7 @@ internal fun clamAvUserData(
     distro: ClamAvDistro = ClamAvDistro.Ubuntu2404,
 ): String {
     val tcpConfig = { confPath: String -> clamdTcpConfigScript(confPath, port, maxFileSize, maxScanSize, maxThreads) }
+    @OptIn(Untested::class)
     val sections = when (distro) {
         ClamAvDistro.Ubuntu2404, ClamAvDistro.Ubuntu2604 -> listOfNotNull(
             "#!/bin/bash\nset -euxo pipefail\nexport DEBIAN_FRONTEND=noninteractive",
@@ -573,16 +587,20 @@ private val UBUNTU_START_CLAMD: String = """
 """.trimIndent()
 
 private val AMAZON_LINUX_INSTALL: String = """
-    # Amazon Linux 2023 carries ClamAV in its own repositories (no EPEL): clamav-update provides freshclam
-    # and clamav-freshclam.service, clamd provides the clamd@ template unit. Retry in case the repositories
-    # are not reachable yet this early in boot.
+    # Amazon Linux 2023 carries ClamAV in its own repositories (no EPEL). The packages are versioned per
+    # stream (clamav1.4, clamd1.4, clamav1.4-freshclam), and the unversioned names below resolve through
+    # Provides/Obsoletes to whichever stream Amazon currently makes the default. clamd ships the clamd@
+    # template unit; the freshclam package ships freshclam and clamav-freshclam.service. Retry in case the
+    # repositories are not reachable yet this early in boot.
     for attempt in 1 2 3 4 5; do
         dnf install -y clamav clamd clamav-update && break
         sleep 15
     done
     # The retry loop above gives up silently; without this the failure surfaces several commands later as
     # a confusing systemctl error. Assert the postcondition so cloud-init-output.log names the real cause.
-    rpm -q clamd clamav-update >/dev/null 2>&1 || { echo "FATAL: clamd and clamav-update failed to install after 5 attempts" >&2; exit 1; }
+    # Check the files the rest of the script uses rather than package names: rpm -q matches only real
+    # names, so it reports the unversioned names above as missing even after a successful install.
+    test -x /usr/sbin/clamd && test -x /usr/bin/freshclam && test -f /etc/clamd.d/scan.conf && test -f /etc/freshclam.conf || { echo "FATAL: clamd and freshclam failed to install after 5 attempts" >&2; exit 1; }
     # Fedora-derived packaging has shipped these configs with a bare `Example` line, which makes freshclam
     # and clamd refuse to run until it is removed. Deleting it is a no-op where it is already commented out.
     sed -i '/^Example/d' /etc/freshclam.conf /etc/clamd.d/scan.conf
@@ -624,4 +642,71 @@ private val AMAZON_LINUX_START_CLAMD: String = """
 
     systemctl enable clamd@scan
     systemctl restart clamd@scan
+""".trimIndent()
+
+/**
+ * The `AWS-RunShellScript` parameters for the readiness check, as JSON. [clamAvReadyWaitScript] embeds them in a
+ * quoted heredoc so that none of the quoting inside has to survive the local shell as well as the remote one.
+ *
+ * The remote side waits for cloud-init to finish and then probes [port] itself rather than trusting cloud-init's
+ * exit code alone: newer cloud-init exits 2 for warnings such as deprecated config keys on a healthy host, while
+ * exit 1 means a module, such as the user data script, failed. On failure it prints the tail of the user data log
+ * so the reason shows up in the terraform output. Single-line, because it is embedded in a heredoc.
+ */
+internal fun clamAvReadyCheckSsmParameters(port: Int): String = buildJsonObject {
+    putJsonArray("commands") {
+        add("cloud-init status --wait >/dev/null; rc=$?")
+        add($$"""if [ "$rc" = 1 ] || ! timeout 10 bash -c "exec 3<>/dev/tcp/127.0.0.1/$$port && printf 'nPING\n' >&3 && head -c 4 <&3 | grep -q PONG"; then cloud-init status --long; tail -n 80 /var/log/cloud-init-output.log; exit 1; fi""")
+        add("echo \"clamd is answering on port $port\"")
+    }
+    putJsonArray("executionTimeout") { add("1800") }
+}.toString()
+
+/**
+ * The `<name>_ready.sh` script run by the instance's creation-time `local-exec` provisioner, the same way
+ * lightning-server's single-EC2 deploy runs `redeploy.sh`: blocks the apply until the host's user data has finished
+ * and clamd answers on [port], and exits non-zero otherwise. Takes the instance id and region as arguments, so an
+ * operator can also run it by hand.
+ */
+internal fun clamAvReadyWaitScript(port: Int): String = $$"""
+    #!/usr/bin/env bash
+    # Run by the ClamAV instance's creation-time local-exec provisioner; also safe to run by hand.
+    # Exits 0 once the instance's user data has finished and clamd answers on port $$port.
+    set -euo pipefail
+    INSTANCE_ID="${1:?usage: <name>_ready.sh <instance-id> <region>}"
+    export AWS_REGION="${2:?usage: <name>_ready.sh <instance-id> <region>}"
+    export AWS_DEFAULT_REGION="$AWS_REGION"
+    # The AWS-RunShellScript parameters. A quoted heredoc, so the quoting inside is not reinterpreted here.
+    SSM_PARAMETERS=$(cat <<'SSMPARAMETERS'
+    $${clamAvReadyCheckSsmParameters(port)}
+    SSMPARAMETERS
+    )
+    # Run Command only accepts the instance once its SSM agent has registered, a minute or two after boot.
+    ping_status=None
+    for attempt in $(seq 1 60); do
+        ping_status=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || echo None)
+        [ "$ping_status" = Online ] && break
+        sleep 10
+    done
+    if [ "$ping_status" != Online ]; then
+        echo "ClamAV host $INSTANCE_ID never registered with SSM. Check that its subnet has a route out (NAT gateway)." >&2
+        exit 1
+    fi
+    command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Wait for ClamAV user data" --parameters "$SSM_PARAMETERS" --query Command.CommandId --output text)
+    # Polled by hand: `aws ssm wait command-executed` gives up after 100 seconds, well short of a first boot.
+    status=Pending
+    for attempt in $(seq 1 190); do
+        sleep 10
+        status=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)
+        case "$status" in
+            Pending|InProgress|Delayed) ;;
+            *) break ;;
+        esac
+    done
+    aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query StandardOutputContent --output text || true
+    if [ "$status" != Success ]; then
+        aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query StandardErrorContent --output text >&2 || true
+        echo "ClamAV host $INSTANCE_ID did not come up (SSM status: $status). Its user data log is above; the instance is tainted and the next apply replaces it." >&2
+        exit 1
+    fi
 """.trimIndent()

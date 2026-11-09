@@ -12,6 +12,7 @@ import com.mongodb.MongoCommandException
 import com.mongodb.client.model.*
 import com.mongodb.client.model.Aggregates
 import com.mongodb.client.model.Field
+import com.lightningkite.services.database.optics.Field as OpticField
 import com.mongodb.client.model.Aggregates.match
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.Filters.ne
@@ -21,6 +22,8 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.CompositeDecoder
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.decodeStructure
 import org.bson.BsonDocument
 import org.bson.Document
 import org.bson.conversions.Bson
@@ -690,7 +693,44 @@ public class MongoTable<Model : Any>(
         skip: Int,
         limit: Int,
         maxQueryMs: Long,
-    ): Flow<Model> {
+    ): Flow<Model> = findDocuments("find", condition, orderBy, skip, limit, maxQueryMs, projection = null)
+        .map { bson.parse(serializer, it) }
+
+    override suspend fun findPartial(
+        fields: Set<AnyOptic<Model>>,
+        condition: Condition<Model>,
+        orderBy: List<SortPart<Model>>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+    ): Flow<Partial<Model>> {
+        // Claude: fetches each optic's top-level field whole, then trims with partialOf, so any optic gives what
+        // trimming the full model would. Only the whole-document lens and sealed models need every field.
+        val topLevelNames = fields.map { it.fields.firstOrNull()?.name ?: return super.findPartial(fields, condition, orderBy, skip, limit, maxQueryMs) }
+        val deserializer = projectedDeserializer ?: return super.findPartial(fields, condition, orderBy, skip, limit, maxQueryMs)
+        val projection = if ("_id" in topLevelNames) Projections.include(topLevelNames.distinct())
+        else Projections.fields(Projections.include(topLevelNames.distinct()), Projections.excludeId())
+        return findDocuments("findPartial", condition, orderBy, skip, limit, maxQueryMs, projection)
+            .map { partialOf(bson.parse(deserializer, it), fields) }
+    }
+
+    // Claude: null when the model has no fields (sealed) or no default to fill unprojected fields with.
+    private val projectedDeserializer: ProjectedModelDeserializer<Model>? by lazy {
+        val modelFields = serializer.fields ?: return@lazy null
+        val blank = try { serializer.default() } catch (e: SerializationException) { return@lazy null }
+        ProjectedModelDeserializer(serializer, modelFields.asList(), blank)
+    }
+
+    /** Runs a find, optionally keeping only the fields in [projection], and returns the raw documents. */
+    private fun findDocuments(
+        operation: String,
+        condition: Condition<Model>,
+        orderBy: List<SortPart<Model>>,
+        skip: Int,
+        limit: Int,
+        maxQueryMs: Long,
+        projection: Bson?,
+    ): Flow<BsonDocument> {
         val cs = condition.simplify()
         if (cs is Condition.Never) return emptyFlow()
         // A limit of zero means zero rows, and neither Mongo path expresses that: `$limit: 0` is a
@@ -699,7 +739,7 @@ public class MongoTable<Model : Any>(
         if (limit <= 0) return emptyFlow()
         // Wrap the cold result flow so the metric measures the actual query round-trip (driven by the
         // consumer's collect), not just the lazy pipeline construction.
-        return recordingFlow("find") {
+        return recordingFlow(operation) {
             access {
                 var hasGeo = false
                 condition.walk {
@@ -721,7 +761,7 @@ public class MongoTable<Model : Any>(
                         .skip(skip)
                         .limit(limit)
                         .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
-                        .map { bson.parse(serializer, it) }
+                        .let { if (projection != null) it.projection(projection) else it }
                 } else {
                     val hasCiSort = orderBy.any { it.ignoreCase }
                     aggregate<BsonDocument>(
@@ -737,6 +777,7 @@ public class MongoTable<Model : Any>(
                             }
                             add(Aggregates.skip(skip))
                             add(Aggregates.limit(limit))
+                            if (projection != null) add(Aggregates.project(projection))
                         }
                     )
                         .let {
@@ -745,9 +786,6 @@ public class MongoTable<Model : Any>(
                             } else it
                         }
                         .maxTime(maxQueryMs, TimeUnit.MILLISECONDS)
-                        .map {
-                            bson.parse(serializer, it)
-                        }
                 }
             }
         }
@@ -995,5 +1033,36 @@ public class MongoTable<Model : Any>(
                     }
             }
         }
+    }
+}
+
+/**
+ * Decodes a projected document into a model: fields present in the document are decoded normally, and missing ones
+ * keep their value in [blank], as a full decode would give a missing field its default.
+ */
+private class ProjectedModelDeserializer<T>(
+    serializer: KSerializer<T>,
+    private val fields: List<OpticField<T, *>>,
+    private val blank: T,
+) : DeserializationStrategy<T> {
+    @OptIn(ExperimentalSerializationApi::class)
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor(serializer.descriptor.serialName) {
+        val source = serializer.descriptor
+        for (index in 0 until source.elementsCount) {
+            element(source.getElementName(index), source.getElementDescriptor(index), source.getElementAnnotations(index), isOptional = true)
+        }
+    }
+
+    override fun deserialize(decoder: Decoder): T = decoder.decodeStructure(descriptor) {
+        var model = blank
+        while (true) {
+            val index = decodeElementIndex(descriptor)
+            if (index == CompositeDecoder.DECODE_DONE) break
+            if (index == CompositeDecoder.UNKNOWN_NAME) continue
+            @Suppress("UNCHECKED_CAST")
+            val field = fields[index] as OpticField<T, Any?>
+            model = field.set(model, decodeSerializableElement(descriptor, index, field.serializer))
+        }
+        model
     }
 }

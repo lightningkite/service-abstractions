@@ -74,7 +74,7 @@ public sealed interface Field<A, B> : Lens<A, B> {
     override fun mapModification(modification: Modification<B>): Modification<A> =
         Modification.OnField(this, modification)
 
-    @Deprecated("Use set instead", ReplaceWith("set(receiver, value)"))
+    @Deprecated("Use set instead", ReplaceWith("set"))
     public fun setCopy(receiver: A, value: B): A = set(receiver, value)
 
 
