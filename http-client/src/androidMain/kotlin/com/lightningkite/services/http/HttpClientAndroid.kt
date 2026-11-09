@@ -1,14 +1,15 @@
 package com.lightningkite.services.http
 
 import io.ktor.client.*
-import io.ktor.client.engine.cio.*
+import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.serialization.kotlinx.json.*
+import java.util.concurrent.TimeUnit
 
 /**
- * Android-specific HTTP client.
+ * Android-specific HTTP client, backed by OkHttp, Android's recommended engine.
  *
  * This is a basic HTTP client without OpenTelemetry instrumentation,
  * as OpenTelemetry support is currently limited to JVM platforms.
@@ -16,7 +17,7 @@ import io.ktor.serialization.kotlinx.json.*
  * Note: Lazy initialization to avoid eager instantiation issues in serverless environments.
  */
 public actual val client: HttpClient by lazy {
-    HttpClient(CIO) {
+    HttpClient(OkHttp) {
         install(ContentNegotiation) {
             json()
         }
@@ -31,7 +32,10 @@ public actual val client: HttpClient by lazy {
             connectTimeoutMillis = 30_000
         }
         engine {
-            this.requestTimeout = 0  // disable CIO's own total-request cap; HttpTimeout governs
+            config {
+                // On OkHttp, Ktor's `WebSockets { pingIntervalMillis }` sends no pings; only this does.
+                pingInterval(30, TimeUnit.SECONDS)
+            }
         }
     }
 }

@@ -51,15 +51,17 @@ kotlin {
                 api(libs.coroutines.testing)
             }
         }
-        // CIO can't run in a browser, so JS uses Ktor's Js engine (part of ktor-client-core).
+        // Not CIO: it connects only to the first resolved address, so a broken IPv6 route hangs until
+        // the connect timeout.  These platform engines fall back to IPv4 and speak HTTP/2.
+        // JS uses Ktor's Js engine (part of ktor-client-core).
         val androidMain = getByName("androidMain") {
             dependencies {
-                api(libs.ktor.client.cio)
+                implementation(libs.ktor.client.okhttp)
             }
         }
         val nativeMain = getByName("nativeMain") {
             dependencies {
-                api(libs.ktor.client.cio)
+                implementation(libs.ktor.client.darwin)
             }
         }
         val jsMain = getByName("jsMain") {}
