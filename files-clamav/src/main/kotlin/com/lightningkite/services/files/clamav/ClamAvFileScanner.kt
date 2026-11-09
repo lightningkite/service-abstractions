@@ -105,6 +105,11 @@ public class ClamAvFileScanner(
     }
 
     public companion object {
+
+        private val contentTypeKey = TelemetryKey.OfString("content_type")
+        private val resultsKey = TelemetryKey.OfString("clamav.result")
+        private val virusesKey = TelemetryKey.OfString("clamav.viruses")
+
         public fun FileScanner.Settings.Companion.clamav(
             host: String = "localhost",
             port: Int = 3310,
@@ -146,7 +151,7 @@ public class ClamAvFileScanner(
         val startedAt = TimeSource.Monotonic.markNow()
 
         val result = file.get()?.use { item ->
-            span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("content_type"), item.mediaType.toString()) })
+            span.enrich(contentTypeKey to item.mediaType.toString())
             try {
                 withTimeout(scanTimeout) {
                     // runInterruptible, not withContext: the clamav-client performs a *blocking*
@@ -180,15 +185,15 @@ public class ClamAvFileScanner(
 
         when (result) {
             ScanResult.OK -> {
-                span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("clamav.result"), "OK") })
+                span.enrich(resultsKey to "OK")
             }
 
             is ScanResult.VirusFound -> {
                 val viruses = result.foundViruses.keys.joinToString()
-                span.enrich(TelemetryAttributes {
-                    put(TelemetryKey.OfString("clamav.result"), "VirusFound")
-                    put(TelemetryKey.OfString("clamav.viruses"), viruses)
-                })
+                span.enrich(
+                    resultsKey to "VirusFound",
+                    virusesKey to viruses
+                )
                 // Throwing marks the trace's outcome as an error automatically.
                 throw FileScanException("File seems to contain malicious content; $viruses")
             }

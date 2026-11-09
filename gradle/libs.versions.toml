@@ -49,6 +49,7 @@ sqliteJdbc = "3.53.4.0"
 sqliteWasm = "3.54.1-build1"
 stripe = "34.0.0"
 testcontainers = "2.0.5"
+tika = "4.2.0"
 vanniktechMavenPublish = "0.37.0"
 versionCatalogUpdate = "1.1.1"
 vosk = "0.3.45"
@@ -73,6 +74,7 @@ azure-storage-blob = { module = "com.azure:azure-storage-blob", version = "12.35
 azure-identity = { module = "com.azure:azure-identity", version = "1.18.6" }
 bouncyCastle = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncyCastle" }
 clamAv = { module = "xyz.capybara:clamav-client", version.ref = "clamAv" }
+tikaCore = { module = "org.apache.tika:tika-core", version.ref = "tika" }
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 coroutines-reactive = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-reactive", version.ref = "coroutines" }
 coroutines-testing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
