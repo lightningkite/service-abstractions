@@ -129,9 +129,6 @@ public class CheckMimeFileScanner(
             MediaType.Application.GZip to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x1Fu, 0x8Bu))), // 1F 8B
             ),
-            MediaType.Application.OctetStream to listOf(
-                Signature(Segment(0, ubyteArrayOf(0x7Fu, 0x45u, 0x4Cu, 0x46u))), // 7F 45 4C 46
-            ),
             MediaType.Application.Pdf to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x25u, 0x50u, 0x44u, 0x46u, 0x2Du))), // 25 50 44 46 2D
             ),
@@ -202,7 +199,7 @@ public class CheckMimeFileScanner(
                 Signature(Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xE0u, 0x00u, 0x10u, 0x4Au, 0x46u, 0x49u, 0x46u, 0x00u, 0x01u))), // FF D8 FF E0 00 10 4A 46 49 46 00 01
                 Signature(Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xEEu))),                                                         // FF D8 FF EE
                 Signature(                                                                                                               // FF D8 FF E1 ?? ?? 45 78 69 66 00 00
-                    Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xE0u)),
+                    Segment(0, ubyteArrayOf(0xFFu, 0xD8u, 0xFFu, 0xE1u)),
                     Segment(6, ubyteArrayOf(0x45u, 0x78u, 0x69u, 0x66u, 0x00u, 0x00u))
                 ),
             ),
@@ -274,7 +271,7 @@ public class CheckMimeFileScanner(
                 Signature(Segment(4, ubyteArrayOf(0x73u, 0x6Bu, 0x69u, 0x70u, 0x00u))),                         // ?? ?? ?? ?? 73 6B 69 70 00
             ),
             MediaType.Video.WEBM to listOf(
-                Signature(Segment(0, ubyteArrayOf(0x6Du, 0x6Fu, 0x6Fu, 0x76u, 0x00u))), // 1A 45 DF A3
+                Signature(Segment(0, ubyteArrayOf(0x1Au, 0x45u, 0xDFu, 0xA3u))), // 1A 45 DF A3
             ),
             MediaType.Text.Html to listOf(
                 Signature(Segment(0, ubyteArrayOf(0x3Cu, 0x21u, 0x44u, 0x4Fu, 0x43u, 0x54u, 0x59u, 0x50u, 0x45u, 0x20u, 0x48u, 0x54u, 0x4Du, 0x4Cu,))), // 3C 21 44 4F 43 54 59 50 45 20 48 54 4D 4C
