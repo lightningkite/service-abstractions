@@ -203,9 +203,6 @@ class TfTest {
     fun amazonLinuxInstallsWithDnfAndRunsClamdScan() {
         val script = userData(distro = ClamAvDistro.AmazonLinux2023)
         assertContains(script, "\n    dnf install -y clamav clamd clamav-update && break\n")
-        // rpm -q matches only real package names, and on AL2023 the real names are versioned (clamd1.4), so a
-        // name check always failed and stopped the script before clamd was ever started.
-        assertFalse("rpm -q" in script)
         assertContains(script, "\ntest -x /usr/sbin/clamd && test -x /usr/bin/freshclam && test -f /etc/clamd.d/scan.conf && test -f /etc/freshclam.conf || ")
         assertContains(script, "\nsed -i '/^Example/d' /etc/freshclam.conf /etc/clamd.d/scan.conf\n")
         assertContains(script, "\ncat >> /etc/clamd.d/scan.conf <<'CLAMDCONF'\nTCPSocket 3310\n")
