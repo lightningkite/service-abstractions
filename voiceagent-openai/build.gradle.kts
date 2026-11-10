@@ -1,5 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
-
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
@@ -51,10 +49,6 @@ tasks.register<JavaExec>("runVoiceAgentDemo") {
     mainClass.set("com.lightningkite.services.voiceagent.openai.VoiceAgentDemoKt")
 }
 
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("An speech/dialog generator implementation using OpenAI.")
+mavenPublishing {
+    pom { description.set("An speech/dialog generator implementation using OpenAI.") }
 }

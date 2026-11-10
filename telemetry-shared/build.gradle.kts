@@ -1,4 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -62,10 +61,6 @@ dependencies {
     coreLibraryDesugaring(libs.androidDesugaring)
 }
 
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("Client-safe telemetry types: the upload format (TelemetryBatch) and its attribute values, without basis's server concepts.")
+mavenPublishing {
+    pom { description.set("Client-safe telemetry types: the upload format (TelemetryBatch) and its attribute values, without basis's server concepts.") }
 }

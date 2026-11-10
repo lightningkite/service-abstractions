@@ -1,4 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
 import org.gradle.kotlin.dsl.project
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -69,10 +68,6 @@ dependencies {
     coreLibraryDesugaring(libs.androidDesugaring)
 }
 
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("An abstraction for an external email service.")
+mavenPublishing {
+    pom { description.set("An abstraction for an external email service.") }
 }

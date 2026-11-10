@@ -1,5 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
-
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
@@ -61,10 +59,6 @@ tasks.register<JavaExec>("runLightningServerDemo") {
     standardInput = System.`in`
 }
 
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("A tool for connecting a voice agent to a phone call.")
+mavenPublishing {
+    pom { description.set("A tool for connecting a voice agent to a phone call.") }
 }

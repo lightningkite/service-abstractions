@@ -1,5 +1,3 @@
-import com.lightningkite.deployhelpers.*
-
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
@@ -82,5 +80,3 @@ demoRuns.forEach { demo ->
         mainClass.set("com.lightningkite.services.demo.${demo.mainClass}")
     }
 }
-
-lkLibrary("lightningkite", "service-abstractions") {}

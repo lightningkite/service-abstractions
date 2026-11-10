@@ -34,7 +34,6 @@ ktor = "3.6.1"
 lettuce = "7.8.0.RELEASE"
 lightningServer = "5.3.0"
 litertlm = "0.19.0"
-lkGradleHelpers = "4.1.2"
 logBackClassic = "1.6.3"
 memcached = "2.4.9"
 mongoDriver = "5.12.0"
@@ -122,7 +121,6 @@ lightningServer-engine-netty = { module = "com.lightningkite.lightningserver:eng
 lightningServer-typed = { module = "com.lightningkite.lightningserver:typed", version.ref = "lightningServer" }
 litertlm-android = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlm" }
 litertlm-jvm = { module = "com.google.ai.edge.litertlm:litertlm-jvm", version.ref = "litertlm" }
-lkGradleHelpers = { module = "com.lightningkite:lk-gradle-helpers", version.ref = "lkGradleHelpers" }
 logBackClassic = { module = "ch.qos.logback:logback-classic", version.ref = "logBackClassic" }
 memcached = { module = "com.googlecode.xmemcached:xmemcached", version.ref = "memcached" }
 mongo-driver = { module = "org.mongodb:mongodb-driver-kotlin-coroutine", version.ref = "mongoDriver" }

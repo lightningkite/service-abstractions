@@ -1,4 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
 import java.io.File
 
 
@@ -60,11 +59,6 @@ tasks.withType<Test>().configureEach {
     }
 }
 
-
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("A database implementation using MongoDB.")
+mavenPublishing {
+    pom { description.set("A database implementation using MongoDB.") }
 }

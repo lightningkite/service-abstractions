@@ -1,4 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
@@ -119,8 +118,6 @@ tasks.named<Test>("jvmTest") {
 // Without the library the Apple test binaries can't link.
 tasks.matching { it.name.startsWith("linkDebugTest") || it.name in setOf("iosArm64Test", "iosSimulatorArm64Test", "macosArm64Test") }
     .configureEach { onlyIf("-PliteRtApple gives LiteRT-LM's Apple library") { liteRtApple != null } }
-
-lkLibrary("lightningkite", "service-abstractions") {}
 
 dependencies {
     coreLibraryDesugaring(libs.androidDesugaring)

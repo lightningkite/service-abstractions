@@ -1,4 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -93,13 +92,10 @@ dependencies {
     coreLibraryDesugaring(libs.androidDesugaring)
 }
 
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("A set of classes used in querying and modifying databases.")
+mavenPublishing {
+    pom { description.set("A set of classes used in querying and modifying databases.") }
 }
+
 // commonMain compiles the database processor's shared output (written by kspCommonMainKotlinMetadata alone) as plain
 // source, so every other KSP run and compile must wait for it.
 tasks.matching { (it.name.startsWith("ksp") || it.name.startsWith("compile")) && it.name != "kspCommonMainKotlinMetadata" }

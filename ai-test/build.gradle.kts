@@ -1,5 +1,3 @@
-import com.lightningkite.deployhelpers.*
-
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ksp)
@@ -27,5 +25,3 @@ kotlin {
 }
 
 tasks.withType<JavaCompile>().configureEach { this.targetCompatibility = "17" }
-
-lkLibrary("lightningkite", "service-abstractions") {}

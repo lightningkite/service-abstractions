@@ -1,4 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -83,10 +82,6 @@ dependencies {
     coreLibraryDesugaring(libs.androidDesugaring)
 }
 
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("A local, persistent database on SQLite for Android, iOS, macOS, desktop JVM, and the web.")
+mavenPublishing {
+    pom { description.set("A local, persistent database on SQLite for Android, iOS, macOS, desktop JVM, and the web.") }
 }

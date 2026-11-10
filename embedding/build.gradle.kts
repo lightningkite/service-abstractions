@@ -1,4 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -83,8 +82,6 @@ kotlin {
         val macosArm64Main = getByName("macosArm64Main") { dependsOn(nonJvmMain) }
     }
 }
-
-lkLibrary("lightningkite", "service-abstractions") {}
 
 dependencies {
     coreLibraryDesugaring(libs.androidDesugaring)

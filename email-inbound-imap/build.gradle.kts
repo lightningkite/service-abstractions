@@ -1,5 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
-
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
@@ -59,10 +57,6 @@ tasks.register<JavaExec>("runLightningServerDemo") {
     standardInput = System.`in`
 }
 
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("An inbound email implementation using an imap connection.")
+mavenPublishing {
+    pom { description.set("An inbound email implementation using an imap connection.") }
 }

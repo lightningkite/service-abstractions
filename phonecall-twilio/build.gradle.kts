@@ -1,5 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
-
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
@@ -64,11 +62,6 @@ tasks.register<JavaExec>("runLightningServerDemo") {
     standardInput = System.`in`
 }
 
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("A live phone call implementation using twilio.")
+mavenPublishing {
+    pom { description.set("A live phone call implementation using twilio.") }
 }
-

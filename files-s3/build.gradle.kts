@@ -1,5 +1,3 @@
-import com.lightningkite.deployhelpers.lkLibrary
-
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.dokka)
@@ -37,11 +35,6 @@ tasks.withType<JavaCompile>().configureEach {
     this.targetCompatibility = "17"
 }
 
-
-lkLibrary(
-    "lightningkite",
-    "service-abstractions",
-    mavenAutomaticRelease = project.findProperty("mavenAutomaticRelease") as? Boolean ?: false
-) {
-    description.set("A PublicFileSystem implementation using AWS S3.")
+mavenPublishing {
+    pom { description.set("A PublicFileSystem implementation using AWS S3.") }
 }
