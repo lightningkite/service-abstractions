@@ -84,6 +84,10 @@ public interface TerraformEmitterAws : TerraformEmitter {
     public val encryptionKey: KmsKeySource get() = KmsKeySource.AwsManaged
 }
 
+public interface TerraformEmitterKnownIpAddresses : TerraformEmitter {
+    public val applicationIpAddresses: String
+}
+
 public interface TerraformEmitterAwsDomain : TerraformEmitterAws {
     public val domainZoneId: String
     public val domain: String
