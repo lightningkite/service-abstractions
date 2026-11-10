@@ -19,7 +19,7 @@ kotlin {
     applyDefaultHierarchyTemplate()
     android {
         namespace = "com.lightningkite.services.database.sqlite"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 21
         enableCoreLibraryDesugaring = true
         compilerOptions {

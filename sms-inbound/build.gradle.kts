@@ -18,7 +18,7 @@ kotlin {
     applyDefaultHierarchyTemplate()
     android {
         namespace = "com.lightningkite.services.sms.inbound"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 21
         enableCoreLibraryDesugaring = true
         withHostTest {}

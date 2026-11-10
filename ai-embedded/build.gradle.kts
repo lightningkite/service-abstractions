@@ -26,7 +26,7 @@ kotlin {
     applyDefaultHierarchyTemplate()
     android {
         namespace = "com.lightningkite.services.ai.embedded"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 24
         enableCoreLibraryDesugaring = true
         withHostTest {}
