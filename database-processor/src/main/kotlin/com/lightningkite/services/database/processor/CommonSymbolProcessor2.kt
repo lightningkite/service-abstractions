@@ -70,6 +70,13 @@ abstract class CommonSymbolProcessor2(
             metaFolder.mkdirs()
             outFolder.mkdirs()
 
+            // Only commonMain's own (metadata) KSP task fills the shared commonMain folder.  Every target's KSP task
+            // runs this processor too, and some see none of commonMain's models (an empty input hash), so letting them
+            // write would empty the folder under whatever is compiling it.  commonTest has no metadata task, so its
+            // targets still write.
+            val target = outSample.path.split(File.separatorChar).dropWhile { it != "ksp" }.drop(1).first()
+            if (common && flavor == "Main" && target != "metadata") return listOf()
+
             if (common) {
                 // DO NOT route the real generated output through myCodeGenerator.createNewFile -
                 // this is a deliberate deviation from the normal KSP pattern, not an oversight.
