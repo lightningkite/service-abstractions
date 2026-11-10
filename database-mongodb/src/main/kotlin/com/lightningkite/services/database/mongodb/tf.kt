@@ -219,13 +219,23 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                     "to_port" - 27017
                 }
             }
-        } ?: run {
-            "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id" - projectId
-                "cidr_block" - "0.0.0.0/0"
-                "comment" - "Anywhere"
-            }
         }
+            ?: (emitter as? TerraformEmitterKnownIpAddresses)?.also { emitter ->
+                val addresses = emitter.applicationIpAddresses.removePrefix("\${").removeSuffix("}")
+                "resource.mongodbatlas_project_ip_access_list.database" {
+                    "count" - expression("length($addresses)")
+                    "project_id" - projectId
+                    "cidr_block" - "${expression("$addresses[count.index]")}/32"
+                    "comment" - "Main Compute IP ${expression("count.index")}"
+                }
+            }
+            ?: run {
+                "resource.mongodbatlas_project_ip_access_list.database" {
+                    "project_id" - projectId
+                    "cidr_block" - "0.0.0.0/0"
+                    "comment" - "Anywhere"
+                }
+            }
     }
 }
 
@@ -315,22 +325,32 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
                 }
             )
         }
-        (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
-            // One access list entry per NAT gateway public IP
-            val natIps = vpcInfo.natGatewayIps.removePrefix("\${").removeSuffix("}")
+        (emitter as? TerraformEmitterKnownIpAddresses)?.also { emitter ->
+            val addresses = emitter.applicationIpAddresses.removePrefix("\${").removeSuffix("}")
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "count" - expression("length($natIps)")
+                "count" - expression("length($addresses)")
                 "project_id" - projectId
-                "cidr_block" - "${expression("$natIps[count.index]")}/32"
-                "comment" - "Main Compute NAT ${expression("count.index")}"
-            }
-        } ?: run {
-            "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id" - projectId
-                "cidr_block" - "0.0.0.0/0"
-                "comment" - "Anywhere"
+                "cidr_block" - "${expression("$addresses[count.index]")}/32"
+                "comment" - "Main Compute IP ${expression("count.index")}"
             }
         }
+            ?: (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
+                // One access list entry per NAT gateway public IP
+                val natIps = vpcInfo.natGatewayIps.removePrefix("\${").removeSuffix("}")
+                "resource.mongodbatlas_project_ip_access_list.database" {
+                    "count" - expression("length($natIps)")
+                    "project_id" - projectId
+                    "cidr_block" - "${expression("$natIps[count.index]")}/32"
+                    "comment" - "Main Compute NAT ${expression("count.index")}"
+                }
+            }
+            ?: run {
+                "resource.mongodbatlas_project_ip_access_list.database" {
+                    "project_id" - projectId
+                    "cidr_block" - "0.0.0.0/0"
+                    "comment" - "Anywhere"
+                }
+            }
     }
 }
 
@@ -505,21 +525,31 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
                 }
             )
         }
-        (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
-            // One access list entry per NAT gateway public IP
-            val natIps = vpcInfo.natGatewayIps.removePrefix("\${").removeSuffix("}")
+        (emitter as? TerraformEmitterKnownIpAddresses)?.also { emitter ->
+            val addresses = emitter.applicationIpAddresses.removePrefix("\${").removeSuffix("}")
             "resource.mongodbatlas_project_ip_access_list.database" {
-                "count" - expression("length($natIps)")
+                "count" - expression("length($addresses)")
                 "project_id" - projectId
-                "cidr_block" - "${expression("$natIps[count.index]")}/32"
-                "comment" - "Main Compute NAT ${expression("count.index")}"
-            }
-        } ?: run {
-            "resource.mongodbatlas_project_ip_access_list.database" {
-                "project_id" - projectId
-                "cidr_block" - "0.0.0.0/0"
-                "comment" - "Anywhere"
+                "cidr_block" - "${expression("$addresses[count.index]")}/32"
+                "comment" - "Main Compute IP ${expression("count.index")}"
             }
         }
+            ?: (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
+                // One access list entry per NAT gateway public IP
+                val natIps = vpcInfo.natGatewayIps.removePrefix("\${").removeSuffix("}")
+                "resource.mongodbatlas_project_ip_access_list.database" {
+                    "count" - expression("length($natIps)")
+                    "project_id" - projectId
+                    "cidr_block" - "${expression("$natIps[count.index]")}/32"
+                    "comment" - "Main Compute NAT ${expression("count.index")}"
+                }
+            }
+            ?: run {
+                "resource.mongodbatlas_project_ip_access_list.database" {
+                    "project_id" - projectId
+                    "cidr_block" - "0.0.0.0/0"
+                    "comment" - "Anywhere"
+                }
+            }
     }
 }
