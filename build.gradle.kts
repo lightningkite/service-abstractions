@@ -99,7 +99,7 @@ subprojects {
         }
 
         extensions.configure<MavenPublishBaseExtension> {
-            publishToMavenCentral(automaticRelease = true)
+            publishToMavenCentral(automaticRelease = false)
             signAllPublications()
             // Dokka is slow, so the javadoc jar is built only on request.
             configureBasedOnAppliedPlugins(sourcesJar = true, javadocJar = providers.gradleProperty("withDocs").isPresent)
