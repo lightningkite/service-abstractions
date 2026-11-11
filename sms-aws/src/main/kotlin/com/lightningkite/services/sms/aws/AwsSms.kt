@@ -100,7 +100,7 @@ public class LiveAwsSmsEngine(
     private val accessKeyId: String? = null,
     private val secretAccessKey: String? = null
 ) : AwsSmsEngine {
-    private val client = PinpointSmsVoiceV2Client {
+    private fun makeClient() = PinpointSmsVoiceV2Client {
         this.region = this@LiveAwsSmsEngine.region
         if (accessKeyId != null && secretAccessKey != null) {
             credentialsProvider = StaticCredentialsProvider(
@@ -109,6 +109,11 @@ public class LiveAwsSmsEngine(
         }
     }
 
+    // a var so close() can drop the client and the next call builds a new one. Lambda SnapStart
+    // disconnects every service before its snapshot, and a closed client fails with "Credentials provider is closed".
+    private var _client = lazy { makeClient() }
+    private val client get() = _client.value
+
     override suspend fun sendTextMessage(request: SendTextMessageRequest): SendTextMessageResponse =
         client.sendTextMessage(request)
 
@@ -116,9 +121,9 @@ public class LiveAwsSmsEngine(
         client.describeAccountAttributes(request)
 
     override suspend fun close() {
-        withContext(Dispatchers.IO) {
-            client.close()
-        }
+        val closing = _client
+        _client = lazy { makeClient() }
+        if (closing.isInitialized()) withContext(Dispatchers.IO) { closing.value.close() }
     }
 }
 
