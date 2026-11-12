@@ -31,18 +31,13 @@ import kotlinx.serialization.Serializable
  * - [ListAppend]/[SetAppend] - Add elements
  * - [ListRemove]/[SetRemove] - Remove elements matching a condition
  * - [ListRemoveInstances]/[SetRemoveInstances] - Remove specific elements
- * - [ListDropFirst]/[ListDropLast] etc. - Remove first/last element
  * - [ListPerElement]/[SetPerElement] - Apply modification to each element matching a condition
- *
- * ## Map Modifications
- *
- * - [Combine] - Merge map entries (overwrites existing keys)
- * - [RemoveKeys] - Delete map entries
  *
  * ## Nested Modifications
  *
  * - [OnField] - Navigate to nested object fields (created by optics)
  * - [IfNotNull] - Null-safe modification wrapper
+ * - [IfIsType] - Modify only values of one sealed variant
  *
  * ## Usage with Type-Safe DSL
  *
