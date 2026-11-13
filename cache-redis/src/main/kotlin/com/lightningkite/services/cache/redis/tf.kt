@@ -124,6 +124,10 @@ context(emitter: TerraformEmitterAws) private fun awsElasticacheServerless(
  * @param parameterGroupName The Redis parameter group (default: "default.redis7")
  * @param count The number of cache nodes to create (1 for non-cluster mode)
  */
+@Deprecated(
+    "Unencrypted, and a single node with no failover. Use awsElasticacheRedisReplicationGroup instead.",
+    ReplaceWith("awsElasticacheRedisReplicationGroup(name, type, parameterGroupName, count)"),
+)
 context(emitter: TerraformEmitterAws) public fun awsElasticacheRedis(
     name: String,
     type: String = "cache.t4g.micro",
@@ -289,6 +293,10 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.r
  * @param parameterGroupName The Redis parameter group (default: "default.redis7")
  * @param count The number of cache nodes to create (1 for non-cluster mode)
  */
+@Deprecated(
+    "Unencrypted, and a single node with no failover. Use awsElasticacheRedisReplicationGroup instead.",
+    ReplaceWith("awsElasticacheRedisReplicationGroup(type, parameterGroupName, count)"),
+)
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedis(
     type: String = "cache.t4g.micro",
     parameterGroupName: String = "default.redis7",
