@@ -12,7 +12,8 @@ public class ReusableRedisSetting(
 
 /**
  * Emits a node-based ElastiCache replication group (cluster mode disabled) for a Redis-compatible [engine].
- * The settings URL targets the primary endpoint, which stays stable across failover.
+ * The group is encrypted at rest and in transit, so the settings URL uses `rediss://`. It targets the primary
+ * endpoint, which stays stable across failover.
  */
 context(emitter: TerraformEmitterAws) private fun awsElasticacheReplicationGroup(
     name: String,
@@ -27,6 +28,7 @@ context(emitter: TerraformEmitterAws) private fun awsElasticacheReplicationGroup
     setOf(TerraformProviderImport.aws).forEach { emitter.require(it) }
 
     val vpcInfo = emitter.applicationVpc as? AwsVpc.VpcInfo
+    val kmsKeyArn = emitter.encryptionKey.resolveKeyArn(name)
 
     emitter.emit(name) {
         if (vpcInfo != null) {
@@ -45,19 +47,23 @@ context(emitter: TerraformEmitterAws) private fun awsElasticacheReplicationGroup
             "automatic_failover_enabled" - (count > 1)
             "parameter_group_name" - parameterGroupName
             "port" - 6379
+            "at_rest_encryption_enabled" - true
+            if (kmsKeyArn != null) "kms_key_id" - kmsKeyArn
+            "transit_encryption_enabled" - true
             if (vpcInfo != null) {
                 "security_group_ids" - listOf<String>(vpcInfo.securityGroup)
                 "subnet_group_name" - expression("aws_elasticache_subnet_group.${name}.name")
             }
         }
     }
-    return ReusableRedisSetting($$"redis://${aws_elasticache_replication_group.$${name}.primary_endpoint_address}:${aws_elasticache_replication_group.$${name}.port}/0")
+    return ReusableRedisSetting($$"rediss://${aws_elasticache_replication_group.$${name}.primary_endpoint_address}:${aws_elasticache_replication_group.$${name}.port}/0")
 }
 
 
 
 /**
  * Emits an ElastiCache Serverless cache for a Redis-compatible [engine].
+ * Serverless caches only accept TLS connections, so the settings URL uses `rediss://`.
  */
 @Untested
 context(emitter: TerraformEmitterAws) private fun awsElasticacheServerless(
@@ -100,7 +106,7 @@ context(emitter: TerraformEmitterAws) private fun awsElasticacheServerless(
             }
         }
     }
-    return ReusableRedisSetting($$"redis://${aws_elasticache_serverless_cache.$${name}.endpoint[0].address}:${aws_elasticache_serverless_cache.$${name}.endpoint[0].port}/0")
+    return ReusableRedisSetting($$"rediss://${aws_elasticache_serverless_cache.$${name}.endpoint[0].address}:${aws_elasticache_serverless_cache.$${name}.endpoint[0].port}/0")
 }
 
 
@@ -118,6 +124,10 @@ context(emitter: TerraformEmitterAws) private fun awsElasticacheServerless(
  * @param parameterGroupName The Redis parameter group (default: "default.redis7")
  * @param count The number of cache nodes to create (1 for non-cluster mode)
  */
+@Deprecated(
+    "Unencrypted, and a single node with no failover. Use awsElasticacheRedisReplicationGroup instead.",
+    ReplaceWith("awsElasticacheRedisReplicationGroup(name, type, parameterGroupName, count)"),
+)
 context(emitter: TerraformEmitterAws) public fun awsElasticacheRedis(
     name: String,
     type: String = "cache.t4g.micro",
@@ -209,7 +219,7 @@ context(emitter: TerraformEmitterAws) public fun awsElasticacheRedisServerless(
 /**
  * Creates an AWS ElastiCache Valkey cache.
  *
- * Valkey is wire-compatible with Redis, so the result is consumed through the same `redis://` settings URL.
+ * Valkey is wire-compatible with Redis, so the result is consumed through the same `rediss://` settings URL.
  * The cache is created as a replication group with cluster mode disabled; the settings URL targets the
  * primary endpoint, which stays stable across failover.
  *
@@ -283,6 +293,10 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.r
  * @param parameterGroupName The Redis parameter group (default: "default.redis7")
  * @param count The number of cache nodes to create (1 for non-cluster mode)
  */
+@Deprecated(
+    "Unencrypted, and a single node with no failover. Use awsElasticacheRedisReplicationGroup instead.",
+    ReplaceWith("awsElasticacheRedisReplicationGroup(type, parameterGroupName, count)"),
+)
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<Cache.Settings>.awsElasticacheRedis(
     type: String = "cache.t4g.micro",
     parameterGroupName: String = "default.redis7",
