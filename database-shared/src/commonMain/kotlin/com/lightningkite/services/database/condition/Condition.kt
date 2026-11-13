@@ -37,8 +37,8 @@ import kotlinx.serialization.*
  * ## Nested Conditions
  *
  * - [OnField] - Navigate to nested object fields (created by optics)
- * - [OnKey] - Access map values by key
  * - [IfNotNull] - Null-safe condition wrapper
+ * - [IfIsType] - Match only values of one sealed variant
  *
  * ## Usage with Type-Safe DSL
  *
