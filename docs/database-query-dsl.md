@@ -58,6 +58,56 @@ missing. `.notNull`, `.elements` and `.asType` live in `com.lightningkite.servic
 Optics serialize as dotted strings: `"address?.city"` for a not-null step, `"tags.*"` for elements, `"shape.<Circle>"`
 for a sealed variant, and `"this"` for the whole model.
 
+### Build Setup
+
+Apply the KSP plugin and add `database-processor` to the module that declares the models.
+
+**JVM-only module** — nothing else is needed; the fields are generated into `build/generated/ksp/main/kotlin`:
+
+```kotlin
+dependencies {
+    ksp("com.lightningkite.services:database-processor:<version>")
+}
+```
+
+**Multiplatform module** — declare the models in `commonMain`.  Three pieces, and all three are required:
+
+```kotlin
+kotlin {
+    sourceSets {
+        val commonMain by getting {
+            // 1. The processor writes commonMain's fields here, once, for every target to compile.
+            kotlin.srcDir(file("build/generated/ksp/common/commonMain/kotlin"))
+        }
+    }
+}
+
+dependencies {
+    // 2. The processor runs for commonMain (kspCommonMainMetadata) and for each target.
+    configurations.filter { it.name.startsWith("ksp") && it.name != "ksp" }.forEach {
+        add(it.name, "com.lightningkite.services:database-processor:<version>")
+    }
+}
+
+// 3. Only kspCommonMainKotlinMetadata writes commonMain's fields, so every other KSP run and compile waits for it.
+tasks.matching { (it.name.startsWith("ksp") || it.name.startsWith("compile")) && it.name != "kspCommonMainKotlinMetadata" }
+    .configureEach { dependsOn("kspCommonMainKotlinMetadata") }
+```
+
+The target tasks (`kspKotlinJvm`, `kspKotlinJs`, ...) deliberately generate nothing for commonMain: they used to
+each rewrite the shared folder, sometimes emptying it under a running compile.  Instead they check that
+`kspCommonMainKotlinMetadata` has generated from the current models, and without piece 3 fail with
+"The generated sources for commonMain are missing" (or "out of date").  A target task that sees none of commonMain's
+models can't check; there the symptom is unresolved references to every generated field (`User.email`, `User.path`)
+and an empty `build/generated/ksp/common/commonMain/kotlin`.  To generate by hand, run
+`./gradlew :your-module:kspCommonMainKotlinMetadata`.
+
+Only `src/commonMain` and `src/commonTest` count as common: models in another source set of a multiplatform module
+that has these are not generated.
+
+commonTest has no metadata task, so its fields are written by the targets' test KSP tasks into
+`build/generated/ksp/common/commonTest/kotlin`; add that folder to `commonTest` if tests declare models.
+
 ## Conditions (Queries)
 
 ### Basic Comparisons

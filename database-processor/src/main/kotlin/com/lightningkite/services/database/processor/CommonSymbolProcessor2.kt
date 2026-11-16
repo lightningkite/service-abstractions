@@ -46,7 +46,6 @@ abstract class CommonSymbolProcessor2(
         val projectFolder = generateSequence(outSample) { it.parentFile!! }
             .first { it.name == "build" }
             .parentFile!!
-        val common = resolver.getAllFiles().any { it.filePath.contains("/src/common", true) }
         val flavor = outSample.path.split(File.separatorChar)
             .dropWhile { it != "ksp" }
             .drop(2)
@@ -55,13 +54,14 @@ abstract class CommonSymbolProcessor2(
                 if (it.contains("test", true)) "Test"
                 else "Main"
             }
+        // Within the project, not anywhere in the absolute path: a JVM project checked out under .../src/common-api
+        // is not a common source set.
+        val commonSourceSet = projectFolder.resolve("src/common$flavor")
+        val commonFiles = resolver.getAllFiles().filter { File(it.filePath).startsWith(commonSourceSet) }
+        val common = commonFiles.any()
 
         val interestedIn = interestedIn(object : Resolver by resolver {
-            override fun getAllFiles(): Sequence<KSFile> {
-                return resolver.getAllFiles().filter {
-                    !common || it.filePath.contains("/src/common")
-                }
-            }
+            override fun getAllFiles(): Sequence<KSFile> = if (common) commonFiles else resolver.getAllFiles()
         })
 
         try {
@@ -74,8 +74,17 @@ abstract class CommonSymbolProcessor2(
             // runs this processor too, and some see none of commonMain's models (an empty input hash), so letting them
             // write would empty the folder under whatever is compiling it.  commonTest has no metadata task, so its
             // targets still write.
+            // Consumers must therefore make their other KSP and compile tasks depend on kspCommonMainKotlinMetadata:
+            // see "Build Setup" in docs/database-query-dsl.md.
             val target = outSample.path.split(File.separatorChar).dropWhile { it != "ksp" }.drop(1).first()
-            if (common && flavor == "Main" && target != "metadata") return listOf()
+            if (common && flavor == "Main" && target != "metadata") {
+                requireGeneratedByMetadataTask(
+                    version = version,
+                    dependencies = interestedIn.asSequence().map { File(it.filePath) },
+                    lockFile = metaFolder.resolve("$myId-commonMain.lock"),
+                )
+                return listOf()
+            }
 
             if (common) {
                 // DO NOT route the real generated output through myCodeGenerator.createNewFile -
@@ -169,6 +178,32 @@ fun Sequence<File>.checksum(): String {
     sortedBy { it.absolutePath }.forEach { digest.update(it.readBytes()) }
     return digest.digest().joinToString("") { "%02x".format(it) }
 }
+
+private fun inputHash(version: Int, dependencies: Sequence<File>): String = dependencies.checksum() + ":" + version
+
+/**
+ * Called by a target's KSP task, which leaves commonMain's output to kspCommonMainKotlinMetadata.  Without this, a
+ * build that never runs that task has an empty generated folder and no hint why.
+ */
+fun requireGeneratedByMetadataTask(version: Int, dependencies: Sequence<File>, lockFile: File) {
+    // A task that sees none of commonMain's models can't tell whether anything should have been generated.
+    if (dependencies.none()) return
+    val generatedFrom = lockFile.takeIf { it.exists() }?.readText()
+    if (generatedFrom == inputHash(version, dependencies)) return
+    throw IllegalStateException(
+        """
+        The generated sources for commonMain are ${if (generatedFrom == null) "missing" else "out of date"}.
+        In a multiplatform module only kspCommonMainKotlinMetadata writes them, and it has not run for the current sources.
+        Add the processor to the kspCommonMainMetadata configuration, and make everything else wait for that task:
+
+            tasks.matching { (it.name.startsWith("ksp") || it.name.startsWith("compile")) && it.name != "kspCommonMainKotlinMetadata" }
+                .configureEach { dependsOn("kspCommonMainKotlinMetadata") }
+
+        Full setup: "Build Setup" in service-abstractions/docs/database-query-dsl.md.
+        """.trimIndent()
+    )
+}
+
 interface FileGenerator {
     fun file(name: String): Writer
 }
@@ -182,10 +217,11 @@ fun processFiles(
 ) {
     lockFile.parentFile.mkdirs()
     File(lockFile.absolutePath + ".dependencies").writeText(dependencies.joinToString("\n"))
-    val hash = dependencies.checksum() + ":" + version
+    val hash = inputHash(version, dependencies)
 
-    // Every KSP task of every target runs this processor, so the lock is what makes exactly one of
-    // them generate while the rest fall through to the up-to-date check below. Readers are safe
+    // commonMain has a single writer (see the target check in process), but commonTest is written by every
+    // target's test KSP task, so the lock is what makes exactly one of them generate while the rest fall
+    // through to the up-to-date check below. Readers are safe
     // because the live output folder is never emptied and files are replaced atomically — see
     // [syncInto]. The wait is generous because a large project can queue up a lot of tasks here.
     val runningFile = File(lockFile.absolutePath + ".running")
