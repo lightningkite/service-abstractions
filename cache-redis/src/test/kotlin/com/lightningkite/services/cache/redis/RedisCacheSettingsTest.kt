@@ -41,6 +41,7 @@ class RedisCacheSettingsTest {
     @Test
     fun testSupportedSchemes() {
         assertTrue(Cache.Settings.supports("redis"))
+        assertTrue(Cache.Settings.supports("rediss"))
     }
 
     @Test

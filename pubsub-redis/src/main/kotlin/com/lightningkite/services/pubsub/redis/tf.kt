@@ -21,6 +21,10 @@ context(emitter: TerraformEmitterAws) public fun TerraformNeed<PubSub.Settings>.
 }
 
 
+@Deprecated(
+    "Unencrypted, and a single node with no failover. Use awsElasticacheRedisReplicationGroup instead.",
+    ReplaceWith("awsElasticacheRedisReplicationGroup(type, parameterGroupName, count)"),
+)
 context(emitter: TerraformEmitterAws) public fun TerraformNeed<PubSub.Settings>.awsElasticacheRedis(
     type: String = "cache.t2.micro",
     parameterGroupName: String = "default.redis7",

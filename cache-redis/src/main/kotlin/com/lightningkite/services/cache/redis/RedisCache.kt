@@ -126,6 +126,9 @@ end
             Cache.Settings.register("redis") { name, url, context ->
                 RedisCache(name, { RedisClient.create(url) }, context)
             }
+            Cache.Settings.register("rediss") { name, url, context ->
+                RedisCache(name, { RedisClient.create(url) }, context)
+            }
         }
     }
 
