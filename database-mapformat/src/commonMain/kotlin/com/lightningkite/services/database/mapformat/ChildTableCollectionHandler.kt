@@ -799,6 +799,21 @@ private class ChildTableElementDecoder(
         return this
     }
 
+    // Claude: value classes (e.g. Prompt.ID over Uuid) miss the converter lookup above — it is
+    // keyed by the value class's serial name, not the underlying type's — but their generated
+    // serializer reaches this method asking for the underlying type. The schema unwraps value
+    // classes too, so the column is declared by the underlying type: stored blobs arrive here as
+    // ByteArray and must go through the converter. Strings keep the raw path, which parses them
+    // directly — that also keeps this correct on drivers that hand TEXT back as TEXT.
+    override fun <T> decodeSerializableValue(deserializer: DeserializationStrategy<T>): T {
+        if (element is ByteArray) {
+            config.converters.get(deserializer.descriptor)?.let {
+                return ChildTableElementConverterDecoder(element, it).decodeSerializableValue(deserializer)
+            }
+        }
+        return super.decodeSerializableValue(deserializer)
+    }
+
     override fun decodeNotNullMark(): Boolean = element != null
 
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder {
