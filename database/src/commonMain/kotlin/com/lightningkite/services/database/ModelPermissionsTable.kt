@@ -248,6 +248,3 @@ public open class ModelPermissionsTable<Model : Any>(
 
     override suspend fun mask(): Mask<Model> = permissions.readMask
 }
-
-public fun <Model : Any> Table<Model>.withPermissions(permissions: ModelPermissions<Model>): Table<Model> =
-    ModelPermissionsTable(this, permissions)

@@ -194,9 +194,6 @@ public open class DelayedTable<Model : Any>(
     }
 }
 
-public fun <Model : Any> Table<Model>.delayed(range: ClosedRange<Duration>): Table<Model> =
-    DelayedTable(this, range)
-
 public fun Database.delayed(range: ClosedRange<Duration>): Database = object : Database {
     override val name: String
         get() = this@delayed.name

@@ -14,6 +14,7 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
+        freeCompilerArgs.add("-Xreturn-value-checker=check")
     }
     explicitApi()
     applyDefaultHierarchyTemplate()

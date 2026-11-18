@@ -1,3 +1,5 @@
+@file:MustUseReturnValues
+
 package com.lightningkite.services.database
 
 import com.lightningkite.services.database.optics.*
@@ -478,7 +480,7 @@ public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.withChangeListe
  * Intercept all kinds of creates, including [Table.insert], [Table.upsertOne], and [Table.upsertOneIgnoringResult].
  * Allows you to modify the object before it is actually created.
  */
-public inline fun <Model : Any> Table<Model>.interceptCreate(crossinline interceptor: suspend (Model) -> Model): Table<Model> =
+public fun <Model : Any> Table<Model>.interceptCreate(interceptor: suspend (Model) -> Model): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptCreate
         override suspend fun insert(models: Iterable<Model>): List<Model> =
@@ -501,7 +503,7 @@ public inline fun <Model : Any> Table<Model>.interceptCreate(crossinline interce
  * Intercept all kinds of creates, including [Table.insert], [Table.upsertOne], and [Table.upsertOneIgnoringResult].
  * Allows you to modify the object before it is actually created.
  */
-public inline fun <Model : Any> Table<Model>.interceptCreates(crossinline interceptor: suspend (Iterable<Model>) -> List<Model>): Table<Model> =
+public fun <Model : Any> Table<Model>.interceptCreates(interceptor: suspend (Iterable<Model>) -> List<Model>): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptCreates
         override suspend fun insert(models: Iterable<Model>): List<Model> =
@@ -523,7 +525,7 @@ public inline fun <Model : Any> Table<Model>.interceptCreates(crossinline interc
 /**
  * Intercepts all kinds of replace operations.
  */
-public inline fun <Model : Any> Table<Model>.interceptReplace(crossinline interceptor: suspend (Model) -> Model): Table<Model> =
+public fun <Model : Any> Table<Model>.interceptReplace(interceptor: suspend (Model) -> Model): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptReplace
 
@@ -571,7 +573,7 @@ public inline fun <Model : Any> Table<Model>.interceptReplace(crossinline interc
 /**
  * Intercepts all modifications sent to the database.
  */
-public inline fun <Model : Any> Table<Model>.interceptModification(crossinline interceptor: suspend (Modification<Model>) -> Modification<Model>): Table<Model> =
+public fun <Model : Any> Table<Model>.interceptModification(interceptor: suspend (Modification<Model>) -> Modification<Model>): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptModification
         override suspend fun upsertOne(
@@ -612,7 +614,7 @@ public inline fun <Model : Any> Table<Model>.interceptModification(crossinline i
 /**
  * Intercepts all changes sent to the database, including inserting, replacing, upserting, and updating.
  */
-public inline fun <Model : Any> Table<Model>.interceptChange(crossinline interceptor: suspend (Modification<Model>) -> Modification<Model>): Table<Model> =
+public fun <Model : Any> Table<Model>.interceptChange(interceptor: suspend (Modification<Model>) -> Modification<Model>): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptChange
         override suspend fun insert(models: Iterable<Model>): List<Model> =
@@ -686,9 +688,9 @@ public inline fun <Model : Any> Table<Model>.interceptChange(crossinline interce
  *
  * **Warning**: These operations are not atomic, as we must retrieve the data before we can calculate the change. In addition, this makes all database calls more significantly more expensive.
  */
-public inline fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptChangePerInstance(
+public fun <Model : HasId<ID>, ID : Comparable<ID>> Table<Model>.interceptChangePerInstance(
     includeMassUpdates: Boolean = true,
-    crossinline interceptor: suspend (Model, Modification<Model>) -> Modification<Model>,
+    interceptor: suspend (Model, Modification<Model>) -> Modification<Model>,
 ): Table<Model> =
     object : Table<Model> by this {
         override val wraps = this@interceptChangePerInstance
