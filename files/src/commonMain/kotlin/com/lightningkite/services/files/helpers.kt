@@ -9,17 +9,17 @@ import kotlinx.io.files.SystemFileSystem
 import kotlin.uuid.Uuid
 
 /**
- * Downloads a FileObject to a local file.
+ * Downloads an ExternalFile to a local file.
  *
  * @param file KFile to download to.
- * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
+ * @return The KFile containing the downloaded content, or null if the ExternalFile doesn't exist
  */
 public suspend fun ExternalFile.download(file: KFile): KFile? = get()?.let { it.download(file) }
 
 /**
- * Downloads a FileObject to a local temporary file with the correct extension.
+ * Downloads an ExternalFile to a local temporary file with the correct extension.
  *
- * @return The KFile containing the downloaded content, or null if the FileObject doesn't exist
+ * @return The KFile containing the downloaded content, or null if the ExternalFile doesn't exist
  */
 public suspend fun ExternalFile.downloadToTemporaryFile(): KFile? = get()?.let { it.download(SystemFileSystem.temporary(extension = it.mediaType.extension)) }
 
@@ -44,14 +44,14 @@ public fun ExternalFile.resolve(path: String): ExternalFile = then(path)
 public fun ExternalFile.resolveRandom(prefix: String, extension: String): ExternalFile = thenRandom(prefix, extension)
 
 /**
- * Creates a FileObject with a random UUID-based filename.
+ * Creates an ExternalFile with a random UUID-based filename.
  *
  * The separator is `-` rather than `_` so the name survives [ExternalPath.toString] unescaped,
  * keeping generated URLs and stored references readable.
  *
  * @param prefix The prefix for the filename (before the UUID)
  * @param extension The file extension (without the dot)
- * @return A FileObject with path like `{prefix}-{uuid}.{extension}`
+ * @return An ExternalFile with path like `{prefix}-{uuid}.{extension}`
  *
  * Example:
  * ```
@@ -64,7 +64,7 @@ public fun ExternalFile.thenRandom(prefix: String, extension: String): ExternalF
 }
 
 /**
- * Converts a FileObject to a persistable [ServerFile] reference.
+ * Converts an ExternalFile to a persistable [ServerFile] reference.
  *
  * This wraps the backend-agnostic canonical `sf://<name>/<path>` form (see [ExternalFile.toString]),
  * which is what should be stored in a database - not a backend-specific absolute URL. Clients

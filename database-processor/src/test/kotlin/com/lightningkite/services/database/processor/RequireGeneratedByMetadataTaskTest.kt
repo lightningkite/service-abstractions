@@ -33,6 +33,18 @@ class RequireGeneratedByMetadataTaskTest {
     }
 
     @Test
+    fun failureMessagePointsAtTheBuildSetupDocs() {
+        val failure = assertFailsWith<IllegalStateException> {
+            requireGeneratedByMetadataTask(version = 1, dependencies = sequenceOf(model), lockFile = lockFile)
+        }
+        val doc = Regex("""service-abstractions/(docs/[\w-]+\.md)""").find(failure.message!!)!!.groupValues[1]
+        val section = Regex(""""([^"]+)" in service-abstractions/""").find(failure.message!!)!!.groupValues[1]
+        val docFile = java.io.File("../$doc")
+        assertTrue(docFile.exists(), "$doc doesn't exist")
+        assertTrue("## $section" in docFile.readText(), "$doc has no \"$section\" section")
+    }
+
+    @Test
     fun failsWhenAModelChangedSinceTheMetadataTaskRan() {
         metadataTaskRuns()
         model.writeText("val nickname: String\n")

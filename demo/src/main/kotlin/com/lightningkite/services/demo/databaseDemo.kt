@@ -10,7 +10,7 @@ import kotlin.uuid.Uuid
 /**
  * Demonstrates the database subsystem: insert/query/update/delete against an in-memory
  * `ram://` database, using a `@Queryable` model for type-safe conditions and
- * modifications (the KSP-generated `Task.path` companion property).
+ * modifications (the KSP-generated `Task.done` and friends).
  */
 fun main() = runBlocking {
     val context = TestSettingContext()
@@ -26,14 +26,14 @@ fun main() = runBlocking {
     )
     println("All tasks: ${tasks.find(Condition.Always).toList()}")
 
-    val open = tasks.find(Task.path.done eq false).toList()
+    val open = tasks.find(Task.done eq false).toList()
     println("Open tasks: $open")
 
     val firstOpen = open.first()
     tasks.updateOneById(firstOpen._id, Modification<Task> { it.done assign true })
     println("After completing '${firstOpen.title}': ${tasks.find(Condition.Always).toList()}")
 
-    val removed = tasks.deleteMany(Task.path.done eq true)
+    val removed = tasks.deleteMany(Task.done eq true)
     println("Deleted ${removed.size} completed tasks; remaining: ${tasks.find(Condition.Always).toList()}")
 }
 

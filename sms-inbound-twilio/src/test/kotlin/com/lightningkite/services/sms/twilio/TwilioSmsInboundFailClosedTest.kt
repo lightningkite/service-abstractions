@@ -4,6 +4,11 @@ import com.lightningkite.services.TestSettingContext
 import com.lightningkite.services.data.Data
 import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -16,7 +21,7 @@ import kotlin.test.assertNotNull
 
 /**
  * Verifies that [TwilioSmsInboundService] fails closed when no webhook URL has been
- * configured. Prior to 1.0.0, an unconfigured webhook URL caused signature validation
+ * configured, here or on the number in Twilio. Prior to 1.0.0, an unconfigured webhook URL caused signature validation
  * to be silently skipped, accepting any inbound POST as authentic. The current
  * behavior must throw [SecurityException] instead.
  */
@@ -35,6 +40,12 @@ class TwilioSmsInboundFailClosedTest {
             accountSid = "AC1234567890",
             authToken = "authtoken123",
             phoneNumber = "+18008008000",
+            httpClient = HttpClient(MockEngine {
+                respond(
+                    """{"incoming_phone_numbers": [{"sid": "PN1", "sms_url": null}]}""",
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+            }),
         )
 
         val body = TypedData(Data.Text(sampleBody), MediaType.Application.FormUrlEncoded)

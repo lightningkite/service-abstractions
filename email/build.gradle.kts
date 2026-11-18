@@ -43,7 +43,8 @@ kotlin {
         val commonMain = getByName("commonMain") {
             dependencies {
                 api(project(path = ":basis"))
-                implementation(libs.kotlinx.html)
+                // Public API: Email(html = { ... }) takes an HTML.() -> Unit.
+                api(libs.kotlinx.html)
             }
         }
         val commonTest = getByName("commonTest") {

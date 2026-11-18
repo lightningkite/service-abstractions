@@ -49,6 +49,38 @@ class RawStringTest {
         assertFailsWith<SerializationException> { Json.decodeFromString(PhoneNumber.serializer(), "\"12345\"") }
     }
 
+    @Test
+    fun phoneNumbersNormalizeToE164WithUsDefault() {
+        assertEquals("+18015550123", "+18015550123".toPhoneNumberOrNull()?.raw)
+        assertEquals("+18015550123", "18015550123".toPhoneNumberOrNull()?.raw)
+        assertEquals("+18015550123", "8015550123".toPhoneNumberOrNull()?.raw)
+        assertEquals("+18015550123", "(801) 555-0123".toPhoneNumberOrNull()?.raw)
+        assertEquals("+442079460958", "+44 20 7946 0958".toPhoneNumberOrNull()?.raw)
+        assertEquals("+12345678", "+12345678".toPhoneNumberOrNull()?.raw)
+        assertEquals("+123456789012345", "+123456789012345".toPhoneNumberOrNull()?.raw)
+    }
+
+    @Test
+    fun phoneNumberGarbageIsRejected() {
+        assertEquals(null, "+abc".toPhoneNumberOrNull())
+        assertEquals(null, "+1".toPhoneNumberOrNull())
+        assertEquals(null, "+1234567".toPhoneNumberOrNull())
+        assertEquals(null, "801555012".toPhoneNumberOrNull())
+        assertEquals(null, "+1234567890123456".toPhoneNumberOrNull())
+        assertEquals(null, "801555o123".toPhoneNumberOrNull())
+        assertEquals(null, "+1801555o123".toPhoneNumberOrNull())
+        assertEquals(null, "28015550123".toPhoneNumberOrNull())
+        assertEquals(null, "".toPhoneNumberOrNull())
+        assertFailsWith<IllegalArgumentException> { "+abc".toPhoneNumber() }
+    }
+
+    @Test
+    fun phoneNumberDecodingEnforcesE164() {
+        assertFailsWith<SerializationException> { Json.decodeFromString(PhoneNumber.serializer(), "\"+abc\"") }
+        assertFailsWith<SerializationException> { Json.decodeFromString(PhoneNumber.serializer(), "\"+1\"") }
+        assertEquals("+1 (801) 555-0123", Json.decodeFromString(PhoneNumber.serializer(), "\"+18015550123\"").toString())
+    }
+
     @Suppress("DEPRECATION")
     @Test
     fun constructorRejectsUnnormalizedValues() {

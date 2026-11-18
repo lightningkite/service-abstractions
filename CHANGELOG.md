@@ -3,7 +3,7 @@
 ## [Unreleased - 1.0.0 candidate]
 
 ### Breaking Changes
-- **database-processor**: In a multiplatform module, only `kspCommonMainKotlinMetadata` writes commonMain's generated fields; the target tasks (`kspKotlinJvm`, ...) no longer do. The module must have the processor on `kspCommonMainMetadata` and make its other KSP and compile tasks depend on that task, or the build fails with "The generated sources for commonMain are missing". Only `src/commonMain` and `src/commonTest` count as common. JVM-only modules are unaffected. See "Build Setup" in `docs/database-query-dsl.md`.
+- **database-processor**: In a multiplatform module, only `kspCommonMainKotlinMetadata` writes commonMain's generated fields; the target tasks (`kspKotlinJvm`, ...) no longer do. The module must have the processor on `kspCommonMainMetadata` and make its other KSP and compile tasks depend on that task, or the build fails with "The generated sources for commonMain are missing". Only `src/commonMain` and `src/commonTest` count as common. JVM-only modules are unaffected. See "Build Setup" in `docs/database-queries.md`.
 - **cache-dynamodb-kmp**: Module removed. Migrate to `cache-dynamodb` (JVM) or another KMP cache.
 - **basis**: `ConcurrentMutableMap` is now an `expect class` (was factory fn). Source-compatible at call sites; **binary-incompatible** — recompile dependents.
 - **basis**: `SharedResources` ctor param type changed `MutableMap` → `ConcurrentMutableMap`.

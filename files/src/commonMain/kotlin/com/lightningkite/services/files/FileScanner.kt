@@ -30,7 +30,7 @@ public interface FileScanner : Service {
     @Serializable
     @JvmInline
     public value class Settings(
-        public val url: String = "file://files",
+        public val url: String = "mime://",
     ) : Setting<FileScanner> {
 
         public companion object : UrlSettingParser<FileScanner>() {

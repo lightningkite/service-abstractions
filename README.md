@@ -1,146 +1,74 @@
 # Service Abstractions
 
-Originally from our [Lightning Server](https://github.com/lightningkite/lightning-server) project, we've decided to
-separate the external service abstractions we've built such that others can use them.
+Kotlin Multiplatform interfaces for the infrastructure an app depends on, with swappable implementations: databases, caches, pub/sub, file storage, email, SMS, push notifications, LLMs, embeddings, speech, phone calls, payments and geocoding.  Each service is configured by a URL, so tests run on in-memory fakes and production on the real provider without code changes.  Every service reports traces, metrics and health checks, and many can generate their own Terraform.
 
-You can use the abstractions here to make testing and running servers locally easier, as well as reduce your dependence
-on any one specific technology or deployment style.
-
-All the services and their implementations have the following:
-
-- Metrics - the system automatically tracks metrics on the service's performance and sends them to a location of your
-  choice.
-- Health Checks - the services have built-in ways to check if they are currently connected and are operating safely.
-
-We've done our best to minimize the dependencies in the `basis` package.
-
-## Current Status
-
-Version 1.3 has breaking changes that improve the ergonomics and safety, and is in the process of release.
-
-## Goals
-
-- **Abstract services where possible:** make it possible to switch databases and caches
-- **Make local running easy:** for example, you should be able to use `mongodb-file://file-path` to automatically
-  download and run MongoDB on your machine and connect to it.
-- **Make deployments safe:** generate Terraform for the resource types you need and ensure you can move dependencies
-  safely.
-
-## Our dependencies
-
-- [kotlin-logging](https://github.com/oshai/kotlin-logging)
-- [KotlinX Serialization](https://github.com/Kotlin/kotlinx.serialization)
-- [KotlinX Coroutines](https://github.com/Kotlin/kotlinx.coroutines)
-
-## Settings Sample (server library agnostic)
+Extracted from [Lightning Server](https://github.com/lightningkite/lightning-server), but independent of any server framework.
 
 ```kotlin
-fun main() {
-    val settingsFile = """
-        {
-            "port": 8941,
-            "host": "127.0.0.1",
-            "cache": "ram"
-        }
-    """.trimIndent()
-    val context = TestSettingContext()
-    val settings = Json.decodeFromString<MyServerSettings>(settingsFile)
-
-    runBlocking {
-        val cache = settings.cache("cache", context)
-        repeat(5) {
-            val currentValue = cache.get<Int>("counter")
-            cache.set("counter", (currentValue ?: 0) + 1)
-        }
-    }
-}
-
 @Serializable
-data class MyServerSettings(
-    val port: Int = 8080,
-    val host: String = "0.0.0.0",
-    val cache: Cache.Settings = Cache.Settings(),
+data class AppSettings(
+    val database: Database.Settings = Database.Settings("ram"),
+    val cache: Cache.Settings = Cache.Settings("ram"),
+    val email: EmailService.Settings = EmailService.Settings("console"),
 )
+
+@Queryable
+data class Post(
+    override val _id: Uuid = Uuid.random(),
+    val author: EmailAddress,
+    val title: String,
+    val likes: Int = 0,
+) : HasId<Uuid>
+
+suspend fun main() {
+    MongoDatabase; RedisCache  // register the schemes production uses
+    val settings = Json.decodeFromString<AppSettings>(File("settings.json").readText())
+    val context = TestSettingContext()
+
+    val posts = settings.database("database", context).prepare(DatabaseTableDefinition<Post>())
+    val post = posts.insertOne(Post(author = "ada@example.com".toEmailAddress(), title = "Hello"))
+    posts.updateOneById(post._id, Modification { it.likes += 1 })
+    val popular = posts.find(Post.likes gte 1).toList()
+
+    settings.cache("cache", context).set("last-post", post._id)
+}
 ```
 
-`TestSettingContext()` is a zero-dependency `SettingContext` meant for exactly this kind of
-local running/testing. See **[demo/](demo/README.md)** for a runnable version of this sample
-plus one for every other subsystem (database, email, sms, files, pubsub, phonecall, speech,
-subscription-payments, voiceagent, and more), each using a local/fake implementation so it
-needs no credentials.
-
-## Database Sample (server library agnostic)
-
-```kotlin
-@Serializable
-data class Post(
-    override val _id: UUID = UUID.random(),
-    val title: String,
-    val content: String,
-    val author: String,
-    val postedAt: Instant,
-): HasId<UUID>
-
-fun main(database: Database) {
-    val table = database.collection<Post>()
-
-    runBlocking {
-        val newPost = table.insertOne(Post(
-          title = "My test post", 
-          content = "Here's a long story about my cat.", 
-          author = "someone@email.com", 
-          postedAt = Clock.System.now()
-        ))!!
-        table.updateOneById(newPost._id, modification {
-            title assign "Cat Posting"
-        })
-        table.find(condition { it.author.eq("someone@gmail.com") }, sort { it.postedAt.ascending() })
-          .toList()
-          .forEach { println(it) }
-    }
-}
-
-@Serializable
-data class MyServerSettings(
-    val port: Int = 8080,
-    val host: String = "0.0.0.0",
-    val cache: Cache.Settings = Cache.Settings(),
-)
+```json
+{ "database": "mongodb://localhost/app", "cache": "redis://localhost:6379", "email": "smtp://user:pass@smtp.example.com:587?fromEmail=noreply@example.com" }
 ```
 
 ## Documentation
 
-Comprehensive user guides are available for all major modules:
+Start at **[docs/index.md](docs/index.md)**: learning path, installation, and every module with its Gradle coordinates.
 
-- **[Settings URL Reference](docs/settings-url-reference.md)** - Every URL scheme each service accepts, with parameters and examples
+- [Basis](docs/basis.md): settings, context, lifecycle
+- [Database](docs/database.md) and [queries](docs/database-queries.md)
+- [Settings URL reference](docs/settings-url-reference.md)
+- [Runnable demos](demo/README.md) on fakes, no credentials needed
 
-### Core Services
+## Installing
 
-- **[Database](docs/database-module.md)** - Type-safe database abstraction with MongoDB, PostgreSQL, and in-memory
-  implementations
-    - [Query DSL Reference](docs/database-query-dsl.md) - Complete guide to Condition and Modification syntax
-    - [Vector Search](docs/database-module.md#vector-search) - `VectorDatabase`: similarity search over Atlas, pgvector, or in memory
-- **[Cache](docs/cache-module.md)** - Unified caching interface for Redis, Memcached, DynamoDB, and in-memory
-- **[Files](docs/files.md)** - File storage abstraction for local filesystem and AWS S3
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement {
+    versionCatalogs {
+        create("sa") { from("com.lightningkite.stack:service-abstractions-catalog:<catalog version>") }
+    }
+}
+// build.gradle.kts
+dependencies {
+    implementation(sa.database.mongodb)
+    ksp(sa.database.processor)
+}
+```
 
-### Communication Services
+Modules are `com.lightningkite.services:<module>`.  See [docs/index.md#installing](docs/index.md#installing) for repositories and versions.
 
-- **[Email](docs/email-module.md)** - Send emails via SMTP (Gmail, SendGrid, Office 365, AWS SES)
-- **[SMS](docs/sms-module.md)** - Send text messages via Twilio and other providers
-- **[Push Notifications](docs/notifications-module.md)** - Multi-platform push notifications via Firebase Cloud
-  Messaging
-- **[PubSub](docs/pubsub-module.md)** - Publish-subscribe messaging for real-time event broadcasting
+## Changes
 
-### Additional Resources
+[CHANGELOG.md](CHANGELOG.md), and [BREAKING_CHANGES_1.3.md](BREAKING_CHANGES_1.3.md) for upgrading from 1.3.
 
-- [Database Pipeline Queries](plans/database-pipeline-queries.md) - Pipeline query design notes
-- [DB Map Format Architecture](plans/db-map-format-architecture.md) - Database map format design
+## License
 
-## Status
-
-Incomplete and in progress. You can use Lightning Server if you want access immediately.
-
-### Roadmap
-
-- [ ] Add a convenient loader for Ktor and potentially other server libraries.
-    - Are there even any other coroutine-based server libraries? What else is desired?
+[LICENSE.txt](LICENSE.txt)

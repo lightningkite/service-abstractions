@@ -14,7 +14,7 @@ import kotlin.time.Duration
  * the same file system.
  *
  * ```kotlin
- * val fs: PublicFileSystem = ...
+ * val fs: ExternalFileSystem = ...
  * val file = fs.root.then("uploads/document.pdf")
  *
  * file.put(TypedData(pdfBytes, MediaType.Application.Pdf))
@@ -77,7 +77,7 @@ public data class ExternalFile(public val fileSystem: ExternalFileSystem, public
      *
      * This - not a backend-specific absolute URL - is what gets persisted (see
      * [com.lightningkite.services.files.serverFile]). Because it is keyed by the service's
-     * [PublicFileSystem.name] rather than by where the bytes physically live, a stored value keeps
+     * [ExternalFileSystem.name] rather than by where the bytes physically live, a stored value keeps
      * resolving after the storage backend is swapped (e.g. S3 to local), as long as the service
      * keeps the same name and the underlying files are moved across. The path is escaped by
      * [ExternalPath.toString], so any file name survives the round trip through [Parser].

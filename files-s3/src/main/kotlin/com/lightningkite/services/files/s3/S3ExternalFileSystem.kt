@@ -908,7 +908,7 @@ public class S3ExternalFileSystem(
         ): ExternalFileSystem.Settings = ExternalFileSystem.Settings("s3://$bucket.s3-$region.amazonaws.com")
 
         init {
-            // Registers the "s3" URL scheme with the PublicFileSystem.Settings parser
+            // Registers the "s3" URL scheme with the ExternalFileSystem.Settings parser
             // Supports formats:
             // - s3://bucket.region.amazonaws.com/                           (default credentials)
             // - s3://profile@bucket.region.amazonaws.com/                   (named profile)

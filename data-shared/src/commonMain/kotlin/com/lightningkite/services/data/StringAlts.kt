@@ -332,7 +332,7 @@ public fun String.toEmailAddress(): EmailAddress =
  * ## Features
  *
  * - **E.164 storage**: All numbers stored as +{country}{subscriber} (e.g., +18015551234)
- * - **US default**: 10-digit numbers automatically get +1 prefix
+ * - **US default**: numbers without a + are US: 10 digits get +1, 11 digits starting with 1 get +
  * - **Formatting**: toString() provides human-readable format for US numbers
  * - **tel: URL generation**: Easy conversion to tel links
  *
@@ -358,7 +358,7 @@ public fun String.toEmailAddress(): EmailAddress =
 public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constructor(override val raw: String) :
     IsRawString {
     init {
-        requireNormalized(raw.isEmpty() || (raw.startsWith('+') && raw == raw.lowercase() && raw.none { it in punctuation })) {
+        requireNormalized(raw.isEmpty() || e164.matches(raw)) {
             "$raw is not a phone number in '+<country code><number>' form."
         }
     }
@@ -393,27 +393,34 @@ public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constru
 /** Characters to strip from phone number input. */
 private val punctuation = setOf(' ', '-', '.', ',', '(', ')', '[', ']', '<', '>')
 
+private val e164 = Regex("""\+\d{8,15}""")
+
 
 /**
  * Converts this string to a [PhoneNumber], returning null if invalid.
+ *
+ * Follows the same rules as [toPhoneNumber].
  *
  * @return Normalized PhoneNumber in E.164 format, or null if invalid
  */
 @Suppress("DEPRECATION")
 public fun String.toPhoneNumberOrNull(): PhoneNumber? {
-    val fixed = this.lowercase().filter { it !in punctuation }
-
-    return if (fixed.startsWith('+')) PhoneNumber(fixed)
-    else if (fixed.length == 10) PhoneNumber("+1$fixed")
-    else null
+    val fixed = this.filter { it !in punctuation }
+    val candidate = when {
+        fixed.startsWith('+') -> fixed
+        fixed.length == 10 -> "+1$fixed"
+        fixed.length == 11 && fixed.startsWith('1') -> "+$fixed"
+        else -> return null
+    }
+    return if (e164.matches(candidate)) PhoneNumber(candidate) else null
 }
 
 /**
  * Converts this string to a [PhoneNumber] in E.164 format.
  *
- * - Strips common punctuation and spaces
- * - Numbers starting with + are kept as-is
- * - 10-digit numbers get +1 (US) prefix automatically
+ * - Strips common punctuation and spaces; what remains must be digits, optionally after a leading +
+ * - With +: kept as-is, and must have 8 to 15 digits (E.164)
+ * - Without +: 10 digits get the +1 (US) prefix, 11 digits starting with 1 get +; anything else is invalid
  *
  * @return Normalized PhoneNumber in E.164 format
  * @throws IllegalArgumentException if format is invalid

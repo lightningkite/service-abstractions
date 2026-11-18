@@ -75,7 +75,7 @@ abstract class CommonSymbolProcessor2(
             // write would empty the folder under whatever is compiling it.  commonTest has no metadata task, so its
             // targets still write.
             // Consumers must therefore make their other KSP and compile tasks depend on kspCommonMainKotlinMetadata:
-            // see "Build Setup" in docs/database-query-dsl.md.
+            // see "Build setup" in docs/database-queries.md.
             val target = outSample.path.split(File.separatorChar).dropWhile { it != "ksp" }.drop(1).first()
             if (common && flavor == "Main" && target != "metadata") {
                 requireGeneratedByMetadataTask(
@@ -199,7 +199,7 @@ fun requireGeneratedByMetadataTask(version: Int, dependencies: Sequence<File>, l
             tasks.matching { (it.name.startsWith("ksp") || it.name.startsWith("compile")) && it.name != "kspCommonMainKotlinMetadata" }
                 .configureEach { dependsOn("kspCommonMainKotlinMetadata") }
 
-        Full setup: "Build Setup" in service-abstractions/docs/database-query-dsl.md.
+        Full setup: "Build setup" in service-abstractions/docs/database-queries.md.
         """.trimIndent()
     )
 }

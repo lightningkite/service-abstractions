@@ -16,14 +16,14 @@ import kotlin.uuid.Uuid
 /**
  * Service abstraction for cloud file storage and content delivery.
  *
- * PublicFileSystem provides a unified interface for storing and serving files across
+ * ExternalFileSystem provides a unified interface for storing and serving files across
  * different storage backends (local filesystem, AWS S3, etc.), keyed by [ExternalPath].
  * Files are accessible via public URLs with optional signed URL support for access control.
  *
  * ## Available Implementations
  *
- * - **KotlinxIoPublicFileSystem** (`file://`) - Local filesystem storage
- * - **S3PublicFileSystem** (`s3://`) - AWS S3 storage (JVM-only: files-s3)
+ * - **KotlinxIoExternalFileSystem** (`file://`) - Local filesystem storage
+ * - **S3ExternalFileSystem** (`s3://`) - AWS S3 storage (JVM-only: files-s3)
  *
  * ## Configuration
  *
@@ -33,11 +33,11 @@ import kotlin.uuid.Uuid
  * @Serializable
  * data class ServerSettings(
  *     // Local filesystem
- *     val files: PublicFileSystem.Settings = PublicFileSystem.Settings(
+ *     val files: ExternalFileSystem.Settings = ExternalFileSystem.Settings(
  *         "file:///var/app/uploads?serveUrl=https://example.com/files"
  *     ),
  *     // S3 with signed URLs
- *     val s3Files: PublicFileSystem.Settings = PublicFileSystem.Settings(
+ *     val s3Files: ExternalFileSystem.Settings = ExternalFileSystem.Settings(
  *         "s3://my-bucket.s3-us-east-1.amazonaws.com?signedUrlDuration=1h"
  *     )
  * )
@@ -46,7 +46,7 @@ import kotlin.uuid.Uuid
  * ## Basic Usage
  *
  * ```kotlin
- * val fs: PublicFileSystem = settings.files("storage", context)
+ * val fs: ExternalFileSystem = settings.files("storage", context)
  *
  * // Upload file
  * val file = fs.root.then("uploads/avatar.jpg")
@@ -64,7 +64,7 @@ import kotlin.uuid.Uuid
  * For access control, signed URLs include signatures that expire:
  *
  * ```kotlin
- * val fs = PublicFileSystem.Settings(
+ * val fs = ExternalFileSystem.Settings(
  *     "s3://bucket.s3-us-east-1.amazonaws.com?signedUrlDuration=1h"
  * )("storage", context)
  *
@@ -282,7 +282,7 @@ public interface ExternalFileSystem : Service {
     }
 
     /**
-     * Configuration for instantiating a PublicFileSystem.
+     * Configuration for instantiating an ExternalFileSystem.
      *
      * The URL scheme determines the storage backend:
      * - `file://path?serveUrl=baseUrl` - Local filesystem (requires serveUrl parameter)
@@ -304,16 +304,16 @@ public interface ExternalFileSystem : Service {
      *
      * ```kotlin
      * // Local filesystem with relative URL
-     * PublicFileSystem.Settings("file:///var/uploads?serveUrl=files")
+     * ExternalFileSystem.Settings("file:///var/uploads?serveUrl=files")
      *
      * // Local filesystem with absolute URL and signed URLs
-     * PublicFileSystem.Settings("file:///var/uploads?serveUrl=https://cdn.example.com/files&signedUrlDuration=PT30M")
+     * ExternalFileSystem.Settings("file:///var/uploads?serveUrl=https://cdn.example.com/files&signedUrlDuration=PT30M")
      *
      * // S3 with default credentials
-     * PublicFileSystem.Settings("s3://my-bucket.s3-us-east-1.amazonaws.com")
+     * ExternalFileSystem.Settings("s3://my-bucket.s3-us-east-1.amazonaws.com")
      *
      * // S3 with access key and no signed URLs
-     * PublicFileSystem.Settings("s3://AKIAIOSFODNN7EXAMPLE:secretKey@my-bucket.s3-us-east-1.amazonaws.com?signedUrlDuration=forever")
+     * ExternalFileSystem.Settings("s3://AKIAIOSFODNN7EXAMPLE:secretKey@my-bucket.s3-us-east-1.amazonaws.com?signedUrlDuration=forever")
      * ```
      *
      * @property url Connection string defining the storage backend and parameters

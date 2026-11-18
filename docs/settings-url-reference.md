@@ -1,111 +1,110 @@
 # Settings URL Reference
 
-Every URL scheme each service accepts, taken from the registration code, not from KDoc.  Paths are relative to the repo root.  `file:line` citations point at the `register(...)` call.
+Every URL scheme each service accepts, with its parameters and quirks, taken from the registration code.  For how settings work in general, see [basis.md](basis.md); for how to use each service, follow the chapter links.
 
 ## Cheatsheet
 
-**Preload** is the class that registers the scheme.  Reference it once at startup, before any settings are parsed, or the scheme gives "No handler":
-- `X.Companion` means touch the companion object, e.g. `MongoDatabase.Companion`.  This initializes the class and runs its `init {}`.
+**Preload** is what registers the scheme.  Reference it once at startup, before any settings are parsed, or the scheme fails with "No handler":
+- `X.Companion` means touch the class or its companion (`MongoDatabase`), which runs its `init {}`.
 - `X.ensureRegistered()` / `X.register()` means call that no-op.
-- **—** means the scheme is built into the `Settings` type's own module, so nothing needs preloading.
+- **—** means the scheme is built into the `Settings` type's own module.
 
-`[...]` marks optional parts.  For the full parameter lists, see each service's section.
+`[...]` marks optional parts.
 
-| Service | Sample setting | Preload |
-|---|---|---|
-| **Database** | `ram` | — |
-| | `ram-preload://<path>` | — |
-| | `delay://<100ms-500ms>/<wrapped db url>` | — |
-| | `json-files://<folder>` | `JsonFileDatabase.Companion` |
-| | `mongodb://<user>:<pass>@<host>:<port>/<db>` | `MongoDatabase.Companion` |
-| | `mongodb+srv://<user>:<pass>@<host>/<db>` | `MongoDatabase.Companion` |
-| | `mongodb-test[://?version=<V7_0>]` | `MongoDatabase.Companion` |
-| | `mongodb-file://<folder>[?databaseName=<name>&port=<port>&version=<7.0>]` | `MongoDatabase.Companion` |
-| | `postgresql://<user>:<pass>@<host>:<port>/<db>` | `PostgresDatabase.Companion` |
-| | `sql-h2://<mem:name or file path>` | `SqlDatabase.Companion` |
-| | `sql-sqlite://<path or :memory:>` | `SqlDatabase.Companion` |
-| | `sql-mysql://<user>:<pass>@<host>:<port>/<db>` (also `sql-mariadb://`) | `SqlDatabase.Companion` |
-| | `cassandra://<user>:<pass>@<host>:<port>/<keyspace>[?dc=<dc>&rf=<n>]` | `CassandraDatabase.Companion` |
-| | `keyspaces://<region>/<keyspace>` | `CassandraDatabase.Companion` |
-| | `native://<location>` | `SqliteDatabase.Companion` |
-| **VectorDatabase** | `ram` | `Database.Settings` |
-| | `mongodb+srv://<user>:<pass>@<host>/<db>` (also `mongodb://`) | `MongoDatabase.Companion` |
-| | `postgresql://<user>:<pass>@<host>:<port>/<db>` | `PostgresDatabase.Companion` |
-| **Cache** | `ram` / `ram-unsafe` | — |
-| | `redis://[:<pass>@]<host>:<port>[/<db>]` | `RedisCache.Companion` |
-| | `memcached://<host>:<port>[,<host>:<port>]` | `MemcachedCache.Companion` |
-| | `memcached-aws://<config-endpoint>:<port>` | `MemcachedCache.Companion` |
-| | `memcached-test` (spawns local memcached) | `MemcachedCache.Companion` |
-| | `dynamodb://[<accessKey>:<secretKey>@]<region>/<table>` | `DynamoDbCache.Companion` |
-| | `dynamodb-local` (downloads + runs DynamoDB Local) | `DynamoDbCache.Companion` |
-| **PubSub** | `local` / `debug` | — |
-| | `redis://[:<pass>@]<host>:<port>[/<db>]` | `RedisPubSub.Companion` |
-| | `dynamodb-pubsub://[<accessKey>:<secretKey>@]<region>/<table>` | `DynamoDbPubSub.Companion` |
-| **Files** | `file://<path>?serveUrl=<url>` | — |
-| | `s3://[<profile>@]<bucket>.s3-<region>.amazonaws.com` | `S3ExternalFileSystem.Companion` |
-| | `azure-blob://<account>:<accountKey>@<container>` | `AzureBlobExternalFileSystem.Companion` |
-| **FileScanner** | `mime://` | — |
-| | `clamav://<host>:<port>/[<platform>]` | `ClamAvFileScanner.Companion` |
-| **Email** | `console` / `test` | — |
-| | `smtp://<user>:<pass>@<host>:<port>?fromEmail=<addr>[&fromLabel=<name>]` | `JavaSmtpEmailService.Companion` |
-| | `mailgun://<apiKey>@<domain>` | `MailgunEmailService.Companion` |
-| | `human://<host>:<port>` | `HumanEmailService.Companion` |
-| **Email inbound** | `console` / `test` | — |
-| | `imaps://<user>:<pass>@<host>[:<port>][/<folder>]` (also `imap://`) | `ImapEmailInboundService.Companion` |
-| | `mailgun://<apiKey>@<domain>` | `MailgunEmailInboundService.Companion` |
-| | `sendgrid://<verificationKey>@<host>` | `SendGridEmailInboundService.Companion` |
-| | `ses://?topicArn=<arn>[&bucket=<bucket>&region=<region>]` | `SesEmailInboundService.Companion` |
-| | `human://<host>:<port>` | `HumanEmailInboundService.Companion` |
-| **SMS** | `console` / `test` | — |
-| | `twilio://<accountSid>:<authToken>@<fromPhone>` | `TwilioSMS.Companion` |
-| | `awssms://[<accessKey>:<secretKey>@]<region>?originationIdentity=<id>` | `AwsSms.Companion` |
-| | `human://<host>:<port>` | `HumanSmsService.Companion` |
-| **SMS inbound** | `console` / `test` | — |
-| | `twilio://<accountSid>:<authToken>@<phone>` | `TwilioSmsInboundService.Companion` |
-| | `human://<host>:<port>` | `HumanSmsInboundService.Companion` |
-| **Notifications** | `console` / `test` | — |
-| | `fcm://<path-to-service-account.json>` | `FcmNotificationClient.Companion` |
-| **Phone calls** | `console` / `test` | — |
-| | `twilio://<accountSid>:<authToken>@<fromPhone>` or `twilio://<accountSid>-<keySid>:<keySecret>@<fromPhone>` | `TwilioPhoneCallService.Companion` |
-| **LLM Access** | `anthropic://?apiKey=<key>` | `AnthropicLlmSettings.ensureRegistered()` |
-| | `openai://?apiKey=<key>[&baseUrl=<url>]` | `OpenAiLlmSettings.ensureRegistered()` |
-| | `ollama://[<model>]?baseUrl=<url>&autoStart=<bool>&autoPull=<bool>` | `OllamaSchemeRegistrar.ensureRegistered()` |
-| | `bedrock://[<accessKeyId>:<secretKey>@ or <profile>@]?region=<region>` | `BedrockLlmSettings.ensureRegistered()` |
-| | `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>]` | `BedrockSdkLlm.ensureRegistered()` |
-| | `embedded://<model-name>?path=<model path or HF id>` | `EmbeddedLlmSettings.ensureRegistered()` |
-| **Embeddings** | `openai://<model-id>?apiKey=<key>[&dimensions=<n>]` | `OpenAiEmbeddingSettings.ensureRegistered()` |
-| | `ollama://<model>?baseUrl=<url>` | `OllamaEmbeddingSchemeRegistrar.ensureRegistered()` |
-| | `bedrock://[<profile>@]<model-id>?region=<region>` | `BedrockEmbeddingSettings.ensureRegistered()` |
-| | `bedrock-sdk://<model-id>?region=<region>` | `BedrockSdkEmbedding.ensureRegistered()` |
-| **Speech-to-text** | `test` / `console` | — |
-| | `openai://<apiKey>@<model>` | `OpenAISpeechToTextService.Companion` |
-| | `elevenlabs://<apiKey>@<model>` | `ElevenLabsSpeechToTextService.Companion` |
-| | `vosk://[?modelName=<name>]` (also `local://`) | `VoskSpeechToTextService.Companion` |
-| **Text-to-speech** | `test` / `console` | — |
-| | `openai://<apiKey>@<model>` | `OpenAITextToSpeechService.Companion` |
-| | `elevenlabs://<apiKey>@<model>` | `ElevenLabsTextToSpeechService.Companion` |
-| | `freetts://` (also `local://`) | `FreeTtsTextToSpeechService.Companion` |
-| **Voice agent** | `test` / `console` | — |
-| | `openai-realtime://[<model>]?apiKey=<key>` | `OpenAIVoiceAgentService.Companion` |
-| **Telemetry** | `noop` | — |
-| | `logging` / `logging-nocolor` | `LoggingTelemetryBackend.register()` |
-| | `log` / `console` | `OtelTelemetryBackend.register()` |
-| | `otlp-grpc://<host>:<port>` (also `otlp-http://`, `otlp-https://`) | `OtelTelemetryBackend.register()` |
-| | `dev[://<outputFile>]` / `debounced-dev[://<outputFile>]` | `OtelTelemetryBackend.register()` |
-| | `sentry://<key>@<sentry-host>/<projectId>/<wrapped telemetry url>` | `SentryTelemetryBackend.register()` |
-| **Geocoding** | `test` | — |
-| | `local` | `LocalGeocoding.Companion` |
-| | `stadia://<apiKey>[@<host>]` | `StadiaGeocoding.Companion` |
-| | `google://<apiKey>` | `GoogleGeocoding.Companion` |
-| | `aws-location://[<accessKey>:<secretKey>@]<region>` | `AwsLocationGeocoding.Companion` |
-| | `azure-maps://<subscriptionKey>` or `azure-maps://<clientId>?auth=entra` | `AzureMapsGeocoding.Companion` |
-| **Subscription payments** | `console` / `test` | — |
-| | `stripe://<apiKey>[@<webhookSecret>]` | `StripeSubscriptionService.Companion` |
+| Service | Sample setting | Preload | Chapter |
+|---|---|---|---|
+| **Database** | `ram` | — | [database](database.md#settings-urls) |
+| | `ram-preload://<path>` | — | |
+| | `delay://<100ms-500ms>/<wrapped db url>` | — | |
+| | `json-files://<folder>` | `JsonFileDatabase.Companion` | |
+| | `mongodb://<user>:<pass>@<host>:<port>/<db>` | `MongoDatabase.Companion` | |
+| | `mongodb+srv://<user>:<pass>@<host>/<db>` | `MongoDatabase.Companion` | |
+| | `mongodb-test[://?version=<V7_0>]` | `MongoDatabase.Companion` | |
+| | `mongodb-file://<folder>[?databaseName=<name>&port=<port>&version=<7.0>]` | `MongoDatabase.Companion` | |
+| | `postgresql://<user>:<pass>@<host>:<port>/<db>` | `PostgresDatabase.Companion` | |
+| | `sql-h2://<mem:name or file path>` | `SqlDatabase.Companion` | |
+| | `sql-sqlite://<path or :memory:>` | `SqlDatabase.Companion` | |
+| | `sql-mysql://<user>:<pass>@<host>:<port>/<db>` (also `sql-mariadb://`) | `SqlDatabase.Companion` | |
+| | `native://<location>` | `SqliteDatabase.Companion` | |
+| **VectorDatabase** | `ram` | `Database.Settings` | [database](database.md#vector-search) |
+| | `mongodb+srv://<user>:<pass>@<host>/<db>` (also `mongodb://`) | `MongoDatabase.Companion` | |
+| | `postgresql://<user>:<pass>@<host>:<port>/<db>` | `PostgresDatabase.Companion` | |
+| **Cache** | `ram` / `ram-unsafe` | — | [cache](cache.md#settings-urls) |
+| | `redis://[:<pass>@]<host>:<port>[/<db>]` | `RedisCache.Companion` | |
+| | `memcached://<host>:<port>[,<host>:<port>]` | `MemcachedCache.Companion` | |
+| | `memcached-aws://<config-endpoint>:<port>` | `MemcachedCache.Companion` | |
+| | `memcached-test` (spawns local memcached) | `MemcachedCache.Companion` | |
+| | `dynamodb://[<accessKey>:<secretKey>@]<region>/<table>` | `DynamoDbCache.Companion` | |
+| | `dynamodb-local` (downloads + runs DynamoDB Local) | `DynamoDbCache.Companion` | |
+| **PubSub** | `local` / `debug` | — | [pubsub](pubsub.md#settings-urls) |
+| | `redis://[:<pass>@]<host>:<port>[/<db>]` | `RedisPubSub.Companion` | |
+| | `dynamodb-pubsub://[<accessKey>:<secretKey>@]<region>/<table>` | `DynamoDbPubSub.Companion` | |
+| **Files** | `file://<path>?serveUrl=<url>` | — | [files](files.md#settings-urls) |
+| | `s3://[<profile>@]<bucket>.s3-<region>.amazonaws.com` | `S3ExternalFileSystem.Companion` | |
+| | `azure-blob://<account>:<accountKey>@<container>` | `AzureBlobExternalFileSystem.Companion` | |
+| **FileScanner** | `mime://` | — | [files](files.md#scan-uploads) |
+| | `tika://[?unknownTypes=allow]` | `TikaFileScanner.Companion` | |
+| | `clamav://<host>:<port>/[<platform>]` | `ClamAvFileScanner.Companion` | |
+| **Email** | `console` / `test` | — | [email](email.md#settings-urls) |
+| | `smtp://<user>:<pass>@<host>:<port>?fromEmail=<addr>[&fromLabel=<name>]` | `JavaSmtpEmailService.Companion` | |
+| | `mailgun://<apiKey>@<domain>` | `MailgunEmailService.Companion` | |
+| | `human://<host>:<port>` | `HumanEmailService.Companion` | [human-services](human-services.md) |
+| **Email inbound** | `console` / `test` | — | [email](email.md#receive-email) |
+| | `imaps://<user>:<pass>@<host>[:<port>][/<folder>]` (also `imap://`) | `ImapEmailInboundService.Companion` | |
+| | `mailgun://<signingKey>@<domain>` | `MailgunEmailInboundService.Companion` | |
+| | `sendgrid://<verificationKey>@<host>` | `SendGridEmailInboundService.Companion` | |
+| | `ses://?topicArn=<arn>[&bucket=<bucket>&region=<region>]` | `SesEmailInboundService.Companion` | |
+| | `human://<host>:<port>` | `HumanEmailInboundService.Companion` | [human-services](human-services.md) |
+| **SMS** | `console` / `test` | — | [sms](sms.md#settings-urls) |
+| | `twilio://<accountSid>:<authToken>@<fromPhone>` | `TwilioSMS.Companion` | |
+| | `awssms://[<accessKey>:<secretKey>@]<region>?originationIdentity=<id>` | `AwsSms.Companion` | |
+| | `human://<host>:<port>` | `HumanSmsService.Companion` | [human-services](human-services.md) |
+| **SMS inbound** | `console` / `test` | — | [sms](sms.md#receive-texts) |
+| | `twilio://<accountSid>:<authToken>@<phone>` | `TwilioSmsInboundService.Companion` | |
+| | `human://<host>:<port>` | `HumanSmsInboundService.Companion` | [human-services](human-services.md) |
+| **Notifications** | `console` / `test` | — | [notifications](notifications.md#settings-urls) |
+| | `fcm://<path-to-service-account.json>` | `FcmNotificationClient.Companion` | |
+| **Phone calls** | `console` / `test` | — | [phonecall](phonecall.md#settings-urls) |
+| | `twilio://<accountSid>:<authToken>@<fromPhone>` or `twilio://<accountSid>-<keySid>:<keySecret>@<fromPhone>` | `TwilioPhoneCallService.Companion` | |
+| **LLM Access** | `anthropic://?apiKey=<key>` | `AnthropicLlmSettings.ensureRegistered()` | [ai](ai.md#settings-urls) |
+| | `openai://?apiKey=<key>[&baseUrl=<url>]` | `OpenAiLlmSettings.ensureRegistered()` | |
+| | `ollama://[<model>]?baseUrl=<url>&autoStart=<bool>&autoPull=<bool>` | `OllamaSchemeRegistrar.ensureRegistered()` | |
+| | `bedrock://[<accessKeyId>:<secretKey>@ or <profile>@]?region=<region>` | `BedrockLlmSettings.ensureRegistered()` | |
+| | `bedrock-sdk://<model-id>?region=<region>[&profile=<profile>]` | `BedrockSdkLlm.ensureRegistered()` | |
+| | `embedded://<model-name>?path=<model path or HF id>` | `EmbeddedLlmSettings.ensureRegistered()` | |
+| **Embeddings** | `openai://<model-id>?apiKey=<key>[&dimensions=<n>]` | `OpenAiEmbeddingSettings.ensureRegistered()` | [embedding](embedding.md#settings-urls) |
+| | `ollama://<model>?baseUrl=<url>` | `OllamaEmbeddingSchemeRegistrar.ensureRegistered()` | |
+| | `bedrock://[<profile>@]<model-id>?region=<region>` | `BedrockEmbeddingSettings.ensureRegistered()` | |
+| | `bedrock-sdk://<model-id>?region=<region>` | `BedrockSdkEmbedding.ensureRegistered()` | |
+| **Speech-to-text** | `test` / `console` | — | [speech](speech.md#settings-urls) |
+| | `openai://<apiKey>@<model>` | `OpenAISpeechToTextService.Companion` | |
+| | `elevenlabs://<apiKey>@<model>` | `ElevenLabsSpeechToTextService.Companion` | |
+| | `vosk://[?modelName=<name>]` (also `local://`) | `VoskSpeechToTextService.Companion` | |
+| **Text-to-speech** | `test` / `console` | — | [speech](speech.md#settings-urls) |
+| | `openai://<apiKey>@<model>` | `OpenAITextToSpeechService.Companion` | |
+| | `elevenlabs://<apiKey>@<model>` | `ElevenLabsTextToSpeechService.Companion` | |
+| | `freetts://` (also `local://`) | `FreeTtsTextToSpeechService.Companion` | |
+| **Voice agent** | `test` / `console` | — | [voiceagent](voiceagent.md#settings-urls) |
+| | `openai-realtime://[<model>]?apiKey=<key>` | `OpenAIVoiceAgentService.Companion` | |
+| **Telemetry** | `noop` | — | [telemetry](telemetry.md#settings-urls) |
+| | `logging` / `logging-nocolor` | `LoggingTelemetryBackend.register()` | |
+| | `log` / `console` | `OtelTelemetryBackend.register()` | |
+| | `otlp-grpc://<host>:<port>` (also `otlp-http://`, `otlp-https://`) | `OtelTelemetryBackend.register()` | |
+| | `dev[://<outputFile>]` / `debounced-dev[://<outputFile>]` | `OtelTelemetryBackend.register()` | |
+| | `sentry://<key>@<sentry-host>/<projectId>/<wrapped telemetry url>` | `SentryTelemetryBackend.register()` | |
+| **Geocoding** | `test` | — | [geocoding](geocoding.md#settings-urls) |
+| | `local` | `LocalGeocoding.Companion` | |
+| | `stadia://<apiKey>[@<host>]` | `StadiaGeocoding.Companion` | |
+| | `google://<apiKey>` | `GoogleGeocoding.Companion` | |
+| | `aws-location://[<accessKey>:<secretKey>@]<region>` | `AwsLocationGeocoding.Companion` | |
+| | `azure-maps://<subscriptionKey>` or `azure-maps://<clientId>?auth=entra` | `AzureMapsGeocoding.Companion` | |
+| **Subscription payments** | `console` / `test` | — | [subscription-payments](subscription-payments.md#settings-urls) |
+| | `stripe://<apiKey>[@<webhookSecret>]` | `StripeSubscriptionService.Companion` | |
 
 ## How dispatch works
 
 - Each service has a `Settings` type, usually `@JvmInline value class Settings(val url: String)`.  Telemetry is the exception: it's a data class with extra fields (see [Telemetry](#telemetry)).
-- `UrlSettingParser.parse` uses `url.substringBefore("://")` as the key (`basis/src/commonMain/kotlin/com/lightningkite/services/UrlSettingParser.kt`).  A URL without `://` uses the whole string as the key, so bare `ram`, `test`, `console`, `noop` all work.
+- `UrlSettingParser.parse` uses `url.substringBefore("://")` as the key.  A URL without `://` uses the whole string as the key, so bare `ram`, `test`, `console`, `noop` all work.
 - An unknown scheme throws `IllegalArgumentException("No handler <key> ... available handlers are ...")`.  If a scheme you expect is missing from that list, its module isn't loaded.
 - Handlers register in the implementation's companion `init {}`.  Being on the classpath isn't enough: the class must be initialized first.  Some modules expose a no-op you can call at startup for this: `ensureRegistered()` (ai-*, embedding-*) or `register()` (otel-jvm, telemetry-sentry, `LoggingTelemetryBackend`).  For other modules, reference the implementation class or its `Settings.Companion` builder.
 - Registering the same scheme twice throws `Error`, so a library can't hijack a scheme.
@@ -119,21 +118,21 @@ Every URL scheme each service accepts, taken from the registration code, not fro
 - Messaging: [Email](#email-emailservicesettings), [Email inbound](#email-inbound-emailinboundservicesettings), [SMS](#sms-smssettings), [SMS inbound](#sms-inbound-smsinboundservicesettings), [Notifications](#notifications-notificationservicesettings), [Phone calls](#phone-calls-phonecallservicesettings)
 - AI: [LLM Access](#llm-access), [Embeddings](#embeddings), [Speech-to-Text](#speech-to-text), [Text-to-Speech](#text-to-speech), [Voice Agent](#voice-agent)
 - Other: [Telemetry](#telemetry), [Geocoding](#geocoding), [Subscription payments](#subscription-payments)
-- [Known issues found while writing this](#known-issues-found-while-writing-this)
+- [Known issues](#known-issues)
 
 ## Database
 
-`Database.Settings(url: String = "ram")` — `database/src/commonMain/kotlin/com/lightningkite/services/database/Database.kt:114`. `invoke(name, context)` = `parse(name, url, context)`.
+`Database.Settings(url: String = "ram")`. `invoke(name, context)` = `parse(name, url, context)`.
 
 ### `ram://`
-Module: `database` (Database.kt:119)
+Module: `database`
 ```
 ram          (or ram://anything - everything after the scheme is ignored)
 ```
 No parts. Example: `ram`. Data lost on exit.
 
 ### `ram-preload://`
-Module: `database` (Database.kt:122)
+Module: `database`
 ```
 ram-preload://<path>
 ```
@@ -145,7 +144,7 @@ Surprises: a missing/unreadable path only logs a warning (`Could not extract met
 Examples: `ram-preload://./testdata/`, `ram-preload://seed.json`
 
 ### `delay://`
-Module: `database` (Database.kt:151)
+Module: `database`
 ```
 delay://<delay>/<wrapped database url>
 ```
@@ -158,7 +157,7 @@ Surprises: wraps another DB via `.delayed(range)`. The delay part ends at the fi
 Examples: `delay://100ms-500ms/ram`, `delay://250/json-files://./data`
 
 ### `sql-h2://`
-Module: `database-sql` (SqlDatabase.kt:85; parsing in HikariPool.kt:84)
+Module: `database-sql`
 ```
 sql-h2://<h2 jdbc path>[?<pool and/or h2 params>]
 ```
@@ -176,7 +175,7 @@ Surprises: no user/password support (no userinfo parsing). Bad numeric pool valu
 Examples: `sql-h2://mem:test`, `sql-h2://file:./data/app?maxPoolSize=5`
 
 ### `sql-sqlite://`
-Module: `database-sql` (SqlDatabase.kt:99)
+Module: `database-sql`
 ```
 sql-sqlite://<path or :memory:>[?<pool and/or sqlite params>]
 ```
@@ -184,7 +183,7 @@ Becomes `jdbc:sqlite:` + path + (`?` + remaining query). Same pool param names a
 Examples: `sql-sqlite://:memory:`, `sql-sqlite://./data/app.db`, `sql-sqlite://app.db?busy_timeout=5000`
 
 ### `sql-mysql://` and `sql-mariadb://`
-Module: `database-sql` (SqlDatabase.kt:114, 125; auth parse HikariPool.kt:64)
+Module: `database-sql`
 ```
 sql-mysql://user:password@host[:port]/database[?<pool and/or driver params>]
 sql-mariadb://user:password@host[:port]/database[?...]
@@ -203,7 +202,7 @@ Error: `IllegalStateException("Invalid MySQL URL. Expected: sql-mysql://user:pas
 Example: `sql-mysql://app:s3cret@db.internal:3306/app?maxPoolSize=20&useSSL=true`
 
 ### `json-files://`
-Module: `database-jsonfile` (JsonFileDatabase.kt:144)
+Module: `database-jsonfile`
 ```
 json-files://<folder>
 ```
@@ -215,7 +214,7 @@ Surprises: one `<table>.json` per table (table name filtered to letters/digits);
 Example: `json-files://./local-data`
 
 ### `mongodb://`
-Module: `database-mongodb` (MongoDatabase.kt:145)
+Module: `database-mongodb`
 ```
 mongodb://[user:pass@]host[:port][,host2...]/<databaseName>[?<mongo options>]
 ```
@@ -231,7 +230,7 @@ Helper: `Database.Settings.mongoDb(connectionString)`.
 Examples: `mongodb://localhost:27017/mydb`, `mongodb://u:p@h1:27017,h2:27017/app?replicaSet=rs0&atlasSearch=true`
 
 ### `mongodb+srv://`
-Module: `database-mongodb` (MongoDatabase.kt:164)
+Module: `database-mongodb`
 ```
 mongodb+srv://[user:pass@]host/<databaseName>[?<options>]
 ```
@@ -239,7 +238,7 @@ Same as `mongodb://` (incl. `atlasSearch=true`, `retryWrites=false` default). Di
 Example: `mongodb+srv://u:p@cluster0.abcde.mongodb.net/prod?retryWrites=true&atlasSearch=true`
 
 ### `mongodb-test://`
-Module: `database-mongodb` (MongoDatabase.kt:181; embeddedMongo.kt:19)
+Module: `database-mongodb`
 ```
 mongodb-test[://[?version=<v>]]
 ```
@@ -251,7 +250,7 @@ Surprises: **starts an embedded mongod** (flapdoodle; downloads binaries) on a f
 Examples: `mongodb-test://`, `mongodb-test://?version=V7_0`
 
 ### `mongodb-file://`
-Module: `database-mongodb` (MongoDatabase.kt:200; embeddedMongo.kt:29)
+Module: `database-mongodb`
 ```
 mongodb-file://<folder>[?databaseName=<n>&port=<p>&version=<v>]
 ```
@@ -266,7 +265,7 @@ Surprises: **starts an embedded mongod** on a fixed default port; two on the sam
 Example: `mongodb-file://./build/mongo?databaseName=app&port=27018`
 
 ### `postgresql://`
-Module: `database-postgres` (PostgresDatabase.kt:103; parse HikariPool.kt:63)
+Module: `database-postgres`
 ```
 postgresql://[user[:password]@]host[:port]/<database>[?<pool and/or jdbc params>]
 ```
@@ -282,8 +281,10 @@ Becomes `jdbc:postgresql://host:port/database?...`, driver `org.postgresql.Drive
 Error text says credentials are required (`postgresql://[user]:[password]@[destination]`) but the code does not require them. Helper `Database.Settings.postgres(username, password, host)` builds `postgresql://u:p@host` with no database path and no escaping.
 Example: `postgresql://app:pw@db.example.com:5432/app?sslmode=require&maxPoolSize=10`
 
+The `database-cassandra` module (`cassandra`, `cassandra-test`, `keyspaces`) is experimental: it is excluded from the build in `settings.gradle.kts` and not published.
+
 ### `cassandra://`
-Module: `database-cassandra` (CassandraDatabase.kt:120)
+Module: `database-cassandra`
 ```
 cassandra://[user:pass@]host[:port][,host[:port]...]/<keyspace>[?dc=<dc>&rf=<n>]
 ```
@@ -300,11 +301,11 @@ Surprises: **creates the keyspace if missing** (`CREATE KEYSPACE IF NOT EXISTS .
 Examples: `cassandra://localhost/app`, `cassandra://u:p@c1:9042,c2:9042/app?dc=us-east&rf=3`
 
 ### `cassandra-test://`
-Module: `database-cassandra` (CassandraDatabase.kt:146, 299)
+Module: `database-cassandra`
 URL ignored. **Always throws `NotImplementedError("cassandra-test:// requires TestContainers implementation. Use embeddedCassandra() instead.")`**; not usable.
 
 ### `keyspaces://`
-Module: `database-cassandra` (CassandraDatabase.kt:152)
+Module: `database-cassandra`
 ```
 keyspaces://<region>/<keyspace>[?...]
 ```
@@ -331,7 +332,7 @@ Examples: `native:///var/data/app.db`, `native://app.db` (web)
 
 ## VectorDatabase
 
-`VectorDatabase.Settings(url: String = "ram")` — `database/src/commonMain/kotlin/com/lightningkite/services/database/VectorDatabase.kt`. Each handler below reuses the `Database.Settings` handler of the same scheme and returns that database, which is also a `VectorDatabase`.
+`VectorDatabase.Settings(url: String = "ram")`. Each handler below reuses the `Database.Settings` handler of the same scheme and returns that database, which is also a `VectorDatabase`.
 
 | scheme | preload | backend |
 |---|---|---|
@@ -343,24 +344,24 @@ Surprises: a `VectorDatabase.Settings` and a `Database.Settings` with the same U
 
 ## Cache
 
-`Cache.Settings(url: String = "ram")` — `cache/src/commonMain/kotlin/com/lightningkite/services/cache/Cache.kt` (class ~:50, registrations :57-58).
+`Cache.Settings(url: String = "ram")`.
 
 ### `ram://`
-Module: `cache` (Cache.kt:57). No parts; rest ignored. Thread-safe `MapCache`. Example: `ram`
+Module: `cache`. No parts; rest ignored. Thread-safe `MapCache`. Example: `ram`
 
 ### `ram-unsafe://`
-Module: `cache` (Cache.kt:58). No parts; rest ignored. `MapCacheUnsafe`, not thread-safe. Example: `ram-unsafe`
+Module: `cache`. No parts; rest ignored. `MapCacheUnsafe`, not thread-safe. Example: `ram-unsafe`
 
 ### `redis://`
-Module: `cache-redis` (RedisCache.kt:126)
+Module: `cache-redis`
 ```
 redis://[[user:]password@]host[:port][/<db>][?<lettuce options>]
 ```
-The **entire URL is passed unchanged to Lettuce `RedisClient.create(url)`**; the library parses nothing itself, so Lettuce RedisURI syntax applies (I did not verify Lettuce's exact option names). Only the exact scheme `redis` is registered, so `rediss://` (TLS) and `redis-sentinel://` fail with "No handler". The client is built lazily, so a bad URL errors on first connect, not at settings parse. Helper `Cache.Settings.redis(url)` prefixes `redis://`.
+The **entire URL is passed unchanged to Lettuce `RedisClient.create(url)`**; the library parses nothing itself, so Lettuce RedisURI syntax applies. Only the exact scheme `redis` is registered, so `rediss://` (TLS) and `redis-sentinel://` fail with "No handler". The client is built lazily, so a bad URL errors on first connect, not at settings parse. Helper `Cache.Settings.redis(url)` prefixes `redis://`.
 Examples: `redis://localhost:6379`, `redis://:pw@cache.internal:6379/2`
 
 ### `memcached://`
-Module: `cache-memcached` (MemcachedCache.kt:104)
+Module: `cache-memcached`
 ```
 memcached://host[:port][,host[:port]...]      (separators: comma or space)
 ```
@@ -373,11 +374,11 @@ No query, auth, or path (a path would be glued into the host). IPv6 literals bre
 Example: `memcached://10.0.0.5:11211,10.0.0.6:11211`
 
 ### `memcached-test`
-Module: `cache-memcached` (MemcachedCache.kt:96; EmbeddedMemcached.kt:50)
+Module: `cache-memcached`
 URL ignored. **Spawns a local `memcached` process from PATH** when settings are instantiated (blocks up to ~10s polling 127.0.0.1:11211), registers a shutdown hook to kill it, and connects to fixed `127.0.0.1:11211`. Fails if `memcached` is not installed; conflicts with an already-running memcached. Test-only. Example: `memcached-test`
 
 ### `memcached-aws://`
-Module: `cache-memcached` (MemcachedCache.kt:115)
+Module: `cache-memcached`
 ```
 memcached-aws://<config-endpoint-host>[:port]
 ```
@@ -385,7 +386,7 @@ Host required; port default 11211 (non-numeric -> 11211). Uses `AutoDiscoveryCac
 Example: `memcached-aws://mycache.abc123.cfg.use1.cache.amazonaws.com:11211`
 
 ### `dynamodb://`
-Module: `cache-dynamodb` (DynamoDbCache.kt:133)
+Module: `cache-dynamodb`
 ```
 dynamodb://[<accessKey>:<secretKey>@]<region>/<tableName>
 ```
@@ -396,27 +397,26 @@ Regex: `dynamodb://(?:(?<access>[^:]+):(?<secret>[^@]+)@)?(?<region>[^/]+)/(?<ta
 | region | yes | - | `Region.of(...)` |
 | tableName | yes | - | `.+`: no query parsing; `?x=y` would become part of the table name. (The class's own default `tableName = "cache"` is not used by the URL handler.) |
 
-Surprises: HTTP client/config come from `context[AwsConnections]`. Table readiness (`ready`) is awaited on connect/first use; I did not trace whether the table is auto-created. Error: `IllegalStateException("Invalid dynamodb URL...")`. Helpers: `dynamoDb(region, tableName)`, `dynamoDb(accessKey, secretKey, region, tableName)`.
+Surprises: HTTP client/config come from `context[AwsConnections]`. Table readiness (`ready`) is awaited on connect/first use; The table is created if it doesn't exist. Error: `IllegalStateException("Invalid dynamodb URL...")`. Helpers: `dynamoDb(region, tableName)`, `dynamoDb(accessKey, secretKey, region, tableName)`.
 Example: `dynamodb://us-west-2/app-cache`
 
 ### `dynamodb-local`
-Module: `cache-dynamodb` (DynamoDbCache.kt:130; testDynamoDb.kt:45)
+Module: `cache-dynamodb`
 URL ignored. **Downloads DynamoDB Local on first use** into `~/.dynamodblocal` (from AWS S3) and **starts `java -jar DynamoDBLocal.jar -inMemory -port 7999`**; fixed port 7999, singleton per JVM, killed on shutdown; `IllegalStateException` if not ready in 30s. Dummy creds, region us-west-2. Dev/test only. Example: `dynamodb-local`
 
-`cache-dynamodb-kmp`: contains only `build/`; no source, no registrations.
 
 ## PubSub
 
-`PubSub.Settings(url: String = "local")` — `pubsub/src/commonMain/kotlin/com/lightningkite/services/pubsub/PubSub.kt` (class ~:126, registrations :131-132).
+`PubSub.Settings(url: String = "local")`.
 
 ### `local://`
-Module: `pubsub` (PubSub.kt:131). No parts; rest ignored. In-process only (not shared across instances). Example: `local`
+Module: `pubsub`. No parts; rest ignored. In-process only (not shared across instances). Example: `local`
 
 ### `debug://`
-Module: `pubsub` (PubSub.kt:132). No parts; rest ignored. `DebugPubSub` (KDoc: "console logging implementation"; I did not read it to confirm delivery semantics). Example: `debug`
+Module: `pubsub`. No parts; rest ignored. `DebugPubSub`: delivers like `local` and prints each channel creation and emit with its subscriber count. Example: `debug`
 
 ### `redis://`
-Module: `pubsub-redis` (RedisPubSub.kt:228)
+Module: `pubsub-redis`
 ```
 redis://[[user:]password@]host[:port][/<db>][?<lettuce options>]
 ```
@@ -424,7 +424,7 @@ Same as cache `redis://`: the whole URL is passed to Lettuce `RedisClient.create
 Example: `redis://localhost:6379`
 
 ### `dynamodb-pubsub://`
-Module: `pubsub-aws` (DynamoDbPubSub.kt:119)
+Module: `pubsub-aws`
 ```
 dynamodb-pubsub://[<accessKey>:<secretKey>@]<region>/<tableName>[?pollInterval=<ms>&fastEmit=<bool>]
 ```
@@ -436,11 +436,8 @@ dynamodb-pubsub://[<accessKey>:<secretKey>@]<region>/<tableName>[?pollInterval=<
 | `pollInterval` | no | 15 (ms) | long ms; non-numeric silently -> 15ms |
 | `fastEmit` | no | false | `toBoolean()` (anything but "true" -> false). One DynamoDB write per emit instead of two; same-millisecond messages may be unordered. |
 
-Not URL-settable: `messageTtl` (5 min default). Polling-based (reads every `pollInterval`). I did not trace table auto-creation (`ensureReady`/`doInitialize`). Error: `IllegalStateException("Invalid dynamodb-pubsub URL. Expected: ...")`. Unknown params ignored.
+Not URL-settable: `messageTtl` (5 min default). Polling-based (reads every `pollInterval`). The table is created if it doesn't exist; a failure there is permanent for the instance. Error: `IllegalStateException("Invalid dynamodb-pubsub URL. Expected: ...")`. Unknown params ignored.
 Example: `dynamodb-pubsub://us-east-1/app-pubsub?pollInterval=50&fastEmit=true`
-
-### MQTT
-`pubsub-mqtt`, `pubsub-mqtt-aws`, `pubsub-mqtt-paho` have no Kotlin sources in this checkout (only `build/`, and `terraform/`/`local/` for paho); no `PubSub.Settings.register` exists for them. Nothing to document.
 
 ## Files (`ExternalFileSystem.Settings`)
 
@@ -449,7 +446,7 @@ Signed-URL duration (`signedUrlDuration`) grammar is identical for `file`, `s3`,
 
 ### `file://`
 
-- Module: `files` (`files/src/commonMain/kotlin/com/lightningkite/services/files/ExternalFileSystem.kt:331`)
+- Module: `files`
 
 ```
 file://<path>?serveUrl=<relative-or-absolute-url>[&signedUrlDuration=<d>]
@@ -470,7 +467,7 @@ Surprises: query parsed by naive split on `&`/`=`, no percent-decoding (a `serve
 
 ### `s3://`
 
-- Module: `files-s3` (`files-s3/src/main/kotlin/com/lightningkite/services/files/s3/S3ExternalFileSystem.kt:918`)
+- Module: `files-s3`
 
 ```
 s3://[<accessKey>:<secretKey>@ | <profile>@]<bucket>.[s3-]<region>.amazonaws.com[/][?signedUrlDuration=<d>]
@@ -498,7 +495,7 @@ Surprises: `bucket.s3.amazonaws.com` (no region) parses with region `s3` (invali
 
 ### `azure-blob://`
 
-- Module: `files-azure-blob` (`files-azure-blob/src/main/kotlin/com/lightningkite/services/files/azure/AzureBlobExternalFileSystem.kt:284`)
+- Module: `files-azure-blob`
 
 ```
 azure-blob://<account>[:<accountKey>]@<container>[?signedUrlDuration=<d>][&endpoint=<url>]
@@ -523,11 +520,11 @@ Surprises: params not percent-decoded at parse time; the account key may end in 
 
 ## FileScanner (`FileScanner.Settings`)
 
-Field: `url`. Default: `file://files` (a scheme NOT registered on `FileScanner`; invoking the default throws unknown-scheme. Ambiguous whether intentional; looks like a copy-paste bug). Source: `files/src/commonMain/kotlin/com/lightningkite/services/files/FileScanner.kt:33`.
+Field: `url`. Default: `mime://`.
 
 ### `mime://`
 
-- Module: `files` (`FileScanner.kt:38`)
+- Module: `files`
 
 ```
 mime://
@@ -535,9 +532,25 @@ mime://
 No parts; everything after the scheme is ignored. Builds `CheckMimeFileScanner(name, context)`.
 Example: `mime://`
 
+### `tika://`
+
+- Module: `files-tika`
+
+```
+tika://[?unknownTypes=allow|block][&allowedUnknownTypes=<type/subtype>,<type/subtype>]
+```
+
+| Part | Required | Default | Meaning |
+|---|---|---|---|
+| `unknownTypes` | no | `block` | `allow` lets through media types Tika doesn't know (they can't be checked); anything other than `allow`/`block` throws |
+| `allowedUnknownTypes` | no | none | comma-separated media types to let through even though Tika doesn't know them; each must be `type/subtype` |
+
+Checks that a file's bytes match its claimed media type using Tika's magic-number database (over a thousand types, with their relationships: docx is a zip, SVG is XML).  No native libraries or external processes.
+Examples: `tika://`, `tika://?allowedUnknownTypes=application/bson,application/x-protobuf-text`
+
 ### `clamav://`
 
-- Module: `files-clamav` (`files-clamav/src/main/kotlin/com/lightningkite/services/files/clamav/ClamAvFileScanner.kt:117`)
+- Module: `files-clamav`
 
 ```
 clamav://<host>[:<port>]/[<platform>][?timeoutSeconds=<n>]
@@ -562,17 +575,17 @@ Surprises: omitted platform -> `JVM_PLATFORM`, but the helper `FileScanner.Setti
 
 ## Email (`EmailService.Settings`)
 
-Field: `url`. Default: `console`. Source: `email/src/commonMain/kotlin/com/lightningkite/services/email/EmailService.kt:126`.
+Field: `url`. Default: `console`.
 
 ### `console://`
-- Module: `email` (`EmailService.kt:126`). Format: `console` (tail ignored). Logs emails. Example: `console`
+- Module: `email`. Format: `console` (tail ignored). Logs emails. Example: `console`
 
 ### `test://`
-- Module: `email` (`EmailService.kt:127`). Format: `test` (tail ignored). Collects in memory; test-only. Example: `test`
+- Module: `email`. Format: `test` (tail ignored). Collects in memory; test-only. Example: `test`
 
 ### `smtp://`
 
-- Module: `email-javasmtp` (`email-javasmtp/src/main/kotlin/com/lightningkite/services/email/javasmtp/JavaSmtpEmailService.kt:142`)
+- Module: `email-javasmtp`
 
 ```
 smtp://[<username>:<password>@]<host>:<port>?fromEmail=<addr>[&fromLabel=<name>][&insecure=true]
@@ -597,7 +610,7 @@ Surprises: query values are not URL-decoded (`+` stays `+`; a space in `fromLabe
 
 ### `mailgun://`
 
-- Module: `email-mailgun` (`email-mailgun/src/main/kotlin/com/lightningkite/services/email/mailgun/MailgunEmailService.kt:32`)
+- Module: `email-mailgun`
 
 ```
 mailgun://<apiKey>@<domain>
@@ -614,7 +627,7 @@ Surprises: no query params; US endpoint (`api.mailgun.net`) is hard-coded (no EU
 
 ### `human://`
 
-- Module: `human-services` (`human-services/src/main/kotlin/com/lightningkite/services/human/HumanEmailService.kt:49`; parsing in `human-services/src/main/kotlin/com/lightningkite/services/human/util.kt:27`)
+- Module: `human-services`
 
 ```
 human://[<host>][:<port>]
@@ -630,17 +643,17 @@ Surprises: dev tool (human-operated web dashboard; outbound emails appear in it)
 
 ## Email inbound (`EmailInboundService.Settings`)
 
-Field: `url`. Default: `console`. Source: `email-inbound/src/commonMain/kotlin/com/lightningkite/services/email/EmailService.kt:92`.
+Field: `url`. Default: `console`.
 
 ### `console://`
-- Module: `email-inbound` (`EmailService.kt:92`). Tail ignored. Example: `console`
+- Module: `email-inbound`. Tail ignored. Example: `console`
 
 ### `test://`
-- Module: `email-inbound` (`EmailService.kt:93`). Tail ignored; test-only. Example: `test`
+- Module: `email-inbound`. Tail ignored; test-only. Example: `test`
 
 ### `imap://` and `imaps://`
 
-- Module: `email-inbound-imap` (`email-inbound-imap/src/main/kotlin/com/lightningkite/services/email/imap/ImapEmailInboundService.kt:136` imap, `:113` imaps)
+- Module: `email-inbound-imap` ( imap, `:113` imaps)
 
 ```
 imap://<username>:<password>@<host>[:<port>][/<folder>]
@@ -665,7 +678,7 @@ Surprises: the regex has a `?params` group but the greedy `folder` group swallow
 
 ### `mailgun://` (inbound)
 
-- Module: `email-inbound-mailgun` (`email-inbound-mailgun/src/main/kotlin/com/lightningkite/services/email/mailgun/MailgunEmailInboundService.kt:84`). Class is `@Untested`.
+- Module: `email-inbound-mailgun`. Class is `@Untested`.
 
 ```
 mailgun://<apiKey>@<domain>
@@ -681,7 +694,7 @@ Surprises: registered scheme is `mailgun`, NOT `mailgun-inbound` (class KDoc say
 
 ### `sendgrid://`
 
-- Module: `email-inbound-sendgrid` (`email-inbound-sendgrid/src/main/kotlin/com/lightningkite/services/email/sendgrid/SendGridEmailInboundService.kt:93`). `@Untested`.
+- Module: `email-inbound-sendgrid`. `@Untested`.
 
 ```
 sendgrid://<verificationKey>@<host>
@@ -696,7 +709,7 @@ Surprises: the documented/helper format `sendgrid://<URL-encoded key>@` (empty h
 
 ### `ses://`
 
-- Module: `email-inbound-ses` (`email-inbound-ses/src/main/kotlin/com/lightningkite/services/email/ses/SesEmailInboundService.kt:93`)
+- Module: `email-inbound-ses`
 
 ```
 ses://?topicArn=<arn>[&bucket=<bucket>&region=<region>]
@@ -713,23 +726,23 @@ Surprises: everything before the first `?` is ignored; params split on `&` and f
 
 ### `human://` (inbound)
 
-- Module: `human-services` (`human-services/src/main/kotlin/com/lightningkite/services/human/HumanEmailInboundService.kt:91`). Same format and port rules as email `human://` above (`human://[host][:port]`, port default 8800, host ignored). Dev tool: a person types inbound emails into the dashboard.
+- Module: `human-services`. Same format and port rules as email `human://` above (`human://[host][:port]`, port default 8800, host ignored). Dev tool: a person types inbound emails into the dashboard.
 Example: `human://localhost:8800`
 
 
 ## SMS (`SMS.Settings`)
 
-Field: `url`. Default: `console`. Source: `sms/src/commonMain/kotlin/com/lightningkite/services/sms/SMS.kt:106`.
+Field: `url`. Default: `console`.
 
 ### `console://`
-- Module: `sms` (`SMS.kt:106`). Tail ignored. Example: `console`
+- Module: `sms`. Tail ignored. Example: `console`
 
 ### `test://`
-- Module: `sms` (`SMS.kt:109`). Tail ignored; test-only. Example: `test`
+- Module: `sms`. Tail ignored; test-only. Example: `test`
 
 ### `twilio://`
 
-- Module: `sms-twilio` (`sms-twilio/src/main/kotlin/com/lightningkite/services/sms/twilio/TwilioSMS.kt:185`)
+- Module: `sms-twilio`
 
 ```
 twilio://<accountSid>:<authToken>@<fromPhoneNumber>
@@ -746,7 +759,7 @@ Surprises: only Account SID + Auth Token (no API-key variant here, unlike phone 
 
 ### `awssms://`
 
-- Module: `sms-aws` (`sms-aws/src/main/kotlin/com/lightningkite/services/sms/aws/AwsSms.kt:222`)
+- Module: `sms-aws`
 
 ```
 awssms://[<accessKey>:<secretKey>@]<region>?originationIdentity=<id>
@@ -767,21 +780,21 @@ awssms://AKIAEXAMPLE:secret@us-east-1?originationIdentity=pool-0123456789abcdef
 Surprises: uses AWS End User Messaging SMS (PinpointSmsVoiceV2). Health check returns WARNING in sandbox mode.
 
 ### `human://`
-- Module: `human-services` (`human-services/src/main/kotlin/com/lightningkite/services/human/HumanSmsService.kt:48`). Same as email `human://`: `human://[host][:port]`, port default 8800, host ignored. Example: `human://localhost:8800`
+- Module: `human-services`. Same as email `human://`: `human://[host][:port]`, port default 8800, host ignored. Example: `human://localhost:8800`
 
 ## SMS inbound (`SmsInboundService.Settings`)
 
-Field: `url`. Default: `console`. Source: `sms-inbound/src/commonMain/kotlin/com/lightningkite/services/sms/SmsInboundService.kt:83`.
+Field: `url`. Default: `console`.
 
 ### `console://`
-- Module: `sms-inbound` (`SmsInboundService.kt:83`). Tail ignored. Example: `console`
+- Module: `sms-inbound`. Tail ignored. Example: `console`
 
 ### `test://`
-- Module: `sms-inbound` (`SmsInboundService.kt:84`). Tail ignored; test-only. Example: `test`
+- Module: `sms-inbound`. Tail ignored; test-only. Example: `test`
 
 ### `twilio://` (inbound)
 
-- Module: `sms-inbound-twilio` (`sms-inbound-twilio/src/main/kotlin/com/lightningkite/services/sms/twilio/TwilioSmsInboundService.kt:327`)
+- Module: `sms-inbound-twilio`
 
 ```
 twilio://<accountSid>:<authToken>@<phoneNumber>
@@ -798,22 +811,22 @@ Example: `twilio://ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:your_auth_token@+155512345
 Surprises: unlike outbound, `@phone` is required by the regex itself.
 
 ### `human://` (inbound)
-- Module: `human-services` (`human-services/src/main/kotlin/com/lightningkite/services/human/HumanSmsInboundService.kt:89`). `human://[host][:port]`, port default 8800, host ignored. Example: `human://localhost:8800`
+- Module: `human-services`. `human://[host][:port]`, port default 8800, host ignored. Example: `human://localhost:8800`
 
 
 ## Notifications (`NotificationService.Settings`)
 
-Field: `url`. NO default value (required). Source: `notifications/src/commonMain/kotlin/com/lightningkite/services/notifications/NotificationService.kt:146`.
+Field: `url`. NO default value (required).
 
 ### `console://`
-- Module: `notifications` (`NotificationService.kt:146`). Tail ignored. Example: `console`
+- Module: `notifications`. Tail ignored. Example: `console`
 
 ### `test://`
-- Module: `notifications` (`NotificationService.kt:147`). Tail ignored; test-only. Example: `test`
+- Module: `notifications`. Tail ignored; test-only. Example: `test`
 
 ### `fcm://`
 
-- Module: `notifications-fcm` (`notifications-fcm/src/main/kotlin/com/lightningkite/services/notifications/fcm/FcmNotificationClient.kt:152`)
+- Module: `notifications-fcm`
 
 ```
 fcm://<path-to-service-account.json>
@@ -824,7 +837,7 @@ fcm://{ ...inline service-account JSON... }
 |---|---|---|---|
 | everything after `://` | yes | `""` | If it starts with `{`, treated as inline JSON. Otherwise treated as a file path (`fcm:///etc/secrets/fb.json` -> `/etc/secrets/fb.json`; `fcm://rel/path.json` -> relative) and read from disk. |
 
-Errors: file missing -> `IllegalArgumentException("FCM credentials file not found at '...'")`. JSON decoded by `FcmServiceAccount.fromJson` (`FcmServiceAccount.kt:77`): required `project_id`, `client_email`, `private_key` (PEM PKCS#8 RSA); optional `token_uri` (defaults to `FcmServiceAccount.DEFAULT_TOKEN_URI`). Missing fields -> kotlinx.serialization exception.
+Errors: file missing -> `IllegalArgumentException("FCM credentials file not found at '...'")`. JSON decoded by `FcmServiceAccount.fromJson`: required `project_id`, `client_email`, `private_key` (PEM PKCS#8 RSA); optional `token_uri` (defaults to `FcmServiceAccount.DEFAULT_TOKEN_URI`). Missing fields -> kotlinx.serialization exception.
 Examples:
 ```
 fcm:///etc/secrets/firebase-adminsdk.json
@@ -835,17 +848,17 @@ Surprises: no query params; any `?`/`#` becomes part of the path or JSON. Talks 
 
 ## Phone calls (`PhoneCallService.Settings`)
 
-Field: `url`. Default: `test`. Source: `phonecall/src/commonMain/kotlin/com/lightningkite/services/phonecall/PhoneCallService.kt:123`.
+Field: `url`. Default: `test`.
 
 ### `test://`
-- Module: `phonecall` (`PhoneCallService.kt:123`). Tail ignored; in-memory, test-only. Example: `test`
+- Module: `phonecall`. Tail ignored; in-memory, test-only. Example: `test`
 
 ### `console://`
-- Module: `phonecall` (`PhoneCallService.kt:124`). Tail ignored; logs to console. Example: `console`
+- Module: `phonecall`. Tail ignored; logs to console. Example: `console`
 
 ### `twilio://`
 
-- Module: `phonecall-twilio` (`phonecall-twilio/src/main/kotlin/com/lightningkite/services/phonecall/twilio/TwilioPhoneCallService.kt:1270`)
+- Module: `phonecall-twilio`
 
 Two forms, tried in this order (API-key first):
 ```
@@ -870,14 +883,14 @@ Surprises: the separator between account and key SID is a hyphen (`AC...-SK...`)
 
 ## LLM Access
 
-Type: `LlmAccess.Settings(val url: String)` (`@JvmInline` value class, `ai/src/commonMain/.../interfaces.kt:50`). No default URL. No built-in schemes in module `ai` (no `test`/`console`); all come from provider modules. URLs configure access only (credentials/endpoint); the model is chosen per call via `LlmModelId`, so a model in the URL is ignored unless stated.
+Type: `LlmAccess.Settings(val url: String)` (`@JvmInline` value class). No default URL. No built-in schemes in module `ai` (no `test`/`console`); all come from provider modules. URLs configure access only (credentials/endpoint); the model is chosen per call via `LlmModelId`, so a model in the URL is ignored unless stated.
 
 ### `anthropic://`
 
-Module: `ai-anthropic`. `ai-anthropic/src/main/kotlin/com/lightningkite/services/ai/anthropic/Settings.kt:38`
+Module: `ai-anthropic`.
 
 ```
-anthropic://?apiKey=<key>&baseUrl=<url>&version=<header>&maxTokens=<int>
+anthropic://?apiKey=<key>&baseUrl=<url>&version=<header>&maxTokens=<int>&directBrowserAccess=<bool>
 ```
 
 | part | required? | default | meaning |
@@ -887,17 +900,18 @@ anthropic://?apiKey=<key>&baseUrl=<url>&version=<header>&maxTokens=<int>
 | `baseUrl` | no | `https://api.anthropic.com` | API root; `${VAR}` expanded; not trimmed of trailing `/` |
 | `version` | no | `2023-06-01` | `anthropic-version` header; `${VAR}` expanded |
 | `maxTokens` | no | `4096` | default max output tokens; non-int silently falls back to default |
+| `directBrowserAccess` | no | `false` | sends `anthropic-dangerous-direct-browser-access: true` so a web page can call Anthropic; the key is then visible to the page's users. Only `true`/`false` (anything else throws) |
 
 Examples:
 ```
 anthropic://?apiKey=sk-ant-xxxx
 anthropic://?apiKey=${ANTHROPIC_API_KEY}&maxTokens=8192
 ```
-Surprises: no URL-decoding. Registration is guarded by `supports()` (safe to load twice).
+Surprises: no URL-decoding. Registration is guarded by `supports()` (safe to load twice). Browsers have no environment, so there `apiKey` must be in the URL.
 
 ### `openai://`
 
-Module: `ai-openai`. `ai-openai/src/main/kotlin/com/lightningkite/services/ai/openai/Settings.kt:66`
+Module: `ai-openai`.
 
 ```
 openai://?apiKey=<key>&baseUrl=<url>&organization=<org>
@@ -915,11 +929,11 @@ Examples:
 openai://?apiKey=sk-xxxx
 openai://?apiKey=lm-studio&baseUrl=http://localhost:1234/v1
 ```
-Surprises: keys and values ARE URL-decoded (`URLDecoder`, so a literal `+` becomes a space; encode as `%2B`). `${VAR}` with unset var throws `IllegalArgumentException("Environment variable $VAR not set")` (differs from other schemes). Not guarded by `supports()` before register.
+Surprises: keys and values ARE URL-decoded (a literal `+` becomes a space; encode as `%2B`). `${VAR}` with unset var throws `IllegalArgumentException("Environment variable $VAR not set")` (differs from other schemes). Not guarded by `supports()` before register.
 
 ### `ollama://`
 
-Module: `ai-ollama`. `ai-ollama/src/main/kotlin/com/lightningkite/services/ai/ollama/Settings.kt:25`
+Module: `ai-ollama`.
 
 ```
 ollama://[<model>]?baseUrl=<url>&autoStart=<bool>&autoPull=<bool>
@@ -941,7 +955,7 @@ Surprises: instantiation blocks (`runBlocking`) while starting server / download
 
 ### `bedrock://`
 
-Module: `ai-bedrock` (KMP; JVM profile support). `ai-bedrock/src/commonMain/kotlin/com/lightningkite/services/ai/bedrock/Settings.kt:109` (registered from `BedrockLlmAccess` companion init)
+Module: `ai-bedrock` (KMP; JVM profile support).
 
 ```
 bedrock://[<accessKeyId>:<secretKey>@ | <profile>@][<ignored-model>]?region=<region>&downloadUrlAttachments=<bool>
@@ -966,7 +980,7 @@ Surprises: credentials are resolved eagerly at instantiation into a non-refreshi
 
 ### `bedrock-sdk://`
 
-Module: `ai-bedrock-aws-sdk` (JVM). `ai-bedrock-aws-sdk/src/main/kotlin/com/lightningkite/services/ai/bedrock/awssdk/AwsSdkCredentials.kt:91`
+Module: `ai-bedrock-aws-sdk` (JVM).
 
 ```
 bedrock-sdk://<model-id>?region=<region>&profile=<profile>&downloadUrlAttachments=<bool>
@@ -988,35 +1002,38 @@ Surprises: model id is required even though ignored (unlike `bedrock://`). Crede
 
 ### `embedded://`
 
-Module: `ai-embedded` (KMP: native/Android/iOS/JS). `ai-embedded/src/commonMain/kotlin/com/lightningkite/services/ai/embedded/Settings.kt:29`
+Module: `ai-embedded` (Android, JVM, iOS, macOS, browser).  Platform setup: [ai-embedded/README.md](../ai-embedded/README.md).
 
 ```
-embedded://<model-name>?path=<model path or HF id>&threads=<int>&contextSize=<int>
+embedded://<model-name>?path=<model>&threads=<int>&contextSize=<int>&dtype=<variant>&runtimeUrl=<url>&device=<webgpu|wasm>
 ```
 
 | part | required? | default | meaning |
 |---|---|---|---|
-| authority = `<model-name>` | **yes** | -- | blank -> `IllegalArgumentException("Embedded URL is missing a model name")` |
-| `path` | doc says required; handler does NOT enforce | null | model file path (native) or HuggingFace id/URL (web). Android/iOS engines throw `IllegalStateException("modelPath is required...")` at engine use; other engines not checked |
-| `threads` | no | `4` | non-int silently -> default |
-| `contextSize` | no | `4096` | non-int silently -> default |
+| authority = `<model-name>` | **yes** | -- | blank throws `IllegalArgumentException` |
+| `path` | **yes** | -- | native: a `.litertlm` file; browser: a Hugging Face model ID or URL of ONNX files. Missing throws |
+| `threads` | no | `4` | native only; non-int throws |
+| `contextSize` | no | `4096` | native only; non-int throws |
+| `dtype` | no | `q4` | browser only: ONNX weight variant |
+| `runtimeUrl` | no | cdn.jsdelivr.net | browser only: where the page serves onnxruntime-web's `dist` files |
+| `device` | no | WebGPU when available | browser only: `webgpu` or `wasm` |
 
 Examples:
 ```
-embedded://gemma-2b?path=/data/models/gemma-2b.tflite
-embedded://phi-3-mini?path=Xenova/phi-3-mini&contextSize=2048
+embedded://gemma-3-1b?path=/data/models/Gemma3-1B-IT.litertlm
+embedded://qwen2.5-0.5b?path=onnx-community/Qwen2.5-0.5B-Instruct&dtype=q4f16
 ```
-Surprises: here the model name in the authority is used (unlike other LLM schemes). No `${VAR}` expansion, no URL-decoding. Ambiguous: whether JVM/native/js engines tolerate missing `path` (not traced).
+Surprises: here the model name in the authority is used (unlike other LLM schemes). No `${VAR}` expansion, no URL-decoding.
 
 ---
 
 ## Embeddings
 
-Type: `EmbeddingService.Settings(val url: String)` (`embedding/src/commonMain/.../interfaces.kt:45`). No default URL, no built-in schemes in module `embedding`.
+Type: `EmbeddingService.Settings(val url: String)`. No default URL, no built-in schemes in module `embedding`.
 
 ### `openai://`
 
-Module: `embedding-openai`. `embedding-openai/src/main/kotlin/com/lightningkite/services/embedding/openai/Settings.kt:33`
+Module: `embedding-openai`.
 
 ```
 openai://<model-id>?apiKey=<key>&baseUrl=<url>&organization=<org>&dimensions=<n>
@@ -1039,7 +1056,7 @@ Surprises: keys/values URL-decoded (same as LLM `openai`).
 
 ### `ollama://`
 
-Module: `embedding-ollama`. `embedding-ollama/src/main/kotlin/com/lightningkite/services/embedding/ollama/Settings.kt:30`
+Module: `embedding-ollama`.
 
 ```
 ollama://<model>?baseUrl=<url>&autoStart=<bool>&autoPull=<bool>
@@ -1053,11 +1070,11 @@ ollama://<model>?baseUrl=<url>&autoStart=<bool>&autoPull=<bool>
 | `autoPull` | no | `false` | |
 
 Examples: `ollama://nomic-embed-text`, `ollama://nomic-embed-text?baseUrl=${OLLAMA_BASE_URL}&autoPull=true`.
-Surprise: model required here even without auto flags (unlike LLM `ollama://`). Whether the model is otherwise used by the service is not traced (`OllamaEmbeddingService` only receives `name`, `baseUrl`, `context`).
+Surprise: model required here even without auto flags (unlike LLM `ollama://`). The service itself only receives `baseUrl`; the model is chosen per call.
 
 ### `bedrock://`
 
-Module: `embedding-bedrock` (KMP). `embedding-bedrock/src/commonMain/kotlin/com/lightningkite/services/embedding/bedrock/Settings.kt:73`
+Module: `embedding-bedrock` (KMP).
 
 ```
 bedrock://[<accessKeyId>:<secretKey>@ | <profile>@]<model-id>?region=<region>&dimensions=<n>
@@ -1081,7 +1098,7 @@ Surprise: model id is in the URL here, unlike LLM `bedrock://`. Credentials reso
 
 ### `bedrock-sdk://`
 
-Module: `embedding-bedrock-aws-sdk` (JVM). `embedding-bedrock-aws-sdk/src/main/kotlin/com/lightningkite/services/embedding/bedrock/awssdk/AwsSdkCredentials.kt:70`
+Module: `embedding-bedrock-aws-sdk` (JVM).
 
 ```
 bedrock-sdk://<model-id>?region=<region>&dimensions=<n>&profile=<profile>
@@ -1101,15 +1118,15 @@ Surprise: params parsed with a custom splitter (`substringBefore/After("=")`): a
 
 ## Speech-to-Text
 
-Type: `SpeechToTextService.Settings(val url: String = "test")` (`speech/src/commonMain/.../SpeechToTextService.kt:~128`). Default `"test"`. Note: scheme extraction means a bare `test` / `console` (no `://`) also resolves, since `substringBefore("://")` returns the whole string. KDoc in this file mentions `openai-stt://`, `elevenlabs-stt://` but the code registers plain `openai`/`elevenlabs` (see below; the KDoc is stale/misleading).
+Type: `SpeechToTextService.Settings(val url: String = "test")`. Default `"test"`. Note: scheme extraction means a bare `test` / `console` (no `://`) also resolves, since `substringBefore("://")` returns the whole string. KDoc in this file mentions `openai-stt://`, `elevenlabs-stt://` but the code registers plain `openai`/`elevenlabs` (see below; the KDoc is stale/misleading).
 
 ### `test` / `console`
 
-Module: `speech`. `SpeechToTextService.kt:135` (`test` -> `TestSpeechToTextService`), `:136` (`console` -> `ConsoleSpeechToTextService`). No params; rest of URL ignored. Examples: `test`, `console://`.
+Module: `speech`., `:136` (`console` -> `ConsoleSpeechToTextService`). No params; rest of URL ignored. Examples: `test`, `console://`.
 
 ### `openai://`
 
-Module: `speech-openai`. `speech-openai/src/main/kotlin/com/lightningkite/services/speech/openai/OpenAISpeechToTextService.kt:217` (parse at `:243-283`)
+Module: `speech-openai`.
 
 ```
 openai://<apiKey>@<model>              (standard)
@@ -1132,7 +1149,7 @@ Surprises: form chosen by `contains("@") && !startsWith("?")` over the whole pos
 
 ### `elevenlabs://`
 
-Module: `speech-elevenlabs`. `speech-elevenlabs/src/main/kotlin/com/lightningkite/services/speech/elevenlabs/ElevenLabsSpeechToTextService.kt:313` (parse `:340-380`)
+Module: `speech-elevenlabs`.
 
 ```
 elevenlabs://<apiKey>@<model>              (standard)
@@ -1142,7 +1159,7 @@ Same rules as OpenAI STT above with: default model `scribe_v1`; env fallback `EL
 
 ### `vosk://` and `local://`
 
-Module: `speech-local` (JVM). `speech-local/src/main/kotlin/com/lightningkite/services/speech/local/VoskSpeechToTextService.kt:301` (`vosk`), `:309` (`local`, identical alias)
+Module: `speech-local` (JVM)., `:309` (`local`, identical alias)
 
 ```
 vosk://?modelPath=<dir>&modelName=<name>&modelsDir=<dir>
@@ -1161,27 +1178,27 @@ Surprises: auto-downloads a model (network + disk) on first use. No `${VAR}` exp
 
 ## Text-to-Speech
 
-Type: `TextToSpeechService.Settings(val url: String = "test")` (`speech/src/commonMain/.../TextToSpeechService.kt:~125`). Default `"test"`; bare `test`/`console` (no `://`) resolve. KDoc mentions `openai-tts://` which is NOT what the code registers.
+Type: `TextToSpeechService.Settings(val url: String = "test")`. Default `"test"`; bare `test`/`console` (no `://`) resolve. KDoc mentions `openai-tts://` which is NOT what the code registers.
 
 ### `test` / `console`
 
-Module: `speech`. `TextToSpeechService.kt:132` / `:133`. No params; rest ignored.
+Module: `speech`. / `:133`. No params; rest ignored.
 
 ### `openai://`
 
-Module: `speech-openai`. `speech-openai/src/main/kotlin/com/lightningkite/services/speech/openai/OpenAITextToSpeechService.kt:293` (parse `:313-353`)
+Module: `speech-openai`.
 
 Same format and rules as OpenAI STT: `openai://<apiKey>@<model>` or legacy `openai://?apiKey=<key>&model=<model>`; default model `tts-1` (also e.g. `tts-1-hd`); env fallback `OPENAI_API_KEY`. Examples: `openai://${OPENAI_API_KEY}@tts-1-hd`, `openai://?apiKey=sk-xxxx`. Same surprises (`openai://tts-1` ignores the model and needs env key).
 
 ### `elevenlabs://`
 
-Module: `speech-elevenlabs`. `speech-elevenlabs/src/main/kotlin/com/lightningkite/services/speech/elevenlabs/ElevenLabsTextToSpeechService.kt:378` (parse `:395-430`)
+Module: `speech-elevenlabs`.
 
 Same format and rules as OpenAI STT: `elevenlabs://<apiKey>@<model>` or `elevenlabs://?apiKey=<key>&model=<model>`; default model `eleven_multilingual_v2`; env fallback `ELEVENLABS_API_KEY`. Example: `elevenlabs://${ELEVENLABS_API_KEY}@eleven_multilingual_v2`.
 
 ### `freetts://` and `local://`
 
-Module: `speech-local` (JVM). `speech-local/src/main/kotlin/com/lightningkite/services/speech/local/FreeTtsTextToSpeechService.kt:199` (`freetts`), `:202` (`local`)
+Module: `speech-local` (JVM)., `:202` (`local`)
 
 No params, rest of URL ignored. Examples: `freetts://`, `local://`. Both return `FreeTtsTextToSpeechService`.
 
@@ -1189,15 +1206,15 @@ No params, rest of URL ignored. Examples: `freetts://`, `local://`. Both return 
 
 ## Voice Agent
 
-Type: `VoiceAgentService.Settings(val url: String = "test")` (`voiceagent/src/commonMain/.../VoiceAgentService.kt:~129`). Default `"test"`; bare `test`/`console` resolve. Builder `Settings.openaiRealtime(model, apiKey)` emits `openai-realtime://<model>[?apiKey=...]`. `voiceagent-phonecall` and `voiceagent-test` contain no scheme registrations.
+Type: `VoiceAgentService.Settings(val url: String = "test")`. Default `"test"`; bare `test`/`console` resolve. Builder `Settings.openaiRealtime(model, apiKey)` emits `openai-realtime://<model>[?apiKey=...]`. `voiceagent-phonecall` and `voiceagent-test` contain no scheme registrations.
 
 ### `test` / `console`
 
-Module: `voiceagent`. `VoiceAgentService.kt:147` / `:148`. No params; rest ignored.
+Module: `voiceagent`. / `:148`. No params; rest ignored.
 
 ### `openai-realtime://`
 
-Module: `voiceagent-openai`. `voiceagent-openai/src/main/kotlin/com/lightningkite/services/voiceagent/openai/OpenAIVoiceAgentService.kt:105`
+Module: `voiceagent-openai`.
 
 ```
 openai-realtime://[<model>]?apiKey=<key>
@@ -1220,7 +1237,7 @@ Surprises: model IS in the URL here. No baseUrl. Registered in the companion of 
 
 ## Telemetry
 
-`TelemetryBackend.Settings` is a `@Serializable data class` (`basis/src/commonMain/.../telemetry/TelemetryBackend.kt:~55-107`), implements `HasUrl`. Default `url = "noop"`. Fields beyond `url` (apply to the `otel-jvm` schemes `log`, `console`, `otlp-*`; `noop`, `logging*` ignore them; `dev`/`debounced-dev` use only `spanLimits`):
+`TelemetryBackend.Settings` is a `@Serializable data class`, implements `HasUrl`. Default `url = "noop"`. Fields beyond `url` (apply to the `otel-jvm` schemes `log`, `console`, `otlp-*`; `noop`, `logging*` ignore them; `dev`/`debounced-dev` use only `spanLimits`):
 
 | field | type | default | meaning |
 |---|---|---|---|
@@ -1228,7 +1245,7 @@ Surprises: model IS in the URL here. No baseUrl. Registered in the companion of 
 | `metricReportBatching` | `BatchingRules?` | `batching` | only `frequency` is used, as metric export interval (null falls back to 5s) |
 | `traceReportBatching` | `BatchingRules?` | `batching` | span batch processor; null = SimpleSpanProcessor |
 | `logReportBatching` | `BatchingRules?` | `batching` with `maxQueueSize`x10, `maxSize`x10 (null if batching null) | log batch processor; null = SimpleLogRecordProcessor |
-| `batchingLimits` | `BatchingRules` | `BatchingRules()` | declared; I found no reader in `otel-jvm` (appears unused) |
+| `batchingLimits` | `BatchingRules` | `BatchingRules()` | declared, but nothing in `otel-jvm` reads it |
 | `spanLimits` | `SpanLimitSettings` | see below | OTel `SpanLimits` |
 | `logLimits` | `LogLimits` | `maxBodyLength=8192, maxStackTraceDepth=50` | truncation in `SafeLogRecordExporter` |
 | `sampling` | `Sampling?` | `null` (always on) | `ratio: Double = 1.0`, `parentBased: Boolean = true`; remote parents never decide sampling (`followLocalParents`) |
@@ -1240,19 +1257,19 @@ Surprises: model IS in the URL here. No baseUrl. Registered in the companion of 
 
 JSON form: `{"url":"otlp-grpc://collector:4317","sampling":{"ratio":0.1}}`.
 
-`otel-jvm/.../OpenTelemetrySettings.kt` (`OpenTelemetrySettings`, own `HasUrlSettingParser`, default url `log`, extra `serviceName`) is `@Deprecated` (line 130) in favour of `TelemetryBackend.Settings`.
+`OpenTelemetrySettings` in `otel-jvm` (own `HasUrlSettingParser`, default url `log`, extra `serviceName`) is `@Deprecated` in favour of `TelemetryBackend.Settings`.
 
-Basis `LoggingSettings.kt` (`basis/src/*/.../LoggingSettings.kt`) is NOT a URL setting. It is a `@Serializable` data class: `LoggingSettings(default: ContextSettings? = ContextSettings(null, true, Level.INFO, false), logger: Map<String, ContextSettings>? = null)`. `ContextSettings(filePattern: String? = "local/logs/logfile-%d{yyyy-MM-dd}.log", toConsole: Boolean, level: Level, additive: Boolean)` (Logback file patterns; `logger` is keyed by package name; I did not read the defaults of the last three fields).
+`LoggingSettings` in `basis` is NOT a URL setting. It is a `@Serializable` data class: `LoggingSettings(default: ContextSettings? = ContextSettings(null, true, Level.INFO, false), logger: Map<String, ContextSettings>? = null)`. `ContextSettings(filePattern: String? = "local/logs/logfile-%d{yyyy-MM-dd}.log", toConsole: Boolean, level: Level, additive: Boolean)` (Logback file patterns; `logger` is keyed by package name; I did not read the defaults of the last three fields).
 
 ### `noop://`
-Module: `basis`. `basis/src/commonMain/.../telemetry/TelemetryBackend.kt:108`
+Module: `basis`.
 ```
 noop
 ```
 No parts. Everything discarded. Default setting.
 
 ### `logging://` and `logging-nocolor://`
-Module: `basis` (JVM only). `basis/src/jvmMain/.../LoggingTelemetryBackend.kt:51-52`
+Module: `basis` (JVM only).
 ```
 logging
 logging-nocolor
@@ -1260,21 +1277,21 @@ logging-nocolor
 No parts; anything after `://` is ignored. `logging-nocolor` only turns off ANSI color. Prints span trees to stdout. Needs the `LoggingTelemetryBackend.register()` call.
 
 ### `log://`
-Module: `otel-jvm`. `otel-jvm/.../OtelTelemetryBackend.kt:322`
+Module: `otel-jvm`.
 ```
 log
 ```
 No parts (suffix ignored). OTel SDK with `LoggingSpanExporter`, `LoggingMetricExporter`, `SystemOutLogRecordExporter`; honours all `Settings` fields. Service name = `context.projectName`.
 
 ### `console://`
-Module: `otel-jvm`. `OtelTelemetryBackend.kt:335`
+Module: `otel-jvm`.
 ```
 console
 ```
 No parts. Same as `log` but with the module's own `Print*Exporter`s; honours all `Settings` fields.
 
 ### `otlp-grpc://`
-Module: `otel-jvm`. `OtelTelemetryBackend.kt:348`
+Module: `otel-jvm`.
 ```
 otlp-grpc://<host>:<port>
 ```
@@ -1285,7 +1302,7 @@ otlp-grpc://<host>:<port>
 Example: `otlp-grpc://localhost:4317`. Surprise: no TLS option, no auth headers, remainder not validated.
 
 ### `otlp-http://`
-Module: `otel-jvm`. `OtelTelemetryBackend.kt:361`
+Module: `otel-jvm`.
 ```
 otlp-http://<host>:<port>
 ```
@@ -1296,7 +1313,7 @@ otlp-http://<host>:<port>
 Example: `otlp-http://otel-collector:4318`. Surprise: a path in the URL becomes a prefix of `/v1/...`; no headers/auth.
 
 ### `otlp-https://`
-Module: `otel-jvm`. `OtelTelemetryBackend.kt:374`
+Module: `otel-jvm`.
 ```
 otlp-https://<host>[:port]
 ```
@@ -1307,7 +1324,7 @@ otlp-https://<host>[:port]
 Example: `otlp-https://otlp.example.com`. Surprise: unlike the other two there is no default; bare `otlp-https` yields endpoint `https:///v1/traces` (not validated).
 
 ### `dev://`
-Module: `otel-jvm`. `OtelTelemetryBackend.kt:387`
+Module: `otel-jvm`.
 ```
 dev[://[<outputFile>][?color=<bool>&log_delay=<ms>&metric_frequency=<duration>]]
 ```
@@ -1322,7 +1339,7 @@ Examples: `dev`, `dev://./local/telemetry.log?color=false&metric_frequency=30s`.
 Surprises: always samples everything; ignores batching/sampling/rate-limit fields (uses `spanLimits` only). Query parser is naive (split on `&`/`=`, no URL decoding). The code has a `dev:<path>` fallback (no `//`), but `parse()` dispatches on the text before `://`, so `dev:foo` has no handler; only reachable by calling the factory directly. Service name defaults to `"dev"` when `projectName` is blank.
 
 ### `debounced-dev://`
-Module: `otel-jvm`. `OtelTelemetryBackend.kt:410`
+Module: `otel-jvm`.
 ```
 debounced-dev[://[<outputFile>][?color=..&debounce=<ms>&debounce_min=<n>&log_delay=<ms>&metric_frequency=<duration>]]
 ```
@@ -1333,10 +1350,10 @@ Same as `dev` plus:
 | `debounce` | no | `null` | debounce window in ms (`toLongOrNull`; invalid = null) |
 | `debounce_min` | no | `1` | minimum repeat count (`toIntOrNull`; invalid = 1) |
 
-What a `null` window does is defined in `DebouncedDevSpanExporter`, which I did not read (ambiguous here). Example: `debounced-dev://?debounce=2000&debounce_min=3`.
+Example: `debounced-dev://?debounce=2000&debounce_min=3`.
 
 ### `sentry://`
-Module: `telemetry-sentry`. `telemetry-sentry/.../SentryTelemetryBackend.kt:82`
+Module: `telemetry-sentry`.
 ```
 sentry://<key>@<sentry-host>/<numericProjectId>/<wrapped telemetry URL>
 ```
@@ -1351,24 +1368,24 @@ Error: `IllegalArgumentException("Expected sentry://<key>@<host>/<projectId>/<wr
 
 ## Geocoding
 
-`Geocoding.Settings` is a `@JvmInline @Serializable value class Settings(val url: String = "test")` (`geocoding/src/commonMain/.../Geocoding.kt:172`), plain `UrlSettingParser`. Default `test`. The KDoc also lists `nominatim://` (`geocoding-nominatim`) but no such module or registration exists in the repo: stale doc.
+`Geocoding.Settings` is a `@JvmInline @Serializable value class Settings(val url: String = "test")`, plain `UrlSettingParser`. Default `test`. The KDoc also lists `nominatim://` (`geocoding-nominatim`) but no such module or registration exists in the repo: stale doc.
 
 ### `test://`
-Module: `geocoding`. `Geocoding.kt:175`
+Module: `geocoding`.
 ```
 test
 ```
 No parts (suffix ignored). `TestGeocoding`: empty programmable table.
 
 ### `local://`
-Module: `geocoding-local`. `geocoding-local/.../LocalGeocoding.kt:348`
+Module: `geocoding-local`.
 ```
 local
 ```
 No parts (suffix ignored). Offline US lookup from bundled data. Helper `Geocoding.Settings.local()`.
 
 ### `stadia://`
-Module: `geocoding-stadia`. `geocoding-stadia/.../StadiaGeocoding.kt:143`. Working-tree diff vs HEAD only removes `@Untested` from the class; the handler is unchanged.
+Module: `geocoding-stadia`.. Working-tree diff vs HEAD only removes `@Untested` from the class; the handler is unchanged.
 ```
 stadia://<apiKey>[@<host>]
 ```
@@ -1381,7 +1398,7 @@ Examples: `stadia://sk_XXXX`, `stadia://sk_XXXX@stadia-proxy.example.com`.
 Error: blank after `stadia://` throws `IllegalArgumentException("Invalid Stadia URL...")`. Surprises: the key travels in the query string; a key containing `@` splits wrongly; the error message shows `[apiKey]` as optional but blank is rejected.
 
 ### `google://`
-Module: `geocoding-google`. `geocoding-google/.../GoogleGeocoding.kt:202`
+Module: `geocoding-google`.
 ```
 google://<apiKey>
 ```
@@ -1392,7 +1409,7 @@ google://<apiKey>
 Example: `google://AIzaXXXX`. Error: blank key throws `IllegalArgumentException("Invalid Google URL...")`. No query/host parsing: the whole remainder, including any `?` or `@`, is the key.
 
 ### `aws-location://`
-Module: `geocoding-aws`. `geocoding-aws/.../AwsLocationGeocoding.kt:162`
+Module: `geocoding-aws`.
 ```
 aws-location://[<accessKey>:<secretKey>@]<region>[/][?intendedUse=Storage|SingleUse]
 ```
@@ -1406,7 +1423,7 @@ Examples: `aws-location://us-east-1`, `aws-location://AKIAXXXX:SECRET@us-west-2?
 Errors: non-matching URL throws `IllegalArgumentException("Invalid Amazon Location URL...")`; unknown `intendedUse` throws. Uses `context[AwsConnections]` for the HTTP client. Surprise: whole-URL regex, so any other query param fails the match; secrets are not URL-decoded and cannot contain `@`.
 
 ### `azure-maps://`
-Module: `geocoding-azure`. `geocoding-azure/.../AzureMapsGeocoding.kt:197`
+Module: `geocoding-azure`.
 ```
 azure-maps://<subscriptionKey>
 azure-maps://<accountClientId>?auth=entra
@@ -1421,24 +1438,24 @@ Errors: blank credential, or any query other than exactly `auth=entra`, throws `
 
 ## Subscription payments
 
-`SubscriptionService.Settings` is a `@JvmInline @Serializable value class Settings(val url: String = "console")` (`subscription-payments/src/commonMain/.../SubscriptionService.kt:~104`). Default `console`.
+`SubscriptionService.Settings` is a `@JvmInline @Serializable value class Settings(val url: String = "console")`. Default `console`.
 
 ### `console://`
-Module: `subscription-payments`. `SubscriptionService.kt:109`
+Module: `subscription-payments`.
 ```
 console
 ```
 No parts. Prints operations to the console (`ConsoleSubscriptionService`).
 
 ### `test://`
-Module: `subscription-payments`. `SubscriptionService.kt:110`
+Module: `subscription-payments`.
 ```
 test
 ```
 No parts. In-memory (`TestSubscriptionService`).
 
 ### `stripe://`
-Module: `subscription-payments-stripe`. `subscription-payments-stripe/.../StripeSubscriptionService.kt:526`
+Module: `subscription-payments-stripe`.
 ```
 stripe://<apiKey>[@<webhookSecret>]
 ```
@@ -1452,11 +1469,10 @@ Errors: regex mismatch throws `IllegalArgumentException("Invalid Stripe URL...")
 
 
 
-## Known issues found while writing this
+## Known issues
 
-These came from reading the code.  Unless a line says otherwise, none of them was reproduced.
+Found by reading the code; unless a line says otherwise, not reproduced.
 
-- **FileScanner:** `FileScanner.Settings` defaults to `file://files`, but `file` isn't registered on `FileScanner`.  Using the default throws.
 - **H2:** `sql-h2` appends extra JDBC params after `;`, but joins them with `&`.  H2 expects `;` between params.
 - **MongoDB Atlas search:** `mongodb+srv` strips `atlasSearch=true` but leaves the following `&` behind.  The `mongodb://` handler cleans this up.
 - **`mongodb-test`:** `version` must be the enum name, e.g. `V7_0`.  `mongodb-file` also accepts `7.0`.

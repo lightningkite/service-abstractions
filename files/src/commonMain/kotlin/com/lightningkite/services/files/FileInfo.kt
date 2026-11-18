@@ -7,7 +7,7 @@ import kotlin.time.Instant
 /**
  * Holds metadata information about files without requiring the full content to be read.
  *
- * This data class is returned by [FileObject.head] to provide quick access to file
+ * This data class is returned by [ExternalFile.head] to provide quick access to file
  * metadata for operations like listing files with their sizes or checking content types.
  */
 public data class FileInfo(

@@ -10,14 +10,14 @@ import com.lightningkite.services.sms.InboundSms
 import com.lightningkite.services.sms.SmsInboundService
 import com.lightningkite.services.webhooksubservice.WebhookAdapter
 import com.lightningkite.services.http.client
+import io.ktor.client.HttpClient
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.net.URLDecoder
 import java.net.URLEncoder
 import javax.crypto.Mac
@@ -80,6 +80,7 @@ private val logger = io.github.oshai.kotlinlogging.KotlinLogging.logger("TwilioS
  * @property accountSid Twilio Account SID (starts with AC)
  * @property authToken Twilio Auth Token (used for signature validation)
  * @property phoneNumber The Twilio phone number in E.164 format (e.g., +15551234567)
+ * @property httpClient Client for the Twilio REST API
  */
 public class TwilioSmsInboundService(
     override val name: String,
@@ -87,6 +88,7 @@ public class TwilioSmsInboundService(
     private val accountSid: String,
     private val authToken: String,
     private val phoneNumber: String,
+    private val httpClient: HttpClient = client,
 ) : SmsInboundService {
 
     private val baseUrl = "https://api.twilio.com/2010-04-01/Accounts/$accountSid"
@@ -110,12 +112,11 @@ public class TwilioSmsInboundService(
         }) { span ->
             this.httpUrl = httpUrl
 
-            // Look up the phone number SID
-            val phoneNumberSid = lookupPhoneNumberSid(phoneNumber)
+            val phoneNumberSid = lookupPhoneNumber().sid
             span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("sms.phone_number_sid"), phoneNumberSid) })
 
             // Update the phone number's SMS webhook URL
-            val response = client.submitForm(
+            val response = httpClient.submitForm(
                 url = "$baseUrl/IncomingPhoneNumbers/$phoneNumberSid.json",
                 formParameters = Parameters.build {
                     append("SmsUrl", httpUrl)
@@ -145,8 +146,9 @@ public class TwilioSmsInboundService(
             val bodyText = body.text()
             val params = parseUrlEncodedForm(bodyText)
 
-            // Validate Twilio signature for security
-            validateWebhookSignature(headers, params, httpUrl)
+            // Twilio signs against the URL configured on the number, which another process may have set.
+            val url = httpUrl ?: lookupPhoneNumber().smsUrl?.takeIf { it.isNotBlank() }?.also { httpUrl = it }
+            validateWebhookSignature(headers, params, url)
 
             // Extract required fields
             val from = params["From"]
@@ -238,7 +240,7 @@ public class TwilioSmsInboundService(
         webhookUrl: String?,
     ) {
         if (webhookUrl == null) {
-            throw SecurityException("Cannot validate Twilio webhook: webhook URL not configured. Call configureWebhook() first.")
+            throw SecurityException("Cannot validate Twilio webhook: webhook URL not configured, neither by configureWebhook() nor as the SMS URL of $phoneNumber in Twilio.")
         }
 
         val signature = headers["X-Twilio-Signature"]?.firstOrNull()
@@ -266,39 +268,36 @@ public class TwilioSmsInboundService(
             }
     }
 
+    @Serializable
+    private data class IncomingPhoneNumbers(@SerialName("incoming_phone_numbers") val numbers: List<IncomingPhoneNumber>)
+
+    @Serializable
+    private data class IncomingPhoneNumber(val sid: String, @SerialName("sms_url") val smsUrl: String? = null)
+
+    private val twilioJson = Json { ignoreUnknownKeys = true }
+
     /**
-     * Looks up the Twilio phone number SID for a given phone number.
+     * Looks up [phoneNumber] in the Twilio account.
      *
-     * @param phoneNumber The phone number in E.164 format (e.g., +15551234567)
-     * @return The phone number SID (e.g., PN...)
-     * @throws IllegalStateException if the phone number is not found
+     * @throws IllegalStateException if the lookup fails or the number isn't in the account
      */
-    private suspend fun lookupPhoneNumberSid(phoneNumber: String): String =
-        telemetryTrace("lookup_phone_sid", attributes = TelemetryAttributes {
+    private suspend fun lookupPhoneNumber(): IncomingPhoneNumber =
+        telemetryTrace("lookup_phone_number", attributes = TelemetryAttributes {
             put(TelemetryKeys.Messaging.system, "twilio")
             put(TelemetryKey.OfString("sms.phone_number"), phoneNumber)
         }) { span ->
             val encodedNumber = URLEncoder.encode(phoneNumber, Charsets.UTF_8)
-            val response = client.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber") { basicAuth(accountSid, authToken) }
+            val response = httpClient.get("$baseUrl/IncomingPhoneNumbers.json?PhoneNumber=$encodedNumber") { basicAuth(accountSid, authToken) }
 
             if (!response.status.isSuccess()) {
-                val errorBody = response.bodyAsText()
-                throw IllegalStateException("Failed to look up Twilio phone number: $errorBody")
+                throw IllegalStateException("Failed to look up Twilio phone number: ${response.bodyAsText()}")
             }
 
-            val responseBody = response.bodyAsText()
-            // Parse the SID from the JSON response
-            // Response format: {"incoming_phone_numbers": [{"sid": "PN...", ...}], ...}
-            val element = Json.parseToJsonElement(responseBody)
-            val sid = element.jsonObject["incoming_phone_numbers"]
-                ?.let { it as? JsonArray }
-                ?.firstOrNull()
-                ?.jsonObject?.get("sid")
-                ?.jsonPrimitive?.content
+            val number = twilioJson.decodeFromString<IncomingPhoneNumbers>(response.bodyAsText()).numbers.firstOrNull()
                 ?: throw IllegalStateException("Phone number $phoneNumber not found in Twilio account $accountSid")
 
-            span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("sms.phone_number_sid"), sid) })
-            sid
+            span.enrich(TelemetryAttributes { put(TelemetryKey.OfString("sms.phone_number_sid"), number.sid) })
+            number
         }
 
     override suspend fun healthCheck(): HealthStatus {

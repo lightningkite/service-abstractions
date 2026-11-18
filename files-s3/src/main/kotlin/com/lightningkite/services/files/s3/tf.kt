@@ -30,7 +30,7 @@ import kotlin.time.Duration
  *                   noncurrent object versions after this duration - otherwise, with [versioning]
  *                   enabled, they're kept (and billed for) forever. Requires [versioning]. A common
  *                   choice is 30-90 days, balancing recovery/audit needs against storage cost.
- * @throws IllegalArgumentException if S3PublicFileSystem is not registered in the settings parser,
+ * @throws IllegalArgumentException if S3ExternalFileSystem is not registered in the settings parser,
  *                   or if [noncurrentVersionExpirationDays] is set without [versioning]
  */
 context(emitter: TerraformEmitterAws)
@@ -42,7 +42,7 @@ public fun TerraformNeed<ExternalFileSystem.Settings>.awsS3Bucket(
     versioning: Boolean = false,
     noncurrentVersionExpiration: Duration? = null,
 ): Unit {
-    if (!ExternalFileSystem.Settings.supports("s3")) throw IllegalArgumentException("You need to reference S3PublicFileSystem in your server definition to use this.")
+    if (!ExternalFileSystem.Settings.supports("s3")) throw IllegalArgumentException("You need to reference S3ExternalFileSystem in your server definition to use this.")
     require(noncurrentVersionExpiration == null || versioning) {
         "noncurrentVersionExpirationDays requires versioning to be enabled"
     }
@@ -119,7 +119,7 @@ public fun TerraformNeed<ExternalFileSystem.Settings>.awsS3Bucket(
                                 "s3:GetObject"
                             ],
                             "Resource": [
-                                "arn:aws:s3:::${aws_s3_bucket.$${name}.id}/*",
+                                "arn:aws:s3:::${aws_s3_bucket.$${name}.id}/*"
                             ]
                         }
                     ]
