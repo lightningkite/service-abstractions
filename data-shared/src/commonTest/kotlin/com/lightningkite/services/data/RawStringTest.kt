@@ -75,6 +75,28 @@ class RawStringTest {
     }
 
     @Test
+    fun phoneNumbersParseForRegion() {
+        val uk = PhoneNumber.Region.UK
+        assertEquals("+447911123456", "07911 123456".toPhoneNumberOrNull(uk)?.raw)
+        assertEquals("+447911123456", "7911 123456".toPhoneNumberOrNull(uk)?.raw)
+        assertEquals("+447911123456", "44 7911 123456".toPhoneNumberOrNull(uk)?.raw)
+        assertEquals("+18015550123", "+1 801 555 0123".toPhoneNumberOrNull(uk)?.raw)
+        assertEquals(null, "801 555 0123".toPhoneNumberOrNull(PhoneNumber.Region.FR))
+        assertEquals("+33123456789", "01 23 45 67 89".toPhoneNumberOrNull(PhoneNumber.Region.FR)?.raw)
+        assertEquals("+34912345678", "912 345 678".toPhoneNumberOrNull(PhoneNumber.Region.ES)?.raw)
+        assertEquals("+61412345678", "0412 345 678".toPhoneNumberOrNull(PhoneNumber.Region.AU)?.raw)
+        assertEquals("+919876543210", "098765 43210".toPhoneNumberOrNull(PhoneNumber.Region.IN)?.raw)
+
+        assertEquals("+18015550123", "+18015550123".toPhoneNumberOrNull(region = null)?.raw)
+        assertEquals(null, "8015550123".toPhoneNumberOrNull(region = null))
+
+        for (region in PhoneNumber.Region.entries) {
+            val number = "+${region.countryCode}${"2".repeat(region.nationalLength)}".toPhoneNumber()
+            assertEquals(number, number.digits(region).toPhoneNumber(region))
+        }
+    }
+
+    @Test
     fun phoneNumbersFormatByRegion() {
         assertEquals("+1 (801) 555-0123", "+18015550123".toPhoneNumber().toString())
         assertEquals("+12345678", "+12345678".toPhoneNumber().toString())
@@ -115,7 +137,7 @@ class RawStringTest {
         assertEquals("+1 (801) 555-0123", Json.decodeFromString(PhoneNumber.serializer(), "\"+18015550123\"").toString())
     }
 
-    @Suppress("DEPRECATION")
+    @OptIn(NormalizedRawStringConstructor::class)
     @Test
     fun constructorRejectsUnnormalizedValues() {
         assertFailsWith<IllegalArgumentException> { TrimmedString(" a") }

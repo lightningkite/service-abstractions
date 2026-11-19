@@ -329,6 +329,21 @@ public annotation class TextIndex(val fields: Array<String>)
 )
 public annotation class ExperimentalLightningServer(val explanation: String)
 
+/**
+ * Marks constructors of [IsRawString] types that take an already-normalized value.
+ *
+ * They throw on input that isn't normalized; use the matching `String` conversion, such as
+ * [toPhoneNumber] or [trimmed], to normalize arbitrary input instead.
+ */
+@RequiresOptIn(
+    message = "This constructor throws on input that isn't already normalized. Use the matching String conversion, such as String.toPhoneNumber(), instead.",
+    level = RequiresOptIn.Level.WARNING,
+)
+@MustBeDocumented
+@Retention(AnnotationRetention.BINARY)
+@Target(AnnotationTarget.CONSTRUCTOR)
+public annotation class NormalizedRawStringConstructor
+
 @RequiresOptIn(level = RequiresOptIn.Level.ERROR)
 @MustBeDocumented
 @Retention(AnnotationRetention.BINARY)

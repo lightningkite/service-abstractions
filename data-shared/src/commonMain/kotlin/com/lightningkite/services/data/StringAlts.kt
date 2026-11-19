@@ -140,7 +140,7 @@ private inline fun requireNormalized(isNormalized: Boolean, message: () -> Strin
  */
 @Serializable
 @JvmInline
-public value class TrimmedString @Deprecated("Use String.trimmed()") constructor(override val raw: String) :
+public value class TrimmedString @NormalizedRawStringConstructor constructor(override val raw: String) :
     IsRawString {
     init {
         requireNormalized(raw == raw.trim()) { "TrimmedString has leading or trailing whitespace: '$raw'" }
@@ -155,13 +155,14 @@ public value class TrimmedString @Deprecated("Use String.trimmed()") constructor
  *
  * @return TrimmedString with whitespace removed
  */
-@Suppress("DEPRECATION", "NOTHING_TO_INLINE")
+@OptIn(NormalizedRawStringConstructor::class)
+@Suppress("NOTHING_TO_INLINE")
 public inline fun String.trimmed(): TrimmedString = TrimmedString(this.trim())
 
 
 @Serializable
 @JvmInline
-public value class CaselessString @Deprecated("Use String.caseless()") constructor(override val raw: String) :
+public value class CaselessString @NormalizedRawStringConstructor constructor(override val raw: String) :
     IsRawString {
     init {
         requireNormalized(raw == raw.lowercase()) { "CaselessString has uppercase characters: '$raw'" }
@@ -171,13 +172,14 @@ public value class CaselessString @Deprecated("Use String.caseless()") construct
     override fun mapRaw(action: (String) -> String): CaselessString = raw.let(action).caseless()
 }
 
-@Suppress("DEPRECATION", "NOTHING_TO_INLINE")
+@OptIn(NormalizedRawStringConstructor::class)
+@Suppress("NOTHING_TO_INLINE")
 public inline fun String.caseless(): CaselessString = CaselessString(this.lowercase())
 
 
 @Serializable
 @JvmInline
-public value class TrimmedCaselessString @Deprecated("Use String.trimmedCaseless()") constructor(override val raw: String) :
+public value class TrimmedCaselessString @NormalizedRawStringConstructor constructor(override val raw: String) :
     IsRawString {
     init {
         requireNormalized(raw == raw.trim().lowercase()) {
@@ -189,7 +191,8 @@ public value class TrimmedCaselessString @Deprecated("Use String.trimmedCaseless
     override fun mapRaw(action: (String) -> String): TrimmedCaselessString = raw.let(action).trimmedCaseless()
 }
 
-@Suppress("DEPRECATION", "NOTHING_TO_INLINE")
+@OptIn(NormalizedRawStringConstructor::class)
+@Suppress("NOTHING_TO_INLINE")
 public inline fun String.trimmedCaseless(): TrimmedCaselessString = TrimmedCaselessString(this.trim().lowercase())
 
 
@@ -223,7 +226,7 @@ public inline fun String.trimmedCaseless(): TrimmedCaselessString = TrimmedCasel
  */
 @Serializable
 @JvmInline
-public value class EmailAddress @Deprecated("Use String.toEmailAddress()") constructor(override val raw: String) : IsRawString {
+public value class EmailAddress @NormalizedRawStringConstructor constructor(override val raw: String) : IsRawString {
     init {
         requireNormalized(raw.isEmpty() || (raw == raw.trim().lowercase() && emailRegex.matches(raw))) {
             "$raw is not a lowercase, trimmed email address."
@@ -232,7 +235,7 @@ public value class EmailAddress @Deprecated("Use String.toEmailAddress()") const
 
     public companion object {
         /** The empty placeholder for "not provided yet", for use as a default in draft models. */
-        @Suppress("DEPRECATION")
+        @OptIn(NormalizedRawStringConstructor::class)
         public val EMPTY: EmailAddress = EmailAddress("")
 
         private val commentRegex = Regex("\\([^)]+\\)")
@@ -304,7 +307,7 @@ public value class EmailAddress @Deprecated("Use String.toEmailAddress()") const
  *
  * @return Validated and normalized EmailAddress, or null if invalid
  */
-@Suppress("DEPRECATION")
+@OptIn(NormalizedRawStringConstructor::class)
 public fun String.toEmailAddressOrNull(): EmailAddress? {
     val fixed = this.trim().lowercase()
     return if (EmailAddress.emailRegex.matches(fixed)) EmailAddress(fixed) else null
@@ -318,7 +321,6 @@ public fun String.toEmailAddressOrNull(): EmailAddress? {
  * @return Validated and normalized EmailAddress
  * @throws IllegalArgumentException if the string is not a valid email address
  */
-@Suppress("DEPRECATION")
 public fun String.toEmailAddress(): EmailAddress =
     toEmailAddressOrNull() ?: throw IllegalArgumentException("$this is not an email address.")
 
@@ -332,7 +334,7 @@ public fun String.toEmailAddress(): EmailAddress =
  * ## Features
  *
  * - **E.164 storage**: All numbers stored as +{country}{subscriber} (e.g., +18015551234)
- * - **US default**: numbers without a + are US: 10 digits get +1, 11 digits starting with 1 get +
+ * - **Region default**: numbers without a + are read as national numbers of a [Region], [Region.US] unless told otherwise
  * - **Formatting**: toString() formats US numbers; toString([Region]) formats the other supported regions
  * - **tel: URL generation**: Easy conversion to tel links
  *
@@ -349,13 +351,13 @@ public fun String.toEmailAddress(): EmailAddress =
  * ## Limitations
  *
  * - Numbers outside the supported [Region]s display as [raw]
- * - Assumes US for 10-digit numbers without country code
+ * - Numbers without a + parse only for the supported [Region]s
  *
  * @throws IllegalArgumentException if the string is not a valid phone number format
  */
 @Serializable
 @JvmInline
-public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constructor(override val raw: String) :
+public value class PhoneNumber @NormalizedRawStringConstructor constructor(override val raw: String) :
     IsRawString {
     init {
         requireNormalized(raw.isEmpty() || e164.matches(raw)) {
@@ -365,7 +367,7 @@ public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constru
 
     public companion object {
         /** The empty placeholder for "not provided yet", for use as a default in draft models. */
-        @Suppress("DEPRECATION")
+        @OptIn(NormalizedRawStringConstructor::class)
         public val EMPTY: PhoneNumber = PhoneNumber("")
 
         internal val e164 = Regex("""\+\d{8,15}""")
@@ -378,28 +380,30 @@ public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constru
     public fun isNotEmpty(): Boolean = raw.isNotEmpty()
 
     /**
-     * A country whose numbers [toString] can lay out in that country's usual digit grouping.
+     * A country whose numbers [toString] can lay out in that country's usual digit grouping, and
+     * [toPhoneNumber] can read without a `+` and country code.
      *
      * @property trunkPrefix what callers within the country dial in place of the country code.
+     * @property nationalLength how many digits a number has after the country code.
      */
-    public enum class Region(public val countryCode: String, public val trunkPrefix: String) {
+    public enum class Region(public val countryCode: String, public val trunkPrefix: String, public val nationalLength: Int) {
         /** United States, and the rest of the North American Numbering Plan: `+1 (801) 555-1234` or `(801) 555-1234`. */
-        US("1", ""),
+        US("1", "", 10),
 
         /** United Kingdom: `+44 20 7946 0958` or `020 7946 0958` for London-style numbers, `+44 7911 123456` or `07911 123456` otherwise. */
-        UK("44", "0"),
+        UK("44", "0", 10),
 
         /** France: `+33 1 23 45 67 89` or `01 23 45 67 89`. */
-        FR("33", "0"),
+        FR("33", "0", 9),
 
         /** Spain: `+34 912 345 678` or `912 345 678`. */
-        ES("34", ""),
+        ES("34", "", 9),
 
         /** Australia: `+61 412 345 678` or `0412 345 678` for mobiles, `+61 2 1234 5678` or `02 1234 5678` for landlines. */
-        AU("61", "0"),
+        AU("61", "0", 9),
 
         /** India: `+91 98765 43210` or `098765 43210`. */
-        IN("91", "0"),
+        IN("91", "0", 10),
     }
 
     /** Returns this number formatted as a [Region.US] number with its country code, or [raw] if it isn't one. */
@@ -460,19 +464,20 @@ private fun String.grouped(vararg sizes: Int): String? {
 
 
 /**
- * Converts this string to a [PhoneNumber], returning null if invalid.
+ * Converts this string to a [PhoneNumber], returning `null` if invalid.
  *
  * Follows the same rules as [toPhoneNumber].
- *
- * @return Normalized PhoneNumber in E.164 format, or null if invalid
  */
-@Suppress("DEPRECATION")
-public fun String.toPhoneNumberOrNull(): PhoneNumber? {
+@OptIn(NormalizedRawStringConstructor::class)
+public fun String.toPhoneNumberOrNull(region: PhoneNumber.Region?): PhoneNumber? {
     val fixed = this.filter { it !in punctuation }
     val candidate = when {
         fixed.startsWith('+') -> fixed
-        fixed.length == 10 -> "+1$fixed"
-        fixed.length == 11 && fixed.startsWith('1') -> "+$fixed"
+        region == null -> return null
+        fixed.length == region.nationalLength -> "+${region.countryCode}$fixed"
+        fixed.length == region.trunkPrefix.length + region.nationalLength && fixed.startsWith(region.trunkPrefix) ->
+            "+${region.countryCode}${fixed.removePrefix(region.trunkPrefix)}"
+        fixed.length == region.countryCode.length + region.nationalLength && fixed.startsWith(region.countryCode) -> "+$fixed"
         else -> return null
     }
     return if (PhoneNumber.e164.matches(candidate)) PhoneNumber(candidate) else null
@@ -481,12 +486,23 @@ public fun String.toPhoneNumberOrNull(): PhoneNumber? {
 /**
  * Converts this string to a [PhoneNumber] in E.164 format.
  *
- * - Strips common punctuation and spaces; what remains must be digits, optionally after a leading +
- * - With +: kept as-is, and must have 8 to 15 digits (E.164)
- * - Without +: 10 digits get the +1 (US) prefix, 11 digits starting with 1 get +; anything else is invalid
+ * Common punctuation and spaces are stripped; what remains must be digits, optionally after a leading `+`.
+ * With a `+`, the number is kept as-is and must have 8 to 15 digits. Without one, it is read as a
+ * number in [region]: its national digits (`8015551234`, `7911123456`), those after the trunk prefix
+ * (`07911123456`), or those after the country code (`18015551234`, `447911123456`).
+ * When [region] is `null`, only numbers with a `+` are accepted.
  *
- * @return Normalized PhoneNumber in E.164 format
- * @throws IllegalArgumentException if format is invalid
+ * @throws IllegalArgumentException if this isn't a valid phone number.
  */
-public fun String.toPhoneNumber(): PhoneNumber =
-    toPhoneNumberOrNull() ?: throw IllegalArgumentException("Phone numbers should begin with a '+' and your country code.")
+public fun String.toPhoneNumber(region: PhoneNumber.Region?): PhoneNumber =
+    toPhoneNumberOrNull(region) ?: throw IllegalArgumentException("Phone numbers should begin with a '+' and your country code.")
+
+/** Converts this string to a [PhoneNumber], reading numbers without a `+` as [PhoneNumber.Region.US] numbers, or returns `null` if invalid. */
+public fun String.toPhoneNumberOrNull(): PhoneNumber? = toPhoneNumberOrNull(PhoneNumber.Region.US)
+
+/**
+ * Converts this string to a [PhoneNumber], reading numbers without a `+` as [PhoneNumber.Region.US] numbers.
+ *
+ * @throws IllegalArgumentException if this isn't a valid phone number.
+ */
+public fun String.toPhoneNumber(): PhoneNumber = toPhoneNumber(PhoneNumber.Region.US)
