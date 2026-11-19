@@ -75,6 +75,40 @@ class RawStringTest {
     }
 
     @Test
+    fun phoneNumbersFormatByRegion() {
+        assertEquals("+1 (801) 555-0123", "+18015550123".toPhoneNumber().toString())
+        assertEquals("+12345678", "+12345678".toPhoneNumber().toString())
+        assertEquals("+442079460958", "+442079460958".toPhoneNumber().toString())
+        assertEquals("", PhoneNumber.EMPTY.toString())
+
+        assertEquals("+44 20 7946 0958", "+442079460958".toPhoneNumber().toString(PhoneNumber.Region.UK))
+        assertEquals("+44 7911 123456", "+447911123456".toPhoneNumber().toString(PhoneNumber.Region.UK))
+        assertEquals("+33 1 23 45 67 89", "+33123456789".toPhoneNumber().toString(PhoneNumber.Region.FR))
+        assertEquals("+34 912 345 678", "+34912345678".toPhoneNumber().toString(PhoneNumber.Region.ES))
+        assertEquals("+61 412 345 678", "+61412345678".toPhoneNumber().toString(PhoneNumber.Region.AU))
+        assertEquals("+61 2 1234 5678", "+61212345678".toPhoneNumber().toString(PhoneNumber.Region.AU))
+        assertEquals("+91 98765 43210", "+919876543210".toPhoneNumber().toString(PhoneNumber.Region.IN))
+
+        assertEquals("(801) 555-0123", "+18015550123".toPhoneNumber().toString(PhoneNumber.Region.US, includeCountryCode = false))
+        assertEquals("020 7946 0958", "+442079460958".toPhoneNumber().toString(PhoneNumber.Region.UK, includeCountryCode = false))
+        assertEquals("07911 123456", "+447911123456".toPhoneNumber().toString(PhoneNumber.Region.UK, includeCountryCode = false))
+        assertEquals("01 23 45 67 89", "+33123456789".toPhoneNumber().toString(PhoneNumber.Region.FR, includeCountryCode = false))
+        assertEquals("912 345 678", "+34912345678".toPhoneNumber().toString(PhoneNumber.Region.ES, includeCountryCode = false))
+        assertEquals("0412 345 678", "+61412345678".toPhoneNumber().toString(PhoneNumber.Region.AU, includeCountryCode = false))
+        assertEquals("098765 43210", "+919876543210".toPhoneNumber().toString(PhoneNumber.Region.IN, includeCountryCode = false))
+
+        assertEquals("+18015550123", "+18015550123".toPhoneNumber().toString(PhoneNumber.Region.UK))
+        assertEquals("+18015550123", "+18015550123".toPhoneNumber().toString(PhoneNumber.Region.UK, includeCountryCode = false))
+
+        assertEquals("8015550123", "+18015550123".toPhoneNumber().digits(PhoneNumber.Region.US))
+        assertEquals("02079460958", "+442079460958".toPhoneNumber().digits(PhoneNumber.Region.UK))
+        assertEquals("912345678", "+34912345678".toPhoneNumber().digits(PhoneNumber.Region.ES))
+        assertEquals("+18015550123", "+18015550123".toPhoneNumber().digits(PhoneNumber.Region.UK))
+        assertEquals("+18015550123", "+18015550123".toPhoneNumber().digits(PhoneNumber.Region.US).toPhoneNumber().raw)
+        assertEquals("+4420794609", "+4420794609".toPhoneNumber().toString(PhoneNumber.Region.UK))
+    }
+
+    @Test
     fun phoneNumberDecodingEnforcesE164() {
         assertFailsWith<SerializationException> { Json.decodeFromString(PhoneNumber.serializer(), "\"+abc\"") }
         assertFailsWith<SerializationException> { Json.decodeFromString(PhoneNumber.serializer(), "\"+1\"") }

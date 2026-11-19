@@ -333,7 +333,7 @@ public fun String.toEmailAddress(): EmailAddress =
  *
  * - **E.164 storage**: All numbers stored as +{country}{subscriber} (e.g., +18015551234)
  * - **US default**: numbers without a + are US: 10 digits get +1, 11 digits starting with 1 get +
- * - **Formatting**: toString() provides human-readable format for US numbers
+ * - **Formatting**: toString() formats US numbers; toString([Region]) formats the other supported regions
  * - **tel: URL generation**: Easy conversion to tel links
  *
  * ## Usage
@@ -342,14 +342,14 @@ public fun String.toEmailAddress(): EmailAddress =
  * val intl = "+44 20 7946 0958".toPhoneNumber()  // Stored as "+442079460958"
  *
  * println(phone)  // Displays: "+1 (801) 555-1234"
+ * println(intl.toString(PhoneNumber.Region.UK))  // Displays: "+44 20 7946 0958"
  * val link = phone.url  // "tel:+18015551234"
  * ```
  *
  * ## Limitations
  *
- * - Only US (+1) numbers get formatted toString()
+ * - Numbers outside the supported [Region]s display as [raw]
  * - Assumes US for 10-digit numbers without country code
- * - More localized formats could be added in the future (see TODO in code)
  *
  * @throws IllegalArgumentException if the string is not a valid phone number format
  */
@@ -367,6 +367,8 @@ public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constru
         /** The empty placeholder for "not provided yet", for use as a default in draft models. */
         @Suppress("DEPRECATION")
         public val EMPTY: PhoneNumber = PhoneNumber("")
+
+        internal val e164 = Regex("""\+\d{8,15}""")
     }
 
     /** Whether this is [EMPTY], meaning "not provided yet". */
@@ -375,13 +377,69 @@ public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constru
     /** Whether this holds a real value, i.e. is not [EMPTY]. */
     public fun isNotEmpty(): Boolean = raw.isNotEmpty()
 
-    // TODO: API Recommendation - Add support for more regional formatting (UK, EU, etc.)
-    //  Currently only US +1 numbers get formatted in toString()
-    override fun toString(): String = when {
-        //+18013693729
-        //012345678901
-        raw.startsWith("+1") -> "+1 (${raw.substring(2, 5)}) ${raw.substring(5, 8)}-${raw.substring(8)}"
-        else -> raw
+    /**
+     * A country whose numbers [toString] can lay out in that country's usual digit grouping.
+     *
+     * @property trunkPrefix what callers within the country dial in place of the country code.
+     */
+    public enum class Region(public val countryCode: String, public val trunkPrefix: String) {
+        /** United States, and the rest of the North American Numbering Plan: `+1 (801) 555-1234` or `(801) 555-1234`. */
+        US("1", ""),
+
+        /** United Kingdom: `+44 20 7946 0958` or `020 7946 0958` for London-style numbers, `+44 7911 123456` or `07911 123456` otherwise. */
+        UK("44", "0"),
+
+        /** France: `+33 1 23 45 67 89` or `01 23 45 67 89`. */
+        FR("33", "0"),
+
+        /** Spain: `+34 912 345 678` or `912 345 678`. */
+        ES("34", ""),
+
+        /** Australia: `+61 412 345 678` or `0412 345 678` for mobiles, `+61 2 1234 5678` or `02 1234 5678` for landlines. */
+        AU("61", "0"),
+
+        /** India: `+91 98765 43210` or `098765 43210`. */
+        IN("91", "0"),
+    }
+
+    /** Returns this number formatted as a [Region.US] number with its country code, or [raw] if it isn't one. */
+    override fun toString(): String = toString(Region.US, includeCountryCode = true)
+
+    /**
+     * Returns this number laid out in [region]'s digit grouping, e.g. `+44 20 7946 0958`.
+     *
+     * When [includeCountryCode] is `false`, returns the form dialed from within [region] instead,
+     * e.g. `020 7946 0958`. Returns [raw] unchanged if this number has a different country code than
+     * [region], or doesn't have the digit count numbers in [region] have.
+     */
+    public fun toString(region: Region, includeCountryCode: Boolean = true): String {
+        val prefix = "+${region.countryCode}"
+        if (!raw.startsWith(prefix)) return raw
+        val n = raw.removePrefix(prefix)
+        val grouped = when (region) {
+            Region.US -> if (n.length == 10) "(${n.take(3)}) ${n.substring(3, 6)}-${n.substring(6)}" else null
+            Region.UK -> if (n.startsWith('2')) n.grouped(2, 4, 4) else n.grouped(4, 6)
+            Region.FR -> n.grouped(1, 2, 2, 2, 2)
+            Region.ES -> n.grouped(3, 3, 3)
+            Region.AU -> if (n.startsWith('4')) n.grouped(3, 3, 3) else n.grouped(1, 4, 4)
+            Region.IN -> n.grouped(5, 5)
+        }
+        return when {
+            grouped == null -> raw
+            includeCountryCode -> "$prefix $grouped"
+            else -> region.trunkPrefix + grouped
+        }
+    }
+
+    /**
+     * Returns the bare digits dialed from within [region], e.g. `8015551234` or `02079460958`.
+     *
+     * Returns [raw] unchanged if this number has a different country code than [region].
+     */
+    public fun digits(region: Region): String {
+        val prefix = "+${region.countryCode}"
+        if (!raw.startsWith(prefix)) return raw
+        return region.trunkPrefix + raw.removePrefix(prefix)
     }
 
     /** Converts to a tel: URL. */
@@ -393,7 +451,12 @@ public value class PhoneNumber @Deprecated("Use String.toPhoneNumber()") constru
 /** Characters to strip from phone number input. */
 private val punctuation = setOf(' ', '-', '.', ',', '(', ')', '[', ']', '<', '>')
 
-private val e164 = Regex("""\+\d{8,15}""")
+/** Splits this string into space-separated groups of [sizes], or returns null if they don't add up to its length. */
+private fun String.grouped(vararg sizes: Int): String? {
+    if (sizes.sum() != length) return null
+    var start = 0
+    return sizes.joinToString(" ") { size -> substring(start, start + size).also { start += size } }
+}
 
 
 /**
@@ -412,7 +475,7 @@ public fun String.toPhoneNumberOrNull(): PhoneNumber? {
         fixed.length == 11 && fixed.startsWith('1') -> "+$fixed"
         else -> return null
     }
-    return if (e164.matches(candidate)) PhoneNumber(candidate) else null
+    return if (PhoneNumber.e164.matches(candidate)) PhoneNumber(candidate) else null
 }
 
 /**
