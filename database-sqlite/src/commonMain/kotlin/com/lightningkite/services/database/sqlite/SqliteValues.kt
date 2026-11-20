@@ -109,5 +109,9 @@ internal fun SQLiteStatement.read(index: Int, type: ColumnType): Any? =
         ColumnType.Integer -> if (getColumnType(index) == SQLITE_DATA_TEXT) getText(index).toLong() else getLong(index)
         ColumnType.Real -> getDouble(index)
         ColumnType.Text -> getText(index)
-        ColumnType.Blob -> getBlob(index)
+        // Claude: mirror of the Integer branch — a writer that missed the converter still binds its
+        // value-class ids as TEXT into this BLOB-declared column; handing those back as their UTF-8
+        // bytes makes the decoder's `as String` throw. TEXT storage reads as the text that was written;
+        // genuine blobs (converter-written ids) keep returning bytes.
+        ColumnType.Blob -> if (getColumnType(index) == SQLITE_DATA_TEXT) getText(index) else getBlob(index)
     }
