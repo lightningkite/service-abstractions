@@ -112,7 +112,7 @@ public open class FcmNotificationClient(
         name: String,
         context: SettingContext,
         credentials: FcmServiceAccount,
-        baseClient: HttpClient? = null,
+        baseClient: HttpClient?,
     ):this(name, context, credentials){
         this.clientOverride = baseClient
     }
