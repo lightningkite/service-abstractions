@@ -51,7 +51,8 @@ import java.util.Locale.getDefault
 class TableGenerator(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger,
-) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 24) {
+    singleTarget: Boolean,
+) : CommonSymbolProcessor2(codeGenerator, "lightningdb", 24, singleTarget) {
     fun KSClassDeclaration.needsDcp(): Boolean =
         annotation("Queryable") != null || annotation("GenerateDataClassPaths") != null
 
@@ -432,6 +433,7 @@ class MyProvider : SymbolProcessorProvider {
         return TableGenerator(
             codeGenerator = environment.codeGenerator,
             logger = environment.logger,
+            singleTarget = environment.options["lightningdb.singleTarget"] == "true",
         )
     }
 }

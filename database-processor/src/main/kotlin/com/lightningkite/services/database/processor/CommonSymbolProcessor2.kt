@@ -13,6 +13,7 @@ abstract class CommonSymbolProcessor2(
     private val myCodeGenerator: CodeGenerator,
     val myId: String,
     val version: Int = 0,
+    private val singleTarget: Boolean,
 ) : SymbolProcessor {
     lateinit var log: Appendable
     abstract fun process2(resolver: Resolver, files: Set<KSFile>)
@@ -73,11 +74,11 @@ abstract class CommonSymbolProcessor2(
             // Only commonMain's own (metadata) KSP task fills the shared commonMain folder.  Every target's KSP task
             // runs this processor too, and some see none of commonMain's models (an empty input hash), so letting them
             // write would empty the folder under whatever is compiling it.  commonTest has no metadata task, so its
-            // targets still write.
+            // targets still write.  A single-target module has no metadata task, so its one target writes instead.
             // Consumers must therefore make their other KSP and compile tasks depend on kspCommonMainKotlinMetadata:
             // see "Build Setup" in docs/database-query-dsl.md.
             val target = outSample.path.split(File.separatorChar).dropWhile { it != "ksp" }.drop(1).first()
-            if (common && flavor == "Main" && target != "metadata") {
+            if (common && flavor == "Main" && target != "metadata" && !singleTarget) {
                 requireGeneratedByMetadataTask(
                     version = version,
                     dependencies = interestedIn.asSequence().map { File(it.filePath) },
@@ -198,6 +199,8 @@ fun requireGeneratedByMetadataTask(version: Int, dependencies: Sequence<File>, l
 
             tasks.matching { (it.name.startsWith("ksp") || it.name.startsWith("compile")) && it.name != "kspCommonMainKotlinMetadata" }
                 .configureEach { dependsOn("kspCommonMainKotlinMetadata") }
+
+        A module with a single target has no such task; set ksp { arg("lightningdb.singleTarget", "true") } instead.
 
         Full setup: "Build Setup" in service-abstractions/docs/database-query-dsl.md.
         """.trimIndent()

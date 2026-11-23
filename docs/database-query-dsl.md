@@ -102,6 +102,15 @@ models can't check; there the symptom is unresolved references to every generate
 and an empty `build/generated/ksp/common/commonMain/kotlin`.  To generate by hand, run
 `./gradlew :your-module:kspCommonMainKotlinMetadata`.
 
+**Multiplatform module with a single target** (e.g. only `js()`) — Kotlin creates no metadata task, so piece 3 can't
+work.  Keep pieces 1 and 2, drop piece 3, and tell the processor that the one target writes commonMain's fields:
+
+```kotlin
+ksp {
+    arg("lightningdb.singleTarget", "true")
+}
+```
+
 Only `src/commonMain` and `src/commonTest` count as common: models in another source set of a multiplatform module
 that has these are not generated.
 
