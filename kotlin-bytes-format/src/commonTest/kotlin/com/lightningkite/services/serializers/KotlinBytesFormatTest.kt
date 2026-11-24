@@ -2,14 +2,17 @@ package com.lightningkite.services.serializers
 
 import com.lightningkite.services.data.StringArrayFormat
 import kotlinx.serialization.*
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.EmptySerializersModule
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlinx.io.EOFException
 import kotlin.uuid.Uuid
 
 class KotlinBytesFormatTest {
-    val javaData = KotlinBytesFormat(EmptySerializersModule())
+    val javaData = OldKotlinBytesFormat(EmptySerializersModule())
     val stringArray = StringArrayFormat(EmptySerializersModule())
     val json = Json { serializersModule = EmptySerializersModule() }
 
@@ -198,6 +201,102 @@ class KotlinBytesFormatTest {
         javaData.decodeFromHexString<StringContainer>(output)
     }
 
+
+    @Serializable
+    data class TokenV1(val user: Int, val name: String)
+
+    @Serializable
+    data class TokenV2(val user: Int, val name: String, val scope: String = "all")
+
+    @Serializable
+    data class TokenV3(val user: Int, val name: String, val scope: String = "all", val expires: Long? = null)
+
+    @Serializable
+    data class EnvelopeV1(val version: Int, val token: TokenV1)
+
+    @Serializable
+    data class EnvelopeV2(val version: Int, val token: TokenV2)
+
+    @Serializable
+    data class TokenThenRequired(val token: TokenV2, val after: Int)
+
+    @Test
+    fun oldDataDecodesWithNewTrailingOptional() {
+        val old = javaData.encodeToByteArray(TokenV1.serializer(), TokenV1(1, "ada"))
+        assertEquals(TokenV2(1, "ada"), javaData.decodeFromByteArray(TokenV2.serializer(), old))
+    }
+
+    @Test
+    fun oldDataDecodesWithSeveralNewTrailingOptionals() {
+        val old = javaData.encodeToByteArray(TokenV1.serializer(), TokenV1(1, "ada"))
+        assertEquals(TokenV3(1, "ada"), javaData.decodeFromByteArray(TokenV3.serializer(), old))
+
+        val fromV2 = javaData.encodeToByteArray(TokenV2.serializer(), TokenV2(1, "ada", "read"))
+        assertEquals(TokenV3(1, "ada", "read"), javaData.decodeFromByteArray(TokenV3.serializer(), fromV2))
+    }
+
+    @Test
+    fun oldDataDecodesWhenNestedLastFieldGainsTrailingOptional() {
+        val old = javaData.encodeToByteArray(EnvelopeV1.serializer(), EnvelopeV1(2, TokenV1(1, "ada")))
+        assertEquals(
+            EnvelopeV2(2, TokenV2(1, "ada")),
+            javaData.decodeFromByteArray(EnvelopeV2.serializer(), old)
+        )
+    }
+
+    @Serializable
+    data class SessionV2(
+        val user: Int,
+        val scope: String = "all",
+        val original: SessionV2? = null,
+        val cache: Map<String, Int> = mapOf(),
+        val audience: String? = null,
+    )
+
+    @Serializable
+    data class StoredV2(val value: SessionV2?, val expiresAt: Long?)
+
+    @Test
+    fun newDataWithTheAddedFieldStillRoundTrips() {
+        val value = StoredV2(SessionV2(1, original = SessionV2(2, audience = "inner"), audience = "outer"), 5L)
+        assertEquals(value, javaData.decodeFromByteArray(StoredV2.serializer(), javaData.encodeToByteArray(StoredV2.serializer(), value)))
+    }
+
+    @Test
+    fun partialWithOutOfOrderPartsRoundTrips() {
+        // Markers 2, 0, 3.  (The decoder stops after the last field's marker, so parts after "tags" would be lost.)
+        val parts: Map<String, Any?> = linkedMapOf("nick" to null, "name" to "Rex", "tags" to listOf("a", null))
+        val bytes = javaData.encodeToByteArray(PartialPetSerializer, parts)
+        assertEquals(parts, javaData.decodeFromByteArray(PartialPetSerializer, bytes))
+        assertEquals(
+            listOf(parts, mapOf("age" to 1)),
+            javaData.decodeFromByteArray(ListSerializer(PartialPetSerializer), javaData.encodeToByteArray(ListSerializer(PartialPetSerializer), listOf(parts, mapOf("age" to 1))))
+        )
+    }
+
+    @Test
+    fun truncatedRequiredFieldStillFails() {
+        val full = javaData.encodeToByteArray(TokenV1.serializer(), TokenV1(1, "ada"))
+        // Cut inside the string, and right before it.
+        assertFailsWith<EOFException> {
+            javaData.decodeFromByteArray(TokenV1.serializer(), full.copyOf(full.size - 1))
+        }
+        assertFailsWith<EOFException> {
+            javaData.decodeFromByteArray(TokenV1.serializer(), full.copyOf(4))
+        }
+    }
+
+    @Test
+    fun truncatedBeforeParentRequiredFieldStillFails() {
+        val full = javaData.encodeToByteArray(TokenThenRequired.serializer(), TokenThenRequired(TokenV2(1, "ada"), 7))
+        val withoutScopeAndAfter = javaData.encodeToByteArray(TokenV1.serializer(), TokenV1(1, "ada"))
+        assertFailsWith<EOFException> {
+            javaData.decodeFromByteArray(TokenThenRequired.serializer(), withoutScopeAndAfter)
+        }
+        assertFailsWith<EOFException> {
+            javaData.decodeFromByteArray(TokenThenRequired.serializer(), full.copyOf(full.size - 4))
+        }
+    }
 
     interface Permissions<Whole, Crud> {
         val manageBalance: Whole

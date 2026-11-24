@@ -228,6 +228,9 @@ public class RedisPubSub(
             PubSub.Settings.register("redis") { name, url, context ->
                 RedisPubSub(name, context, RedisClient.create(url))
             }
+            PubSub.Settings.register("rediss") { name, url, context ->
+                RedisPubSub(name, context, RedisClient.create(url))
+            }
         }
     }
 

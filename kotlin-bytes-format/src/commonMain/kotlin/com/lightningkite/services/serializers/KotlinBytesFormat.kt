@@ -9,7 +9,22 @@ import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.modules.SerializersModule
 
-public class KotlinBytesFormat(override val serializersModule: SerializersModule) : BinaryFormat {
+@Deprecated(
+    "Positional format that can't evolve; use KotlinWireFormat for new data. OldKotlinBytesFormat remains to read data already written.",
+    ReplaceWith("OldKotlinBytesFormat")
+)
+public typealias KotlinBytesFormat = OldKotlinBytesFormat
+
+/**
+ * The original positional binary format, frozen so data already written stays readable.  Write new data with
+ * [KotlinWireFormat].
+ *
+ * Class fields are written in declaration order; required fields carry no marker, optional fields are preceded by
+ * their index, and an end marker follows only when trailing fields were skipped.  Nothing has a length, so the only
+ * schema change old data survives is optional fields added at the end of a value that ends the input (the top-level
+ * value, or a last field all the way up): the input ends where the new field's marker would be.
+ */
+public class OldKotlinBytesFormat(override val serializersModule: SerializersModule) : BinaryFormat {
     override fun <T> decodeFromByteArray(deserializer: DeserializationStrategy<T>, bytes: ByteArray): T {
         return DataInputDecoder(Buffer().also {
             it.write(bytes)
@@ -23,7 +38,7 @@ public class KotlinBytesFormat(override val serializersModule: SerializersModule
     }
 
     private inner class DataOutputEncoder(val output: Sink) : AbstractEncoder() {
-        override val serializersModule: SerializersModule get() = this@KotlinBytesFormat.serializersModule
+        override val serializersModule: SerializersModule get() = this@OldKotlinBytesFormat.serializersModule
         override fun encodeBoolean(value: Boolean) = output.writeByte((if (value) 1 else 0))
         override fun encodeByte(value: Byte) = output.writeByte(value)
         override fun encodeShort(value: Short) = output.writeShort(value)
@@ -89,7 +104,7 @@ public class KotlinBytesFormat(override val serializersModule: SerializersModule
     private inner class DataInputDecoder(val input: Source, var elementsCount: Int = 0, val seq: Boolean = false) :
         AbstractDecoder() {
         private var elementIndex = 0
-        override val serializersModule: SerializersModule get() = this@KotlinBytesFormat.serializersModule
+        override val serializersModule: SerializersModule get() = this@OldKotlinBytesFormat.serializersModule
         override fun decodeBoolean(): Boolean = (input.readByte().toInt() != 0)
         override fun decodeByte(): Byte = input.readByte()
         override fun decodeShort(): Short = input.readShort()
@@ -116,6 +131,9 @@ public class KotlinBytesFormat(override val serializersModule: SerializersModule
                 if (!descriptor.isElementOptional(elementIndex) && elementIndex < descriptor.elementsCount) {
                     return (elementIndex++)
                 }
+                // Data written before trailing optional fields were added ends here, without an end marker.  Markers
+                // can't be compared to find an end elsewhere: `PartialSerializer` writes them in insertion order.
+                if (input.exhausted()) return CompositeDecoder.DECODE_DONE
                 if (descriptor.elementsCount >= 0xFE) {
                     val index = input.readShort().toUShort().toInt()
                     if (index == 0xFFFF) {
