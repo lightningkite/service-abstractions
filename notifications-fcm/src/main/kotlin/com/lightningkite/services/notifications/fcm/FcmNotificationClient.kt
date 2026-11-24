@@ -105,19 +105,8 @@ public open class FcmNotificationClient(
     override val name: String,
     override val context: SettingContext,
     private val credentials: FcmServiceAccount,
+    private val baseClient: HttpClient? = null,
 ) : NotificationService {
-
-    @TestOnly
-    public constructor(
-        name: String,
-        context: SettingContext,
-        credentials: FcmServiceAccount,
-        baseClient: HttpClient?,
-    ):this(name, context, credentials){
-        this.clientOverride = baseClient
-    }
-
-    private var clientOverride: HttpClient? = null
 
     private val log = KotlinLogging.logger("com.lightningkite.services.notifications.fcm.FcmNotificationClient")
 
@@ -133,7 +122,7 @@ public open class FcmNotificationClient(
 
     // Own instance so a caller-supplied engine (e.g. a test MockEngine) is honored; production
     // passes the shared, OpenTelemetry-instrumented client.
-    private val http: HttpClient get() = clientOverride ?: client
+    private val http: HttpClient get() = baseClient ?: client
 
     // FCM's batch endpoint was retired (June 2024), so the v1 API takes one token per request. We
     // fan out those requests concurrently and rely on the shared client's HTTP/2 engine to multiplex
