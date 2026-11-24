@@ -170,10 +170,6 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                     "role_name" - "readWrite"
                     "database_name" - "default"
                 },
-                terraformJsonObject {
-                    "role_name" - "readAnyDatabase"
-                    "database_name" - "admin"
-                }
             )
         }
 
@@ -319,10 +315,6 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
                     "role_name" - "readWrite"
                     "database_name" - "default"
                 },
-                terraformJsonObject {
-                    "role_name" - "readAnyDatabase"
-                    "database_name" - "admin"
-                }
             )
         }
         (emitter as? TerraformEmitterKnownIpAddresses)?.also { emitter ->
@@ -519,10 +511,6 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
                     "role_name" - "readWrite"
                     "database_name" - "default"
                 },
-                terraformJsonObject {
-                    "role_name" - "readAnyDatabase"
-                    "database_name" - "admin"
-                }
             )
         }
         (emitter as? TerraformEmitterKnownIpAddresses)?.also { emitter ->
