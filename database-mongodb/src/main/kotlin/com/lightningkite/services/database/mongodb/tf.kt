@@ -170,10 +170,6 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
                     "role_name" - "readWrite"
                     "database_name" - "default"
                 },
-                terraformJsonObject {
-                    "role_name" - "readAnyDatabase"
-                    "database_name" - "admin"
-                }
             )
         }
 
@@ -195,7 +191,7 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlas(
             "resource.mongodbatlas_project_ip_access_list.atlas_ip_access_list_1" {
                 "project_id" - projectId
                 "cidr_block" - cidr
-                "comment" - "CIDR block for Staging AWS Public Subnet Access for Atlas"
+                "comment" - "CIDR block for AWS Public Subnet Access for Atlas"
             }
             // AWS VPC Peer Conf
             "resource.aws_vpc_peering_connection_accepter.peer" {
@@ -319,10 +315,6 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFree(
                     "role_name" - "readWrite"
                     "database_name" - "default"
                 },
-                terraformJsonObject {
-                    "role_name" - "readAnyDatabase"
-                    "database_name" - "admin"
-                }
             )
         }
         (emitter as? TerraformEmitterKnownIpAddresses)?.also { emitter ->
@@ -519,10 +511,6 @@ public fun TerraformNeed<Database.Settings>.mongodbAtlasFlex(
                     "role_name" - "readWrite"
                     "database_name" - "default"
                 },
-                terraformJsonObject {
-                    "role_name" - "readAnyDatabase"
-                    "database_name" - "admin"
-                }
             )
         }
         (emitter as? TerraformEmitterKnownIpAddresses)?.also { emitter ->
