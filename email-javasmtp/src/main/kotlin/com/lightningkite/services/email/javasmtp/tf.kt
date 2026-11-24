@@ -244,23 +244,23 @@ public fun TerraformNeed<EmailService.Settings>.awsSesSmtp(
 
         // VPC endpoint for SMTP (if in VPC context)
         (emitter.applicationVpc as? AwsVpc.VpcInfo)?.also { vpcInfo ->
-            "resource.aws_security_group.$name" {
-                "name" - "${emitter.projectPrefix}-${name}-security-group"
-                "vpc_id" - vpcInfo.id
-            }
-            "resource.aws_vpc_security_group_ingress_rule.${name}" {
-                "security_group_id" - expression("aws_security_group.$name.id")
-                "from_port" - 587
-                "to_port" - 587
-                "ip_protocol" - "tcp"
-                // Only instances inside the VPC ever reach this endpoint; don't expose it to the world.
-                "cidr_ipv4" - vpcInfo.cidr
-            }
+            // VPC Endpoints not of type Gateway cost money and charged per endpoint, per availability zone, per hour.
+            // So adding in all three azs with cost about $22 a month. If you don't have a public subnet or NAT Gateway
+            // or you absolutely need to for security purposes and keeping everything on a private network then turn
+            // this on
             if (createVpcEndpoints) {
-                // VPC Endpoints not of type Gateway cost money and charged per endpoint, per availability zone, per hour.
-                // So adding in all three azs with cost about $22 a month. If you don't have a public subnet or NAT Gateway
-                // or you absolutely need to for security purposes and keeping everything on a private network then turn
-                // this on
+                "resource.aws_security_group.$name" {
+                    "name" - "${emitter.projectPrefix}-${name}-security-group"
+                    "vpc_id" - vpcInfo.id
+                }
+                "resource.aws_vpc_security_group_ingress_rule.${name}" {
+                    "security_group_id" - expression("aws_security_group.$name.id")
+                    "from_port" - 587
+                    "to_port" - 587
+                    "ip_protocol" - "tcp"
+                    // Only instances inside the VPC ever reach this endpoint; don't expose it to the world.
+                    "cidr_ipv4" - vpcInfo.cidr
+                }
                 "resource.aws_vpc_endpoint.$name" {
                     "vpc_id" - vpcInfo.id
                     "service_name" - "com.amazonaws.${emitter.applicationRegion}.email-smtp"
