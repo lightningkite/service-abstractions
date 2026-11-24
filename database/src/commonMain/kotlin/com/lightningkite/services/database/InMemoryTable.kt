@@ -4,7 +4,6 @@ import com.lightningkite.services.database.optics.*
 
 import com.lightningkite.services.data.IndexUniqueness
 import com.lightningkite.services.data.TextIndex
-import kotlinx.atomicfu.*
 import kotlinx.atomicfu.locks.ReentrantLock
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.flow.Flow
@@ -48,9 +47,87 @@ public open class InMemoryTable<Model : Any>(
         serializer.descriptor.annotations.filterIsInstance<TextIndex>().firstOrNull()?.fields
             ?.map { AnyOpticSerializer(serializer).fromString(it) }
 
+    private inner class UniqueIndex(
+        val fields: List<Field<Model, *>>,
+        val nullSparse: Boolean,
+    ) {
+        // A set of ids rather than one, because [preload] skips the checks and may place rows that share a key.
+        val ids = HashMap<List<Any?>, MutableSet<Any?>>()
+
+        fun keyOf(model: Model): List<Any?>? {
+            val key = fields.map { it.get(model) }
+            return if (nullSparse && key.any { it == null }) null else key
+        }
+    }
+
+    private val uniqueIndexes: List<UniqueIndex> = serializer.descriptor.indexes()
+        .filter { it.unique == IndexUniqueness.Unique || it.unique == IndexUniqueness.UniqueNullSparse }
+        .map { index ->
+            UniqueIndex(
+                fields = serializer.fields!!.filter { index.fields.contains(it.name) },
+                nullSparse = index.unique == IndexUniqueness.UniqueNullSparse,
+            )
+        }
+
+    init {
+        data.values.forEach { index(it) }
+    }
+
+    private fun index(model: Model) {
+        for (unique in uniqueIndexes) {
+            val key = unique.keyOf(model) ?: continue
+            unique.ids.getOrPut(key) { HashSet() }.add(idOf(model))
+        }
+    }
+
+    private fun unindex(model: Model) {
+        for (unique in uniqueIndexes) {
+            val key = unique.keyOf(model) ?: continue
+            val ids = unique.ids[key] ?: continue
+            ids.remove(idOf(model))
+            if (ids.isEmpty()) unique.ids.remove(key)
+        }
+    }
+
+    // Checks every unique index and the primary key before touching anything, so a violation leaves no trace.
+    private fun write(old: Model?, new: Model) {
+        for (unique in uniqueIndexes) {
+            if (old != null && unique.fields.all { it.get(old) == it.get(new) }) continue
+            val key = unique.keyOf(new) ?: continue
+            val holders = unique.ids[key] ?: continue
+            if (holders.any { old == null || it != idOf(old) }) throw UniqueViolationException(
+                table = serializer.descriptor.serialName,
+                key = unique.fields.joinToString { it.name },
+                cause = IllegalStateException()
+            )
+        }
+        val existing = data[idOf(new)]
+        if (existing != null && existing !== old) throw UniqueViolationException(
+            table = serializer.descriptor.serialName,
+            key = "_id",
+            cause = IllegalStateException()
+        )
+        if (old != null) {
+            unindex(old)
+            if (idOf(old) != idOf(new)) data.remove(idOf(old))
+        }
+        data[idOf(new)] = new
+        index(new)
+    }
+
+    private fun delete(old: Model) {
+        unindex(old)
+        data.remove(idOf(old))
+    }
+
     /** Place items into [data] keyed by `_id`. Bypasses unique checks; intended for trusted preload paths. */
     public fun preload(items: Iterable<Model>) {
-        for (item in items) data[idOf(item)] = item
+        lock.withLock {
+            for (item in items) {
+                data.put(idOf(item), item)?.let { unindex(it) }
+                index(item)
+            }
+        }
     }
 
     /**
@@ -70,82 +147,6 @@ public open class InMemoryTable<Model : Any>(
         tableName: String = "unknown",
     ) : this(HashMap<Any?, Model>(), serializer, tableName) {
         preload(data)
-    }
-
-    private val uniqueIndexChecks: AtomicRef<List<(List<EntryChange<Model>>) -> Unit>> = atomic(emptyList())
-
-    private fun uniqueCheck(changed: EntryChange<Model>) = uniqueCheck(listOf(changed))
-    private fun uniqueCheck(changes: List<EntryChange<Model>>) =
-        lock.withLock { uniqueIndexChecks.value.forEach { it(changes) } }
-
-    init {
-        registerUniqueIndexChecks()
-    }
-
-    // Kept out of the init block: the atomicfu compiler plugin cannot transform atomic operations
-    // inside lambdas that have no enclosing function.
-    private fun registerUniqueIndexChecks() {
-        serializer.descriptor.indexes().plus(NeededIndex(fields = listOf("_id"), IndexUniqueness.Unique, "primary key"))
-            .forEach { index: NeededIndex ->
-                if (index.unique in
-                    setOf(IndexUniqueness.Unique, IndexUniqueness.UniqueNullSparse)
-                ) {
-                    val fields = serializer.fields!!.filter { index.fields.contains(it.name) }
-                    val isPrimaryKey = index.fields.size == 1 && index.fields[0] == "_id"
-                    uniqueIndexChecks.update { it ->
-                        it.plus({ changes: List<EntryChange<Model>> ->
-                            val fieldChanges = changes.mapNotNull { entryChange ->
-                                if (
-                                    (entryChange.old == null && entryChange.new != null) ||
-                                    (entryChange.old != null &&
-                                            entryChange.new != null &&
-                                            fields.any { it.get(entryChange.old!!) != it.get(entryChange.new!!) })
-                                )
-                                    entryChange to fields.map { it to it.get(entryChange.new!!) }
-                                else
-                                    null
-                            }
-                            fieldChanges.forEach { (entryChange, fieldValues) ->
-                                if (isPrimaryKey) {
-                                    val newId = idOf(entryChange.new!!)
-                                    val existing = data[newId]
-                                    if (existing != null && existing !== entryChange.old) {
-                                        throw UniqueViolationException(
-                                            table = serializer.descriptor.serialName,
-                                            key = "_id",
-                                            cause = IllegalStateException()
-                                        )
-                                    }
-                                } else if (index.unique == IndexUniqueness.Unique) {
-                                    if (data.values.any { fromDb ->
-                                            fromDb !== entryChange.old && fieldValues.all { (property, value) ->
-                                                property.get(fromDb) == value
-                                            }
-                                        }) {
-                                        throw UniqueViolationException(
-                                            table = serializer.descriptor.serialName,
-                                            key = fields.joinToString { it.name },
-                                            cause = IllegalStateException()
-                                        )
-                                    }
-                                } else {
-                                    if (data.values.any { fromDb ->
-                                            fromDb !== entryChange.old && fieldValues.all { (property, value) ->
-                                                value != null && property.get(fromDb) == value
-                                            }
-                                        }) {
-                                        throw UniqueViolationException(
-                                            table = serializer.descriptor.serialName,
-                                            key = fields.joinToString { it.name },
-                                            cause = IllegalStateException()
-                                        )
-                                    }
-                                }
-                            }
-                        })
-                    }
-                }
-            }
     }
 
     /**
@@ -277,10 +278,7 @@ public open class InMemoryTable<Model : Any>(
             // placed by this same call. Checking the whole batch up front compared every new row
             // only against previously committed data, so two conflicting rows inserted together
             // never saw each other and both went in.
-            for (m in list) {
-                uniqueCheck(EntryChange(null, m))
-                data[idOf(m)] = m
-            }
+            for (m in list) write(null, m)
             return@traced list
         }
     }
@@ -292,13 +290,8 @@ public open class InMemoryTable<Model : Any>(
     ): EntryChange<Model> = traced {
         lock.withLock {
             for (old in snapshotFor(condition, orderBy)) {
-                val changed = EntryChange(old, model)
-                uniqueCheck(changed)
-                val oldId = idOf(old)
-                val newId = idOf(model)
-                if (oldId != newId) data.remove(oldId)
-                data[newId] = model
-                return@traced changed
+                write(old, model)
+                return@traced EntryChange(old, model)
             }
             return@traced EntryChange(null, null)
         }
@@ -312,16 +305,10 @@ public open class InMemoryTable<Model : Any>(
         lock.withLock {
             for (old in snapshotFor(condition, emptyList())) {
                 val new = modification(old)
-                val changed = EntryChange(old, new)
-                uniqueCheck(changed)
-                val oldId = idOf(old)
-                val newId = idOf(new)
-                if (oldId != newId) data.remove(oldId)
-                data[newId] = new
-                return@traced changed
+                write(old, new)
+                return@traced EntryChange(old, new)
             }
-            uniqueCheck(EntryChange(null, model))
-            data[idOf(model)] = model
+            write(null, model)
             return@traced EntryChange(null, model)
         }
     }
@@ -334,13 +321,8 @@ public open class InMemoryTable<Model : Any>(
         lock.withLock {
             for (old in snapshotFor(condition, orderBy)) {
                 val new = modification(old)
-                val changed = EntryChange(old, new)
-                uniqueCheck(changed)
-                val oldId = idOf(old)
-                val newId = idOf(new)
-                if (oldId != newId) data.remove(oldId)
-                data[newId] = new
-                return@traced changed
+                write(old, new)
+                return@traced EntryChange(old, new)
             }
             return@traced EntryChange(null, null)
         }
@@ -355,13 +337,7 @@ public open class InMemoryTable<Model : Any>(
                 .map { old -> EntryChange(old, modification(old)) }
             // Same reason as [insert]: checked and written per row, so a modification that makes two
             // of the matched rows collide with each other is caught rather than silently applied.
-            for (change in matches) {
-                uniqueCheck(change)
-                val oldId = idOf(change.old!!)
-                val newId = idOf(change.new!!)
-                if (oldId != newId) data.remove(oldId)
-                data[newId] = change.new!!
-            }
+            for (change in matches) write(change.old!!, change.new!!)
             return@traced CollectionChanges(changes = matches)
         }
     }
@@ -369,7 +345,7 @@ public open class InMemoryTable<Model : Any>(
     override suspend fun deleteOne(condition: Condition<Model>, orderBy: List<SortPart<Model>>): Model? = traced {
         lock.withLock {
             for (old in snapshotFor(condition, orderBy)) {
-                data.remove(idOf(old))
+                delete(old)
                 return@traced old
             }
             return@traced null
@@ -379,7 +355,7 @@ public open class InMemoryTable<Model : Any>(
     override suspend fun deleteMany(condition: Condition<Model>): List<Model> = traced {
         lock.withLock {
             val removed = snapshotFor(condition, emptyList()).toList()
-            for (m in removed) data.remove(idOf(m))
+            for (m in removed) delete(m)
             return@traced removed
         }
     }
@@ -415,6 +391,9 @@ public open class InMemoryTable<Model : Any>(
     override suspend fun deleteManyIgnoringOld(condition: Condition<Model>): Int = deleteMany(condition).size
 
     public fun drop() {
-        data.clear()
+        lock.withLock {
+            data.clear()
+            uniqueIndexes.forEach { it.ids.clear() }
+        }
     }
 }
