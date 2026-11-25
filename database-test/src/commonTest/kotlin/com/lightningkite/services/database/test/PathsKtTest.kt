@@ -66,7 +66,7 @@ class PathsKtTest {
 
     @Test
     fun partialOrWithNoPassingBranchIsFalse() {
-        val partial = partialOf<LargeTestModel> { it.byte assign 0.toByte(); it.short assign 0.toShort() }
+        val partial = buildPartial<LargeTestModel> { it.byte assign 0.toByte(); it.short assign 0.toShort() }
         assertEquals(false, Condition<LargeTestModel> { (it.byte eq 1) or (it.short eq 1) }(partial))
     }
 

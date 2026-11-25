@@ -23,7 +23,7 @@ class MaskTest {
         }
         mask(model).also(::println)
         mask(
-            partialOf<LargeTestModel> {
+            buildPartial<LargeTestModel> {
                 it.byte.assign(1)
                 it.byte assign 1.toByte()
                 it.short assign 1.toShort()
