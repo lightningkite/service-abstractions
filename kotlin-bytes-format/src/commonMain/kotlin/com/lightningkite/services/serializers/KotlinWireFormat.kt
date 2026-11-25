@@ -4,30 +4,38 @@ package com.lightningkite.services.serializers
 
 import kotlinx.io.*
 import kotlinx.serialization.*
+import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
+import kotlinx.serialization.descriptors.elementDescriptors
+import kotlinx.serialization.descriptors.elementNames
+import kotlinx.serialization.descriptors.getPolymorphicDescriptors
+import kotlin.concurrent.Volatile
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.modules.SerializersModule
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 /**
- * Gives a field an explicit wire id instead of one hashed from its serial name, so its key takes 1 byte (ids 1 to 15)
- * or 2 (up to 2047) instead of 4.  Adding, removing or changing it changes the field's identity on the wire, like a
- * rename, so choose it when the field is created.
+ * Gives a field, enum entry or polymorphic subclass an explicit wire id instead of one hashed from its serial name.  A
+ * field's key then takes 1 byte (ids 1 to 15) or 2 (up to 2047) instead of 5; an entry's or subclass's id 1 byte (up
+ * to 127) or 2 (up to 16383).
+ * Adding, removing or changing it changes the identity on the wire, like a rename, so choose it at creation.
  */
 @SerialInfo
-@Target(AnnotationTarget.PROPERTY)
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.CLASS)
 public annotation class WireId(val id: Int)
 
 /**
  * A compact binary format whose data survives schema changes in both directions: fields can be added (with defaults),
  * removed, reordered, and renamed with `@SerialName`, and both older and newer readers still read the data.
  *
- * Each class field is a key (its wire id and wire type) followed by its value; classes, lists, maps, strings, enums and
+ * Each class field is a key (its wire id and wire type) followed by its value; classes, lists, maps, strings and
  * polymorphic values are length-prefixed, so a reader skips fields it doesn't know.  Field ids are hashed from serial
  * names unless the field has a [WireId].  Defaults are not written (`@EncodeDefault` opts a field in), and null is
- * written, so `T? = default` round-trips null.  Enums are written by name.  `Uuid` and `kotlin.time.Instant` with their
+ * written, so `T? = default` round-trips null.  Enum entries and polymorphic subclasses are written as wire ids chosen
+ * like a field's.  Polymorphic subclasses must be registered (sealed, or in [serializersModule]): default serializers
+ * and `polymorphicDefaultDeserializer` aren't supported, since there's no name to hand them.  `Uuid` and `kotlin.time.Instant` with their
  * default serializers are written compactly (16 bytes; epoch seconds and nanoseconds as varints) instead of as strings.
  *
  * The bytes carry no header: the caller records which format wrote them (a token prefix, a media type, a storage
@@ -51,20 +59,40 @@ public class KotlinWireFormat(override val serializersModule: SerializersModule)
         return value
     }
 
+    @Volatile
+    private var typeIdCache: Map<SerialDescriptor, Map<String, Long>> = mapOf()
+
+    // Subclass serial name to wire id, for a polymorphic or sealed descriptor.
+    private fun typeIdsOf(polymorphic: SerialDescriptor): Map<String, Long> {
+        typeIdCache[polymorphic]?.let { return it }
+        val sealed = if (polymorphic.kind == PolymorphicKind.SEALED) polymorphic.getElementDescriptor(1).elementDescriptors.toList() else listOf()
+        val subclasses = (sealed + serializersModule.getPolymorphicDescriptors(polymorphic)).distinctBy { it.serialName }
+        val names = subclasses.map { it.serialName }
+        val ids = wireIdsOf(polymorphic.serialName, names, subclasses.map { it.annotations })
+        val table = names.zip(ids.toList()).toMap()
+        // Copy-on-write: a race only computes the same table twice.
+        typeIdCache = typeIdCache + (polymorphic to table)
+        return table
+    }
+
     // fieldIds is null in element position (top level, collection and map entries, polymorphic type and value),
     // where values have no key and nullable ones a 00/01 mark.  The top-level structure has no length: the input's end
     // is its end, so it writes straight into the output and parentOutput is null.
     private inner class WireEncoder(
         val output: Buffer,
-        val fieldIds: IntArray?,
+        val fieldIds: LongArray?,
         val parentOutput: Buffer?,
         val isTopLevel: Boolean = false,
+        val polymorphic: SerialDescriptor? = null,
     ) : AbstractEncoder() {
         override val serializersModule: SerializersModule get() = this@KotlinWireFormat.serializersModule
-        private var pendingFieldId = 0
+        private val typeIds = polymorphic?.let { typeIdsOf(it) }
+        private var pendingFieldId = 0L
+        private var elementIndex = -1
 
         override fun encodeElement(descriptor: SerialDescriptor, index: Int): Boolean {
             if (fieldIds != null) pendingFieldId = fieldIds[index]
+            elementIndex = index
             return true
         }
 
@@ -72,9 +100,9 @@ public class KotlinWireFormat(override val serializersModule: SerializersModule)
 
         private fun writeKey(wireType: Int) {
             if (fieldIds == null) return
-            check(pendingFieldId != 0) { "A value was written outside a field" }
-            output.writeVarint((pendingFieldId.toLong() shl 3) or wireType.toLong())
-            pendingFieldId = 0
+            check(pendingFieldId != 0L) { "A value was written outside a field" }
+            output.writeVarint((pendingFieldId shl 3) or wireType.toLong())
+            pendingFieldId = 0L
         }
 
         override fun encodeNull() {
@@ -130,6 +158,14 @@ public class KotlinWireFormat(override val serializersModule: SerializersModule)
         }
 
         override fun encodeString(value: String) {
+            // A polymorphic value's element 0 is its subclass's serial name.
+            if (typeIds != null && elementIndex == 0) {
+                val id = typeIds[value] ?: throw SerializationException(
+                    "$value isn't a registered subclass of ${polymorphic!!.serialName}; KotlinWireFormat doesn't support default serializers"
+                )
+                output.writeVarint(id)
+                return
+            }
             writeKey(LEN)
             val bytes = value.encodeToByteArray()
             output.writeVarint(bytes.size.toLong())
@@ -137,7 +173,8 @@ public class KotlinWireFormat(override val serializersModule: SerializersModule)
         }
 
         override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) {
-            encodeString(enumDescriptor.getElementName(index))
+            writeKey(VARINT)
+            output.writeVarint(wireIdsOf(enumDescriptor)[index])
         }
 
         override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
@@ -162,8 +199,9 @@ public class KotlinWireFormat(override val serializersModule: SerializersModule)
 
         override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
             writeKey(LEN)
-            return if (isTopLevel) WireEncoder(output, fieldIdsOf(descriptor), parentOutput = null)
-            else WireEncoder(Buffer(), fieldIdsOf(descriptor), parentOutput = output)
+            val polymorphic = descriptor.takeIf { it.kind is PolymorphicKind }
+            return if (isTopLevel) WireEncoder(output, fieldIdsOf(descriptor), parentOutput = null, polymorphic = polymorphic)
+            else WireEncoder(Buffer(), fieldIdsOf(descriptor), parentOutput = output, polymorphic = polymorphic)
         }
 
         override fun endStructure(descriptor: SerialDescriptor) {
@@ -178,9 +216,11 @@ public class KotlinWireFormat(override val serializersModule: SerializersModule)
         val input: Buffer,
         val structure: SerialDescriptor?,
         val isTopLevel: Boolean = false,
+        val polymorphic: SerialDescriptor? = null,
     ) : AbstractDecoder() {
         override val serializersModule: SerializersModule get() = this@KotlinWireFormat.serializersModule
         private val fieldIds = structure?.let { fieldIdsOf(it) }
+        private val typeIds = polymorphic?.let { typeIdsOf(it) }
         private val seen = BooleanArray(fieldIds?.size ?: 0)
         private var nextIndex = 0
         private var field = -1
@@ -199,7 +239,7 @@ public class KotlinWireFormat(override val serializersModule: SerializersModule)
                 val key = input.readVarint()
                 val wireType = (key and 7).toInt()
                 val id = key ushr 3
-                val index = fieldIds.indexOfFirst { it.toLong() == id }
+                val index = fieldIds.indexOf(id)
                 if (index == -1) {
                     skip(wireType)
                     continue
@@ -308,16 +348,22 @@ public class KotlinWireFormat(override val serializersModule: SerializersModule)
         }
 
         override fun decodeString(): String {
+            // Element 0, just returned by decodeElementIndex, of a polymorphic value is its subclass's serial name.
+            if (typeIds != null && nextIndex == 1) {
+                val id = input.readVarint()
+                return typeIds.entries.firstOrNull { it.value == id }?.key ?: throw SerializationException(
+                    "${polymorphic!!.serialName} has no subclass with wire id $id; KotlinWireFormat doesn't support polymorphic default deserializers"
+                )
+            }
             expect(LEN)
             return input.readString(readLength())
         }
 
         override fun decodeEnum(enumDescriptor: SerialDescriptor): Int {
-            val name = decodeString()
-            val index = enumDescriptor.getElementIndex(name)
-            if (index == CompositeDecoder.UNKNOWN_NAME) {
-                throw SerializationException("${enumDescriptor.serialName} has no entry '$name'")
-            }
+            expect(VARINT)
+            val id = input.readVarint()
+            val index = wireIdsOf(enumDescriptor).indexOf(id)
+            if (index == -1) throw SerializationException("${enumDescriptor.serialName} has no entry with wire id $id")
             return index
         }
 
@@ -355,7 +401,11 @@ public class KotlinWireFormat(override val serializersModule: SerializersModule)
         override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder {
             expect(LEN)
             val payload = if (isTopLevel) input else readPayload()
-            return WireDecoder(payload, descriptor.takeIf { it.kind == StructureKind.CLASS || it.kind == StructureKind.OBJECT })
+            return WireDecoder(
+                payload,
+                structure = descriptor.takeIf { it.kind == StructureKind.CLASS || it.kind == StructureKind.OBJECT },
+                polymorphic = descriptor.takeIf { it.kind is PolymorphicKind },
+            )
         }
 
         override fun endStructure(descriptor: SerialDescriptor) {
@@ -374,29 +424,36 @@ private const val FIXED32 = 5
 private const val UUID = "kotlin.uuid.Uuid"
 private const val INSTANT = "kotlin.time.Instant"
 
-// Hashed ids always have this bit set, so their keys are always 4 bytes and never equal an explicit `@WireId`.
-private const val HASHED_ID_BIT = 0x80_0000
+// Hashed ids always have this bit set, so their keys are always 5 bytes and never equal an explicit `@WireId` (an Int).
+private const val HASHED_ID_BIT = 1L shl 31
 
-private fun fieldIdsOf(descriptor: SerialDescriptor): IntArray? {
+private fun fieldIdsOf(descriptor: SerialDescriptor): LongArray? {
     if (descriptor.kind != StructureKind.CLASS && descriptor.kind != StructureKind.OBJECT) return null
-    val ids = IntArray(descriptor.elementsCount) { index ->
-        val name = descriptor.getElementName(index)
-        val explicit = descriptor.getElementAnnotations(index).filterIsInstance<WireId>().firstOrNull()
+    return wireIdsOf(descriptor)
+}
+
+private fun wireIdsOf(descriptor: SerialDescriptor): LongArray = wireIdsOf(
+    descriptor.serialName,
+    descriptor.elementNames.toList(),
+    List(descriptor.elementsCount) { descriptor.getElementAnnotations(it) },
+)
+
+// A class's fields, an enum's entries, or a polymorphic base's subclasses.
+private fun wireIdsOf(owner: String, names: List<String>, annotations: List<List<Annotation>>): LongArray {
+    val ids = LongArray(names.size) { index ->
+        val explicit = annotations[index].filterIsInstance<WireId>().firstOrNull()
         if (explicit == null) {
-            (fnv1a32(name) and (HASHED_ID_BIT - 1)) or HASHED_ID_BIT
+            (fnv1a32(names[index]).toLong() and 0x7FFF_FFFF) or HASHED_ID_BIT
         } else {
-            if (explicit.id !in 1 until HASHED_ID_BIT) {
-                throw SerializationException("${descriptor.serialName}.$name: @WireId must be in 1 until $HASHED_ID_BIT, was ${explicit.id}")
-            }
-            explicit.id
+            if (explicit.id < 1) throw SerializationException("$owner.${names[index]}: @WireId must be positive, was ${explicit.id}")
+            explicit.id.toLong()
         }
     }
     for (later in ids.indices) {
         for (earlier in 0 until later) {
             if (ids[earlier] == ids[later]) {
                 throw SerializationException(
-                    "${descriptor.serialName}.${descriptor.getElementName(earlier)} and " +
-                        "${descriptor.getElementName(later)} share wire id ${ids[later]}; add @SerialName or @WireId"
+                    "$owner.${names[earlier]} and ${names[later]} share wire id ${ids[later]}; add @SerialName or @WireId"
                 )
             }
         }

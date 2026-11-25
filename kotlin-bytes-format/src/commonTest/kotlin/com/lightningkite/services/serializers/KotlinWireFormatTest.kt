@@ -100,7 +100,12 @@ class KotlinWireFormatTest {
 
     @Serializable
     @SerialName("Cat")
+    @WireId(9)
     data class Cat(val lives: Int) : Animal
+
+    @Serializable
+    @SerialName("Hamster")
+    data class Hamster(val name: String) : Animal
 
     @Serializable
     @JvmInline
@@ -159,8 +164,11 @@ class KotlinWireFormatTest {
 
     val module = SerializersModule {
         contextual(Money::class, MoneySerializer)
+        // Two blocks for one base, as separate modules would register them.
         polymorphic(Animal::class) {
             subclass(Dog::class)
+        }
+        polymorphic(Animal::class) {
             subclass(Cat::class)
         }
     }
@@ -179,7 +187,7 @@ class KotlinWireFormatTest {
     @Test
     fun goldenPet() {
         val bytes = roundTrip(Pet(name = "Rex", age = 3, nick = null, tags = listOf("a", null)))
-        assertContentEquals(hex("b2deb72e 03526578 10 06 f3b6b52c 82badd25 04 01016100"), bytes)
+        assertContentEquals(hex("b2deb7ce46 03526578 10 06 f3b6b58c4c 82badd857a 04 01016100"), bytes)
     }
 
     @Test
@@ -194,7 +202,7 @@ class KotlinWireFormatTest {
         val old = OldKotlinBytesFormat(EmptySerializersModule()).encodeToByteArray(Pet.serializer(), pet)
         assertContentEquals(hex("00 03526578 01 00000003 02 00 03 00000002 01 00 0161 00"), old)
         assertEquals(22, old.size)
-        assertEquals(23, format.encodeToByteArray(Pet.serializer(), pet).size)
+        assertEquals(26, format.encodeToByteArray(Pet.serializer(), pet).size)
         assertEquals(14, format.encodeToByteArray(SmallPet.serializer(), SmallPet("Rex", 3, null, listOf("a", null))).size)
     }
 
@@ -211,9 +219,9 @@ class KotlinWireFormatTest {
     data class Named(val a: Int, val longerName: Int, val x: Int, @SerialName("com.example.Very.long.serial_name") val y: Int)
 
     @Test
-    fun hashedKeysAreFourBytes() {
+    fun hashedKeysAreFiveBytes() {
         val bytes = roundTrip(Named(0, 0, 0, 0))
-        assertEquals(4 * (4 + 1), bytes.size)
+        assertEquals(4 * (5 + 1), bytes.size)
     }
 
     @Test
@@ -308,7 +316,7 @@ class KotlinWireFormatTest {
         roundTrip(Pet("Rex", nick = null))
         val defaulted = roundTrip(Pet("Rex"))
         assertEquals(Pet("Rex", nick = "Buddy"), format.decodeFromByteArray(Pet.serializer(), defaulted))
-        assertContentEquals(hex("b2deb72e 03526578"), defaulted)
+        assertContentEquals(hex("b2deb7ce46 03526578"), defaulted)
     }
 
     @Serializable
@@ -320,7 +328,7 @@ class KotlinWireFormatTest {
     @Test
     fun defaultsAreOmittedUnlessEncodeDefault() {
         assertContentEquals(hex(""), roundTrip(Defaulted()))
-        assertEquals(5, roundTrip(EncodesDefault()).size)
+        assertEquals(6, roundTrip(EncodesDefault()).size)
     }
 
     // Evolution: classes sharing a name are versions of one schema.
@@ -431,6 +439,16 @@ class KotlinWireFormatTest {
         assertFailsWith<SerializationException> { format.encodeToByteArray(ZeroId.serializer(), ZeroId(1)) }
     }
 
+    // Found by search: both names hash to wire id 0xcfdd2a83 (31 hash bits plus the hashed flag).
+    @Serializable
+    data class HashCollision(val field258524: Int, val field688200: Int)
+
+    @Test
+    fun collidingHashedIdsThrow() {
+        assertFailsWith<SerializationException> { format.encodeToByteArray(HashCollision.serializer(), HashCollision(1, 2)) }
+        assertFailsWith<SerializationException> { format.decodeFromByteArray(HashCollision.serializer(), hex("00")) }
+    }
+
     @Test
     fun malformedInputThrows() {
         val golden = format.encodeToByteArray(Pet.serializer(), Pet(name = "Rex", age = 3, nick = null, tags = listOf("a", null)))
@@ -443,7 +461,7 @@ class KotlinWireFormatTest {
                 false
             }
         }
-        assertEquals(listOf(8, 10, 14), decodable)
+        assertEquals(listOf(9, 11, 16), decodable)
         val nested = format.encodeToByteArray(ListSerializer(Pet.serializer()), listOf(Pet("Rex", 3, null, listOf("a", null))))
         // Nested values have lengths, so any cut inside one is caught.
         for (size in 1 until nested.size) {
@@ -460,14 +478,194 @@ class KotlinWireFormatTest {
         assertFailsWith<SerializationException> { format.decodeFromByteArray(String.serializer().nullable, hex("02 00")) }
         // The same field twice.
         assertFailsWith<SerializationException> {
-            format.decodeFromByteArray(Pet.serializer(), hex("b2deb72e 03526578 b2deb72e 03526578"))
+            format.decodeFromByteArray(Pet.serializer(), hex("b2deb7ce46 03526578 b2deb7ce46 03526578"))
         }
         // NULL for a non-null field.
-        assertFailsWith<SerializationException> { format.decodeFromByteArray(Pet.serializer(), hex("b3deb72e")) }
-        assertFailsWith<SerializationException> { format.decodeFromByteArray(Color.serializer(), hex("06 507572706c65")) }
+        assertFailsWith<SerializationException> { format.decodeFromByteArray(Pet.serializer(), hex("b3deb7ce46")) }
+        assertFailsWith<SerializationException> { format.decodeFromByteArray(Color.serializer(), hex("07")) }
         val animal = PolymorphicSerializer(Animal::class)
         val cat = format.encodeToByteArray(animal, Cat(1))
         assertFailsWith<SerializationException> { KotlinWireFormat(EmptySerializersModule()).decodeFromByteArray(animal, cat) }
+    }
+
+    @Serializable
+    enum class Level { Low, @SerialName("mid") Medium, @WireId(3) High }
+
+    @Serializable
+    enum class LevelReordered { @WireId(3) High, @SerialName("mid") Medium, Low }
+
+    @Serializable
+    enum class LevelRenamed { @SerialName("Low") Lowest, @SerialName("mid") Middle, @WireId(3) Top }
+
+    @Serializable
+    enum class LevelV0 { Low }
+
+    @Serializable
+    data class Leveled(@WireId(1) val level: Level)
+
+    @Serializable
+    data class Levels(val list: List<Level?>, val keys: Map<Level, Level?>, val maybe: Level?, val levels: Set<Level> = setOf())
+
+    // Found by search: both names hash to wire id 0xcfdd2a83, as fields do.
+    @Serializable
+    @Suppress("EnumEntryName")
+    enum class CollidingEntries { field258524, field688200 }
+
+    @Serializable
+    enum class DuplicateEntries { @WireId(1) A, @WireId(1) B }
+
+    @Test
+    fun goldenEnums() {
+        assertContentEquals(hex("a1aaf68e0b"), roundTrip(Level.Low))
+        assertContentEquals(hex("e5f7bc9c0c"), roundTrip(Level.Medium))
+        assertContentEquals(hex("03"), roundTrip(Level.High))
+        assertContentEquals(hex("08 03"), roundTrip(Leveled(Level.High)))
+        assertContentEquals(hex("08 a1aaf68e0b"), roundTrip(Leveled(Level.Low)))
+    }
+
+    @Test
+    fun enumEvolution() {
+        for (level in Level.entries) {
+            val bytes = format.encodeToByteArray(Level.serializer(), level)
+            assertEquals(level.name, format.decodeFromByteArray(LevelReordered.serializer(), bytes).name)
+            assertEquals(level.ordinal, format.decodeFromByteArray(LevelRenamed.serializer(), bytes).ordinal)
+        }
+        assertEquals(LevelV0.Low, reencode<Level, LevelV0>(Level.Low))
+        assertFailsWith<SerializationException> { reencode<Level, LevelV0>(Level.High) }
+    }
+
+    @Test
+    fun enumsEverywhere() {
+        roundTrip(Levels(listOf(null, Level.Low, Level.High), mapOf(Level.Medium to null, Level.High to Level.Low), null, Level.entries.toSet()))
+        roundTrip(Levels(listOf(), mapOf(), Level.Medium))
+        roundTrip<Level?>(null)
+        roundTrip<Level?>(Level.Medium)
+    }
+
+    @Test
+    fun duplicateEnumIdsThrow() {
+        assertFailsWith<SerializationException> { format.encodeToByteArray(CollidingEntries.serializer(), CollidingEntries.field258524) }
+        assertFailsWith<SerializationException> { format.decodeFromByteArray(CollidingEntries.serializer(), hex("01")) }
+        assertFailsWith<SerializationException> { format.encodeToByteArray(DuplicateEntries.serializer(), DuplicateEntries.A) }
+    }
+
+    @Serializable
+    sealed interface Vehicle
+
+    @Serializable
+    @SerialName("Car")
+    data class Car(@WireId(1) val seats: Int) : Vehicle
+
+    @Serializable
+    @WireId(2)
+    data class Bike(@WireId(1) val gears: Int) : Vehicle
+
+    // Car renamed keeping its @SerialName, Bike renamed keeping its @WireId.
+    @Serializable
+    sealed interface VehicleV2
+
+    @Serializable
+    @SerialName("Car")
+    data class Automobile(@WireId(1) val seats: Int) : VehicleV2
+
+    @Serializable
+    @WireId(2)
+    data class Bicycle(@WireId(1) val gears: Int) : VehicleV2
+
+    @Serializable
+    sealed interface DuplicateSubclasses
+
+    @Serializable
+    @WireId(1)
+    data object First : DuplicateSubclasses
+
+    @Serializable
+    @WireId(1)
+    data object Second : DuplicateSubclasses
+
+    // Found by search: both names hash to wire id 0xcfdd2a83, as fields do.
+    @Serializable
+    sealed interface CollidingSubclasses
+
+    @Serializable
+    @SerialName("field258524")
+    data object CollidingA : CollidingSubclasses
+
+    @Serializable
+    @SerialName("field688200")
+    data object CollidingB : CollidingSubclasses
+
+    @Serializable
+    data class Fleet(
+        val vehicles: List<Vehicle?>,
+        val byName: Map<String, Vehicle>,
+        val owners: Map<Vehicle, Animal?>,
+        val maybe: Vehicle?,
+        val pet: Animal? = null,
+    )
+
+    private val animal = PolymorphicSerializer(Animal::class)
+
+    @Test
+    fun goldenPolymorphism() {
+        assertContentEquals(hex("81e1fbb70e 02 08 08"), roundTrip<Vehicle>(Car(4)))
+        assertContentEquals(hex("02 02 08 06"), roundTrip<Vehicle>(Bike(3)))
+        assertContentEquals(hex("a9fbb6db0c 09 b2deb7ce46 03526578"), format.encodeToByteArray(animal, Dog("Rex")))
+        assertContentEquals(hex("09 06 a0f5b1bd6d 02"), format.encodeToByteArray(animal, Cat(1)))
+        assertEquals<Animal>(Cat(1), format.decodeFromByteArray(animal, hex("09 06 a0f5b1bd6d 02")))
+    }
+
+    @Test
+    fun polymorphismEverywhere() {
+        roundTrip(
+            Fleet(
+                vehicles = listOf(Car(1), null, Bike(2)), byName = mapOf("a" to Bike(1)),
+                owners = mapOf(Car(2) to Dog("d"), Bike(3) to null), maybe = Car(5), pet = Cat(3),
+            )
+        )
+        roundTrip(Fleet(listOf(), mapOf(), mapOf(), null))
+        roundTrip<Vehicle?>(null)
+        roundTrip<List<Vehicle>>(listOf(Bike(1), Car(2)))
+    }
+
+    @Test
+    fun subclassRenames() {
+        assertEquals<VehicleV2>(Automobile(4), reencode<Vehicle, VehicleV2>(Car(4)))
+        assertEquals<VehicleV2>(Bicycle(3), reencode<Vehicle, VehicleV2>(Bike(3)))
+    }
+
+    @Test
+    fun duplicateSubclassIdsThrow() {
+        assertFailsWith<SerializationException> { format.encodeToByteArray(DuplicateSubclasses.serializer(), First) }
+        assertFailsWith<SerializationException> { format.decodeFromByteArray(DuplicateSubclasses.serializer(), hex("01 00")) }
+        assertFailsWith<SerializationException> { format.encodeToByteArray(CollidingSubclasses.serializer(), CollidingA) }
+    }
+
+    @Test
+    fun unregisteredSubclassesThrow() {
+        assertFailsWith<SerializationException> { format.decodeFromByteArray(Vehicle.serializer(), hex("03 02 08 06")) }
+        val withDefaults = KotlinWireFormat(SerializersModule {
+            polymorphic(Animal::class) {
+                subclass(Dog::class)
+                defaultDeserializer { Hamster.serializer() }
+            }
+            @Suppress("UNCHECKED_CAST")
+            polymorphicDefaultSerializer(Animal::class) { Hamster.serializer() as SerializationStrategy<Animal> }
+        })
+        assertFailsWith<SerializationException> { withDefaults.encodeToByteArray(animal, Hamster("h")) }
+        assertFailsWith<SerializationException> { withDefaults.decodeFromByteArray(animal, format.encodeToByteArray(animal, Cat(1))) }
+    }
+
+    @Test
+    fun subclassIdSizes() {
+        val bikeName = Bike.serializer().descriptor.serialName
+        val byId = format.encodeToByteArray(Vehicle.serializer(), Bike(3)).size
+        // Before, the type was written as its serial name, a LEN string; the subclass value is 3 bytes either way.
+        val byName = 1 + bikeName.length + 3
+        println("Bike: id $byId bytes, name $byName bytes ($bikeName)")
+        assertEquals(1 + 3, byId)
+        assertEquals(5 + 3, format.encodeToByteArray(Vehicle.serializer(), Car(4)).size)
+        assertTrue(byName > 40)
     }
 
     @Serializable
@@ -535,7 +733,7 @@ class KotlinWireFormatTest {
         val withContextual = format.encodeToByteArray(Session.serializer(), Session(uuid, now, contextualId = uuid))
         val without = format.encodeToByteArray(Session.serializer(), Session(uuid, now))
         // @Contextual with nothing registered falls back to Uuid's default serializer.
-        assertEquals(4 + 1 + 16, withContextual.size - without.size)
+        assertEquals(5 + 1 + 16, withContextual.size - without.size)
     }
 
     @Test
@@ -552,7 +750,7 @@ class KotlinWireFormatTest {
         val asStrings = format.encodeToByteArray(StringSession.serializer(), StringSession(uuid.toString(), now.toString())).size
         val old = OldKotlinBytesFormat(module).encodeToByteArray(Session.serializer(), Session(uuid, now)).size
         println("Session(id, at): wire $wire, wire with string Uuid/Instant $asStrings, old $old")
-        assertEquals(4 + 1 + 16 + 4 + 1 + 9, wire)
+        assertEquals(5 + 1 + 16 + 5 + 1 + 9, wire)
         assertTrue(asStrings > wire + 30)
     }
 

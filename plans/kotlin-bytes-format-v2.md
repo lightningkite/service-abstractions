@@ -44,7 +44,7 @@ From `blackstone/shared/.../models.kt`, `bluetooth/.../protobuf.kt`, `server/...
 | Signedness per field | `@ProtoType(ProtoIntegerType.SIGNED)` | all signed ints zigzag varint |
 | Default serializers for Uuid/Instant/Duration are strings, big | `ProtoBufOverrides` contextual module | unchanged: still the module's choice (not this format's job) |
 | Nested lists, nullable elements, nullable map values unsupported | avoided in models | supported |
-| Polymorphic as artificial message | avoided | type name + value, same model as JSON |
+| Polymorphic as artificial message | avoided | type id + value, ids chosen like field ids |
 
 Blackstone's BLE protocol is real protobuf shared with firmware; it keeps kotlinx protobuf.  This format is for
 Kotlin-to-Kotlin data.
@@ -77,9 +77,9 @@ little-endian.
 
 | wt | Name | Payload | Produced by |
 |---|---|---|---|
-| 0 | VARINT | varint | Boolean, Byte, Short, Int, Long, Char |
+| 0 | VARINT | varint | Boolean, Byte, Short, Int, Long, Char, enum |
 | 1 | FIXED64 | 8 bytes | Double |
-| 2 | LEN | varint length, then that many bytes | String, enum, class/object, list, map, polymorphic |
+| 2 | LEN | varint length, then that many bytes | String, class/object, list, map, polymorphic, Uuid, Instant |
 | 3 | NULL | nothing | a null value |
 | 5 | FIXED32 | 4 bytes | Float |
 
@@ -98,23 +98,28 @@ custom serializers need no special cases.
 ### Field ids
 
 - Default: from the element's serial name (`@SerialName` or property name), so ids survive reordering and insertion:
-  `fieldId = (fnv1a32(utf8(name)) and 0x7F_FFFF) or 0x80_0000`.  Range [2^23, 2^24): a 24-bit id whose top bit is
-  always set, so the key is always a 4-byte varint and hashed ids never equal small explicit ones.
-- Optional `@SerialInfo @Target(PROPERTY) annotation class WireId(val id: Int)` with `1 <= id < 2^23`: an explicit
-  small id (1-byte key for ids 1..15, 2 bytes to 2047).  Read with `descriptor.getElementAnnotations(i)`, which works on
+  `fieldId = (fnv1a32(utf8(name)) and 0x7FFF_FFFF) or (1 shl 31)`.  Range [2^31, 2^32): 31 hash bits plus a flag
+  bit, so the key (3 wire-type bits + 32) is always a 5-byte varint and hashed ids never equal explicit ones (an Int).
+  Hashed keys are the convenience path; size-sensitive classes use `@WireId`.
+- Optional `@SerialInfo @Target(PROPERTY, CLASS) annotation class WireId(val id: Int)` with `1 <= id < 2^31`: an
+  explicit small id (1-byte key for ids 1..15, 2 bytes to 2047).  `CLASS` lets it go on enum entries (where kotlinx
+  reads `@SerialName` too) and on polymorphic subclasses (read from the subclass descriptor's `annotations`).  Read with `descriptor.getElementAnnotations(i)`, which works on
   every platform and survives `Partial` (it copies element annotations).  Adding or removing `@WireId` changes the id,
   so it is a rename on the wire: choose it when the field is created.
 - When a descriptor's field table is built (per `beginStructure`; cache later if measured), two elements with the same
   id throw `SerializationException("X.a and X.b share wire id; add @SerialName or @WireId")`.  Unknown-field collisions
-  (a newer writer's field hashing to an old reader's known field) need a 23-bit collision among one class's fields
-  and then a matching wire type (about one in 8 million per pair); accepted.
+  (a newer writer's field hashing to an old reader's known field) need a 31-bit collision among one class's fields
+  and then a matching wire type (about one in 2.1 billion per pair); accepted.  A scan of 18,084 real property names
+  across our repos found no 31-bit collisions (27 at 23 bits).
 
 ### Values
 
 - String: LEN, UTF-8.  No 64 KB limit.
-- Enum: LEN, the entry's serial name.  Not ordinal: entries get inserted mid-list in practice (`UserRole` is ordered
-  `NoOne < User < Admin < Developer < Root`; a new role lands in the middle), which silently remaps every ordinal.
-  Names cost a few bytes and match JSON.  Unknown name throws.
+- Enum: VARINT of the entry's wire id, chosen like a field's: `@WireId` on the entry, else the 31-bit hash of its
+  serial name (`@SerialName` respected), so a hashed entry is 5 bytes and an explicit one 1-2.  Not ordinal: entries
+  get inserted mid-list in practice (`UserRole` is ordered `NoOne < User < Admin < Developer < Root`; a new role lands
+  in the middle), which silently remaps every ordinal.  Duplicate ids among one enum's entries throw; an unknown id
+  throws.
 - Class / object: LEN; payload is its fields in field position, written in whatever order the serializer emits them
   (generated serializers: declaration order).  Decoder accepts any order, skips unknown keys by wire type (VARINT read
   one, FIXED32/64 skip 4/8, LEN skip length, NULL nothing), throws on a duplicate key.  `object` is `00` (empty).
@@ -125,8 +130,13 @@ custom serializers need no special cases.
   ends; `decodeCollectionSize` returns -1).  A `Byte` in element position is one raw byte (a field's `Byte` is a
   zigzag varint, since it needs a wire type), so `ByteArray` costs length + bytes.
 - Map: LEN; payload is key, value, key, value... in element position.  Any key type, nullable keys/values via marks.
-- Polymorphic (`POLYMORPHIC`, `SEALED`): LEN; payload is the type's serial name (varint length + UTF-8) then the value
-  in element position.  Unknown type name follows kotlinx (module default deserializer, else throw).
+- Polymorphic (`POLYMORPHIC`, `SEALED`): LEN; payload is the subclass's wire id (varint: `@WireId` on the subclass,
+  else the 31-bit hash of its serial name) then the value in element position.  The id table for a base is its
+  sealed subclasses plus the module's registrations (`getPolymorphicDescriptors`), built once per base descriptor and
+  cached; duplicate ids among one base's subclasses throw.  Default serializers and deserializers
+  (`polymorphicDefaultSerializer`/`Deserializer`) aren't supported: encoding a subclass that isn't registered throws
+  (it couldn't be decoded), and an unknown id throws rather than reaching a default deserializer, which would need a
+  name.
 - Value class: transparent; the field takes the inner value's wire type.
 - `kotlin.uuid.Uuid` (default serializer, serial name `kotlin.uuid.Uuid`): LEN, 16 raw bytes (big-endian, as
   `Uuid.toByteArray`).  Any other length throws.  Instead of the 36-character string.
@@ -171,18 +181,18 @@ Pet(name = "Rex", age = 3, nick = null, tags = listOf("a", null))
 
 ```
                             Pet, top level: no length
-B2 DE B7 2E                 key name (fnv1a "name" = 8D39BDE6 -> id B9BDE6), wt LEN
+B2 DE B7 CE 46              key name (fnv1a "name" = 8D39BDE6 -> id 8D39BDE6), wt LEN
 03 52 65 78                 "Rex"
 10                          key age (@WireId 2), wt VARINT
 06                          zigzag(3)
-F3 B6 B5 2C                 key nick (id B1AB6E), wt NULL: explicitly null, not default
-82 BA DD 25                 key tags (id 96EBA0), wt LEN
+F3 B6 B5 8C 4C              key nick (id 9831AB6E), wt NULL: explicitly null, not default
+82 BA DD 85 7A              key tags (id F416EBA0), wt LEN
 04  01 01 61  00            4 bytes: present "a", null
 ```
 
-23 bytes.  The old format writes 22 (`00 03 52 65 78 | 01 00 00 00 03 | 02 00 | 03 00 00 00 02 01 00 01 61 00`).
+26 bytes.  The old format writes 22 (`00 03 52 65 78 | 01 00 00 00 03 | 02 00 | 03 00 00 00 02 01 00 01 61 00`).
 With `@WireId` on all four fields: 14 (`0A 03 52 65 78 10 06 1B 22 04 01 01 61 00`).  Nested in a list or another
-class, `Pet` gains its length byte `17`.  A reader whose `Pet` has no `tags` sees key `82 BA DD 25`, finds no such
+class, `Pet` gains its length byte `1A`.  A reader whose `Pet` has no `tags` sees key `82 BA DD 85 7A`, finds no such
 field, reads wt LEN, skips `04` + 4 bytes.  A reader with an extra `color: String = "brown"` gets no key for it and
 uses the default.
 
@@ -206,10 +216,11 @@ uses the default.
 | `Int` <-> value class over `Int`; `List` <-> `Set` | yes | yes |
 | `Float` <-> `Double`, `Int` <-> `String`, any other type change | throws (wire type or payload mismatch) | throws |
 | Nullability or type of list elements, map keys/values, polymorphic value, top level | no (no wire types there) | no |
-| Add enum entry / sealed or polymorphic subtype | yes | yes unless it receives the new value, which throws |
+| Add enum entry / sealed or polymorphic subtype | yes | yes unless it receives the new value (unknown id), which throws |
 | Remove enum entry / subtype | throws on stored uses | yes |
-| Reorder enum entries | yes | yes |
-| Move/rename polymorphic class without `@SerialName` | no (serial name is the FQN) | no |
+| Reorder enum entries or subtypes | yes | yes |
+| Rename enum entry or subtype keeping `@SerialName("old")`, or with a `@WireId` | yes | yes |
+| Rename / move them otherwise (a class's default serial name is its FQN) | no | no |
 | Read-modify-write by an old reader | n/a | drops the new fields (rewrites defaults) |
 
 ## Caller migration
@@ -265,7 +276,8 @@ sandbox; ask the user).
    fixtures.
 5. Strictness: trailing bytes, truncated payload, length past end, 11-byte
    varint, `Boolean` 2, `Long` into `Int` out of range, duplicate key, NULL for a non-null field, wrong wire type,
-   unknown enum name, unknown subtype, colliding field ids (two `@WireId(1)`).
+   unknown enum id, unknown subtype id, colliding ids among fields, entries or subtypes (two `@WireId(1)`, or
+   `field258524`/`field688200`, which collide at 31 bits).
 6. Fuzz: random and mutated golden inputs decode or throw `SerializationException`, never another exception or a huge
    allocation.
 7. lightning-server: tokens with old prefix still read, new prefix round-trips; `LegacySocketRowFixture` rows decode via
@@ -282,7 +294,7 @@ were inserted out of order ended early and left its marker for the parent.  Reve
 ## Decided
 
 1. Names: `KotlinWireFormat` and `@WireId`.
-2. Field ids: 24-bit hash of the serial name by default (4-byte keys), optional `@WireId` for 1-2 byte keys; duplicate
+2. Field ids: 31-bit hash of the serial name by default (5-byte keys), optional `@WireId` for 1-2 byte keys; duplicate
    ids within one class throw.
 3. Defaults always omitted; `@EncodeDefault` opts in.  No flag.
 4. No header bytes; the format is chosen externally.
