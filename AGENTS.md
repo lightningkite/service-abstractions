@@ -123,7 +123,7 @@ interface Service {
 - **cache-test/**: Shared test suite
 
 #### Other Service Modules
-- **files/**: File system abstraction (`PublicFileSystem`)
+- **files/**: File system abstraction (`ExternalFileSystem`, `ExternalFile`, `ExternalPath`; local `KotlinxIoExternalFileSystem`)
 - **files-s3/**: S3 implementation
 - **files-client/**: HTTP client for file systems
 - **files-test/**: Shared test suite

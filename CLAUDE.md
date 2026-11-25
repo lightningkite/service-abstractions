@@ -140,7 +140,7 @@ interface Service {
 
 #### Other Service Modules
 
-- **files/**: File system abstraction (`PublicFileSystem`)
+- **files/**: File system abstraction (`ExternalFileSystem`, `ExternalFile`, `ExternalPath`; local `KotlinxIoExternalFileSystem`)
 - **files-s3/**: S3 implementation
 - **files-azure-blob/**: Azure Blob Storage implementation (`azure-blob://<account>[:<key>]@<container>`; no key = managed identity). Tests need `scripts/azurite.sh` running.
 - **files-tika/**: `FileScanner` that checks content against the claimed media type using Apache Tika's magic database (`tika://`, optional `?unknownTypes=allow|block`, `allowedUnknownTypes=`); JVM-only, no native dependencies
