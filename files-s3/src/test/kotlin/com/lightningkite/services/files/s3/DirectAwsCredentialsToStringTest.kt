@@ -5,14 +5,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Regression test for FIX 38: [S3ExternalFileSystem.DirectAwsCredentials] is a public data class, so
+ * Regression test for FIX 38: [S3PresignedUrlSigner.DirectAwsCredentials] is a public data class, so
  * without an explicit override its compiler-generated `toString()` would print the raw AWS secret
  * access key (and session token) in any log line, exception message, or debugger view.
  */
 class DirectAwsCredentialsToStringTest {
     @Test
     fun toStringRedactsSecretAndToken() {
-        val creds = S3ExternalFileSystem.DirectAwsCredentials(
+        val creds = S3PresignedUrlSigner.DirectAwsCredentials(
             access = "AKIAEXAMPLE",
             secret = "super-secret-value",
             token = "session-token-value",
@@ -28,7 +28,7 @@ class DirectAwsCredentialsToStringTest {
 
     @Test
     fun toStringHandlesNullToken() {
-        val creds = S3ExternalFileSystem.DirectAwsCredentials(access = "AKIAEXAMPLE", secret = "super-secret-value")
+        val creds = S3PresignedUrlSigner.DirectAwsCredentials(access = "AKIAEXAMPLE", secret = "super-secret-value")
 
         assertFalse(creds.toString().contains("super-secret-value"))
     }

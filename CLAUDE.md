@@ -141,7 +141,7 @@ interface Service {
 #### Other Service Modules
 
 - **files/**: File system abstraction (`PublicFileSystem`)
-- **files-s3/**: S3 implementation
+- **files-s3/**: S3 implementation. `?domain=` serves through CloudFront on a custom host; private buckets there use CloudFront signed URLs (`cloudFrontKeyId`, `cloudFrontPrivateKey`) since S3 presigned URLs only work on the S3 host. `awsS3Bucket(domain = ...)` emits the distribution, certificate, DNS and key pair
 - **files-azure-blob/**: Azure Blob Storage implementation (`azure-blob://<account>[:<key>]@<container>`; no key = managed identity). Tests need `scripts/azurite.sh` running.
 - **files-tika/**: `FileScanner` that checks content against the claimed media type using Apache Tika's magic database (`tika://`, optional `?unknownTypes=allow|block`, `allowedUnknownTypes=`); JVM-only, no native dependencies
 - **files-client/**: HTTP client for file systems

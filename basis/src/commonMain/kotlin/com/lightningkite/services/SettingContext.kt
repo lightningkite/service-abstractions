@@ -149,6 +149,22 @@ public interface SettingContext {
     public val sharedResources: SharedResources
 
     /**
+     * A secret key derived for [purpose] from a secret the host application holds, or null if it holds none.
+     *
+     * Services use this for keys every instance of a deployment must agree on, such as one to sign and
+     * verify URLs any server hands out, without each needing its own setting for it. The same [purpose]
+     * must give the same bytes on every server of the deployment, and different purposes unrelated ones.
+     * Name the purpose after the service and the resource it protects (e.g. `files-s3/<bucket>`).
+     *
+     * Defaults to null; a host with a deployment-wide secret (Lightning Server's `secretBasis`, for
+     * instance) overrides it. Services must keep working without it.
+     *
+     * @param purpose What the key is for; each purpose gets its own key.
+     * @return At least 32 bytes of key material, or null if the host has no secret to derive from.
+     */
+    public fun deriveSecret(purpose: String): ByteArray? = null
+
+    /**
      * Reports an already-caught [throwable] to logging and telemetry.
      *
      * Default behavior:

@@ -21,6 +21,8 @@ dependencies {
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.testing)
+    // Only to cross-check CloudFrontUrlSigner against the SDK's own signer.
+    testImplementation(libs.aws.cloudfront) { excludeDefaultHttpClients() }
 }
 
 kotlin {

@@ -34,10 +34,6 @@ import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
-import java.net.URLDecoder
-import java.time.ZoneOffset
-import javax.crypto.spec.SecretKeySpec
-import kotlin.jvm.optionals.getOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
@@ -56,7 +52,7 @@ private val fileCopyServerSide: TelemetryKey.OfBoolean = TelemetryKey.OfBoolean(
  * This implementation provides access to files stored in an AWS S3 bucket with support for:
  * - Signed URLs for secure access control
  * - Multiple credential providers (static keys, profiles, default chain)
- * - Optimized URL signing using custom implementation
+ * - Optimized URL signing using a custom implementation ([S3PresignedUrlSigner], or [CloudFrontUrlSigner] on a custom domain)
  * - Server-side copies within the same bucket
  * - Connection pooling via [AwsConnections]
  *
@@ -66,6 +62,11 @@ private val fileCopyServerSide: TelemetryKey.OfBoolean = TelemetryKey.OfBoolean(
  * @property bucket The S3 bucket name
  * @property signedUrlDuration The duration for which signed URLs are valid. If null, URLs are not signed (public bucket).
  * @property context The setting context for accessing shared resources
+ * @property urlSigner Decides where files are served from ([S3UrlSigner.publicRoot]), signs download and
+ * upload URLs, and verifies the signed URLs clients send back. Defaults to S3 presigning with [region],
+ * [bucket] and [credentialProvider]. For a custom domain, a [CloudFrontUrlSigner] wrapping that: URLs
+ * handed to clients are then on the domain, upload URLs still point at S3 directly, and URLs on the S3
+ * host are still accepted so references issued before the domain was added keep working.
  */
 public class S3ExternalFileSystem(
     override val name: String,
@@ -74,94 +75,9 @@ public class S3ExternalFileSystem(
     public val bucket: String,
     public val signedUrlDuration: Duration? = null,
     override val context: SettingContext,
+    public val urlSigner: S3UrlSigner = S3PresignedUrlSigner(region, bucket, credentialProvider),
 ) : ExternalFileSystem {
 
-    @Volatile
-    private var credsOnHand: AwsCredentials? = null
-    @Volatile
-    private var credsOnHandMs: Long = 0
-    @Volatile
-    private var credsDirect: DirectAwsCredentials? = null
-
-    /**
-     * Direct AWS credentials with pre-encoded session token for efficient URL generation.
-     *
-     * @property access The AWS access key ID
-     * @property secret The AWS secret access key
-     * @property token The optional session token for temporary credentials
-     * @property tokenPreEncoded The pre-encoded session token for use in URLs
-     */
-    public data class DirectAwsCredentials(
-        val access: String,
-        val secret: String,
-        val token: String? = null,
-    ) {
-        public val tokenPreEncoded: String? = token?.let { java.net.URLEncoder.encode(it, Charsets.UTF_8) }
-
-        // The compiler-generated toString() would print the raw secret/token - override it so logging,
-        // exceptions, or a debugger view of this value never leak live AWS credentials.
-        override fun toString(): String =
-            "DirectAwsCredentials(access=$access, secret=***, token=${token?.let { "***" }})"
-    }
-
-    /**
-     * Gets the current AWS credentials, caching them until expiration.
-     *
-     * This method caches credentials to avoid repeated calls to the credential provider.
-     * Credentials are refreshed when they expire or when the cache is empty.
-     *
-     * @return The current [DirectAwsCredentials]
-     */
-    public fun creds(): DirectAwsCredentials {
-        val onHand = credsDirect
-        return if (onHand == null || System.currentTimeMillis() > credsOnHandMs) {
-            val x = credentialProvider.resolveCredentials()
-            credsOnHand = x
-            val y = DirectAwsCredentials(
-                access = x.accessKeyId(),
-                secret = x.secretAccessKey(),
-                token = (x as? AwsSessionCredentials)?.sessionToken(),
-            )
-            credsDirect = y
-            credsOnHandMs =
-                x.expirationTime().getOrNull()?.toEpochMilli() ?: (System.currentTimeMillis() + 24L * 60 * 60 * 1000)
-            y
-        } else onHand
-    }
-
-    @Volatile
-    private var lastSigningKey: SecretKeySpec? = null
-    @Volatile
-    private var lastSigningKeyDate: String = ""
-    @Volatile
-    private var lastSigningKeyAccessKey: String = ""
-
-    /**
-     * Gets a signing key for the given date and credentials, caching it for reuse.
-     *
-     * The signing key is derived from AWS credentials following AWS Signature Version 4 specification.
-     * It is cached per (date, access key) pair so that it is correctly invalidated when IAM
-     * credentials rotate (as happens on EC2 instance profiles approximately every hour).
-     *
-     * @param date The date string in YYYYMMDD format
-     * @param currentCreds The current credentials, used both for key derivation and cache invalidation
-     * @return A [SecretKeySpec] for signing requests
-     */
-    public fun signingKey(date: String, currentCreds: DirectAwsCredentials): SecretKeySpec {
-        val lastSigningKey = lastSigningKey
-        if (lastSigningKey == null || lastSigningKeyDate != date || lastSigningKeyAccessKey != currentCreds.access) {
-            val newKey = "AWS4${currentCreds.secret}".toByteArray()
-                .let { date.toByteArray().mac(it) }
-                .let { region.id().toByteArray().mac(it) }
-                .let { "s3".toByteArray().mac(it) }
-                .let { "aws4_request".toByteArray().mac(it) }
-                .let { SecretKeySpec(it, "HmacSHA256") }
-            this.lastSigningKey = newKey
-            lastSigningKeyDate = date
-            lastSigningKeyAccessKey = currentCreds.access
-            return newKey
-        } else return lastSigningKey
-    }
 
     /**
      * Total operation budget for S3 API calls. Large-object transfers (uploads/downloads) are
@@ -486,21 +402,22 @@ public class S3ExternalFileSystem(
         }
     }
 
+    /** The bucket's own S3 endpoint. S3 presigned URLs only work against this host. */
+    private val s3Root: String = "https://${bucket}.s3.${region.id()}.amazonaws.com/"
+
+    /** Where clients fetch files from: a custom domain when [urlSigner] has one, otherwise S3 itself. */
+    private val publicRoot: String = urlSigner.publicRoot
+
     /**
-     * The unsigned URL for the file at [path].
-     * This URL will only work if the bucket has public read access configured.
+     * The unsigned URL for the file at [path], with the key written literally (un-encoded).
+     * This URL will only work if the bucket (or the CloudFront distribution in front of it) allows public reads.
      */
-    private fun url(path: ExternalPath): String =
-        "https://${bucket}.s3.${region.id()}.amazonaws.com/${unixPathOf(path)}"
+    private fun url(path: ExternalPath): String = publicRoot + unixPathOf(path)
 
-    private fun encodedUrl(unixPath: String): String =
-        "https://${bucket}.s3.${region.id()}.amazonaws.com/${unixPath.aggressiveEncodeURLPath()}"
+    private fun encodedUrl(unixPath: String): String = publicRoot + unixPath.aggressiveEncodeURLPath()
 
     /**
-     * A signed URL for secure, time-limited access to the file at [path].
-     *
-     * This implementation uses a custom AWS Signature V4 signing process that is significantly
-     * faster than the AWS SDK's built-in presigner.
+     * A signed URL for secure, time-limited access to the file at [path], from [urlSigner].
      *
      * @param timeout How long the URL should remain valid. Defaults to [signedUrlDuration]; if
      * that is also unset, the unsigned [url] is returned instead.
@@ -508,63 +425,14 @@ public class S3ExternalFileSystem(
     override fun signUrl(path: ExternalPath, timeout: Duration?): String {
         val unixPath = unixPathOf(path)
         val duration = timeout ?: signedUrlDuration ?: return encodedUrl(unixPath)
-
-        val creds = creds()
-        val accessKey = creds.access
-        val tokenPreEncoded = creds.tokenPreEncoded
-        var dateOnly: String
-        val date = java.time.ZonedDateTime.now(ZoneOffset.UTC).run {
-            buildString {
-                append(year.toString().padStart(4, '0'))
-                append(monthValue.toString().padStart(2, '0'))
-                append(dayOfMonth.toString().padStart(2, '0'))
-                dateOnly = toString()
-                append("T")
-                append(hour.toString().padStart(2, '0'))
-                append(minute.toString().padStart(2, '0'))
-                append(second.toString().padStart(2, '0'))
-                append("Z")
-            }
-        }
-        val regionId = region.id()
-        val preHeaders = tokenPreEncoded?.let {
-            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKey}%2F$dateOnly%2F$regionId%2Fs3%2Faws4_request&X-Amz-Date=$date&X-Amz-Expires=${duration.inWholeSeconds}&X-Amz-Security-Token=${it}&X-Amz-SignedHeaders=host"
-        } ?: run {
-            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKey}%2F$dateOnly%2F$regionId%2Fs3%2Faws4_request&X-Amz-Date=$date&X-Amz-Expires=${duration.inWholeSeconds}&X-Amz-SignedHeaders=host"
-        }
-        val hashHolder = ByteArray(32)
-        val canonicalRequestHasher = java.security.MessageDigest.getInstance("SHA-256")
-        canonicalRequestHasher.update(CONSTANT_BYTES_GET)
-        canonicalRequestHasher.update(unixPath.removePrefix("/").aggressiveEncodeURLPath().toByteArray())
-        canonicalRequestHasher.update(CONSTANT_BYTE_NEWLINE)
-        canonicalRequestHasher.update(preHeaders.toByteArray())
-        canonicalRequestHasher.update(CONSTANT_BYTES_C)
-        canonicalRequestHasher.update(bucket.toByteArray())
-        canonicalRequestHasher.update(CONSTANT_BYTES_D)
-        canonicalRequestHasher.update(regionId.toByteArray())
-        canonicalRequestHasher.update(CONSTANT_BYTES_E)
-        canonicalRequestHasher.digest(hashHolder, 0, 32)
-        val canonicalRequestHash = hashHolder.toHex()
-        val finalHasher = javax.crypto.Mac.getInstance("HmacSHA256")
-        finalHasher.init(signingKey(dateOnly, creds))
-        finalHasher.update(CONSTANT_BYTES_F)
-        finalHasher.update(date.toByteArray())
-        finalHasher.update(CONSTANT_BYTE_NEWLINE)
-        finalHasher.update(dateOnly.toByteArray())
-        finalHasher.update(CONSTANT_BYTE_SLASH)
-        finalHasher.update(regionId.toByteArray())
-        finalHasher.update(CONSTANT_BYTES_H)
-        finalHasher.update(canonicalRequestHash.toByteArray())
-        finalHasher.doFinal(hashHolder, 0)
-        val regeneratedSig = hashHolder.toHex()
-        return "${encodedUrl(unixPath)}?$preHeaders&X-Amz-Signature=$regeneratedSig"
+        return urlSigner.signDownload(unixPath, duration)
     }
 
     /**
      * Generates a signed URL for uploading content to the file at [path].
      *
-     * This uses the custom signing implementation when [signedUrlDuration] is set,
-     * otherwise falls back to the AWS SDK presigner.
+     * This uses [urlSigner] when [signedUrlDuration] is set, otherwise falls back to the AWS SDK
+     * presigner. Either way it points at S3 directly, even with a custom domain.
      */
     override fun uploadUrl(path: ExternalPath, timeout: Duration): String {
         val unixPath = unixPathOf(path)
@@ -577,58 +445,7 @@ public class S3ExternalFileSystem(
                 }
             }.url().toString()
         }
-
-        val creds = creds()
-        val accessKey = creds.access
-        val tokenPreEncoded = creds.tokenPreEncoded
-        var dateOnly: String
-        val date = java.time.ZonedDateTime.now(ZoneOffset.UTC).run {
-            buildString {
-                append(year.toString().padStart(4, '0'))
-                append(monthValue.toString().padStart(2, '0'))
-                append(dayOfMonth.toString().padStart(2, '0'))
-                dateOnly = toString()
-                append("T")
-                append(hour.toString().padStart(2, '0'))
-                append(minute.toString().padStart(2, '0'))
-                append(second.toString().padStart(2, '0'))
-                append("Z")
-            }
-        }
-        val regionId = region.id()
-        val preHeaders = tokenPreEncoded?.let {
-            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKey}%2F$dateOnly%2F$regionId%2Fs3%2Faws4_request&X-Amz-Date=$date&X-Amz-Expires=${timeout.inWholeSeconds}&X-Amz-Security-Token=${it}&X-Amz-SignedHeaders=host"
-        } ?: run {
-            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKey}%2F$dateOnly%2F$regionId%2Fs3%2Faws4_request&X-Amz-Date=$date&X-Amz-Expires=${timeout.inWholeSeconds}&X-Amz-SignedHeaders=host"
-        }
-
-        // For PUT requests, we need to modify the canonical request
-        val hashHolder = ByteArray(32)
-        val canonicalRequestHasher = java.security.MessageDigest.getInstance("SHA-256")
-        canonicalRequestHasher.update(CONSTANT_BYTES_PUT)
-        canonicalRequestHasher.update(unixPath.removePrefix("/").aggressiveEncodeURLPath().toByteArray())
-        canonicalRequestHasher.update(CONSTANT_BYTE_NEWLINE)
-        canonicalRequestHasher.update(preHeaders.toByteArray())
-        canonicalRequestHasher.update(CONSTANT_BYTES_C)
-        canonicalRequestHasher.update(bucket.toByteArray())
-        canonicalRequestHasher.update(CONSTANT_BYTES_D)
-        canonicalRequestHasher.update(regionId.toByteArray())
-        canonicalRequestHasher.update(CONSTANT_BYTES_E)
-        canonicalRequestHasher.digest(hashHolder, 0, 32)
-        val canonicalRequestHash = hashHolder.toHex()
-        val finalHasher = javax.crypto.Mac.getInstance("HmacSHA256")
-        finalHasher.init(signingKey(dateOnly, creds))
-        finalHasher.update(CONSTANT_BYTES_F)
-        finalHasher.update(date.toByteArray())
-        finalHasher.update(CONSTANT_BYTE_NEWLINE)
-        finalHasher.update(dateOnly.toByteArray())
-        finalHasher.update(CONSTANT_BYTE_SLASH)
-        finalHasher.update(regionId.toByteArray())
-        finalHasher.update(CONSTANT_BYTES_H)
-        finalHasher.update(canonicalRequestHash.toByteArray())
-        finalHasher.doFinal(hashHolder, 0)
-        val regeneratedSig = hashHolder.toHex()
-        return "${encodedUrl(unixPath)}?$preHeaders&X-Amz-Signature=$regeneratedSig"
+        return urlSigner.signUpload(unixPath, timeout)
     }
 
     /**
@@ -650,9 +467,10 @@ public class S3ExternalFileSystem(
 
 
     private val rootUrls: List<String> = listOf(
-        "https://${bucket}.s3.${region.id()}.amazonaws.com/",
+        publicRoot,
+        s3Root,
         "https://s3-${region.id()}.amazonaws.com/${bucket}/",
-    )
+    ).distinct()
     override fun parseLegacyUrl(url: String): ExternalFile? {
         val matchingPrefix = rootUrls.firstOrNull { prefix -> url.startsWith(prefix) } ?: return null
         // Internal URLs come from url(path), which writes the object key literally (un-encoded).
@@ -674,19 +492,9 @@ public class S3ExternalFileSystem(
     }
 
     /**
-     * Validates the signature of an external URL's query parameters.
+     * Validates the signature of an external URL's query parameters with [urlSigner].
      *
-     * Verification is performed purely by recomputing the AWS Signature V4 signature with our own
-     * signing key (derived from [credentialProvider]) over the presented URL's own query
-     * parameters, then comparing it to the supplied `X-Amz-Signature` in a constant-time manner.
-     * This is the same HMAC signing logic used by [signUrl]; no network round-trip is required and
-     * none is performed on the default path. A signature we did not produce - whether tampered or
-     * simply foreign - is rejected.
-     *
-     * When local recomputation does not match - or cannot be performed, because the query parameters
-     * are missing or malformed - verification falls back to asking S3 directly over the network.
-     *
-     * @throws IllegalArgumentException if the signature is invalid
+     * @throws IllegalArgumentException if the signature is invalid or expired
      */
     internal fun assertSignatureValid(
         path: ExternalPath,
@@ -694,105 +502,8 @@ public class S3ExternalFileSystem(
         now: java.time.Instant = java.time.Instant.now(),
     ) {
         if (signedUrlDuration == null) return
-        val unixPath = unixPathOf(path)
-
-        val presentedSignature: String?
-        val recomputedSignature: String?
-        val expiresAt: java.time.Instant
-        try {
-            val headers = queryParams.split('&').associate {
-                URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(
-                    it.substringAfter('=', ""), Charsets.UTF_8
-                )
-            }
-            val secretKey = credentialProvider.resolveCredentials().secretAccessKey()
-            val objectPath = unixPath.aggressiveEncodeURLPath()
-            val date =
-                headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
-            val expiresSeconds = headers["X-Amz-Expires"]?.toLongOrNull()
-                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Expires' found.")
-            expiresAt = parseAmzDate(date).plusSeconds(expiresSeconds)
-            val algorithm = headers["X-Amz-Algorithm"]
-                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Algorithm' found.")
-            val credential = headers["X-Amz-Credential"]
-                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Credential' found.")
-            val scope = credential.substringAfter("/")
-
-            val canonicalRequest = """
-            GET
-            ${"/" + objectPath.removePrefix("/")}
-            ${queryParams.substringBefore("&X-Amz-Signature=").split('&').sorted().joinToString("&")}
-            host:${bucket}.s3.${region.id()}.amazonaws.com
-
-            host
-            UNSIGNED-PAYLOAD
-            """.trimIndent()
-
-            val toSignString = """
-            $algorithm
-            $date
-            $scope
-            ${canonicalRequest.sha256()}
-            """.trimIndent()
-
-            val signingKeyBytes = "AWS4$secretKey".toByteArray().let { date.substringBefore('T').toByteArray().mac(it) }
-                .let { region.id().toByteArray().mac(it) }.let { "s3".toByteArray().mac(it) }
-                .let { "aws4_request".toByteArray().mac(it) }
-
-            recomputedSignature = toSignString.toByteArray().mac(signingKeyBytes).toHex()
-            presentedSignature = headers["X-Amz-Signature"]
-        } catch (e: Exception) {
-            // Recomputation could not even be set up (malformed/foreign URL). Treat as a verification
-            // failure unless the compat flag re-enables the legacy HTTP fallback below.
-            verifySignatureOverNetwork(path, queryParams)
-            return
-        }
-
-        // Constant-time comparison so verification time does not leak how many leading bytes matched.
-        if (presentedSignature != null && constantTimeEquals(presentedSignature, recomputedSignature)) {
-            // A matching signature only proves authenticity; the URL must also be within its
-            // X-Amz-Date + X-Amz-Expires validity window. AWS S3 enforces this server-side when the
-            // URL is used against it, but local recomputation must enforce it too - otherwise an
-            // expired-but-once-valid URL is accepted here and laundered into a permanent,
-            // auto-renewing reference by the serializer. (The local backend and future: path both
-            // already check expiry; this keeps S3 consistent.)
-            if (now.isAfter(expiresAt)) throw IllegalArgumentException("Signed URL has expired")
-            return
-        }
-
-        verifySignatureOverNetwork(path, queryParams)
+        urlSigner.verify(unixPathOf(path), queryParams, now)
     }
-
-    /**
-     * Fallback: validates the signed URL by asking S3 directly, for URLs this backend cannot verify
-     * locally. Performs a blocking network round-trip, so local recomputation is always tried first.
-     */
-    private fun verifySignatureOverNetwork(path: ExternalPath, queryParams: String) {
-        // The shared client applies a 60s engine timeout.
-        runBlocking(Dispatchers.IO) {
-            val response = client.get("${url(path)}?$queryParams") {
-                header("Range", "bytes=0-0")
-            }
-            if (!response.status.isSuccess()) throw IllegalArgumentException("Could not verify signature")
-        }
-    }
-
-    /**
-     * Length-aware constant-time string comparison, used to compare HMAC signature hex digests
-     * without leaking match progress through timing.
-     */
-    private fun constantTimeEquals(a: String, b: String): Boolean {
-        val aBytes = a.toByteArray(Charsets.UTF_8)
-        val bBytes = b.toByteArray(Charsets.UTF_8)
-        return java.security.MessageDigest.isEqual(aBytes, bBytes)
-    }
-
-    /**
-     * Parses an AWS `X-Amz-Date` value (e.g. `20260722T101054Z`) into a UTC [java.time.Instant].
-     * This is the signing timestamp; adding `X-Amz-Expires` seconds gives the URL's expiry.
-     */
-    private fun parseAmzDate(amzDate: String): java.time.Instant =
-        java.time.LocalDateTime.parse(amzDate, AMZ_DATE_FORMATTER).toInstant(ZoneOffset.UTC)
 
     /**
      * Checks the health of the S3 connection by performing a test write, read, and delete.
@@ -831,7 +542,7 @@ public class S3ExternalFileSystem(
                 )
             }
 
-            val result = client.get(url(testFile.path))
+            val result = client.get(s3Root + unixPathOf(testFile.path))
             if (result.status.isSuccess() && signedUrlDuration != null) {
                 results.add(
                     HealthStatus.Level.WARNING to
@@ -915,6 +626,16 @@ public class S3ExternalFileSystem(
             // - s3://user:password@bucket.region.amazonaws.com/             (static credentials)
             // Query parameters:
             // - signedUrlDuration: Duration for signed URLs (default: 1h, "forever"/"null" for unsigned)
+            // - domain: Custom host name served by CloudFront in front of the bucket (e.g. files.example.com)
+            // - cloudFrontKeyId: ID of the CloudFront public key in the distribution's trusted key group
+            // - cloudFrontPrivateKey: Matching RSA private key - PEM, or base64 of PEM or DER (percent-encoding allowed)
+            //   Both CloudFront parameters are required for a private bucket on a custom domain; a public
+            //   bucket on one (signedUrlDuration=forever) needs only the domain.
+            // - urlSecret: A secret (16+ characters, percent-encoding allowed) shared by every server using the
+            //   bucket. S3 presigned download URLs then carry a signature made with it, so any of those servers
+            //   can verify them locally rather than asking S3. Without it, the key comes from
+            //   context.deriveSecret("files-s3/<bucket>") (Lightning Server derives it from its secretBasis);
+            //   if that is null too, URLs from other credentials are verified by asking S3.
             ExternalFileSystem.Settings.register("s3") { name, url, context ->
                 val regex =
                     Regex("""s3:\/\/(?:(?<user>[^:]+):(?<password>[^@]+)@)?(?:(?<profile>[^:]+)@)?(?<bucket>[^.]+)\.(?:s3-)?(?<region>[^.]+)\.amazonaws.com\/?(?:\?(?<params>.*))?""")
@@ -922,7 +643,7 @@ public class S3ExternalFileSystem(
                     "Invalid S3 URL. The URL should match one of the patterns:" +
                             "   s3://[user]:[password]@[bucket].[region].amazonaws.com/?[params]," +
                             "   s3://[profile]@[bucket].[region].amazonaws.com/?[params]," +
-                            "       Available params are: signedUrlDuration"
+                            "       Available params are: signedUrlDuration, domain, cloudFrontKeyId, cloudFrontPrivateKey, urlSecret"
                 )
 
                 val user = match.groups["user"]?.value ?: ""
@@ -946,39 +667,83 @@ public class S3ExternalFileSystem(
                     val value = it?.firstOrNull()
                     when {
                         value == null -> 1.hours
-                        value == "forever" || value == "null" -> null
+                        value == "forever" || value == "null" || value == "Infinity" -> null
                         value.all { it.isDigit() } -> value.toLong().seconds
                         else -> Duration.parse(value)
+                    }
+                }
+
+                val domain = params["domain"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                val cloudFrontKeyId = params["cloudFrontKeyId"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                val cloudFrontPrivateKey = params["cloudFrontPrivateKey"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                require((cloudFrontKeyId == null) == (cloudFrontPrivateKey == null)) {
+                    "S3 URL parameters 'cloudFrontKeyId' and 'cloudFrontPrivateKey' must be given together"
+                }
+                val credentialProvider = when {
+                    user.isNotBlank() && password.isNotBlank() -> {
+                        StaticCredentialsProvider.create(object : AwsCredentials {
+                            override fun accessKeyId(): String = user
+                            override fun secretAccessKey(): String = password
+                        })
+                    }
+
+                    profile.isNotBlank() -> {
+                        DefaultCredentialsProvider.builder().profileName(profile).build()
+                    }
+
+                    else -> DefaultCredentialsProvider.builder().build()
+                }
+                val urlSecret = params["urlSecret"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                    ?.decodeURLQueryComponent(plusIsSpace = false)
+                    ?.also { require(it.length >= 16) { "S3 URL parameter 'urlSecret' must be at least 16 characters" } }
+                // Keyed by bucket, so every setting on the same bucket verifies the others' URLs.
+                val serverKey = urlSecret?.encodeToByteArray() ?: context.deriveSecret("files-s3/$bucket")
+                val s3Signer = S3PresignedUrlSigner(Region.of(region), bucket, credentialProvider, serverKey)
+                val urlSigner = when {
+                    domain == null -> {
+                        require(cloudFrontKeyId == null) {
+                            "S3 URL parameters 'cloudFrontKeyId' and 'cloudFrontPrivateKey' need 'domain' as well"
+                        }
+                        s3Signer
+                    }
+                    cloudFrontKeyId == null || cloudFrontPrivateKey == null -> {
+                        require(signedUrlDuration == null) {
+                            "A private bucket on a custom domain needs CloudFront signing ('cloudFrontKeyId' and " +
+                                    "'cloudFrontPrivateKey'), because S3 presigned URLs only work on the S3 host. " +
+                                    "For a public bucket, set signedUrlDuration=forever."
+                        }
+                        CloudFrontUrlSigner(s3 = s3Signer, domain = domain)
+                    }
+                    else -> {
+                        require(signedUrlDuration != null) {
+                            "S3 URL parameters 'cloudFrontKeyId' and 'cloudFrontPrivateKey' sign URLs, so they need " +
+                                    "a signedUrlDuration; for a public bucket, drop them."
+                        }
+                        CloudFrontUrlSigner(
+                            s3 = s3Signer,
+                            domain = domain,
+                            keyPairId = cloudFrontKeyId,
+                            // Base64 never contains '%', so decoding only undoes percent-encoding; '+' stays '+'.
+                            privateKey = CloudFrontUrlSigner.parsePrivateKey(
+                                cloudFrontPrivateKey.decodeURLQueryComponent(plusIsSpace = false)
+                            ),
+                        )
                     }
                 }
 
                 S3ExternalFileSystem(
                     name = name,
                     region = Region.of(region),
-                    credentialProvider = when {
-                        user.isNotBlank() && password.isNotBlank() -> {
-                            StaticCredentialsProvider.create(object : AwsCredentials {
-                                override fun accessKeyId(): String = user
-                                override fun secretAccessKey(): String = password
-                            })
-                        }
-
-                        profile.isNotBlank() -> {
-                            DefaultCredentialsProvider.builder().profileName(profile).build()
-                        }
-
-                        else -> DefaultCredentialsProvider.builder().build()
-                    },
+                    credentialProvider = credentialProvider,
                     bucket = bucket,
                     signedUrlDuration = signedUrlDuration,
-                    context = context
+                    context = context,
+                    urlSigner = urlSigner,
                 )
             }
         }
     }
 }
-
-private val AMZ_DATE_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
 
 private val URL_ALPHABET_CHARS = ((('a'..'z') + ('A'..'Z') + ('0'..'9'))).toSet()
 private val VALID_PATH_PART = setOf('-', '.', '_', '/')
@@ -1010,7 +775,7 @@ private fun Byte.percentEncode(): String {
  * Percent-encodes a unix-style S3 object key for use in a URL path, leaving path separators
  * and the usual "safe" punctuation untouched.
  */
-private fun String.aggressiveEncodeURLPath(): String = buildString {
+internal fun String.aggressiveEncodeURLPath(): String = buildString {
     val charset = io.ktor.utils.io.charsets.Charsets.UTF_8
 
     var index = 0
@@ -1028,36 +793,5 @@ private fun String.aggressiveEncodeURLPath(): String = buildString {
             append(it.percentEncode())
         }
         index += symbolSize
-    }
-}
-
-private val CONSTANT_BYTES_GET = "GET\n/".toByteArray()
-private val CONSTANT_BYTES_PUT = "PUT\n/".toByteArray()
-private val CONSTANT_BYTES_C = "\nhost:".toByteArray()
-private val CONSTANT_BYTES_D = ".s3.".toByteArray()
-private val CONSTANT_BYTES_E = (".amazonaws.com\n\nhost\nUNSIGNED-PAYLOAD").toByteArray()
-private val CONSTANT_BYTES_F = "AWS4-HMAC-SHA256\n".toByteArray()
-private val CONSTANT_BYTE_NEWLINE = '\n'.code.toByte()
-private val CONSTANT_BYTE_SLASH = '/'.code.toByte()
-private val CONSTANT_BYTES_H = "/s3/aws4_request\n".toByteArray()
-
-/**
- * Applies a MAC operation to this byte array using the given key.
- */
-internal fun ByteArray.mac(key: ByteArray): ByteArray = javax.crypto.Mac.getInstance("HmacSHA256").apply {
-    init(SecretKeySpec(key, "HmacSHA256"))
-}.doFinal(this)
-
-/**
- * Computes the SHA-256 hash of this string.
- */
-internal fun String.sha256(): String = java.security.MessageDigest.getInstance("SHA-256").digest(toByteArray()).toHex()
-
-/**
- * Converts this byte array to a hexadecimal string.
- */
-internal fun ByteArray.toHex(): String = buildString {
-    for (item in this@toHex) {
-        append(item.toUByte().toString(16).padStart(2, '0'))
     }
 }
