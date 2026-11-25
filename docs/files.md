@@ -1,27 +1,27 @@
 # File System Abstraction
 
 The `files` module provides an abstraction for working with file storage systems across different backends (local
-filesystem, S3, etc.) using a consistent API.
+filesystem, S3, Azure Blob) using a consistent API.
 
 ## Overview
 
-The file system abstraction consists of several key interfaces:
-
-- **`PublicFileSystem`** - The main service interface for accessing a file system
-- **`FileObject`** - Represents a file or directory with operations like read, write, delete
-- **`FileInfo`** - Metadata about a file (size, type, last modified)
-- **`FileScanner`** - Service for validating and scanning uploaded files
+- **`ExternalFileSystem`** - The service: every file operation, keyed by `ExternalPath`.  `PublicFileSystem` is a
+  deprecated alias for it.
+- **`ExternalFile`** - A `(fileSystem, path)` pair whose operations delegate to the file system.  `FileObject` is a
+  deprecated alias for it.
+- **`ExternalPath`** - A path as a list of literal segments, with a conservative string form for URLs and stored
+  references.
+- **`FileInfo`** - Metadata about a file (type, size, last modified)
+- **`FileScanner`** - Service for validating uploaded files
 
 ## Quick Start
 
 ### Setting Up a File System
 
 ```kotlin
-import com.lightningkite.services.files.PublicFileSystem
-import com.lightningkite.services.SettingContext
+import com.lightningkite.services.files.ExternalFileSystem
 
-// Create a local filesystem
-val fileSystem = PublicFileSystem.Settings(
+val fileSystem = ExternalFileSystem.Settings(
     url = "file:///path/to/storage?serveUrl=http://localhost:8080/files"
 ).invoke("my-files", settingContext)
 ```
@@ -29,61 +29,49 @@ val fileSystem = PublicFileSystem.Settings(
 ### Basic File Operations
 
 ```kotlin
-// Get a reference to a file
 val file = fileSystem.root.then("uploads/photo.jpg")
 
-// Write a file
-val content = TypedData.bytes(imageBytes, MediaType.Image.JPEG)
-file.put(content)
+file.put(TypedData.bytes(imageBytes, MediaType.Image.JPEG))
 
-// Read a file
-val data = file.get() // Returns TypedData or null if not found
+val data: TypedData? = file.get()                 // null if not found; close it when done
+val header: TypedData? = file.getRange(0L..15L)   // inclusive bounds, clamped to the file's length
 
-// Get file metadata
-val info = file.head() // Returns FileInfo or null
-println("Size: ${info?.size} bytes, Type: ${info?.type}")
+val info: FileInfo? = file.head()
+println("Size: ${info?.size}, Type: ${info?.type}")
 
-// Delete a file
 file.delete()
 ```
 
 ### Working with Directories
 
 ```kotlin
-// Navigate directories
-val uploadsDir = fileSystem.root.then("uploads")
-val userDir = uploadsDir.then("user-123")
+val userDir = fileSystem.root.then("uploads", "user-123")
 
-// List directory contents
-val files = userDir.list() // Returns List<FileObject> or null
-files?.forEach { file ->
-    println("${file.name}: ${file.url}")
-}
+val files: List<ExternalFile> = userDir.list() // empty when there is nothing there
+files.forEach { println(it.name) }
 
-// Create nested paths (parent directories created automatically)
-val deepFile = fileSystem.root.then("a/b/c/file.txt")
-deepFile.put(content) // Creates directories a, b, c if needed
+// Parent directories are created as needed.
+fileSystem.root.then("a/b/c/file.txt").put(content)
 ```
+
+`flow()` is the streaming form of `list()`.
 
 ### File URLs
 
 ```kotlin
-// Internal URL (for server-side use)
-val internalUrl = file.url
-
-// Signed URL (for client access, with expiration)
-val signedUrl = file.signedUrl
-
-// Upload URL (for client uploads)
+val signedUrl = file.signedUrl                  // signed for the file system's signedUrlDuration
+val shortLived = file.signUrl(5.minutes)        // signed for the given duration
 val uploadUrl = file.uploadUrl(timeout = 1.hours)
 ```
+
+With signing turned off (`signedUrlDuration=null`), `signedUrl` is the plain URL.
 
 ## Configuration
 
 ### Local File System
 
 ```kotlin
-val settings = PublicFileSystem.Settings(
+val settings = ExternalFileSystem.Settings(
     url = "file:///path/to/directory?serveUrl=files&signedUrlDuration=PT1H"
 )
 ```
@@ -91,12 +79,14 @@ val settings = PublicFileSystem.Settings(
 **Parameters:**
 
 - `serveUrl` (required) - Base URL where files will be served from
-    - Relative: `serveUrl=files` → uses context.publicUrl
+    - Relative: `serveUrl=files` → `${context.publicUrl}/files/`
     - Absolute: `serveUrl=https://cdn.example.com/files`
 - `signedUrlDuration` (optional) - How long signed URLs remain valid
     - Default: 1 hour
-    - Format: ISO 8601 duration (e.g., `PT1H`, `PT30M`) or seconds (e.g., `3600`)
-    - Special values: `forever`, `null` (disables signing)
+    - Format: `kotlin.time.Duration` text (e.g., `PT1H`, `30m`) or seconds (e.g., `3600`)
+    - `forever` or `null` disables signing
+
+The default `Settings()` is `file://<working directory>/local/files?serveUrl=files`.
 
 **Example URLs:**
 
@@ -108,114 +98,115 @@ file:///data?serveUrl=files&signedUrlDuration=forever
 
 ### S3 File System
 
-For S3 storage, use the `files-s3` module (see separate documentation).
+For S3 storage, use the `files-s3` module; see [Files-S3 Module](files-s3-module.md).
 
 ## File Scanning and Validation
 
-File scanners validate uploaded files to prevent security issues:
+File scanners validate uploaded files:
 
 ```kotlin
-// Create a scanner
-val scanner = CheckMimeFileScanner(
-    name = "mime-checker",
-    context = settingContext
-)
+val scanner = CheckMimeFileScanner(name = "mime-checker", context = settingContext)
 
-// Scan a file
 try {
-    scanner.scan(fileData)
-    println("File is valid")
+    scanner.scan(uploadedFile) // an ExternalFile
 } catch (e: FileScanException) {
     println("File validation failed: ${e.message}")
 }
 
-// Copy and scan (deletes destination if scan fails)
-scanner.copyAndScan(source = uploadedFile, destination = safeFile)
+// Several scanners in parallel; throws if any fails.
+listOf(scanner, clamAv).scan(uploadedFile)
 ```
 
-### Supported File Types (CheckMimeFileScanner)
+`FileScanner.Settings("mime://")` builds a `CheckMimeFileScanner`; `files-clamav` (`clamav://`) and `files-tika`
+(`tika://`) provide others.
 
-The built-in `CheckMimeFileScanner` validates these formats by checking magic numbers:
+### CheckMimeFileScanner
 
-- JPEG images (including EXIF)
-- GIF images
-- TIFF images
-- PNG images
-- XML-based formats
+It reads the file's first 16 bytes (a ranged read, so large files aren't downloaded) and checks them against the
+magic numbers for its claimed media type.  It knows most image, video and audio types and some application types
+(ZIP, GZIP, PDF, Office XML, XML); a media type it has no signature for passes.  A file too short to hold the
+signature fails cleanly.
 
 ## Helper Functions
 
 ### Random Filenames
 
 ```kotlin
-// Generate random filename with UUID
 val file = root.thenRandom("upload", "jpg")
-// Results in: upload_550e8400-e29b-41d4-a716-446655440000.jpg
+// upload-550e8400-e29b-41d4-a716-446655440000.jpg
 ```
+
+The separator is `-` because `_` is the escape character in `ExternalPath`'s string form.
 
 ### Downloading Files
 
 ```kotlin
-// Download to local temp file
-val localFile = fileObject.download(file = null)
-
-// Download TypedData to file
-val tempFile = typedData.download()
+val localFile: KFile? = file.downloadToTemporaryFile() // null if the file doesn't exist
+val intoFile: KFile? = file.download(someKFile)
+val tempFile: KFile = typedData.download()
 ```
 
-### ServerFile Conversion
+### Persisting References
 
 ```kotlin
-// Convert FileObject to ServerFile (for serialization)
-val serverFile = fileObject.serverFile
+val serverFile: ServerFile = file.serverFile // ServerFile("sf://<file system name>/<path>")
+val restored: ExternalFile = ExternalFile.Parser(listOf(fileSystem)).parse(serverFile.location)
 ```
+
+Store the canonical `sf://` form, never a signed URL (it expires).  It is keyed by the file system's service name,
+so it keeps resolving if the backend changes under the same name.  `ExternalFile.Parser` also resolves absolute URLs
+stored before the canonical form existed, through each file system's `parseLegacyUrl`.  Neither form is signed, so the
+parser is for values from your own storage only; client input goes through `parseExternalUrl`.
+
+`ExternalServerFileSerializer` (JVM) does this translation for serialized `ServerFile`s: stored references go out as
+signed URLs, and signed URLs coming in are verified and stored as references.
 
 ## Advanced Topics
 
-### Signed URLs
+### Paths
 
-The local file system implementation uses HMAC-SHA256 signatures to secure file URLs:
+`ExternalPath` segments are literal: `then("a/b")` splits on `/`, but a segment's text is otherwise kept exactly.
+`toString()` writes the conservative form, escaping every character outside `a-z A-Z 0-9 - .` as `_` plus four hex
+digits (and the first dot of an all-dots segment, so `.` and `..` never appear), and
+`ExternalPath.fromConservativeString` reads it back.  So any file name, special characters included, survives URLs
+and stored references.  The local backend refuses segments it would read as navigation (`.`, `..`, separators).
+
+### Signed URLs (local)
+
+The local file system signs URLs with HMAC-SHA256:
 
 ```kotlin
-// URLs are signed with expiration
 val signedUrl = file.signedUrl
-// Example: http://localhost:8080/files/photo.jpg?expires=1234567890&signature=abc...
+// http://localhost:8080/files/photo.jpg?expires=1234567890000&signature=abc...
 
-// Verify and parse external URLs
-val fileObject = fileSystem.parseExternalUrl(signedUrl)
+val fileObject: ExternalFile? = fileSystem.parseExternalUrl(signedUrl) // null if not under serveUrl
 ```
 
-**Important Security Notes:**
+- The signing key is generated on first use and kept in `.signingKey` in the root directory; protect it.
+- `expires` is in epoch milliseconds; `parseExternalUrl` rejects an expired or tampered URL with
+  `IllegalArgumentException`.
+- Upload URLs carry `upload=true` inside the signature, so a read URL can't be used to upload and an upload URL
+  isn't accepted as a read reference.
 
-- The signing key is stored in `.signingKey` in the root directory
-- Ensure proper file permissions on the storage directory (600/700)
-- Signed URLs include expiration timestamps to prevent replay attacks
-- Upload URLs use a separate flag to prevent signed read URLs from being used for uploads
+`referencesAreUnforgeable` says whether `parseExternalUrl` can tell a URL it issued from one a client made up; it is
+false when signing is off.  Code whose security depends on clients only naming files they were given must check it.
 
 ### Content Type Storage
 
-The local filesystem stores content types in sidecar files:
-
-```
-photo.jpg           # The actual file
-photo.jpg.contenttype  # Contains "image/jpeg"
-```
-
-This allows accurate content type tracking independent of file extensions.
+The local file system keeps each file's content type in a sidecar under a separate `.metadata` tree that mirrors the
+file's path (`.metadata/uploads/photo.jpg.contenttype`).  The sidecars are kept apart from the files so no writable
+file name is ever a sidecar name: side by side, an upload of `photo.jpg.contenttype` could choose the type
+`photo.jpg` is served with.  Paths under `.metadata` or `.signingKey` can't be read, written or listed.
 
 ### Health Checks
 
-File systems implement health checks that verify:
-
-- Ability to write files
-- Ability to read files with correct content
-- Ability to delete files
+`healthCheck()` writes `health-check/test-file-<uuid>.txt`, reads it back, compares type and content, and deletes it.
 
 ```kotlin
 val health = fileSystem.healthCheck()
 when (health.level) {
     HealthStatus.Level.OK -> println("File system is healthy")
-    HealthStatus.Level.ERROR -> println("Issue: ${health.additionalMessage}")
+    else -> println("Issue: ${health.additionalMessage}")
 }
 ```
 
@@ -224,102 +215,75 @@ when (health.level) {
 ### Safe File Uploads
 
 ```kotlin
-// Pattern 1: Direct upload with scanning
-fun handleUpload(data: TypedData): FileObject {
-    scanner.scan(data) // Throws if invalid
+suspend fun handleUpload(data: TypedData): ExternalFile {
     val file = fileSystem.root.thenRandom("uploads", data.mediaType.extension)
     file.put(data)
+    try {
+        scanner.scan(file)
+    } catch (e: FileScanException) {
+        file.delete()
+        throw e
+    }
     return file
 }
-
-// Pattern 2: Jail/quarantine pattern (see ExternalServerFileSerializer)
-// Upload to jail → scan → move to production
 ```
 
 ### File Copying
 
 ```kotlin
-// Copy file between locations
-source.copyTo(destination)
-
-// Move file (copy + delete source)
-source.moveTo(destination)
-
-// Copy between file systems
-val source = fsA.root.then("file.txt")
-val dest = fsB.root.then("file.txt")
-dest.put(source.get()!!)
-```
-
-### Batch Operations
-
-```kotlin
-// List and process all files in a directory
-userDir.list()?.forEach { file ->
-    val info = file.head()
-    println("${file.name}: ${info?.size} bytes")
-}
-
-// Delete all files in a directory
-userDir.list()?.forEach { it.delete() }
+source.copyTo(destination) // works across file systems; S3 copies server-side within a bucket
+source.moveTo(destination) // copy, then delete the source
 ```
 
 ## Error Handling
 
 ```kotlin
 try {
-    file.put(content)
-} catch (e: IOException) {
-    // File system I/O error
-}
-
-try {
-    scanner.scan(data)
-} catch (e: FileScanException) {
-    // File validation failed
-}
-
-try {
     fileSystem.parseExternalUrl(untrustedUrl)
 } catch (e: IllegalArgumentException) {
-    // Invalid signature, expired URL, or wrong file system
+    // Invalid signature or expired URL
+}
+
+try {
+    source.copyTo(destination)
+} catch (e: IllegalArgumentException) {
+    // Source doesn't exist
 }
 ```
 
 ## Best Practices
 
-1. **Always scan uploaded files** - Use `FileScanner` to validate user uploads
-2. **Use signed URLs for clients** - Never expose internal file paths
-3. **Set appropriate expiration times** - Balance security vs. usability
-4. **Handle missing files gracefully** - Many operations return null for missing files
-5. **Use random filenames** - Prevent filename collisions and enumeration attacks
-6. **Clean up temp files** - The `download()` functions create temp files that need manual cleanup
-7. **Check file existence** - Use `head()` or `get()` to verify files exist before operations
-8. **Secure the signing key** - Protect the `.signingKey` file with proper permissions
+1. **Scan uploaded files** - Use a `FileScanner` before serving user uploads
+2. **Give clients signed URLs** and verify the ones they send back with `parseExternalUrl`
+3. **Persist `serverFile`**, never a signed URL
+4. **Set appropriate expiration times** - Balance security vs. usability
+5. **Use random filenames** - Prevent collisions and enumeration
+6. **Clean up temp files** - `download` and `downloadToTemporaryFile` leave the file for you to delete
+7. **Close `get()` and `getRange()` results** - a network backend hands back a live response body
 
 ## Limitations and Gotchas
 
-1. **`moveTo()` is not atomic** - If copy succeeds but delete fails, file exists in both locations
-2. **`copyTo()` throws on missing source** - Throws `IllegalArgumentException` if the source file doesn't exist
-3. **List order is unspecified** - Directory listings have no guaranteed sort order
-4. **Small files break CheckMimeFileScanner** - Files < 16 bytes cause exceptions
-5. **lastModified is always null** - The local filesystem implementation doesn't populate this field
-6. **Sidecar files create clutter** - `.contenttype` files appear alongside regular files
-7. **URL encoding not handled** - Filenames with special characters may not work correctly
+1. **`moveTo()` is not atomic** - If copy succeeds but delete fails, the file exists in both locations
+2. **`copyTo()` and `moveTo()` throw on a missing source** - `IllegalArgumentException`
+3. **List order is unspecified**
+4. **`lastModified` is always null on the local file system**
 
 ## Related Modules
 
-- **`files-s3`** - S3 file system implementation
+- **`files-s3`** - S3 file system implementation ([docs](files-s3-module.md))
 - **`files-azure-blob`** - Azure Blob Storage implementation: `azure-blob://<account>:<accountKey>@<container>?signedUrlDuration=1h`, or `azure-blob://<account>@<container>` to authenticate with `DefaultAzureCredential` (managed identity; needs "Storage Blob Data Contributor"; signed URLs capped at 5 days). Optional `endpoint=` for Azurite or sovereign clouds; local tests run against `scripts/azurite.sh`.
-- **`files-client`** - Client-side file operations and ServerFile
+- **`files-client`** - `ServerFile`, the serializable file reference shared with clients
 - **`files-test`** - Shared test suite for file system implementations
-- **`files-clamav`** - ClamAV antivirus scanner integration
+- **`files-clamav`** - ClamAV antivirus scanner
+- **`files-tika`** - Apache Tika content-type scanner
 
 ## API Reference
 
-For detailed API documentation, see the KDoc comments in the source files:
+See the KDoc in the source files:
 
-- `PublicFileSystem.kt` - Main file system interface
-- `FileObject.kt` - File/directory operations
+- `ExternalFileSystem.kt` - The file system interface and its settings
+- `ExternalFile.kt` - File references and `ExternalFile.Parser`
+- `ExternalPath.kt` - Paths and their conservative string form
+- `KotlinxIoExternalFileSystem.kt` - The local implementation
 - `FileScanner.kt` - File validation
 - `helpers.kt` - Extension functions
