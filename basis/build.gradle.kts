@@ -78,6 +78,12 @@ kotlin {
                 implementation(libs.slf4j.simple)
             }
         }
+        // kotlin-logging on Android also defaults to slf4j, without depending on it.
+        getByName("androidHostTest") {
+            dependencies {
+                implementation(libs.slf4j.simple)
+            }
+        }
     }
 }
 
