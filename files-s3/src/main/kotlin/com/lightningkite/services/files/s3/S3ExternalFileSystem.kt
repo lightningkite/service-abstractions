@@ -10,12 +10,13 @@ import com.lightningkite.services.files.ExternalPath
 import com.lightningkite.services.files.FileInfo
 import com.lightningkite.services.get
 import com.lightningkite.services.kfile.temporary
-import com.lightningkite.services.http.client
+import com.lightningkite.services.http.client as sharedClient
 import com.lightningkite.services.telemetry.TelemetryAttributes
 import com.lightningkite.services.telemetry.TelemetryKey
 import com.lightningkite.services.telemetry.TelemetryKeys
 import com.lightningkite.services.telemetry.enrich
 import com.lightningkite.services.telemetry.telemetryTrace
+import io.ktor.client.HttpClient
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.encode
@@ -74,6 +75,7 @@ public class S3ExternalFileSystem(
     public val bucket: String,
     public val signedUrlDuration: Duration? = null,
     override val context: SettingContext,
+    private val client: HttpClient = sharedClient,
 ) : ExternalFileSystem {
 
     @Volatile
@@ -676,15 +678,14 @@ public class S3ExternalFileSystem(
     /**
      * Validates the signature of an external URL's query parameters.
      *
-     * Verification is performed purely by recomputing the AWS Signature V4 signature with our own
-     * signing key (derived from [credentialProvider]) over the presented URL's own query
-     * parameters, then comparing it to the supplied `X-Amz-Signature` in a constant-time manner.
-     * This is the same HMAC signing logic used by [signUrl]; no network round-trip is required and
-     * none is performed on the default path. A signature we did not produce - whether tampered or
-     * simply foreign - is rejected.
+     * A URL signed under our current access key is verified locally, by recomputing its AWS
+     * Signature V4 with our own signing key and comparing it to `X-Amz-Signature` in constant time;
+     * a tampered signature, or one past its `X-Amz-Date` + `X-Amz-Expires` window, is rejected with
+     * no network round-trip, as is a URL missing its signing parameters.
      *
-     * When local recomputation does not match - or cannot be performed, because the query parameters
-     * are missing or malformed - verification falls back to asking S3 directly over the network.
+     * A URL signed under a different access key is checked by asking S3 for its first byte, since
+     * only S3 holds that key.  This is how URLs signed with temporary credentials keep working after
+     * the credentials rotate, or when another server instance with its own session signed them.
      *
      * @throws IllegalArgumentException if the signature is invalid
      */
@@ -694,81 +695,61 @@ public class S3ExternalFileSystem(
         now: java.time.Instant = java.time.Instant.now(),
     ) {
         if (signedUrlDuration == null) return
-        val unixPath = unixPathOf(path)
-
-        val presentedSignature: String?
-        val recomputedSignature: String?
-        val expiresAt: java.time.Instant
-        try {
-            val headers = queryParams.split('&').associate {
-                URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(
-                    it.substringAfter('=', ""), Charsets.UTF_8
-                )
-            }
-            val secretKey = credentialProvider.resolveCredentials().secretAccessKey()
-            val objectPath = unixPath.aggressiveEncodeURLPath()
-            val date =
-                headers["X-Amz-Date"] ?: throw IllegalArgumentException("No query parameter 'X-Amz-Date' found.")
-            val expiresSeconds = headers["X-Amz-Expires"]?.toLongOrNull()
-                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Expires' found.")
-            expiresAt = parseAmzDate(date).plusSeconds(expiresSeconds)
-            val algorithm = headers["X-Amz-Algorithm"]
-                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Algorithm' found.")
-            val credential = headers["X-Amz-Credential"]
-                ?: throw IllegalArgumentException("No query parameter 'X-Amz-Credential' found.")
-            val scope = credential.substringAfter("/")
-
-            val canonicalRequest = """
-            GET
-            ${"/" + objectPath.removePrefix("/")}
-            ${queryParams.substringBefore("&X-Amz-Signature=").split('&').sorted().joinToString("&")}
-            host:${bucket}.s3.${region.id()}.amazonaws.com
-
-            host
-            UNSIGNED-PAYLOAD
-            """.trimIndent()
-
-            val toSignString = """
-            $algorithm
-            $date
-            $scope
-            ${canonicalRequest.sha256()}
-            """.trimIndent()
-
-            val signingKeyBytes = "AWS4$secretKey".toByteArray().let { date.substringBefore('T').toByteArray().mac(it) }
-                .let { region.id().toByteArray().mac(it) }.let { "s3".toByteArray().mac(it) }
-                .let { "aws4_request".toByteArray().mac(it) }
-
-            recomputedSignature = toSignString.toByteArray().mac(signingKeyBytes).toHex()
-            presentedSignature = headers["X-Amz-Signature"]
-        } catch (e: Exception) {
-            // Recomputation could not even be set up (malformed/foreign URL). Treat as a verification
-            // failure unless the compat flag re-enables the legacy HTTP fallback below.
+        val params = queryParams.split('&').associate {
+            URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(
+                it.substringAfter('=', ""), Charsets.UTF_8
+            )
+        }
+        fun param(name: String) = params[name] ?: throw IllegalArgumentException("No query parameter '$name' found.")
+        val credential = param("X-Amz-Credential")
+        val creds = creds()
+        if (credential.substringBefore('/') != creds.access) {
             verifySignatureOverNetwork(path, queryParams)
             return
         }
-
-        // Constant-time comparison so verification time does not leak how many leading bytes matched.
-        if (presentedSignature != null && constantTimeEquals(presentedSignature, recomputedSignature)) {
-            // A matching signature only proves authenticity; the URL must also be within its
-            // X-Amz-Date + X-Amz-Expires validity window. AWS S3 enforces this server-side when the
-            // URL is used against it, but local recomputation must enforce it too - otherwise an
-            // expired-but-once-valid URL is accepted here and laundered into a permanent,
-            // auto-renewing reference by the serializer. (The local backend and future: path both
-            // already check expiry; this keeps S3 consistent.)
-            if (now.isAfter(expiresAt)) throw IllegalArgumentException("Signed URL has expired")
-            return
+        val algorithm = param("X-Amz-Algorithm")
+        val date = param("X-Amz-Date")
+        val presentedSignature = param("X-Amz-Signature")
+        val expiresSeconds = param("X-Amz-Expires").toLongOrNull()
+            ?: throw IllegalArgumentException("Query parameter 'X-Amz-Expires' is not a number.")
+        val expiresAt = try {
+            parseAmzDate(date).plusSeconds(expiresSeconds)
+        } catch (e: java.time.format.DateTimeParseException) {
+            throw IllegalArgumentException("Query parameter 'X-Amz-Date' is malformed.", e)
         }
 
-        verifySignatureOverNetwork(path, queryParams)
+        val canonicalRequest = """
+        GET
+        ${"/" + unixPathOf(path).aggressiveEncodeURLPath().removePrefix("/")}
+        ${queryParams.substringBefore("&X-Amz-Signature=").split('&').sorted().joinToString("&")}
+        host:${bucket}.s3.${region.id()}.amazonaws.com
+
+        host
+        UNSIGNED-PAYLOAD
+        """.trimIndent()
+
+        val toSignString = """
+        $algorithm
+        $date
+        ${credential.substringAfter("/")}
+        ${canonicalRequest.sha256()}
+        """.trimIndent()
+
+        val signingKeyBytes = "AWS4${creds.secret}".toByteArray().let { date.substringBefore('T').toByteArray().mac(it) }
+            .let { region.id().toByteArray().mac(it) }.let { "s3".toByteArray().mac(it) }
+            .let { "aws4_request".toByteArray().mac(it) }
+        val recomputedSignature = toSignString.toByteArray().mac(signingKeyBytes).toHex()
+
+        // Constant-time comparison so verification time does not leak how many leading bytes matched.
+        if (!constantTimeEquals(presentedSignature, recomputedSignature)) throw IllegalArgumentException("Could not verify signature")
+        // S3 enforces expiry when the URL is used against it, but a URL accepted here becomes a stored
+        // reference the serializer re-signs, so an expired one would otherwise live forever.
+        if (now.isAfter(expiresAt)) throw IllegalArgumentException("Signed URL has expired")
     }
 
-    /**
-     * Fallback: validates the signed URL by asking S3 directly, for URLs this backend cannot verify
-     * locally. Performs a blocking network round-trip, so local recomputation is always tried first.
-     */
+    /** Validates a URL signed under credentials other than ours by asking S3, which also enforces its expiry. */
     private fun verifySignatureOverNetwork(path: ExternalPath, queryParams: String) {
-        // The shared client applies a 60s engine timeout.
+        // The default shared client applies a 60s engine timeout.
         runBlocking(Dispatchers.IO) {
             val response = client.get("${url(path)}?$queryParams") {
                 header("Range", "bytes=0-0")

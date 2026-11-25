@@ -230,6 +230,10 @@ try {
 }
 ```
 
+A URL signed under the current access key is checked locally, with no network call: a tampered, unsigned or expired
+one is rejected.  A URL signed under another access key (temporary credentials that have since rotated, or another
+server instance's session) is checked by asking S3 for its first byte, since only S3 holds that key.
+
 ## Terraform Integration
 
 The module provides Terraform configuration generation for automated infrastructure provisioning:

@@ -1,10 +1,15 @@
 package com.lightningkite.services.files.s3
 
 import com.lightningkite.services.TestSettingContext
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.regions.Region
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.time.Duration.Companion.hours
@@ -12,10 +17,8 @@ import kotlin.time.Duration.Companion.hours
 /**
  * Verifies that [S3ExternalFileSystem.assertSignatureValid] (reached via
  * [S3ExternalFileSystem.parseExternalUrl]) validates signed URLs by PURE local HMAC recomputation —
- * no network round-trip — and rejects tampered signatures.
- *
- * Signing and verification with static credentials are entirely CPU-bound, so these tests need no
- * real AWS access and never touch the network on the default path.
+ * no network round-trip — and rejects tampered signatures; only a URL signed under another access key
+ * is checked with S3.
  */
 class S3SignatureVerificationTest {
 
@@ -26,7 +29,10 @@ class S3SignatureVerificationTest {
         S3ExternalFileSystem
     }
 
-    private fun system(): S3ExternalFileSystem = S3ExternalFileSystem(
+    // Any request reaching this client fails the test: the default path must stay offline.
+    private fun system(
+        client: HttpClient = HttpClient(MockEngine { error("Unexpected request to ${it.url}") }),
+    ): S3ExternalFileSystem = S3ExternalFileSystem(
         name = "test",
         region = Region.US_WEST_2,
         credentialProvider = StaticCredentialsProvider.create(
@@ -35,6 +41,7 @@ class S3SignatureVerificationTest {
         bucket = "example-bucket",
         signedUrlDuration = 1.hours,
         context = TestSettingContext(),
+        client = client,
     )
 
     /**
@@ -73,20 +80,33 @@ class S3SignatureVerificationTest {
         }
     }
 
-    /**
-     * A foreign signature using parameters we never produced (different X-Amz-Credential) is
-     * rejected on the default path rather than being trusted.
-     */
     @Test
-    fun foreignSignatureRejected() {
+    fun urlWithoutSignatureRejected() {
         val system = system()
         val file = system.root.then("folder/test.txt")
-        val signed = file.signedUrl
-        // Swap the credential's access-key portion so recomputation produces a different signature.
-        val tampered = signed.replace("AKIAEXAMPLEKEYID0000", "AKIADIFFERENTKEYID00")
+        val unsigned = file.signedUrl.substringBefore("&X-Amz-Signature=")
         assertFailsWith<IllegalArgumentException> {
-            system.parseExternalUrl(tampered)
+            system.parseExternalUrl(unsigned)
         }
+    }
+
+    /**
+     * Only S3 holds the key behind another access key, such as our own temporary credentials before they rotated,
+     * so it is asked; it answers 403 for a forgery.
+     */
+    @Test
+    fun signatureUnderAnotherAccessKeyIsCheckedWithS3() {
+        val asked = mutableListOf<String>()
+        fun system(status: HttpStatusCode) = system(HttpClient(MockEngine { request ->
+            asked += request.url.toString()
+            respond("", status)
+        }))
+        val signed = system(HttpStatusCode.OK).root.then("folder/test.txt").signedUrl
+            .replace("AKIAEXAMPLEKEYID0000", "AKIADIFFERENTKEYID00")
+
+        assertFailsWith<IllegalArgumentException> { system(HttpStatusCode.Forbidden).parseExternalUrl(signed) }
+        assertContains(asked.single(), "X-Amz-Credential=AKIADIFFERENTKEYID00")
+        assertEquals(listOf("folder", "test.txt"), system(HttpStatusCode.PartialContent).parseExternalUrl(signed)?.path?.parts)
     }
 
     /**
