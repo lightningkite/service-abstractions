@@ -161,19 +161,6 @@ class ValidationTest {
     }
 
     @Test
-    fun testTypeNameNormalization() {
-        fun test(k1: KClass<*>, k2: KClass<*>) {
-            println("$k1 -> ${k1.normalizedTypeName()}")
-            println("$k2 -> ${k2.normalizedTypeName()}")
-            assertEquals(k1.normalizedTypeName(), k2.normalizedTypeName())
-        }
-        test(MaxLength::class, MaxLength(1)::class)
-        test(MaxLength::class, MaxLength(1)::class)
-        test(FloatRange::class, FloatRange(0.0, 1.0)::class)
-        test(FloatRange::class, FloatRange(0.0, 1.0)::class)
-    }
-
-    @Test
     fun test() {
         assertPasses(Sample("ASDFA"))
         assertFails(Sample("ASDFAB"))

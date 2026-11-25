@@ -150,7 +150,7 @@ public class AnnotationValidators private constructor(
             val fast = validators.entries()
             val suspending = suspendingValidators.entries()
             for (annotation in fast.keys + suspending.keys) {
-                append("${annotation.substringAfterLast('.')}:[")
+                append("${annotation.simpleName}:[")
                 val fast = fast[annotation]
                 fast?.joinTo(this)
                 suspending[annotation]?.joinTo(
@@ -170,8 +170,8 @@ public class AnnotationValidators private constructor(
             val suspending = suspendingValidators.entries()
             for (annotation in fast.keys + suspending.keys) {
                 append("\n\t")
-                if (qualified) append(annotation)
-                else append(annotation.substringAfterLast('.'))
+                // KClass.toString() because Kotlin/JS doesn't support qualifiedName.
+                append(if (qualified) annotation.toString() else annotation.simpleName)
                 append(":[")
 
                 val fast = fast[annotation]
@@ -199,7 +199,7 @@ public class AnnotationValidators private constructor(
         /** See [AnnotationValidators.collectWarnings]. */
         public var collectWarnings: Boolean = true
 
-        private val used = HashSet<Pair<String, SerialKType>>()
+        private val used = HashSet<Pair<KClass<out Annotation>, SerialKType>>()
         private val validators = ValidationMap<(Annotation, Any?) -> String?>()
         private val suspendingValidators = ValidationMap<suspend (Annotation, Any?) -> String?>()
 
@@ -211,9 +211,7 @@ public class AnnotationValidators private constructor(
             type: SerialKType,
             value: T,
         ) {
-            val key = annotation.normalizedTypeName()
-                ?: throw IllegalArgumentException("Cannot determine type name for $annotation.")
-            if (!used.add(key to type)) throw IllegalArgumentException("Multiple validator declarations encountered for ${annotation.simpleName ?: key}/$type")
+            if (!used.add(annotation to type)) throw IllegalArgumentException("Multiple validator declarations encountered for ${annotation.simpleName}/$type")
             put(annotation, type, value)
         }
 
@@ -324,24 +322,25 @@ public class AnnotationValidators private constructor(
 
     @OptIn(ExperimentalLightningServer::class)
     private class ValidationMap<T : Any> {
-        // map of qualified annotation name to possible type/validation pairs
-        private val map = HashMap<String, ArrayList<Pair<SerialKType, T>>>()
+        private val map = HashMap<KClass<out Annotation>, ArrayList<Pair<SerialKType, T>>>()
 
-        fun entries(): Map<String, List<SerialKType>> = map.mapValues { entry -> entry.value.map { it.first } }
+        fun entries(): Map<KClass<out Annotation>, List<SerialKType>> = map.mapValues { entry -> entry.value.map { it.first } }
 
         fun put(annotation: KClass<out Annotation>, type: SerialKType, value: T) {
-            map.getOrPut(annotation.normalizedTypeName() ?: return, ::ArrayList).add(type to value)
+            map.getOrPut(annotation, ::ArrayList).add(type to value)
         }
+
+        // An annotation instance's own class is a platform implementation class on JVM and Native, not the annotation class.
+        private fun validationsFor(annotation: Annotation): List<Pair<SerialKType, T>>? = map.entries.firstOrNull { it.key.isInstance(annotation) }?.value
 
         fun finalize() {
             for (list in map.values) list.sortBy { it.first.generality() }  // we want to search most_specific->least_specific
         }
 
-        fun supports(annotation: Annotation): Boolean = map.containsKey(annotation.normalizedTypeName())
+        fun supports(annotation: Annotation): Boolean = validationsFor(annotation) != null
         fun validTypesJoint(other: ValidationMap<*>, annotation: Annotation): List<SerialKType>? {
-            val key = annotation.normalizedTypeName()
-            val a = map[key]
-            val b = other.map[key]
+            val a = validationsFor(annotation)
+            val b = other.validationsFor(annotation)
             if (a == null && b == null) return null
             val out = ArrayList<SerialKType>((a?.size ?: 0) + (b?.size ?: 0))
             a?.mapTo(out) { it.first }
@@ -350,14 +349,13 @@ public class AnnotationValidators private constructor(
         }
 
         fun get(annotation: Annotation, type: SerialKType): T? {
-            val forAnnotation = map[annotation.normalizedTypeName()] ?: return null
+            val forAnnotation = validationsFor(annotation) ?: return null
             return forAnnotation.firstOrNull { it.first.matches(type) }?.second
         }
 
         fun <V : Any> getJoint(other: ValidationMap<V>, annotation: Annotation, type: SerialKType): Pair<T?, V?>? {
-            val key = annotation.normalizedTypeName()
-            val first = map[key]
-            val second = other.map[key]
+            val first = validationsFor(annotation)
+            val second = other.validationsFor(annotation)
 
             if (first == null && second == null) return null
 
@@ -803,7 +801,7 @@ internal sealed interface EncodingWarning {
         val path: String,
         val validTypes: List<SerialKType>
     ) : EncodingWarning {
-        override fun toString(): String = "${annotation::class.simpleName ?: annotation.normalizedTypeName()} applied to invalid type $appliedTo at path '$path'. Valid types: $validTypes. Ignoring validation."
+        override fun toString(): String = "$annotation applied to invalid type $appliedTo at path '$path'. Valid types: $validTypes. Ignoring validation."
     }
 
     data class EnumSerializerNotFound(
@@ -813,8 +811,6 @@ internal sealed interface EncodingWarning {
         override fun toString(): String = "Serializer for enum $type at path '$path' could not be found. Ignoring validation."
     }
 }
-
-private fun Annotation.normalizedTypeName(): String = toString().removePrefix("@").substringBefore('(')
 
 /**
  * Whether [valid] matches any type nested within this one, at any depth of type argument.
@@ -832,13 +828,6 @@ private fun SerialKType.argumentMatched(valid: SerialKType): Boolean = when (thi
 private fun SerialKType.notNull(): SerialKType = when (this) {
     is SerialKType.Specified -> if (nullable) copy(nullable = false) else this
     SerialKType.Wildcard -> this
-}
-
-// I'm not sure if this works on anything other than JVM
-internal fun KClass<*>.normalizedTypeName(): String? = toString().let { str ->
-    if (!str.contains("Kotlin reflection is not available")) str.removePrefix("class ")
-    else if (str.startsWith("interface")) str.removePrefix("interface").trim().split(' ').getOrNull(0)?.trim()
-    else str.split('$').dropLast(1).lastOrNull()?.replace('_', '.')?.trim()
 }
 
 
